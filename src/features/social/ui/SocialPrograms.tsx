@@ -4,7 +4,9 @@ import { NativeSelect } from "../../../shared/ui/Select";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { dateTimeFormat } from "../../../shared/lib/intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,7 +23,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { REMOTE_PROVIDERS } from "../../connections/model/protocol";
 import { modelsFor } from "../../sessions/model/models";
 import {
@@ -284,15 +286,12 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
           <div className="social-program-step" data-program-step="0" hidden={setupStep !== 0}>
             <details className="social-program-advanced social-program-assistant" open>
               <summary>{t("Describe the campaign to AI")}</summary>
-              <Label text="Campaign instructions">
-                <TextareaField
-                  hideLabel
-                  label=""
-                  rows={3}
-                  value={instructions}
-                  onChange={(e) => setInstructions(e.target.value)}
-                />
-              </Label>
+              <TextareaField
+                label={t("Campaign instructions")}
+                rows={3}
+                value={instructions}
+                onChange={(e) => setInstructions(e.target.value)}
+              />
               <Button
                 variant="secondary"
                 loading={busy}
@@ -318,15 +317,12 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             <fieldset disabled={busy}>
               <legend>{t("Purpose and content")}</legend>
               <div className="social-program-grid">
-                <Label text="Campaign name">
-                  <TextField
-                    hideLabel
-                    label=""
-                    required
-                    value={config.name}
-                    onChange={(e) => set("name", e.target.value)}
-                  />
-                </Label>
+                <TextField
+                  label={t("Campaign name")}
+                  required
+                  value={config.name}
+                  onChange={(e) => set("name", e.target.value)}
+                />
                 <Label text="Project">
                   <NativeSearchableSelect
                     label={t("Project")}
@@ -351,26 +347,20 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     }
                   />
                 </Label>
-                <Label text="Topic">
-                  <TextField
-                    hideLabel
-                    label=""
-                    required
-                    value={config.brief.topic}
-                    onChange={(e) => brief("topic", e.target.value)}
-                  />
-                </Label>
-              </div>
-              <Label text="Description">
-                <TextareaField
-                  hideLabel
-                  label=""
+                <TextField
+                  label={t("Topic")}
                   required
-                  rows={3}
-                  value={config.brief.description}
-                  onChange={(e) => brief("description", e.target.value)}
+                  value={config.brief.topic}
+                  onChange={(e) => brief("topic", e.target.value)}
                 />
-              </Label>
+              </div>
+              <TextareaField
+                label={t("Description")}
+                required
+                rows={3}
+                value={config.brief.description}
+                onChange={(e) => brief("description", e.target.value)}
+              />
               <SocialMultiSelect
                 label={t("Target accounts")}
                 selected={config.accountIds}
@@ -382,73 +372,52 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 }))}
               />
               <details className="social-program-advanced social-program-content-options">
-                <summary>{t("Marka ve içerik ayrıntıları")}</summary>
-                <Label text="Title">
-                  <TextField
-                    hideLabel
-                    label=""
-                    value={config.brief.title}
-                    onChange={(e) => brief("title", e.target.value)}
-                  />
-                </Label>
+                <summary>{t("Brand and content details")}</summary>
+                <TextField
+                  label={t("Title")}
+                  value={config.brief.title}
+                  onChange={(e) => brief("title", e.target.value)}
+                />
                 <div className="social-program-grid">
-                  <Label text="Audience">
-                    <TextField
-                      hideLabel
-                      label=""
-                      value={config.brief.audience}
-                      onChange={(e) => brief("audience", e.target.value)}
-                    />
-                  </Label>
-                  <Label text="Content language">
-                    <TextField
-                      hideLabel
-                      label=""
-                      value={config.brief.language}
-                      onChange={(e) => brief("language", e.target.value)}
-                    />
-                  </Label>
-                  <Label text="Brand voice">
-                    <TextField
-                      hideLabel
-                      label=""
-                      value={config.brief.voice}
-                      onChange={(e) => brief("voice", e.target.value)}
-                    />
-                  </Label>
-                  <Label text="Call to action">
-                    <TextField
-                      hideLabel
-                      label=""
-                      value={config.brief.cta}
-                      onChange={(e) => brief("cta", e.target.value)}
-                    />
-                  </Label>
-                  <Label text="Content angles (comma separated)">
-                    <TextField
-                      hideLabel
-                      label=""
-                      value={config.brief.angles?.join(", ") ?? ""}
-                      onChange={(e) =>
-                        set("brief", {
-                          ...config.brief,
-                          angles: e.target.value
-                            .split(",")
-                            .map((s) => s.trim())
-                            .filter(Boolean),
-                        })
-                      }
-                    />
-                  </Label>
-                  <Label text="Public link">
-                    <TextField
-                      hideLabel
-                      label=""
-                      type="url"
-                      value={config.brief.link ?? ""}
-                      onChange={(e) => brief("link", e.target.value)}
-                    />
-                  </Label>
+                  <TextField
+                    label={t("Audience")}
+                    value={config.brief.audience}
+                    onChange={(e) => brief("audience", e.target.value)}
+                  />
+                  <TextField
+                    label={t("Content language")}
+                    value={config.brief.language}
+                    onChange={(e) => brief("language", e.target.value)}
+                  />
+                  <TextField
+                    label={t("Brand voice")}
+                    value={config.brief.voice}
+                    onChange={(e) => brief("voice", e.target.value)}
+                  />
+                  <TextField
+                    label={t("Call to action")}
+                    value={config.brief.cta}
+                    onChange={(e) => brief("cta", e.target.value)}
+                  />
+                  <TextField
+                    label={t("Content angles (comma separated)")}
+                    value={config.brief.angles?.join(", ") ?? ""}
+                    onChange={(e) =>
+                      set("brief", {
+                        ...config.brief,
+                        angles: e.target.value
+                          .split(",")
+                          .map((s) => s.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                  />
+                  <TextField
+                    label={t("Public link")}
+                    type="url"
+                    value={config.brief.link ?? ""}
+                    onChange={(e) => brief("link", e.target.value)}
+                  />
                 </div>
                 <Label text="Content template">
                   <NativeSelect
@@ -550,10 +519,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                       ))}
                     </NativeSelect>
                   </Label>
-                  <Label text="Text model">
+                  <div className="social-program-field">
                     <TextField
-                      hideLabel
-                      label=""
+                      label={t("Text model")}
                       list={`${formId}-models`}
                       value={config.textAgent?.model ?? ""}
                       disabled={!config.textAgent}
@@ -571,7 +539,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                           ))
                         : null}
                     </datalist>
-                  </Label>
+                  </div>
                   <Label text="Media source">
                     <NativeSelect
                       value={config.image.mode}
@@ -620,10 +588,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                           ))}
                         </NativeSelect>
                       </Label>
-                      <Label text="Image model">
+                      <div className="social-program-field">
                         <TextField
-                          hideLabel
-                          label=""
+                          label={t("Image model")}
                           disabled={config.image.provider === "automatic"}
                           value={config.image.model ?? ""}
                           list={`${formId}-image-models`}
@@ -636,7 +603,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                               <option key={m} value={m} />
                             ))}
                         </datalist>
-                      </Label>
+                      </div>
                       <Label text="Aspect ratio">
                         <NativeSelect
                           value={config.image.aspectRatio}
@@ -691,49 +658,43 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                               .find((m) => (m.uploadId ?? m.url) === nextValue);
                             if (media) set("image", { ...config.image, media: [media] });
                           }}
-                          searchLocale="tr"
+                          searchLocale={getLocale()}
                         />
                       </Label>
-                      <Label text="Upload image or video">
-                        <TextField
-                          hideLabel
-                          label=""
-                          type="file"
-                          accept="image/png,image/jpeg,video/mp4,video/webm"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file)
-                              void run(async () => {
-                                const asset = file.type.startsWith("video/")
-                                  ? await client.uploadVideo(file)
-                                  : await client.upload(file);
-                                set("image", {
-                                  ...config.image,
-                                  media: [
-                                    {
-                                      kind: file.type.startsWith("video/") ? "video" : "image",
-                                      uploadId: asset.uploadId,
-                                    },
-                                  ],
-                                });
+                      <TextField
+                        label={t("Upload image or video")}
+                        type="file"
+                        accept="image/png,image/jpeg,video/mp4,video/webm"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file)
+                            void run(async () => {
+                              const asset = file.type.startsWith("video/")
+                                ? await client.uploadVideo(file)
+                                : await client.upload(file);
+                              set("image", {
+                                ...config.image,
+                                media: [
+                                  {
+                                    kind: file.type.startsWith("video/") ? "video" : "image",
+                                    uploadId: asset.uploadId,
+                                  },
+                                ],
                               });
-                          }}
-                        />
-                      </Label>
-                      <Label text="Public image URL">
-                        <TextField
-                          hideLabel
-                          label=""
-                          type="url"
-                          value={config.image.media[0]?.url ?? ""}
-                          onChange={(e) =>
-                            set("image", {
-                              ...config.image,
-                              media: e.target.value ? [{ kind: "image", url: e.target.value }] : [],
-                            })
-                          }
-                        />
-                      </Label>
+                            });
+                        }}
+                      />
+                      <TextField
+                        label={t("Public image URL")}
+                        type="url"
+                        value={config.image.media[0]?.url ?? ""}
+                        onChange={(e) =>
+                          set("image", {
+                            ...config.image,
+                            media: e.target.value ? [{ kind: "image", url: e.target.value }] : [],
+                          })
+                        }
+                      />
                       <p>{config.image.media[0]?.uploadId ? t("Media uploaded") : ""}</p>
                     </>
                   ) : null}
@@ -763,7 +724,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     onChange={(nextValue) =>
                       set("strategy", nextValue as ProgramConfig["strategy"])
                     }
-                    searchLocale="tr"
+                    searchLocale={getLocale()}
                   />
                 </Label>
                 <details>
@@ -771,35 +732,32 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   {config.accountIds.map((id) => (
                     <section key={id}>
                       <strong>{snapshot.accounts.find((a) => a.id === id)?.name}</strong>
-                      <Label text="Override media">
-                        <TextField
-                          hideLabel
-                          label=""
-                          type="file"
-                          accept="image/png,image/jpeg,video/mp4,video/webm"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file)
-                              void run(async () => {
-                                const asset = file.type.startsWith("video/")
-                                  ? await client.uploadVideo(file)
-                                  : await client.upload(file);
-                                setConfig((c) => ({
-                                  ...c,
-                                  mediaOverrides: {
-                                    ...c.mediaOverrides,
-                                    [id]: [
-                                      {
-                                        kind: file.type.startsWith("video/") ? "video" : "image",
-                                        uploadId: asset.uploadId,
-                                      },
-                                    ],
-                                  },
-                                }));
-                              });
-                          }}
-                        />
-                      </Label>
+                      <TextField
+                        label={t("Override media")}
+                        type="file"
+                        accept="image/png,image/jpeg,video/mp4,video/webm"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file)
+                            void run(async () => {
+                              const asset = file.type.startsWith("video/")
+                                ? await client.uploadVideo(file)
+                                : await client.upload(file);
+                              setConfig((c) => ({
+                                ...c,
+                                mediaOverrides: {
+                                  ...c.mediaOverrides,
+                                  [id]: [
+                                    {
+                                      kind: file.type.startsWith("video/") ? "video" : "image",
+                                      uploadId: asset.uploadId,
+                                    },
+                                  ],
+                                },
+                              }));
+                            });
+                        }}
+                      />
                       <Label text="Use text only">
                         <Checkbox
                           checked={config.mediaOverrides?.[id]?.length === 0}
@@ -848,22 +806,19 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   (id) => snapshot.accounts.find((a) => a.id === id)?.platform === "youtube",
                 ) ? (
                   <div className="social-program-grid">
-                    <Label text="Video title">
-                      <TextField
-                        hideLabel
-                        label=""
-                        value={config.youtube?.title ?? ""}
-                        onChange={(e) =>
-                          set("youtube", {
-                            privacy: "private",
-                            madeForKids: false,
-                            containsSyntheticMedia: false,
-                            ...config.youtube,
-                            title: e.target.value,
-                          })
-                        }
-                      />
-                    </Label>
+                    <TextField
+                      label={t("Video title")}
+                      value={config.youtube?.title ?? ""}
+                      onChange={(e) =>
+                        set("youtube", {
+                          privacy: "private",
+                          madeForKids: false,
+                          containsSyntheticMedia: false,
+                          ...config.youtube,
+                          title: e.target.value,
+                        })
+                      }
+                    />
                     <Label text="Video visibility">
                       <NativeSelect
                         value={config.youtube?.privacy ?? "private"}
@@ -932,51 +887,39 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     schedule("mode", e.target.value as ProgramConfig["schedule"]["mode"])
                   }
                 />
-                <Label text="Time zone">
-                  <TextField
-                    hideLabel
-                    label=""
-                    required
-                    value={config.schedule.timeZone}
-                    onChange={(e) => schedule("timeZone", e.target.value)}
-                  />
-                </Label>
-                <Label text="Campaign start (device local time)">
-                  <TextField
-                    hideLabel
-                    label=""
-                    type="datetime-local"
-                    required
-                    value={localInput(config.schedule.startsAt)}
-                    onChange={(e) => schedule("startsAt", new Date(e.target.value).getTime())}
-                  />
-                </Label>
-                <Label text="Campaign end (optional)">
-                  <TextField
-                    hideLabel
-                    label=""
-                    type="datetime-local"
-                    value={config.schedule.endsAt ? localInput(config.schedule.endsAt) : ""}
-                    onChange={(e) =>
-                      schedule(
-                        "endsAt",
-                        e.target.value ? new Date(e.target.value).getTime() : undefined,
-                      )
-                    }
-                  />
-                </Label>
-                <Label text="Total logical posts">
-                  <TextField
-                    hideLabel
-                    label=""
-                    type="number"
-                    min={1}
-                    max={10000}
-                    disabled={config.totalPosts === null}
-                    value={config.totalPosts ?? ""}
-                    onChange={(e) => set("totalPosts", Number(e.target.value))}
-                  />
-                </Label>
+                <TextField
+                  label={t("Time zone")}
+                  required
+                  value={config.schedule.timeZone}
+                  onChange={(e) => schedule("timeZone", e.target.value)}
+                />
+                <TextField
+                  label={t("Campaign start (device local time)")}
+                  type="datetime-local"
+                  required
+                  value={localInput(config.schedule.startsAt)}
+                  onChange={(e) => schedule("startsAt", new Date(e.target.value).getTime())}
+                />
+                <TextField
+                  label={t("Campaign end (optional)")}
+                  type="datetime-local"
+                  value={config.schedule.endsAt ? localInput(config.schedule.endsAt) : ""}
+                  onChange={(e) =>
+                    schedule(
+                      "endsAt",
+                      e.target.value ? new Date(e.target.value).getTime() : undefined,
+                    )
+                  }
+                />
+                <TextField
+                  label={t("Total logical posts")}
+                  type="number"
+                  min={1}
+                  max={10000}
+                  disabled={config.totalPosts === null}
+                  value={config.totalPosts ?? ""}
+                  onChange={(e) => set("totalPosts", Number(e.target.value))}
+                />
                 <Label text="Continuous campaign">
                   <Checkbox
                     checked={config.totalPosts === null}
@@ -984,76 +927,58 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   />
                 </Label>
                 {config.schedule.mode === "times" ? (
-                  <Label text="Publishing times (HH:mm, comma separated)">
-                    <TextField
-                      hideLabel
-                      label=""
-                      required
-                      value={config.schedule.times.join(", ")}
-                      onChange={(e) =>
-                        schedule(
-                          "times",
-                          e.target.value.split(",").map((x) => x.trim()),
-                        )
-                      }
-                    />
-                  </Label>
+                  <TextField
+                    label={t("Publishing times (HH:mm, comma separated)")}
+                    required
+                    value={config.schedule.times.join(", ")}
+                    onChange={(e) =>
+                      schedule(
+                        "times",
+                        e.target.value.split(",").map((x) => x.trim()),
+                      )
+                    }
+                  />
                 ) : (
                   <>
-                    <Label text="Window start">
-                      <TextField
-                        hideLabel
-                        label=""
-                        type="time"
-                        value={config.schedule.startTime}
-                        onChange={(e) => schedule("startTime", e.target.value)}
-                      />
-                    </Label>
-                    <Label text="Window end">
-                      <TextField
-                        hideLabel
-                        label=""
-                        type="time"
-                        value={config.schedule.endTime}
-                        onChange={(e) => schedule("endTime", e.target.value)}
-                      />
-                    </Label>
+                    <TextField
+                      label={t("Window start")}
+                      type="time"
+                      value={config.schedule.startTime}
+                      onChange={(e) => schedule("startTime", e.target.value)}
+                    />
+                    <TextField
+                      label={t("Window end")}
+                      type="time"
+                      value={config.schedule.endTime}
+                      onChange={(e) => schedule("endTime", e.target.value)}
+                    />
                     {config.schedule.mode === "interval" ? (
                       <>
-                        <Label text="Minimum interval (minutes)">
-                          <TextField
-                            hideLabel
-                            label=""
-                            type="number"
-                            min={1}
-                            value={config.schedule.minIntervalMinutes}
-                            onChange={(e) => schedule("minIntervalMinutes", Number(e.target.value))}
-                          />
-                        </Label>
-                        <Label text="Maximum interval (minutes)">
-                          <TextField
-                            hideLabel
-                            label=""
-                            type="number"
-                            min={1}
-                            value={config.schedule.maxIntervalMinutes}
-                            onChange={(e) => schedule("maxIntervalMinutes", Number(e.target.value))}
-                          />
-                        </Label>
+                        <TextField
+                          label={t("Minimum interval (minutes)")}
+                          type="number"
+                          min={1}
+                          value={config.schedule.minIntervalMinutes}
+                          onChange={(e) => schedule("minIntervalMinutes", Number(e.target.value))}
+                        />
+                        <TextField
+                          label={t("Maximum interval (minutes)")}
+                          type="number"
+                          min={1}
+                          value={config.schedule.maxIntervalMinutes}
+                          onChange={(e) => schedule("maxIntervalMinutes", Number(e.target.value))}
+                        />
                       </>
                     ) : (
                       <>
-                        <Label text="Posts per period">
-                          <TextField
-                            hideLabel
-                            label=""
-                            type="number"
-                            min={1}
-                            max={48}
-                            value={config.schedule.frequency}
-                            onChange={(e) => schedule("frequency", Number(e.target.value))}
-                          />
-                        </Label>
+                        <TextField
+                          label={t("Posts per period")}
+                          type="number"
+                          min={1}
+                          max={48}
+                          value={config.schedule.frequency}
+                          onChange={(e) => schedule("frequency", Number(e.target.value))}
+                        />
                         <Label text="Period">
                           <NativeSelect
                             value={config.schedule.period}
@@ -1209,29 +1134,24 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                       "maxImageGenerations",
                     ] as const
                   ).map((key) => (
-                    <Label
+                    <TextField
                       key={key}
-                      text={
+                      label={t(
                         {
                           dailyPosts: "Daily posts per account",
                           dailyGenerations: "Daily generation budget",
                           totalGenerations: "Total generation budget",
                           maxImageGenerations: "Image generation budget",
-                        }[key]
+                        }[key],
+                      )}
+                      type="number"
+                      min={1}
+                      max={100000}
+                      value={config.limits[key]}
+                      onChange={(e) =>
+                        set("limits", { ...config.limits, [key]: Number(e.target.value) })
                       }
-                    >
-                      <TextField
-                        hideLabel
-                        label=""
-                        type="number"
-                        min={1}
-                        max={100000}
-                        value={config.limits[key]}
-                        onChange={(e) =>
-                          set("limits", { ...config.limits, [key]: Number(e.target.value) })
-                        }
-                      />
-                    </Label>
+                    />
                   ))}
                 </div>
                 <p>
@@ -1249,7 +1169,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 type="button"
                 onClick={() => setSetupStep((step) => step - 1)}
               >
-                {t("Geri")}
+                {t("Back")}
               </Button>
             ) : null}
             {setupStep < 2 ? (
@@ -1258,7 +1178,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 type="button"
                 onClick={() => setSetupStep((step) => step + 1)}
               >
-                {t("Devam et")}
+                {t("Continue")}
               </Button>
             ) : null}
             <Button
@@ -1329,17 +1249,14 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             </details>
             <details className="social-program-advanced">
               <summary>{t("Link for future drafts")}</summary>
-              <Label text="Link for future drafts">
-                <TextField
-                  hideLabel
-                  label=""
-                  type="url"
-                  value={bulkLink}
-                  onChange={(e) => setBulkLink(e.target.value)}
-                />
-              </Label>
+              <TextField
+                label={t("Link for future drafts")}
+                type="url"
+                value={bulkLink}
+                onChange={(e) => setBulkLink(e.target.value)}
+              />
               <Button
-                type="submit"
+                type="button"
                 variant="secondary"
                 loading={busy}
                 disabled={busy}
@@ -1356,7 +1273,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             </details>
             <div className="social-toolbar-actions">
               <Button
-                type="submit"
+                type="button"
                 variant="secondary"
                 loading={busy}
                 disabled={busy || detail.program.cancelled}
@@ -1365,7 +1282,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 {t("Generate next content")}
               </Button>
               <Button
-                type="submit"
+                type="button"
                 variant="secondary"
                 loading={busy}
                 disabled={busy}
@@ -1396,7 +1313,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 {t("Edit campaign settings")}
               </Button>
               <Button
-                type="submit"
+                type="button"
                 variant="secondary"
                 loading={busy}
                 disabled={busy}
@@ -1404,15 +1321,21 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               >
                 {t("Pause")}
               </Button>
-              <Button
-                type="submit"
-                variant="secondary"
-                loading={busy}
-                disabled={busy}
-                onClick={() => void perform("programs.cancel", { id: detail.program.id })}
-              >
-                {t("Cancel future publications")}
-              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) pt-2">
+              <ConfirmMorph
+                label={t("Cancel future publications")}
+                tone="danger"
+                confirmLabel={t("Cancel publications")}
+                pendingLabel={t("Cancelling…")}
+                doneLabel={t("Cancelled")}
+                errorLabel={t("Cancel failed")}
+                disabled={busy || detail.program.cancelled}
+                onConfirm={async () => {
+                  if (!(await perform("programs.cancel", { id: detail.program.id })))
+                    throw new Error(t("Cancel failed"));
+                }}
+              />
             </div>
             <label className="social-program-confirm">
               <Checkbox checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
@@ -1420,21 +1343,37 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 "I reviewed this revision, its accounts, schedule, models, budgets and approval steps.",
               )}
             </label>
-            <Button
-              type="submit"
-              variant="secondary"
-              loading={busy}
-              disabled={busy || !confirmed || detail.program.cancelled || detail.program.enabled}
-              onClick={() =>
-                void perform("programs.activate", {
-                  id: detail.program.id,
-                  expectedRevision: detail.program.revision,
-                  confirm: true,
-                })
-              }
-            >
-              {t("Activate reviewed campaign")}
-            </Button>
+            {detail.program.enabled || detail.program.cancelled || !confirmed ? (
+              <small className="social-muted">
+                {detail.program.cancelled
+                  ? t("This campaign was cancelled.")
+                  : detail.program.enabled
+                    ? t("This campaign is already active.")
+                    : t("Tick the review confirmation above to activate.")}
+              </small>
+            ) : null}
+            <div className="social-actions">
+              {detail.program.accountIds.map((accountId) => (
+                <Badge key={accountId} variant="label" appearance="outline">
+                  {snapshot.accounts.find((account) => account.id === accountId)?.name ?? accountId}
+                </Badge>
+              ))}
+              <Button
+                type="button"
+                variant="secondary"
+                loading={busy}
+                disabled={busy || !confirmed || detail.program.cancelled || detail.program.enabled}
+                onClick={() =>
+                  void perform("programs.activate", {
+                    id: detail.program.id,
+                    expectedRevision: detail.program.revision,
+                    confirm: true,
+                  })
+                }
+              >
+                {t("Activate reviewed campaign")}
+              </Button>
+            </div>
             {!snapshot.sendingEnabled || snapshot.stopped ? (
               <Notice>
                 {t(
@@ -1469,24 +1408,21 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     </p>
                   ) : null}
                   {!o.targets.some((t) => t.jobId) ? (
-                    <Label text="Reschedule (device local time)">
-                      <TextField
-                        hideLabel
-                        label=""
-                        type="datetime-local"
-                        disabled={busy}
-                        defaultValue={localInput(o.scheduledAt)}
-                        onBlur={(e) => {
-                          const at = new Date(e.target.value).getTime();
-                          if (at !== o.scheduledAt && Number.isFinite(at))
-                            void perform("programs.reschedule", {
-                              id: detail.program.id,
-                              occurrenceId: o.id,
-                              scheduledAt: at,
-                            });
-                        }}
-                      />
-                    </Label>
+                    <TextField
+                      label={t("Reschedule (device local time)")}
+                      type="datetime-local"
+                      disabled={busy}
+                      defaultValue={localInput(o.scheduledAt)}
+                      onBlur={(e) => {
+                        const at = new Date(e.target.value).getTime();
+                        if (at !== o.scheduledAt && Number.isFinite(at))
+                          void perform("programs.reschedule", {
+                            id: detail.program.id,
+                            occurrenceId: o.id,
+                            scheduledAt: at,
+                          });
+                      }}
+                    />
                   ) : null}
                   {o.targets.map((target) => (
                     <TargetEditor
@@ -1497,6 +1433,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                       busy={busy}
                       perform={perform}
                       client={client}
+                      accountName={
+                        snapshot.accounts.find((account) => account.id === target.accountId)?.name
+                      }
                     />
                   ))}
                 </article>
@@ -1504,7 +1443,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             </div>
             {detail.nextBefore !== undefined ? (
               <Button
-                type="submit"
+                type="button"
                 variant="secondary"
                 onClick={() =>
                   void run(async () => {
@@ -1537,7 +1476,9 @@ function TargetEditor({
   busy,
   perform,
   client,
+  accountName,
 }: {
+  accountName?: string;
   target: ProgramTarget;
   occurrence: SocialOccurrence;
   program: SocialProgram;
@@ -1588,7 +1529,7 @@ function TargetEditor({
       ) : null}
       {!variant && !target.jobId && target.status !== "generating" ? (
         <Button
-          type="submit"
+          type="button"
           variant="secondary"
           loading={busy}
           disabled={busy}
@@ -1603,7 +1544,7 @@ function TargetEditor({
       !variant.media.length &&
       target.status === "review" ? (
         <Button
-          type="submit"
+          type="button"
           variant="secondary"
           loading={busy}
           disabled={busy}
@@ -1614,49 +1555,40 @@ function TargetEditor({
       ) : null}
       {variant ? (
         <>
-          <Label text="Platform content">
-            <TextareaField
-              hideLabel
-              label=""
-              rows={3}
-              disabled={busy || !!target.jobId || target.status === "generating"}
-              value={variant.text}
-              onChange={(e) => {
-                dirty.current = true;
-                setVariant({ ...variant, text: e.target.value });
-              }}
-            />
-          </Label>
-          <Label text="Public link">
-            <TextField
-              hideLabel
-              label=""
-              type="url"
-              disabled={busy || !!target.jobId}
-              value={variant.link ?? ""}
-              onChange={(e) => {
-                dirty.current = true;
-                setVariant({ ...variant, link: e.target.value || undefined });
-              }}
-            />
-          </Label>
+          <TextareaField
+            label={t("Platform content")}
+            rows={3}
+            disabled={busy || !!target.jobId || target.status === "generating"}
+            value={variant.text}
+            onChange={(e) => {
+              dirty.current = true;
+              setVariant({ ...variant, text: e.target.value });
+            }}
+          />
+          <TextField
+            label={t("Public link")}
+            type="url"
+            disabled={busy || !!target.jobId}
+            value={variant.link ?? ""}
+            onChange={(e) => {
+              dirty.current = true;
+              setVariant({ ...variant, link: e.target.value || undefined });
+            }}
+          />
           {variant.youtube ? (
             <>
-              <Label text="Video title">
-                <TextField
-                  hideLabel
-                  label=""
-                  disabled={busy || !!target.jobId}
-                  value={variant.youtube.title}
-                  onChange={(e) => {
-                    dirty.current = true;
-                    setVariant({
-                      ...variant,
-                      youtube: { ...variant.youtube!, title: e.target.value },
-                    });
-                  }}
-                />
-              </Label>
+              <TextField
+                label={t("Video title")}
+                disabled={busy || !!target.jobId}
+                value={variant.youtube.title}
+                onChange={(e) => {
+                  dirty.current = true;
+                  setVariant({
+                    ...variant,
+                    youtube: { ...variant.youtube!, title: e.target.value },
+                  });
+                }}
+              />
               <Label text="Video visibility">
                 <NativeSelect
                   disabled={busy || !!target.jobId}
@@ -1689,7 +1621,7 @@ function TargetEditor({
                     <img src={image} alt={media.alt ?? ""} />
                   ) : (
                     <Button
-                      type="submit"
+                      type="button"
                       variant="secondary"
                       loading={busy}
                       disabled={busy}
@@ -1698,23 +1630,20 @@ function TargetEditor({
                       {t("Preview generated image")}
                     </Button>
                   )}
-                  <Label text="Image alt text">
-                    <TextField
-                      hideLabel
-                      label=""
-                      disabled={busy || !!target.jobId}
-                      value={media.alt ?? ""}
-                      onChange={(e) => {
-                        dirty.current = true;
-                        setVariant({
-                          ...variant,
-                          media: variant.media.map((m, index) =>
-                            index === i ? { ...m, alt: e.target.value } : m,
-                          ),
-                        });
-                      }}
-                    />
-                  </Label>
+                  <TextField
+                    label={t("Image alt text")}
+                    disabled={busy || !!target.jobId}
+                    value={media.alt ?? ""}
+                    onChange={(e) => {
+                      dirty.current = true;
+                      setVariant({
+                        ...variant,
+                        media: variant.media.map((m, index) =>
+                          index === i ? { ...m, alt: e.target.value } : m,
+                        ),
+                      });
+                    }}
+                  />
                 </>
               ) : (
                 <p>{t("Uploaded video")}</p>
@@ -1724,7 +1653,7 @@ function TargetEditor({
           {!target.jobId ? (
             <div className="social-toolbar-actions">
               <Button
-                type="submit"
+                type="button"
                 variant="secondary"
                 loading={busy}
                 disabled={busy || target.status === "generating"}
@@ -1744,7 +1673,7 @@ function TargetEditor({
                 {t("Save content changes")}
               </Button>
               <Button
-                type="submit"
+                type="button"
                 variant="secondary"
                 loading={busy}
                 disabled={busy || target.status === "generating"}
@@ -1772,8 +1701,11 @@ function TargetEditor({
                   ),
                 )}
               </div>
+              <Badge variant="label" appearance="outline">
+                {accountName ?? target.accountId} · {names[target.platform]}
+              </Badge>
               <Button
-                type="submit"
+                type="button"
                 variant="secondary"
                 loading={busy}
                 disabled={

@@ -16,6 +16,7 @@ import {
   windowsServiceRunner,
   windowsNodeSetupScript,
   windowsUninstallScript,
+  windowsUninstallPreflightScript,
 } from "./windows";
 
 const directories: string[] = [];
@@ -27,6 +28,30 @@ const temporary = () => {
   directories.push(dir);
   return dir;
 };
+
+it.skipIf(process.platform !== "win32")(
+  "checks effective task deletion rights without changing permissions or stopping the host",
+  async () => {
+    // Exercise the actual Windows access check, including denied rights, rather
+    // than assuming that membership in Administrators grants an unelevated token access.
+    const script = windowsUninstallPreflightScript();
+    const definitions = script.slice(0, script.lastIndexOf("\nAssert-BycodaTaskRemovalAccess"));
+    const result = JSON.parse(
+      await runPowerShell(`
+${definitions}
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$descriptor = 'O:' + $sid + 'G:' + $sid + 'D:'
+Assert-BycodaTaskRemovalAccess ('Bycoda Missing Test-' + [Guid]::NewGuid().ToString('N'))
+@{
+  readOnly = [BycodaTaskAccess]::CanDelete($descriptor + '(A;;FR;;;' + $sid + ')')
+  full = [BycodaTaskAccess]::CanDelete($descriptor + '(A;;FA;;;' + $sid + ')')
+  denied = [BycodaTaskAccess]::CanDelete($descriptor + '(D;;SD;;;' + $sid + ')(A;;FA;;;' + $sid + ')')
+} | ConvertTo-Json -Compress
+`),
+    );
+    expect(result).toEqual({ readOnly: false, full: true, denied: false });
+  },
+);
 
 it.skipIf(process.platform !== "win32")(
   "reuses the firewall executable across releases, replaces Node atomically and restores older engines",

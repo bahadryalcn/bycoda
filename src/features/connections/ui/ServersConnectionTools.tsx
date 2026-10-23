@@ -6,6 +6,7 @@ import { useId, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { SshIdentityField } from "./SshIdentityField";
 import { Alert } from "../../../shared/ui/Alert";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Terminal, Lock } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { setServerSshIdentity, type ServerRecord } from "../model/serverInventory";
@@ -92,7 +93,7 @@ export function ServersConnectionTools({
             onClick={() => openTerminal(currentServer)}
             disabled={busy}
           >
-            <Terminal aria-hidden className="size-3.5" />
+            <Terminal aria-hidden className="icon-sm" />
             {t("Connect via SSH")}
           </Button>
         ) : null}
@@ -102,52 +103,19 @@ export function ServersConnectionTools({
           </Button>
         ) : null}
       </div>
-      <nav
-        aria-label={t("Server tools")}
-        className="flex min-w-0 gap-1 overflow-x-auto border-b border-stroke pbe-2"
-        onKeyDown={(event) => {
-          if (
-            !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) ||
-            event.altKey ||
-            event.ctrlKey ||
-            event.metaKey
-          )
-            return;
-          const buttons = Array.from(
-            event.currentTarget.querySelectorAll<HTMLButtonElement>("button"),
-          );
-          const index = buttons.indexOf(event.target as HTMLButtonElement);
-          if (index < 0) return;
-          event.preventDefault();
-          const next =
-            event.key === "Home"
-              ? 0
-              : event.key === "End"
-                ? buttons.length - 1
-                : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
-          buttons[next]?.focus();
-          buttons[next]?.click();
-        }}
-      >
-        {[
-          ["connection", "Connection"],
-          ...(canAssignKey ? [["forwards", "Port forwarding"]] : []),
-          ["automation", "Automation"],
-          ["settings", "Settings"],
-          ["activity", "Activity"],
-        ].map(([id, label]) => (
-          <Button
-            key={id}
-            variant="tab"
-            className="shrink-0"
-            aria-pressed={panel === id}
-            aria-controls={`${panelId}-${id}`}
-            onClick={() => setPanel(id)}
-          >
-            {t(label)}
-          </Button>
-        ))}
-      </nav>
+      <SegmentedControl
+        label={t("Server tools")}
+        selectionRole="pressed"
+        value={panel}
+        onValueChange={setPanel}
+        options={[
+          { value: "connection", label: t("Connection") },
+          ...(canAssignKey ? [{ value: "forwards", label: t("Port forwarding") }] : []),
+          { value: "automation", label: t("Automation") },
+          { value: "settings", label: t("Organization") },
+          { value: "activity", label: t("Activity") },
+        ]}
+      />
       <div id={`${panelId}-connection`} hidden={panel !== "connection"}>
         {canAssignKey ? (
           <section aria-label={t("Credentials")} className="flex min-w-0 flex-col gap-3">
@@ -235,7 +203,7 @@ export function ServersConnectionTools({
         <ServerSnippets key={server.id} serverId={server.id} serverName={server.name} embedded />
       </div>
       <div id={`${panelId}-settings`} hidden={panel !== "settings"} className="min-w-0">
-        <h3 className="mbe-3 text-sm font-medium">{t("SSH settings")}</h3>
+        <h3 className="mbe-3 text-ui-body font-medium">{t("Organization")}</h3>
         <div className="flex flex-wrap gap-2">
           {(server.kind === "ssh" || server.machine?.ssh) && openAgentTerminal ? (
             <Button onClick={() => setAgentReview(true)}>{t("Forward SSH agent")}</Button>
@@ -244,7 +212,7 @@ export function ServersConnectionTools({
             <Button onClick={() => setGroupSettings(true)}>{t("SSH group settings")}</Button>
           ) : null}
           <Button loading={busy} onClick={() => setSecurity(true)}>
-            <Lock aria-hidden className="size-3.5" />
+            <Lock aria-hidden className="icon-sm" />
             {t("SSH settings")}
           </Button>
         </div>

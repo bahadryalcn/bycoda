@@ -1,5 +1,5 @@
 import { SearchInput } from "./SearchInput";
-import { t, useLocale } from "../i18n";
+import { t, useT } from "../i18n";
 import {
   useEffect,
   useId,
@@ -76,7 +76,7 @@ export function SearchableSelect(
   } & SelectionOptions &
     (SingleSelectProps | MultiSelectProps),
 ) {
-  useLocale();
+  const t = useT();
   const {
     label,
     options,
@@ -171,7 +171,7 @@ function SearchableSelectMenu({
   searchable?: boolean;
   align?: PopoverAlign;
 } & SelectionOptions) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -348,14 +348,14 @@ function SearchableSelectMenu({
         className={[
           triggerProps?.className,
           variant === "row"
-            ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent hover:bg-(--ui-surface-hover) focus-visible:bg-(--ui-surface-hover) disabled:opacity-50"
+            ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent hover:bg-(--ui-surface-hover) focus-visible:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]"
             : variant === "panel"
-              ? "flex h-14 w-full items-center justify-end gap-3 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-4 text-right text-[14px] font-medium focus-visible:outline-2 focus-visible:outline-accent hover:bg-(--ui-surface-hover) focus:border-(--ui-tone-neutral-border) focus:bg-(--ui-surface-hover) disabled:opacity-50 active:scale-[0.995]"
+              ? "flex h-14 w-full items-center justify-end gap-3 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-4 text-right text-[14px] font-medium focus-visible:outline-2 focus-visible:outline-accent hover:bg-(--ui-surface-hover) focus:border-(--ui-tone-neutral-border) focus:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)] active:scale-[0.995]"
               : variant === "pill"
-                ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent hover:bg-(--ui-surface-hover) focus-visible:bg-(--ui-surface-hover) disabled:opacity-50"
+                ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent hover:bg-(--ui-surface-hover) focus-visible:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]"
                 : variant === "transparent"
-                  ? "flex h-[var(--ui-control-height)] w-full items-center justify-between gap-2 rounded-md border border-(--ui-tone-neutral-border) bg-transparent px-2.5 text-left text-[13px] focus-visible:outline-2 focus-visible:outline-accent hover:border-(--ui-tone-neutral-border) focus:border-(--ui-focus-ring-color) disabled:opacity-50 active:scale-[0.99]"
-                  : "flex h-[var(--ui-control-height)] w-full items-center justify-between gap-2 rounded-md border border-(--ui-tone-neutral-border) bg-background-base px-2.5 text-left text-[13px] focus-visible:outline-2 focus-visible:outline-accent hover:border-(--ui-tone-neutral-border) focus:border-(--ui-focus-ring-color) disabled:opacity-50 active:scale-[0.99]",
+                  ? "flex h-[var(--ui-control-height)] w-full items-center justify-between gap-2 rounded-md border border-(--ui-tone-neutral-border) bg-transparent px-2.5 text-left text-[13px] focus-visible:outline-2 focus-visible:outline-accent hover:border-(--ui-tone-neutral-border) focus:border-(--ui-focus-ring-color) disabled:opacity-[var(--ui-disabled-opacity,0.5)] active:scale-[0.99]"
+                  : "flex h-[var(--ui-control-height)] w-full items-center justify-between gap-2 rounded-md border border-(--ui-tone-neutral-border) bg-background-base px-2.5 text-left text-[13px] focus-visible:outline-2 focus-visible:outline-accent hover:border-(--ui-tone-neutral-border) focus:border-(--ui-focus-ring-color) disabled:opacity-[var(--ui-disabled-opacity,0.5)] active:scale-[0.99]",
         ]
           .filter(Boolean)
           .join(" ")}

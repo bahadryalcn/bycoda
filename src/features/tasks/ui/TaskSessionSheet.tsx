@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
 import { LoaderCircle } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { remoteRequest } from "../../connections/model/connections";
@@ -62,15 +63,17 @@ export function TaskSessionSheet({
       <div className="task-session-preview">
         <div className="task-session-toolbar">
           <span role="status">
-            {session
-              ? t(
-                  session.status === "running"
-                    ? "Running"
-                    : session.status === "interrupted"
-                      ? "Interrupted"
-                      : "Idle",
-                )
-              : t("Loading…")}
+            <Badge tone={session?.status === "running" ? "info" : "neutral"}>
+              {session
+                ? t(
+                    session.status === "running"
+                      ? "Running"
+                      : session.status === "interrupted"
+                        ? "Interrupted"
+                        : "Idle",
+                  )
+                : t("Loading…")}
+            </Badge>
           </span>
           <Button
             variant="secondary"
@@ -102,7 +105,7 @@ export function TaskSessionSheet({
           </Alert>
         ) : null}
         {!session && !error ? (
-          <LoaderCircle className="size-4 animate-spin" aria-label={t("Loading…")} />
+          <LoaderCircle className="icon-md animate-spin" aria-label={t("Loading…")} />
         ) : null}
         {session?.session.blocks
           .filter((block) => block.text?.trim())

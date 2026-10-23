@@ -84,6 +84,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("publishes each typed draft once while preserving immediate owner updates", async () => {
+  const onDraftChange = vi.fn();
+  await draw({ onDraftChange });
+  onDraftChange.mockClear();
+  const textarea = container.querySelector("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      textarea,
+      "one edit",
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(onDraftChange).toHaveBeenCalledWith("one edit");
+  });
+  expect(onDraftChange).toHaveBeenCalledTimes(1);
+});
+
 it("waits for a pending picker and includes its file in the original Send", async () => {
   let finish!: (files: Attachment[]) => void;
   picker.read.mockReturnValue(

@@ -103,9 +103,9 @@ describe("bulk social draft eligibility", () => {
     });
     expect(rows.map((row) => row.reason)).toEqual([
       "",
-      "Yeni mesaj için kayıtlı iletişim izni yok.",
-      "Bu kişi iletişim istemiyor.",
-      "Kişi seçilen projeye bağlı değil.",
+      "There is no recorded contact consent for a new message.",
+      "This contact has opted out of contact.",
+      "This contact is not linked to the selected project.",
     ]);
     expect(value.contacts[1].consent).toBeUndefined();
   });
@@ -123,7 +123,7 @@ describe("bulk social draft eligibility", () => {
       { account: { maxMessageCharacters: 3 } },
       { other: "Policy unavailable" },
     );
-    expect(rows[0].reason).toBe("Metin 3 karakter sınırını aşıyor.");
+    expect(rows[0].reason).toBe("The text exceeds the 3 character limit.");
     expect(rows[1].reason).toBe("Policy unavailable");
   });
   it("shows browser X inbox restriction instead of suggesting unsupported replies", () => {
@@ -147,7 +147,7 @@ describe("bulk social draft eligibility", () => {
       projects,
       { account: {} },
     );
-    expect(rows[0].reason).toContain("Resmî API bağlantısı gerekli");
+    expect(rows[0].reason).toContain("An official API connection is required");
   });
   it("rejects missing assignment, expired reply windows, and changed thread/contact association", () => {
     const value = snapshot({
@@ -167,9 +167,9 @@ describe("bulk social draft eligibility", () => {
       {},
       100,
     );
-    expect(rows[0].reason).toBe("Erişilebilir bir proje seçin.");
-    expect(rows[1].reason).toBe("Yanıt süresi doldu.");
-    expect(rows[2].reason).toBe("Konuşma eşleşmesi geçersiz.");
+    expect(rows[0].reason).toBe("Select an accessible project.");
+    expect(rows[1].reason).toBe("The reply window has expired.");
+    expect(rows[2].reason).toBe("The conversation match is invalid.");
   });
   it("requires a separate post identity for each selected comment recipient", () => {
     const value = snapshot();
@@ -180,7 +180,7 @@ describe("bulk social draft eligibility", () => {
       { account: {} },
     );
     expect(rows[0].reason).toBe("");
-    expect(rows[1].reason).toBe("Yorum yapılacak gönderi kimliğini girin.");
+    expect(rows[1].reason).toBe("Enter the ID of the post to comment on.");
   });
 });
 

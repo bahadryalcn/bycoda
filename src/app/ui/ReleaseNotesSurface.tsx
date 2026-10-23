@@ -17,7 +17,7 @@ export function ReleaseNotesSurface({ source }: { source: ReleaseNotesTabSource 
             <AgentMarkdown text={markdown} streaming={false} />
           </SurfaceSelection>
         ) : (
-          <p className="text-[13px] text-content/60">
+          <p className="text-ui-secondary text-(--ui-text-secondary)">
             {t("Release notes for this version are not available in this build.")}
           </p>
         )}

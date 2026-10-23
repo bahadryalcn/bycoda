@@ -61,7 +61,7 @@ export function AccountUsageRefresh({ usage }: { usage: AccountUsage }) {
       aria-label={t("Refresh usage limits")}
       title={t("Refresh usage limits")}
     >
-      <RefreshCw className="size-3.5" strokeWidth={1.75} />
+      <RefreshCw className="icon-sm" strokeWidth={1.75} />
     </Button>
   );
 }
@@ -160,7 +160,7 @@ export function UsageMeter({
           : t("Resets {p0}", { p0: new Date(window.resetsAt).toLocaleString(getLocale()) })
       }
     >
-      <div className="flex items-baseline justify-between gap-2 text-(length:--ui-font-caption) leading-4">
+      <div className="flex items-baseline justify-between gap-2 text-ui-caption leading-4">
         <span className="min-w-0 truncate text-[var(--ui-text-secondary)]">
           {title} · <span className="tabular-nums">{reset}</span>
         </span>
@@ -188,11 +188,4 @@ export function UsageMeter({
 function MeterSkeleton() {
   useLocale();
   return <Skeleton className="w-36" lines={2} label={t("Loading…")} />;
-}
-
-/** Bar colour by percent used; shared with the footer usage chip. */
-export function barClass(pct: number): string {
-  if (pct >= 90) return "bg-danger";
-  if (pct >= 80) return "bg-warning";
-  return "bg-content/45";
 }

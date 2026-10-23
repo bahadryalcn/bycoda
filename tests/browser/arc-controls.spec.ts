@@ -895,12 +895,6 @@ test("additional Arc controls preserve data, keyboard actions and inline recover
   const additions = page.getByRole("region", { name: "Additional Arc controls" });
   await additions.getByRole("searchbox", { name: "Search JSON" }).fill("59");
   await expect(additions.getByRole("treeitem").filter({ hasText: /59/ }).first()).toBeVisible();
-  await additions.getByRole("button", { name: "Remove filter: Project: bycoda" }).click();
-  await expect(
-    additions.getByRole("button", { name: "Remove filter: Project: bycoda" }),
-  ).toHaveCount(0);
-  await additions.getByRole("button", { name: "Clear all", exact: true }).click();
-  await expect(additions.getByText("No filters applied", { exact: true })).toBeVisible();
   const table = additions.getByRole("table", { name: "Project usage" });
   await table.getByRole("button", { name: "Sort by Cost", exact: true }).click();
   await expect(table.locator("tbody tr").first()).toContainText("Beta");
@@ -1030,7 +1024,6 @@ test("additional controls localize their actions and accessibility labels", asyn
   await page.goto("/tests/browser/arc-controls.html");
   await page.getByRole("button", { name: "Türkçe controls", exact: true }).click();
   await expect(page.getByRole("searchbox", { name: "JSON'da ara", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Tümünü temizle", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /^Tarih aralığı:/ }).click();
   const dialog = page.getByRole("dialog", { name: "Tarih aralığı", exact: true });
   await expect(dialog.getByRole("button", { name: "Son 7 gün", exact: true })).toBeVisible();

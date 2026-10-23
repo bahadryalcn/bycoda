@@ -1,6 +1,6 @@
 import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
-import { Select as SharedSelect, NativeSelect } from "../../../shared/ui/Select";
+import { Select as SharedSelect } from "../../../shared/ui/Select";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -178,15 +178,15 @@ function AddServerModal({
             onChange={setScope}
           />
         </div>
-        <p className="text-xs text-content/65" role="status">
+        <p className="text-ui-caption text-(--ui-text-secondary)" role="status">
           {MCP_PROVIDER_LABELS[provider]} · {scopeDescription(scope)}
         </p>
-        <p className="break-all text-xs text-content/55">
+        <p className="break-all text-ui-caption text-(--ui-text-muted)">
           {t("Selected project: {p0}", { p0: cwd })}
         </p>
-        <label className="block text-xs text-content/65">
+        <label className="block text-ui-caption text-(--ui-text-secondary)">
           {t("Name")}{" "}
-          <span className="text-content/40">{t("(optional for an mcpServers block)")}</span>
+          <span className="text-(--ui-text-muted)">{t("(optional for an mcpServers block)")}</span>
           <TextField
             hideLabel
             label={t("Name")}
@@ -197,7 +197,7 @@ function AddServerModal({
             placeholder={t("my-server")}
           />
         </label>
-        <label className="block text-xs text-content/65">
+        <label className="block text-ui-caption text-(--ui-text-secondary)">
           {t("JSON configuration")}
           <TextareaField
             hideLabel
@@ -213,7 +213,7 @@ function AddServerModal({
             }
           />
         </label>
-        <p className="text-xs text-content/45">
+        <p className="text-ui-caption text-(--ui-text-muted)">
           {t(
             "Paste one entry from an mcpServers block, or a single server object with a name above.",
           )}
@@ -415,7 +415,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-sm font-medium">{t("MCP connections")}</h2>
+            <h2 className="text-ui-body font-medium">{t("MCP connections")}</h2>
             {projectPicker}
           </div>
         </div>
@@ -428,7 +428,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             onClick={() => void refresh()}
             disabled={loading || busy !== null}
           >
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className="icon-sm" />
           </Button>
           <Button
             type="button"
@@ -436,7 +436,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             variant="primary"
             onClick={() => setAddOpen(true)}
           >
-            <Plus className="size-3.5" />
+            <Plus className="icon-sm" />
             <span>{t("Add MCP server")}</span>
           </Button>
         </div>
@@ -464,7 +464,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
           aria-haspopup="dialog"
           onClick={() => setFiltersOpen(!filtersOpen)}
         >
-          <ListFilter className="size-3.5" />
+          <ListFilter className="icon-sm" />
         </Button>
         {filter !== "all" ? (
           <span className={styles.filterLabel}>{MCP_PROVIDER_LABELS[filter]}</span>
@@ -498,7 +498,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                   }}
                 >
                   {provider === "all" ? (
-                    <Globe className="size-3.5" />
+                    <Globe className="icon-sm" />
                   ) : (
                     <ProviderIcon provider={provider} />
                   )}
@@ -619,34 +619,36 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                 {server.provider === "claude" ? (
                   <>
                     {!server.configPath ? (
-                      <label className="text-xs text-content/55">
+                      <label className="text-ui-caption text-(--ui-text-muted)">
                         {t("Scope")}{" "}
-                        <NativeSelect
-                          aria-label={t("Scope to remove {p0} from", { p0: server.name })}
+                        <SharedSelect
+                          label={t("Scope to remove {p0} from", { p0: server.name })}
                           value={removeScopes[server.name] ?? "local"}
-                          onChange={(event) =>
+                          onValueChange={(value) =>
                             setRemoveScopes((current) => ({
                               ...current,
-                              [server.name]: event.target.value as Scope,
+                              [server.name]: value as Scope,
                             }))
                           }
-                        >
-                          <option value="local">{t("Local project")}</option>
-                          <option value="project">{t("Project")}</option>
-                          <option value="user">{t("Personal")}</option>
-                        </NativeSelect>
+                          options={[
+                            { value: "local", label: t("Local project") },
+                            { value: "project", label: t("Project") },
+                            { value: "user", label: t("Personal") },
+                          ]}
+                        />
                       </label>
                     ) : null}
                     <Button
                       type="button"
                       variant="ghost"
+                      tone="danger"
                       iconOnly
                       label={t("Remove")}
                       tooltip={`${t("Remove")}: ${server.name} · ${scopeLabel(server.scope)}`}
                       disabled={busy !== null}
                       onClick={() => void remove(server)}
                     >
-                      <Trash2 className="size-3.5" />
+                      <Trash2 className="icon-sm" />
                     </Button>
                   </>
                 ) : (
@@ -661,7 +663,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                       void revealPath(server.configPath).catch((cause) => setError(String(cause)))
                     }
                   >
-                    <FileScript className="size-3.5" />
+                    <FileScript className="icon-sm" />
                   </Button>
                 )}
               </div>
@@ -697,7 +699,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
         </div>
       ) : null}
       {busy ? (
-        <p role="status" className="text-xs text-content/65">
+        <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
           {t(
             "Operation in progress for {p0}. Wait for the result before starting another operation.",
             { p0: busy },
@@ -717,7 +719,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             scopeDescription("user"),
           ].join(" ")}
         />
-        <p className="text-xs text-content/45">
+        <p className="text-ui-caption text-(--ui-text-muted)">
           {t(
             "Claude Code status comes from its CLI. Other providers show configured entries. Sign in opens your browser when supported.",
           )}

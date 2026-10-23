@@ -1,7 +1,11 @@
 import { useSidebarActions } from "./workspace/layout/useSidebarActions";
+import { VoiceCompanionGate } from "../features/voice/ui/VoiceCompanionGate";
 import { SOCIAL_PANEL_EVENT } from "../features/social/ui/SocialShortcut";
 import { useAppUiControl } from "./workspace/control/useAppUiControl";
-import { createConversationTerminalControl, type ConversationTerminalDeps } from "./workspace/control/conversationTerminalControl";
+import {
+  createConversationTerminalControl,
+  type ConversationTerminalDeps,
+} from "./workspace/control/conversationTerminalControl";
 import { type ToolWindow } from "./model/toolWindows";
 import { useWindowNavigation } from "./model/windowNavigation";
 import { useTraySessions } from "./model/useTraySessions";
@@ -189,7 +193,7 @@ import { sessionWorkCwd } from "../features/sessions/model/session";
 import { useQueuePersistence } from "../features/sessions/hooks/useQueuePersistence";
 import { type SessionSummary } from "../features/sessions/data/sessionStore";
 import { TranscriptPoolOutlet } from "../features/sessions/ui/TranscriptPool";
-import { syncDockBadge } from "../features/notifications/model/dockBadge";
+import { useDockBadge } from "../features/notifications/hooks/useDockBadge";
 import { useKeepAwake } from "../features/settings/model/keepAwake";
 import { useInputNotifications } from "../features/notifications/hooks/useInputNotifications";
 import { useBackgroundNotifications } from "../features/notifications/hooks/useBackgroundNotifications";
@@ -806,8 +810,10 @@ function Workspace({
 
   const { listedRemoteSessions, loadedRemoteHostIds, unopenedRemote, unopenedRemoteRef } =
     useRemoteRailProjects({ visibleRecents, sessionRecovery, lockSnapshot, sessions });
+  // The unopened list already leaves out loaded sessions and the one a tab is
+  // creating, so the user's own first turn never shows as finished elsewhere.
   const [remoteUnseenFinishedIds, dismissRemoteFinished] = useRemoteUnseenFinished(
-    listedRemoteSessions,
+    unopenedRemote,
     loadedRemoteHostIds,
     activeSessionId ? remoteSessionFor(activeSessionId) : undefined,
   );
@@ -830,9 +836,7 @@ function Workspace({
   const [reminderNoticesHeight, setReminderNoticesHeight] = useState(0);
   const [harnessUpdateHeight, setHarnessUpdateHeight] = useState(0);
 
-  useEffect(() => {
-    syncDockBadge(sessions);
-  }, [sessions]);
+  useDockBadge();
 
   useWindowFocusLifecycle({
     serversViewOpenRef,
@@ -1107,7 +1111,7 @@ function Workspace({
     dirtyFileIds: dirtyFiles,
     movingTabIds: movingTabIds.current,
     restoredWorkspace: !windowTransfer,
-    onCloseTabs: (ids, fallbackId) => onCloseTabs(ids, fallbackId),
+    onCloseTabs: (ids, fallbackId, opts) => onCloseTabs(ids, fallbackId, opts),
   });
 
   const { onCloseFile, onCloseOtherFiles } = useEditorFileClose({
@@ -1919,9 +1923,10 @@ function Workspace({
     onSubmit: submitSession,
     enqueueHarnessEvent,
     flushHarnessEvents,
+    onStopRef,
   });
 
-  useQueuePersistence(sessions);
+  useQueuePersistence();
 
   const {
     onUsageLimitDismiss,
@@ -2033,7 +2038,6 @@ function Workspace({
     activeTabId,
     setTabs,
     setActiveTabId,
-    sessions,
     orchestrationRuns,
     setHistory,
     setStoredLinkedSessions,
@@ -2357,12 +2361,22 @@ function Workspace({
     docks: projectTerminalsRef,
     setDocks: setProjectTerminals,
     open: openProjectTerminal,
-    stillActive: context => projectCwdRef.current === context.cwd && tabsRef.current.some(tab =>
-      tab.id === activeTabIdRef.current && tab.kind === "session" && tab.focusedId === context.sessionId),
+    stillActive: (context) =>
+      projectCwdRef.current === context.cwd &&
+      tabsRef.current.some(
+        (tab) =>
+          tab.id === activeTabIdRef.current &&
+          tab.kind === "session" &&
+          tab.focusedId === context.sessionId,
+      ),
   };
-  const conversationTerminalControl = useRef<ReturnType<typeof createConversationTerminalControl> | null>(null);
+  const conversationTerminalControl = useRef<ReturnType<
+    typeof createConversationTerminalControl
+  > | null>(null);
   if (!conversationTerminalControl.current)
-    conversationTerminalControl.current = createConversationTerminalControl(() => conversationTerminalDeps.current!);
+    conversationTerminalControl.current = createConversationTerminalControl(
+      () => conversationTerminalDeps.current!,
+    );
 
   useAppUiControl({
     terminalControl: conversationTerminalControl.current,
@@ -2805,6 +2819,7 @@ function Workspace({
           }`}
         >
           {compactTitleBar ? workspaceTitleBar : null}
+          <VoiceCompanionGate activeId={activeSessionId} sessions={sessions} onSubmit={submitSession} onStop={onStop} />
           {detachedSessionWindow && (!IS_MAC || liveAgents.length > 0) ? (
             <DetachedWorkingBar agents={liveAgents} onSelectAgent={onSelectLiveAgent} />
           ) : null}

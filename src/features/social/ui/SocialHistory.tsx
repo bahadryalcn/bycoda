@@ -1,8 +1,9 @@
 import { SocialFilters } from "./SocialFilters";
-import { t, useLocale } from "../../../shared/i18n";
+import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useState } from "react";
@@ -22,21 +23,32 @@ import {
 } from "./socialShared";
 
 const jobKinds: Record<SocialJob["kind"], string> = {
-  publish: "Paylaşım",
-  reply: "Yanıt",
-  message: "Mesaj",
-  comment: "Yorum",
+  get publish() {
+    return t("Post");
+  },
+  get reply() {
+    return t("Reply");
+  },
+  get message() {
+    return t("Message");
+  },
+  get comment() {
+    return t("Comment");
+  },
 };
 const PAGE_SIZE = 30;
 export function socialJobExplanation(job: SocialJob): string {
-  if (job.status === "cancelled") return "Bu iş iptal edildi; gönderim beklemiyor.";
+  if (job.status === "cancelled")
+    return t("This job was cancelled; nothing is waiting to be sent.");
   if (job.status === "review")
-    return "Sonuç doğrulanamadı. Hesabı kontrol edin; aynı içeriği yeniden göndermeyin.";
+    return t(
+      "The result could not be verified. Check the account; do not resend the same content.",
+    );
   if (job.status === "failed")
-    return "Gönderim başarısız. Ayrıntıyı kontrol edip bu hedefi yeniden deneyebilirsiniz.";
-  if (job.status === "queued") return `Planlanan gönderim: ${time(job.scheduledAt)}`;
-  if (job.status === "running") return "Platformdan sonuç bekleniyor.";
-  return "Platform gönderimi doğruladı.";
+    return t("Sending failed. Check the detail and retry this target if needed.");
+  if (job.status === "queued") return t("Scheduled send: {p0}", { p0: time(job.scheduledAt) });
+  if (job.status === "running") return t("Waiting for the result from the platform.");
+  return t("The platform confirmed the send.");
 }
 function resultUrl(value?: string) {
   try {
@@ -59,10 +71,10 @@ export function SocialHistory({ snapshot, client, run, onFilterChange }: Props) 
     <div className="social-history-page">
       <div className="social-section-heading">
         <div>
-          <h2>{t("Gönderim geçmişi")}</h2>
+          <h2>{t("Send history")}</h2>
         </div>
       </div>
-      <div className="social-stats social-history-summary" aria-label="Gönderim özeti">
+      <div className="social-stats social-history-summary" aria-label={t("Send summary")}>
         <div>
           <strong>
             {snapshot.jobCounts?.succeeded ??
@@ -72,11 +84,11 @@ export function SocialHistory({ snapshot, client, run, onFilterChange }: Props) 
         </div>
         <div>
           <strong>{waiting}</strong>
-          <span>Bekleyen</span>
+          <span>{t("Waiting")}</span>
         </div>
         <div>
           <strong>{attention}</strong>
-          <span>Kontrol gerekli</span>
+          <span>{t("Needs attention")}</span>
         </div>
         <div>
           <strong>
@@ -91,13 +103,13 @@ export function SocialHistory({ snapshot, client, run, onFilterChange }: Props) 
           kind="warning"
           title={
             snapshot.stopped
-              ? "Gönderimler durduruldu"
+              ? t("Sending stopped")
               : !snapshot.hostOnline
-                ? "Gönderim hizmeti kapalı"
-                : "Gönderim kapalı"
+                ? t("Sending service offline")
+                : t("Sending is off")
           }
         >
-          Kuyruktaki işler korunuyor. Gönderim kontrollerini Otomasyonlar bölümünden yönetin.
+          {t("Queued jobs are kept. Manage sending controls in Automations.")}
         </Notice>
       ) : null}
       <JobHistory snapshot={snapshot} client={client} run={run} onFilterChange={onFilterChange} />
@@ -151,8 +163,8 @@ export function JobHistory({
         (!kind || job.kind === kind) &&
         (!since || job.createdAt >= new Date(`${since}T00:00:00`).getTime()) &&
         `${account?.name ?? ""} ${campaign?.name ?? ""} ${contact?.name ?? ""} ${job.payload.text} ${job.error ?? ""}`
-          .toLocaleLowerCase("tr")
-          .includes(query.toLocaleLowerCase("tr"))
+          .toLocaleLowerCase(getLocale())
+          .includes(query.toLocaleLowerCase(getLocale()))
       );
     })
     .sort((a, b) => b.createdAt - a.createdAt || b.scheduledAt - a.scheduledAt);
@@ -169,12 +181,12 @@ export function JobHistory({
     <div className="social-job-list">
       <div className="social-list-tools social-history-filters">
         <label className="social-history-search">
-          {t("İşlem ara")}
+          {t("Search jobs")}
           <SearchInput
             appearance="field"
             type="search"
             value={query}
-            placeholder="İçerik, kişi veya kampanya"
+            placeholder={t("Content, contact or campaign")}
             onChange={(event) => {
               setQuery(event.target.value);
               setPage(0);
@@ -186,7 +198,7 @@ export function JobHistory({
           onReset={reset}
         >
           <label>
-            Gönderim durumu
+            {t("Send status")}
             <NativeSelect
               value={status}
               onChange={(event) => {
@@ -195,7 +207,7 @@ export function JobHistory({
               }}
             >
               <option value="">
-                Tüm işler ·{" "}
+                {t("All jobs")} ·{" "}
                 {onFilterChange && snapshot.jobCounts
                   ? Object.values(snapshot.jobCounts).reduce(
                       (total, count) => total + (count ?? 0),
@@ -214,12 +226,12 @@ export function JobHistory({
             </NativeSelect>
           </label>
           <label>
-            Hesap
+            {t("Account")}
             <SearchableSelect
               value={accountId}
-              label={"Hesap"}
+              label={t("Account")}
               options={[
-                { value: "", label: "Tüm hesaplar" },
+                { value: "", label: t("All accounts") },
                 ...snapshot.accounts.map((item) => ({
                   value: item.id,
                   label: [item.name, "·", names[item.platform]].join(" "),
@@ -229,11 +241,11 @@ export function JobHistory({
                 setAccountId(nextValue);
                 setPage(0);
               }}
-              searchLocale="tr"
+              searchLocale={getLocale()}
             />
           </label>
           <label>
-            İşlem türü
+            {t("Job type")}
             <NativeSelect
               value={kind}
               onChange={(event) => {
@@ -241,7 +253,7 @@ export function JobHistory({
                 setPage(0);
               }}
             >
-              <option value="">Tüm işlemler</option>
+              <option value="">{t("All jobs")}</option>
               {Object.entries(jobKinds).map(([id, title]) => (
                 <option key={id} value={id}>
                   {title}
@@ -249,11 +261,9 @@ export function JobHistory({
               ))}
             </NativeSelect>
           </label>
-          <label>
-            Başlangıç tarihi
+          <div>
             <TextField
-              hideLabel
-              label=""
+              label={t("Start date")}
               type="date"
               value={since}
               onChange={(event) => {
@@ -261,15 +271,17 @@ export function JobHistory({
                 setPage(0);
               }}
             />
-          </label>
+          </div>
         </SocialFilters>
       </div>
       <p className="social-inline-meta" role="status">
-        {hostFiltered && onFilterChange ? snapshot.pages?.jobs?.total : filtered.length} iş
+        {t("{p0} jobs", {
+          p0: hostFiltered && onFilterChange ? snapshot.pages?.jobs?.total : filtered.length,
+        })}
         {!hostFiltered && filtered.length !== jobs.length ? ` / ${jobs.length}` : ""}
         {status || accountId || kind || query || since ? (
           <Button variant="secondary" type="button" onClick={reset}>
-            Filtreleri temizle
+            {t("Clear filters")}
           </Button>
         ) : null}
       </p>
@@ -288,10 +300,10 @@ export function JobHistory({
                 <div className="social-record-heading">
                   <div>
                     <strong>
-                      {jobKinds[job.kind]} · {campaign?.name ?? contact?.name ?? "Konuşma"}
+                      {jobKinds[job.kind]} · {campaign?.name ?? contact?.name ?? t("Conversation")}
                     </strong>
                     <p className="social-inline-meta">
-                      {account?.name ?? "Hesap kaldırılmış"}
+                      {account?.name ?? t("Account removed")}
                       {account ? ` · ${names[account.platform]}` : ""}
                     </p>
                   </div>
@@ -300,63 +312,73 @@ export function JobHistory({
                 <p className="social-job-explanation">{socialJobExplanation(job)}</p>
                 <p className="social-history-excerpt">{job.payload.text}</p>
                 <details className="social-history-metadata">
-                  <summary>{t("İşlem ayrıntıları")}</summary>
+                  <summary>{t("Job details")}</summary>
                   <div className="social-inline-meta">
-                    <span>Oluşturuldu {time(job.createdAt)}</span>
+                    <span>{t("Created {p0}", { p0: time(job.createdAt) })}</span>
                     {job.dispatchedAt ? (
-                      <span>Gönderim başladı {time(job.dispatchedAt)}</span>
+                      <span>{t("Send started {p0}", { p0: time(job.dispatchedAt) })}</span>
                     ) : null}
-                    {job.attempts ? <span>{job.attempts} deneme</span> : null}
+                    {job.attempts ? <span>{t("{p0} attempts", { p0: job.attempts })}</span> : null}
                   </div>
                 </details>
                 {job.error && job.status !== "cancelled" ? (
                   <details className="social-job-error">
-                    <summary>Sonuç ayrıntısı</summary>
+                    <summary>{t("Result detail")}</summary>
                     <p>{job.error}</p>
                   </details>
                 ) : null}
                 {job.visibility ? (
                   <p className="social-muted">
-                    Video:{" "}
-                    {job.visibility === "public"
-                      ? "Herkese açık"
-                      : job.visibility === "private"
-                        ? "Özel"
-                        : "Liste dışı"}
+                    {t("Video: {p0}", {
+                      p0:
+                        job.visibility === "public"
+                          ? t("Public")
+                          : job.visibility === "private"
+                            ? t("Private")
+                            : t("Unlisted"),
+                    })}
                   </p>
                 ) : null}
                 <div className="social-actions">
                   {link ? (
                     <a className="social-result-link" href={link} target="_blank" rel="noreferrer">
-                      Platformda aç
+                      {t("Open on platform")}
                     </a>
+                  ) : null}
+                  {job.status === "failed" ? (
+                    <>
+                      <Badge variant="label" appearance="outline">
+                        {account
+                          ? `${account.name} · ${names[account.platform]}`
+                          : t("Account removed")}
+                      </Badge>
+                      <Button
+                        variant="secondary"
+                        type="button"
+                        onClick={() =>
+                          void run(
+                            () => client.request("jobs.retry", { id: job.id }),
+                            t("Failed target was queued again."),
+                          )
+                        }
+                      >
+                        {t("Retry this target")}
+                      </Button>
+                    </>
                   ) : null}
                   {job.status === "queued" ? (
                     <Button
-                      variant="secondary"
+                      variant="danger"
                       type="button"
+                      className="ml-auto"
                       onClick={() =>
                         void run(
                           () => client.request("jobs.cancel", { id: job.id }),
-                          "Kuyruktaki iş iptal edildi.",
+                          t("Queued job cancelled."),
                         )
                       }
                     >
-                      İşi iptal et
-                    </Button>
-                  ) : null}
-                  {job.status === "failed" ? (
-                    <Button
-                      variant="secondary"
-                      type="button"
-                      onClick={() =>
-                        void run(
-                          () => client.request("jobs.retry", { id: job.id }),
-                          "Başarısız hedef yeniden kuyruğa alındı.",
-                        )
-                      }
-                    >
-                      Bu hedefi yeniden dene
+                      {t("Cancel job")}
                     </Button>
                   ) : null}
                 </div>
@@ -365,10 +387,10 @@ export function JobHistory({
           })}
         </div>
       ) : (
-        <Empty title={jobs.length ? "Bu filtrelere uyan iş yok" : "Henüz gönderim yapılmadı"}>
+        <Empty title={jobs.length ? t("No jobs match these filters") : t("Nothing sent yet")}>
           {jobs.length
-            ? "Filtreleri temizleyerek diğer işleri görebilirsiniz."
-            : "Planlanan paylaşımlar, mesajlar ve yanıtlar sonuçlarıyla burada görünecek."}
+            ? t("Clear the filters to see other jobs.")
+            : t("Scheduled posts, messages and replies will appear here with their results.")}
         </Empty>
       )}
       {!onFilterChange && filtered.length > PAGE_SIZE ? (
@@ -379,7 +401,7 @@ export function JobHistory({
             disabled={currentPage === 0}
             onClick={() => setPage(currentPage - 1)}
           >
-            Önceki
+            {t("Previous")}
           </Button>
           <span>
             {currentPage + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}
@@ -390,7 +412,7 @@ export function JobHistory({
             disabled={(currentPage + 1) * PAGE_SIZE >= filtered.length}
             onClick={() => setPage(currentPage + 1)}
           >
-            Sonraki
+            {t("Next")}
           </Button>
         </div>
       ) : null}

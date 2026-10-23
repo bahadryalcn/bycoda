@@ -24,7 +24,7 @@ export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenR
       className="space-y-2 border-t border-(--ui-tone-neutral-border) pt-3"
     >
       <div className="flex flex-wrap items-center justify-between gap-1">
-        <h3 className="text-[12px] font-medium text-(--ui-text-secondary)">
+        <h3 className="text-ui-caption font-medium text-(--ui-text-secondary)">
           {t("Review notes · ")}
           {open}
           {t(" open")}
@@ -57,7 +57,7 @@ export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenR
                 data-review-note={note.id}
                 className="space-y-1.5 rounded-md border border-(--ui-tone-neutral-border) p-2"
               >
-                <div className="flex flex-wrap items-center gap-2 text-(length:--ui-font-caption)">
+                <div className="flex flex-wrap items-center gap-2 text-ui-caption">
                   <Badge tone={resolved ? "success" : "warning"}>
                     {resolved ? t("Fixed") : t("Open")}
                   </Badge>
@@ -86,17 +86,17 @@ export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenR
                     {new Date(note.createdAt).toLocaleString(getLocale())}
                   </time>
                 </div>
-                <p className="whitespace-pre-wrap break-words text-[12px] text-(--ui-text-secondary)">
+                <p className="whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
                   {note.finding}
                 </p>
                 {note.suggestion ? (
-                  <p className="whitespace-pre-wrap break-words text-[12px] text-(--ui-text-secondary)">
+                  <p className="whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
                     {t("Suggested correction: ")}
                     {note.suggestion}
                   </p>
                 ) : null}
                 {note.details ? (
-                  <details className="text-[12px] text-(--ui-text-secondary)">
+                  <details className="text-ui-caption text-(--ui-text-secondary)">
                     <summary className="cursor-pointer">{t("Review details")}</summary>
                     <p className="mt-1 whitespace-pre-wrap break-words">{note.details}</p>
                   </details>
@@ -123,7 +123,7 @@ export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenR
                   ) : null}
                 </div>
                 {(note.sessionIds?.length ?? 0) > 1 ? (
-                  <details className="text-[11px] text-(--ui-text-secondary)">
+                  <details className="text-ui-micro text-(--ui-text-secondary)">
                     <summary className="cursor-pointer">{t("Review history")}</summary>
                     <div className="flex flex-wrap gap-1">
                       {note.sessionIds!.map((sessionId, index) => (
@@ -146,7 +146,7 @@ export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenR
           })}
         </ul>
       )}
-      <p className="text-[11px] text-(--ui-text-secondary)">
+      <p className="text-ui-micro text-(--ui-text-secondary)">
         {t("Marking a note fixed does not complete this task. Its checks and review still apply.")}
       </p>
     </section>

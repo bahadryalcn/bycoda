@@ -201,7 +201,7 @@
   }
 }
 .root[data-disabled] {
-  opacity: 0.5;
+  opacity: var(--ui-disabled-opacity, 0.5);
 }
 .root[data-disabled] .control,
 .root[data-disabled] .thumb,

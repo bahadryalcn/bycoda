@@ -1,7 +1,7 @@
 import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { Modal } from "../../../shared/ui/Modal";
 import { Pencil, Plus, Trash2 } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -54,7 +54,6 @@ import { AccountStatusLabel, AccountUsageRefresh } from "../../providers/ui/Prov
 import { AntigravityAccountSettings } from "./AntigravityAccountSettings";
 import { TerminalProfileDiscovery } from "./TerminalProfileDiscovery";
 import { Button } from "../../../shared/ui/Button";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { TextField } from "../../../shared/ui/TextField";
 import {
   hasProbedHarnessAvailability,
@@ -83,6 +82,7 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
   const [editor, setEditor] = useState<AccountEditor | null>(null);
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<ProviderAccount | null>(null);
   const [completedSignIn, setCompletedSignIn] = useState<HarnessId | null>(null);
   const busy = useRef(false);
   const pendingAccount = useRef<ProviderAccount | null>(null);
@@ -194,30 +194,26 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
     }
   };
 
+  const removeAccountMessage = (account: ProviderAccount) =>
+    account.id.startsWith("terminal-")
+      ? t(
+          "Disconnect “{p0}”? Running turns for this account will stop. Its terminal sign-in, settings and conversation history stay intact.",
+          { p0: account.label },
+        )
+      : account.id === DEFAULT_PROVIDER_ACCOUNT_ID
+        ? t(
+            "Remove “{p0}”? This signs out of the shared {p1} CLI profile and stops its running turns. CLI settings and conversation history stay on disk.",
+            { p0: account.label, p1: HARNESS_TITLE[account.provider] },
+          )
+        : t(
+            "Remove “{p0}”? Its stored credentials will be deleted and any running turns for this account will stop. Existing conversations stay in history, but cannot continue until you switch accounts.",
+            { p0: account.label },
+          );
+
   const removeAccount = async (account: ProviderAccount) => {
     const key = `remove:${account.provider}:${account.id}`;
     if (!begin(key)) return;
     try {
-      const confirmed = await ask(
-        account.id.startsWith("terminal-")
-          ? `Disconnect “${account.label}”? Running turns for this account will stop. Its terminal sign-in, settings and conversation history stay intact.`
-          : account.id === DEFAULT_PROVIDER_ACCOUNT_ID
-            ? `Remove “${account.label}”? This signs out of the shared ${HARNESS_TITLE[account.provider]} CLI profile and stops its running turns. CLI settings and conversation history stay on disk.`
-            : `Remove “${account.label}”? Its stored credentials will be deleted and any running turns for this account will stop. Existing conversations stay in history, but cannot continue until you switch accounts.`,
-        {
-          get title() {
-            return t("Remove {p0} account", {
-              p0: HARNESS_TITLE[account.provider],
-            });
-          },
-          kind: "warning",
-          okLabel: "Remove account",
-          get cancelLabel() {
-            return t("Cancel");
-          },
-        },
-      );
-      if (!confirmed) return;
       await removeProviderAccountCredentials(account.provider, account.id);
       clearCachedRateLimits(account.provider, account.id);
       setVersion((value) => value + 1);
@@ -293,7 +289,7 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
                 disabled={Boolean(working)}
                 onClick={() => startAdd(accountProvider)}
               >
-                <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
+                <Plus className="icon-sm" strokeWidth={1.75} aria-hidden />
                 {t("Add account")}
               </Button>
               <AccountUsageRefresh
@@ -390,10 +386,7 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
                             />
                           </div>
                           {duplicateOf ? (
-                            <p
-                              className="mt-1 truncate text-[length:var(--ui-font-caption)] leading-4 text-warning dark:text-warning"
-                              role="note"
-                            >
+                            <p className="mt-1 truncate text-ui-caption text-warning" role="note">
                               {t("Same sign-in as ")}
                               {duplicateOf.label}
                               {t(". Remove this account if you do not need it separately.")}
@@ -436,26 +429,28 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
                             disabled={Boolean(working)}
                             onClick={() => startRename(account)}
                           >
-                            <Pencil className="size-3.5" strokeWidth={1.75} aria-hidden />
+                            <Pencil className="icon-sm" strokeWidth={1.75} aria-hidden />
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            iconOnly
-                            label={t("Remove {p0}", { p0: account.label })}
-                            tooltip={t("Remove account")}
-                            loading={removing}
-                            disabled={Boolean(working)}
-                            onClick={() => void removeAccount(account)}
-                          >
-                            <Trash2 className="size-3.5" strokeWidth={1.75} aria-hidden />
-                          </Button>
+                          <span className="ms-1 border-s border-stroke ps-2">
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              iconOnly
+                              label={t("Remove {p0}", { p0: account.label })}
+                              tooltip={t("Remove account")}
+                              loading={removing}
+                              disabled={Boolean(working)}
+                              onClick={() => setConfirmRemove(account)}
+                            >
+                              <Trash2 className="icon-sm" strokeWidth={1.75} aria-hidden />
+                            </Button>
+                          </span>
                         </div>
                       </div>
                     );
                   })}
                   {accounts.length === 0 ? (
-                    <p className="px-4 py-3 text-[12px] text-(--ui-text-secondary)">
+                    <p className="px-4 py-3 text-ui-caption text-(--ui-text-secondary)">
                       {t("No accounts. Add an account to sign in.")}
                     </p>
                   ) : null}
@@ -479,7 +474,7 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
           hidden={harness !== "cursor" && harness !== "grok"}
           className="flex flex-wrap items-center gap-2 border-t border-(--color-stroke) px-3 py-2.5"
         >
-          <span className="min-w-[12rem] flex-1 text-[11px] text-(--ui-text-secondary)">
+          <span className="min-w-[12rem] flex-1 text-ui-micro text-(--ui-text-secondary)">
             {harness === "cursor"
               ? t("Use the Cursor CLI sign-in on this machine.")
               : t("Use the Grok Build CLI sign-in on this machine.")}
@@ -487,13 +482,13 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
           {standaloneHarness &&
           hasProbedHarnessAvailability() &&
           !isHarnessAvailable(standaloneHarness) ? (
-            <span className="text-[11px] text-(--ui-text-secondary)">
+            <span className="text-ui-micro text-(--ui-text-secondary)">
               {t("Install the CLI first, then sign in.")}
             </span>
           ) : (
             <>
               {completedSignIn === standaloneHarness ? (
-                <span role="status" className="text-[11px] text-success">
+                <span role="status" className="text-ui-micro text-success">
                   {t("CLI sign-in completed")}
                 </span>
               ) : null}
@@ -518,6 +513,31 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
         </div>
         {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       </section>
+      {confirmRemove ? (
+        <Modal
+          size="sm"
+          title={t("Remove {p0} account", { p0: HARNESS_TITLE[confirmRemove.provider] })}
+          description={removeAccountMessage(confirmRemove)}
+          onClose={() => setConfirmRemove(null)}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setConfirmRemove(null)}>{t("Cancel")}</Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  const account = confirmRemove;
+                  setConfirmRemove(null);
+                  void removeAccount(account);
+                }}
+              >
+                {t("Remove account")}
+              </Button>
+            </div>
+          }
+        >
+          {null}
+        </Modal>
+      ) : null}
     </div>
   );
 }
@@ -564,9 +584,9 @@ export function ProviderAccountEditor({
           className="min-w-0 flex-1"
           fieldClassName="min-w-0 flex-1"
         />
-        <SecondaryButton disabled={working && !adding} onClick={onCancel}>
+        <Button className="shrink-0" disabled={working && !adding} onClick={onCancel}>
           {t("Cancel")}
-        </SecondaryButton>
+        </Button>
         <Button
           type="submit"
           variant="secondary"

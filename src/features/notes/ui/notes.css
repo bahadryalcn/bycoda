@@ -197,8 +197,20 @@
 }
 .note-detail-status {
   grid-area: status;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   text-align: end;
   justify-self: end;
+}
+.note-detail-words {
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+}
+.note-detail-delete {
+  margin-inline-start: 12px;
+  padding-inline-start: 12px;
+  border-inline-start: 1px solid var(--color-stroke);
 }
 .note-detail-error {
   grid-column: 1 / -1;

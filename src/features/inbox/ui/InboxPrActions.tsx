@@ -1,6 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Button } from "../../../shared/ui/Button";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   GitMerge,
@@ -8,6 +9,7 @@ import {
   GitPullRequestClosed,
   GitPullRequestDraft,
   LoaderCircle,
+  MoreHorizontal,
 } from "../../../shared/ui/icons";
 import { useRef, useState } from "react";
 import { Popover } from "../../../shared/ui/Popover";
@@ -138,6 +140,8 @@ export function GithubPrActions({
 }) {
   useLocale();
   const mergeGroup = useRef<HTMLDivElement>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [mergeAction, setMergeAction] = useState<GithubPrMergeAction>("merge");
   const [mergeMenuOpen, setMergeMenuOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<{
@@ -227,7 +231,7 @@ export function GithubPrActions({
           disabled={busy}
           menuOpen={mergeMenuOpen}
           onMenuOpenChange={setMergeMenuOpen}
-          startIcon={<GitMerge className="size-3.5" strokeWidth={1.75} />}
+          startIcon={<GitMerge className="icon-sm" strokeWidth={1.75} />}
           onClick={(event) => askToRun(mergeAction, event.currentTarget)}
           actions={GITHUB_PR_MERGE_OPTIONS.map((option) => ({
             id: option.action,
@@ -246,31 +250,60 @@ export function GithubPrActions({
           disabled={busy}
           onClick={(event) => askToRun("ready", event.currentTarget)}
         >
-          <GitPullRequest className="size-3.5" strokeWidth={1.75} />
+          <GitPullRequest className="icon-sm" strokeWidth={1.75} />
           {t("Ready for review")}
         </Button>
       ) : null}
-      {state === "open" && !item.draft ? (
-        <Button
-          variant="secondary"
-          type="button"
-          disabled={busy}
-          onClick={(event) => askToRun("draft", event.currentTarget)}
-        >
-          <GitPullRequestDraft className="size-3.5" strokeWidth={1.75} />
-          {t("Convert to draft")}
-        </Button>
-      ) : null}
       {state === "open" ? (
-        <Button
-          variant="secondary"
-          type="button"
-          disabled={busy}
-          onClick={(event) => askToRun("close", event.currentTarget)}
-        >
-          <GitPullRequestClosed className="size-3.5" strokeWidth={1.75} />
-          {t("Close pull request")}
-        </Button>
+        <>
+          <Button
+            ref={moreButton}
+            type="button"
+            variant="ghost"
+            iconOnly
+            label={t("More pull request actions")}
+            tooltip={t("More pull request actions")}
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            disabled={busy}
+            onClick={() => setMoreOpen((open) => !open)}
+          >
+            <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+          </Button>
+          {moreOpen ? (
+            <DropdownMenu
+              anchor={moreButton}
+              label={t("More pull request actions")}
+              returnFocusRef={moreButton}
+              onClose={() => setMoreOpen(false)}
+              items={[
+                ...(item.draft
+                  ? []
+                  : [
+                      {
+                        kind: "item" as const,
+                        id: "draft",
+                        label: t("Convert to draft"),
+                        icon: <GitPullRequestDraft />,
+                      },
+                      { kind: "sep" as const },
+                    ]),
+                {
+                  kind: "item" as const,
+                  id: "close",
+                  label: t("Close pull request"),
+                  icon: <GitPullRequestClosed />,
+                  danger: true,
+                },
+              ]}
+              onPick={(id) => {
+                setMoreOpen(false);
+                if (moreButton.current)
+                  askToRun(id === "close" ? "close" : "draft", moreButton.current);
+              }}
+            />
+          ) : null}
+        </>
       ) : null}
       {state === "closed" ? (
         <Button
@@ -279,14 +312,14 @@ export function GithubPrActions({
           disabled={busy}
           onClick={(event) => askToRun("reopen", event.currentTarget)}
         >
-          <GitPullRequest className="size-3.5" strokeWidth={1.75} />
+          <GitPullRequest className="icon-sm" strokeWidth={1.75} />
           {t("Reopen pull request")}
         </Button>
       ) : null}
       {notice ? (
-        <span role="status" className="text-[11px] text-(--ui-text-secondary)">
+        <Alert tone="info" inline role="status" className="w-full">
           {notice}
-        </span>
+        </Alert>
       ) : null}
       {!confirmation && actionError ? (
         <Alert tone="danger" role="alert">
@@ -306,10 +339,10 @@ export function GithubPrActions({
           className="p-3"
         >
           <div className="flex flex-col gap-1">
-            <h2 className="text-[13px] font-medium text-(--ui-tone-neutral-fg)">
+            <h2 className="text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
               {confirmCopy.title}
             </h2>
-            <p className="text-[12px] leading-snug text-(--ui-text-secondary)">
+            <p className="text-ui-caption text-(--ui-text-secondary)">
               {confirmCopy.detail}
               {confirmation.expectedHeadOid
                 ? ` Reviewed head: ${confirmation.expectedHeadOid}`
@@ -325,8 +358,13 @@ export function GithubPrActions({
             <Button variant="ghost" type="button" disabled={busy} onClick={dismissConfirmation}>
               {t("Cancel")}
             </Button>
-            <Button variant="ghost" type="button" disabled={busy} onClick={() => void runAction()}>
-              {busy ? <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} /> : null}
+            <Button
+              variant={confirmation.action === "close" ? "danger" : "primary"}
+              type="button"
+              disabled={busy}
+              onClick={() => void runAction()}
+            >
+              {busy ? <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} /> : null}
               {busy ? confirmCopy.progress : confirmCopy.confirm}
             </Button>
           </div>

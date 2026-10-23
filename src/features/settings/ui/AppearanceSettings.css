@@ -55,10 +55,6 @@
   gap: 8px;
   padding-block: 0 10px;
 }
-.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-group-heading h2 {
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-}
 .bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-row {
   flex-direction: row;
   flex-wrap: wrap;

@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { t, useLocale, getLocale } from "../../../shared/i18n/git";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { t, useLocale } from "../../../shared/i18n/git";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { LAYER } from "../../../shared/lib/layers";
 import { createWorktree, type Worktree } from "../model/worktrees";
@@ -23,13 +23,11 @@ export function CreateWorktreeDialog({
   onCreated: (tree: Worktree) => void | Promise<void>;
   onCancel: () => void;
 }) {
-  useLocale();
+  const locale = useLocale();
   const { branches } = useProjectBranchesState(baseCwd, true);
   const [name, setName] = useState("");
   const [base, setBase] = useState("HEAD");
   const [existing, setExisting] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (existing) return;
@@ -47,9 +45,7 @@ export function CreateWorktreeDialog({
     () => [
       {
         value: "HEAD",
-        get label() {
-          return t("Current commit{p0}", { p0: branches?.current ? ` (${branches.current})` : "" });
-        },
+        label: t("Current commit{p0}", { p0: branches?.current ? ` (${branches.current})` : "" }),
         keywords: "HEAD current commit",
       },
       ...(branches?.branches ?? []).map((branch) => {
@@ -57,22 +53,17 @@ export function CreateWorktreeDialog({
         return { value: ref, label: ref };
       }),
     ],
-    [getLocale(), branches],
+    [locale, branches],
   );
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (busy || !name.trim()) return;
-    setBusy(true);
-    setError(undefined);
+  const [error, submit, busy] = useActionState<string | undefined, FormData>(async () => {
+    if (!name.trim()) return;
     try {
       const tree = await createWorktree(baseCwd, name.trim(), base, existing);
       await onCreated(tree);
     } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
+      return String(err);
     }
-  };
+  }, undefined);
   return (
     <Modal
       languageDomain="git"
@@ -82,7 +73,7 @@ export function CreateWorktreeDialog({
         if (!busy) onCancel();
       }}
     >
-      <form className="flex flex-col gap-4 p-4" onSubmit={(e) => void submit(e)}>
+      <form className="flex flex-col gap-4 p-4" action={submit}>
         <p className="text-[12px] text-[var(--ui-text-secondary)]">
           {t("An independent working copy of ")}
           {prettyCwd(cwd)}

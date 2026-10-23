@@ -1,10 +1,14 @@
 import { lazySurface } from "../../../shared/ui/lazySurface";
+import type { WorkspaceToolId } from "../../model/toolWindows";
 import type { ServersViewProps } from "../../../features/connections/ui/ServersView";
 
-export const ServersView = lazySurface<ServersViewProps>(async () => {
-  const module = await import("../../../features/connections/ui/ServersWorkspaceView");
-  return { default: module.ServersWorkspaceView };
-}, { suspense: false });
+export const ServersView = lazySurface<ServersViewProps>(
+  async () => {
+    const module = await import("../../../features/connections/ui/ServersWorkspaceView");
+    return { default: module.ServersWorkspaceView };
+  },
+  { suspense: false },
+);
 export const SearchView = lazySurface(
   async () => {
     const module = await import("../../../features/search/ui/SearchView");
@@ -55,3 +59,18 @@ export const TasksView = lazySurface(
   },
   { suspense: false },
 );
+
+/** Warm a destination on pointer or keyboard intent; failures retry on open. */
+export function preloadToolSurface(tool: WorkspaceToolId): void {
+  const surface = {
+    servers: ServersView,
+    social: SocialView,
+    tasks: TasksView,
+    automations: AutomationsView,
+    inbox: InboxView,
+    notes: NotesView,
+    terminal: null,
+    "conversation-tools": null,
+  }[tool];
+  void surface?.preload().catch(() => undefined);
+}

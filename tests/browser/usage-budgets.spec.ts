@@ -51,7 +51,6 @@ for (const [theme, width] of [
     await page.keyboard.press("Escape");
 
     await page.getByRole("radio", { name: "Limits", exact: true }).click();
-    await page.locator(".usage-display-preferences > summary").click();
     await page.getByRole("switch", { name: "Show remaining usage", exact: true }).click();
     await page.getByRole("radio", { name: "Limits", exact: true }).click();
     await expect(accounts.first().getByRole("meter").first()).toHaveAttribute(
@@ -96,6 +95,7 @@ test("creates, edits, persists and removes a project token allocation", async ({
   await page.getByRole("button", { name: "Save budget", exact: true }).click();
   await expect(page.getByText("Budget reached", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm delete", exact: true }).click();
   await expect(page.getByText("No usage budgets.", { exact: false })).toBeVisible();
 });
 test("supports session and workspace scopes and 5-hour account thresholds", async ({ page }) => {
@@ -161,8 +161,10 @@ for (const [theme, width, motion] of [
     await page.goto(`/tests/browser/usage-budgets.html?overview=1&theme=${theme}&motion=${motion}`);
 
     const values = page.locator(".usage-metrics strong > .bycoda-arc");
-    await expect(values).toHaveCount(6);
-    await expect(values.nth(1)).toHaveText(motion === "auto" ? /1.0K/ : "1.0K");
+    await expect(values).toHaveCount(3);
+    await page.getByRole("button", { name: "Usage details", exact: true }).click();
+    await expect(values).toHaveCount(7);
+    await expect(values.nth(3)).toHaveText(motion === "auto" ? /1K/ : "1K");
     if (motion !== "auto") await expect(values.locator('[aria-hidden="true"]')).toHaveCount(0);
     await page.evaluate(() => {
       (window as any).refreshUsageFixture();
@@ -171,14 +173,14 @@ for (const [theme, width, motion] of [
     await expect
       .poll(() =>
         values
-          .nth(1)
+          .nth(3)
           .evaluate((node) =>
             node.querySelector("[aria-hidden]")
               ? node.firstElementChild?.textContent
               : node.textContent,
           ),
       )
-      .toBe("3.0K");
+      .toBe("3K");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );

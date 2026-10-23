@@ -91,6 +91,12 @@ const button = (label: string) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent === label || node.getAttribute("aria-label") === label,
   )!;
+const menuAction = async (label: string) => {
+  await act(async () => button("More actions").click());
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>(`[role="menuitem"][aria-label="${label}"]`)!.click(),
+  );
+};
 const rows = () => [...container.querySelectorAll<HTMLElement>(".runtime-log-row")];
 // Groups are ordered by their latest occurrence, so find rows by content.
 const rowIndex = (text: string) => rows().findIndex((row) => row.textContent?.includes(text));
@@ -431,7 +437,7 @@ it("adds selected grouped errors as an untrusted draft only after an explicit cl
 
 it("retains the clear watermark through replayed host history and shows only new events", async () => {
   await mount();
-  await act(async () => button("Clear view").click());
+  await menuAction("Clear view");
   expect(rows()).toHaveLength(0);
   vi.mocked(hostToolRequest).mockResolvedValueOnce(
     result([...entries, { ...base, id: "5", cursor: 5, message: "New event after clear" }], 5),
@@ -538,7 +544,7 @@ it("expands structured objects and stack traces without treating values as marku
 
 it("exports the selected events through a save dialog and does not write when canceled", async () => {
   await mount();
-  await act(async () => button("Export logs").click());
+  await menuAction("Export logs");
   expect(save).toHaveBeenCalledOnce();
   expect(writeTextFile).not.toHaveBeenCalled();
   await act(async () =>
@@ -547,7 +553,7 @@ it("exports the selected events through a save dialog and does not write when ca
       .click(),
   );
   vi.mocked(save).mockResolvedValueOnce("/logs/runtime.jsonl");
-  await act(async () => button("Export logs").click());
+  await menuAction("Export logs");
   const [path, content] = vi.mocked(writeTextFile).mock.calls[0];
   expect(path).toBe("/logs/runtime.jsonl");
   const records = content

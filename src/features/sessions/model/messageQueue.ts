@@ -1,6 +1,7 @@
 import { isPreparingHandoff } from "./handoff";
 import type { FollowUpBehavior } from "../../settings/model/settings";
 import { moveItem, orderByIds } from "../../../shared/lib/reorder";
+import { mergeModelSettings, modelEffortLabel, resolveModel } from "./models";
 import { hasMissingAttachment } from "./queuePersistence";
 import type { ModelTarget, QueuedMessage, Session, TurnIntent } from "./session";
 
@@ -14,13 +15,71 @@ export function queuedModelTarget(
   };
 }
 
-export function sameQueuedModelTarget(a: ModelTarget, b: ModelTarget): boolean {
+function sameSettings(a: Record<string, string>, b: Record<string, string>): boolean {
   return (
-    a.harness === b.harness &&
-    a.model === b.model &&
-    Object.keys(a.modelSettings).length === Object.keys(b.modelSettings).length &&
-    Object.entries(a.modelSettings).every(([key, value]) => b.modelSettings[key] === value)
+    Object.keys(a).length === Object.keys(b).length &&
+    Object.entries(a).every(([key, value]) => b[key] === value)
   );
+}
+
+/**
+ * The model and settings a target actually runs with. The composer stores
+ * either the sparse selection or every default once a setting is touched, so
+ * `{ effort: "high" }` and the same choice with its defaults filled in are one
+ * target. Models outside the settings catalog keep their raw values.
+ */
+function effectiveModelSettings(target: ModelTarget): Record<string, string> {
+  const model = resolveModel(target.harness, target.model);
+  return model.id === target.model && model.settings?.length
+    ? mergeModelSettings(model, target.modelSettings)
+    : target.modelSettings;
+}
+
+export function sameQueuedModelTarget(a: ModelTarget, b: ModelTarget): boolean {
+  if (a.harness !== b.harness || a.model !== b.model) return false;
+  return (
+    sameSettings(a.modelSettings, b.modelSettings) ||
+    sameSettings(effectiveModelSettings(a), effectiveModelSettings(b))
+  );
+}
+
+type RunningSelection = Pick<
+  Session,
+  "busy" | "harness" | "model" | "modelSettings" | "runningModelTarget"
+>;
+
+/** The model and settings of the turn in progress. */
+export function runningTargetOf(session: Omit<RunningSelection, "busy">): ModelTarget {
+  return session.runningModelTarget ?? queuedModelTarget(session);
+}
+
+/**
+ * How an explicit Steer sends a row with the model it was queued for while a
+ * turn runs. "join" delivers it into the running turn (same target, or only
+ * settings the provider applies per message). "restart" stops the turn and
+ * starts the row as a new turn with its saved model. "switch" stops the turn
+ * and continues on the saved provider, as the composer's provider switch does.
+ */
+export type QueuedSteerRoute = "join" | "restart" | "switch";
+
+export function queuedSteerRoute(
+  session: RunningSelection,
+  message: QueuedMessage,
+  steerAppliesSettings: boolean,
+): QueuedSteerRoute {
+  if (!session.busy || !message.modelTarget) return "join";
+  const running = runningTargetOf(session);
+  if (message.modelTarget.harness !== running.harness) return "switch";
+  if (message.modelTarget.model !== running.model) return "restart";
+  return steerAppliesSettings || sameQueuedModelTarget(message.modelTarget, running)
+    ? "join"
+    : "restart";
+}
+
+/** Model name and effort a queued row was saved for, for its queue label. */
+export function queuedTargetSummary(target: ModelTarget): { model: string; effort?: string } {
+  const model = resolveModel(target.harness, target.model);
+  return { model: model.name, effort: modelEffortLabel(model, target.modelSettings) };
 }
 
 export function queuedHead(session: Session): QueuedMessage | undefined {
@@ -161,15 +220,6 @@ export function queuedMessageForSubmit(
   if (!message || message.deliveryUnknown || hasMissingAttachment(message)) return undefined;
   if (mode === "steer") {
     if (session.busy && (message.intent === "plan" || message.intent === "orchestrate"))
-      return undefined;
-    if (
-      session.busy &&
-      message.modelTarget &&
-      !sameQueuedModelTarget(
-        message.modelTarget,
-        session.runningModelTarget ?? queuedModelTarget(session),
-      )
-    )
       return undefined;
     return message;
   }

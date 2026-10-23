@@ -60,8 +60,12 @@ import { AppearancePage } from "./AppearanceSettings";
 import { KeybindingsPage } from "./ShortcutSettings";
 import { TerminalPage } from "./TerminalSettings";
 import { ProvidersPage } from "./ProviderSettings";
-import { UsagePage } from "../../usage/ui/UsagePage";
+import { lazySurface } from "../../../shared/ui/lazySurface";
 import { ArchivePage } from "./ArchiveSettings";
+
+const UsagePage = lazySurface(async () => ({
+  default: (await import("../../usage/ui/UsagePage")).UsagePage,
+}));
 
 /**
  * The `data-setting-id` Settings should reveal when it opens: one of the ids in
@@ -97,6 +101,15 @@ type Props = {
   collapsedProjectRailMode?: CollapsedProjectRailMode;
   onCollapsedProjectRailModeChange?: (mode: CollapsedProjectRailMode) => void;
 };
+
+/** Pages that persist every change themselves; the header says so once. */
+const AUTOMATIC_SAVE_SECTIONS: readonly string[] = [
+  "general",
+  "appearance",
+  "workspace",
+  "chat",
+  "terminal",
+];
 
 export function SettingsView({
   section,
@@ -253,7 +266,7 @@ export function SettingsView({
         data-tauri-drag-region="deep"
       >
         {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
           <Button
             variant="ghost"
             size="sm"
@@ -262,10 +275,10 @@ export function SettingsView({
             aria-label={t("Back to workspace")}
             data-tauri-drag-region="false"
           >
-            <ArrowLeft className="size-3.5 shrink-0" aria-hidden="true" />
+            <ArrowLeft className="icon-sm shrink-0" aria-hidden="true" />
             <span className="truncate">{t("Back to workspace")}</span>
           </Button>
-          <span className="min-w-0 truncate text-content/60">
+          <span className="min-w-0 truncate text-(--ui-text-secondary)">
             {section === "usage" ? t("Usage / This machine") : t("Settings")}
           </span>
         </div>
@@ -273,9 +286,6 @@ export function SettingsView({
       </div>
 
       <header className="bycoda-settings-toolbar">
-        <div className="bycoda-settings-toolbar-title">
-          <span>{section === "usage" ? t("Usage") : t("Settings")}</span>
-        </div>
         <div className="bycoda-settings-toolbar-actions">
           <SidebarUpdateFooter />
           <SettingsSearch onReveal={onReveal} />
@@ -288,7 +298,7 @@ export function SettingsView({
               label={t("Restore defaults")}
               onClick={appearance.restoreDefaults}
             >
-              <RotateCcw className="size-3.5" strokeWidth={1.75} />
+              <RotateCcw className="icon-sm" strokeWidth={1.75} />
             </Button>
           ) : null}
         </div>
@@ -341,7 +351,6 @@ export function SettingsView({
                       tabIndex={category.id === section ? 0 : -1}
                       disabled={!onSelectSection && category.id !== section}
                       data-category-group={category.group}
-                      title={category.label}
                       onClick={() => {
                         setRevealed(null);
                         onSelectSection?.(category.id);
@@ -397,9 +406,7 @@ export function SettingsView({
             </RevealedSetting.Provider>
           ) : (
             <RevealedSetting.Provider value={revealed}>
-              <PageAutomaticSaveHint.Provider
-                value={["general", "appearance", "workspace", "chat", "terminal"].includes(section)}
-              >
+              <PageAutomaticSaveHint.Provider value={AUTOMATIC_SAVE_SECTIONS.includes(section)}>
                 <div
                   key={section}
                   data-settings-scroller
@@ -413,6 +420,7 @@ export function SettingsView({
                     <PageHeader
                       title={settingsSectionLabel(section)}
                       description={settingsSectionDescription(section)}
+                      automaticSave={AUTOMATIC_SAVE_SECTIONS.includes(section)}
                     />
                     {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
                     {section === "crews" ? <CrewsSettings cwd={cwd} /> : null}

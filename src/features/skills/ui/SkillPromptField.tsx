@@ -179,7 +179,7 @@ export function SkillPromptField({
       ) : null}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 min-h-28 overflow-hidden whitespace-pre-wrap break-words px-3 py-3 font-sans text-sm leading-5.5 text-content"
+        className="pointer-events-none absolute inset-0 min-h-28 overflow-hidden whitespace-pre-wrap break-words px-3 py-3 font-sans text-ui-body leading-5.5 text-content"
       >
         <SkillPromptHighlight
           text={value}
@@ -211,7 +211,7 @@ export function SkillPromptField({
         }}
         onSelect={(event) => syncSlashToken(event.currentTarget)}
         placeholder={placeholder}
-        className="composer-field relative min-h-28 w-full resize-none overflow-hidden whitespace-pre-wrap break-words bg-transparent px-3 py-3 font-sans text-sm leading-5.5 outline-none placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap"
+        className="composer-field relative min-h-28 w-full resize-none overflow-hidden whitespace-pre-wrap break-words bg-transparent px-3 py-3 font-sans text-ui-body leading-5.5 outline-none placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap"
       />
     </div>
   );

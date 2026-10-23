@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { Fragment, useEffect, useState } from "react";
 import { splitAttachmentTokens } from "../model/attachmentTokens";
 import type { Attachment } from "../model/session";
@@ -23,7 +23,7 @@ const PILL_CLASS =
 
 /** A token as a pill. It keeps its brackets in the DOM so selecting and copying give the text back. */
 function TokenPill({ token, label, attachment }: PillProps) {
-  useLocale();
+  const t = useT();
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
   useEffect(() => {

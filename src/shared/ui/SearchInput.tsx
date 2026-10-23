@@ -6,7 +6,7 @@ import {
   useState,
   type ComponentPropsWithoutRef,
 } from "react";
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 import { X } from "./icons";
 import styles from "./SearchInput.module.css";
 
@@ -52,7 +52,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
   },
   ref,
 ) {
-  useLocale();
+  const t = useT();
   const input = useRef<HTMLInputElement>(null);
   useImperativeHandle(ref, () => input.current!, []);
   const [uncontrolledValue, setUncontrolledValue] = useState(props.defaultValue ?? "");

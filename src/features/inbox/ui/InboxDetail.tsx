@@ -1,6 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { useGithubPrChecks } from "../hooks/useGithubPrChecks";
 import { summarizePrChecks } from "../model/githubPrChecks";
@@ -29,6 +30,7 @@ import {
   type InboxItem,
 } from "../model/githubTasks";
 import { copyText } from "../../../platform/tauri/clipboard";
+import { providerLabel } from "../../../shared/lib/providerLabel";
 import { projectName } from "../../../shared/lib/paths";
 import { playCue } from "../../settings/model/sounds";
 import { sameProjectPath } from "../../projects/model/recents";
@@ -201,12 +203,6 @@ export function InboxDetail({
   const showAssignment = extraAssignees.length > 0 || item.assignees.length === 0;
   const reviewDecision = details?.reviewDecision?.trim() || thread?.reviewDecision?.trim() || "";
   const reviewLabel = githubReviewDecisionLabel(reviewDecision);
-  const reviewClass =
-    reviewDecision.toUpperCase() === "APPROVED"
-      ? "text-(--ui-tone-success-fg)"
-      : reviewDecision.toUpperCase() === "CHANGES_REQUESTED"
-        ? "text-(--ui-tone-danger-fg)"
-        : "text-(--ui-text-secondary)";
   const baseRef = details?.baseRefName?.trim() || thread?.baseRefName?.trim() || "";
   const headRef = details?.headRefName?.trim() || thread?.headRefName?.trim() || "";
 
@@ -313,17 +309,17 @@ export function InboxDetail({
     <div
       data-inbox-detail-identity
       data-inbox-detail-fixed-header={panel ? "" : undefined}
-      className={`flex min-w-0 items-center gap-2 whitespace-nowrap text-[12px] text-(--ui-text-secondary) ${
+      className={`flex min-w-0 items-center gap-2 whitespace-nowrap text-ui-caption text-(--ui-text-secondary) ${
         panel ? "h-9 shrink-0 border-b border-(--ui-tone-neutral-border) px-4 pr-[34px]" : ""
       }`}
     >
-      <InboxProviderMark provider={item.provider} className="size-3.5 shrink-0" />
+      <InboxProviderMark provider={item.provider} className="icon-sm shrink-0" />
       <span className="shrink-0">
         {item.kind === "pr" ? (gitlab ? t("Merge request") : t("Pull request")) : t("Issue")}
       </span>
       <span className="shrink-0 tabular-nums">{inboxItemRef(item)}</span>
       <span className={`flex shrink-0 items-center gap-1 ${statusMark.className}`}>
-        <statusMark.Icon className="size-3.5" strokeWidth={1.75} />
+        <statusMark.Icon className="icon-sm" strokeWidth={1.75} />
         {status}
       </span>
       {attentionLabel ? (
@@ -339,7 +335,7 @@ export function InboxDetail({
           disabled={!item.url}
           onClick={() => void openUrl(item.url)}
         >
-          <ExternalLink className="size-3.5" strokeWidth={1.75} />
+          <ExternalLink className="icon-sm" strokeWidth={1.75} />
           <span className="@max-[420px]/linked:hidden">{externalActionLabel}</span>
         </Button>
       ) : null}
@@ -367,13 +363,13 @@ export function InboxDetail({
               {panel ? null : identityRow}
               <h1
                 title={item.title}
-                className={`break-words font-semibold leading-tight text-(--ui-tone-neutral-fg) ${
-                  panel ? "text-[18px]" : "text-[20px]"
+                className={`break-words font-medium leading-tight text-(--ui-tone-neutral-fg) ${
+                  panel ? "text-ui-heading" : "text-ui-heading"
                 }`}
               >
                 {item.title}
               </h1>
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-(--ui-text-secondary)">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-caption text-(--ui-text-secondary)">
                 {authorName ? (
                   <InboxPerson
                     name={authorName}
@@ -433,7 +429,7 @@ export function InboxDetail({
                   <>
                     <span aria-hidden>·</span>
                     <span className="inline-flex min-w-0 items-center gap-1">
-                      <GitCompare className="size-3 shrink-0" strokeWidth={1.75} />
+                      <GitCompare className="icon-xs shrink-0" strokeWidth={1.75} />
                       <span className="min-w-0 truncate">
                         {baseRef} ← {headRef}
                       </span>
@@ -442,16 +438,30 @@ export function InboxDetail({
                   </>
                 ) : null}
                 {reviewLabel ? (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span className={reviewClass}>{reviewLabel}</span>
-                  </>
+                  <Badge
+                    tone={
+                      reviewDecision.toUpperCase() === "APPROVED"
+                        ? "success"
+                        : reviewDecision.toUpperCase() === "CHANGES_REQUESTED"
+                          ? "danger"
+                          : "neutral"
+                    }
+                  >
+                    {reviewLabel}
+                  </Badge>
                 ) : null}
               </div>
+              {item.labels.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {item.labels.map((label) => (
+                    <InboxLabel key={label.name} label={label} />
+                  ))}
+                </div>
+              ) : null}
               {!panel && relatedSessions.length > 0 ? (
                 <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-                  <span className="mr-0.5 inline-flex shrink-0 items-center gap-1 text-[11px] text-(--ui-text-secondary)">
-                    <MessageMultiple className="size-3.5" strokeWidth={1.75} />
+                  <span className="mr-0.5 inline-flex shrink-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)">
+                    <MessageMultiple className="icon-sm" strokeWidth={1.75} />
                     {t("Related")} {relatedSessions.length === 1 ? t("thread") : t("threads")}
                   </span>
                   {relatedSessions.map((session) => {
@@ -503,6 +513,11 @@ export function InboxDetail({
                     >
                       {starting ? t("Sending...") : t("Send to agent")}
                     </Button>
+                    {!chooseStartProject && item.repo ? (
+                      <span className="min-w-0 max-w-48 truncate text-ui-caption text-(--ui-text-secondary)">
+                        {t("in {p0}", { p0: item.repo })}
+                      </span>
+                    ) : null}
                     {chooseStartProject ? (
                       <InboxProjectPicker
                         projects={projects}
@@ -523,7 +538,7 @@ export function InboxDetail({
                 ) : null}
                 {onDiscuss ? (
                   <Button variant="secondary" type="button" onClick={onDiscuss}>
-                    <MessageSquare className="size-3.5" strokeWidth={1.75} /> {t("Ask")}
+                    <MessageSquare className="icon-sm" strokeWidth={1.75} /> {t("Ask")}
                   </Button>
                 ) : null}
                 {panel ? null : (
@@ -534,13 +549,13 @@ export function InboxDetail({
                     disabled={!item.url}
                     onClick={() => void openUrl(item.url)}
                   >
-                    <ExternalLink className="size-3.5" strokeWidth={1.75} />
+                    <ExternalLink className="icon-sm" strokeWidth={1.75} />
                     {externalActionLabel}
                   </Button>
                 )}
               </div>
               {startError ? (
-                <p className="text-[12px] text-(--ui-tone-danger-fg)">{startError}</p>
+                <p className="text-ui-caption text-(--ui-tone-danger-fg)">{startError}</p>
               ) : null}
             </header>
             {isPr ? (
@@ -597,28 +612,17 @@ export function InboxDetail({
                   ) : null}
                 </div>
                 {tab === "code" && inboxShowsFullFileDiff(item) ? (
-                  <div
-                    role="group"
-                    aria-label={t("Diff context")}
-                    className="ml-auto flex items-center self-center rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) p-0.5"
-                  >
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      aria-pressed={diffMode === "hunks"}
-                      onClick={() => setDiffMode("hunks")}
-                    >
-                      {t("Hunks")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      aria-pressed={diffMode === "full"}
-                      onClick={() => setDiffMode("full")}
-                    >
-                      {t("Full file")}
-                    </Button>
-                  </div>
+                  <SegmentedControl
+                    className="ml-auto self-center"
+                    label={t("Diff context")}
+                    selectionRole="pressed"
+                    value={diffMode}
+                    onValueChange={(next) => setDiffMode(next === "full" ? "full" : "hunks")}
+                    options={[
+                      { value: "hunks", label: t("Hunks") },
+                      { value: "full", label: t("Full file") },
+                    ]}
+                  />
                 ) : null}
               </div>
             ) : null}
@@ -637,17 +641,10 @@ export function InboxDetail({
               panel ? "linked-work-item-content-enter gap-6 px-4 py-5" : "gap-5 px-8 py-5"
             }`}
           >
-            {item.labels.length > 0 ? (
-              <div className="flex flex-wrap gap-1">
-                {item.labels.map((label) => (
-                  <InboxLabel key={label.name} label={label} />
-                ))}
-              </div>
-            ) : null}
             {isPr && tab === "code" ? (
               diffLoading ? (
                 <div className="flex justify-center py-10 text-(--ui-text-secondary)">
-                  <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
+                  <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
                 </div>
               ) : diffError && !prDiff ? (
                 <Alert tone="info" role="alert">
@@ -668,7 +665,9 @@ export function InboxDetail({
                   />
                 </>
               ) : (
-                <p className="text-[13px] text-(--ui-text-secondary)">{t("No file changes")}</p>
+                <p className="text-ui-secondary text-(--ui-text-secondary)">
+                  {t("No file changes")}
+                </p>
               )
             ) : isPr && tab === "checks" ? (
               <InboxPrChecks
@@ -697,7 +696,7 @@ export function InboxDetail({
               />
             ) : loading ? (
               <div className="flex justify-center py-10 text-(--ui-text-secondary)">
-                <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
+                <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
               </div>
             ) : error && !details ? (
               <Alert tone="info" role="alert">
@@ -717,7 +716,9 @@ export function InboxDetail({
                     <AgentMarkdown text={details.body} cwd={markdownCwd} allowRemoteMedia />
                   </SurfaceSelection>
                 ) : (
-                  <p className="text-[13px] text-(--ui-text-secondary)">{t("No description")}</p>
+                  <p className="text-ui-secondary text-(--ui-text-secondary)">
+                    {t("No description")}
+                  </p>
                 )}
                 {panel && isPr ? (
                   <InboxPrChangesGlance
@@ -742,6 +743,7 @@ export function InboxDetail({
                   onReply={setReplyTo}
                 />
                 <InboxCommentForm
+                  target={providerLabel(item.provider)}
                   replyTo={replyTo}
                   posting={posting}
                   error={postError}
@@ -792,9 +794,9 @@ export function CopyBranchNameButton({ branch }: { branch: string }) {
       }}
     >
       {copied ? (
-        <Check className="size-3" strokeWidth={1.75} />
+        <Check className="icon-xs" strokeWidth={1.75} />
       ) : (
-        <Copy className="size-3" strokeWidth={1.75} />
+        <Copy className="icon-xs" strokeWidth={1.75} />
       )}
     </Button>
   );

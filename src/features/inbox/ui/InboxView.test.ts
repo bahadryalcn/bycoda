@@ -176,19 +176,19 @@ describe("InboxDetail layout", () => {
 
     expect(markup).toContain("Merge pull request");
     expect(markup).toContain('aria-label="Merge options"');
-    expect(markup).toContain("Convert to draft");
-    expect(markup).toContain("Close pull request");
+    expect(markup).toContain('aria-label="More pull request actions"');
+    expect(markup).not.toContain("Close pull request");
   });
 
   it("adapts pull request actions to draft and closed states", () => {
     const draft = renderDetail(item({ kind: "pr", state: "open", draft: true }));
     expect(draft).toContain("Ready for review");
-    expect(draft).toContain("Close pull request");
+    expect(draft).toContain('aria-label="More pull request actions"');
     expect(draft).not.toContain('aria-label="Merge options"');
 
     const closed = renderDetail(item({ kind: "pr", state: "closed" }));
     expect(closed).toContain("Reopen pull request");
-    expect(closed).not.toContain("Convert to draft");
+    expect(closed).not.toContain('aria-label="More pull request actions"');
 
     const merged = renderDetail(item({ kind: "pr", state: "merged" }));
     expect(merged).not.toContain("Reopen pull request");
@@ -206,8 +206,7 @@ describe("InboxDetail layout", () => {
     );
 
     expect(markup).not.toContain('aria-label="Merge options"');
-    expect(markup).not.toContain("Convert to draft");
-    expect(markup).not.toContain("Close pull request");
+    expect(markup).not.toContain('aria-label="More pull request actions"');
   });
 
   it("pins the linked-item identity above the panel scroller", () => {
@@ -256,7 +255,7 @@ describe("InboxDetail layout", () => {
     expect(fixedHeader).not.toContain("px-5");
     expect(fixedHeader).toContain("border-b");
     expect(fixedHeader).not.toContain("A long inbox issue");
-    expect(markup).toContain("text-[18px]");
+    expect(markup).toContain("text-ui-heading");
     expect(markup).not.toContain("Related thread");
     expect(fixedHeader).not.toContain("Review Bycoda Pull Request");
     // The PR watch panel may offer linked threads as repair targets inside the scroller.

@@ -3,14 +3,14 @@ import "./connections-settings.css";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { NativeSelect } from "../../../shared/ui/Select";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { t, useLocale } from "../../../shared/i18n";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { Modal } from "../../../shared/ui/Modal";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { Internet, Copy, Loader } from "../../../shared/ui/icons";
 import type {
   ExternalTunnel,
@@ -62,6 +62,14 @@ const stateCopy = {
   stopped: "Stopped",
   error: "Error",
   interrupted: "Interrupted",
+};
+const stateTone: Record<keyof typeof stateCopy, BadgeTone> = {
+  starting: "info",
+  ready: "success",
+  stopping: "warning",
+  stopped: "neutral",
+  error: "danger",
+  interrupted: "warning",
 };
 const providerName = (provider: TunnelProvider) => (provider === "ngrok" ? "ngrok" : "Cloudflare");
 
@@ -122,13 +130,22 @@ function TunnelUrl({ tunnel, machine }: { tunnel: ExternalTunnel; machine: Remot
     <div className="external-tunnel-url">
       <code>{tunnel.publicUrl}</code>
       <div className="external-tunnel-actions">
-        <SecondaryButton disabled={copied === "pending"} onClick={() => void copy()}>
-          <Copy className="size-3.5" aria-hidden />
+        <Button
+          type="button"
+          className="shrink-0"
+          disabled={copied === "pending"}
+          onClick={() => void copy()}
+        >
+          <Copy className="icon-sm" aria-hidden />
           {t("Copy URL")}
-        </SecondaryButton>
-        <SecondaryButton onClick={() => setQr(true)}>{t("Show QR code")}</SecondaryButton>
+        </Button>
+        <Button type="button" className="shrink-0" onClick={() => setQr(true)}>
+          {t("Show QR code")}
+        </Button>
         {tunnel.target === "host" ? (
-          <SecondaryButton onClick={() => setPair(true)}>{t("Connect your phone")}</SecondaryButton>
+          <Button type="button" className="shrink-0" onClick={() => setPair(true)}>
+            {t("Connect your phone")}
+          </Button>
         ) : null}
       </div>
       {copied === "done" ? (
@@ -218,12 +235,17 @@ export function TunnelControls({
         </p>
       </details>
       <div className="external-tunnel-actions">
-        <SecondaryButton disabled={state.pending} onClick={() => void controller.refresh(true)}>
+        <Button
+          type="button"
+          className="shrink-0"
+          disabled={state.pending}
+          onClick={() => void controller.refresh(true)}
+        >
           {t("Check again")}
-        </SecondaryButton>
+        </Button>
         {state.phase === "loading" || state.pending ? (
           <span role="status" className="inline-flex items-center gap-2">
-            <Loader className="size-3.5 motion-safe:animate-spin" aria-hidden />
+            <Loader className="icon-sm motion-safe:animate-spin" aria-hidden />
             {state.pending ? t("Working…") : t("Checking tunnel access…")}
           </span>
         ) : null}
@@ -249,46 +271,40 @@ export function TunnelControls({
             });
         }}
       >
-        <label htmlFor={`${id}-provider`}>
-          {t("Tunnel provider")}
-          <NativeSelect
-            id={`${id}-provider`}
-            value={provider}
-            disabled={state.pending}
-            onChange={(event) => setProvider(event.target.value as TunnelProvider)}
-          >
-            <option value="cloudflare">Cloudflare</option>
-            <option value="ngrok">ngrok</option>
-          </NativeSelect>
-        </label>
-        <label htmlFor={`${id}-target`}>
-          {t("Tunnel target")}
-          <NativeSelect
-            id={`${id}-target`}
-            value={target}
-            disabled={state.pending}
-            onChange={(event) => setTarget(event.target.value as TunnelTarget)}
-          >
-            <option value="dev-server">{t("Dev server sharing")}</option>
-            <option value="host">{t("bycoda host access")}</option>
-          </NativeSelect>
-        </label>
-        <label htmlFor={`${id}-url`}>
-          {t("Local URL or port")}
-          <TextField
-            id={`${id}-url`}
-            value={target === "host" ? (overview?.hostLocalUrl ?? "") : localUrl}
-            readOnly={target === "host"}
-            disabled={state.pending}
-            placeholder="http://127.0.0.1:3000"
-            onChange={(event) => setLocalUrl(event.target.value)}
-            autoCapitalize="none"
-            spellCheck={false}
-            label=""
-            hideLabel
-            fieldClassName="min-w-0 flex-1"
-          />
-        </label>
+        <SegmentedControl
+          label={t("Tunnel provider")}
+          value={provider}
+          onValueChange={(value) => {
+            if (!state.pending) setProvider(value as TunnelProvider);
+          }}
+          options={[
+            { value: "cloudflare", label: "Cloudflare" },
+            { value: "ngrok", label: "ngrok" },
+          ]}
+        />
+        <SegmentedControl
+          label={t("Tunnel target")}
+          value={target}
+          onValueChange={(value) => {
+            if (!state.pending) setTarget(value as TunnelTarget);
+          }}
+          options={[
+            { value: "dev-server", label: t("Dev server sharing") },
+            { value: "host", label: t("bycoda host access") },
+          ]}
+        />
+        <TextField
+          label={t("Local URL or port")}
+          id={`${id}-url`}
+          value={target === "host" ? (overview?.hostLocalUrl ?? "") : localUrl}
+          readOnly={target === "host"}
+          disabled={state.pending}
+          placeholder="http://127.0.0.1:3000"
+          onChange={(event) => setLocalUrl(event.target.value)}
+          autoCapitalize="none"
+          spellCheck={false}
+          fieldClassName="min-w-0 flex-1"
+        />
         <p className="external-tunnel-wide">
           {target === "host"
             ? t(
@@ -346,28 +362,29 @@ export function TunnelControls({
               }
             }}
           >
-            <label htmlFor={`${id}-token`}>
-              {t("ngrok authtoken")}
-              <PasswordField
-                id={`${id}-token`}
+            <PasswordField
+              label={t("ngrok authtoken")}
+              id={`${id}-token`}
 
-                value={token}
-                disabled={state.pending}
-                autoComplete="new-password"
-                spellCheck={false}
-                onChange={(event) => setToken(event.target.value)}
-                label=""
-                hideLabel
-                fieldClassName="min-w-0 flex-1"
-              />
-            </label>
+              value={token}
+              disabled={state.pending}
+              autoComplete="new-password"
+              spellCheck={false}
+              onChange={(event) => setToken(event.target.value)}
+              fieldClassName="min-w-0 flex-1"
+            />
             <Button type="submit" disabled={!ready || !token} variant="primary">
               {t("Save token securely")}
             </Button>
             {selected?.credential === "saved" ? (
-              <SecondaryButton disabled={!ready} onClick={() => void controller.credential("")}>
+              <Button
+                type="button"
+                className="shrink-0"
+                disabled={!ready}
+                onClick={() => void controller.credential("")}
+              >
                 {t("Forget saved token")}
-              </SecondaryButton>
+              </Button>
             ) : null}
           </form>
         </div>
@@ -381,14 +398,18 @@ export function TunnelControls({
                 {providerName(tunnel.provider)} ·{" "}
                 {t(tunnel.target === "host" ? "bycoda host access" : "Dev server sharing")}
               </strong>
-              <span role="status">{t(stateCopy[tunnel.state])}</span>
+              <Badge variant="dot" size="sm" tone={stateTone[tunnel.state]} role="status">
+                {t(stateCopy[tunnel.state])}
+              </Badge>
               {tunnel.canStop ? (
-                <SecondaryButton
+                <Button
+                  type="button"
+                  className="shrink-0"
                   disabled={state.pending || tunnel.state === "stopping"}
                   onClick={() => void controller.stop(tunnel.id)}
                 >
                   {t("Stop tunnel")}
-                </SecondaryButton>
+                </Button>
               ) : null}
             </div>
             <code>{tunnel.localUrl}</code>
@@ -429,13 +450,13 @@ export function ExternalTunnelsPanel({
   const machine = selected ? ordered.find((entry) => entry.id === selected) : ordered[0];
   return (
     <section
-      className="external-tunnels-panel rounded-xl border border-stroke bg-(--ui-surface-raised) p-4"
+      className="external-tunnels-panel rounded-xl border border-stroke bg-(--ui-surface) p-4"
       aria-label={t("External tunnels")}
     >
       <div className="external-tunnel-actions">
-        <Internet className="size-5 shrink-0 text-(--ui-text-muted)" aria-hidden />
+        <Internet className="icon-lg shrink-0 text-(--ui-text-muted)" aria-hidden />
         <div>
-          <h2 className="text-[14px] font-medium text-content">{t("External tunnels")}</h2>
+          <h2 className="text-ui-body font-medium text-content">{t("External tunnels")}</h2>
           <p>{t("Share a dev server or connect to a bycoda host through ngrok or Cloudflare.")}</p>
         </div>
       </div>

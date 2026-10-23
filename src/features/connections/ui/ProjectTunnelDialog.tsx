@@ -2,7 +2,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Modal } from "../../../shared/ui/Modal";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { Button } from "../../../shared/ui/Button";
 import { featureHost } from "../model/hostFeatureClient";
 import { tunnelUiIssue } from "../model/externalTunnelController";
 import type { RemoteMachine } from "../model/protocol";
@@ -58,9 +58,9 @@ export function ProjectTunnelDialog({
                 : "The selected computer could not be reached. Reconnect it and check again.",
             )}
           </Alert>
-          <SecondaryButton onClick={() => setRetry((value) => value + 1)}>
+          <Button type="button" className="shrink-0" onClick={() => setRetry((value) => value + 1)}>
             {t("Check again")}
-          </SecondaryButton>
+          </Button>
         </div>
       ) : (
         <p role="status">{t("Checking tunnel access…")}</p>

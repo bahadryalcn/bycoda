@@ -30,7 +30,7 @@ export const MarkdownDocumentPreview = memo(function MarkdownDocumentPreview({
       header={
         document.metadata !== null ? (
           <details className="group/metadata mb-6 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid)/[0.03]">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color) [&::-webkit-details-marker]:hidden">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg px-3 py-2 text-ui-caption text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color) [&::-webkit-details-marker]:hidden">
               <ChevronRight
                 aria-hidden="true"
                 className="size-3.5 shrink-0 text-(--ui-text-secondary) group-open/metadata:hidden"
@@ -43,7 +43,7 @@ export const MarkdownDocumentPreview = memo(function MarkdownDocumentPreview({
               />
               {metadataLabel}
             </summary>
-            <pre className="whitespace-pre-wrap break-words border-t border-(--ui-tone-neutral-border) px-3 py-2 font-mono text-[12px] leading-5 text-(--ui-text-secondary)">
+            <pre className="whitespace-pre-wrap break-words border-t border-(--ui-tone-neutral-border) px-3 py-2 font-mono text-ui-caption leading-5 text-(--ui-text-secondary)">
               {document.metadata}
             </pre>
           </details>

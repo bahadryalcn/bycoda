@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { getSessions, setSessions } from "../model/sessionsStore";
 import type { QueuedMessage } from "../model/session";
 import {
@@ -41,7 +41,7 @@ export function DeliveryProgressNotice({
   sessionId?: string;
   messages: QueuedMessage[];
 }) {
-  useLocale();
+  const t = useT();
   const progress = useDeliveryProgress(sessionId);
   const client = useLocalSharedQueueClient(sessionId);
   const clientState = useSyncExternalStore<{ queue: { claim?: { id: string } } }>(

@@ -737,7 +737,7 @@ describe("GitChangesPanel action feedback", () => {
     unstaged: !staged,
   });
   const sections = () =>
-    [...container.querySelectorAll("button > span.uppercase")]
+    [...container.querySelectorAll("[data-file-section-title]")]
       .map((title) => title.textContent ?? "")
       .filter((title) => title.endsWith("Changes"));
   const statusText = () => container.querySelector('header [role="status"]')?.textContent ?? null;
@@ -1344,7 +1344,7 @@ describe("GitChangesPanel loading and publication recovery", () => {
       [...container.querySelectorAll<HTMLButtonElement>("button")].find(
         (button) => button.textContent?.trim() === "Create PR",
       )!;
-    expect(create().disabled).toBe(true);
+    expect(create()).toBeUndefined();
     await act(async () =>
       [...container.querySelectorAll<HTMLButtonElement>("button")]
         .find((button) => button.textContent === "Retry")!

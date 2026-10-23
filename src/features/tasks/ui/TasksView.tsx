@@ -1,10 +1,12 @@
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Popover } from "../../../shared/ui/Popover";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { Progress } from "../../../shared/ui/Progress";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Switch } from "../../../shared/ui/Switch";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { useTaskBoardQueries } from "../model/useTaskBoardQueries";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -16,13 +18,14 @@ import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TaskWorkspacePicker } from "./TaskWorkspacePicker";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { HostModelSource } from "../../connections/ui/HostModelSource";
 import { CrewTaskPicker } from "../../crews/ui/CrewTaskPicker";
 import { startTask, retargetTask, reorderTasks } from "../model/taskClient";
 import type { TaskWorkspace } from "../model/taskWorkspace";
 import { taskColumn } from "../model/hostTasks";
 import "./tasks.css";
-import { t, useLocale, getLocale } from "../../../shared/i18n";
+import { t, useT, useLocale, getLocale } from "../../../shared/i18n";
 import {
   invalidateMachineSnapshot,
   machineProjects,
@@ -49,6 +52,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   DashboardSquare,
   Gauge,
   GripVertical,
@@ -307,7 +311,7 @@ export function TasksView({
   onOpenBackgroundSession,
 }: Props) {
   "use memo";
-  useLocale();
+  const t = useT();
   return (
     <div
       role="region"
@@ -323,9 +327,9 @@ export function TasksView({
         {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
         {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
             <DashboardSquare
-              className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+              className="icon-sm shrink-0 text-(--ui-text-secondary)"
               strokeWidth={1.75}
             />
             <span className="min-w-0 truncate text-(--ui-tone-neutral-fg)">{t("Tasks")}</span>
@@ -418,6 +422,7 @@ function TasksContent({
   const [freshSummary, setFreshSummary] = useState<DailySummary | null>(null);
   const [summaryBusy, setSummaryBusy] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const visibleTasks = useMemo(
     () => storedTasks.filter((task) => !isProjectLockedIn(lock, task.cwd)),
@@ -614,11 +619,15 @@ function TasksContent({
       setStewards((current) => upsertBoardItem(current, saved)),
     );
 
-  const onDeleteSteward = (steward: BoardSteward) => {
+  const onDeleteSteward = async (steward: BoardSteward) => {
     if (
-      !window.confirm(
-        `Delete the steward for ${stewardProjectName(steward)}? Its suggestions stay on the board.`,
-      )
+      !(await confirm({
+        title: t("Delete steward"),
+        message: t("Delete the steward for {p0}? Its suggestions stay on the board.", {
+          p0: stewardProjectName(steward),
+        }),
+        confirmLabel: t("Delete"),
+      }))
     )
       return;
     void act(
@@ -650,8 +659,15 @@ function TasksContent({
       setGoals((current) => upsertBoardItem(current, saved)),
     );
 
-  const onDeleteGoal = (goal: BoardGoal) => {
-    if (!window.confirm(`Delete the goal “${goal.title}”? Its tasks stay on the board.`)) return;
+  const onDeleteGoal = async (goal: BoardGoal) => {
+    if (
+      !(await confirm({
+        title: t("Delete goal"),
+        message: t("Delete the goal “{p0}”? Its tasks stay on the board.", { p0: goal.title }),
+        confirmLabel: t("Delete"),
+      }))
+    )
+      return;
     if (goalFilter === goalKey(goal.machineId, goal.id)) setGoalFilter(ALL_GOALS);
     void act(
       { id: `goal:${goalKey(goal.machineId, goal.id)}` },
@@ -740,7 +756,12 @@ function TasksContent({
         (column === "blocked" ||
           (column === "done" && hasUnmergedBranch(task)) ||
           (task.status === "review" && column === "queued")) &&
-        !window.confirm(t("Move this task to {p0}?", { p0: t(COLUMN_LABELS[column]) }))
+        !(await confirm({
+          title: t("Move task"),
+          message: t("Move this task to {p0}?", { p0: t(COLUMN_LABELS[column]) }),
+          confirmLabel: t("Move"),
+          danger: false,
+        }))
       )
         return;
       onMove(task, column);
@@ -794,14 +815,19 @@ function TasksContent({
     }
   };
 
-  const onDelete = (task: BoardTask) => {
+  const onDelete = async (task: BoardTask) => {
     const discard = hasUnmergedBranch(task);
     if (
-      !window.confirm(
-        discard
-          ? `Delete “${task.title}”? Its work on ${task.branch} was never merged, and the branch will be discarded.`
-          : `Delete “${task.title}”?`,
-      )
+      !(await confirm({
+        title: t("Delete task"),
+        message: discard
+          ? t(
+              "Delete “{p0}”? Its work on {p1} was never merged, and the branch will be discarded.",
+              { p0: task.title, p1: task.branch },
+            )
+          : t("Delete “{p0}”?", { p0: task.title }),
+        confirmLabel: t("Delete"),
+      }))
     )
       return;
     void act(
@@ -953,10 +979,9 @@ function TasksContent({
   return (
     <div className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)">
       <header className="task-board-toolbar">
-        <h1 className="text-[13px] font-medium">{t("Tasks")}</h1>
-        <Badge className="tabular-nums">{visibleTasks.length}</Badge>
+        <h1 className="sr-only">{t("Tasks")}</h1>
         {machines.length === 0 ? (
-          <span className="min-w-[min(100%,14rem)] flex-1 text-[12px] text-(--ui-text-secondary)">
+          <span className="min-w-[min(100%,14rem)] flex-1 text-ui-caption text-(--ui-text-secondary)">
             {loading
               ? t("Looking for machines…")
               : t("No connected machine has a task board. Connect one, or update its {p0} Host.", {
@@ -965,7 +990,10 @@ function TasksContent({
           </span>
         ) : null}
         {newReviewNotes > 0 ? (
-          <span data-new-review-notes className="shrink-0 text-[11px] text-(--ui-tone-warning-fg)">
+          <span
+            data-new-review-notes
+            className="shrink-0 text-ui-micro text-(--ui-tone-warning-fg)"
+          >
             {newReviewNotes}
             {t(" new review ")}
             {newReviewNotes === 1 ? t("note") : t("notes")}
@@ -985,7 +1013,7 @@ function TasksContent({
               aria-pressed={goalFilter !== ALL_GOALS}
               onClick={() => setFiltersOpen((open) => !open)}
             >
-              <ListFilter className="size-3.5" />
+              <ListFilter className="icon-sm" />
               {goalFilter !== ALL_GOALS ? (
                 <span className="task-filter-active" aria-hidden="true" />
               ) : null}
@@ -1042,7 +1070,7 @@ function TasksContent({
           aria-expanded={!!boardActionMenu}
           onClick={(event) => setBoardActionMenu(event.currentTarget)}
         >
-          <MoreHorizontal className="size-3.5" />
+          <MoreHorizontal className="icon-sm" />
         </Button>
         {boardActionMenu ? (
           <DropdownMenu
@@ -1054,7 +1082,7 @@ function TasksContent({
                 id: "summary",
                 label: t("Summary"),
                 checked: summaryOpen,
-                icon: <Check className="size-3.5" />,
+                icon: <DashboardSquare className="icon-sm" strokeWidth={1.75} />,
               },
               ...(stewardCapable.length > 0
                 ? [
@@ -1063,7 +1091,7 @@ function TasksContent({
                       id: "stewards",
                       label: t("Stewards"),
                       checked: stewardsOpen,
-                      icon: <Bot className="size-3.5" />,
+                      icon: <Bot className="icon-sm" />,
                     },
                   ]
                 : []),
@@ -1074,7 +1102,7 @@ function TasksContent({
                       id: "limits",
                       label: t("Limits"),
                       checked: limitsOpen,
-                      icon: <Gauge className="size-3.5" />,
+                      icon: <Gauge className="icon-sm" />,
                     },
                   ]
                 : []),
@@ -1083,7 +1111,7 @@ function TasksContent({
                 id: "goal",
                 label: t("New goal"),
                 disabled: goalDraft != null || draft != null,
-                icon: <Sparkles className="size-3.5" />,
+                icon: <Sparkles className="icon-sm" />,
               },
             ]}
             onClose={() => setBoardActionMenu(null)}
@@ -1096,48 +1124,48 @@ function TasksContent({
           />
         ) : null}
         <Button
-          variant="secondary"
+          variant="primary"
           type="button"
           onClick={beginCreate}
           disabled={draft != null || goalDraft != null}
         >
-          <Plus className="size-3.5" strokeWidth={1.75} />
+          <Plus className="icon-sm" strokeWidth={1.75} />
           {t("New task")}
         </Button>
         <div className="task-board-status" data-remote-data-state={boardDataState.phase}>
-          <Button
-            variant="ghost"
-            onClick={() => setStatusDetails(true)}
-            tone={error || missingNotice || boardDataState.error ? "warning" : "neutral"}
-          >
-            {board.pending ? (
-              <LoaderCircle className="size-3 animate-spin" />
-            ) : error || missingNotice || boardDataState.error ? (
-              <CircleHelp className="size-3.5" />
-            ) : (
-              <Check className="size-3.5" />
-            )}
-            <span aria-live="polite">
-              {error
-                ? t("Task action failed")
-                : missingNotice || boardDataState.error
-                  ? t("Connection issue")
-                  : board.pending
-                    ? t("Refreshing…")
-                    : t("Up to date")}
-            </span>
-          </Button>
+          {error || missingNotice || boardDataState.error || board.pending ? (
+            <Button
+              variant="ghost"
+              onClick={() => setStatusDetails(true)}
+              tone={error || missingNotice || boardDataState.error ? "warning" : "neutral"}
+            >
+              {board.pending ? (
+                <LoaderCircle className="icon-xs animate-spin" strokeWidth={1.75} />
+              ) : (
+                <CircleHelp className="icon-sm" strokeWidth={1.75} />
+              )}
+              <span aria-live="polite">
+                {error
+                  ? t("Task action failed")
+                  : missingNotice || boardDataState.error
+                    ? t("Connection issue")
+                    : t("Refreshing…")}
+              </span>
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             iconOnly
             label={boardDataState.error ? t("Retry") : t("Refresh")}
+            tooltip={boardDataState.error ? t("Retry") : t("Refresh")}
             loading={board.pending}
             onClick={retryBoard}
           >
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className="icon-sm" strokeWidth={1.75} />
           </Button>
         </div>
       </header>
+      {confirmDialog}
       {statusDetails ? (
         <Modal title={t("Task board status")} onClose={() => setStatusDetails(false)}>
           <div className="task-status-details">
@@ -1172,7 +1200,7 @@ function TasksContent({
         />
       ) : null}
       {dailyNotice ? (
-        <Alert tone="warning" role="status" className="mx-4 mt-4 shrink-0">
+        <Alert tone="warning" role="status" className="mx-3 mt-3 shrink-0">
           {dailyNotice}
         </Alert>
       ) : null}
@@ -1197,7 +1225,7 @@ function TasksContent({
           }}
         >
           {error ? (
-            <Alert tone="danger" role="alert" className="">
+            <Alert tone="danger" role="alert">
               {error}
             </Alert>
           ) : null}
@@ -1271,7 +1299,7 @@ function TasksContent({
           }}
         >
           {error ? (
-            <Alert tone="danger" role="alert" className="">
+            <Alert tone="danger" role="alert">
               {error}
             </Alert>
           ) : null}
@@ -1400,7 +1428,7 @@ function TasksContent({
       {goals.length > 0 ? (
         <ul
           aria-label={t("Goals")}
-          className="flex max-h-[45%] shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-(--ui-tone-neutral-border) p-3"
+          className="flex max-h-[30%] shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-(--ui-tone-neutral-border) p-3"
         >
           {goals
             .filter(
@@ -1421,12 +1449,16 @@ function TasksContent({
                     }}
                     onReplan={(feedback) => actOnGoal(goal, () => replanGoal(goal, feedback))}
                     onCancel={() => {
-                      if (
-                        window.confirm(
-                          `Cancel the goal “${goal.title}”? Its running tasks are stopped; their branches stay.`,
-                        )
-                      )
-                        void actOnGoal(goal, () => cancelGoal(goal));
+                      void confirm({
+                        title: t("Cancel goal"),
+                        message: t(
+                          "Cancel the goal “{p0}”? Its running tasks are stopped; their branches stay.",
+                          { p0: goal.title },
+                        ),
+                        confirmLabel: t("Cancel goal"),
+                      }).then((ok) => {
+                        if (ok) void actOnGoal(goal, () => cancelGoal(goal));
+                      });
                     }}
                     onDelete={() => onDeleteGoal(goal)}
                     onSessions={() => setGoalSessions(goal)}
@@ -1458,7 +1490,7 @@ function TasksContent({
                     >
                       <strong>{task.title}</strong>
                       <span>{t(STATUS_LABELS[task.status])}</span>
-                      <span className="break-all text-[11px]">
+                      <span className="break-all text-ui-micro">
                         {task.branch} {task.worktreeCwd ?? task.workspace?.checkoutCwd ?? task.cwd}
                       </span>
                       <div className="flex flex-wrap gap-2">
@@ -1503,7 +1535,7 @@ function TasksContent({
         >
           {loading ? (
             <div className="grid h-full place-items-center text-(--ui-text-secondary)">
-              <LoaderCircle className="size-4 animate-spin" />
+              <LoaderCircle className="icon-md animate-spin" />
             </div>
           ) : (
             <>
@@ -1567,7 +1599,7 @@ function TasksContent({
                       }}
                       className="bycoda-task-column flex min-h-0 min-w-0 flex-col rounded-md bg-(--ui-surface-raised)"
                     >
-                      <h2 className="flex h-9 shrink-0 items-center gap-2 px-3 text-[12px] font-medium text-(--ui-text-secondary)">
+                      <h2 className="flex h-9 shrink-0 items-center gap-2 px-3 text-ui-caption font-medium text-(--ui-text-secondary)">
                         <span className="min-w-0 flex-1 truncate">{t(COLUMN_LABELS[status])}</span>
                         <Badge className="shrink-0 tabular-nums">{column.length}</Badge>
                       </h2>
@@ -1747,6 +1779,31 @@ function TaskCardBody({
   const model = resolveModel(task.harness, task.model);
   const description = taskInstructionsSummary(task.prompt);
   const unread = unreadReviewNotes(task.reviewNotes);
+  // Exceptional state leads the card; machine, model and branch are ambient.
+  const statusBadges =
+    task.source === "steward" ||
+    task.autoMerged ||
+    task.status === "verifying" ||
+    task.needsInput ||
+    taskRequiresInstructions(task) ? (
+      <>
+        {task.needsInput || taskRequiresInstructions(task) ? (
+          <Badge tone="warning">{t("Needs input")}</Badge>
+        ) : null}
+        {task.status === "verifying" ? <Badge tone="info">{t("Verifying")}</Badge> : null}
+        {task.autoMerged ? (
+          <Badge data-task-auto-merged tone="success">
+            {t("Merged automatically")}
+          </Badge>
+        ) : null}
+        {task.source === "steward" ? (
+          <Badge data-task-suggested title={t("Suggested by a project steward")} tone="info">
+            <Bot className="icon-xs shrink-0" strokeWidth={1.75} />
+            {t("Suggested")}
+          </Badge>
+        ) : null}
+      </>
+    ) : null;
   return (
     // A click anywhere on the card but its buttons opens the detail panel.
     <article
@@ -1757,110 +1814,31 @@ function TaskCardBody({
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && event.key === "Enter") onOpen();
       }}
-      className={`task-board-card cursor-pointer rounded-md border bg-(--ui-surface) px-2.5 py-2 hover:border-(--ui-tone-neutral-border) ${
-        selected ? "border-(--ui-tone-neutral-border)" : "border-(--ui-tone-neutral-border)"
-      }`}
+      data-selected={selected || undefined}
+      className="task-board-card cursor-pointer rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-2.5 py-2 hover:bg-(--ui-surface-hover) data-[selected]:bg-(--ui-surface-selected)"
     >
       {goal ? (
         <p
           data-task-goal
           title={t("Part of the goal “{p0}”", { p0: goal })}
-          className="mb-1 flex min-w-0 items-center gap-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
+          className="mb-1 flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-muted)"
         >
-          <Sparkles className="size-2.5 shrink-0" />
+          <Sparkles className="icon-xs shrink-0" strokeWidth={1.75} />
           <span className="min-w-0 truncate">{goal}</span>
         </p>
       ) : null}
-      {task.source === "steward" ? (
-        <Badge
-          data-task-suggested
-          title={t("Suggested by a project steward")}
-          tone="info"
-          className="mb-1"
-        >
-          <Bot className="size-2.5 shrink-0" />
-          {t("Suggested")}
-        </Badge>
-      ) : null}
       <h3
         title={description}
-        className="line-clamp-2 text-[13px] font-semibold leading-snug text-(--ui-tone-neutral-fg)"
+        className="line-clamp-2 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)"
       >
-        <GripVertical aria-hidden="true" className="task-drag-grip size-3" />
+        <GripVertical aria-hidden="true" className="task-drag-grip icon-xs" strokeWidth={1.75} />
         {task.title}
       </h3>
-      {description ? (
-        <p
-          data-task-description
-          className="mt-0.5 line-clamp-2 whitespace-pre-line break-words text-[11px] leading-snug text-(--ui-text-secondary)"
-        >
-          {description}
-        </p>
-      ) : null}
-      <p className="mt-1 truncate text-[11px] text-(--ui-text-secondary)">
-        {project}
-        {t(" · on ")}
-        {task.machineName}
-        {task.stale ? t(" (offline, last known)") : ""}
-      </p>
-      <p className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-(--ui-text-secondary)">
-        {task.crewDefinitionId && <span>{t("Crew")} · </span>}
-        <HarnessIcon harness={task.harness} className="size-3.5 shrink-0" />
-        <span title={model.name} className="min-w-0 truncate">
-          {model.name}
-        </span>
-        <span className="ml-auto shrink-0 tabular-nums text-(--ui-text-secondary)">
-          {taskTimeLabel(task, now)}
-        </span>
-      </p>
-      {task.branch ? (
-        <p
-          title={task.merged ? t("Merged into {p0}", { p0: task.baseBranch }) : task.branch}
-          className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-(--ui-text-secondary)"
-        >
-          <GitBranch className="size-3 shrink-0" />
-          <span className="min-w-0 truncate">
-            {task.merged
-              ? t("{p0} merged into {p1}", { p0: task.branch, p1: task.baseBranch })
-              : task.branch}
-          </span>
-        </p>
-      ) : null}
-      {task.autoMerged ? (
-        <Badge data-task-auto-merged tone="success" className="mt-1">
-          {t("Merged automatically")}
-        </Badge>
-      ) : null}
-      {waitingFor.length > 0 ? (
-        <p className="mt-1 break-words text-[11px] leading-snug text-(--ui-text-secondary)">
-          {t("Waiting for: ")}
-          {waitingFor.join(", ")}
-        </p>
-      ) : null}
-      {task.status === "verifying" ? (
-        <Badge tone="info" className="mt-1.5 mr-1">
-          {t("Verifying")}
-        </Badge>
-      ) : null}
-      {task.needsInput || taskRequiresInstructions(task) ? (
-        <Badge tone="warning" className="mt-1.5">
-          {t("Needs input")}
-        </Badge>
+      {statusBadges ? (
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">{statusBadges}</div>
       ) : null}
       {repairStopLabel(task) ? (
         <p className="task-recovery-status">{repairStopLabel(task)}</p>
-      ) : null}
-      {task.reviewNotes?.length ? (
-        <p
-          data-task-review-notes
-          className={`mt-1.5 text-[11px] ${unread ? "text-(--ui-tone-warning-fg)" : "text-(--ui-text-secondary)"}`}
-        >
-          {unread
-            ? t(unread === 1 ? "{p0} new review note" : "{p0} new review notes", { p0: unread })
-            : t(task.reviewNotes.length === 1 ? "{p0} review note" : "{p0} review notes", {
-                p0: task.reviewNotes.length,
-              })}
-        </p>
       ) : null}
       {task.error || task.mergeError || task.verification?.review?.verdict === "fail" ? (
         <Button
@@ -1879,7 +1857,7 @@ function TaskCardBody({
         </Button>
       ) : null}
       {task.status === "review" && !task.mergeError ? (
-        <p className="mbs-1 text-[11px] text-(--ui-tone-warning-fg)">
+        <p className="mbs-1 text-ui-micro text-(--ui-tone-warning-fg)">
           {hasUnmergedBranch(task)
             ? task.mergeError
               ? t("Delivery is blocked")
@@ -1889,7 +1867,60 @@ function TaskCardBody({
             : t("Waiting for your approval")}
         </p>
       ) : null}
-      <TaskActions task={task} {...actions} />
+      {task.reviewNotes?.length ? (
+        <p
+          data-task-review-notes
+          className={`text-ui-micro ${unread ? "text-(--ui-tone-warning-fg)" : "text-(--ui-text-muted)"}`}
+        >
+          {unread
+            ? t(unread === 1 ? "{p0} new review note" : "{p0} new review notes", { p0: unread })
+            : t(task.reviewNotes.length === 1 ? "{p0} review note" : "{p0} review notes", {
+                p0: task.reviewNotes.length,
+              })}
+        </p>
+      ) : null}
+      {waitingFor.length > 0 ? (
+        <p className="break-words text-ui-micro text-(--ui-tone-warning-fg)">
+          {t("Waiting for: ")}
+          {waitingFor.join(", ")}
+        </p>
+      ) : null}
+      {description ? (
+        <p
+          data-task-description
+          className="line-clamp-2 whitespace-pre-line break-words text-ui-micro text-(--ui-text-muted)"
+        >
+          {description}
+        </p>
+      ) : null}
+      <p className="truncate text-ui-micro text-(--ui-text-muted)">
+        {project}
+        {t(" · on ")}
+        {task.machineName}
+        {task.stale ? t(" (offline, last known)") : ""}
+      </p>
+      <p className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-muted)">
+        {task.crewDefinitionId && <span>{t("Crew")} · </span>}
+        <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
+        <span title={model.name} className="min-w-0 truncate">
+          {model.name}
+        </span>
+        <span className="ml-auto shrink-0 tabular-nums">{taskTimeLabel(task, now)}</span>
+      </p>
+      {task.branch ? (
+        <p
+          title={task.merged ? t("Merged into {p0}", { p0: task.baseBranch }) : task.branch}
+          className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-muted)"
+        >
+          <GitBranch className="icon-xs shrink-0" strokeWidth={1.75} />
+          <span className="min-w-0 truncate">
+            {task.merged
+              ? t("{p0} merged into {p1}", { p0: task.branch, p1: task.baseBranch })
+              : task.branch}
+          </span>
+        </p>
+      ) : null}
+      <TaskActions task={task} compact {...actions} />
       {failureOpen ? (
         <div onClick={(event) => event.stopPropagation()}>
           <Modal title={t("Task details")} onClose={() => setFailureOpen(false)}>
@@ -1949,8 +1980,10 @@ function TaskActions({
   onOpenReviewSession,
   openingReviewSession,
   onRecheckReview,
-}: { task: BoardTask } & TaskActionHandlers) {
+  compact = false,
+}: { task: BoardTask; compact?: boolean } & TaskActionHandlers) {
   useLocale();
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const can = (to: TaskStatus) =>
     canMoveTask(task.status, to, task.crewRunId ?? task.crewDefinitionId);
   type Action = {
@@ -1968,7 +2001,7 @@ function TaskActions({
     primary.push({
       id: "earlier",
       label: t("Move earlier"),
-      icon: <ChevronRight className="size-3" />,
+      icon: <ChevronUp className="icon-xs" />,
       run: onEarlier,
       disabled: busy,
     });
@@ -1976,7 +2009,7 @@ function TaskActions({
     primary.push({
       id: "later",
       label: t("Move later"),
-      icon: <ChevronDown className="size-3" />,
+      icon: <ChevronDown className="icon-xs" />,
       run: onLater,
       disabled: busy,
     });
@@ -1984,7 +2017,7 @@ function TaskActions({
     primary.push({
       id: "start-now",
       label: t("Start now"),
-      icon: <Play className="size-3" />,
+      icon: <Play className="icon-xs" />,
       run: onStart,
       disabled: busy,
     });
@@ -1992,7 +2025,7 @@ function TaskActions({
     secondary.push({
       id: "delivery",
       label: t("Choose delivery target"),
-      icon: <GitBranch className="size-3" />,
+      icon: <GitBranch className="icon-xs" />,
       run: onDelivery,
       disabled: busy,
     });
@@ -2000,7 +2033,7 @@ function TaskActions({
       secondary.push({
         id: "pause-merge",
         label: t("Pause automatic merge"),
-        icon: <Square className="size-3" />,
+        icon: <Square className="icon-xs" />,
         run: onPauseMerge,
         disabled: busy,
       });
@@ -2014,9 +2047,9 @@ function TaskActions({
           ? t("Mark done")
           : t("Approve"),
       icon: hasUnmergedBranch(task) ? (
-        <GitMerge className="size-3" />
+        <GitMerge className="icon-xs" />
       ) : (
-        <Check className="size-3" />
+        <Check className="icon-xs" />
       ),
       run: () => onMove("done"),
       disabled: busy,
@@ -2031,7 +2064,11 @@ function TaskActions({
             ? t("Retry")
             : t("Run again"),
       icon:
-        task.status === "blocked" ? <RotateCcw className="size-3" /> : <Play className="size-3" />,
+        task.status === "blocked" ? (
+          <RotateCcw className="icon-xs" />
+        ) : (
+          <Play className="icon-xs" />
+        ),
       run: () => onMove("queued"),
       disabled: busy,
     });
@@ -2046,7 +2083,7 @@ function TaskActions({
     secondary.push({
       id: "recheck",
       label: t("Recheck review"),
-      icon: <RefreshCw className="size-3" />,
+      icon: <RefreshCw className="icon-xs" />,
       run: onRecheckReview,
       disabled: busy,
     });
@@ -2054,7 +2091,7 @@ function TaskActions({
     secondary.push({
       id: "todo",
       label: task.status === "done" ? t("Reopen") : t("Move to To do"),
-      icon: <Undo2 className="size-3" />,
+      icon: <Undo2 className="icon-xs" />,
       run: () => onMove("todo"),
       disabled: busy,
     });
@@ -2062,7 +2099,7 @@ function TaskActions({
     primary.push({
       id: "blocked",
       label: t("Stop"),
-      icon: <Square className="size-3" />,
+      icon: <Square className="icon-xs" />,
       run: () => onMove("blocked"),
       disabled: busy,
     });
@@ -2070,7 +2107,7 @@ function TaskActions({
     primary.push({
       id: "worker",
       label: t("Open worker session"),
-      icon: <MessageSquare className="size-3" />,
+      icon: <MessageSquare className="icon-xs" />,
       run: onOpenSession,
       disabled: openingWorkerSession,
       loading: openingWorkerSession,
@@ -2079,7 +2116,7 @@ function TaskActions({
     primary.push({
       id: "review",
       label: t("Open review session"),
-      icon: <MessageSquare className="size-3" />,
+      icon: <MessageSquare className="icon-xs" />,
       run: onOpenReviewSession,
       disabled: openingReviewSession,
       loading: openingReviewSession,
@@ -2088,7 +2125,7 @@ function TaskActions({
     (taskRequiresInstructions(task) ? primary : secondary).push({
       id: "edit",
       label: taskRequiresInstructions(task) ? t("Update instructions") : t("Edit"),
-      icon: <Pencil className="size-3" />,
+      icon: <Pencil className="icon-xs" />,
       run: onEdit,
       disabled: busy,
     });
@@ -2096,48 +2133,130 @@ function TaskActions({
     secondary.push({
       id: "decline",
       label: t("Decline"),
-      icon: <X className="size-3" />,
+      icon: <X className="icon-xs" />,
       run: onDecline,
       disabled: busy,
+      danger: true,
     });
   else if (task.status !== "running" && task.status !== "verifying")
     secondary.push({
       id: "delete",
       label: t("Delete"),
-      icon: <Trash2 className="size-3" />,
+      icon: <Trash2 className="icon-xs" />,
       run: onDelete,
       disabled: busy,
       danger: true,
     });
+  const shortLabel = (action: Action) =>
+    action.id === "worker"
+      ? t("Worker")
+      : action.id === "review"
+        ? t("Review")
+        : action.id === "delivery"
+          ? t("Target")
+          : action.label;
+  const groupItem = (action: Action) => ({
+    id: action.id,
+    label: shortLabel(action),
+    ariaLabel: action.label,
+    icon: action.loading ? <LoaderCircle className="icon-xs animate-spin" /> : action.icon,
+    disabled: action.disabled,
+    tone: "neutral" as const,
+    onSelect: action.run,
+  });
+  const all = [...primary, ...secondary];
+  const destructive = all.filter((action) => action.danger);
+  const regular = all.filter((action) => !action.danger);
+  // The card offers one lead action; the detail panel keeps the full set.
+  const leadOrder =
+    task.status === "review" ? ["done", "queued"] : ["queued", "start-now", "blocked", "done"];
+  const lead = compact
+    ? ((taskRequiresInstructions(task)
+        ? primary.find((action) => action.id === "edit")
+        : undefined) ??
+      leadOrder
+        .map((id) => primary.find((action) => action.id === id))
+        .find((action) => action !== undefined))
+    : undefined;
+  const visible = compact ? (lead ? [lead] : []) : regular;
+  const overflow = compact ? all.filter((action) => action !== lead) : [];
+  const overflowRegular = overflow.filter((action) => !action.danger);
+  const overflowDanger = overflow.filter((action) => action.danger);
+  const pickOverflow = (id: string) => overflow.find((action) => action.id === id)?.run();
   return (
     <div
       className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1"
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
     >
-      <ExpandingButtonGroup
-        label={t("Task actions")}
-        size="sm"
-        fit
-        fullWidth
-        defaultExpanded={primary.find((action) => !["earlier", "later"].includes(action.id))?.id}
-        items={[...primary, ...secondary].map((action) => ({
-          id: action.id,
-          label:
-            action.id === "worker"
-              ? t("Worker")
-              : action.id === "review"
-                ? t("Review")
-                : action.id === "delivery"
-                  ? t("Target")
-                  : action.label,
-          ariaLabel: action.label,
-          icon: action.loading ? <LoaderCircle className="size-3 animate-spin" /> : action.icon,
-          disabled: action.disabled,
-          tone: action.danger ? ("danger" as const) : ("neutral" as const),
-          onSelect: action.run,
-        }))}
-      />
+      {visible.length > 0 ? (
+        <ExpandingButtonGroup
+          label={t("Task actions")}
+          size="sm"
+          fit
+          defaultExpanded={visible.find((action) => !["earlier", "later"].includes(action.id))?.id}
+          items={visible.map(groupItem)}
+        />
+      ) : null}
+      {compact && overflow.length > 0 ? (
+        <>
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("More actions")}
+            tooltip={t("More actions")}
+            aria-haspopup="menu"
+            aria-expanded={!!menuAnchor}
+            className="ms-auto"
+            onClick={(event) => setMenuAnchor(event.currentTarget)}
+          >
+            <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+          </Button>
+          {menuAnchor ? (
+            <DropdownMenu
+              anchor={menuAnchor}
+              label={t("Task actions")}
+              items={[
+                ...overflowRegular.map((action) => ({
+                  kind: "item" as const,
+                  id: action.id,
+                  label: action.label,
+                  icon: action.icon,
+                  disabled: action.disabled,
+                })),
+                ...(overflowDanger.length > 0 && overflowRegular.length > 0
+                  ? [{ kind: "sep" as const }]
+                  : []),
+                ...overflowDanger.map((action) => ({
+                  kind: "item" as const,
+                  id: action.id,
+                  label: action.label,
+                  icon: action.icon,
+                  disabled: action.disabled,
+                  danger: true,
+                })),
+              ]}
+              onClose={() => setMenuAnchor(null)}
+              onPick={pickOverflow}
+            />
+          ) : null}
+        </>
+      ) : null}
+      {!compact
+        ? destructive.map((action) => (
+            <Button
+              key={action.id}
+              variant="ghost"
+              tone="danger"
+              className="ms-auto"
+              disabled={action.disabled}
+              startIcon={action.icon}
+              onClick={action.run}
+            >
+              {action.label}
+            </Button>
+          ))
+        : null}
     </div>
   );
 }
@@ -2159,9 +2278,9 @@ function formatTime(at: number | undefined): string | undefined {
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   useLocale();
   return (
-    <div className="flex min-w-0 gap-2 text-[12px] leading-snug">
-      <dt className="w-24 shrink-0 text-(--ui-text-secondary)">{label}</dt>
-      <dd className="min-w-0 flex-1 break-words text-(--ui-text-secondary)">{children}</dd>
+    <div className="flex min-w-0 gap-2 text-ui-caption">
+      <dt className="w-24 shrink-0 text-(--ui-text-muted)">{label}</dt>
+      <dd className="min-w-0 flex-1 break-words text-(--ui-tone-neutral-fg)">{children}</dd>
     </div>
   );
 }
@@ -2227,7 +2346,6 @@ function TaskDetail({
     }
   };
 
-  const { command, review } = task.verification ?? {};
   return (
     <OverlayParent.Provider value={overlayId}>
       <aside
@@ -2259,7 +2377,7 @@ function TaskDetail({
             onClick={onClose}
             className="ml-auto"
           >
-            <X className="size-3.5" />
+            <X className="icon-sm" />
           </Button>
         </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
@@ -2293,7 +2411,7 @@ function TaskDetail({
               />
               <div className="flex items-center gap-2">
                 <Button variant="primary" type="submit" disabled={!canSave}>
-                  {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+                  {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
                   {t("Save")}
                 </Button>
                 <Button
@@ -2309,7 +2427,7 @@ function TaskDetail({
           ) : (
             <>
               <div className="flex items-start gap-2">
-                <h2 className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-snug text-(--ui-tone-neutral-fg)">
+                <h2 className="min-w-0 flex-1 break-words text-ui-title font-medium text-(--ui-tone-neutral-fg)">
                   {task.title}
                 </h2>
                 {editable ? (
@@ -2320,12 +2438,15 @@ function TaskDetail({
 
                     aria-label={t("Edit title and description")}
                   >
-                    <Pencil className="size-3" />
+                    <Pencil className="icon-xs" />
                     {t("Edit")}
                   </Button>
                 ) : null}
               </div>
-              <div data-task-detail-description className="text-[13px] text-(--ui-text-secondary)">
+              <div
+                data-task-detail-description
+                className="text-ui-secondary text-(--ui-tone-neutral-fg)"
+              >
                 {description ? (
                   <AgentMarkdown
                     text={taskInstructionsMarkdown(task.prompt)}
@@ -2337,6 +2458,21 @@ function TaskDetail({
               </div>
             </>
           )}
+          {task.status === "blocked" && task.error ? (
+            <Alert tone="danger" role="alert" className="break-words">
+              {task.error}
+            </Alert>
+          ) : null}
+          {task.mergeError ? (
+            <Alert tone="danger" role="alert" className="break-words">
+              {task.mergeError}
+            </Alert>
+          ) : null}
+          {task.deliveryNote ? (
+            <p role="status" className="break-words text-ui-caption text-(--ui-tone-warning-fg)">
+              {task.deliveryNote}
+            </p>
+          ) : null}
           <TaskActions task={task} {...actions} />
           <TaskAttemptHistory
             task={task}
@@ -2354,18 +2490,13 @@ function TaskDetail({
             />
           ) : null}
           {goal ? (
-            <p className="flex min-w-0 items-center gap-1 text-[12px] text-(--ui-text-secondary)">
-              <Sparkles className="size-3 shrink-0" />
+            <p className="flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
+              <Sparkles className="icon-xs shrink-0" />
               <span className="min-w-0 truncate">
                 {t("Part of the goal “")}
                 {goal}”
               </span>
             </p>
-          ) : null}
-          {task.status === "blocked" && task.error ? (
-            <Alert tone="danger" role="alert" className="break-words">
-              {task.error}
-            </Alert>
           ) : null}
           <dl className="space-y-1.5">
             <DetailRow label={t("Project")}>{project}</DetailRow>
@@ -2375,7 +2506,7 @@ function TaskDetail({
             </DetailRow>
             <DetailRow label={t("Agent")}>
               <span className="inline-flex items-center gap-1">
-                <HarnessIcon harness={task.harness} className="size-3.5 shrink-0" />
+                <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
                 {model.name}
               </span>
             </DetailRow>
@@ -2416,7 +2547,7 @@ function TaskDetail({
             {task.completedAt ? (
               <DetailRow label={t("Completed")}>{formatTime(task.completedAt)}</DetailRow>
             ) : null}
-            <DetailRow label={t("Status")}>{taskTimeLabel(task, now)}</DetailRow>
+            <DetailRow label={t("Duration")}>{taskTimeLabel(task, now)}</DetailRow>
             {task.repairAttempts ? (
               <DetailRow label={t("Automatic correction")}>
                 {t("Attempt ")}
@@ -2425,70 +2556,18 @@ function TaskDetail({
             ) : null}
             {task.verifyCommand ? (
               <DetailRow label={t("Check command")}>
-                <code className="font-mono text-[11px]">{task.verifyCommand}</code>
+                <code className="font-mono text-ui-micro">{task.verifyCommand}</code>
               </DetailRow>
             ) : null}
           </dl>
-          {command ? (
-            <section aria-label={t("Check output")} className="space-y-1">
-              <h3 className="text-[12px] text-(--ui-text-secondary)">
-                {t("Check command")}{" "}
-                <span
-                  className={
-                    !command.timedOut && command.exitCode === 0
-                      ? "text-(--ui-tone-success-fg)"
-                      : "text-(--ui-tone-danger-fg)"
-                  }
-                >
-                  {!command.timedOut && command.exitCode === 0
-                    ? t("passed")
-                    : command.timedOut
-                      ? t("timed out")
-                      : command.exitCode === null
-                        ? t("could not run")
-                        : t("failed (exit code {p0})", { p0: command.exitCode })}
-                </span>
-              </h3>
-              <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-(--ui-surface-raised) px-2 py-1.5 font-mono text-[11px] text-(--ui-text-secondary)">
-                {command.output.trim() || "No output."}
-              </pre>
-            </section>
-          ) : null}
-          {review ? (
-            <p className="break-words text-[12px] leading-snug text-(--ui-text-secondary)">
-              {t("Reviewer")}{" "}
-              <span
-                className={
-                  review.verdict === "pass"
-                    ? "text-(--ui-tone-success-fg)"
-                    : "text-(--ui-tone-danger-fg)"
-                }
-              >
-                {review.verdict === "pass" ? t("passed") : t("failed")}
-              </span>
-              {review.note ? ` · ${review.note}` : null}
-            </p>
-          ) : null}
+          {task.verification ? <VerificationSummary verification={task.verification} /> : null}
           {task.diffStat ? (
             <pre
-              aria-label={"Diff stat"}
-              className="max-h-48 overflow-auto rounded bg-(--ui-surface-raised) px-2 py-1.5 font-mono text-[11px] leading-snug text-(--ui-text-secondary)"
+              aria-label={t("Diff stat")}
+              className="max-h-48 overflow-auto rounded bg-(--ui-surface-raised) px-2 py-1.5 font-mono text-ui-micro text-(--ui-text-secondary)"
             >
               {task.diffStat}
             </pre>
-          ) : null}
-          {task.mergeError ? (
-            <Alert tone="danger" role="alert" className="break-words">
-              {task.mergeError}
-            </Alert>
-          ) : null}
-          {task.deliveryNote ? (
-            <p
-              role="status"
-              className="break-words text-[12px] leading-snug text-(--ui-tone-warning-fg)"
-            >
-              {task.deliveryNote}
-            </p>
           ) : null}
         </div>
       </aside>
@@ -2504,9 +2583,9 @@ function VerificationSummary({ verification }: { verification: TaskVerification 
   if (!command && !review) return null;
   const passed = command && !command.timedOut && command.exitCode === 0;
   return (
-    <div className="mt-1.5 space-y-1 text-[11px] leading-snug text-(--ui-text-secondary)">
+    <div className="mt-1.5 space-y-1 text-ui-micro text-(--ui-text-secondary)">
       {command ? (
-        <details>
+        <details open={!passed || undefined}>
           <summary className="cursor-pointer select-none">
             {t("Check command")}{" "}
             <span className={passed ? "text-(--ui-tone-success-fg)" : "text-(--ui-tone-danger-fg)"}>
@@ -2519,8 +2598,8 @@ function VerificationSummary({ verification }: { verification: TaskVerification 
                     : t("failed (exit code {p0})", { p0: command.exitCode })}
             </span>
           </summary>
-          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-(--ui-surface-raised) px-1.5 py-1 font-mono text-(length:--ui-font-caption) text-(--ui-text-secondary)">
-            {command.output.trim() || "No output."}
+          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-(--ui-surface-raised) px-1.5 py-1 font-mono text-ui-caption text-(--ui-text-secondary)">
+            {command.output.trim() || t("No output.")}
           </pre>
         </details>
       ) : null}
@@ -2606,7 +2685,7 @@ function ProjectDiscoveryStatus({ state }: { state: ReturnType<typeof useTaskMac
     </span>
   ) : state.loading ? (
     <span role="status" className="inline-flex items-center gap-1.5">
-      <LoaderCircle className="size-3 animate-spin" />
+      <LoaderCircle className="icon-xs animate-spin" />
       {t("Loading projects…")}
     </span>
   ) : null;
@@ -2691,22 +2770,20 @@ function TaskForm({
           if (canSave) onSubmit("save");
         } else if (canTodo) onSubmit("todo");
       }}
-      className="shrink-0 border-b border-(--ui-tone-neutral-border) px-4 py-3"
+      className="shrink-0 px-4 py-3"
     >
       <fieldset disabled={saving} inert={saving} className="min-w-0">
-        <div className="flex flex-wrap items-start gap-4">
-          <TextField
-            hideLabel
-            label=""
-            autoFocus
-            aria-label={t("Task title")}
-            value={draft.title}
-            onChange={(event) => update("title", event.target.value)}
-            placeholder={t("What should get done?")}
-            fieldClassName="task-title-field"
-          />
-        </div>
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-(--ui-text-secondary)">
+        <TextField
+          hideLabel
+          label=""
+          autoFocus
+          aria-label={t("Task title")}
+          value={draft.title}
+          onChange={(event) => update("title", event.target.value)}
+          placeholder={t("What should get done?")}
+          fieldClassName="task-title-field"
+        />
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
           {!draft.id ? (
             <SearchableSelect
               variant="pill"
@@ -2753,7 +2830,7 @@ function TaskForm({
             />
           )}
           <ProjectDiscoveryStatus state={projectState} />
-          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
           {target && !looksLikeProject(draft.cwd) ? (
             <span>{t("Choose project")}</span>
           ) : machine ? (
@@ -2825,7 +2902,7 @@ function TaskForm({
             onClick={() => setAgentOpen((open) => !open)}
             className="mt-2"
           >
-            {agentOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+            {agentOpen ? <ChevronDown className="icon-xs" /> : <ChevronRight className="icon-xs" />}
             {t("Agent settings")}
           </Button>
         )}
@@ -2866,7 +2943,7 @@ function TaskForm({
                   onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
                 />
               ) : null}
-              <span className="ml-auto flex items-center gap-2 text-[11px] text-(--ui-text-secondary)">
+              <span className="ml-auto flex items-center gap-2 text-ui-micro text-(--ui-text-secondary)">
                 {t("Time limit")}
                 <SearchableSelect
                   variant="pill"
@@ -2879,7 +2956,7 @@ function TaskForm({
                 />
               </span>
             </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-ui-caption text-(--ui-text-secondary)">
               <label className="flex cursor-pointer items-center gap-1.5">
                 <Checkbox
                   checked={draft.review}
@@ -2914,12 +2991,12 @@ function TaskForm({
           </div>
         ) : null}
         <div className="task-form-footer">
-          <Button variant="secondary" type="button" onClick={onCancel}>
+          <Button variant="ghost" type="button" onClick={onCancel}>
             {t("Cancel")}
           </Button>
           {draft.id ? (
             <Button variant="primary" type="submit" disabled={!canSave || saving}>
-              {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+              {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
               {t("Save")}
             </Button>
           ) : (
@@ -2936,7 +3013,7 @@ function TaskForm({
                 {t(draft.crewDefinitionId ? "Start with crew" : "Add and start")}
               </Button>
               <Button variant="primary" type="submit" disabled={!canTodo || saving}>
-                {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+                {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
                 {t("Add to To do")}
               </Button>
             </>
@@ -2959,7 +3036,7 @@ function ContinueUntilDoneField({
       <Checkbox checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <span>
         <span className="block">{t("Continue until complete")}</span>
-        <span className="block text-[11px] text-(--ui-text-secondary)">
+        <span className="block text-ui-micro text-(--ui-text-secondary)">
           {t("Keeps correcting while progress is made; asks for input when needed.")}
         </span>
       </span>
@@ -3006,14 +3083,16 @@ function AutoMergeField({
 }) {
   useLocale();
   return (
-    <label className={`flex items-center gap-1.5 ${disabled ? "opacity-50" : "cursor-pointer"}`}>
+    <label
+      className={`flex items-center gap-1.5 ${disabled ? "text-(--ui-text-disabled)" : "cursor-pointer"}`}
+    >
       <Checkbox
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
       />
       {t("Merge automatically")}
-      <span className="text-[11px] text-(--ui-text-secondary)">
+      <span className="text-ui-micro text-(--ui-text-secondary)">
         {t("Merges into the base branch when every check passes")}
       </span>
     </label>
@@ -3038,7 +3117,7 @@ const SUMMARY_TIME = new Intl.DateTimeFormat(undefined, {
 });
 
 const SUMMARY_HEADING =
-  "text-[11px] font-medium uppercase tracking-wide text-(--ui-text-secondary)";
+  "text-ui-micro font-medium uppercase tracking-wide text-(--ui-text-secondary)";
 
 /** What the agents did over a period, across every machine. */
 function SummaryPanel({
@@ -3064,7 +3143,7 @@ function SummaryPanel({
         </h3>
         <ul className="flex flex-col gap-0.5">
           {items.map((item) => (
-            <li key={item.key} className="min-w-0 text-[12px] text-(--ui-text-secondary)">
+            <li key={item.key} className="min-w-0 text-ui-caption text-(--ui-text-secondary)">
               <Button
                 variant="ghost"
                 type="button"
@@ -3092,7 +3171,7 @@ function SummaryPanel({
           {goals.map((goal) => (
             <li
               key={`${goal.machineName}:${goal.title}`}
-              className="text-[12px] text-(--ui-text-secondary)"
+              className="text-ui-caption text-(--ui-text-secondary)"
             >
               <span className="font-medium text-(--ui-text-secondary)">{goal.title}</span>{" "}
               <span className="text-(--ui-text-secondary)">
@@ -3118,10 +3197,10 @@ function SummaryPanel({
   return (
     <section
       aria-label={t("Summary")}
-      className="mx-4 mt-4 flex max-h-[45%] shrink-0 flex-col gap-3 overflow-y-auto rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3"
+      className="flex max-h-[45%] shrink-0 flex-col gap-3 overflow-y-auto border-b border-(--ui-tone-neutral-border) p-3"
     >
       <div className="flex items-center gap-2">
-        <p className="min-w-0 flex-1 text-[12px] text-(--ui-text-secondary)">
+        <p className="min-w-0 flex-1 text-ui-caption text-(--ui-text-secondary)">
           {summary
             ? t("From {p0} to {p1}", {
                 p0: SUMMARY_TIME.format(summary.since),
@@ -3130,15 +3209,17 @@ function SummaryPanel({
             : t("No summary yet. One is sent every day at the time set in Settings.")}
         </p>
         <Button variant="secondary" type="button" onClick={onRefresh} disabled={busy}>
-          <RefreshCw className="size-3.5" strokeWidth={1.75} />
+          <RefreshCw className="icon-sm" strokeWidth={1.75} />
           {busy ? t("Refreshing…") : t("Refresh now")}
         </Button>
       </div>
-      {error ? <p className="text-[12px] text-(--ui-tone-danger-fg)">{error}</p> : null}
+      {error ? <p className="text-ui-caption text-(--ui-tone-danger-fg)">{error}</p> : null}
       {summary ? (
         <>
           {empty ? (
-            <p className="text-[12px] text-(--ui-text-secondary)">{t("No background activity.")}</p>
+            <p className="text-ui-caption text-(--ui-text-secondary)">
+              {t("No background activity.")}
+            </p>
           ) : null}
           {taskSection(
             "Finished",
@@ -3155,7 +3236,10 @@ function SummaryPanel({
               <h3 className={SUMMARY_HEADING}>{t("Agent time today")}</h3>
               <ul className="flex flex-col gap-0.5">
                 {summary.usage.map((entry) => (
-                  <li key={entry.machineName} className="text-[12px] text-(--ui-text-secondary)">
+                  <li
+                    key={entry.machineName}
+                    className="text-ui-caption text-(--ui-text-secondary)"
+                  >
                     <span className="font-medium text-(--ui-text-secondary)">
                       {entry.machineName}
                     </span>{" "}
@@ -3169,7 +3253,7 @@ function SummaryPanel({
             </section>
           ) : null}
           {summary.unreachable.length || summary.outdated.length ? (
-            <p className="text-[12px] text-(--ui-text-secondary)">
+            <p className="text-ui-caption text-(--ui-text-secondary)">
               {t("Not included:")}{" "}
               {[
                 ...summary.unreachable.map((name) => `${name} (not reachable)`),
@@ -3234,7 +3318,7 @@ function CustomDailyLimit({
       <Button variant="secondary" type="submit" disabled={!valid || saving}>
         {t("Save")}
       </Button>
-      <span className="text-[11px] text-(--ui-text-secondary)">{t("0 = no limit")}</span>
+      <span className="text-ui-micro text-(--ui-text-secondary)">{t("0 = no limit")}</span>
     </form>
   );
 }
@@ -3251,7 +3335,7 @@ function MachineConcurrency({
   const limit = limits.find((entry) => entry.machineId === machineId);
   if (!limit) return null;
   return (
-    <label className="flex flex-wrap items-center gap-2 text-[12px]">
+    <label className="flex flex-wrap items-center gap-2 text-ui-caption">
       {t("Machine task limit")}
       <SearchableSelect
         label={t("Machine task limit")}
@@ -3287,12 +3371,12 @@ function LimitsPanel({
   return (
     <ul
       aria-label={t("Work limits")}
-      className="mx-4 mt-4 flex shrink-0 flex-col gap-2 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3"
+      className="flex shrink-0 flex-col gap-2 border-b border-(--ui-tone-neutral-border) p-3"
     >
       {limits.map((entry) => (
         <li
           key={entry.machineId}
-          className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)"
+          className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-ui-caption text-(--ui-text-secondary)"
         >
           <span className="min-w-24 font-medium text-(--ui-text-secondary)">
             {entry.machineName}
@@ -3379,33 +3463,44 @@ function GoalCard({
       className="rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2"
     >
       <div className="flex min-w-0 items-center gap-2">
-        <Sparkles className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
+        <Sparkles className="icon-sm shrink-0 text-(--ui-text-secondary)" />
         <h3
           title={goal.prompt}
-          className="min-w-0 truncate text-[13px] font-semibold text-(--ui-tone-neutral-fg)"
+          className="min-w-0 truncate text-ui-secondary font-medium text-(--ui-tone-neutral-fg)"
         >
           {goal.title}
         </h3>
         <Badge tone={GOAL_STATUS_TONES[goal.status]} className="shrink-0">
           {goal.status === "planning" ? (
-            <LoaderCircle className="mr-1 size-3 animate-spin" />
+            <LoaderCircle className="mr-1 icon-xs animate-spin" />
           ) : null}
           {t(GOAL_STATUS_LABELS[goal.status])}
         </Badge>
         {progress.total > 0 ? (
-          <span className="shrink-0 tabular-nums text-[11px] text-(--ui-text-secondary)">
-            {progress.done}/{progress.total}
-            {t(" done")}
+          <span className="flex shrink-0 items-center gap-1.5 tabular-nums text-ui-micro text-(--ui-text-secondary)">
+            <span className="w-14">
+              <Progress
+                compact
+                value={progress.done}
+                max={progress.total}
+                label={t("Goal progress")}
+                tone={goal.status === "blocked" ? "danger" : "neutral"}
+              />
+            </span>
+            <span>
+              {progress.done}/{progress.total}
+              {t(" done")}
+            </span>
           </span>
         ) : null}
-        <span className="min-w-0 truncate text-[11px] text-(--ui-text-secondary)">
+        <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
           {goal.projects.map((project) => project.name).join(", ")}
           {t(" · on")} {goal.machineName}
           {goal.stale ? t(" (offline, last known)") : ""}
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {busy ? (
-            <LoaderCircle className="mx-1.5 size-3 animate-spin text-(--ui-text-secondary)" />
+            <LoaderCircle className="mx-1.5 icon-xs animate-spin text-(--ui-text-secondary)" />
           ) : null}
           {goal.status !== "done" && goal.status !== "cancelled" ? (
             <Button
@@ -3420,12 +3515,12 @@ function GoalCard({
               }
               onClick={onEdit}
             >
-              <Pencil className="size-3" />
+              <Pencil className="icon-xs" />
             </Button>
           ) : null}
           {goal.status === "awaiting-approval" ? (
             <Button variant="ghost" disabled={busy} onClick={onApprove}>
-              <Check className="size-3" />
+              <Check className="icon-xs" />
               {t("Approve")}
             </Button>
           ) : null}
@@ -3436,19 +3531,19 @@ function GoalCard({
               disabled={busy}
               onClick={() => setReplanning((open) => !open)}
             >
-              <RotateCcw className="size-3" />
+              <RotateCcw className="icon-xs" />
               {t("Replan")}
             </Button>
           ) : null}
           {onOpenPlanner ? (
             <Button variant="ghost" disabled={false} onClick={onOpenPlanner}>
-              <MessageSquare className="size-3" />
+              <MessageSquare className="icon-xs" />
               {t("Open planner")}
             </Button>
           ) : null}
           {goal.taskIds.length > 0 ? (
             <Button variant="ghost" disabled={false} onClick={onSessions}>
-              <MessageSquare className="size-3" />
+              <MessageSquare className="icon-xs" />
               {t("Task sessions")}
             </Button>
           ) : null}
@@ -3462,7 +3557,7 @@ function GoalCard({
             disabled={busy}
             onClick={() => setMenuOpen((open) => !open)}
           >
-            <MoreHorizontal className="size-3.5" />
+            <MoreHorizontal className="icon-sm" />
           </Button>
           {menuOpen ? (
             <DropdownMenu
@@ -3478,7 +3573,7 @@ function GoalCard({
                         id: "cancel",
                         label: t("Cancel"),
                         disabled: busy,
-                        icon: <Square className="size-3" />,
+                        icon: <Square className="icon-xs" />,
                       },
                     ]),
                 ...(goal.status === "planning" || goal.status === "running"
@@ -3490,7 +3585,7 @@ function GoalCard({
                         label: t("Delete"),
                         disabled: busy,
                         danger: true,
-                        icon: <Trash2 className="size-3" />,
+                        icon: <Trash2 className="icon-xs" />,
                       },
                     ]),
               ]}
@@ -3504,7 +3599,7 @@ function GoalCard({
         </div>
       </div>
       {goal.status === "blocked" && reason ? (
-        <p className="mt-1 break-words text-[11px] leading-snug text-(--ui-tone-danger-fg)">
+        <p className="mt-1 break-words text-ui-micro leading-snug text-(--ui-tone-danger-fg)">
           {reason}
         </p>
       ) : null}
@@ -3514,15 +3609,15 @@ function GoalCard({
             <li
               key={task.key}
               title={task.prompt}
-              className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-[12px] leading-snug"
+              className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-ui-caption leading-snug"
             >
               <span className="text-(--ui-text-secondary)">{task.title}</span>
-              <span className="text-[11px] text-(--ui-text-secondary)">
+              <span className="text-ui-micro text-(--ui-text-secondary)">
                 {t("in ")}
                 {projectOf(task.projectId, task.project)}
               </span>
               {task.dependsOn.length ? (
-                <span className="text-[11px] text-(--ui-text-secondary)">
+                <span className="text-ui-micro text-(--ui-text-secondary)">
                   {t("· after ")}
                   {task.dependsOn.map(titleOf).join(", ")}
                 </span>
@@ -3654,7 +3749,7 @@ function GoalSettingsForm({
         ) : null}
       </fieldset>
       {error ? (
-        <Alert tone="danger" role="alert" className="">
+        <Alert tone="danger" role="alert">
           {t(error)}
         </Alert>
       ) : null}
@@ -3759,12 +3854,12 @@ function GoalForm({
               {t("Cancel")}
             </Button>
             <Button variant="primary" type="submit" disabled={!valid || saving}>
-              {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+              {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
               {t("Plan it")}
             </Button>
           </div>
         </div>
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-[12px] text-(--ui-text-secondary)">
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
           <SearchableSelect
             variant="pill"
             label={t("Machine")}
@@ -3778,17 +3873,17 @@ function GoalForm({
               onChange({ ...draft, machineId, cwds: [], leadCwd: "", workspaces: undefined })
             }
           />
-          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
           <span className="shrink-0">{t("Projects")}</span>
           {draft.cwds.map((cwd) => (
             <span
               key={cwd}
               data-goal-project={cwd}
-              className="inline-flex h-6 max-w-[220px] items-center gap-1 rounded-full border border-(--ui-tone-neutral-border) pl-2 pr-1 text-[12px] text-(--ui-text-secondary)"
+              className="inline-flex h-6 max-w-[220px] items-center gap-1 rounded-full border border-(--ui-tone-neutral-border) pl-2 pr-1 text-ui-caption text-(--ui-text-secondary)"
             >
               <span className="min-w-0 truncate">{projectDisplayName(cwd)}</span>
               {cwd === lead ? (
-                <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
                   {t("lead")}
                 </span>
               ) : null}
@@ -3801,7 +3896,7 @@ function GoalForm({
                 onClick={() => onChange(toggleGoalProject(draft, cwd))}
                 className="shrink-0"
               >
-                <X className="size-3" />
+                <X className="icon-xs" />
               </Button>
             </span>
           ))}
@@ -3822,7 +3917,7 @@ function GoalForm({
           <ProjectDiscoveryStatus state={projectState} />
           {draft.cwds.length > 1 ? (
             <span className="flex items-center gap-1.5">
-              <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+              <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
               {t("Lead")}
               <SearchableSelect
                 variant="pill"
@@ -3837,7 +3932,7 @@ function GoalForm({
               />
             </span>
           ) : null}
-          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
           {machine ? (
             <span className="truncate">
               {t("Runs on ")}
@@ -3880,7 +3975,7 @@ function GoalForm({
                 onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
               />
             ) : null}
-            <span className="ml-auto flex items-center gap-2 text-[11px] text-(--ui-text-secondary)">
+            <span className="ml-auto flex items-center gap-2 text-ui-micro text-(--ui-text-secondary)">
               {t("Time limit")}
               <SearchableSelect
                 variant="pill"
@@ -3894,7 +3989,7 @@ function GoalForm({
             </span>
           </div>
         </div>
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-ui-caption text-(--ui-text-secondary)">
           <label
             title={t("The planned tasks are created only once you approve the plan.")}
             className="flex cursor-pointer items-center gap-1.5"
@@ -3926,7 +4021,7 @@ function GoalForm({
             checked={draft.continueUntilDone}
             onChange={(checked) => update("continueUntilDone", checked)}
           />
-          <span className="text-[11px] text-(--ui-text-secondary)">
+          <span className="text-ui-micro text-(--ui-text-secondary)">
             {draft.isolate === false
               ? t(
                   "Tasks work directly in the selected checkout. You review and commit the changes.",
@@ -3936,7 +4031,7 @@ function GoalForm({
                 : t("Each task runs on its own branch and waits for you to merge it.")}
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-3 text-[12px]">
+        <div className="flex flex-wrap items-center gap-3 text-ui-caption">
           <label>
             {t("Start planned tasks")}
             <SearchableSelect
@@ -3970,7 +4065,7 @@ function GoalForm({
         </div>
         {draft.cwds.map((cwd) => (
           <div key={cwd}>
-            <p className="font-medium text-[12px]">{projectDisplayName(cwd)}</p>
+            <p className="font-medium text-ui-caption">{projectDisplayName(cwd)}</p>
             <TaskWorkspacePicker
               machine={target}
               cwd={cwd}
@@ -4078,13 +4173,13 @@ function StewardsPanel({
       className="flex max-h-[45%] shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-(--ui-tone-neutral-border) p-3"
     >
       <div className="flex items-center gap-2">
-        <p className="min-w-0 flex-1 text-[12px] text-(--ui-text-secondary)">
+        <p className="min-w-0 flex-1 text-ui-caption text-(--ui-text-secondary)">
           {t(
             "A steward reads its project on a schedule and suggests the next work as To do items. Nothing runs until you start it.",
           )}
         </p>
         <Button variant="secondary" type="button" onClick={onAdd} disabled={draft != null}>
-          <Plus className="size-3.5" strokeWidth={1.75} />
+          <Plus className="icon-sm" strokeWidth={1.75} />
           {t("Add steward")}
         </Button>
       </div>
@@ -4111,14 +4206,14 @@ function StewardsPanel({
                 className="rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2"
               >
                 <div className="flex min-w-0 items-center gap-2">
-                  <Bot className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
+                  <Bot className="icon-sm shrink-0 text-(--ui-text-secondary)" />
                   <h3
                     title={steward.focus || undefined}
-                    className="min-w-0 truncate text-[13px] font-semibold text-(--ui-tone-neutral-fg)"
+                    className="min-w-0 truncate text-ui-secondary font-medium text-(--ui-tone-neutral-fg)"
                   >
                     {stewardProjectName(steward)}
                   </h3>
-                  <span className="min-w-0 truncate text-[11px] text-(--ui-text-secondary)">
+                  <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
                     {t("on ")}
                     {steward.machineName}
                     {steward.stale ? t(" (offline, last known)") : ""} ·{" "}
@@ -4126,28 +4221,29 @@ function StewardsPanel({
                   </span>
                   <div className="ml-auto flex shrink-0 items-center gap-0.5">
                     {busy ? (
-                      <LoaderCircle className="mx-1.5 size-3 animate-spin text-(--ui-text-secondary)" />
+                      <LoaderCircle className="mx-1.5 icon-xs animate-spin text-(--ui-text-secondary)" />
                     ) : null}
-                    <label className="flex cursor-pointer items-center gap-1.5 px-1.5 text-[11px] text-(--ui-text-secondary)">
-                      <Checkbox
+                    <span className="flex items-center gap-1.5 px-1.5 text-ui-micro text-(--ui-text-secondary)">
+                      <Switch
                         aria-label={t("Enabled")}
+                        title={t("Enabled")}
                         checked={steward.enabled}
                         disabled={busy}
-                        onChange={() => onToggle(steward)}
+                        onCheckedChange={() => onToggle(steward)}
                       />
                       {t("Enabled")}
-                    </label>
+                    </span>
                     <Button
                       variant="ghost"
 
                       disabled={busy || running}
                       onClick={() => onRunNow(steward)}
                     >
-                      <Play className="size-3" />
+                      <Play className="icon-xs" />
                       {t("Run now")}
                     </Button>
                     <Button variant="ghost" disabled={busy} onClick={() => onEdit(steward)}>
-                      <Pencil className="size-3" />
+                      <Pencil className="icon-xs" />
                       {t("Edit")}
                     </Button>
                     <Button
@@ -4164,15 +4260,27 @@ function StewardsPanel({
                         })
                       }
                     >
-                      <MoreHorizontal className="size-3.5" />
+                      <MoreHorizontal className="icon-sm" />
                     </Button>
                   </div>
                 </div>
-                <p className="mt-1 break-words text-[11px] leading-snug text-(--ui-text-secondary)">
+                <p className="mt-1 flex min-w-0 flex-wrap items-center gap-1 break-words text-ui-micro leading-snug text-(--ui-text-secondary)">
                   {steward.lastRunStatus ? (
                     <>
                       {t("Last run: ")}
-                      {STEWARD_STATUS_LABELS[steward.lastRunStatus]}
+                      <Badge
+                        tone={
+                          steward.lastRunStatus === "failed"
+                            ? "danger"
+                            : steward.lastRunStatus === "succeeded"
+                              ? "success"
+                              : steward.lastRunStatus === "running"
+                                ? "info"
+                                : "neutral"
+                        }
+                      >
+                        {t(STEWARD_STATUS_LABELS[steward.lastRunStatus])}
+                      </Badge>
                       {steward.lastRunAt
                         ? t(" {p0} ago", { p0: formatTaskSpan(now - steward.lastRunAt) })
                         : ""}
@@ -4193,7 +4301,7 @@ function StewardsPanel({
                 {steward.lastRunError &&
                 (steward.lastRunStatus === "failed" || steward.lastRunStatus === "skipped") ? (
                   <p
-                    className={`mt-0.5 break-words text-[11px] leading-snug ${
+                    className={`mt-0.5 break-words text-ui-micro leading-snug ${
                       steward.lastRunStatus === "failed"
                         ? "text-(--ui-tone-danger-fg)"
                         : "text-(--ui-text-secondary)"
@@ -4223,7 +4331,7 @@ function StewardsPanel({
               label: t("Delete"),
               danger: true,
               disabled: menuBusy,
-              icon: <Trash2 className="size-3" />,
+              icon: <Trash2 className="icon-xs" />,
             },
           ]}
           onClose={() => setMenu(null)}
@@ -4292,7 +4400,7 @@ function StewardForm({
       className="rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 py-2"
     >
       <fieldset disabled={saving} inert={saving} className="min-w-0">
-        <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-(--ui-text-secondary)">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
           {draft.id ? (
             // A steward stays with the project it was created for.
             <span className="truncate">{projectDisplayName(draft.cwd)}</span>
@@ -4303,7 +4411,7 @@ function StewardForm({
               onSelectProject={(cwd) => update("cwd", cwd)}
             />
           )}
-          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
           {machine ? (
             <span className="truncate">
               {t("Runs on ")}
@@ -4319,7 +4427,7 @@ function StewardForm({
               {t("Cancel")}
             </Button>
             <Button variant="primary" type="submit" disabled={!valid || saving}>
-              {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+              {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
               {t("Save")}
             </Button>
           </div>
@@ -4337,7 +4445,7 @@ function StewardForm({
           fieldClassName="mt-2 block w-full"
           className="resize-y"
         />
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-(--ui-text-secondary)">
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-ui-caption text-(--ui-text-secondary)">
           <span className="shrink-0">{t("Look")}</span>
           <SearchableSelect
             variant="pill"
@@ -4374,7 +4482,7 @@ function StewardForm({
               }}
             />
           )}
-          <span className="text-[11px] text-(--ui-text-secondary)">
+          <span className="text-ui-micro text-(--ui-text-secondary)">
             {automationScheduleLabel(scheduleOf(draft))}
           </span>
         </div>
@@ -4394,7 +4502,7 @@ function StewardForm({
             />
           ) : null}
         </div>
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-ui-caption text-(--ui-text-secondary)">
           {number(
             "Max suggestions per run",
             draft.maxProposals,
@@ -4414,7 +4522,7 @@ function StewardForm({
             onChange={(checked) => update("autoMerge", checked)}
           />
           {draft.autoStart ? (
-            <span role="status" className="text-[11px] text-(--ui-tone-warning-fg)">
+            <span role="status" className="text-ui-micro text-(--ui-tone-warning-fg)">
               {t("Suggestions will run without you reviewing the idea first.")}
               {draft.autoMerge ? "" : t(" Each still waits for your review before it is merged.")}
             </span>

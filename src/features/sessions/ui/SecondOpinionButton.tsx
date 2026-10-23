@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import type { ExpandingButtonGroupTriggerProps } from "../../../shared/ui/ExpandingButtonGroup";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import {
   Check,
   ChevronDown,
@@ -64,6 +64,7 @@ type Props = {
   excludeFromModel?: boolean;
   disabled?: boolean;
   triggerClassName?: string;
+  triggerVariant?: "ghost" | "secondary";
   renderTrigger?: (props: ExpandingButtonGroupTriggerProps) => ReactNode;
 };
 
@@ -81,7 +82,7 @@ export function HandoffButton({
   onPick,
   renderTrigger,
 }: Pick<Props, "from" | "onPick" | "renderTrigger">) {
-  useLocale();
+  const t = useT();
   return (
     <SecondOpinionButton
       from={from}
@@ -109,7 +110,7 @@ export function BuildTargetButton({
   disabled?: boolean;
   onPick: (target: ModelTarget) => void;
 }) {
-  useLocale();
+  const t = useT();
   return (
     <SecondOpinionButton
       from={from}
@@ -123,7 +124,7 @@ export function BuildTargetButton({
       menuLabel="Build this plan with another model or provider"
       includeCurrent
       disabled={disabled}
-      triggerClassName="flex h-6 w-6 shrink-0 items-center justify-center rounded-r-md border-l border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid) text-(--ui-tone-neutral-on-solid) hover:bg-(--ui-surface-raised) disabled:pointer-events-none disabled:opacity-40"
+      triggerVariant="secondary"
     />
   );
 }
@@ -142,9 +143,10 @@ export function SecondOpinionButton({
   excludeFromModel = false,
   disabled: disabledByCaller = false,
   triggerClassName,
+  triggerVariant = "ghost",
   renderTrigger,
 }: Props) {
-  useLocale();
+  const t = useT();
   const availabilityVersion = useSyncExternalStore(
     subscribeHarnessAvailability,
     getHarnessAvailabilitySnapshot,
@@ -386,7 +388,7 @@ export function SecondOpinionButton({
           className={triggerClassName}
           iconOnly
           label={label}
-          variant="ghost"
+          variant={triggerVariant}
           ref={setButton}
           type="button"
           title={label}
@@ -421,13 +423,13 @@ export function SecondOpinionButton({
             className="p-1 font-sans"
           >
             <div className="px-1.5 pb-2 pt-1.5">
-              <p className="text-[11px] leading-3 text-(--ui-text-secondary) text-balance">
+              <p className="text-ui-micro leading-3 text-(--ui-text-secondary) text-balance">
                 {description}
               </p>
             </div>
-            <div className="mx-1 mb-1 h-px bg-(--ui-surface-raised)" />
+            <div className="mx-1 mb-1 h-px bg-(--color-stroke)" />
             {targets.length === 0 ? (
-              <div className="px-2.5 py-2 text-[12px] leading-4 text-(--ui-text-secondary)">
+              <div className="px-2.5 py-2 text-ui-caption leading-4 text-(--ui-text-secondary)">
                 {disabledTitle}
               </div>
             ) : (

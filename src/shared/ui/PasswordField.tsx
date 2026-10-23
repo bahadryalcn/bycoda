@@ -1,5 +1,5 @@
 import { useId, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 import { Button } from "./Button";
 import { Eye, EyeOff } from "./icons";
 import { TextField, type TextFieldProps } from "./TextField";
@@ -12,7 +12,7 @@ export type PasswordFieldProps = Omit<TextFieldProps, "type" | "clearable" | "en
  * The input remains the value owner; sensitive text is never copied into state.
  */
 export function PasswordField({ ref, id, messages, disabled, ...props }: PasswordFieldProps) {
-  useLocale();
+  const t = useT();
   const generatedId = useId();
   const controlId = id ?? generatedId;
   const input = useRef<HTMLInputElement>(null);

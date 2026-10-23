@@ -18,13 +18,9 @@
   display: none;
 }
 
-.connections-settings .external-tunnels-panel {
-  background: var(--ui-surface);
-}
-
 .connection-details {
   margin-block-start: 0.5rem;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   color: var(--ui-text-muted);
   overflow-wrap: anywhere;
 }
@@ -43,7 +39,7 @@
   align-items: center;
   gap: 0.25rem 0.5rem;
   margin-block-start: 0.25rem;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 
 .connection-sync-error {
@@ -66,7 +62,7 @@
 .connection-disclosure {
   border-block-start: 1px solid var(--color-stroke);
   padding-block-start: 1rem;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   color: var(--ui-text-muted);
 }
 
@@ -104,7 +100,7 @@
   flex-direction: column;
   gap: 0.5rem;
   text-align: center;
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   line-height: 1.5;
 }
 

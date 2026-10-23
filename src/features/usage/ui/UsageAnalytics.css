@@ -8,7 +8,7 @@
   display: none;
 }
 .usage-analytics h3 {
-  font-size: var(--text-sm);
+  font-size: var(--text-ui-body);
   font-weight: 500;
   color: var(--color-content);
 }
@@ -34,7 +34,7 @@
 .usage-section-heading > span,
 .usage-pagination {
   color: var(--ui-text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
 }
 .usage-analytics-actions {
   max-inline-size: 100%;
@@ -76,13 +76,13 @@
 }
 .usage-metrics small {
   color: var(--ui-text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
 }
 .usage-facts {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 24px;
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
   color: var(--ui-text-secondary);
 }
 .usage-facts b {
@@ -104,7 +104,7 @@
 .usage-panel details,
 .usage-display-preferences {
   margin-block-start: 12px;
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
   color: var(--ui-text-secondary);
 }
 .usage-panel summary,
@@ -152,7 +152,7 @@
   text-overflow: ellipsis;
 }
 .usage-contribution > span {
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
   color: var(--color-content);
   font-variant-numeric: tabular-nums;
 }
@@ -216,7 +216,7 @@
 .usage-week-row > [role="columnheader"] {
   display: grid;
   gap: 4px;
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
   text-align: center;
   color: var(--ui-text-secondary);
   padding-block-end: 8px;
@@ -227,7 +227,7 @@
 }
 .usage-week-row > [role="rowheader"] {
   align-self: center;
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
   color: var(--ui-text-secondary);
   font-variant-numeric: tabular-nums;
 }
@@ -255,7 +255,7 @@
   color: var(--color-on-solid);
 }
 .usage-week-grid .usage-hour-cell > span {
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
   font-variant-numeric: tabular-nums;
 }
 .usage-heat-legend {
@@ -265,7 +265,7 @@
   gap: 4px;
   margin-block-start: 12px;
   color: var(--ui-text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
 }
 .usage-heat-legend > i {
   inline-size: 12px;
@@ -311,7 +311,7 @@
 .usage-quota-zero {
   position: absolute;
   inset-inline-end: calc(100% + 8px);
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
   color: var(--ui-text-secondary);
 }
 .usage-quota-max {
@@ -322,7 +322,7 @@
 }
 .usage-empty {
   padding-block: 12px;
-  font-size: var(--text-sm);
+  font-size: var(--text-ui-body);
   color: var(--ui-text-secondary);
 }
 @container (max-width: 900px) {

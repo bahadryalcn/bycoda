@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { memo, useEffect, useRef, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { Shimmer } from "../../../shared/ui/Shimmer";
@@ -158,7 +158,7 @@ function DockBody({
   onOpenAgent: (agent: DockAgent) => void;
   stop: DockStop;
 }) {
-  useLocale();
+  const t = useT();
   const [expanded, setExpandedState] = useState(() => expandedBySession.get(sessionId) ?? false);
   const lockList = useLockOverscroll<HTMLDivElement>();
   const setExpanded = (next: boolean) => {
@@ -320,7 +320,7 @@ function DockAgentRow({
   onOpen: (agent: DockAgent) => void;
   stop: DockStop;
 }) {
-  useLocale();
+  const t = useT();
   const summary = [agent.name, agent.model, agent.detail, agent.status].filter(Boolean).join(", ");
   const key = agent.callId ?? agent.blockId;
   const stoppable = canStopAgent(agent, stop.perItem);

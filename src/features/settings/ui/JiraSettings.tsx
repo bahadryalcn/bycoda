@@ -1,9 +1,9 @@
-import { SettingsFeedback } from "./settingsControls";
-import { Checkbox } from "../../../shared/ui/Checkbox";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { SettingsFeedback, Toggle } from "./settingsControls";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { Row } from "./settingsControls";
 import { InboxConnectionStatus, InboxConnectionError } from "./InboxConnectionStatus";
 import { TextField } from "../../../shared/ui/TextField";
@@ -47,7 +47,6 @@ export function JiraSettings() {
   const [allowedBoardIds, setAllowedBoardIds] = useState(loadAllowedJiraBoardIds);
   const [backgroundSync, setBackgroundSync] = useState(jiraBackgroundSyncEnabled);
   const [boards, setBoards] = useState<JiraBoard[]>([]);
-  const [projectSearch, setProjectSearch] = useState("");
   const [boardsError, setBoardsError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -156,10 +155,21 @@ export function JiraSettings() {
     }
   };
 
-  const query = projectSearch.trim().toLocaleLowerCase();
-  const filteredProjects = projects.filter((project) =>
-    `${project.name} ${project.key}`.toLocaleLowerCase().includes(query),
-  );
+  const setVisibleProjects = (visible: string[]) => {
+    const known = new Set(projects.map((project) => project.id));
+    clearInboxCache();
+    saveHiddenJiraProjectIds([
+      ...hiddenIds.filter((id) => !known.has(id)),
+      ...projects.filter((project) => !visible.includes(project.id)).map((project) => project.id),
+    ]);
+  };
+  const setAllowedBoards = (selected: string[]) => {
+    const known = new Set(boards.map((board) => board.id));
+    saveAllowedJiraBoardIds([
+      ...allowedBoardIds.filter((id) => !known.has(id)),
+      ...boards.filter((board) => selected.includes(String(board.id))).map((board) => board.id),
+    ]);
+  };
 
   return (
     <>
@@ -179,18 +189,20 @@ export function JiraSettings() {
       >
         <div className="w-full min-w-0">
           {checking ? (
-            <p className="text-[12px] text-content/45">{t("Checking Jira connection…")}</p>
+            <p className="text-ui-caption text-(--ui-text-muted)">
+              {t("Checking Jira connection…")}
+            </p>
           ) : status?.connected ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0 text-[12px] text-content/65">
+              <div className="min-w-0 text-ui-caption text-(--ui-text-secondary)">
                 <p className="break-all">{status.site}</p>
                 <p className="flex min-w-0">
                   <PrivateEmail key={status.email} email={status.email} />
                 </p>
               </div>
-              <SecondaryButton onClick={() => void disconnect()} disabled={busy}>
+              <Button className="shrink-0" onClick={() => void disconnect()} disabled={busy}>
                 {busy ? t("Disconnecting") : t("Disconnect")}
-              </SecondaryButton>
+              </Button>
             </div>
           ) : (
             <form
@@ -252,7 +264,8 @@ export function JiraSettings() {
                 />
               ))}
               <div className="flex items-center gap-3">
-                <SecondaryButton
+                <Button
+                  className="shrink-0"
                   type="submit"
                   disabled={busy || !site.trim() || !email.trim() || !token.trim()}
                 >
@@ -261,7 +274,7 @@ export function JiraSettings() {
                     : error
                       ? t("Retry save and test")
                       : t("Save and test connection")}
-                </SecondaryButton>
+                </Button>
                 <Button
                   variant="link"
                   type="button"
@@ -284,113 +297,111 @@ export function JiraSettings() {
           <div className="inbox-scope">
             <section aria-label={t("Projects")}>
               <div className="inbox-scope-heading">
-                <span className="text-[13px] font-medium text-content">{t("Projects")}</span>
-                <SecondaryButton
+                <span className="inline-flex items-center gap-1 text-ui-secondary font-medium text-content">
+                  {t("Projects")}
+                  <InfoPopover className="shrink-0">
+                    <p>{t("Unchecked projects stay out of the inbox.")}</p>
+                  </InfoPopover>
+                </span>
+                <Button
+                  className="shrink-0"
                   disabled={busy || checking || projectsLoading}
                   onClick={() => void loadProjects()}
                 >
                   {projectsLoading ? t("Loading…") : t("Refresh projects")}
-                </SecondaryButton>
+                </Button>
               </div>
-              <p className="text-[12px] text-content/45">
-                {t("Unchecked projects stay out of the inbox.")}
-              </p>
               <InboxConnectionError error={projectsError} />
-              <TextField
-                type="search"
-                label={t("Search projects")}
-                hideLabel
-                aria-label={t("Search projects")}
-                placeholder={t("Search projects")}
-                value={projectSearch}
-                onChange={(event) => setProjectSearch(event.target.value)}
+              <SearchableSelect
+                multiple
+                label={t("Projects")}
+                options={projects.map((project) => ({
+                  value: project.id,
+                  label: `${project.name} · ${project.key}`,
+                  keywords: project.key,
+                }))}
+                value={projects
+                  .filter((project) => !hiddenIds.includes(project.id))
+                  .map((project) => project.id)}
+                onChange={setVisibleProjects}
+                disabled={busy}
+                placeholder={t("{p0} of {p1} projects selected", { p0: 0, p1: projects.length })}
+                searchPlaceholder={t("Search projects")}
+                emptyLabel={t("No matching projects")}
+                selectionLabels={{
+                  summary: (count) =>
+                    t("{p0} of {p1} projects selected", { p0: count, p1: projects.length }),
+                }}
               />
-              <div className="inbox-scope-help" role="status" aria-live="polite">
-                {t("{p0} of {p1} projects selected", {
-                  p0: projects.filter((project) => !hiddenIds.includes(project.id)).length,
-                  p1: projects.length,
-                })}
-              </div>
-              <div className="inbox-scope-list">
-                {filteredProjects.map((project) => (
-                  <label key={project.id} className="inbox-scope-option">
-                    <Checkbox
-                      checked={!hiddenIds.includes(project.id)}
-                      disabled={busy}
-                      onChange={() => {
-                        const next = hiddenIds.includes(project.id)
-                          ? hiddenIds.filter((id) => id !== project.id)
-                          : [...hiddenIds, project.id];
-                        clearInboxCache();
-                        saveHiddenJiraProjectIds(next);
-                      }}
-                    />
-                    {project.name} <span className="inbox-scope-key">{project.key}</span>
-                  </label>
-                ))}
-              </div>
-              {filteredProjects.length === 0 && !projectsError && !projectsLoading ? (
+              {projects.length === 0 && !projectsError && !projectsLoading ? (
                 <p className="inbox-scope-help">
-                  {query
-                    ? t("No matching projects")
-                    : t("No projects available. Refresh projects to try again.")}
+                  {t("No projects available. Refresh projects to try again.")}
                 </p>
               ) : null}
             </section>
             <section aria-label={t("Boards")}>
               <div className="inbox-scope-heading">
-                <span>{t("Boards")}</span>
-                <SecondaryButton
+                <span className="inline-flex items-center gap-1 text-ui-secondary font-medium text-content">
+                  {t("Boards")}
+                  <InfoPopover className="shrink-0">
+                    <p>{t("Only checked boards from selected projects appear in the inbox.")}</p>
+                  </InfoPopover>
+                </span>
+                <Button
+                  className="shrink-0"
                   disabled={busy || checking || boardsLoading}
                   onClick={() => setBoardsRevision((value) => value + 1)}
                 >
                   {boardsLoading ? t("Loading…") : boardsError ? t("Retry") : t("Refresh boards")}
-                </SecondaryButton>
+                </Button>
               </div>
-              <p className="text-[12px] text-content/45">
-                {t("Only checked boards from selected projects appear in the inbox.")}
-              </p>
               {boardsError ? (
                 <SettingsFeedback state="error">{boardsError}</SettingsFeedback>
               ) : null}
-              {boards.map((board) => (
-                <label key={board.id} className="inbox-scope-option">
-                  <Checkbox
-                    checked={allowedBoardIds.includes(board.id)}
-                    disabled={busy}
-                    onChange={() =>
-                      saveAllowedJiraBoardIds(
-                        allowedBoardIds.includes(board.id)
-                          ? allowedBoardIds.filter((id) => id !== board.id)
-                          : [...allowedBoardIds, board.id],
-                      )
-                    }
-                  />
-                  {board.name} · {board.kind}
-                </label>
-              ))}
+              {boards.length > 0 ? (
+                <SearchableSelect
+                  multiple
+                  label={t("Boards")}
+                  options={boards.map((board) => ({
+                    value: String(board.id),
+                    label: `${board.name} · ${board.kind}`,
+                  }))}
+                  value={boards
+                    .filter((board) => allowedBoardIds.includes(board.id))
+                    .map((board) => String(board.id))}
+                  onChange={setAllowedBoards}
+                  disabled={busy}
+                  placeholder={t("{p0} of {p1} boards selected", { p0: 0, p1: boards.length })}
+                  searchPlaceholder={t("Search boards")}
+                  selectionLabels={{
+                    summary: (count) =>
+                      t("{p0} of {p1} boards selected", { p0: count, p1: boards.length }),
+                  }}
+                />
+              ) : null}
               {boards.length === 0 && !boardsError && !boardsLoading ? (
                 <p className="inbox-scope-help">
                   {t("No boards available. Select projects and refresh boards.")}
                 </p>
               ) : null}
             </section>
-            <section>
-              <label className="inbox-scope-option">
-                <Checkbox
-                  checked={backgroundSync}
-                  disabled={busy}
-                  onChange={(event) => saveJiraBackgroundSync(event.target.checked)}
-                />
-                {t("Automatically refresh Jira in the background")}
-              </label>
-              <p className="text-[12px] text-content/45">
-                {t(
-                  "Off by default. Jira loads when opened or refreshed manually. Background notifications and Jira triggers require this option.",
-                )}
-              </p>
-            </section>
           </div>
+        </Row>
+      ) : null}
+      {status?.connected ? (
+        <Row
+          label={t("Automatically refresh Jira in the background")}
+          description={t(
+            "Off by default. Jira loads when opened or refreshed manually. Background notifications and Jira triggers require this option.",
+          )}
+          persistence={{ mode: "automatic" }}
+        >
+          <Toggle
+            label={t("Automatically refresh Jira in the background")}
+            on={backgroundSync}
+            disabled={busy}
+            onChange={saveJiraBackgroundSync}
+          />
         </Row>
       ) : null}
     </>

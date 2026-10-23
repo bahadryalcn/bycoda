@@ -180,7 +180,7 @@ export function GitGraphConflictEditor({
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
         <span
           title={relative}
-          className="min-w-0 flex-1 truncate text-[12px] font-medium text-warning"
+          className="min-w-0 flex-1 truncate text-ui-caption font-medium text-warning"
         >
           {relative}
         </span>
@@ -221,7 +221,7 @@ export function GitGraphConflictEditor({
           dirty={dirty}
           resultActions={
             <Button
-              variant="ghost"
+              variant="primary"
               motion="none"
               type="button"
               disabled={disabled || hasConflictMarkers(draft)}

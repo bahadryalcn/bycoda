@@ -42,7 +42,7 @@
 }
 .social-heading h1 {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: var(--ui-font-heading);
   font-weight: 560;
   line-height: 1.4;
 }
@@ -128,7 +128,7 @@
   font-variant-numeric: tabular-nums;
   flex: none;
   padding: 0.0625rem 0.375rem;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--ui-text-secondary);
 }
 .social-host-status {
@@ -187,7 +187,7 @@
   grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr);
   align-items: stretch;
   border: 1px solid var(--color-stroke);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
 }
 .social-columns > section {
   min-inline-size: 0;
@@ -224,7 +224,7 @@
   border-block: 1px solid var(--color-stroke);
 }
 .social-connection > strong {
-  font-size: 14px;
+  font-size: var(--ui-font-body);
 }
 .social-connection summary {
   cursor: pointer;
@@ -232,7 +232,7 @@
 }
 
 .social-view h2 {
-  font-size: 0.9375rem;
+  font-size: var(--ui-font-title);
   font-weight: 600;
   margin-block: 0 0.875rem;
   line-height: 1.5;
@@ -288,10 +288,7 @@
 .social-confirm {
   border: 1px solid var(--color-stroke);
   padding: 12px;
-  border-radius: 8px;
-}
-.social-view summary:has(+ .social-editor) {
-  list-style: none;
+  border-radius: var(--radius-panel);
 }
 .social-view input:not([type="checkbox"]),
 .social-view textarea,
@@ -308,7 +305,7 @@
   margin-block: 0.75rem;
   min-inline-size: 0;
   max-inline-size: 100%;
-  font-size: 0.8125rem;
+  font-size: var(--ui-font-secondary);
 }
 .social-job-list {
   display: grid;
@@ -369,17 +366,46 @@
   display: block;
   font-weight: 500;
 }
-.social-row > span:not(.bycoda-arc) {
+.social-row > span:not(.bycoda-arc, .social-row-head) {
   display: block;
   font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
   margin-block-start: 4px;
 }
+.social-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.social-row-head > small {
+  flex: none;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-micro);
+  font-variant-numeric: tabular-nums;
+}
+.social-row-preview {
+  display: -webkit-box;
+  margin: 0.125rem 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.social-approval {
+  display: grid;
+  gap: 0.25rem;
+  margin-block-start: 0.75rem;
+}
+.social-approval > .social-actions {
+  margin-block: 0;
+}
 .social-variant {
   border: 1px solid var(--color-stroke);
   padding: 10px 14px;
   margin-block-start: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
 }
 .social-variant legend {
   padding: 0 6px;
@@ -387,7 +413,7 @@
 }
 .social-preview {
   border: 1px solid var(--color-stroke);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   padding: 0.875rem 1rem;
   margin-block: 0.875rem;
   min-inline-size: 0;
@@ -412,7 +438,7 @@
   padding: 10px 12px;
   border: 1px solid var(--color-stroke);
   color: var(--color-content);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   overflow-wrap: break-word;
 }
 .social-workspace .social-error {
@@ -453,14 +479,12 @@
   margin-block: 1rem;
 }
 .social-conversation article {
-  padding: 10px 12px;
-  margin-block: 0.5rem;
-  border: 1px solid var(--color-stroke);
-  border-radius: 6px;
+  padding: 0.5rem 0;
+  border-block-end: 1px solid var(--color-stroke);
 }
 .social-conversation .social-outbound {
-  margin-inline-start: 28px;
-  background: var(--color-selection-subtle);
+  padding-inline-start: 0.75rem;
+  border-inline-start: 2px solid var(--ui-tone-neutral-border);
 }
 @container social (width < 55rem) {
   .social-columns,

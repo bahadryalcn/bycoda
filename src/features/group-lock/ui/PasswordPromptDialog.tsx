@@ -10,11 +10,11 @@ import { Alert } from "../../../shared/ui/Alert";
 /** What to tell the user about a refused password, or `null` when it was accepted. */
 export function verifyFailureMessage(result: VerifyResult, cooldownMs: number): string | null {
   if (result.ok) return null;
-  if (result.reason === "no-password") return "No lock password is set.";
+  if (result.reason === "no-password") return t("No lock password is set.");
   if (cooldownMs > 0) {
-    return `Too many wrong passwords. Try again in ${formatCooldown(cooldownMs)}.`;
+    return t("Too many wrong passwords. Try again in {p0}.", { p0: formatCooldown(cooldownMs) });
   }
-  return "Wrong password.";
+  return t("Wrong password.");
 }
 
 /** Re-renders every half second while a cool-down runs. */

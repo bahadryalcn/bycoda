@@ -75,6 +75,12 @@ function snapshot(overrides: Partial<SocialSnapshot> = {}): SocialSnapshot {
     ...overrides,
   };
 }
+async function startSelecting() {
+  const toggle = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent === "Select",
+  )!;
+  await act(async () => toggle.click());
+}
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   request.mockReset();
@@ -209,7 +215,7 @@ it("loads selected history pages and discards a previous thread's delayed detail
     };
   });
   await mount(value);
-  expect(container.textContent).toContain("Konuşma geçmişi yükleniyor");
+  expect(container.textContent).toContain("Loading conversation history");
   const row = Array.from(container.querySelectorAll<HTMLButtonElement>(".social-row")).find(
     (item) => item.textContent?.includes("comment"),
   )!;
@@ -224,10 +230,10 @@ it("loads selected history pages and discards a previous thread's delayed detail
     }),
   );
   expect(container.textContent).not.toContain("Delayed previous private message");
-  const pager = container.querySelector('[aria-label="Konuşma geçmişi sayfaları"]')!;
+  const pager = container.querySelector('[aria-label="Conversation history pages"]')!;
   await act(async () =>
     Array.from(pager.querySelectorAll("button"))
-      .find((item) => item.textContent === "Önceki kayıtlar")!
+      .find((item) => item.textContent === "Previous records")!
       .click(),
   );
   expect(request).toHaveBeenLastCalledWith("thread.page", { id: "comment", limit: 20, offset: 60 });
@@ -240,10 +246,10 @@ it("explains unavailable browser X inbox next to the disabled refresh action", a
       capabilities: { account: [] },
     }),
   );
-  expect(container.textContent).toContain("X tarayıcı bağlantısı paylaşım yapabilir");
-  expect(container.textContent).toContain("Gelen kutusu erişimi gerekli");
+  expect(container.textContent).toContain("X browser connections can publish");
+  expect(container.textContent).toContain("Inbox access required");
   const refresh = Array.from(container.querySelectorAll("button")).find(
-    (button) => button.getAttribute("aria-label") === "Konuşmaları yenile",
+    (button) => button.getAttribute("aria-label") === "Refresh conversations",
   )!;
   expect(refresh.disabled).toBe(true);
   expect(request.mock.calls.some((call) => call[0] === "inbox.sync")).toBe(false);
@@ -251,24 +257,29 @@ it("explains unavailable browser X inbox next to the disabled refresh action", a
 it("selects only filtered conversations and keeps the bulk target count explicit", async () => {
   await mount(snapshot());
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Filtreler"]')!.click(),
+    container.querySelector<HTMLButtonElement>('button[aria-label="Filters"]')!.click(),
   );
   const kind = Array.from(document.querySelectorAll("label"))
-    .find((label) => label.textContent?.startsWith("İleti türü"))!
+    .find((label) => label.textContent?.startsWith("Message type"))!
     .querySelector("select")!;
   await act(async () => {
     kind.value = "comment";
     kind.dispatchEvent(new Event("change", { bubbles: true }));
   });
+  await startSelecting();
   const all = container.querySelector<HTMLInputElement>(
-    'input[aria-label="Görünen tüm konuşmaları seç"]',
+    'input[aria-label="Select all visible conversations"]',
   )!;
   await act(async () => all.click());
   expect(container.querySelector(".social-bulk-toolbar")?.textContent).toContain(
-    "1 konuşma seçili",
+    "1 conversations selected",
   );
-  expect(container.querySelector('input[aria-label="comment konuşmasını seç"]')).toBeTruthy();
-  expect(container.querySelector('input[aria-label="message konuşmasını seç"]')).toBeNull();
+  expect(
+    container.querySelector('input[aria-label="Select conversation with comment"]'),
+  ).toBeTruthy();
+  expect(
+    container.querySelector('input[aria-label="Select conversation with message"]'),
+  ).toBeNull();
   expect(request.mock.calls.some((call) => call[0].endsWith(".send"))).toBe(false);
 });
 it("shows refresh failures per account while preserving other accounts' success", async () => {
@@ -284,10 +295,10 @@ it("shows refresh failures per account while preserving other accounts' success"
   });
   await mount(value);
   const refresh = Array.from(container.querySelectorAll("button")).find(
-    (button) => button.getAttribute("aria-label") === "Konuşmaları yenile",
+    (button) => button.getAttribute("aria-label") === "Refresh conversations",
   )!;
   await act(async () => refresh.click());
-  expect(container.textContent).toContain("Güncel iletiler alındı.");
+  expect(container.textContent).toContain("Refreshed: ");
   expect(container.textContent).toContain("Connection interrupted");
   expect(request.mock.calls.filter((call) => call[0] === "inbox.sync")).toHaveLength(2);
 });
@@ -298,7 +309,7 @@ it("does not report success when every inbox refresh failed", async () => {
   });
   await mount(snapshot());
   const refresh = Array.from(container.querySelectorAll("button")).find(
-    (button) => button.getAttribute("aria-label") === "Konuşmaları yenile",
+    (button) => button.getAttribute("aria-label") === "Refresh conversations",
   )!;
   await act(async () => refresh.click());
   expect(runResults).toEqual([false]);
@@ -311,12 +322,13 @@ it("keeps every failed draft result and text while reporting batch failure", asy
     throw new Error("Draft service disconnected");
   });
   await mount(snapshot());
+  await startSelecting();
   const all = container.querySelector<HTMLInputElement>(
-    'input[aria-label="Görünen tüm konuşmaları seç"]',
+    'input[aria-label="Select all visible conversations"]',
   )!;
   await act(async () => all.click());
   const editor = container.querySelector<HTMLElement>(
-    '.social-editor[aria-label="Seçili konuşmalara yanıt hazırla"]',
+    '.social-editor[aria-label="Prepare replies to selected conversations"]',
   )!;
   const text = editor.querySelector("textarea")!;
   await act(async () => {
@@ -333,14 +345,14 @@ it("keeps every failed draft result and text while reporting batch failure", asy
   );
   expect(runResults).toEqual([false]);
   expect(editor.textContent).toContain("Answer text");
-  expect(editor.textContent).toContain("2 başarısız");
+  expect(editor.textContent).toContain("2 failed");
   expect(editor.querySelector('.social-notice[data-kind="success"]')).toBeNull();
-  expect(editor.textContent).toContain("Yalnızca 2 başarısız taslağı yeniden dene");
+  expect(editor.textContent).toContain("Retry only the 2 failed drafts");
   const firstIds = request.mock.calls
     .filter((call) => call[0] === "replies.draft")
     .map((call) => call[2]);
   const edit = Array.from(editor.querySelectorAll("button")).find(
-    (button) => button.textContent === "İçeriği düzenle",
+    (button) => button.textContent === "Edit content",
   )!;
   await act(async () => edit.click());
   const amended = editor.querySelector("textarea")!;
@@ -386,13 +398,14 @@ it("marks results from an earlier selection and prepares only the new recipients
     return {};
   });
   await mount(snapshot());
+  await startSelecting();
   await act(async () =>
     container
-      .querySelector<HTMLInputElement>('input[aria-label="Görünen tüm konuşmaları seç"]')!
+      .querySelector<HTMLInputElement>('input[aria-label="Select all visible conversations"]')!
       .click(),
   );
   const editor = container.querySelector<HTMLElement>(
-    '.social-editor[aria-label="Seçili konuşmalara yanıt hazırla"]',
+    '.social-editor[aria-label="Prepare replies to selected conversations"]',
   )!;
   const text = editor.querySelector("textarea")!;
   await act(async () => {
@@ -411,18 +424,20 @@ it("marks results from an earlier selection and prepares only the new recipients
   expect(initialRequests).toHaveLength(2);
   await act(async () =>
     container
-      .querySelector<HTMLInputElement>('input[aria-label="comment konuşmasını seç"]')!
+      .querySelector<HTMLInputElement>('input[aria-label="Select conversation with comment"]')!
       .click(),
   );
-  expect(editor.textContent).toContain("Alıcı seçimi değişti.");
-  expect(editor.textContent).toContain("Bu sonuçlar önceki hazırlamaya ait.");
+  expect(editor.textContent).toContain("Recipient selection changed.");
+  expect(editor.textContent).toContain("These results belong to the previous preparation.");
   const fresh = Array.from(editor.querySelectorAll("button")).find(
-    (button) => button.textContent === "Yeni seçilenler için hazırla",
+    (button) => button.textContent === "Prepare for the new selection",
   )!;
   await act(async () => fresh.click());
   expect(editor.querySelector("textarea")!.value).toBe("Retained answer");
-  expect(editor.textContent).toContain("Önceki hazırlama · 2 alıcı · 2 taslak");
-  expect(editor.querySelector("form.social-form")?.textContent).toContain("1 konuşma seçili");
+  expect(editor.textContent).toContain("Previous preparation · 2 recipients · 2 drafts");
+  expect(editor.querySelector("form.social-form")?.textContent).toContain(
+    "1 conversation selected",
+  );
   await act(async () =>
     editor
       .querySelector("form.social-form")!

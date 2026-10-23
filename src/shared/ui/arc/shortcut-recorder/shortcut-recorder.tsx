@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "../../../i18n";
+import { useT } from "../../../i18n";
 
 import {
   forwardRef,
@@ -290,7 +290,7 @@ export interface ShortcutKbdProps extends HTMLAttributes<HTMLElement> {
   children: ReactNode;
   /** Draws the key pushed down and lit, such as while it is held. */
   pressed?: boolean;
-  size?: "sm" | "md";
+  size?: "xs" | "sm" | "md";
 }
 
 /** A key cap. Use it inline in copy, in menus, or through `ShortcutKeys` for a whole combination. */
@@ -321,7 +321,7 @@ export interface ShortcutKeysProps {
   platform?: Platform;
   /** Held key ids from `usePressedKeys`; matching caps light up. */
   pressed?: ReadonlySet<string>;
-  size?: "sm" | "md";
+  size?: "xs" | "sm" | "md";
   className?: string;
 }
 
@@ -458,6 +458,7 @@ export function ShortcutRecorder({
   id,
   className,
 }: ShortcutRecorderProps) {
+  const t = useT();
   const reduced = useReducedFlag();
   const platform = usePlatform(platformProp);
   const uid = useId();
@@ -909,6 +910,7 @@ export function ShortcutList({
   platform: platformProp,
   className,
 }: ShortcutListProps) {
+  const t = useT();
   const reduced = useReducedFlag();
   const platform = usePlatform(platformProp);
   const held = usePressedKeys(highlightPressed);

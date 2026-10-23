@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "../../../i18n";
+import { useT } from "../../../i18n";
 
 import {
   useEffect,
@@ -127,6 +127,7 @@ export function ImageCompare({
   aspectRatio = "3 / 2",
   className,
 }: ImageCompareProps) {
+  const t = useT();
   const reduced = useReducedMotion();
   const vertical = orientation === "vertical";
   const [internal, setInternal] = useState(defaultPosition);

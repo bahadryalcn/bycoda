@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { AiIdea, CircleDashed, PanelRight, Play } from "../../../shared/ui/icons";
 import { planSummary, planTitle } from "../model/plan";
 import type { HarnessId, PlanBlockMeta, PlanBuildTarget } from "../model/session";
@@ -28,7 +28,7 @@ export function PlanPreview({
   onOpen,
   onBuild,
 }: Props) {
-  useLocale();
+  const t = useT();
   const title = planTitle(text);
   const summary = planSummary(text);
   const buildDisabled =
@@ -39,10 +39,14 @@ export function PlanPreview({
     plan?.status === "building" ||
     plan?.status === "built";
   const buildLabel =
-    plan?.status === "building" ? "Building…" : plan?.status === "built" ? "Built" : "Build";
+    plan?.status === "building"
+      ? t("Building…")
+      : plan?.status === "built"
+        ? t("Built")
+        : t("Build");
 
   return (
-    <div className="mb-2 overflow-hidden rounded-[12px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
+    <div className="mb-2 overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
       <div className="flex items-start gap-2.5 px-3 py-2.5">
         {streaming ? (
           <CircleDashed
@@ -69,14 +73,14 @@ export function PlanPreview({
             </Button>
           ) : (
             <span
-              className="block truncate font-sans text-[13px] font-medium text-(--ui-text-secondary)"
+              className="block truncate font-sans text-ui-secondary font-medium text-(--ui-text-secondary)"
               title={title}
             >
               {title}
             </span>
           )}
           {summary ? (
-            <p className="mt-0.5 line-clamp-3 font-sans text-[12px] leading-4.5 text-(--ui-text-secondary)">
+            <p className="mt-0.5 line-clamp-3 font-sans text-ui-caption leading-4.5 text-(--ui-text-secondary)">
               {summary}
             </p>
           ) : null}
@@ -96,14 +100,13 @@ export function PlanPreview({
                 </Button>
               ) : null}
               {onBuild ? (
-                <div className="flex items-center font-sans">
+                <div className="flex items-center gap-0.5 font-sans">
                   <Button
                     className="shrink-0"
-                    variant="ghost"
+                    variant="secondary"
                     type="button"
                     title={t("Build this plan")}
                     disabled={buildDisabled}
-
                     onClick={() => onBuild()}
                   >
                     <Play className="size-3" strokeWidth={1.75} />

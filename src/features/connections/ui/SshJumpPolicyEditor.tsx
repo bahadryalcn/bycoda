@@ -53,7 +53,7 @@ export function SshJumpPolicyEditor({
               disabled={disabled || index === 0}
               onClick={() => move(index, -1)}
             >
-              <ArrowUp className="size-3" />
+              <ArrowUp className="icon-xs" />
             </Button>
             <Button
               variant="ghost"
@@ -62,7 +62,7 @@ export function SshJumpPolicyEditor({
               disabled={disabled || index === value.length - 1}
               onClick={() => move(index, 1)}
             >
-              <ArrowDown className="size-3" />
+              <ArrowDown className="icon-xs" />
             </Button>
             <Button
               variant="ghost"
@@ -71,7 +71,7 @@ export function SshJumpPolicyEditor({
               disabled={disabled}
               onClick={() => onChange(value.filter((_, i) => i !== index))}
             >
-              <X className="size-3" />
+              <X className="icon-xs" />
             </Button>
           </div>
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,6rem)] gap-2">
@@ -137,7 +137,7 @@ export function SshJumpPolicyEditor({
         disabled={disabled || value.length >= MAX_SSH_JUMP_HOSTS}
         onClick={() => onChange([...value, emptySshJumpPolicyDraft()])}
       >
-        <Plus className="size-3" />
+        <Plus className="icon-xs" />
         {t("Add jump host")}
       </Button>
       {sshJumpPoliciesFromDrafts(value) === undefined ? (

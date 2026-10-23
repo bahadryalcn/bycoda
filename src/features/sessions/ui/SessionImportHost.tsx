@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
-import { OPEN_SESSION_IMPORT_EVENT, SESSION_HISTORY_IMPORTED_EVENT, type SessionImportContext } from "../import/importModel";
-import { SessionImportDialog } from "./SessionImportDialog";
+import {
+  OPEN_SESSION_IMPORT_EVENT,
+  SESSION_HISTORY_IMPORTED_EVENT,
+  type SessionImportContext,
+} from "../import/importModel";
+import { lazySurface } from "../../../shared/ui/lazySurface";
+
+const SessionImportDialog = lazySurface(async () => ({
+  default: (await import("./SessionImportDialog")).SessionImportDialog,
+}));
 
 /**
  * Owns the import dialog so the rail menu and Settings can open it with an

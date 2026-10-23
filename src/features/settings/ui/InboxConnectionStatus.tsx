@@ -1,7 +1,7 @@
 import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { Button } from "../../../shared/ui/Button";
 import { Row } from "./settingsControls";
 import { Check, CircleDashed, AlertCircle } from "../../../shared/ui/icons";
 
@@ -51,9 +51,9 @@ export function InboxConnectionStatus({
               ? t("Configured")
               : t("Not configured")}
       </Badge>
-      <SecondaryButton disabled={busy || checking} onClick={onCheck}>
+      <Button className="shrink-0" disabled={busy || checking} onClick={onCheck}>
         {error ? t("Retry") : t("Check saved configuration")}
-      </SecondaryButton>
+      </Button>
     </Row>
   );
 }

@@ -5,7 +5,7 @@ import { Button } from "../../shared/ui/Button";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import { projectDisplayName } from "../../features/projects/model/projectNames";
 import { useEffect, useMemo, useState } from "react";
-import { t, useLocale } from "../../shared/i18n";
+import { useLocale, useT } from "../../shared/i18n";
 import { Modal } from "../../shared/ui/Modal";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
@@ -14,7 +14,8 @@ import {
   type Session,
 } from "../../features/sessions/model/session";
 import { parseRemotePath } from "../../features/connections/model/remoteProjects";
-import { knownRemoteMachine } from "../../features/connections/model/connections";
+import { knownRemoteMachine, remoteSessionFor } from "../../features/connections/model/connections";
+import { sameProjectPath } from "../../features/projects/model/recents";
 import type { RemoteRailSession } from "../../features/connections/model/remoteRailSessions";
 import {
   recoveryStatus,
@@ -62,6 +63,7 @@ export function SessionRecoveryPanel({
   onOpen,
   onRemove,
 }: Props) {
+  const t = useT();
   const locale = useLocale();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -69,7 +71,20 @@ export function SessionRecoveryPanel({
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"attention" | "all">("attention");
   const [stored, setStored] = useState<Map<string, Session | null | "error">>(() => new Map());
-  const visible = useVisibleProjects(recovery.workspace.sessions, stubPath);
+  const lockVisible = useVisibleProjects(recovery.workspace.sessions, stubPath);
+  // A remote chat whose host session is already open in a tab is not unopened work.
+  const visible = useMemo(
+    () =>
+      lockVisible.filter((stub) => {
+        const hostId = stub.remoteSessionId;
+        if (!hostId || !parseRemotePath(stub.cwd)) return true;
+        return !sessions.some(
+          (session) =>
+            sameProjectPath(session.cwd, stub.cwd) && remoteSessionFor(session.id) === hostId,
+        );
+      }),
+    [lockVisible, sessions],
+  );
   const missingLocalIds = visible
     .filter(
       (stub) => !parseRemotePath(stub.cwd) && !sessions.some((session) => session.id === stub.id),

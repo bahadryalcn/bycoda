@@ -4,7 +4,6 @@ import { ChevronRight, Folder } from "../../../shared/ui/icons";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Switch } from "../../../shared/ui/Switch";
 import { NotificationMuteControl } from "./NotificationMuteControl";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import "./ProjectNotificationSettings.css";
@@ -120,8 +119,10 @@ export function ProjectNotificationSettings({
     >
       <div className="flex flex-wrap items-end gap-4 pb-2.5">
         <div className="min-w-[min(100%,240px)] flex-1">
-          <h2 className="text-[13px] font-medium text-content">{t("Project notifications")}</h2>
-          <p className="mt-1 text-[12px] leading-relaxed text-content/45">
+          <h2 className="text-ui-secondary font-medium text-content">
+            {t("Project notifications")}
+          </h2>
+          <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
             {t(
               "Choose categories per project. Sounds and desktop alerts follow the application settings above.",
             )}
@@ -129,7 +130,9 @@ export function ProjectNotificationSettings({
         </div>
         {projects.length ? (
           <div className="shrink-0 pb-0.5">
-            <SecondaryButton
+            <Button
+              variant="secondary"
+              className="shrink-0"
               type="button"
               aria-pressed={selecting}
               onClick={() => {
@@ -138,18 +141,18 @@ export function ProjectNotificationSettings({
               }}
             >
               {selecting ? t("Done") : t("Select projects")}
-            </SecondaryButton>
+            </Button>
           </div>
         ) : null}
       </div>
       <div className="project-notification-collection" data-highlighted={highlighted || undefined}>
         {error ? (
-          <p role="alert" className="px-4 py-3.5 text-[12px] text-danger">
+          <p role="alert" className="px-4 py-3.5 text-ui-caption text-(--ui-tone-danger-fg)">
             {error}
           </p>
         ) : null}
         {projects.length === 0 ? (
-          <p role="status" className="px-4 py-3.5 text-[12px] leading-relaxed text-content/45">
+          <p role="status" className="px-4 py-3.5 text-ui-caption text-(--ui-text-secondary)">
             {t("Open a project or connect an Inbox provider to configure its notifications.")}
           </p>
         ) : null}
@@ -169,7 +172,7 @@ export function ProjectNotificationSettings({
             </div>
             {selecting ? (
               <div className="flex min-h-9 flex-wrap items-center justify-between gap-3 px-4 py-3.5">
-                <label className="flex cursor-pointer items-center gap-2.5 text-[12px] text-content/55 hover:text-content/80">
+                <label className="flex cursor-pointer items-center gap-2.5 text-ui-caption text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg)">
                   <ProjectSelection
                     label={t("Select all projects")}
                     checked={selectedIds.length === projects.length}
@@ -255,12 +258,12 @@ export function ProjectNotificationSettings({
                           onClick={() => setExpanded(isExpanded ? null : project.id)}
                           className="project-notification-trigger"
                         >
-                          <span className="grid size-4 shrink-0 place-items-center">
+                          <span className="grid icon-md shrink-0 place-items-center">
                             {logoPath ? (
                               <ProjectLogoIcon
                                 path={logoPath}
-                                className="size-4 rounded-sm"
-                                imageClassName="size-4"
+                                className="icon-md rounded-sm"
+                                imageClassName="icon-md"
                               />
                             ) : key ? (
                               <ProjectMascot
@@ -272,10 +275,13 @@ export function ProjectNotificationSettings({
                                   seed,
                                 )}
                                 name={resolveTabGroupMascot(key, groupMascots)}
-                                className="size-3"
+                                className="icon-xs"
                               />
                             ) : (
-                              <Folder className="size-4 text-content/40" aria-hidden="true" />
+                              <Folder
+                                className="icon-md text-(--ui-text-secondary)"
+                                aria-hidden="true"
+                              />
                             )}
                           </span>
                           <div className="min-w-0 flex-1">
@@ -298,13 +304,13 @@ export function ProjectNotificationSettings({
                             </p>
                           </div>
                           <ChevronRight
-                            className={`size-3.5 shrink-0 text-content/40 ${isExpanded ? "rotate-90" : ""}`}
+                            className={`icon-sm shrink-0 text-(--ui-text-secondary) ${isExpanded ? "rotate-90" : ""}`}
                             aria-hidden="true"
                           />
                         </Button>
                       </div>
                       <div className="ml-auto max-w-full">
-                        <NotificationMuteControl projectIds={[project.id]} />
+                        <NotificationMuteControl projectIds={[project.id]} compact />
                       </div>
                     </div>
                     <div

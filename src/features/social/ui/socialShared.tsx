@@ -2,7 +2,19 @@ import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { useContext, useEffect, useId, useRef, type FormEvent, type ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
+import { Modal } from "../../../shared/ui/Modal";
+import { getLocale, t } from "../../../shared/i18n";
 import {
   AlertCircle,
   CheckCircle,
@@ -25,52 +37,109 @@ export const youtubeDefaults = {
   containsSyntheticMedia: false,
 };
 export const statuses: Record<string, string> = {
-  queued: "Sırada",
-  running: "Gönderiliyor",
-  succeeded: "Gönderildi",
-  failed: "Başarısız",
-  review: "İnceleme gerekli",
-  cancelled: "İptal",
-  available: "Kullanılabilir",
-  unsupported: "Desteklenmiyor",
-  pending: "Erişim bekleniyor",
-  expired: "Bağlantı süresi doldu",
-  draft: "Taslak",
-  approved: "Onaylı",
-  active: "Etkin",
-  paused: "Durduruldu",
-  completed: "Tamamlandı",
-  connected: "Bağlı",
-  disconnected: "Bağlı değil",
-  skipped: "Atlandı",
-  partial: "Kısmen gönderildi",
+  get queued() {
+    return t("Queued");
+  },
+  get running() {
+    return t("Sending");
+  },
+  get succeeded() {
+    return t("Sent");
+  },
+  get failed() {
+    return t("Failed");
+  },
+  get review() {
+    return t("Needs review");
+  },
+  get cancelled() {
+    return t("Cancelled");
+  },
+  get available() {
+    return t("Available");
+  },
+  get unsupported() {
+    return t("Unsupported");
+  },
+  get pending() {
+    return t("Awaiting access");
+  },
+  get expired() {
+    return t("Connection expired");
+  },
+  get draft() {
+    return t("Draft");
+  },
+  get approved() {
+    return t("Approved");
+  },
+  get active() {
+    return t("Active");
+  },
+  get paused() {
+    return t("Paused");
+  },
+  get completed() {
+    return t("Completed");
+  },
+  get connected() {
+    return t("Connected");
+  },
+  get disconnected() {
+    return t("Not connected");
+  },
+  get skipped() {
+    return t("Skipped");
+  },
+  get partial() {
+    return t("Partially sent");
+  },
 };
 export const operations: Record<string, string> = {
-  publish: "Yayın",
-  media: "Medya",
-  "comments.read": "Yorumları oku",
-  reply: "Yoruma yanıt",
-  comment: "Gönderiye yorum",
-  "inbox.read": "Mesajları oku",
-  "message.reply": "Mesaja yanıt",
-  "message.start": "Yeni konuşma",
-  search: "Keşif",
-  webhook: "Anlık olaylar",
-  poll: "API ile yenileme",
+  get publish() {
+    return t("Publishing");
+  },
+  get media() {
+    return t("Media");
+  },
+  get "comments.read"() {
+    return t("Read comments");
+  },
+  get reply() {
+    return t("Reply to comment");
+  },
+  get comment() {
+    return t("Comment on post");
+  },
+  get "inbox.read"() {
+    return t("Read messages");
+  },
+  get "message.reply"() {
+    return t("Reply to message");
+  },
+  get "message.start"() {
+    return t("New conversation");
+  },
+  get search() {
+    return t("Discovery");
+  },
+  get webhook() {
+    return t("Live events");
+  },
+  get poll() {
+    return t("Refresh via API");
+  },
 };
-export const time = (value: number) => new Date(value).toLocaleString("tr-TR");
+export const time = (value: number) => new Date(value).toLocaleString(getLocale());
 export type Run = (work: () => Promise<unknown>, successMessage?: string) => Promise<boolean>;
 export { SocialBusyContext } from "./socialContext";
 export const field = (event: FormEvent<HTMLFormElement>) => {
   event.preventDefault();
   return new FormData(event.currentTarget);
 };
+/** Closes the Composer that owns this form; the form keeps its unsaved state. */
 export function closeComposer(form: HTMLFormElement) {
-  const details = form.closest<HTMLDetailsElement>(".social-composer");
-  if (!details) return;
-  details.querySelector<HTMLDialogElement>("dialog")?.close();
-  details.open = false;
-  details.querySelector("summary")?.focus();
+  form.closest("[data-social-composer]")?.dispatchEvent(new CustomEvent("social-composer-close"));
 }
 
 export type NoticeKind = "info" | "success" | "warning" | "error" | "loading";
@@ -157,7 +226,10 @@ export function Empty({
   );
 }
 
-/** Retain unfinished forms while editing in a modal that never displaces the list. */
+/**
+ * Opens its form in the shared Modal. The form lives in one persistent host element that
+ * is parked in the page while closed, so unfinished drafts and refs survive close/reopen.
+ */
 export function Composer({
   title,
   children,
@@ -171,77 +243,79 @@ export function Composer({
   description?: string;
   onOpen?: () => void;
 }) {
-  const details = useRef<HTMLDetailsElement>(null);
-  const summary = useRef<HTMLElement>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
+  const [open, setOpen] = useState(false);
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const stash = useRef<HTMLDivElement>(null);
+  const opened = useRef(onOpen);
+  opened.current = onOpen;
   const feedback = useContext(SocialFeedbackContext);
-  const titleId = useId();
-  const sync = () => {
-    if (!dialog.current) return;
-    if (details.current?.open && !dialog.current.open) {
-      dialog.current.showModal();
-      onOpen?.();
-    } else if (!details.current?.open && dialog.current.open) dialog.current.close();
-  };
-  useEffect(() => {
-    if (editing && details.current) {
-      details.current.open = true;
-      sync();
-    }
-  }, [editing]);
-  useEffect(() => {
-    sync();
-    return () => dialog.current?.close();
+  const host = useMemo(() => {
+    if (typeof document === "undefined") return null;
+    const element = document.createElement("div");
+    element.className = "social-view social-editor social-composer-body";
+    element.setAttribute("data-social-composer", "");
+    element.setAttribute("role", "group");
+    return element;
   }, []);
-  const close = () => {
-    dialog.current?.close();
-    if (details.current) details.current.open = false;
-    summary.current?.focus();
-  };
+  useEffect(() => {
+    host?.setAttribute("aria-label", title);
+  }, [host, title]);
+  useEffect(() => {
+    if (editing) setOpen(true);
+  }, [editing]);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) opened.current?.();
+    if (!open && wasOpen.current) trigger.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
+  useEffect(() => {
+    if (!host) return;
+    const close = () => setOpen(false);
+    host.addEventListener("social-composer-close", close);
+    return () => host.removeEventListener("social-composer-close", close);
+  }, [host]);
+  useLayoutEffect(() => {
+    const target = open ? slot : stash.current;
+    if (host && target && host.parentElement !== target) target.appendChild(host);
+  });
+  useLayoutEffect(() => () => host?.remove(), [host]);
   return (
-    <details ref={details} className="social-composer" onToggle={sync}>
-      <summary ref={summary} aria-haspopup="dialog">
+    <>
+      <Button
+        ref={trigger}
+        type="button"
+        variant="secondary"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+      >
         <Plus aria-hidden="true" />
         <span>{title}</span>
-      </summary>
-      <dialog
-        ref={dialog}
-        className="social-composer-dialog"
-        aria-labelledby={titleId}
-        onCancel={(event) => {
-          event.preventDefault();
-          close();
-        }}
-      >
-        <section className="social-editor" aria-label={title}>
-          <header className="social-editor-heading">
-            <div>
-              <h2 id={titleId}>{title}</h2>
-              {description ? <p>{description}</p> : null}
-            </div>
-            <Button
-              iconOnly
-              label={`${title} formunu kapat`}
-              variant="ghost"
-              type="button"
-
-              aria-label={`${title} formunu kapat`}
-              onClick={close}
-            >
-              <X aria-hidden="true" />
-            </Button>
-          </header>
-          {feedback.busy ? (
-            <Notice kind="loading" title="İşlem sürüyor…" />
-          ) : feedback.error ? (
-            <Notice kind="error" title="İşlem tamamlanamadı">
-              {feedback.error}
-            </Notice>
-          ) : null}
-          {children}
-        </section>
-      </dialog>
-    </details>
+      </Button>
+      <div ref={stash} hidden />
+      {open ? (
+        <Modal title={title} description={description} size="lg" onClose={() => setOpen(false)}>
+          <div ref={setSlot} />
+        </Modal>
+      ) : null}
+      {host
+        ? createPortal(
+            <>
+              {feedback.busy ? (
+                <Notice kind="loading" title={t("Operation in progress…")} />
+              ) : feedback.error ? (
+                <Notice kind="error" title={t("Operation could not be completed")}>
+                  {feedback.error}
+                </Notice>
+              ) : null}
+              {children}
+            </>,
+            host,
+          )
+        : null}
+    </>
   );
 }
 export function Projects({
@@ -255,9 +329,9 @@ export function Projects({
 }) {
   return (
     <SocialMultiSelect
-      label="İlgili projeler"
-      placeholder="Proje seçin"
-      searchPlaceholder="Proje adı veya klasör ara"
+      label={t("Related projects")}
+      placeholder={t("Select a project")}
+      searchPlaceholder={t("Search by project name or folder")}
       options={projects.map((project) => ({
         value: project.id,
         label: project.name || project.cwd,

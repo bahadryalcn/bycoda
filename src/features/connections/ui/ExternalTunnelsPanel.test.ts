@@ -105,6 +105,13 @@ function button(text: string) {
   return value;
 }
 async function choose(label: string, value: string) {
+  const radio = container.querySelector<HTMLButtonElement>(
+    `[role="radiogroup"][aria-label="${label}"] [data-value="${value}"]`,
+  );
+  if (radio) {
+    await act(async () => radio.click());
+    return;
+  }
   const field = [...container.querySelectorAll("label")]
     .find((entry) => entry.textContent?.startsWith(label))
     ?.querySelector("select");

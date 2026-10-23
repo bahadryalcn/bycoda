@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { Check, ChevronDown, Lock, Pencil, Shield, Sparkles } from "../../../shared/ui/icons";
 import {
   useEffect,
@@ -35,7 +35,7 @@ const ICONS: Record<RuntimeMode, typeof Lock> = {
 };
 
 export function AccessPicker({ value, onChange, onClose, busy = false, unavailable }: Props) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const id = useId();
   const [active, setActive] = useState(() => Math.max(0, RUNTIME_MODES.indexOf(value)));
@@ -164,13 +164,13 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
                   strokeWidth={1.75}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center justify-between gap-2 text-[13px] font-medium leading-5">
+                  <span className="flex items-center justify-between gap-2 text-ui-secondary font-medium leading-5">
                     <span>{RUNTIME_MODE_LABEL[mode]}</span>
                     {selected ? (
                       <Check aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={1.75} />
                     ) : null}
                   </span>
-                  <span className="block text-[11px] font-normal leading-4 text-(--ui-text-secondary)">
+                  <span className="block text-ui-micro font-normal leading-4 text-(--ui-text-secondary)">
                     {reason ? t("Unavailable: {p0}", { p0: reason }) : RUNTIME_MODE_HINT[mode]}
                   </span>
                 </span>
@@ -178,7 +178,7 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
             );
           })}
           {busy ? (
-            <p className="mbs-1 border-bs border-(--ui-tone-neutral-border) px-2 py-2 text-[11px] font-normal leading-4 text-(--ui-text-secondary)">
+            <p className="mbs-1 border-bs border-(--ui-tone-neutral-border) px-2 py-2 text-ui-micro font-normal leading-4 text-(--ui-text-secondary)">
               {t("Access changes apply to the next turn. Stop and resend to apply them now.")}
             </p>
           ) : null}

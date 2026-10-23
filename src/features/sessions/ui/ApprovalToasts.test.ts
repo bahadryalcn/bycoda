@@ -238,7 +238,15 @@ it("keeps expired requests in history without approval controls and can clear th
   expect(document.querySelector('[role="tabpanel"] button')).toBeNull();
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toHaveLength(1);
   act(() => button("Notification settings…").click());
-  act(() => button("Clear notification history").click());
+  let now = 1000;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  const morph = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => !item.closest("[inert]") && item.textContent?.includes(label),
+    )!;
+  act(() => morph("Clear notification history").click());
+  now += 300;
+  act(() => morph("Confirm delete").click());
   expect(document.body.textContent).toContain("No notification history");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toEqual([]);
 });

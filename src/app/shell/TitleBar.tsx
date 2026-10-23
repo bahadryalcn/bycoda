@@ -1,6 +1,6 @@
 import { Button } from "../../shared/ui/Button";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
-import { t, useLocale } from "../../shared/i18n";
+import { t, useLocale, useT } from "../../shared/i18n";
 import {
   AppWindow,
   CheckCircle,
@@ -35,6 +35,7 @@ import { looksLikeProject } from "../../features/projects/model/recents";
 import type { HarnessId } from "../../features/sessions/model/session";
 import { CwdPicker } from "../../features/projects/ui/CwdPicker";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
+import { useStableHandlers } from "../../shared/hooks/useStableHandlers";
 import { setDropFeedback } from "../../shared/lib/drag";
 import {
   useAnimatedReorder,
@@ -303,9 +304,9 @@ function TabHarnesses({
             } ${i > 0 ? "-ml-0.5" : ""}`}
           >
             {status === "busy" ? (
-              <TerminalSpinner className="inline-block w-3.5 select-none text-center text-[11px] leading-none text-accent" />
+              <TerminalSpinner className="inline-block w-3.5 select-none text-center text-ui-micro leading-none text-accent" />
             ) : status === "done" ? (
-              <CheckCircle className="size-3.5 shrink-0 text-success" strokeWidth={2} />
+              <CheckCircle className="icon-sm shrink-0 text-success" strokeWidth={2} />
             ) : (
               <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
             )}
@@ -314,7 +315,7 @@ function TabHarnesses({
       })}
       {extra > 0 ? (
         <span
-          className={`pl-0.5 text-(length:--ui-font-caption) leading-none ${dimmed ? "text-(--ui-text-secondary)" : "text-content"}`}
+          className={`pl-0.5 text-ui-caption leading-none ${dimmed ? "text-(--ui-text-secondary)" : "text-content"}`}
         >
           +{extra}
         </span>
@@ -350,7 +351,7 @@ function TitleTabItem({
   onContextMenu: (id: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   itemRef?: (el: HTMLDivElement | null) => void;
 }) {
-  useLocale();
+  const t = useT();
   const { headline, meta, tooltip } = tabCopy(tab);
   const fileIcon = tab.files[0];
   const accessibleTooltip = [
@@ -424,7 +425,7 @@ function TitleTabItem({
           />
         ) : tab.terminal || !fileIcon ? (
           <Terminal
-            className={`size-3.5 shrink-0 ${active ? "text-content" : "text-content/55"}`}
+            className={`size-3.5 shrink-0 ${active ? "text-content" : "text-(--ui-text-secondary)"}`}
             strokeWidth={1.75}
           />
         ) : (
@@ -438,8 +439,8 @@ function TitleTabItem({
             <TabLabel
               className={`leading-tight ${tab.previewFileId || tab.previewSessionId ? "italic" : ""} ${
                 meta
-                  ? "text-[13px] @min-[11rem]:text-(length:--ui-font-caption) @min-[11rem]:font-medium"
-                  : "text-[13px]"
+                  ? "text-ui-secondary @min-[11rem]:text-ui-caption @min-[11rem]:font-medium"
+                  : "text-ui-secondary"
               }`}
             >
               {headline}
@@ -458,7 +459,7 @@ function TitleTabItem({
                     : t("Moves to a new window when the response finishes")
                 }
               >
-                <AppWindow className="size-3" strokeWidth={1.75} />
+                <AppWindow className="icon-xs" strokeWidth={1.75} />
               </span>
             ) : null}
             {tab.dirty ? (
@@ -470,7 +471,7 @@ function TitleTabItem({
             ) : null}
           </span>
           {meta ? (
-            <TabLabel className="hidden text-(length:--ui-font-caption) leading-tight text-(--ui-text-secondary) @min-[11rem]:block">
+            <TabLabel className="hidden text-ui-caption leading-tight text-(--ui-text-secondary) @min-[11rem]:block">
               {meta}
             </TabLabel>
           ) : null}
@@ -494,7 +495,7 @@ function TitleTabItem({
           }}
           className="absolute end-0 inset-bs-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-has-[button:focus-visible]:opacity-100"
         >
-          <X className="size-3" strokeWidth={1.75} />
+          <X className="icon-xs" strokeWidth={1.75} />
         </Button>
       ) : null}
     </div>
@@ -593,12 +594,12 @@ export function IconButton({
 }
 
 export function DevModeLabel() {
-  useLocale();
+  const t = useT();
   if (!import.meta.env.DEV) return null;
   return (
     <span
       title={t("Development build")}
-      className="mr-1 min-w-0 truncate rounded-md bg-(--ui-tone-info-subtle) px-1.5 py-0.5 text-(length:--ui-font-caption) font-medium text-(--ui-tone-info-fg)"
+      className="mr-1 min-w-0 truncate rounded-md bg-(--ui-tone-info-subtle) px-1.5 py-0.5 text-ui-caption font-medium text-(--ui-tone-info-fg)"
     >
       {t("Development")}
     </span>
@@ -632,11 +633,11 @@ export function TabVisitNav({
   panelActive?: boolean;
   panelLabel?: string;
 }) {
-  useLocale();
+  const t = useT();
   return (
     <div className="flex shrink-0 items-center">
       <IconButton label={t("Back")} command="Tab: Back" disabled={!canGoBack} onClick={onGoBack}>
-        <ChevronLeft className="size-3.5" strokeWidth={1.75} />
+        <ChevronLeft className="icon-sm" strokeWidth={1.75} />
       </IconButton>
       <IconButton
         label={t("Forward")}
@@ -644,7 +645,7 @@ export function TabVisitNav({
         disabled={!canGoForward}
         onClick={onGoForward}
       >
-        <ChevronRight className="size-3.5" strokeWidth={1.75} />
+        <ChevronRight className="icon-sm" strokeWidth={1.75} />
       </IconButton>
       {onTogglePanel ? (
         <IconButton
@@ -653,7 +654,7 @@ export function TabVisitNav({
           active={panelActive}
           onClick={onTogglePanel}
         >
-          <PanelLeft className="size-3.5" strokeWidth={1.75} />
+          <PanelLeft className="icon-sm" strokeWidth={1.75} />
         </IconButton>
       ) : null}
     </div>
@@ -668,7 +669,7 @@ export function OverlayNav({
   onBack?: () => void;
   onToggleSidebar?: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const navigation = useContext(ToolNavigationContext)?.history;
   if (navigation)
     return (
@@ -685,7 +686,7 @@ export function OverlayNav({
     <div className="flex shrink-0 items-center px-1.5">
       {onBack ? (
         <IconButton label={t("Back")} command="Tab: Back" onClick={onBack}>
-          <ChevronLeft className="size-3.5" strokeWidth={1.75} />
+          <ChevronLeft className="icon-sm" strokeWidth={1.75} />
         </IconButton>
       ) : null}
       {onToggleSidebar ? (
@@ -694,7 +695,7 @@ export function OverlayNav({
           command="App: Toggle Sidebar"
           onClick={onToggleSidebar}
         >
-          <PanelLeft className="size-3.5" strokeWidth={1.75} />
+          <PanelLeft className="icon-sm" strokeWidth={1.75} />
         </IconButton>
       ) : null}
     </div>
@@ -740,7 +741,7 @@ function TitleBarComponent({
   onSelectProject,
   layout,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [layoutMenu, setLayoutMenu] = useState<{ x: number; y: number } | null>(null);
   const splitRightShortcut = useKeybindingShortcut("Pane: Split Right");
   const splitDownShortcut = useKeybindingShortcut("Pane: Split Down");
@@ -1247,7 +1248,7 @@ function TitleBarComponent({
                 });
               }}
             >
-              <SplitSquare className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              <SplitSquare className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
             </Button>
           </div>
         ) : null}
@@ -1256,28 +1257,28 @@ function TitleBarComponent({
             {projectless && railClosed && onOpenInbox ? (
               <WorkspaceFeatureGate id="inbox">
                 <IconButton label={t("Inbox")} command="App: Open Inbox" onClick={onOpenInbox}>
-                  <Inbox className="size-3.5" strokeWidth={1.75} />
+                  <Inbox className="icon-sm" strokeWidth={1.75} />
                 </IconButton>
               </WorkspaceFeatureGate>
             ) : null}
             {projectless && railClosed && onOpenNotes ? (
               <IconButton label={t("Notes")} command="App: Open Notes" onClick={onOpenNotes}>
-                <StickyNote className="size-3.5" strokeWidth={1.75} />
+                <StickyNote className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             ) : null}
             {!sessionSidebarOpen && !projectless ? (
               <>
                 <IconButton label={t("Go to File")} command="App: Go to File" onClick={onGoToFile}>
-                  <Search className="size-3.5" strokeWidth={1.75} />
+                  <Search className="icon-sm" strokeWidth={1.75} />
                 </IconButton>
                 <IconButton label={t("New session")} command="Tab: New" onClick={onNew}>
-                  <Plus className="size-3.5" strokeWidth={1.75} />
+                  <Plus className="icon-sm" strokeWidth={1.75} />
                 </IconButton>
               </>
             ) : null}
             {!projectRailOpen && !showCurrentProject && onOpenSettings ? (
               <IconButton label={t("Settings")} command="App: Settings" onClick={onOpenSettings}>
-                <Settings className="size-3.5" strokeWidth={1.75} />
+                <Settings className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             ) : null}
           </div>
@@ -1320,7 +1321,7 @@ function TitleBarComponent({
               command="App: Toggle Sidebar"
               onClick={onToggleSidebar}
             >
-              <PanelLeft className="size-3.5" strokeWidth={1.75} />
+              <PanelLeft className="icon-sm" strokeWidth={1.75} />
             </IconButton>
           </div>
         </>
@@ -1333,7 +1334,7 @@ function TitleBarComponent({
             command="App: Toggle Session Sidebar"
             onClick={onToggleSessionSidebar}
           >
-            <DashboardSquare className="size-3.5" strokeWidth={1.75} />
+            <DashboardSquare className="icon-sm" strokeWidth={1.75} />
           </IconButton>
         </div>
       ) : null}
@@ -1344,9 +1345,9 @@ function TitleBarComponent({
           placement="below"
           onCwdChange={onSelectProject}
           onNewTerminal={onNewTerminal}
-          buttonClassName="flex h-full min-w-0 max-w-64 shrink items-center gap-2 px-6 text-left text-sm font-medium leading-tight"
+          buttonClassName="flex h-full min-w-0 max-w-64 shrink items-center gap-2 px-6 text-left text-ui-body font-medium leading-tight"
         >
-          <span className="min-w-0 truncate text-content/50">{t("No project")}</span>
+          <span className="min-w-0 truncate text-(--ui-text-secondary)">{t("No project")}</span>
         </CwdPicker>
       ) : null}
 
@@ -1395,7 +1396,7 @@ function TitleBarComponent({
                   {!entry.closing && paneToTabDrop?.targetTabId === tab.id ? (
                     <span
                       data-pane-tab-drop-hint
-                      className={`pointer-events-none absolute inset-y-1 z-50 w-0.5 rounded-full ${paneToTabDrop.invalid ? "bg-danger" : "bg-accent shadow-[0_0_8px_var(--color-accent)]"} ${
+                      className={`pointer-events-none absolute inset-y-1 z-50 w-0.5 rounded-full ${paneToTabDrop.invalid ? "bg-danger" : "bg-accent"} ${
                         paneToTabDrop.position === "before" ? "left-0" : "right-0"
                       }`}
                     />
@@ -1462,7 +1463,7 @@ function TitleBarComponent({
               "Return all sessions to the main window; running responses finish before moving",
             )}
           >
-            <AppWindow className="size-4" aria-hidden />
+            <AppWindow className="icon-md" aria-hidden />
           </Button>
         ) : null}
         {trailingControls}
@@ -1492,4 +1493,9 @@ function TitleBarComponent({
   );
 }
 
-export const TitleBar = memo(TitleBarComponent);
+const MemoTitleBar = memo(TitleBarComponent);
+
+/** The workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function TitleBar(props: Props) {
+  return <MemoTitleBar {...useStableHandlers(props)} />;
+}

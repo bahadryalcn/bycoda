@@ -312,7 +312,7 @@ describe("onboarding workflow", () => {
     await click("Agents");
     expect(container.textContent).not.toContain("Signed in");
     await act(async () =>
-      container.querySelector<HTMLInputElement>('input[aria-label="Use Codex"]')!.click(),
+      container.querySelector<HTMLButtonElement>('button[aria-label="Use Codex"]')!.click(),
     );
     expect(isPickerProviderVisible("codex")).toBe(false);
     expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(1);

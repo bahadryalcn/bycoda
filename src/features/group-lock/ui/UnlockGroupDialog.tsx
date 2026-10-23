@@ -15,7 +15,7 @@ export function UnlockGroupDialog({ groupId, name, onClose }: Props) {
     <PasswordPromptDialog
       title={t("Unlock {p0}", { p0: name })}
       description={t("Enter the lock password to open this group.")}
-      submitLabel="Unlock"
+      submitLabel={t("Unlock")}
       verify={(password) => unlockGroup(groupId, password)}
       onDone={onClose}
       onClose={onClose}

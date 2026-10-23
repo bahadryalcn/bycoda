@@ -22,11 +22,11 @@ afterEach(async () => {
 });
 
 it.each([
-  ["failed", "danger", "Başarısız"],
-  ["partial", "warning", "Kısmen gönderildi"],
-  ["running", "info", "Gönderiliyor"],
-  ["approved", "success", "Onaylı"],
-  ["paused", "neutral", "Durduruldu"],
+  ["failed", "danger", "Failed"],
+  ["partial", "warning", "Partially sent"],
+  ["running", "info", "Sending"],
+  ["approved", "success", "Approved"],
+  ["paused", "neutral", "Paused"],
 ])("retains domain status %s and maps its shared semantic tone", async (status, tone, label) => {
   await act(async () => root.render(createElement(StatusBadge, { status })));
   const badge = container.querySelector(".social-status-badge")!;
@@ -38,9 +38,9 @@ it.each([
 
 it("keeps explicit status labels and unknown status values", async () => {
   await act(async () =>
-    root.render(createElement(StatusBadge, { status: "custom", label: "Özel durum" })),
+    root.render(createElement(StatusBadge, { status: "custom", label: "Custom status" })),
   );
-  expect(container.textContent).toBe("Özel durum");
+  expect(container.textContent).toBe("Custom status");
   await act(async () => root.render(createElement(StatusBadge, { status: "custom" })));
   expect(container.textContent).toContain("custom");
 });
@@ -141,7 +141,7 @@ it("keeps the empty-state action mounted and operable when content updates", asy
   expect(container.querySelector('section[aria-label="Search results"]')).not.toBeNull();
 });
 
-it("preserves the native composer draft and summary focus after closing", async () => {
+it("keeps the composer draft across Modal close and reopen and returns focus to its trigger", async () => {
   await act(async () =>
     root.render(
       createElement(
@@ -149,19 +149,25 @@ it("preserves the native composer draft and summary focus after closing", async 
         { value: { busy: false, error: "", notice: "" } },
         createElement(
           Composer,
-          { title: "Düzenle" },
-          createElement("form", null, createElement("input", { defaultValue: "Taslak" })),
+          { title: "Edit" },
+          createElement("form", null, createElement("input", { defaultValue: "Draft" })),
         ),
       ),
     ),
   );
-  const details = container.querySelector("details")!;
-  const form = container.querySelector("form")!;
+  const trigger = container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
   const input = container.querySelector("input")!;
-  input.value = "Saklanan taslak";
-  details.open = true;
-  await act(async () => closeComposer(form));
-  expect(details.open).toBe(false);
-  expect(input.value).toBe("Saklanan taslak");
-  expect(document.activeElement).toBe(container.querySelector("summary"));
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  input.value = "Kept draft";
+  await act(async () => trigger.click());
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.contains(input)).toBe(true);
+  await act(async () => closeComposer(input.closest("form")!));
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(container.contains(input)).toBe(true);
+  expect(input.value).toBe("Kept draft");
+  expect(document.activeElement).toBe(trigger);
+  await act(async () => trigger.click());
+  expect(document.querySelector('[role="dialog"]')!.contains(input)).toBe(true);
+  expect(input.value).toBe("Kept draft");
 });

@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { StickyNote } from "../../../shared/ui/icons";
 import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import type { RankedFile } from "../../files/model/fileIndex";
@@ -27,7 +27,7 @@ export function FileMentionPicker({
   onActive,
   onPick,
 }: Props) {
-  useLocale();
+  const t = useT();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const activeRef = useRef<HTMLButtonElement>(null);
   const pointer = useRef({ x: Number.NaN, y: Number.NaN, allow: false });
@@ -62,10 +62,10 @@ export function FileMentionPicker({
   return (
     <div
       data-mention-picker
-      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) backdrop-blur-xl"
+      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
     >
       {files.length === 0 ? (
-        <p className="px-3 py-2.5 text-[12px] text-(--ui-text-secondary)">
+        <p className="px-3 py-2.5 text-ui-caption text-(--ui-text-secondary)">
           {loading
             ? t("Indexing files…")
             : query.trim()
@@ -124,11 +124,11 @@ export function FileMentionPicker({
                   {file.isDir ? "/" : null}
                 </span>
                 {note ? (
-                  <span className="shrink-0 font-mono text-[11px] text-(--ui-text-secondary)">
+                  <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-secondary)">
                     {t("Note")}
                   </span>
                 ) : dir ? (
-                  <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-(--ui-text-secondary)">
+                  <span className="min-w-0 max-w-[45%] truncate font-mono text-ui-micro text-(--ui-text-secondary)">
                     <MatchText
                       text={dir}
                       positions={file.positions.filter((pos) => pos < slash)}

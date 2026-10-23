@@ -95,9 +95,9 @@ export function ModalPanel({
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
             onMouseDown={(event) => event.stopPropagation()}
-            className={`relative isolate flex flex-col overflow-hidden border border-content/7 shadow-2xl ${placement === "end" ? "h-full rounded-none" : `rounded-2xl ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
+            className={`relative isolate flex flex-col overflow-hidden border border-stroke shadow-(--ui-elevation-floating) ${placement === "end" ? "h-full rounded-none" : `rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
           >
-            <GlassBackdrop className="bg-background-base dark:bg-background-base/85" />
+            <GlassBackdrop className="bg-background-base" />
             <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
               <header
                 className={
@@ -163,7 +163,7 @@ export function Modal(props: Props) {
         props.onClose();
       }}
     >
-      <div className="modal-backdrop pointer-events-none absolute inset-0 bg-scrim/40" />
+      <div className="modal-backdrop pointer-events-none absolute inset-0 bg-(--ui-overlay-backdrop)" />
       <ModalPanel {...props} />
     </div>,
     document.body,

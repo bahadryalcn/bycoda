@@ -313,7 +313,7 @@ export function TimeDistribution({
               disabled={page === 0}
               onClick={() => setWeekOffset((value) => value + 1)}
             >
-              <ChevronLeft className="size-3.5" />
+              <ChevronLeft className="icon-sm" />
             </Button>
             <Button
               variant="ghost"
@@ -322,7 +322,7 @@ export function TimeDistribution({
               disabled={page === weekStarts.length - 1}
               onClick={() => setWeekOffset((value) => Math.max(0, value - 1))}
             >
-              <ChevronRight className="size-3.5" />
+              <ChevronRight className="icon-sm" />
             </Button>
           </div>
         </div>

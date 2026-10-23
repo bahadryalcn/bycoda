@@ -61,7 +61,7 @@ export function RenameProjectFolderDialog({
         </label>
         {invalid || error ? <Alert tone="danger">{invalid ?? error}</Alert> : null}
         <div className="flex justify-end gap-2">
-          <Button type="button" disabled={busy} onClick={onClose} variant="secondary">
+          <Button type="button" disabled={busy} onClick={onClose} variant="ghost">
             {t("Cancel")}
           </Button>
           <Button

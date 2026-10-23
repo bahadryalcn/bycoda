@@ -5,6 +5,7 @@ import { Modal } from "../../../shared/ui/Modal";
 import { t, useLocale } from "../../../shared/i18n/git";
 import type { WorktreeManagementRequest } from "../../../features/source-control/model/worktreeManagement";
 import { SettingsView } from "../surfaces/lazySurfaces";
+import { NavigationBoundary } from "../../shell/NavigationBoundary";
 
 type SettingsProps = ComponentProps<typeof SettingsView>;
 type QuickDeleteProps = ComponentProps<typeof QuickDeleteWorktreeDialog>;
@@ -96,29 +97,31 @@ export function WorkspaceSettingsSurface({
         </Modal>
       ) : null}
       {settingsOpen ? (
-        <SettingsView
-          section={settingsSection}
-          anchor={settingsAnchor}
-          notificationProjectPath={notificationProjectPath}
-          notificationSettingsRequest={notificationSettingsRequest}
-          recents={visibleRecents}
-          cwd={sidebarCwd}
-          sessions={sidebarHistory}
-          liveSessions={sessions}
-          onRemoveWorktree={onRemoveWorktree}
-          onCheckWorktreeRemoval={onCheckWorktreeRemoval}
-          onDeleteWorktreeSessions={onDeleteWorktreeSessions}
-          onClose={onCloseSettings}
-          onSelectSection={onSelectSettingsSection}
-          onOpenSession={onOpenArchivedSession}
-          onArchiveSession={onArchiveHistorySession}
-          onDeleteSession={onDeleteHistorySession}
-          onRestoreProject={onRestoreProject}
-          onDeleteProject={(path) => onRemoveProject(path, { purgeData: true })}
-          onOpenWhatsNew={onOpenWhatsNew}
-          collapsedProjectRailMode={collapsedProjectRailMode}
-          onCollapsedProjectRailModeChange={setCollapsedProjectRailMode}
-        />
+        <NavigationBoundary name="Settings" onBack={onCloseSettings}>
+          <SettingsView
+            section={settingsSection}
+            anchor={settingsAnchor}
+            notificationProjectPath={notificationProjectPath}
+            notificationSettingsRequest={notificationSettingsRequest}
+            recents={visibleRecents}
+            cwd={sidebarCwd}
+            sessions={sidebarHistory}
+            liveSessions={sessions}
+            onRemoveWorktree={onRemoveWorktree}
+            onCheckWorktreeRemoval={onCheckWorktreeRemoval}
+            onDeleteWorktreeSessions={onDeleteWorktreeSessions}
+            onClose={onCloseSettings}
+            onSelectSection={onSelectSettingsSection}
+            onOpenSession={onOpenArchivedSession}
+            onArchiveSession={onArchiveHistorySession}
+            onDeleteSession={onDeleteHistorySession}
+            onRestoreProject={onRestoreProject}
+            onDeleteProject={(path) => onRemoveProject(path, { purgeData: true })}
+            onOpenWhatsNew={onOpenWhatsNew}
+            collapsedProjectRailMode={collapsedProjectRailMode}
+            onCollapsedProjectRailModeChange={setCollapsedProjectRailMode}
+          />
+        </NavigationBoundary>
       ) : null}
     </>
   );

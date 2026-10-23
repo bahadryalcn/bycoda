@@ -1,5 +1,10 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 
+// Assertions below use the Turkish catalog, so every test starts in Turkish.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
+});
+
 test("X media selection replaces image batches with video and keeps removal explicit", async ({
   page,
 }, testInfo) => {

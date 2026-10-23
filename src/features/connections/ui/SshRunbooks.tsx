@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n";
 import { revokeSshHttpProxyApproval } from "../model/sshHttpProxyApproval";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import { Modal } from "../../../shared/ui/Modal";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
@@ -533,20 +534,22 @@ export function SshRunbooks({
           ) : null}
           <div className="flex flex-wrap justify-end gap-2">
             {saved ? (
-              <Button
-                disabled={busy || frozen}
-                onClick={() =>
-                  void operation(async () => {
-                    await removeSshRunbook(saved.id, saved.revision);
-                    if (!mounted.current) return;
-                    setProfiles((items) => items.filter((item) => item.id !== saved.id));
-                    setDraft(sshRunbookDraft(undefined, server.id));
-                    setReview(undefined);
-                  })
-                }
-              >
-                {t("Delete runbook")}
-              </Button>
+              <span className="me-auto">
+                <ConfirmMorph
+                  label={t("Delete runbook")}
+                  tone="danger"
+                  disabled={busy || frozen}
+                  onConfirm={() =>
+                    operation(async () => {
+                      await removeSshRunbook(saved.id, saved.revision);
+                      if (!mounted.current) return;
+                      setProfiles((items) => items.filter((item) => item.id !== saved.id));
+                      setDraft(sshRunbookDraft(undefined, server.id));
+                      setReview(undefined);
+                    })
+                  }
+                />
+              </span>
             ) : null}
             <Button
               disabled={busy || frozen || !profile}

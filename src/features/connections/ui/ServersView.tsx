@@ -10,6 +10,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
 import { Popover } from "../../../shared/ui/Popover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
@@ -91,7 +92,7 @@ function ViewToggle({
         aria-pressed={layout === "list"}
         onClick={() => onChange("list")}
       >
-        <ListBullet aria-hidden className="size-3.5" />
+        <ListBullet aria-hidden className="icon-sm" />
       </Button>
       <Button
         variant="ghost"
@@ -102,7 +103,7 @@ function ViewToggle({
         aria-pressed={layout === "cards"}
         onClick={() => onChange("cards")}
       >
-        <LayoutGrid aria-hidden className="size-3.5" />
+        <LayoutGrid aria-hidden className="icon-sm" />
       </Button>
     </div>
   );
@@ -213,7 +214,7 @@ export function ServersView({
             kind: "item" as const,
             id: "connect",
             label: t("Connect"),
-            icon: <Terminal aria-hidden className="size-3.5" />,
+            icon: <Terminal aria-hidden className="icon-sm" />,
           },
         ]
       : []),
@@ -221,13 +222,13 @@ export function ServersView({
       kind: "item",
       id: "details",
       label: t("Show details"),
-      icon: <Info aria-hidden className="size-3.5" />,
+      icon: <Info aria-hidden className="icon-sm" />,
     },
     {
       kind: "item",
       id: "edit",
       label: server.kind === "ssh" ? t("Edit SSH server") : t("Edit machine"),
-      icon: <Pencil aria-hidden className="size-3.5" />,
+      icon: <Pencil aria-hidden className="icon-sm" />,
     },
     {
       kind: "item",
@@ -236,7 +237,7 @@ export function ServersView({
       icon: (
         <Star
           aria-hidden
-          className="size-3.5"
+          className="icon-sm"
           fill={server.metadata.favorite ? "currentColor" : "none"}
         />
       ),
@@ -245,20 +246,20 @@ export function ServersView({
       kind: "item",
       id: "color",
       label: t("Color…"),
-      icon: <Palette aria-hidden className="size-3.5" />,
+      icon: <Palette aria-hidden className="icon-sm" />,
     },
     {
       kind: "item",
       id: "copy",
       label: t("Copy address"),
-      icon: <Copy aria-hidden className="size-3.5" />,
+      icon: <Copy aria-hidden className="icon-sm" />,
     },
     { kind: "sep" },
     {
       kind: "item",
       id: "delete",
       label: t("Delete"),
-      icon: <Trash2 aria-hidden className="size-3.5" />,
+      icon: <Trash2 aria-hidden className="icon-sm" />,
       danger: true,
       title:
         server.kind === "ssh"
@@ -320,7 +321,7 @@ export function ServersView({
         {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
           <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-sm">
-            <Server aria-hidden className="size-3.5 shrink-0 text-(--ui-text-muted)" />
+            <Server aria-hidden className="icon-sm shrink-0 text-(--ui-text-muted)" />
             <span className="truncate">{t("Servers")}</span>
           </div>
         </ToolHeader>
@@ -346,7 +347,7 @@ export function ServersView({
             aria-haspopup="dialog"
             onClick={() => setFiltersOpen(!filtersOpen)}
           >
-            <ListFilter aria-hidden className="size-3.5" />
+            <ListFilter aria-hidden className="icon-sm" />
             {filterCount > 0 ? <span className="sr-only">{filterCount}</span> : null}
           </Button>
           {filtersOpen ? (
@@ -410,16 +411,16 @@ export function ServersView({
             disabled={loading}
             onClick={refresh}
           >
-            <RefreshCw aria-hidden className="size-3.5" />
+            <RefreshCw aria-hidden className="icon-sm" />
           </Button>
           <Button
             variant="ghost"
             iconOnly
-            label={t("Manage SSH")}
+            label={t("SSH settings")}
             tooltip={t("SSH settings")}
             onClick={() => setSshSettings(true)}
           >
-            <Lock aria-hidden className="size-3.5" />
+            <Lock aria-hidden className="icon-sm" />
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -428,34 +429,32 @@ export function ServersView({
               {t("Quick connect")}
             </Button>
           ) : null}
-          <Button variant="secondary" onClick={() => setEditor("new")}>
-            <Plus aria-hidden className="size-3.5" />
-            {t("Add SSH server")}
-          </Button>
-          <Button variant="ghost" onClick={requestMachineAdd}>
-            <Plus aria-hidden className="size-3.5" />
-            {t("Add machine")}
-          </Button>
           <Button
             ref={actionsAnchor}
-            variant="ghost"
-            iconOnly
-            label={t("More actions")}
+            variant={openQuick ? "secondary" : "primary"}
             aria-expanded={actionsOpen}
             aria-haspopup="menu"
+            startIcon={<Plus aria-hidden className="icon-sm" />}
             onClick={() => setActionsOpen(!actionsOpen)}
           >
-            <MoreHorizontal aria-hidden className="size-3.5" />
+            {t("Add")}
           </Button>
           {actionsOpen ? (
             <DropdownMenu
               anchor={actionsAnchor}
-              label={t("More actions")}
-              items={[{ kind: "item", id: "import-termius", label: t("Import from Termius") }]}
+              label={t("Add")}
+              items={[
+                { kind: "item", id: "add-ssh", label: t("Add SSH server") },
+                { kind: "item", id: "add-machine", label: t("Add machine") },
+                { kind: "sep" },
+                { kind: "item", id: "import-termius", label: t("Import from Termius") },
+              ]}
               onClose={() => setActionsOpen(false)}
-              onPick={() => {
+              onPick={(id) => {
                 setActionsOpen(false);
-                setTermiusImport(true);
+                if (id === "add-ssh") setEditor("new");
+                else if (id === "add-machine") requestMachineAdd();
+                else setTermiusImport(true);
               }}
             />
           ) : null}
@@ -489,7 +488,7 @@ export function ServersView({
           role="status"
           className="flex items-center gap-2 px-3 py-2 text-sm text-(--ui-text-muted)"
         >
-          <Loader aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+          <Loader aria-hidden className="icon-sm animate-spin motion-reduce:animate-none" />
           {loaded ? t("Refreshing servers…") : t("Loading servers…")}
         </div>
       ) : null}
@@ -500,13 +499,18 @@ export function ServersView({
           className={`min-h-0 min-w-0 overflow-y-auto p-2 @min-[44rem]/servers:p-3 @min-[44rem]/servers:flex-1 ${selected ? "max-h-[40%] shrink-0 @min-[44rem]/servers:max-h-none" : "flex-1"}`}
         >
           {loaded && servers.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 px-3 py-8 text-center text-sm">
-              <Server aria-hidden className="size-6 text-(--ui-text-muted)" />
-              <p className="font-medium">{t("No machines connected.")}</p>
-              <p className="max-w-sm text-(--ui-text-muted)">
-                {t("Add an SSH server for terminal access, or a machine running bycoda Host.")}
-              </p>
-            </div>
+            <EmptyState
+              icon={<Server aria-hidden className="icon-lg" />}
+              title={t("No machines connected.")}
+              description={t(
+                "Add an SSH server for terminal access, or a machine running bycoda Host.",
+              )}
+              action={
+                <Button variant="primary" onClick={() => setEditor("new")}>
+                  {t("Add SSH server")}
+                </Button>
+              }
+            />
           ) : null}
           {servers.length > 0 && filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-sm text-(--ui-text-muted)">
@@ -562,24 +566,11 @@ export function ServersView({
             className="flex min-h-0 min-w-0 flex-1 flex-col border-t border-stroke @min-[44rem]/servers:w-[min(45%,28rem)] @min-[44rem]/servers:flex-none @min-[44rem]/servers:border-t-0 @min-[44rem]/servers:border-s"
           >
             <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-stroke px-4 py-3">
-              <Server aria-hidden className="size-4 shrink-0 text-(--ui-text-muted)" />
+              <Server aria-hidden className="icon-md shrink-0 text-(--ui-text-muted)" />
               <h2 className="min-w-0 flex-1 truncate text-base font-medium" title={selected.name}>
                 {selected.name}
               </h2>
               {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
-              {selected.machine || selected.kind === "ssh" ? (
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t(selected.kind === "ssh" ? "Edit SSH server" : "Edit machine")}
-                  onClick={() =>
-                    selected.kind === "ssh" ? setEditor(selected) : requestMachineEdit(selected.id)
-                  }
-                >
-                  <Pencil aria-hidden className="size-3.5" />
-                </Button>
-              ) : null}
-              {selected.machine ? <ReconnectAction machine={selected.machine} /> : null}
               <Button
                 variant="ghost"
                 iconOnly
@@ -588,7 +579,7 @@ export function ServersView({
                 aria-expanded={menu?.serverId === selected.id}
                 onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
               >
-                <MoreHorizontal aria-hidden className="size-3.5" />
+                <MoreHorizontal aria-hidden className="icon-sm" />
               </Button>
               <Button
                 variant="ghost"
@@ -603,13 +594,16 @@ export function ServersView({
                     ?.focus({ preventScroll: true });
                 }}
               >
-                <X aria-hidden className="size-3.5" />
+                <X aria-hidden className="icon-sm" />
               </Button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {selected.machine ? (
-                <div className="mbe-3">
+                <div className="mbe-3 flex items-start justify-between gap-2">
                   <MachineStatus key={selected.id} machine={selected.machine} details />
+                  <div className="flex shrink-0 items-center">
+                    <ReconnectAction machine={selected.machine} />
+                  </div>
                 </div>
               ) : null}
               <dl className="mbs-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
@@ -645,16 +639,6 @@ export function ServersView({
               />
             </div>
           </section>
-        ) : loaded && servers.length > 0 ? (
-          <div className="hidden min-h-0 min-w-0 flex-col items-center justify-center gap-2 border-s border-stroke p-4 text-center @min-[44rem]/servers:flex @min-[44rem]/servers:w-[min(45%,28rem)] @min-[44rem]/servers:flex-none">
-            <Server aria-hidden className="size-5 text-(--ui-text-muted)" />
-            <h2 className="text-sm font-medium">{t("Select a server")}</h2>
-            <p className="max-w-xs text-xs text-(--ui-text-muted)">
-              {t(
-                "Select a server to view details. Double-click or press Enter to connect via SSH.",
-              )}
-            </p>
-          </div>
         ) : null}
       </div>
       {menuServer && menu ? (
@@ -705,7 +689,7 @@ export function ServersView({
             </p>
             <ConfirmMorph
               label={t("Delete")}
-              icon={<Trash2 aria-hidden className="size-3.5" />}
+              icon={<Trash2 aria-hidden className="icon-sm" />}
               tone="danger"
               confirmMode="press"
               disabled={deleting != null}

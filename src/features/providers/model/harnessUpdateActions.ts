@@ -145,23 +145,29 @@ function markCurrent(update: HarnessUpdate, version: string) {
  * reloaded before the result says so, so the picker is current by then.
  */
 async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
+  let stage = "updater";
   try {
     await updateHarnessCli(update.harness);
+    stage = "version check";
     const after = await inspectHarnessBinary(update.harness);
     const version = parseHarnessVersion(update.harness, after.version ?? "");
+    if (!version) {
+      throw new Error(after.error ?? `No valid version reported by ${after.path}.`);
+    }
     if (version && !isHarnessVersionBehind(update.harness, version, update.latest)) {
+      stage = "model refresh";
       await refreshHarnessCatalogs([update.harness], { force: true });
       void announceHarnessUpdated(update.harness).catch(() => undefined);
       return { status: "updated", version };
     }
-    return {
-      status: "failed",
-      error: `Still on ${version ?? update.installed} after updating.`,
-    };
+    throw new Error(`Still on ${version} after updating.`);
   } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const message = `${update.harness} ${stage}: ${detail}`;
+    console.warn(`[bycoda] Harness update failed: ${message}`);
     return {
       status: "failed",
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     };
   }
 }

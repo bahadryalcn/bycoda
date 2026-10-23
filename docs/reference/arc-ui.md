@@ -101,6 +101,7 @@ by their existing interactions.
 | `loading` / `loadingLabel` | Controlled pending state and optional translated busy accessible name. Remains focusable and blocks duplicate activation and form submission.                                  |
 | `startIcon` / `endIcon`    | Decorative React nodes; their wrappers are hidden from assistive technology. Existing icon children continue to work.                                                          |
 | `fullWidth`                | Fill the available inline size. `item` is full width by default.                                                                                                               |
+| `align`                    | `center` (default), `start` or `end`. Aligns content in wide/full-width controls; replaces `text-left`/`justify-*` overrides. `justify-*` utilities still win.               |
 | `motion`                   | `auto` (default) or `none`. Structural/text actions and native drag/animation handlers use the native renderer with the same Arc classes and tokens.                           |
 | Native props / `ref`       | Existing button props, form name/value, data attributes, keyboard/context/drag events and `HTMLButtonElement` ref remain supported. Default `type` is `button`.                |
 
@@ -108,7 +109,11 @@ by their existing interactions.
 Enter/Space activation and drop actions in both renderers. Tab/navigation keys remain
 available for focusable aria-disabled/loading controls. Drag-end cleanup still runs.
 Async state is owned by the feature; Button never automatically executes or retries an
-action. SecondaryButton forwards the same API, selecting secondary/danger presentation.
+action. SecondaryButton is a deprecated thin alias (secondary/danger plus `shrink-0`); use Button.
+
+Press feedback is one layer: Arc-rendered buttons scale to 0.98 over the `fast` duration
+(none under reduced motion). Native-rendered buttons and popup anchors never scale and
+step their tone instead. Label width morph runs only when the label content changes.
 
 ```tsx
 <Button variant="primary" type="submit" loading={saving}>{t("Save")}</Button>
@@ -141,8 +146,7 @@ their role and preserve the existing native window and popup contracts.
   do not add a second page gutter or a dashboard shell around a workbench tool.
 - Open collection filters from an icon trigger using the existing Popover. Show an
   active-filter count/state on the trigger. Keep filter values and reset together in
-  the popover; an always-visible chip row is not the default. FilterToolbar can be
-  composed inside the popover without creating another filter-state owner.
+  the popover; an always-visible chip row is not the default.
 - Keep search compact and expandable on narrow surfaces. Preserve the query when
   the search control or filter popover closes.
 - Keep frequent actions visible and move infrequent actions into the existing
@@ -407,7 +411,6 @@ scope appearance to `bycoda-arc`; registry copy is localized through the existin
 | Item                | Integration                                                                                                                                                                                                                                    |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | JSON viewer         | Complete saved JSON objects/arrays in Tool Inspection. Plain text, diffs, commands and truncated output retain their original presentation. Value/path copying uses the native clipboard bridge.                                               |
-| Filter toolbar      | Removable project/tag filters in the Notes library. Existing filter controls and preferences stay authoritative.                                                                                                                               |
 | Sortable data table | Usage time, category and session tables sort numeric metrics before pagination. Shared filters retain project/group membership, separate token categories and explicit missing-data/pricing coverage.                                          |
 | Date range picker   | DateRangePicker retains inclusive calendar days. DateTimeRangePicker composes it with start/end date-time fields for end-exclusive Usage timestamp ranges, validates min/max bounds before applying, and uses the shared Popover/Escape stack. |
 | Inline edit         | Session Notes titles save through the existing serialized queue, finalize pending slugs and roll back failed renames.                                                                                                                          |
@@ -437,6 +440,14 @@ only calls its explicit onSelect; it never implicitly invokes the primary action
 Stepper completion and navigation remain feature-owned; ElasticSlider is opt-in
 for approximate visual adjustments; SplitButton method selection never runs the
 primary action. Native confirmation/approval stays with the feature.
+
+Confirmation rule: a row-level delete confirms in place with ConfirmMorph (danger).
+An action with several consequences (stash drop, remote branch delete, task or
+automation removal) uses `useConfirm` / `ConfirmDialog` from
+`src/shared/ui/ConfirmDialog.tsx`, which supports a danger tone, an async
+`onConfirm` and a pending state that blocks double submit. The Tauri `ask` dialog
+is only for places a web overlay cannot render. Optional help uses the shared
+`InfoPopover` (`src/shared/ui/InfoPopover.tsx`), not feature-local copies.
 
 `MorphSelect` now accepts exported `MorphSelectItem` option/group records,
 `searchable` (default false), `onClose` and native `triggerProps` including ref

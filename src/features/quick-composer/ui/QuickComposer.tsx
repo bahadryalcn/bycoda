@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { projectDisplayName } from "../../projects/model/projectNames";
@@ -503,7 +504,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
         if (picker) closePicker();
         else dismiss();
       }}
-      className="relative flex max-h-[520px] flex-col overflow-clip rounded-[16px] border border-content/10 bg-background-base/45 text-content"
+      className="relative flex max-h-[520px] flex-col overflow-clip rounded-(--ui-radius-popup) border border-stroke bg-background-base/45 text-content"
     >
       <div
         title={t("Drag to move")}
@@ -516,7 +517,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
             .catch(() => undefined);
         }}
       >
-        <span className="pointer-events-none h-0.5 w-6 rounded-full bg-content/15 transition-colors group-hover:bg-content/35" />
+        <span className="pointer-events-none h-0.5 w-6 rounded-full bg-(--color-stroke) transition-colors group-hover:bg-(--ui-text-muted)" />
       </div>
       <Button
         iconOnly
@@ -532,7 +533,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
         <X className="size-3" />
       </Button>
       {attachments.dragging ? (
-        <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center rounded-[16px] border border-dashed border-accent/60 bg-background-base/90 text-sm text-accent">
+        <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center rounded-(--ui-radius-popup) border border-dashed border-accent bg-background-base/90 text-sm text-accent">
           {t("Drop to attach")}
         </div>
       ) : null}
@@ -939,9 +940,5 @@ function CommandLabel({ name }: { name: string }) {
 
 function Kbd({ children }: { children: string }) {
   useLocale();
-  return (
-    <kbd className="rounded border border-stroke px-1 font-sans text-(length:--ui-font-caption) text-(--ui-text-secondary)">
-      {children}
-    </kbd>
-  );
+  return <ShortcutKbd size="xs">{children}</ShortcutKbd>;
 }

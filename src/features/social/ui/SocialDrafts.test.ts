@@ -81,10 +81,10 @@ it("inceleme isteyen taslak düzenlenebilir; başarısız kaydetme editörü kap
   await mount({ ...draft, reviewReason: "Metni inceleyin" });
   expect(
     Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.startsWith("Onayla"),
+      button.textContent?.startsWith("Approve"),
     )?.disabled,
   ).toBe(true);
-  await click("Düzenle");
+  await click("Edit");
   request.mockImplementation(async (action) => {
     if (action === "policy.get") return { effective: {} };
     throw new Error("Save failed");
@@ -112,16 +112,16 @@ it("inceleme isteyen taslak düzenlenebilir; başarısız kaydetme editörü kap
 });
 it("silinmiş bilgi kaynağı kaldırıldıktan sonra inceleme taslağı tekrar kaydedilebilir", async () => {
   await mount({ ...draft, factIds: ["removed"], reviewReason: "Bilgi kaynağı değişti" }, {});
-  await click("Düzenle");
+  await click("Edit");
   expect(
     Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Değişiklikleri kaydet",
+      (button) => button.textContent === "Save changes",
     )?.disabled,
   ).toBe(true);
-  await click("Bilgi bağlantılarını kaldır");
+  await click("Remove fact links");
   expect(
     Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Değişiklikleri kaydet",
+      (button) => button.textContent === "Save changes",
     )?.disabled,
   ).toBe(false);
   await act(async () =>
@@ -147,7 +147,7 @@ it("gönderim kapalı veya taslak zaten kuyruktaysa gönderme düğmesi kapalıd
   });
   const approval = () =>
     Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.startsWith("Onayla"),
+      button.textContent?.startsWith("Approve"),
     )!;
   expect(approval().disabled).toBe(true);
   await mount(draft, {
@@ -167,9 +167,8 @@ it("gönderim kapalı veya taslak zaten kuyruktaysa gönderme düğmesi kapalıd
   });
   expect(approval().disabled).toBe(true);
   expect(
-    Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Düzenle",
-    )?.disabled,
+    Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Edit")
+      ?.disabled,
   ).toBe(true);
   expect(request).not.toHaveBeenCalled();
 });
@@ -189,7 +188,7 @@ it("güncel politika sınırını aşan taslak gönderim onayı alamaz", async (
   });
   request.mockResolvedValue({ effective: { maxMessageCharacters: 2 } });
   const button = Array.from(container.querySelectorAll("button")).find((item) =>
-    item.textContent?.startsWith("Onayla"),
+    item.textContent?.startsWith("Approve"),
   )!;
   expect(button.disabled).toBe(false);
   await act(async () => button.click());
@@ -231,7 +230,7 @@ it.each([false, true])(
     };
     await mount(preview, snapshot);
     const button = Array.from(container.querySelectorAll("button")).find((item) =>
-      item.textContent?.startsWith("Onayla"),
+      item.textContent?.startsWith("Approve"),
     )!;
     await act(async () => button.click());
     expect(request).toHaveBeenCalledWith("policy.get", { accountId: "account" });

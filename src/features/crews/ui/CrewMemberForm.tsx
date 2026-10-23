@@ -137,7 +137,7 @@ export function CrewMemberForm({
         ) : null}
       </div>
       <div className="flex min-w-0 flex-col gap-1.5">
-        <span className="text-sm font-medium">{t("Responsibility in the crew")}</span>
+        <span className="text-ui-body font-medium">{t("Responsibility in the crew")}</span>
         <SegmentedControl
           label={t("Responsibility in the crew")}
           value={agent.role}
@@ -147,7 +147,9 @@ export function CrewMemberForm({
           }))}
           onValueChange={(role) => onChange({ role: role as CrewRole })}
         />
-        <p className="text-xs text-(--ui-text-secondary)">{responsibilityHint(agent.role)}</p>
+        <p className="text-ui-caption text-(--ui-text-secondary)">
+          {responsibilityHint(agent.role)}
+        </p>
       </div>
       <TextareaField
         label={t("Instructions")}
@@ -175,7 +177,7 @@ export function CrewMemberForm({
       ) : null}
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium">{t("Model")}</span>
+          <span className="text-ui-body font-medium">{t("Model")}</span>
           <SegmentedControl
             label={t("Model choice")}
             value={agent.selection}
@@ -198,7 +200,7 @@ export function CrewMemberForm({
           />
         ) : (
           <>
-            <p className="text-xs text-(--ui-text-secondary)">
+            <p className="text-ui-caption text-(--ui-text-secondary)">
               {t(
                 "For each assignment the crew picks one of these models, using your ratings and the crew's working style.",
               )}
@@ -233,8 +235,12 @@ export function CrewMemberForm({
                   return (
                     <li key={c.id} className="flex min-w-0 flex-col gap-2 px-3 py-2">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">{name}</span>
-                        <span className="text-xs text-(--ui-text-secondary)">{t("Cost")}</span>
+                        <span className="min-w-0 flex-1 truncate text-ui-body font-medium">
+                          {name}
+                        </span>
+                        <span className="text-ui-caption text-(--ui-text-secondary)">
+                          {t("Cost")}
+                        </span>
                         <Select
                           label={t("Cost of {p0}", { p0: name })}
                           value={c.cost === undefined ? "" : String(c.cost)}
@@ -247,7 +253,9 @@ export function CrewMemberForm({
                             updateCandidate(c.id, { cost: value ? Number(value) : undefined })
                           }
                         />
-                        <span className="text-xs text-(--ui-text-secondary)">{t("Quality")}</span>
+                        <span className="text-ui-caption text-(--ui-text-secondary)">
+                          {t("Quality")}
+                        </span>
                         <Select
                           label={t("Quality of {p0}", { p0: name })}
                           value={c.quality === undefined ? "" : String(c.quality)}
@@ -280,7 +288,10 @@ export function CrewMemberForm({
                                 }
                               />
                             ) : (
-                              <label key={setting.id} className="flex items-center gap-2 text-xs">
+                              <label
+                                key={setting.id}
+                                className="flex items-center gap-2 text-ui-caption"
+                              >
                                 {setting.label}
                                 <Toggle
                                   label={setting.label}
@@ -304,7 +315,7 @@ export function CrewMemberForm({
                 })}
               </ul>
             ) : null}
-            <p className="text-xs text-(--ui-text-secondary)">
+            <p className="text-ui-caption text-(--ui-text-secondary)">
               {t("Ratings are your own judgement; unrated models are treated as unknown.")}
             </p>
           </>
@@ -318,9 +329,9 @@ export function CrewMemberForm({
             aria-expanded={advanced}
             startIcon={
               advanced ? (
-                <ChevronDown className="size-3.5" aria-hidden />
+                <ChevronDown className="icon-sm" aria-hidden />
               ) : (
-                <ChevronRight className="size-3.5" aria-hidden />
+                <ChevronRight className="icon-sm" aria-hidden />
               )
             }
             onClick={() => setAdvanced((value) => !value)}

@@ -4,7 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 
 import { NativeSelect } from "../../../shared/ui/Select";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { ChevronDown, CircleHelp, SlidersHorizontal } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import {
@@ -81,7 +81,7 @@ export function ModelExtrasPanel({
   /** Rendered before the heading, e.g. a back button. */
   leading?: ReactNode;
 }) {
-  useLocale();
+  const t = useT();
   const { current, effective, isInactive, changed, groups } = useModelExtras(
     harness,
     model,
@@ -105,14 +105,14 @@ export function ModelExtrasPanel({
         key={setting.id}
         className={dependent ? "ml-2 border-l border-(--ui-tone-neutral-border) pl-2.5" : undefined}
       >
-        <div className="flex min-h-8 items-center gap-2 text-[12px]">
+        <div className="flex min-h-8 items-center gap-2 text-ui-caption">
           <span
             className={`flex min-w-0 flex-1 items-center gap-1 ${inactive ? "text-(--ui-text-secondary)" : ""}`}
           >
             <span className="min-w-0 leading-4 break-words">{label}</span>
             {modified && (
               <span
-                className="size-1.5 shrink-0 rounded-full bg-(--ui-surface-raised)"
+                className="size-1.5 shrink-0 rounded-full bg-(--color-accent)"
                 title={t("Changed from default")}
               />
             )}
@@ -184,10 +184,10 @@ export function ModelExtrasPanel({
   };
   return (
     <>
-      <div className="sticky top-0 z-10 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 backdrop-blur-xl pt-2.5 pb-2">
+      <div className="sticky top-0 z-10 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 pt-2.5 pb-2">
         <div className="flex items-center justify-between gap-2">
           {leading}
-          <span className="min-w-0 flex-1 truncate text-[12px] font-medium">
+          <span className="min-w-0 flex-1 truncate text-ui-caption font-medium">
             {title ?? `${HARNESS_TITLE[harness]} · ${t("Extras")}`}
           </span>
           <Button
@@ -251,7 +251,7 @@ export function ModelExtras({
   onClose?: () => void;
   showSummary?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const { settings, effective, active, changed } = useModelExtras(harness, model, values);
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);

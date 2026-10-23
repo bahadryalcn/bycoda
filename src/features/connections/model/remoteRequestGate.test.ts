@@ -55,6 +55,57 @@ it.each(["success", "failure"])(
   },
 );
 
+it("returns a host receipt even when the connection changed while it was in flight", async () => {
+  adoptRemoteMachineInventory([machine]);
+  let finish!: (value: unknown) => void;
+  invoke.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const create = remoteRequest("m1", "commands.dispatch", { type: "create" });
+  adoptRemoteMachineInventory([{ ...machine, ssh: { ...machine.ssh, target: "me@replacement" } }]);
+  finish({ sessionId: "host-1", revision: 1 });
+  await expect(create).resolves.toEqual({ sessionId: "host-1", revision: 1 });
+});
+
+it("still reports a dispatch that failed after the connection changed as superseded", async () => {
+  adoptRemoteMachineInventory([machine]);
+  let fail!: (reason: unknown) => void;
+  invoke.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+  );
+  const create = remoteRequest("m1", "commands.dispatch", { type: "create" });
+  const rejected = expect(create).rejects.toThrow(
+    "Connection changed while the request was running",
+  );
+  adoptRemoteMachineInventory([{ ...machine, ssh: { ...machine.ssh, target: "me@replacement" } }]);
+  fail(new Error("Machine is unreachable"));
+  await rejected;
+});
+
+it("does not trust a receipt from a machine that is no longer the same environment", async () => {
+  adoptRemoteMachineInventory([machine]);
+  let finish!: (value: unknown) => void;
+  invoke.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const create = remoteRequest("m1", "commands.dispatch", { type: "create" });
+  const rejected = expect(create).rejects.toThrow(
+    "Connection changed while the request was running",
+  );
+  adoptRemoteMachineInventory([{ ...machine, environmentId: "other-env" }]);
+  finish({ sessionId: "host-1" });
+  await rejected;
+});
+
 it("does not interrupt a valid request when many other peers report health", async () => {
   adoptRemoteMachineInventory([machine]);
   let finish!: (value: unknown) => void;

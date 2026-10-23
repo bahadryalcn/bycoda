@@ -27,7 +27,6 @@ import { MorphSelect } from "../../src/shared/ui/MorphSelect";
 import { ExpandableCard } from "../../src/shared/ui/ExpandableCard";
 import { Timeline } from "../../src/shared/ui/Timeline";
 import { JsonViewer } from "../../src/shared/ui/JsonViewer";
-import { FilterToolbar } from "../../src/shared/ui/FilterToolbar";
 import { SortableDataTable } from "../../src/shared/ui/SortableDataTable";
 import { DateRangePicker, type DateRange } from "../../src/shared/ui/DateRangePicker";
 import { InlineEdit } from "../../src/shared/ui/InlineEdit";
@@ -609,10 +608,6 @@ function ButtonApiControls() {
 }
 
 function AdditionalControls() {
-  const [filters, setFilters] = useState([
-    { id: "project", label: "Project", value: "bycoda" },
-    { id: "tag", label: "Tag", value: "review" },
-  ]);
   const [range, setRange] = useState<DateRange | null>(null);
   const [name, setName] = useState("Review notes");
   const [failSave, setFailSave] = useState(false);
@@ -638,11 +633,6 @@ function AdditionalControls() {
         writeText={async (text) => {
           await navigator.clipboard.writeText(text);
         }}
-      />
-      <FilterToolbar
-        filters={filters}
-        onRemove={(id) => setFilters((current) => current.filter((filter) => filter.id !== id))}
-        onClearAll={() => setFilters([])}
       />
       <SortableDataTable
         caption="Project usage"

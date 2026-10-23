@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, useState } from "react";
+import { act, createElement, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -14,11 +14,15 @@ import {
   setLanguagePreference,
   t,
   useLocale,
+  useT,
+  sourceMessages,
   getDomainLanguagePreference,
   setDomainLanguagePreference,
   DOMAIN_LANGUAGE_STORAGE_KEYS,
 } from "./index";
-import { t as gitText, useLocale as useGitLocale } from "./git";
+import { t as gitText, useLocale as useGitLocale, useT as useGitT } from "./git";
+import englishSource from "./locales/en.json";
+import englishOverrides from "./en-overrides.json";
 import { t as technicalText } from "./technical";
 import { searchSettings, settingsSectionLabel } from "../../features/settings/model/settings";
 import { LanguageSettings } from "../../features/settings/ui/LanguageSettings";
@@ -31,6 +35,43 @@ afterEach(async () => {
   localStorage.clear();
 });
 describe("application language", () => {
+  it("keeps only nonidentity English translations in the startup catalog", async () => {
+    expect(englishOverrides).toEqual(
+      Object.fromEntries(Object.entries(englishSource).filter(([key, value]) => key !== value)),
+    );
+    await setLanguagePreference("en");
+    expect(t("Archive settings")).toBe("Archive");
+    expect(sourceMessages("Archive")).toContain("Archive settings");
+    expect(sourceMessages("Cancel")).toContain("Cancel");
+    await setLanguagePreference("tr");
+    expect(sourceMessages("İptal")).toContain("Cancel");
+  });
+
+  it("invalidates memoized labels when app and Git languages change independently", async () => {
+    await setLanguagePreference("en");
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    function Labels() {
+      const translate = useT();
+      const gitTranslate = useGitT();
+      // Mirrors the compiler's cached expression depending on the bound translator.
+      const label = useMemo(() => translate("Cancel"), [translate]);
+      const gitLabel = useMemo(() => gitTranslate("Cancel"), [gitTranslate]);
+      return createElement("div", null, `${label}|${gitLabel}`);
+    }
+    try {
+      await act(async () => root.render(createElement(Labels)));
+      expect(container.textContent).toBe("Cancel|Cancel");
+      await act(async () => setLanguagePreference("tr"));
+      expect(container.textContent).toBe("İptal|Cancel");
+      await act(async () => setDomainLanguagePreference("git", "app"));
+      expect(container.textContent).toBe("İptal|İptal");
+      await act(async () => setLanguagePreference("en"));
+      expect(container.textContent).toBe("Cancel|Cancel");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
   it("names task conversation links and local host activity in Turkish", async () => {
     await setLanguagePreference("tr");
     expect(t("Open worker session")).toBe("Çalışan oturumunu aç");

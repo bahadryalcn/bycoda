@@ -1,7 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import {
   useCallback,
   useEffect,
@@ -53,7 +53,7 @@ type Props = {
 
 /** Edits a queued message's text and attachments in a dialog instead of the queue row. */
 export function QueuedMessageEditDialog({ message, canAttach, onSave, onRemove, onCancel }: Props) {
-  useLocale();
+  const t = useT();
   const [draft, setDraft] = useState<QueuedEditDraft>(() => queuedEditDraft(message));
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -297,7 +297,7 @@ export function QueuedMessageEditDialog({ message, canAttach, onSave, onRemove, 
         {loadingAttachments > 0 ? <p role="status">{t("Loading…")}</p> : null}
 
         {draft.attachments.some((file) => file.missing) ? (
-          <p className="text-[11px] leading-4 text-(--ui-tone-warning-fg)">
+          <p className="text-ui-micro leading-4 text-(--ui-tone-warning-fg)">
             {t("Missing files are dropped from the message when you save.")}
           </p>
         ) : null}
@@ -308,19 +308,25 @@ export function QueuedMessageEditDialog({ message, canAttach, onSave, onRemove, 
         ) : null}
 
         {confirmingDiscard ? (
-          <Alert tone="info" role="alert">
+          <Alert tone="warning" role="alert">
             <span className="mr-auto">{t("Discard your changes?")}</span>
             <Button variant="ghost" type="button" onClick={() => setConfirmingDiscard(false)}>
               {t("Keep editing")}
             </Button>
-            <Button variant="ghost" type="button" onClick={onCancel}>
+            <Button variant="secondary" tone="danger" type="button" onClick={onCancel}>
               {t("Discard")}
             </Button>
           </Alert>
         ) : (
           <div className="flex items-center justify-end gap-2">
             {empty ? (
-              <Button variant="ghost" type="button" onClick={onRemove} className="mr-auto">
+              <Button
+                variant="ghost"
+                tone="danger"
+                type="button"
+                onClick={onRemove}
+                className="mr-auto"
+              >
                 {t("Remove from queue")}
               </Button>
             ) : null}
@@ -328,7 +334,7 @@ export function QueuedMessageEditDialog({ message, canAttach, onSave, onRemove, 
               {t("Cancel")}
             </Button>
             <Button
-              variant="ghost"
+              variant="primary"
               type="button"
               disabled={empty || loadingAttachments > 0}
               onClick={save}

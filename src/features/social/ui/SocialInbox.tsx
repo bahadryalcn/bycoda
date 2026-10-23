@@ -5,6 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useState } from "react";
+import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { socialRows } from "../model/socialWorkspace";
 import type { SocialThread } from "../model/social";
 import { HistoryPageControls, useSocialHistoryPage } from "./SocialHistoryPage";
@@ -17,6 +18,8 @@ import { threadTarget } from "./socialBulk";
 import { Composer, Empty, Notice, StatusBadge, names, time, type Props } from "./socialShared";
 
 export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props) {
+  useLocale();
+  const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState(snapshot.threads[0]?.id ?? "");
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
   const [answers, setAnswers] = useState<Record<string, { text: string; factIds: string[] }>>({});
@@ -61,8 +64,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
           (!kindFilter || item.kind === kindFilter) &&
           (!query.trim() ||
             `${contacts.get(item.contactId)?.name ?? ""} ${item.events[item.events.length - 1]?.text ?? ""}`
-              .toLocaleLowerCase("tr")
-              .includes(query.trim().toLocaleLowerCase("tr")))),
+              .toLocaleLowerCase(getLocale())
+              .includes(query.trim().toLocaleLowerCase(getLocale())))),
     )
     .sort((a, b) => b.lastInboundAt - a.lastInboundAt);
   const visibleAccounts = snapshot.accounts.filter(
@@ -96,7 +99,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               return {
                 account: item.name,
                 success: false,
-                reason: error instanceof Error ? error.message : "Yenilenemedi.",
+                reason: error instanceof Error ? error.message : t("Could not refresh."),
               };
             }
           }),
@@ -104,9 +107,9 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
         setSyncResults(results);
         if (!results.some((result) => result.success))
           throw new Error(
-            "Hiçbir hesabın gelen kutusu yenilenemedi. Hesapların hata ayrıntılarını kontrol edin.",
+            t("No account's inbox could be refreshed. Check the accounts' error details."),
           );
-      }, "Gelen kutusu yenilendi. Hesapların sonuçlarını kontrol edin.");
+      }, t("Inbox refreshed. Check each account's result."));
     } finally {
       setSyncing(false);
     }
@@ -119,17 +122,17 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
       >
         <section className="social-collection-list">
           <h2>
-            Gelen kutusu <small>{threads.length}</small>
+            {t("Inbox")} <small>{threads.length}</small>
           </h2>
           <div className="social-list-tools">
             <label>
-              Konuşma ara
+              {t("Find a conversation")}
               <SearchInput
                 appearance="field"
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Kişi veya ileti"
+                placeholder={t("Contact or message")}
               />
             </label>
             <SocialFilters
@@ -140,38 +143,50 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               }}
             >
               <label>
-                Hesap
+                {t("Account")}
                 <SearchableSelect
                   value={accountFilter}
-                  label={"Hesap"}
+                  label={t("Account")}
                   options={[
-                    { value: "", label: "Tüm hesaplar" },
+                    { value: "", label: t("All accounts") },
                     ...snapshot.accounts.map((item) => ({
                       value: item.id,
                       label: item.name,
                     })),
                   ]}
                   onChange={(nextValue) => setAccountFilter(nextValue)}
-                  searchLocale="tr"
+                  searchLocale={getLocale()}
                 />
               </label>
               <label>
-                İleti türü
+                {t("Message type")}
                 <NativeSelect
                   value={kindFilter}
                   onChange={(event) => setKindFilter(event.target.value)}
                 >
-                  <option value="">Mesaj ve yorumlar</option>
-                  <option value="message">Mesajlar</option>
-                  <option value="comment">Yorumlar</option>
+                  <option value="">{t("Messages and comments")}</option>
+                  <option value="message">{t("Messages")}</option>
+                  <option value="comment">{t("Comments")}</option>
                 </NativeSelect>
               </label>
             </SocialFilters>
             <Button
               type="button"
+              variant={selecting ? "secondary" : "ghost"}
+              aria-pressed={selecting}
+              hidden={!threads.length}
+              onClick={() => {
+                if (selecting) setCheckedIds([]);
+                setSelecting(!selecting);
+              }}
+            >
+              {selecting ? t("Finish selecting") : t("Select")}
+            </Button>
+            <Button
+              type="button"
               variant="secondary"
               iconOnly
-              label={syncing ? "Yenileniyor…" : "Konuşmaları yenile"}
+              label={syncing ? t("Refreshing…") : t("Refresh conversations")}
               loading={syncing}
               disabled={!snapshot.hostOnline || !syncAccounts.length || syncing}
               onClick={() => void synchronize()}
@@ -181,58 +196,80 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
           </div>
           {unsupportedAccounts.length ? (
             <details className="social-settings">
-              <summary>{unsupportedAccounts.length} hesapta gelen kutusu erişimi yok</summary>
+              <summary>
+                {t("{p0} accounts have no inbox access", { p0: unsupportedAccounts.length })}
+              </summary>
               {unsupportedAccounts.map((item) => (
                 <Notice
                   key={item.id}
                   kind="warning"
-                  title={`${item.name} · Gelen kutusu kullanılamıyor`}
+                  title={t("{p0} · Inbox unavailable", { p0: item.name })}
                 >
                   {item.connection === "browser"
-                    ? "X tarayıcı bağlantısı paylaşım yapabilir; mesajları ve gelen yorumları okuyamaz. Bu işlemler için resmî API hesabı bağlayın."
+                    ? t(
+                        "X browser connections can publish; they cannot read messages or incoming comments. Connect an official API account for those.",
+                      )
                     : !item.connected || item.paused
-                      ? "Hesap bağlantısını Hesaplar bölümünden kontrol edin."
+                      ? t("Check the account connection in the Accounts section.")
                       : snapshot.capabilities[item.id]?.find(
                           (capability) => capability.operation === "poll",
                         )?.reason ||
-                        "Bu hesabın gelen kutusu okuma erişimi yok. Hesap erişimini kontrol edin."}
+                        t(
+                          "This account has no permission to read its inbox. Check the account's access.",
+                        )}
                 </Notice>
               ))}
             </details>
           ) : null}
-          {syncResults.map((result) => (
-            <Notice
-              key={result.account}
-              kind={result.success ? "success" : "error"}
-              title={result.account}
-            >
-              {result.success ? "Güncel iletiler alındı." : result.reason}
-            </Notice>
-          ))}
-          <label className="social-select-all" hidden={!threads.length}>
-            <Checkbox
-              aria-label="Görünen tüm konuşmaları seç"
-              checked={threads.length > 0 && threads.every((item) => checkedIds.includes(item.id))}
-              disabled={!threads.length}
-              onChange={(event) =>
-                setCheckedIds(event.target.checked ? threads.map((item) => item.id) : [])
-              }
-            />
-            Görünen tüm konuşmaları seç ({threads.length})
-          </label>
+          {syncResults.some((result) => !result.success) ? (
+            <>
+              {syncResults.some((result) => result.success) ? (
+                <p className="social-muted" role="status">
+                  {t("Refreshed: {p0}", {
+                    p0: syncResults
+                      .filter((result) => result.success)
+                      .map((result) => result.account)
+                      .join(", "),
+                  })}
+                </p>
+              ) : null}
+              {syncResults
+                .filter((result) => !result.success)
+                .map((result) => (
+                  <Notice key={result.account} kind="error" title={result.account}>
+                    {result.reason}
+                  </Notice>
+                ))}
+            </>
+          ) : null}
+          {selecting ? (
+            <label className="social-select-all" hidden={!threads.length}>
+              <Checkbox
+                aria-label={t("Select all visible conversations")}
+                checked={
+                  threads.length > 0 && threads.every((item) => checkedIds.includes(item.id))
+                }
+                disabled={!threads.length}
+                onChange={(event) =>
+                  setCheckedIds(event.target.checked ? threads.map((item) => item.id) : [])
+                }
+              />
+              {t("Select all visible conversations ({p0})", { p0: threads.length })}
+            </label>
+          ) : null}
           <div hidden={!checkedThreads.length}>
             <div className="social-bulk-toolbar">
-              <span>{checkedThreads.length} konuşma seçili</span>
+              <span>{t("{p0} conversations selected", { p0: checkedThreads.length })}</span>
               <Button
-                type="submit"
-                variant="secondary"
+                type="button"
+                variant="ghost"
                 disabled={!checkedIds.length}
                 onClick={() => setCheckedIds([])}
               >
-                Seçimi temizle
+                {t("Clear selection")}
               </Button>
             </div>
-            <Composer title="Seçili konuşmalara yanıt hazırla">
+            <Composer title={t("Prepare replies to selected conversations")}>
               <SocialBulkComposer
                 client={client}
                 snapshot={snapshot}
@@ -247,36 +284,44 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
             {threads.length ? (
               threads.map((item) => (
                 <div className="social-selection-row" key={item.id}>
-                  <label>
-                    <Checkbox
-                      aria-label={`${contacts.get(item.contactId)?.name ?? "Kişi"} konuşmasını seç`}
-                      checked={checkedIds.includes(item.id)}
-                      onChange={(event) =>
-                        setCheckedIds((current) =>
-                          event.target.checked
-                            ? [...current, item.id]
-                            : current.filter((id) => id !== item.id),
-                        )
-                      }
-                    />
-                  </label>
+                  {selecting || checkedIds.length ? (
+                    <label>
+                      <Checkbox
+                        aria-label={t("Select conversation with {p0}", {
+                          p0: contacts.get(item.contactId)?.name ?? t("Contact person"),
+                        })}
+                        checked={checkedIds.includes(item.id)}
+                        onChange={(event) =>
+                          setCheckedIds((current) =>
+                            event.target.checked
+                              ? [...current, item.id]
+                              : current.filter((id) => id !== item.id),
+                          )
+                        }
+                      />
+                    </label>
+                  ) : null}
                   <Button
-                    type="submit"
+                    type="button"
                     variant="tab"
                     layout="stacked"
                     className="social-row"
                     aria-pressed={selected === item.id}
                     onClick={() => setSelected(item.id)}
                   >
-                    <strong>{contacts.get(item.contactId)?.name ?? "Kişi"}</strong>
-                    <span>
-                      {item.kind === "message" ? "Mesaj" : "Yorum"} ·{" "}
+                    <span className="social-row-head">
+                      <strong>{contacts.get(item.contactId)?.name ?? t("Contact person")}</strong>
+                      <small>{time(item.lastInboundAt)}</small>
+                    </span>
+                    <p className="social-row-preview">
+                      {item.events[item.events.length - 1]?.text.slice(0, 140)}
+                    </p>
+                    <span className="social-row-meta">
+                      {item.kind === "message" ? t("Message") : t("Comment")} ·{" "}
                       {snapshot.accounts.find((account) => account.id === item.accountId)?.name}
                     </span>
-                    <p>{item.events[item.events.length - 1]?.text.slice(0, 140)}</p>
-                    <span>{time(item.lastInboundAt)}</span>
                     {item.reviewReason || !item.projectId ? (
-                      <StatusBadge status="review" label="Proje seçilmeli" />
+                      <StatusBadge status="review" label={t("Project required")} />
                     ) : null}
                   </Button>
                 </div>
@@ -285,19 +330,19 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               <Empty
                 title={
                   snapshot.threads.length
-                    ? "Konuşma bulunamadı"
+                    ? t("No conversations found")
                     : unsupportedAccounts.length === visibleAccounts.length &&
                         visibleAccounts.length
-                      ? "Gelen kutusu erişimi gerekli"
-                      : "Henüz ileti yok"
+                      ? t("Inbox access required")
+                      : t("No messages yet")
                 }
                 icon={InboxIcon}
               >
                 {snapshot.threads.length
-                  ? "Aramayı veya filtreleri değiştirin."
+                  ? t("Change the search or filters.")
                   : syncAccounts.length
-                    ? "Konuşmaları yenile düğmesiyle yeni mesaj ve yorumları alın."
-                    : "Hesaplar bölümünden gelen kutusu erişimi olan bir hesap bağlayın."}
+                    ? t("Use the refresh button to fetch new messages and comments.")
+                    : t("Connect an account with inbox access in the Accounts section.")}
               </Empty>
             )}
           </div>
@@ -306,8 +351,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
           {thread ? (
             <>
               <div className="social-detail-header">
-                <h2>{contacts.get(thread.contactId)?.name ?? "Konuşma"}</h2>
-                <Composer title="Yanıt hazırla">
+                <h2>{contacts.get(thread.contactId)?.name ?? t("Conversation")}</h2>
+                <Composer title={t("Prepare reply")}>
                   <SocialBulkComposer
                     key={thread.id}
                     client={client}
@@ -324,27 +369,29 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                 </Composer>
               </div>
               <p className="social-muted">
-                {thread.kind === "message" ? "Özel mesaj" : "Yorum"} · {account?.name} ·{" "}
+                {thread.kind === "message" ? t("Direct message") : t("Comment")} · {account?.name} ·{" "}
                 {account ? names[account.platform] : ""}
-                {thread.replyUntil ? ` · Son yanıt zamanı ${time(thread.replyUntil)}` : ""}
+                {thread.replyUntil
+                  ? ` · ${t("Reply deadline {p0}", { p0: time(thread.replyUntil) })}`
+                  : ""}
               </p>
               {thread.reviewReason ? (
-                <Notice kind="warning" title="Proje eşleşmesini kontrol edin">
+                <Notice kind="warning" title={t("Check the project match")}>
                   {thread.reviewReason}
                 </Notice>
               ) : null}
               {thread.replyAllowed === false ? (
                 <Notice kind="warning">
-                  Platform bu konuşmaya yanıt gönderilmesine izin vermiyor.
+                  {t("The platform does not allow sending replies to this conversation.")}
                 </Notice>
               ) : null}
               <label>
-                İlgili proje
+                {t("Related project")}
                 <SearchableSelect
                   value={thread.projectId ?? ""}
-                  label={"İlgili proje"}
+                  label={t("Related project")}
                   options={[
-                    { value: "", label: "Proje seçin", disabled: true },
+                    { value: "", label: t("Select a project"), disabled: true },
                     ...projects
                       .filter((project) => account?.grants[project.id]?.includes("draft"))
                       .map((project) => ({
@@ -359,15 +406,15 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                           id: thread.id,
                           projectId: nextValue,
                         }),
-                      "Konuşmanın projesi güncellendi.",
+                      t("Conversation project updated."),
                     )
                   }
-                  searchLocale="tr"
+                  searchLocale={getLocale()}
                 />
               </label>
               <div className="social-conversation">
                 {detail.loading ? (
-                  <Notice kind="loading" title="Konuşma geçmişi yükleniyor" />
+                  <Notice kind="loading" title={t("Loading conversation history")} />
                 ) : null}
                 {detail.error ? <Notice kind="error">{detail.error}</Notice> : null}
                 {(!summary?.eventsPreview || detail.value ? thread.events : []).map((event) => (
@@ -376,7 +423,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                     className={event.direction === "outbound" ? "social-outbound" : ""}
                   >
                     <small>
-                      {event.direction === "inbound" ? "Gelen" : "Gönderilen"} · {time(event.at)}
+                      {event.direction === "inbound" ? t("Incoming") : t("Outgoing")} ·{" "}
+                      {time(event.at)}
                     </small>
                     <p className="social-message">{event.text}</p>
                   </article>
@@ -385,13 +433,13 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               <HistoryPageControls
                 page={detail.value?.eventsPage}
                 loading={detail.loading}
-                label="Konuşma geçmişi sayfaları"
+                label={t("Conversation history pages")}
                 onPage={detail.show}
               />
 
               {currentDrafts.length ? (
                 <>
-                  <h3>Yanıt taslakları ({currentDrafts.length})</h3>
+                  <h3>{t("Reply drafts ({p0})", { p0: currentDrafts.length })}</h3>
                   <DraftList drafts={currentDrafts} client={client} run={run} snapshot={snapshot} />
                 </>
               ) : null}
@@ -403,7 +451,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                   ),
                 )}
               >
-                <summary>Gönderim geçmişi</summary>
+                <summary>{t("Send history")}</summary>
                 <JobList snapshot={snapshot} client={client} run={run} thread={thread} />
               </details>
             </>
@@ -411,18 +459,20 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
             <Empty
               title={
                 snapshot.threads.length
-                  ? "Bir konuşma seçin"
+                  ? t("Select a conversation")
                   : syncAccounts.length
-                    ? "Mesaj ve yorumlarınız burada"
-                    : "Gelen kutusunu bağlayın"
+                    ? t("Your messages and comments appear here")
+                    : t("Connect an inbox")
               }
               icon={InboxIcon}
             >
               {snapshot.threads.length
-                ? "İletiyi okuyun, AI ile yanıt hazırlayın ve göndermeden önce inceleyin."
+                ? t("Read the message, prepare a reply with AI and review it before sending.")
                 : syncAccounts.length
-                  ? "Yeni iletileri almak için konuşmaları yenileyin."
-                  : "Hesaplar bölümünden mesaj ve yorum okuma erişimi olan bir hesap bağlayın."}
+                  ? t("Refresh conversations to fetch new messages.")
+                  : t(
+                      "Connect an account with message and comment read access in the Accounts section.",
+                    )}
             </Empty>
           )}
         </section>

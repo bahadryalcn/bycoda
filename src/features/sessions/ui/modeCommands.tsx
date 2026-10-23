@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import {
   AiIdea,
   CircleDashed,
@@ -20,7 +20,7 @@ type ModeCommandStyle = {
   /** Text color of the command inside the prompt. */
   className: string;
   /** Mode pill shown under the prompt while the mode is on. */
-  pill?: { label: string; title: string; className: string };
+  pill?: { label: string; title: string };
   /** Rows that list the mode, such as a + menu or command list. */
   menu?: { label: string; description: string; iconClassName: string };
 };
@@ -28,7 +28,7 @@ type ModeCommandStyle = {
 export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
   [PLAN_COMMAND.name]: {
     Icon: AiIdea,
-    className: "text-(--ui-tone-warning-fg) dark:text-(--ui-tone-warning-fg)",
+    className: "text-(--ui-tone-warning-fg)",
     pill: {
       get label() {
         return t("Plan");
@@ -36,8 +36,6 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
       get title() {
         return t("Plan mode");
       },
-      className:
-        "bg-(--ui-tone-warning-subtle) text-(--ui-tone-warning-fg) hover:bg-(--ui-tone-warning-subtle) dark:text-(--ui-tone-warning-fg)",
     },
     menu: {
       get label() {
@@ -51,7 +49,7 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
   },
   [OPERATOR_COMMAND.name]: {
     Icon: CursorMagicSelection,
-    className: "text-(--ui-tone-info-fg) dark:text-(--ui-tone-info-fg)",
+    className: "text-(--ui-tone-info-fg)",
     pill: {
       get label() {
         return t("Operator");
@@ -59,8 +57,6 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
       get title() {
         return t("Operator");
       },
-      className:
-        "bg-(--ui-tone-info-subtle) font-medium text-(--ui-tone-info-fg) hover:bg-(--ui-tone-info-subtle) dark:bg-(--ui-tone-info-subtle) dark:text-(--ui-tone-info-fg) dark:hover:bg-(--ui-tone-info-subtle)",
     },
     menu: {
       get label() {
@@ -74,7 +70,7 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
   },
   [ORCHESTRATOR_COMMAND.name]: {
     Icon: Share,
-    className: "text-orchestration dark:text-orchestration/90",
+    className: "text-orchestration",
     pill: {
       get label() {
         return t("Orchestrator");
@@ -82,8 +78,6 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
       get title() {
         return t("Orchestrator mode");
       },
-      className:
-        "bg-orchestration/15 font-medium text-orchestration hover:bg-orchestration/20 dark:bg-orchestration/10 dark:text-orchestration/90 dark:hover:bg-orchestration/15",
     },
     menu: {
       get label() {
@@ -92,7 +86,7 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
       get description() {
         return t("Plan and coordinate agent work");
       },
-      iconClassName: "text-orchestration/65",
+      iconClassName: "text-(--ui-text-secondary)",
     },
   },
   [DRAFT_COMMAND.name]: {
@@ -105,8 +99,6 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
       get title() {
         return t("Draft mode");
       },
-      className:
-        "border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) text-(--ui-text-secondary) hover:bg-(--ui-surface-raised) hover:text-(--ui-tone-neutral-fg)",
     },
     menu: {
       get label() {
@@ -120,7 +112,7 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
   },
   [BTW_COMMAND.name]: {
     Icon: MessageSquare,
-    className: "text-(--ui-tone-success-fg) dark:text-(--ui-tone-success-fg)",
+    className: "text-(--ui-tone-success-fg)",
   },
 };
 
@@ -129,7 +121,7 @@ export const SHELL_MODE_NAME = "shell";
 
 const SHELL_MODE_STYLE: ModeCommandStyle = {
   Icon: Terminal,
-  className: "text-(--ui-tone-danger-fg) dark:text-(--ui-tone-danger-fg)",
+  className: "text-(--ui-tone-warning-fg)",
 };
 
 /** First-line indent that, with the `/`, makes room for a mode icon. */
@@ -193,7 +185,7 @@ export function ModeCommandText({
 }
 
 export function ModeCommandPill({ name, onClear }: { name: string; onClear: () => void }) {
-  useLocale();
+  const t = useT();
   const style = MODE_COMMAND_STYLES[name];
   if (!style?.pill) return null;
   const { Icon, pill } = style;

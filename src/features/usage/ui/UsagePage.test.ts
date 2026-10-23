@@ -28,9 +28,6 @@ vi.mock("./UsageOverview", () => ({
     limits: (filters: import("../model/usageAnalytics").UsageFilters) => import("react").ReactNode;
   }) => limits({ provider: [], account: [], project: [], model: [], group: [] }),
 }));
-vi.mock("../../settings/ui/ProviderUsageSettings", () => ({
-  ProviderUsageSettings: () => null,
-}));
 import { UsagePage } from "./UsagePage";
 
 it("shows remaining quota and does not invent reset times", () => {

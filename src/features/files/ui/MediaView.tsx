@@ -187,7 +187,7 @@ export function MediaView({
           </div>
         )}
       </div>
-      <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-stroke px-3 py-2 text-xs text-[var(--ui-text-secondary)]">
+      <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-stroke px-3 py-1 text-ui-caption min-h-[var(--ui-control-height-compact)] text-[var(--ui-text-secondary)]">
         <span className="min-w-0 flex-1 truncate" title={path}>
           {basename(path)}
         </span>

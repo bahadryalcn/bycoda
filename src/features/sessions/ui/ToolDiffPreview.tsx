@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ToolPreview } from "../model/session";
 import { FilePreview } from "../../files/ui/FilePreview";
@@ -28,7 +28,7 @@ export function ToolDiffPreview({
   className,
   children,
 }: Props) {
-  useLocale();
+  const t = useT();
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const surface = useRef<HTMLDivElement>(null);
@@ -162,7 +162,7 @@ export function ToolDiffPreview({
             }
           }}
         >
-          <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-1.5 font-sans text-[11px] text-(--ui-text-secondary)">
+          <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-1.5 font-sans text-ui-micro text-(--ui-text-secondary)">
             <span className="min-w-0 flex-1">{description}</span>
             <Button
               iconOnly

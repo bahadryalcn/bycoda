@@ -686,23 +686,30 @@ describe("sidebar session IDs", () => {
     return document.querySelector<HTMLElement>('[role="menu"][aria-label="Copy session ID"]')!;
   }
 
-  it.each(["Harness session ID", "bycoda session ID"])("shows selectable ID and retries after %s clipboard failure", async (label) => {
-    props.sessions = [{ ...props.sessions[0], providerSessionId: "provider-identity" }];
-    vi.mocked(copyText).mockRejectedValueOnce(new Error("Clipboard unavailable"));
-    act(() => render());
-    const menu = openCopyIdMenu("session-1");
-    const item = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent === label)!;
-    await act(async () => item.click());
-    const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain("Could not copy the session ID");
-    const field = dialog.querySelector<HTMLInputElement>('input[aria-label="Session ID"]')!;
-    expect(field.value).toBe(label === "Harness session ID" ? "provider-identity" : "session-1");
-    expect(field.readOnly).toBe(true);
-    const retry = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Retry")!;
-    await act(async () => retry.click());
-    expect(copyText).toHaveBeenLastCalledWith(field.value);
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-  });
+  it.each(["Harness session ID", "bycoda session ID"])(
+    "shows selectable ID and retries after %s clipboard failure",
+    async (label) => {
+      props.sessions = [{ ...props.sessions[0], providerSessionId: "provider-identity" }];
+      vi.mocked(copyText).mockRejectedValueOnce(new Error("Clipboard unavailable"));
+      act(() => render());
+      const menu = openCopyIdMenu("session-1");
+      const item = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (button) => button.textContent === label,
+      )!;
+      await act(async () => item.click());
+      const dialog = document.querySelector('[role="dialog"]')!;
+      expect(dialog.textContent).toContain("Could not copy the session ID");
+      const field = dialog.querySelector<HTMLInputElement>('input[aria-label="Session ID"]')!;
+      expect(field.value).toBe(label === "Harness session ID" ? "provider-identity" : "session-1");
+      expect(field.readOnly).toBe(true);
+      const retry = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Retry",
+      )!;
+      await act(async () => retry.click());
+      expect(copyText).toHaveBeenLastCalledWith(field.value);
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    },
+  );
 
   it("copies either ID from the right-clicked session", async () => {
     props.sessions = [
@@ -1196,7 +1203,7 @@ describe("sidebar orchestration card", () => {
     expect(orchestrationIcon).not.toBeNull();
     expect(orchestrationIcon?.tagName).toBe("BUTTON");
     expect(orchestrationIcon?.classList.contains("opacity-0")).toBe(false);
-    expect(orchestrationIcon?.querySelector("svg")?.classList.contains("size-3")).toBe(true);
+    expect(orchestrationIcon?.querySelector("svg")?.classList.contains("icon-xs")).toBe(true);
     expect(orchestrationIcon?.getAttribute("title")).toBe("");
     expect(card().querySelector("[data-session-select] [data-orchestration-icon]")).toBeNull();
     expect(card().textContent).toContain("3 agents");
@@ -1862,7 +1869,9 @@ describe("collapsed rail Inbox actions", () => {
       remove.click();
     });
     expect(projectSearchInput()).not.toBeNull();
-    const dialog = document.querySelector('[aria-label="Delete other"]')!;
+    const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).find((node) =>
+      node.textContent?.includes("Delete other"),
+    )!;
     const confirm = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find(
       (button) => button.textContent === "Delete",
     )!;
@@ -2361,17 +2370,22 @@ describe("dragging sessions within the list", () => {
   });
 });
 
-it("deletes only its own card from the hover action", () => {
+it("keeps delete out of the row hover actions and deletes only its own card by key", () => {
   props.onDeleteSession = vi.fn();
   props.sessions = [props.sessions[0], { ...props.sessions[0], id: "other" }];
   act(render);
+  expect(card().querySelector('[aria-label^="Delete "]')).toBeNull();
   // Another card is selected; this card is not part of that selection.
   act(() =>
     container
       .querySelector<HTMLElement>('[data-session-card="other"]')!
       .dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })),
   );
-  act(() => card().querySelector<HTMLButtonElement>('[aria-label^="Delete "]')!.click());
+  act(() =>
+    card()
+      .querySelector<HTMLElement>("[data-session-select]")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true })),
+  );
   expect(props.onDeleteSession).toHaveBeenCalledExactlyOnceWith("session-1");
 });
 

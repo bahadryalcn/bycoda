@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { type ReactNode, useSyncExternalStore } from "react";
 import { basename } from "../../../platform/tauri/fs";
 import { projectKey } from "../../../shared/lib/paths";
@@ -25,7 +25,7 @@ type Props = {
 };
 
 export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
-  useLocale();
+  const t = useT();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const crewEnabled = useSyncExternalStore(
     subscribeCrewSceneEnabled,

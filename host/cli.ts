@@ -80,7 +80,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     return;
   }
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid port");
-  const { protectWindowsDirectory } = await import("./windows");
+  const { protectWindowsDirectory, preflightWindowsHostUninstall } = await import("./windows");
   const {
     connectionInfo,
     installService,
@@ -96,6 +96,9 @@ Connect another computer using an SSH forward to the loopback port.`);
     return;
   }
   if (command === "service" && args[1] === "uninstall") {
+    // Legacy administrator-owned tasks may be readable/startable but not removable.
+    // Check before sending stop: a failed upgrade must leave the old host serving.
+    if (process.platform === "win32") await preflightWindowsHostUninstall();
     // Windows owns a launcher tree and its log handle. Drain work first.
     let notes = process.platform === "win32" ? [] : await uninstallService();
     // Also stops a manually started host, or one the service manager left.
@@ -386,7 +389,8 @@ async function entry() {
     return;
   }
   if (command === "conversation") {
-    const { callConversationTool, conversationToolCatalog, CONVERSATION_MAX_INPUT_BYTES } = await import("./conversation-tools");
+    const { callConversationTool, conversationToolCatalog, CONVERSATION_MAX_INPUT_BYTES } =
+      await import("./conversation-tools");
     if (!args[1] || args[1] === "--help") {
       console.log(
         JSON.stringify({
@@ -403,7 +407,8 @@ async function entry() {
       let inputBytes = 0;
       for await (const chunk of process.stdin) {
         inputBytes += Buffer.byteLength(chunk);
-        if (inputBytes > CONVERSATION_MAX_INPUT_BYTES) throw new Error("Conversation input too large.");
+        if (inputBytes > CONVERSATION_MAX_INPUT_BYTES)
+          throw new Error("Conversation input too large.");
         raw += String(chunk);
       }
       console.log(

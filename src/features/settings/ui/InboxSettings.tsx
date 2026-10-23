@@ -4,9 +4,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 
 import { useCallback, useContext, useEffect, useId, useRef, useState } from "react";
-import { Check } from "../../../shared/ui/icons";
-
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 
 import { JiraSettings } from "./JiraSettings";
 import { InboxConnectionStatus, InboxConnectionError } from "./InboxConnectionStatus";
@@ -103,7 +101,7 @@ export function InboxPage() {
             aria-selected={active === provider.id}
             selected={active === provider.id}
             tabIndex={active === provider.id ? 0 : -1}
-            startIcon={<InboxProviderMark provider={provider.id} className="size-4 shrink-0" />}
+            startIcon={<InboxProviderMark provider={provider.id} className="icon-md shrink-0" />}
             onClick={() => setActive(provider.id)}
             onKeyDown={(event) => {
               const last = INBOX_PROVIDERS.length - 1;
@@ -212,11 +210,12 @@ export function GithubSettings() {
         description={description}
         scope={t("This computer · GitHub CLI account")}
       >
-        <span role="status" aria-live="polite" className="text-[12px] text-content/50">
+        <span role="status" aria-live="polite" className="text-ui-caption text-(--ui-text-muted)">
           {label}
         </span>
         {!checking && status && !status.installed ? (
-          <SecondaryButton
+          <Button
+            className="shrink-0"
             onClick={() => {
               void openUrl("https://cli.github.com/").catch((err: unknown) =>
                 setError(String(err)),
@@ -224,11 +223,11 @@ export function GithubSettings() {
             }}
           >
             {t("Installation guide")}
-          </SecondaryButton>
+          </Button>
         ) : null}
-        <SecondaryButton onClick={() => void checkStatus()} disabled={checking}>
+        <Button className="shrink-0" onClick={() => void checkStatus()} disabled={checking}>
           {checking ? t("Checking") : t("Check again")}
-        </SecondaryButton>
+        </Button>
       </Row>
       <InboxConnectionError error={error} />
     </>
@@ -323,12 +322,16 @@ export function GitlabSettings() {
       >
         {connected ? (
           <div className="inbox-account-fields">
-            <span title={url} className="max-w-56 break-all text-[12px] text-content/50">
+            <span title={url} className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)">
               {url}
             </span>
-            <SecondaryButton onClick={() => void onDisconnect()} disabled={busy || checking}>
+            <Button
+              className="shrink-0"
+              onClick={() => void onDisconnect()}
+              disabled={busy || checking}
+            >
               {busy ? t("Disconnecting") : t("Disconnect")}
-            </SecondaryButton>
+            </Button>
           </div>
         ) : (
           <div className="inbox-account-fields">
@@ -357,7 +360,8 @@ export function GitlabSettings() {
               spellCheck={false}
               disabled={busy || checking}
             />
-            <SecondaryButton
+            <Button
+              className="shrink-0"
               onClick={() => void onSave()}
               disabled={busy || checking || !url.trim() || !token.trim()}
             >
@@ -366,7 +370,7 @@ export function GitlabSettings() {
                 : error
                   ? t("Retry save and test")
                   : t("Save and test connection")}
-            </SecondaryButton>
+            </Button>
           </div>
         )}
       </Row>
@@ -463,12 +467,16 @@ export function AzureDevOpsSettings() {
       >
         {connected ? (
           <div className="inbox-account-fields">
-            <span title={url} className="max-w-56 break-all text-[12px] text-content/50">
+            <span title={url} className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)">
               {url}
             </span>
-            <SecondaryButton onClick={() => void onDisconnect()} disabled={busy || checking}>
+            <Button
+              className="shrink-0"
+              onClick={() => void onDisconnect()}
+              disabled={busy || checking}
+            >
               {busy ? t("Disconnecting") : t("Disconnect")}
-            </SecondaryButton>
+            </Button>
           </div>
         ) : (
           <div className="inbox-account-fields">
@@ -497,7 +505,8 @@ export function AzureDevOpsSettings() {
               spellCheck={false}
               disabled={busy || checking}
             />
-            <SecondaryButton
+            <Button
+              className="shrink-0"
               onClick={() => void onSave()}
               disabled={busy || checking || !url.trim() || !token.trim()}
             >
@@ -506,7 +515,7 @@ export function AzureDevOpsSettings() {
                 : error
                   ? t("Retry save and test")
                   : t("Save and test connection")}
-            </SecondaryButton>
+            </Button>
           </div>
         )}
       </Row>
@@ -615,11 +624,12 @@ export function LinearSettings() {
     }
   };
 
-  const toggleTeam = (id: string) => {
-    const next = new Set(hiddenTeamIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    const ids = [...next];
+  const setVisibleTeams = (visible: string[]) => {
+    const known = new Set(teams.map((team) => team.id));
+    const ids = [
+      ...hiddenTeamIds.filter((id) => !known.has(id)),
+      ...teams.filter((team) => !visible.includes(team.id)).map((team) => team.id),
+    ];
     setHiddenTeamIds(ids);
     saveHiddenLinearTeamIds(ids);
     clearInboxCache();
@@ -642,9 +652,13 @@ export function LinearSettings() {
         )}
       >
         {connected ? (
-          <SecondaryButton onClick={() => void onDisconnect()} disabled={busy || checking}>
+          <Button
+            className="shrink-0"
+            onClick={() => void onDisconnect()}
+            disabled={busy || checking}
+          >
             {t("Disconnect")}
-          </SecondaryButton>
+          </Button>
         ) : (
           <div className="inbox-account-fields">
             <PasswordField
@@ -661,7 +675,8 @@ export function LinearSettings() {
               spellCheck={false}
               disabled={busy || checking}
             />
-            <SecondaryButton
+            <Button
+              className="shrink-0"
               onClick={() => void onSave()}
               disabled={busy || checking || !token.trim()}
             >
@@ -670,48 +685,45 @@ export function LinearSettings() {
                 : error
                   ? t("Retry save and test")
                   : t("Save and test connection")}
-            </SecondaryButton>
+            </Button>
           </div>
         )}
       </Row>
       <InboxConnectionError error={error} />
       {connected ? (
-        <Row label={t("Teams")} persistence={{ mode: "automatic" }}>
-          <SecondaryButton disabled={busy || checking} onClick={() => void loadTeams()}>
+        <Row
+          label={t("Teams")}
+          description={t("Unchecked teams stay out of the inbox.")}
+          persistence={{ mode: "automatic" }}
+        >
+          {teams.length > 0 ? (
+            <SearchableSelect
+              multiple
+              label={t("Teams")}
+              options={teams.map((team) => ({
+                value: team.id,
+                label: team.name,
+                keywords: team.key,
+              }))}
+              value={teams
+                .filter((team) => !hiddenTeamIds.includes(team.id))
+                .map((team) => team.id)}
+              onChange={setVisibleTeams}
+              disabled={busy || checking}
+              showSelectedValues
+              placeholder={t("{p0} of {p1} teams selected", { p0: 0, p1: teams.length })}
+              selectionLabels={{
+                summary: (count) =>
+                  t("{p0} of {p1} teams selected", { p0: count, p1: teams.length }),
+              }}
+            />
+          ) : null}
+          <Button className="shrink-0" disabled={busy || checking} onClick={() => void loadTeams()}>
             {teamsError ? t("Retry") : t("Refresh teams")}
-          </SecondaryButton>
+          </Button>
         </Row>
       ) : null}
       <InboxConnectionError error={teamsError} />
-      {connected && teams.length > 0 ? (
-        <div className="border-b border-content/5 px-4 py-3.5 last:border-b-0">
-          <div className="text-[13px] font-medium text-content">{t("Teams")}</div>
-          <p className="mt-1 text-[12px] leading-relaxed text-content/45">
-            {t("Unchecked teams stay out of the inbox.")}
-          </p>
-          <div className="-mx-2 mt-2 flex flex-col gap-0.5">
-            {teams.map((team) => {
-              const checked = !hiddenTeamIds.includes(team.id);
-              return (
-                <Button
-                  variant="item"
-                  aria-pressed={checked}
-                  key={team.id}
-                  type="button"
-                  onClick={() => toggleTeam(team.id)}
-                  className="w-full"
-                >
-                  <span className="min-w-0 flex-1 truncate">
-                    {team.name}
-                    {team.key ? <span className="ml-1.5 text-content/40">{team.key}</span> : null}
-                  </span>
-                  {checked ? <Check className="size-3.5 shrink-0" strokeWidth={2.25} /> : null}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
     </>
   );
 }

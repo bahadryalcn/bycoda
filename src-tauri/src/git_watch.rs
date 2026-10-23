@@ -743,4 +743,71 @@ mod tests {
         drop(watcher);
         let _ = std::fs::remove_dir_all(&base);
     }
+
+    #[test]
+    fn ignores_git_housekeeping_files() {
+        for path in [
+            "/r/.git/HEAD.lock",
+            "/r/.git/shallow.lock",
+            "/r/.git/gc.log",
+            "/r/.git/gc.pid",
+            "/r/.git/FETCH_HEAD",
+            "/r/.git/objects",
+            "/r/.git/objects/pack/pack-1.pack",
+            "/r/.git/objects/info/commit-graph",
+        ] {
+            assert!(!classify(path, GIT, GIT).any(), "{path}");
+        }
+        let mut subs = HashMap::new();
+        subs.insert(("main".to_string(), "/r".to_string()), sub(GIT, GIT));
+        let noise: Vec<String> = ["/r/.git/gc.log", "/r/.git/objects/ab/cd", "/r/.git/x.lock"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert!(reports(&subs, &noise, false).is_empty());
+    }
+
+    #[test]
+    #[ignore = "perf P8: classify must ignore refs/bycoda/** (checkpoint refs, two written per turn)"]
+    fn checkpoint_refs_are_not_a_ref_change() {
+        // Precondition: ordinary refs still count.
+        assert!(classify("/r/.git/refs/heads/main", GIT, GIT).refs);
+        assert!(classify("/r/.git/refs/tags/v1", GIT, GIT).refs);
+        for path in [
+            "/r/.git/refs/bycoda",
+            "/r/.git/refs/bycoda/checkpoints",
+            "/r/.git/refs/bycoda/checkpoints/s1",
+            "/r/.git/refs/bycoda/checkpoints/s1/turn-1/before",
+            "/r/.git/refs/bycoda/checkpoints/s1/turn-1/after",
+        ] {
+            assert!(!classify(path, GIT, GIT).any(), "{path}");
+        }
+        assert!(!classify(
+            "/r/.git/refs/bycoda/checkpoints/s/t/after",
+            "/r/.git/worktrees/w",
+            GIT
+        )
+        .any());
+    }
+
+    #[test]
+    #[ignore = "perf P10: drop objects/, *.lock, FETCH_HEAD and gc.log events before the per-path is_dir() stat"]
+    fn event_filter_discards_housekeeping_paths_before_statting() {
+        let created = EventKind::Create(notify::event::CreateKind::File);
+        let modified = EventKind::Modify(ModifyKind::Any);
+        for kind in [created, modified] {
+            let event = notify::Event::new(kind)
+                .add_path(PathBuf::from("/r/.git/objects/ab/cdef"))
+                .add_path(PathBuf::from("/r/.git/index.lock"))
+                .add_path(PathBuf::from("/r/.git/refs/heads/main.lock"))
+                .add_path(PathBuf::from("/r/.git/FETCH_HEAD"))
+                .add_path(PathBuf::from("/r/.git/gc.log"));
+            let kept = meaningful_paths(event);
+            assert!(kept.is_empty(), "{kept:?}");
+        }
+        // A real ref update still passes.
+        let event = notify::Event::new(EventKind::Create(notify::event::CreateKind::File))
+            .add_path(PathBuf::from("/r/.git/refs/heads/main"));
+        assert_eq!(meaningful_paths(event).len(), 1);
+    }
 }

@@ -232,11 +232,31 @@ export function remoteSessionFor(shellId: string): string | undefined {
     return undefined;
   }
 }
+
+/** Another shell (tab) bound to this host session, if any. */
+export function remoteShellBoundTo(sessionId: string, exceptShellId?: string): string | undefined {
+  try {
+    const all: unknown = JSON.parse(localStorage.getItem(TAB_KEY) ?? "{}");
+    if (!all || typeof all !== "object") return undefined;
+    return Object.entries(all).find(
+      ([shellId, value]) => value === sessionId && shellId !== exceptShellId,
+    )?.[0];
+  } catch {
+    return undefined;
+  }
+}
+
+/** Binds a shell to a host session, or unbinds it. A host session id is unique
+ * to the host, so a shell binding to it takes it over from any other shell:
+ * two tabs never show (and send into) the same host session through bindings. */
 export function rememberRemoteSession(shellId: string, sessionId?: string) {
   try {
     const all = JSON.parse(localStorage.getItem(TAB_KEY) ?? "{}");
-    if (sessionId) all[shellId] = sessionId;
-    else delete all[shellId];
+    if (sessionId) {
+      for (const [other, value] of Object.entries(all))
+        if (other !== shellId && value === sessionId) delete all[other];
+      all[shellId] = sessionId;
+    } else delete all[shellId];
     localStorage.setItem(TAB_KEY, JSON.stringify(all));
   } catch {
     /* tab selection is best effort */
@@ -279,12 +299,14 @@ export function remoteRequest<T>(
   const machine = cachedMachines.find((entry) => entry.id === machineId);
   if (machine) bindMachineEnvironment(machine.id, machine.environmentId);
   const generation = machine ? captureConnectionGeneration(machine.environmentId) : undefined;
+  const sameMachine = () =>
+    !machine ||
+    cachedMachines.some(
+      (entry) => entry.id === machineId && entry.environmentId === machine.environmentId,
+    );
   const current = () =>
     !machine ||
-    (cachedMachines.some(
-      (entry) => entry.id === machineId && entry.environmentId === machine.environmentId,
-    ) &&
-      readRemoteLifecycle(machine.environmentId).generation === generation);
+    (sameMachine() && readRemoteLifecycle(machine.environmentId).generation === generation);
   const feature = remoteFeatureForMethod(method, params);
   return invoke<T>("remote_request", {
     machineId,
@@ -294,7 +316,14 @@ export function remoteRequest<T>(
     ...(mayStartTunnel(machineId, fresh, userInitiated) ? {} : { allowConnect: false }),
   }).then(
     (result) => {
-      if (!current()) throw new Error(SUPERSEDED_CONNECTION);
+      if (!current()) {
+        // A receipt the host returned is the outcome, whatever happened to the
+        // connection meanwhile: turning an accepted command (a create above all)
+        // into an error would orphan the host session it made. The generation
+        // check still voids every other answer, which may describe a stale host.
+        if (method === "commands.dispatch" && sameMachine()) return result;
+        throw new Error(SUPERSEDED_CONNECTION);
+      }
       if (machine && feature) {
         recordFeatureHealth(machine.environmentId, feature, true, generation);
         if (feature === "host" && readRemoteLifecycle(machine.environmentId).phase === "idle")
@@ -896,6 +925,10 @@ function cachedSessions(project: string): HostSessionSummary[] {
   } catch {
     return [];
   }
+}
+/** Ids of the host sessions last listed for a remote project (its `remote://` path). */
+export function cachedRemoteSessionIds(project: string): string[] {
+  return cachedSessions(project).map((session) => session.id);
 }
 export function cachedRemoteSessionSummary(project: string, sessionId: string) {
   return cachedSessions(project).find((session) => session.id === sessionId);

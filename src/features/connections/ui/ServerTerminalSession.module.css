@@ -22,7 +22,7 @@
   flex: 1 1 180px;
   align-items: center;
   min-inline-size: 0;
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
 }
 .address {
   overflow: hidden;
@@ -41,7 +41,7 @@
   min-inline-size: 0;
   margin-inline-start: 16px;
   color: var(--ui-text-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .key > span {
   overflow: hidden;

@@ -53,31 +53,27 @@ export function MachineStatus({
             : indicator.tone === "connecting"
               ? t("Connecting")
               : t(degraded ? "Refresh pending" : "Connected");
-  const badge = (
-    <Badge
-      size="sm"
-      title={label}
-      tone={
-        needsSignIn(state.status)
-          ? "warning"
-          : indicator.tone === "connected" && !degraded
-            ? "success"
-            : "neutral"
-      }
-    >
-      {compact &&
-      !details &&
-      !state.error &&
-      !degraded &&
-      !needsSignIn(state.status) &&
-      (indicator.tone === "connected" || state.status === "unreachable") ? (
-        <>
-          <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
-          <span className="sr-only">{label}</span>
-        </>
-      ) : (
-        label
-      )}
+  const tone =
+    needsSignIn(state.status) || state.status === "unreachable"
+      ? "warning"
+      : indicator.tone === "connected" && !degraded
+        ? "success"
+        : "neutral";
+  // A healthy compact row keeps only the dot; every other state spells out its text.
+  const dotOnly =
+    compact &&
+    !details &&
+    !state.error &&
+    !degraded &&
+    !needsSignIn(state.status) &&
+    indicator.tone === "connected";
+  const badge = dotOnly ? (
+    <Badge variant="dot" size="sm" tone={tone} title={label}>
+      <span className="sr-only">{label}</span>
+    </Badge>
+  ) : (
+    <Badge variant="dot" size="sm" tone={tone} title={label}>
+      {label}
     </Badge>
   );
   if (!details) return badge;
@@ -119,7 +115,7 @@ export function ReconnectAction({ machine }: { machine: RemoteMachine }) {
         disabled={state.status === "identity-mismatch"}
         onClick={() => void reconnectRemoteMachine(machine.environmentId, { signIn: true })}
       >
-        <RefreshCw aria-hidden className="size-3.5" />
+        <RefreshCw aria-hidden className="icon-sm" />
       </Button>
       {reconnecting ? (
         <Button
@@ -128,7 +124,7 @@ export function ReconnectAction({ machine }: { machine: RemoteMachine }) {
           label={t("Cancel reconnect")}
           onClick={() => cancelRemoteReconnect(machine.environmentId)}
         >
-          <X aria-hidden className="size-3.5" />
+          <X aria-hidden className="icon-sm" />
         </Button>
       ) : null}
     </>

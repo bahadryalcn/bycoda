@@ -79,7 +79,21 @@ export function toolCallState(block: Block): ToolCallState {
   return "pending";
 }
 
+/** Blocks are immutable: a live turn re-classifies the same calls on every streamed
+ * frame, so the cwd-free label and the category are remembered per block. */
+const labels = new WeakMap<Block, string>();
+const categories = new WeakMap<Block, ActivityWorkKind>();
+
 export function toolCallLabel(block: Block, cwd?: string): string {
+  if (cwd === undefined) {
+    let label = labels.get(block);
+    if (label === undefined) labels.set(block, (label = composeToolCallLabel(block)));
+    return label;
+  }
+  return composeToolCallLabel(block, cwd);
+}
+
+function composeToolCallLabel(block: Block, cwd?: string): string {
   const preview = block.tool?.preview;
   const path = preview?.path ? displayPath(preview.path, cwd) : preview?.fileName;
   return (
@@ -681,6 +695,12 @@ export type ActivityPhase = {
 const WORK_KIND_ORDER: ActivityWorkKind[] = ["edit", "run", "agent", "research", "other"];
 
 export function toolCategory(block: Block): ActivityWorkKind {
+  let category = categories.get(block);
+  if (category === undefined) categories.set(block, (category = classifyTool(block)));
+  return category;
+}
+
+function classifyTool(block: Block): ActivityWorkKind {
   const kind = block.tool?.kind;
   const title = block.text || block.tool?.title;
   const preview = block.tool?.preview;

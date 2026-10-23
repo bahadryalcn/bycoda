@@ -34,7 +34,7 @@ it("prevents backdrop mousedown from clearing the restored trigger focus", async
     expect(cancel).not.toHaveBeenCalled();
     const backdropPress = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
     act(() => {
-      dialog.parentElement!.dispatchEvent(backdropPress);
+      dialog.parentElement!.parentElement!.dispatchEvent(backdropPress);
     });
     expect(backdropPress.defaultPrevented).toBe(true);
     expect(cancel).toHaveBeenCalledTimes(1);

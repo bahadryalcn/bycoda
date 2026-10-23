@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { useMemo, useState } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import type { Block } from "../model/session";
 import { toolCallState } from "../model/transcriptActivity";
@@ -34,7 +34,7 @@ export function hasToolInspection(block: Block): boolean {
 
 /** Mounted only after an explicit disclosure; never reads today's file as historical output. */
 export function ToolInspectionPanel({ block }: { block: Block }) {
-  useLocale();
+  const t = useT();
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const sections = useMemo(() => {
     const preview = boundedToolPreview(block.tool?.preview);

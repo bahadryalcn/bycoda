@@ -5,7 +5,12 @@ import { orchestrator } from "../../../../features/orchestration/model/orchestra
 import { providerAccountExists, sessionProviderAccountId, supportsProviderAccounts } from "../../../../features/providers/model/providerAccounts";
 import { createEditedResendAttempt } from "../../../../features/sessions/model/editLastTurn";
 import { isPreparingHandoff } from "../../../../features/sessions/model/handoff";
-import { queuedMessageForSubmit } from "../../../../features/sessions/model/messageQueue";
+import {
+  queuedMessageForSubmit,
+  queuedSteerRoute,
+  runningTargetOf,
+} from "../../../../features/sessions/model/messageQueue";
+import { steerAppliesModelSettings } from "../../../../integrations/harness";
 import { saveRecentModelChoice } from "../../../../features/sessions/model/models";
 import { consumeOperatorCommand, operatorEnabledInThread } from "../../../../features/sessions/model/operatorCommand";
 import { approvedPlanForMessage, isBuildablePlan } from "../../../../features/sessions/model/plan";
@@ -99,9 +104,29 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   if (options?.queuedMessageId && !queuedMessage) return { settled: true, value: false };
   const submitTarget = queuedMessage?.modelTarget ?? options?.buildTarget;
   if (queuedMessage?.modelTarget) {
-    current =
+    // A steered row whose model the running turn already uses joins it; its
+    // saved settings (effort) travel with the message. A row for another
+    // provider arms a provider switch like the composer does. A row for
+    // another model of this provider is started only after Stop (see
+    // useQueuedMessageActions), so it never joins the turn on the wrong model.
+    const running = runningTargetOf(current);
+    const route =
       current.busy && options?.followUpBehavior === "steer"
-        ? { ...current, ...queuedMessage.modelTarget }
+        ? queuedSteerRoute(
+            current,
+            queuedMessage,
+            steerAppliesModelSettings(running.harness),
+          )
+        : undefined;
+    if (route === "restart") return { settled: true, value: false };
+    current =
+      route === "join"
+        ? {
+            ...current,
+            harness: running.harness,
+            model: running.model,
+            modelSettings: queuedMessage.modelTarget.modelSettings,
+          }
         : withPlanBuildTarget(current, queuedMessage.modelTarget);
   }
   const editedResend = options?.resendEdited

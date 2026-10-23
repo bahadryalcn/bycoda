@@ -74,9 +74,7 @@ describe("AgentTranscript collapsed work", () => {
       { canRewindMessage: () => true, onRewindMessage: () => {} },
     );
 
-    expect(markup).toContain("Edit this message");
-    expect(markup).toContain("Return before this message");
-    expect(markup).toContain("Return before");
+    expect(markup).toContain('aria-label="Message actions"');
   });
 
   it("shows a stopped turn as stopped by the user", () => {
@@ -351,7 +349,6 @@ describe("AgentTranscript collapsed work", () => {
     const markup = render([{ id: "draft", role: "user", text: "Explore this", draft: true }]);
 
     expect(markup).toContain('data-draft="true"');
-    expect(markup).toContain("border-dashed");
     expect(markup).toContain('aria-label="Send draft"');
     expect(markup).toContain('aria-label="Remove draft"');
     expect(markup).toContain(">Draft</span>");
@@ -466,7 +463,7 @@ describe("AgentTranscript collapsed work", () => {
 
     expect(markup).toContain('data-editing-last-turn="true"');
     expect(markup).toContain("edit-last-turn-bubble");
-    expect(markup).toContain('aria-label="Cancel edit"');
+    expect(markup).toContain('aria-label="Message actions"');
     expect(markup).not.toContain("Editing this message");
   });
 

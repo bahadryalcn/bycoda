@@ -27,21 +27,8 @@
   padding: 12px 20px;
   border-block-end: 1px solid var(--color-stroke);
 }
-.bycoda-settings-toolbar-title {
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
-}
-.bycoda-settings-toolbar-title > span {
-  font-size: 18px;
-  font-weight: 550;
-  letter-spacing: -0.025em;
-}
-.bycoda-settings-toolbar-title p {
-  margin: 4px 0 0;
-  font-size: 12px;
-  opacity: 0.5;
-}
 .bycoda-settings-toolbar-actions {
+  margin-inline-start: auto;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -179,9 +166,7 @@
   padding-block-end: 18px;
 }
 .bycoda-settings-workbench .bycoda-settings-form > header h1 {
-  font-size: 22px;
   letter-spacing: -0.025em;
-  font-weight: 500;
 }
 .bycoda-settings-workbench .bycoda-settings-form .settings-group {
   display: block;
@@ -197,8 +182,8 @@
   padding: 0 2px 10px;
 }
 .bycoda-settings-workbench .bycoda-settings-form .settings-group > .settings-group-heading h2 {
-  font-size: 13px;
-  font-weight: 550;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
 }
 .bycoda-settings-workbench .bycoda-settings-form .settings-group > .settings-group-content {
   min-width: 0;
@@ -215,10 +200,6 @@
   padding-block-start: 14px;
 }
 .bycoda-settings-workbench .settings-description {
-  color: var(--ui-text-secondary);
-}
-.bycoda-settings-toolbar-title p {
-  opacity: 1;
   color: var(--ui-text-secondary);
 }
 .bycoda-settings-workbench .bycoda-settings-form .settings-group[data-settings-layout="full"] {
@@ -389,7 +370,7 @@
 /* Shared metadata wraps with its control instead of competing for its space. */
 .bycoda-settings-workbench .settings-hint {
   margin-block-start: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   line-height: 1.5;
   color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
@@ -421,9 +402,21 @@
 }
 .bycoda-settings-workbench .settings-advanced > .settings-subheading {
   padding-block: 10px;
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
+}
+.bycoda-settings-workbench .settings-advanced-toggle svg {
+  flex-shrink: 0;
+  transition: transform var(--motion-feedback-duration) var(--motion-ease-out);
+}
+.bycoda-settings-workbench .settings-advanced-toggle svg[data-open] {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bycoda-settings-workbench .settings-advanced-toggle svg {
+    transition: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

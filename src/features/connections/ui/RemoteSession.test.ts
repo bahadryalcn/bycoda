@@ -33,6 +33,7 @@ import {
   resetRemoteSessionReadsForTests,
 } from "../model/connections";
 import "../model/remoteCommands";
+import { remoteCreateIntent, resetRemoteCreateIntentsForTests } from "../model/remoteCreateIntent";
 import { notifyRemoteRecovered, resetRemoteHealth } from "../model/remoteHealth";
 import { resetAutoContinueForTests } from "../../sessions/model/autoContinue";
 import { resetRemoteQueuesForTests } from "../model/useRemoteQueue";
@@ -502,6 +503,7 @@ afterEach(async () => {
   resetRemoteMachineChannelsForTests();
   resetRemoteQueuesForTests();
   resetAutoContinueForTests();
+  resetRemoteCreateIntentsForTests();
   container.remove();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
@@ -1677,6 +1679,60 @@ it("ignores a late create response after its tab has switched conversations", as
   expect(remoteSessionFor("shell")).toBe("different-session");
   expect(commands.map((command) => command.type)).toEqual(["create"]);
   expect(container.textContent).not.toContain("Pending first message");
+});
+
+it("names the create window until the receipt has bound the host session", async () => {
+  await render();
+  let release!: () => void;
+  dispatchDelay = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await send("First message");
+  expect(remoteCreateIntent("shell")).toMatchObject({ shellId: "shell", environmentId: "env" });
+  expect(remoteSessionFor("shell")).toBeUndefined();
+  await act(async () => {
+    release();
+    dispatchDelay = undefined;
+  });
+  await settle();
+  expect(remoteSessionFor("shell")).toBe("host-session");
+  expect(remoteCreateIntent("shell")).toBeUndefined();
+});
+
+it("still binds a created session to its tab when the binding changed meanwhile but is empty again", async () => {
+  await render();
+  let release!: () => void;
+  dispatchDelay = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await send("Pending first message");
+  await act(async () => rememberRemoteSession("shell", "different-session"));
+  await act(async () => rememberRemoteSession("shell"));
+  await act(async () => {
+    release();
+    dispatchDelay = undefined;
+  });
+  await settle();
+  expect(remoteSessionFor("shell")).toBe("host-session");
+});
+
+it("does not take a created session another tab already shows", async () => {
+  await render();
+  let release!: () => void;
+  dispatchDelay = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await send("Pending first message");
+  await act(async () => rememberRemoteSession("shell", "different-session"));
+  await act(async () => rememberRemoteSession("shell"));
+  await act(async () => rememberRemoteSession("other-shell", "host-session"));
+  await act(async () => {
+    release();
+    dispatchDelay = undefined;
+  });
+  await settle();
+  expect(remoteSessionFor("shell")).toBeUndefined();
+  expect(remoteSessionFor("other-shell")).toBe("host-session");
 });
 
 // --- queue and recovery across a restart or a dropped connection -------------

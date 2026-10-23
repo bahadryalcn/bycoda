@@ -16,7 +16,6 @@ import { t, useLocale } from "../../../shared/i18n";
 import { MorphSelect } from "../../../shared/ui/MorphSelect";
 import { Progress } from "../../../shared/ui/Progress";
 import { ArrowDownCircle, Loader, RefreshCw } from "../../../shared/ui/icons";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { OPEN_ONBOARDING_EVENT } from "../../onboarding/model/onboarding";
 import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/import/importModel";
@@ -184,20 +183,21 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             "Choose Claude Code and Codex conversations to import. Originals stay unchanged.",
           )}
         >
-          <SecondaryButton
+          <Button
+            className="shrink-0"
             onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}
           >
             {t("Import…")}
-          </SecondaryButton>
+          </Button>
         </Row>
         <Row
           id="getting-started"
           label={t("Getting started")}
           description={t("Connect computers, set up agents, and choose your projects.")}
         >
-          <SecondaryButton onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}>
+          <Button className="shrink-0" onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}>
             {t("Open setup…")}
-          </SecondaryButton>
+          </Button>
         </Row>
         <Row
           id="usage-guide"
@@ -205,7 +205,7 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           description={t("Learn chat, queue, stop and essential shortcuts.")}
         >
           {/* The guide request closes Settings and walks through the workspace. */}
-          <SecondaryButton onClick={openUsageGuide}>{t("Open guide")}</SecondaryButton>
+          <Button className="shrink-0" onClick={openUsageGuide}>{t("Open guide")}</Button>
         </Row>
       </Group>
 
@@ -365,26 +365,28 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
       }
     >
       <div className="general-update-actions">
-        <SecondaryButton
+        <Button
+          className="shrink-0"
           onClick={() => onOpenWhatsNew(snapshot.currentVersion)}
           disabled={snapshot.currentVersion === "…"}
         >
           {t("What's new")}
-        </SecondaryButton>
+        </Button>
         {updatesEnabled === false ? null : (
-          <SecondaryButton
+          <Button
+            className="shrink-0"
             onClick={() => void onClick()}
             disabled={busy || updatesEnabled !== true}
           >
             {busy ? (
-              <Loader className="size-3.5 motion-safe:animate-spin" aria-hidden />
+              <Loader className="icon-sm motion-safe:animate-spin" aria-hidden />
             ) : hasUpdate ? (
-              <ArrowDownCircle className="size-3.5 text-accent" aria-hidden />
+              <ArrowDownCircle className="icon-sm text-accent" aria-hidden />
             ) : (
-              <RefreshCw className="size-3.5" strokeWidth={1.75} aria-hidden />
+              <RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />
             )}
             {hasUpdate ? t("Download") : t("Check for updates")}
-          </SecondaryButton>
+          </Button>
         )}
         {snapshot.phase === "downloading" ? (
           <Progress

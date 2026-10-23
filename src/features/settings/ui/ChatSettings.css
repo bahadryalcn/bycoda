@@ -3,16 +3,11 @@
   min-inline-size: 0;
 }
 
-.chat-save-note,
 .chat-detail {
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-secondary);
   line-height: 1.6;
   overflow-wrap: anywhere;
-}
-
-.chat-save-note {
-  margin-block: 0 8px;
 }
 
 .chat-detail {
@@ -34,12 +29,6 @@
   align-items: center;
   gap: 12px;
   padding-block: 0 8px;
-}
-
-.bycoda-settings-workbench .bycoda-settings-form .chat-settings .settings-group-heading h2 {
-  font-weight: 500;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
 }
 
 .bycoda-settings-workbench .bycoda-settings-form .chat-settings .settings-row {

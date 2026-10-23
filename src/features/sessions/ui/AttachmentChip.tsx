@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { Link, X } from "../../../shared/ui/icons";
 import { attachmentPreviewSrc, isAttachmentFolder } from "../model/attachments";
 import { tokenLabel } from "../model/attachmentTokens";
@@ -33,7 +33,7 @@ export function AttachmentChip({
   tokenLabelPlacement = "below",
   onInsertToken,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
   useEffect(() => {

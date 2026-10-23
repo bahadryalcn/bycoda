@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from "react";
-import { t, useLocale } from "../i18n";
+import { t, useT } from "../i18n";
 import { Button } from "./Button";
 import styles from "./FailureState.module.css";
 
@@ -28,7 +28,7 @@ export function FailureState({
   secondaryAction?: ReactNode;
   fullScreen?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const detailsId = useId();
   const titleId = useId();
   const [details, setDetails] = useState(false);

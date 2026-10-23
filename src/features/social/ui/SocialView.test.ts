@@ -145,6 +145,26 @@ async function mount() {
     );
   });
 }
+/** True when a retained workspace panel hides the node; ignores the Composer's parked (closed) form stash. */
+function panelHidden(node: Element) {
+  for (let el = node.parentElement; el; el = el.parentElement)
+    if (
+      el.hasAttribute("hidden") &&
+      !Array.from(el.children).some((child) => child.hasAttribute("data-social-composer"))
+    )
+      return true;
+  return false;
+}
+function labelledInput(text: string) {
+  const label = Array.from(container.querySelectorAll("label")).find(
+    (item) => item.textContent?.trim() === text,
+  );
+  return (
+    label?.htmlFor
+      ? container.querySelector(`[id="${label.htmlFor}"]`)
+      : label?.querySelector("input")
+  ) as HTMLInputElement;
+}
 function buttonName(button: HTMLButtonElement) {
   const copy = button.cloneNode(true) as HTMLButtonElement;
   copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
@@ -186,7 +206,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     await mount();
     expect(mocks.tokenConnect).not.toHaveBeenCalled();
     expect(mocks.oauthStatus).not.toHaveBeenCalled();
-    await click("Host hesabını bağla");
+    await click("Connect host account");
     expect(mocks.tokenConnect).toHaveBeenCalledExactlyOnceWith("bot");
     expect(mocks.oauthBegin).not.toHaveBeenCalled();
     expect(mocks.openUrl).not.toHaveBeenCalled();
@@ -209,33 +229,33 @@ describe("Sosyal Medya ürün ekranı", () => {
   });
   it("geçmiş sol menüde yer almaz; sosyal medya içinden açılır ve filtreleri korunur", async () => {
     await mount();
-    const nav = container.querySelector('nav[aria-label="Sosyal Medya bölümleri"]')!;
+    const nav = container.querySelector('nav[aria-label="Social Media sections"]')!;
     expect(
       Array.from(nav.querySelectorAll(".social-nav-label")).map((label) => label.textContent),
-    ).not.toContain("Geçmiş");
+    ).not.toContain("History");
     await click(t("More actions"));
-    await click("İşlem geçmişi");
+    await click("Activity history");
     expect(nav.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
-      "Otomasyonlar",
+      "Automations",
     );
     const history = container.querySelector(".social-history-page")!;
     expect(history.closest("[hidden]")).toBeNull();
     const filters = history.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
     await act(async () => filters.click());
     const status = Array.from(document.body.querySelectorAll(".social-filter-panel label"))
-      .find((label) => label.textContent?.startsWith("Gönderim durumu"))!
+      .find((label) => label.textContent?.startsWith("Send status"))!
       .querySelector("select")!;
     await act(async () => {
       status.value = "failed";
       status.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await click("Hesaplar");
+    await click("Accounts");
     await click(t("More actions"));
-    await click("İşlem geçmişi");
+    await click("Activity history");
     expect(history.closest("[hidden]")).toBeNull();
     await act(async () => filters.click());
     const retainedStatus = Array.from(document.body.querySelectorAll(".social-filter-panel label"))
-      .find((label) => label.textContent?.startsWith("Gönderim durumu"))!
+      .find((label) => label.textContent?.startsWith("Send status"))!
       .querySelector("select")!;
     expect(retainedStatus.value).toBe("failed");
   });
@@ -248,12 +268,9 @@ describe("Sosyal Medya ürün ekranı", () => {
         }),
       );
     await act(async () => renderPanel(true));
-    await click("Kampanyalar");
-    const campaignLabel = Array.from(container.querySelectorAll("label")).find(
-      (label) => label.textContent?.trim() === "Kampanya adı",
-    );
-    expect(campaignLabel).toBeTruthy();
-    const input = campaignLabel!.querySelector("input")!;
+    await click("Campaigns");
+    const input = labelledInput("Campaign name");
+    expect(input).toBeTruthy();
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         input,
@@ -271,7 +288,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     );
     await act(async () => renderPanel(true));
     expect(container.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
-      "Kampanyalar",
+      "Campaigns",
     );
     expect(container.querySelector(".social-initial-loading")).toBeNull();
     expect(input.value).toBe("Korunan kampanya");
@@ -298,12 +315,12 @@ describe("Sosyal Medya ürün ekranı", () => {
     ];
     mocks.snapshot.mockResolvedValue(value);
     await mount();
-    expect(container.textContent).toContain("Kurulum gerekli");
+    expect(container.textContent).toContain("Setup required");
     expect(container.textContent).not.toContain("OAuth bekleniyor");
     expect(container.textContent).toContain("BYCODA_SOCIAL_X_CLIENT_ID");
     const connect = () =>
       Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Tarayıcıda bağla",
+        (button) => button.textContent === "Connect in browser",
       )!;
     expect(connect().disabled).toBe(true);
     mocks.availability.mockResolvedValue({
@@ -313,12 +330,12 @@ describe("Sosyal Medya ürün ekranı", () => {
       ...value,
       accounts: [...value.accounts],
     }));
-    await click("Yenile");
+    await click("Refresh");
     expect(connect().disabled).toBe(false);
-    await click("Tarayıcıda bağla");
+    await click("Connect in browser");
     expect(mocks.oauthBegin).toHaveBeenCalledWith("x", undefined, ["publish"]);
     expect(mocks.openUrl).toHaveBeenCalledWith("https://platform.test/authorize");
-    expect(container.textContent).toContain("Açılan platform sayfasında izin verin");
+    expect(container.textContent).toContain("Grant permission on the platform page that opened");
     mocks.oauthStatus.mockResolvedValue({
       status: "connected",
       candidates: [],
@@ -337,8 +354,8 @@ describe("Sosyal Medya ürün ekranı", () => {
     const terminalReads = mocks.oauthStatus.mock.calls.length;
     await act(async () => vi.advanceTimersByTimeAsync(15_000));
     expect(mocks.oauthStatus).toHaveBeenCalledTimes(terminalReads);
-    await click("Bağlantıyı kontrol et");
-    expect(container.textContent).toContain("Verified owner · Bağla");
+    await click("Check connection");
+    expect(container.textContent).toContain("Verified owner · Connect");
     expect(mocks.request).not.toHaveBeenCalled();
   });
   it("X tarayıcı oturumu OAuth kurulumu olmadan yalnız risk onayıyla başlar", async () => {
@@ -363,18 +380,18 @@ describe("Sosyal Medya ürün ekranı", () => {
     await mount();
     const start = () =>
       Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Tarayıcıda X'e giriş yap",
+        (button) => button.textContent === "Sign in to X in the browser",
       )!;
     expect(start().disabled).toBe(true);
     const risk = Array.from(container.querySelectorAll("label"))
-      .find((label) => label.textContent?.includes("Riski anlıyorum"))!
+      .find((label) => label.textContent?.includes("I understand the risk"))!
       .querySelector("input")!;
     await act(async () => risk.click());
     expect(start().disabled).toBe(false);
-    await click("Tarayıcıda X'e giriş yap");
+    await click("Sign in to X in the browser");
     expect(mocks.browserBegin).toHaveBeenCalledWith("x");
     expect(mocks.openUrl).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("Açılan Chrome penceresinde X'e giriş yapın");
+    expect(container.textContent).toContain("Sign in to X in the Chrome window that opened");
   });
   it("aynı host yenilemesi başarısız olduğunda görünür veriyi korur", async () => {
     const value = empty();
@@ -391,12 +408,12 @@ describe("Sosyal Medya ürün ekranı", () => {
     ];
     mocks.snapshot.mockResolvedValue(value);
     await mount();
-    await click("Kampanyalar");
+    await click("Campaigns");
     mocks.snapshot.mockRejectedValue(new Error("Host offline"));
-    await click("Yenile");
+    await click("Refresh");
     expect(container.textContent).toContain("Saved campaign");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host offline");
-    expect(container.textContent).toContain("Son veriler gösteriliyor");
+    expect(container.textContent).toContain("Showing latest data");
   });
 
   it("preserves the host failure when both social and project reads fail, then retries fresh", async () => {
@@ -406,14 +423,14 @@ describe("Sosyal Medya ürün ekranı", () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Machine is unreachable",
     );
-    expect(container.textContent).not.toContain("Proje listesi yenilenemedi");
+    expect(container.textContent).not.toContain("Project list could not be refreshed");
     mocks.snapshot.mockResolvedValue(empty());
     mocks.projects.mockResolvedValue([]);
-    await click("Tekrar dene");
+    await click("Try again");
     expect(mocks.workspaceSnapshot).toHaveBeenLastCalledWith("one", expect.anything(), true);
     expect(mocks.projects).toHaveBeenLastCalledWith("one", "projects.list", {}, true);
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(container.textContent).not.toContain("Host bağlantısı gerekli");
+    expect(container.textContent).not.toContain("Host connection required");
   });
 
   it("shows a project read failure without hiding the loaded social workspace", async () => {
@@ -422,7 +439,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Project access denied",
     );
-    expect(container.textContent).not.toContain("Host bağlantısı gerekli");
+    expect(container.textContent).not.toContain("Host connection required");
   });
 
   it("YouTube channel selection opens video fields with private visibility and no automatic sends", async () => {
@@ -448,50 +465,43 @@ describe("Sosyal Medya ürün ekranı", () => {
     const platform = container.querySelector<HTMLButtonElement>('button[aria-label="Platform"]')!;
     expect(platform).toBeTruthy();
     await chooseSocialValue(platform, "youtube");
-    expect(container.querySelector('option[value="channel"]')?.textContent).toBe("Kanal");
-    await click("Kampanyalar");
-    const picker = container.querySelector<HTMLButtonElement>('[aria-label="Sosyal hesaplar"]')!;
+    expect(container.querySelector('option[value="channel"]')?.textContent).toBe("Channel");
+    await click("Campaigns");
+    const picker = container.querySelector<HTMLButtonElement>('[aria-label="Social accounts"]')!;
     await act(async () => picker.click());
     const target = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>('[role="option"]'),
     ).find((option) => option.textContent?.includes("Video channel"))!;
     await act(async () => target.click());
-    expect(container.textContent).toContain("Video başlığı");
-    expect(container.textContent).toContain("en fazla 64 MiB");
+    expect(container.textContent).toContain("Video title");
+    expect(container.textContent).toContain("up to 64 MiB");
     expect(container.querySelector('input[accept="video/mp4,video/webm"]')).toBeTruthy();
     const privacy = Array.from(container.querySelectorAll("select")).find((select) =>
       Array.from(select.options).some((option) => option.value === "private"),
     )!;
     expect(privacy.value).toBe("private");
-    expect(container.textContent).not.toContain("HTTPS görsel URL");
+    expect(container.textContent).not.toContain("HTTPS image URL");
     expect(mocks.request).not.toHaveBeenCalled();
   });
   it("altı bölüm görünür; açılış ve gezinme gerçek gönderimi etkinleştirmez", async () => {
     await mount();
     expect(container.querySelector("[data-app-social][role=region]")).toBeTruthy();
     expect(container.querySelector('[role="dialog"]')).toBeNull();
-    for (const tab of [
-      "Hesaplar",
-      "Kampanyalar",
-      "Gelen Kutusu",
-      "Hedef Kitle",
-      "Otomasyonlar",
-      "Ayarlar",
-    ]) {
+    for (const tab of ["Accounts", "Campaigns", "Inbox", "Audience", "Automations", "Settings"]) {
       await click(tab);
       expect(container.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
         tab,
       );
     }
-    await click("Zamanlama nasıl çalışır?");
-    expect(document.body.textContent).toContain("Bilgisayar çevrimdışıyken işler bekler");
-    await click("Zamanlama nasıl çalışır?");
-    expect(container.textContent).toContain("Taslak modu · gönderim kapalı");
-    await click("Gönderim kontrolleri");
+    await click("Scheduling ready");
+    expect(document.body.textContent).toContain("Jobs wait while the computer is offline");
+    await click("Scheduling ready");
+    expect(container.textContent).toContain("Draft mode · sending off");
+    await click("Sending controls: Draft mode · sending off");
     expect(container.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
-      "Otomasyonlar",
+      "Automations",
     );
-    expect(container.textContent).toContain("Taslak modu · gönderim kapalı");
+    expect(container.textContent).toContain("Draft mode · sending off");
     expect(mocks.request).not.toHaveBeenCalled();
     expect(mocks.openUrl).not.toHaveBeenCalled();
     expect(
@@ -501,7 +511,7 @@ describe("Sosyal Medya ürün ekranı", () => {
   it("tek yenileme yalnız bir snapshot okur", async () => {
     await mount();
     const reads = mocks.snapshot.mock.calls.length;
-    await click("Yenile");
+    await click("Refresh");
     expect(mocks.snapshot).toHaveBeenCalledTimes(reads + 1);
   });
   it("yavaş yenilemeler çakışmaz; değişmeyen veri için projeler tekrar okunmaz", async () => {
@@ -536,11 +546,8 @@ describe("Sosyal Medya ürün ekranı", () => {
   });
   it("host değiştirip dönünce kaydedilmemiş kampanya ve bölüm korunur", async () => {
     await mount();
-    await click("Kampanyalar");
-    const label = Array.from(container.querySelectorAll("label")).find(
-      (item) => item.textContent?.trim() === "Kampanya adı",
-    )!;
-    const input = label.querySelector("input")!;
+    await click("Campaigns");
+    const input = labelledInput("Campaign name");
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         input,
@@ -549,15 +556,15 @@ describe("Sosyal Medya ürün ekranı", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     const select = container.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Yetkili host:"]',
+      'button[aria-label^="Authoritative host:"]',
     )!;
     await chooseSocialValue(select, "two");
-    expect(input.closest("[hidden]")).toBeTruthy();
+    expect(panelHidden(input)).toBe(true);
     await chooseSocialValue(select, "one");
-    expect(input.closest("[hidden]")).toBeNull();
+    expect(panelHidden(input)).toBe(false);
     expect(input.value).toBe("Host bir taslağı");
     expect(container.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
-      "Kampanyalar",
+      "Campaigns",
     );
   });
   it("büyük koleksiyonlar sunucu sayfalarını açar ve formu yeniden bağlamaz", async () => {
@@ -568,11 +575,8 @@ describe("Sosyal Medya ürün ekranı", () => {
     };
     mocks.snapshot.mockResolvedValue(value);
     await mount();
-    await click("Kampanyalar");
-    const label = Array.from(container.querySelectorAll("label")).find(
-      (item) => item.textContent?.trim() === "Kampanya adı",
-    )!;
-    const input = label.querySelector("input")!;
+    await click("Campaigns");
+    const input = labelledInput("Campaign name");
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         input,
@@ -580,10 +584,10 @@ describe("Sosyal Medya ürün ekranı", () => {
       );
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const pager = container.querySelector('[role="group"][aria-label="Kampanyalar sayfaları"]')!;
+    const pager = container.querySelector('[role="group"][aria-label="Campaigns pages"]')!;
     await act(async () =>
       Array.from(pager.querySelectorAll("button"))
-        .find((button) => button.textContent === "Sonraki sayfa")!
+        .find((button) => button.textContent === "Next page")!
         .click(),
     );
     expect(mocks.workspaceSnapshot.mock.calls.at(-1)?.[1].offsets.campaigns).toBe(50);
@@ -601,7 +605,7 @@ describe("Sosyal Medya ürün ekranı", () => {
       "Machines unavailable",
     );
     mocks.invoke.mockImplementation(original!);
-    await click("Tekrar dene");
+    await click("Try again");
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(mocks.snapshot).toHaveBeenCalled();
   });
@@ -665,9 +669,9 @@ describe("Sosyal Medya ürün ekranı", () => {
     }));
     mocks.snapshot.mockResolvedValue(value);
     await mount();
-    await click("Gelen Kutusu");
+    await click("Inbox");
     const textarea = container.querySelector<HTMLTextAreaElement>(
-      '.social-columns > section:last-child textarea[aria-label="Yanıt"]',
+      ".social-columns > section:last-child textarea",
     )!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
@@ -677,41 +681,37 @@ describe("Sosyal Medya ürün ekranı", () => {
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(textarea.value).toBe("Kullanıcının yanıtı");
-    await click("Hesaplar");
-    await click("Gelen Kutusu");
+    await click("Accounts");
+    await click("Inbox");
     expect(
-      container.querySelector<HTMLTextAreaElement>(
-        '.social-columns > section:last-child textarea[aria-label="Yanıt"]',
-      )!.value,
+      container.querySelector<HTMLTextAreaElement>(".social-columns > section:last-child textarea")!
+        .value,
     ).toBe("Kullanıcının yanıtı");
     const rows = Array.from(container.querySelectorAll<HTMLButtonElement>(".social-row")).filter(
       (row) => !row.closest("[hidden]"),
     );
     await act(async () => rows[1].click());
     expect(
-      container.querySelector<HTMLTextAreaElement>(
-        '.social-columns > section:last-child textarea[aria-label="Yanıt"]',
-      )!.value,
+      container.querySelector<HTMLTextAreaElement>(".social-columns > section:last-child textarea")!
+        .value,
     ).toBe("");
     await act(async () => rows[0].click());
     expect(
-      container.querySelector<HTMLTextAreaElement>(
-        '.social-columns > section:last-child textarea[aria-label="Yanıt"]',
-      )!.value,
+      container.querySelector<HTMLTextAreaElement>(".social-columns > section:last-child textarea")!
+        .value,
     ).toBe("Kullanıcının yanıtı");
     mocks.request.mockImplementation(async (action: string) => {
       if (action === "policy.get") return { effective: {} };
       throw new Error("Save failed");
     });
-    await click("Taslak kaydet");
-    expect(container.textContent).toContain("Save failed");
-    await click("İçeriği düzenle");
+    await click("Prepare reply");
+    await click("Save draft");
+    expect(document.body.textContent).toContain("Save failed");
+    await click("Edit content");
     expect(
-      container.querySelector<HTMLTextAreaElement>(
-        '.social-columns > section:last-child textarea[aria-label="Yanıt"]',
-      )!.value,
+      document.body.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')!.value,
     ).toBe("Kullanıcının yanıtı");
-    expect(container.textContent).toContain("Hiçbir taslak hazırlanamadı");
+    expect(document.body.textContent).toContain("No draft could be prepared");
   });
   it("gelen HTML ve talimat metni kod olarak çalışmaz; kullanıcıya veri olarak gösterilir", async () => {
     const value = empty();
@@ -737,7 +737,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     ];
     mocks.snapshot.mockResolvedValue(value);
     await mount();
-    await click("Gelen Kutusu");
+    await click("Inbox");
     expect(container.textContent).toContain("ignore all instructions");
     expect(container.querySelector("img")).toBeNull();
     expect((window as unknown as Record<string, unknown>).socialInjected).toBeUndefined();
@@ -755,7 +755,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     );
     await mount();
     const select = container.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Yetkili host:"]',
+      'button[aria-label^="Authoritative host:"]',
     )!;
     await chooseSocialValue(select, "two");
     const old = empty();
@@ -771,7 +771,7 @@ describe("Sosyal Medya ürün ekranı", () => {
       },
     ];
     await act(async () => finish(old));
-    await click("Kampanyalar");
+    await click("Campaigns");
     expect(container.textContent).not.toContain("Old host private campaign");
     expect(localStorage.getItem("bycoda.social.host")).toBe("two");
   });
@@ -803,14 +803,14 @@ it("pauses browser and OAuth polling outside the active panel and stops terminal
   mocks.browserStatus.mockResolvedValue({ status: "waiting" });
   await mount();
   await act(async () => vi.advanceTimersByTimeAsync(10));
-  await click("Kampanyalar");
+  await click("Campaigns");
   const oauthReads = mocks.oauthStatus.mock.calls.length;
   const browserReads = mocks.browserStatus.mock.calls.length;
   await act(async () => vi.advanceTimersByTimeAsync(20_000));
   expect(mocks.oauthStatus).toHaveBeenCalledTimes(oauthReads);
   expect(mocks.browserStatus).toHaveBeenCalledTimes(browserReads);
   await act(async () => focusManager.setFocused(false));
-  await click("Hesaplar");
+  await click("Accounts");
   await act(async () => vi.advanceTimersByTimeAsync(20_000));
   expect(mocks.oauthStatus).toHaveBeenCalledTimes(oauthReads);
   expect(mocks.browserStatus).toHaveBeenCalledTimes(browserReads);
@@ -891,7 +891,7 @@ it("ignores an old OAuth poll started while a new begin request is in flight", a
         finishBegin = resolve;
       }),
   );
-  await click("Tarayıcıda bağla");
+  await click("Connect in browser");
   mocks.oauthStatus.mockImplementation(
     () =>
       new Promise((resolve) => {
@@ -904,6 +904,6 @@ it("ignores an old OAuth poll started while a new begin request is in flight", a
     finishBegin({ url: "https://platform.test/new", expiresAt: Date.now() + 60_000 }),
   );
   await act(async () => finishOld({ status: "connected", candidates: [] }));
-  expect(container.textContent).toContain("Açılan platform sayfasında izin verin");
+  expect(container.textContent).toContain("Grant permission on the platform page that opened");
   expect(container.textContent).not.toContain("Hesap bağlandı");
 });

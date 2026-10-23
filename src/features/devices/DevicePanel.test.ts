@@ -262,9 +262,11 @@ it("opens only an explicitly chosen iOS app and captures its screen after the ac
   expect(container.textContent).toContain("open the target app before interacting");
   expect(api.action).not.toHaveBeenCalled();
   vi.mocked(api.capture).mockClear();
-  const input = [...container.querySelectorAll("label")]
-    .find((label) => label.textContent === "App name or bundle ID")!
-    .querySelector("input")!;
+  const input = (
+    [...container.querySelectorAll("label")].find(
+      (label) => label.textContent === "App name or bundle ID",
+    )! as HTMLLabelElement
+  ).control as HTMLInputElement;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       input,
@@ -301,9 +303,11 @@ it("clears the app target when selecting another device or changing the host", a
     await act(async () => options[id === "second" ? 1 : 0].click());
   };
   const target = () =>
-    [...container.querySelectorAll("label")]
-      .find((label) => label.textContent === "App name or bundle ID")!
-      .querySelector("input")!;
+    (
+      [...container.querySelectorAll("label")].find(
+        (label) => label.textContent === "App name or bundle ID",
+      )! as HTMLLabelElement
+    ).control as HTMLInputElement;
   const enterApp = () =>
     act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(

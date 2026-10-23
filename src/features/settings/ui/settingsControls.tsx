@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useId, useRef, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { Select as SharedSelect, type SelectProps } from "../../../shared/ui/Select";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -6,7 +14,10 @@ import { Slider as SharedSlider } from "../../../shared/ui/Slider";
 import { ElasticSlider } from "../../../shared/ui/ElasticSlider";
 import { Switch } from "../../../shared/ui/Switch";
 import { Badge } from "../../../shared/ui/Badge";
+import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { ChevronRight } from "../../../shared/ui/icons";
 
 import { playCue } from "../model/sounds";
 import { useDecorativeMotionPreference } from "../model/decorativeMotion";
@@ -68,56 +79,62 @@ export function SettingsFeedback({
   );
 }
 
-function SettingHints({ scope, dependency, persistence }: SettingDetails) {
-  useLocale();
-  const pageExplainsSaving = useContext(PageAutomaticSaveHint);
-  const state = persistence?.state;
-  const showSaveHint = persistence && !(pageExplainsSaving && persistence.mode === "automatic");
+/** Help text (description, scope, dependency): behind the info control and, for assistive tech, in the description id. */
+function SettingHelpText({
+  description,
+  scope,
+  dependency,
+}: SettingDetails & { description?: string }) {
   return (
     <>
-      {scope ? <p className="settings-hint">{scope}</p> : null}
-      {dependency ? <p className="settings-hint">{dependency}</p> : null}
-      {persistence && (showSaveHint || (state && state !== "idle")) ? (
-        <div className="settings-hint">
-          {showSaveHint ? (
-            <span>
-              {t(
-                persistence.mode === "automatic"
-                  ? "Changes save automatically"
-                  : "Changes require saving",
-              )}
-            </span>
-          ) : null}
-          {state && state !== "idle" ? (
-            <Badge
-              tone={
-                state === "error"
-                  ? "danger"
-                  : state === "saved"
-                    ? "success"
-                    : state === "saving"
-                      ? "info"
-                      : "warning"
-              }
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              {state === "dirty" ? ` · ${t("Unsaved changes")}` : null}
-              {state === "saving" ? ` · ${t("Saving…")}` : null}
-              {state === "saved" ? ` · ${t("Saved")}` : null}
-              {state === "error" ? (
-                <>
-                  {" · "}
-                  {persistence.error ?? t("Could not save changes")}
-                </>
-              ) : null}
-            </Badge>
-          ) : null}
-        </div>
-      ) : null}
+      {description ? <p className="settings-description">{description}</p> : null}
+      {scope ? <p className="settings-description">{scope}</p> : null}
+      {dependency ? <p className="settings-description">{dependency}</p> : null}
     </>
   );
+}
+
+/** Visible persistence state only: errors, unsaved/saving/saved and explicit-save guidance. */
+function SettingStatus({ persistence }: Pick<SettingDetails, "persistence">) {
+  useLocale();
+  const state = persistence?.state;
+  const showSaveHint = persistence?.mode === "explicit";
+  if (!persistence || !(showSaveHint || (state && state !== "idle"))) return null;
+  return (
+    <div className="settings-hint">
+      {showSaveHint ? <span>{t("Changes require saving")}</span> : null}
+      {state && state !== "idle" ? (
+        <Badge
+          tone={
+            state === "error"
+              ? "danger"
+              : state === "saved"
+                ? "success"
+                : state === "saving"
+                  ? "info"
+                  : "warning"
+          }
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {state === "dirty" ? t("Unsaved changes") : null}
+          {state === "saving" ? t("Saving…") : null}
+          {state === "saved" ? t("Saved") : null}
+          {state === "error" ? (persistence.error ?? t("Could not save changes")) : null}
+        </Badge>
+      ) : null}
+    </div>
+  );
+}
+
+/** Screen-reader description for a group or row; the automatic-save note lives here, not on screen. */
+function SettingDescriptionText({ persistence }: Pick<SettingDetails, "persistence">) {
+  useLocale();
+  const pageExplainsSaving = useContext(PageAutomaticSaveHint);
+  return persistence?.mode === "automatic" && !pageExplainsSaving ? (
+    <span className="sr-only">{t("Changes save automatically")}</span>
+  ) : null;
 }
 
 /** Append descriptions to native and custom controls without replacing caller ARIA. */
@@ -165,11 +182,16 @@ function useControlDescriptions(descriptionId: string | undefined) {
   return root;
 }
 
-/** Settings stay visible, including advanced controls. Search can focus the group. */
+/**
+ * Secondary settings. Open unless `defaultOpen={false}`; a search/reveal landing on this
+ * section or one of its `settingIds` opens it.
+ */
 export function AdvancedSettings({
   children,
   id,
+  settingIds,
   title,
+  defaultOpen = true,
 }: {
   children: ReactNode;
   id?: string;
@@ -179,6 +201,14 @@ export function AdvancedSettings({
 }) {
   useLocale();
   const headingId = useId();
+  const revealed = useContext(RevealedSetting);
+  const targeted = revealed != null && (revealed === id || !!settingIds?.includes(revealed));
+  const [open, setOpen] = useState(defaultOpen || targeted);
+  const [wasTargeted, setWasTargeted] = useState(targeted);
+  if (targeted !== wasTargeted) {
+    setWasTargeted(targeted);
+    if (targeted) setOpen(true);
+  }
   return (
     <section
       id={id ? settingDomId(id) : undefined}
@@ -188,21 +218,49 @@ export function AdvancedSettings({
       tabIndex={-1}
     >
       <h3 id={headingId} className="settings-subheading">
-        {title ?? t("Advanced")}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          align="start"
+          motion="none"
+          className="settings-advanced-toggle"
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <ChevronRight
+            aria-hidden
+            className="icon-xs"
+            strokeWidth={1.75}
+            data-open={open || undefined}
+          />
+          {title ?? t("Advanced")}
+        </Button>
       </h3>
-      {children}
+      {open ? children : null}
     </section>
   );
 }
 
-export function PageHeader({ title, description }: { title: string; description: string }) {
+export function PageHeader({
+  title,
+  description,
+  automaticSave = false,
+}: {
+  title: string;
+  description: string;
+  /** The page saves every change itself; say so once, here, instead of on every group. */
+  automaticSave?: boolean;
+}) {
+  useLocale();
   return (
-    <header className="pb-4">
-      <h1 className="text-[20px] font-semibold leading-tight text-content">{title}</h1>
-      {description ? (
-        <p className="settings-description mt-1.5 max-w-xl text-[13px] leading-relaxed text-content/65">
-          {description}
-        </p>
+    <header className="flex items-center gap-1 pb-4">
+      <h1 className="text-ui-heading font-medium text-content">{title}</h1>
+      {description || automaticSave ? (
+        <InfoPopover className="shrink-0" label={t("About this page")}>
+          {description ? <p>{description}</p> : null}
+          {automaticSave ? <p>{t("Changes save automatically")}</p> : null}
+        </InfoPopover>
       ) : null}
     </header>
   );
@@ -236,7 +294,8 @@ export function Group({
   const flash = id != null && revealed === id;
   const headingId = useId();
   const descriptionId = useId();
-  const hasDescription = Boolean(description || scope || dependency || persistence);
+  const hasInfo = Boolean(description || scope || dependency);
+  const hasDescription = Boolean(hasInfo || persistence);
   const controls = useControlDescriptions(hasDescription ? descriptionId : undefined);
 
   return (
@@ -252,24 +311,32 @@ export function Group({
     >
       <div className="settings-group-heading flex flex-wrap items-start gap-4 pb-2.5">
         <div className="settings-group-title min-w-0 flex-1">
-          <h2 id={headingId} className="text-[13px] font-semibold text-content">
-            {title}
-          </h2>
-          <div id={descriptionId}>
-            {description ? (
-              <p className="settings-description mt-1 text-[12px] leading-relaxed text-content/65">
-                {description}
-              </p>
+          <div className="flex items-center gap-1">
+            <h2 id={headingId} className="text-ui-secondary font-medium text-content">
+              {title}
+            </h2>
+            {hasInfo ? (
+              <InfoPopover className="shrink-0">
+                <SettingHelpText description={description} scope={scope} dependency={dependency} />
+              </InfoPopover>
             ) : null}
-            <SettingHints scope={scope} dependency={dependency} persistence={persistence} />
+          </div>
+          <div id={descriptionId}>
+            {hasInfo ? (
+              <span className="sr-only">
+                <SettingHelpText description={description} scope={scope} dependency={dependency} />
+              </span>
+            ) : null}
+            <SettingDescriptionText persistence={persistence} />
+            <SettingStatus persistence={persistence} />
           </div>
         </div>
         {action ? <div className="shrink-0 pb-0.5">{action}</div> : null}
       </div>
       <div
         ref={controls}
-        className={`settings-group-content overflow-hidden rounded-xl border bg-content/3 transition-colors ${
-          flash ? "border-accent/60" : "border-content/10"
+        className={`settings-group-content overflow-hidden rounded-xl border bg-(--ui-surface) transition-colors ${
+          flash ? "border-(--ui-border-accent)" : "border-stroke"
         }`}
       >
         {children}
@@ -302,7 +369,8 @@ export function Row({
   const flash = id != null && revealed === id;
   const labelId = useId();
   const descriptionId = useId();
-  const hasDescription = Boolean(description || scope || dependency || persistence);
+  const hasInfo = Boolean(description || scope || dependency);
+  const hasDescription = Boolean(hasInfo || persistence);
   const controls = useControlDescriptions(hasDescription ? descriptionId : undefined);
 
   return (
@@ -311,27 +379,39 @@ export function Row({
       data-setting-id={id}
       data-revealed={flash || undefined}
       tabIndex={-1}
-      className={`settings-row flex items-start gap-6 border-b border-content/5 px-4 py-3.5 transition-colors last:border-b-0 ${
-        flash ? "bg-accent/10" : ""
+      className={`settings-row flex items-start gap-6 border-b border-stroke px-4 py-3.5 transition-colors last:border-b-0 ${
+        flash ? "bg-(--ui-surface-selected)" : ""
       }`}
     >
       <div className="settings-row-label min-w-0 flex-1">
-        {controlId ? (
-          <label id={labelId} htmlFor={controlId} className="text-[13px] font-medium text-content">
-            {label}
-          </label>
-        ) : (
-          <div id={labelId} className="text-[13px] font-medium text-content">
-            {label}
-          </div>
-        )}
-        <div id={descriptionId}>
-          {description ? (
-            <p className="settings-description mt-1 text-[12px] leading-relaxed text-content/65">
-              {description}
-            </p>
+        <div className="flex items-center gap-1">
+          {controlId ? (
+            <label
+              id={labelId}
+              htmlFor={controlId}
+              className="text-ui-secondary font-medium text-content"
+            >
+              {label}
+            </label>
+          ) : (
+            <div id={labelId} className="text-ui-secondary font-medium text-content">
+              {label}
+            </div>
+          )}
+          {hasInfo ? (
+            <InfoPopover className="shrink-0">
+              <SettingHelpText description={description} scope={scope} dependency={dependency} />
+            </InfoPopover>
           ) : null}
-          <SettingHints scope={scope} dependency={dependency} persistence={persistence} />
+        </div>
+        <div id={descriptionId}>
+          {hasInfo ? (
+            <span className="sr-only">
+              <SettingHelpText description={description} scope={scope} dependency={dependency} />
+            </span>
+          ) : null}
+          <SettingDescriptionText persistence={persistence} />
+          <SettingStatus persistence={persistence} />
         </div>
       </div>
       <div
@@ -421,7 +501,7 @@ export function Slider({
         onValueCommit={onValueCommit}
       />
       <span
-        className={`w-10 shrink-0 text-right text-[12px] text-content tabular-nums ${disabled ? "opacity-40" : ""}`}
+        className={`min-w-[5ch] shrink-0 text-right text-ui-caption tabular-nums ${disabled ? "text-(--ui-text-disabled)" : "text-content"}`}
       >
         {display}
       </span>

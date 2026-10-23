@@ -16,7 +16,7 @@
 
 .usage-toolbar h2,
 .usage-account h3 {
-  font-size: var(--text-sm);
+  font-size: var(--text-ui-body);
   font-weight: 500;
 }
 
@@ -57,13 +57,13 @@
   gap: 6px;
   margin-block-end: 4px;
   color: var(--ui-text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
 }
 
 .usage-account-default {
   margin-inline-start: 8px;
   color: var(--ui-text-muted);
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
   font-weight: 400;
 }
 
@@ -78,7 +78,7 @@
 }
 
 .usage-quota-heading {
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
 }
 
 .usage-quota-heading p {
@@ -90,7 +90,7 @@
 
 .usage-quota-heading strong {
   color: var(--color-content);
-  font-size: var(--text-base);
+  font-size: var(--text-ui-title);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -98,7 +98,7 @@
 .usage-quota-reset {
   margin-block-start: 4px;
   color: var(--ui-text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-caption);
   font-variant-numeric: tabular-nums;
 }
 

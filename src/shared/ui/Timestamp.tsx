@@ -1,5 +1,5 @@
 import { type ComponentProps } from "react";
-import { t, useLocale } from "../i18n";
+import { useLocale, useT } from "../i18n";
 import { dateTimeFormat } from "../lib/intl";
 import { useToday } from "./arc/lib/use-today";
 
@@ -8,6 +8,7 @@ export function Timestamp({
   value,
   ...props
 }: Omit<ComponentProps<"time">, "dateTime" | "children"> & { value: number }) {
+  const t = useT();
   const locale = useLocale();
   const today = useToday();
   const date = new Date(value);

@@ -212,22 +212,64 @@ export function TerminalTools({
             <TerminalIcon size={14} />
           </Button>
         )}
+        {mode !== "search" && remoteShell ? (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!ready || alternate}
+              loading={mode === "remote" && remoteShell.waiting}
+              shortcut="Ctrl+Space"
+              onClick={() => {
+                changeMode("remote");
+                void remoteShell.request(remoteShell.source);
+              }}
+            >
+              {t("Suggestions")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!ready || alternate}
+              onClick={() => {
+                remoteShell.setSource("history");
+                changeMode("remote");
+                void remoteShell.request("history");
+              }}
+            >
+              {t("Reviewed history")}
+            </Button>
+          </>
+        ) : null}
+        {mode !== "search" && onSavedCommands ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!ready || alternate}
+            onClick={() => {
+              changeMode(null);
+              onSavedCommands();
+            }}
+          >
+            {t("Saved commands")}
+          </Button>
+        ) : null}
         {onEnableShellIntegration ? (
           <SplitButton
             variant="ghost"
             size="sm"
             disabled={!ready}
-            label={`${t("Bash suggestions")} (4.4+)`}
+            label={t("Bash suggestions")}
             menuLabel={t("Shell suggestions")}
             actions={[
               {
                 id: "zsh",
-                label: `${t("Zsh suggestions")} (5.1+)`,
+                label: t("Zsh suggestions"),
                 onSelect: () => onEnableShellIntegration("zsh"),
               },
               {
                 id: "powershell",
-                label: `${t("PowerShell suggestions")} (7+ · PSReadLine 2.4+)`,
+                label: t("PowerShell suggestions"),
                 onSelect: () => onEnableShellIntegration("powershell"),
               },
             ]}
@@ -367,59 +409,6 @@ export function TerminalTools({
         controls
       ) : (
         <div className={styles.menuTrigger}>
-          {onEnableShellIntegration ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!ready || alternate}
-              tooltip={t(
-                "Opens a new Bash terminal with session-only suggestions. No remote shell files are changed.",
-              )}
-              onClick={() => onEnableShellIntegration("bash")}
-            >
-              <TerminalIcon aria-hidden size={14} />
-              {t("Bash suggestions")}
-            </Button>
-          ) : null}
-          {remoteShell ? (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!ready || alternate}
-                loading={mode === "remote" && remoteShell.waiting}
-                shortcut="Ctrl+Space"
-                onClick={() => {
-                  changeMode("remote");
-                  void remoteShell.request(remoteShell.source);
-                }}
-              >
-                {t("Suggestions")}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!ready || alternate}
-                onClick={() => {
-                  remoteShell.setSource("history");
-                  changeMode("remote");
-                  void remoteShell.request("history");
-                }}
-              >
-                {t("Reviewed history")}
-              </Button>
-            </>
-          ) : null}
-          {onSavedCommands ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!ready || alternate}
-              onClick={onSavedCommands}
-            >
-              {t("Saved commands")}
-            </Button>
-          ) : null}
           <Button
             variant="ghost"
             size="sm"

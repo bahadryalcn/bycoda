@@ -577,7 +577,9 @@ export function pruneSessionFolders(
 export function loadSessionFolders(cwd: string): SessionFolder[] {
   const key = storageKey(cwd);
   if (!key) return [];
-  return parseStore()[key] ?? [];
+  // Callers may edit the result; the parsed store is shared by later reads.
+  const folders = parseStore()[key];
+  return folders ? structuredClone(folders) : [];
 }
 
 export function saveSessionFolders(cwd: string, folders: SessionFolder[]): void {
@@ -692,10 +694,23 @@ function storageKey(cwd: string): string | null {
   return normalizeProjectPath(cwd);
 }
 
+/** The last parsed blob: reading every project's folders parses the store once. */
+let parsedStore: { raw: string; store: Record<string, SessionFolder[]> } | undefined;
+
+/** A shallow copy: callers replace or delete a project's entry, never edit one in place. */
 function parseStore(): Record<string, SessionFolder[]> {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return {};
+    if (parsedStore?.raw !== raw) parsedStore = { raw, store: parseStoreValue(raw) };
+    return { ...parsedStore.store };
+  } catch {
+    return {};
+  }
+}
+
+function parseStoreValue(raw: string): Record<string, SessionFolder[]> {
+  try {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return {};

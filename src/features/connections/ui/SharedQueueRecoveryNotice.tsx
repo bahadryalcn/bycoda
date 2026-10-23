@@ -1,4 +1,5 @@
 import { useState, useSyncExternalStore } from "react";
+import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { useLocalSharedQueueClient } from "../model/useSharedLocalQueues";
@@ -48,10 +49,7 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
     }
   };
   return (
-    <div
-      role="alert"
-      className="shrink-0 border-b border-stroke px-4 py-2 text-xs text-(--ui-text-muted)"
-    >
+    <Alert tone="warning" role="alert" inline className="shrink-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span>{t("Queued delivery is unknown. Sending is held for review.")}</span>
         <Button variant="secondary" onClick={() => setOpen(true)}>
@@ -74,7 +72,11 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
             <p className="max-h-40 overflow-auto whitespace-pre-wrap break-words">
               {state.recovery}
             </p>
-            {error ? <p role="alert">{error}</p> : null}
+            {error ? (
+              <Alert tone="danger" role="alert">
+                {error}
+              </Alert>
+            ) : null}
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="secondary" disabled={working} onClick={() => void resolve(false)}>
                 {t("Keep queued, pause")}
@@ -86,6 +88,6 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
           </div>
         </Modal>
       ) : null}
-    </div>
+    </Alert>
   );
 }

@@ -1,6 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { readBinaryFile } from "../../../platform/tauri/fs";
 import { formatFileSize, sniffImageMime } from "../../files/model/filePreview";
@@ -13,7 +13,7 @@ type State =
   | { status: "error" };
 
 export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
-  useLocale();
+  const t = useT();
   const [state, setState] = useState<State>({ status: "loading" });
   const [open, setOpen] = useState(false);
 
@@ -58,7 +58,7 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
 
   if (state.status === "error") {
     return (
-      <Alert tone="info" role="alert">
+      <Alert tone="danger" role="alert">
         {t("Could not open generated image.")}
       </Alert>
     );
@@ -85,7 +85,7 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
           className="mx-auto block h-auto w-auto max-h-[min(50dvh,480px)] max-w-full object-contain"
         />
       </Button>
-      <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-(--ui-text-secondary)">
+      <div className="mt-1 flex min-w-0 items-center gap-2 text-ui-micro text-(--ui-text-secondary)">
         <span className="truncate">{image.name}</span>
         <span>{formatFileSize(state.size)}</span>
       </div>

@@ -5,7 +5,7 @@ import {
   subscribeHarnessAvailability,
   getHarnessAvailabilitySnapshot,
 } from "../../../integrations/harness/core/availability";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import {
@@ -42,7 +42,7 @@ export function TranslationResultDialog({
   onApply: (translation: string) => void;
   onClose: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const id = useId();
   const [translator, setTranslator] = useState(() => translationContextWithDefault(context));
   const [requested, setRequested] = useState(() => canTranslate(translator));
@@ -153,7 +153,7 @@ export function TranslationResultDialog({
                   </div>
                 </div>
               ) : error ? (
-                <Alert tone="info" role="alert">
+                <Alert tone="danger" role="alert">
                   {error === "authentication"
                     ? t(
                         "Sign in to the selected provider in Settings > Providers, then retry translation.",
@@ -177,7 +177,7 @@ export function TranslationResultDialog({
           </section>
         </div>
         {applyError ? (
-          <Alert tone="info" role="alert">
+          <Alert tone="danger" role="alert">
             {t("The text changed. Select it again to translate.")}
           </Alert>
         ) : null}

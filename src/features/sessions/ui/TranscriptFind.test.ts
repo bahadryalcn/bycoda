@@ -6,6 +6,48 @@ import { MOD } from "../../../platform/tauri/platform";
 import { saveKeybindingOverride } from "../../settings/model/settings";
 import { TranscriptFind } from "./TranscriptFind";
 
+it("keeps one keyboard binding across streamed renders and reads the latest navigation callback", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("requestAnimationFrame", () => 1);
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const add = vi.spyOn(window, "addEventListener");
+  const remove = vi.spyOn(window, "removeEventListener");
+  const previous = vi.fn(() => true);
+  const latest = vi.fn(() => true);
+  try {
+    const draw = (onNavigate: typeof latest) =>
+      act(async () =>
+        root.render(
+          createElement(TranscriptFind, {
+            blocks: [],
+            visible: true,
+            focused: true,
+            onNavigate,
+          }),
+        ),
+      );
+    await draw(previous);
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    add.mockClear();
+    remove.mockClear();
+    await draw(latest);
+    expect(add.mock.calls.filter(([type]) => type === "keydown")).toHaveLength(0);
+    expect(remove.mock.calls.filter(([type]) => type === "keydown")).toHaveLength(0);
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(latest).toHaveBeenCalledWith(null);
+    expect(previous).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    add.mockRestore();
+    remove.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});
+
 it.each([false, true])(
   "keeps find bindings and mouse access with a header trigger: %s",
   async (inHeader) => {

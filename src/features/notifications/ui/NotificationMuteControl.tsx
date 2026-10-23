@@ -12,16 +12,17 @@ import {
 import { NotificationMuteDatePicker } from "./NotificationMuteDatePicker";
 import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
 import { Popover } from "../../../shared/ui/Popover";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { BellOff, ChevronDown } from "../../../shared/ui/icons";
 import { isProjectMuted, updateNotificationPreferences } from "../model/notificationPreferences";
 
 type Props = {
   projectIds: readonly string[];
   onChanged?: () => void;
+  /** Row presentation: one icon trigger; the status is already stated by the row itself. */
+  compact?: boolean;
 };
 
-export function NotificationMuteControl({ projectIds, onChanged }: Props) {
+export function NotificationMuteControl({ projectIds, onChanged, compact = false }: Props) {
   useLocale();
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<"menu" | "custom" | null>(null);
@@ -53,7 +54,7 @@ export function NotificationMuteControl({ projectIds, onChanged }: Props) {
 
   return (
     <div className="flex max-w-full flex-wrap items-center justify-end gap-x-3 gap-y-2">
-      {status ? (
+      {status && !compact ? (
         <Badge role="status" tone="neutral">
           {status}
         </Badge>
@@ -68,20 +69,27 @@ export function NotificationMuteControl({ projectIds, onChanged }: Props) {
           {t("Resume notifications")}
         </Button>
       ) : null}
-      <SecondaryButton
+      <Button
         ref={trigger}
         type="button"
+        variant="secondary"
+        iconOnly={compact}
+        label={muted.length ? t("Change mute duration") : t("Mute notifications")}
+        tooltip={compact && status ? status : undefined}
         aria-label={muted.length ? t("Change mute duration") : t("Mute notifications")}
         aria-haspopup={open === "custom" ? "dialog" : "menu"}
         aria-expanded={open !== null}
-        title={t("Mute pauses all project notifications without changing your category choices.")}
         disabled={!projectIds.length}
         onClick={() => setOpen(open ? null : "menu")}
       >
-        <BellOff className="size-3.5" aria-hidden="true" />
-        {muted.length ? t("Muted") : t("Mute")}
-        <ChevronDown className="size-3 text-content/40" aria-hidden="true" />
-      </SecondaryButton>
+        <BellOff className="icon-sm" aria-hidden="true" />
+        {compact ? null : (
+          <>
+            {muted.length ? t("Muted") : t("Mute")}
+            <ChevronDown className="icon-xs text-(--ui-text-secondary)" aria-hidden="true" />
+          </>
+        )}
+      </Button>
       {error ? (
         <Alert tone="danger" className="w-full">
           {error}
@@ -94,7 +102,7 @@ export function NotificationMuteControl({ projectIds, onChanged }: Props) {
           ariaLabel="Mute notifications"
           width={244}
           header={
-            <p className="px-2 py-1.5 text-[11px] text-content/45">
+            <p className="px-2 py-1.5 text-ui-micro text-(--ui-text-secondary)">
               {t("Mute all notifications for")}
             </p>
           }

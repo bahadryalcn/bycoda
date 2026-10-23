@@ -1,4 +1,4 @@
-import { t, useLocale, getLocale } from "../i18n";
+import { useLocale, getLocale, useT } from "../i18n";
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ChevronLeft, ChevronRight, Clock } from "./icons";
 import { Button } from "./Button";
@@ -38,6 +38,7 @@ function shiftMonth(date: Date, amount: number): Date {
 }
 
 export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: Props) {
+  const t = useT();
   const locale = useLocale();
   const today = new Date(Date.now());
   const selected = parseLocalDateTime(`${value.slice(0, 10)}T12:00`) ?? today;

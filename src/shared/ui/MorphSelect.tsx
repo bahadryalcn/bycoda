@@ -4,7 +4,7 @@ import {
   type MorphSelectItem,
 } from "./arc/morph-select/morph-select";
 import { useOverlay } from "./overlay";
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 
 function OpenOverlay({
   root,
@@ -40,7 +40,7 @@ export function MorphSelect({
     "ref" | "onMouseDown" | "title" | "aria-label" | "onFocus" | "onBlur"
   >;
 }) {
-  useLocale();
+  const t = useT();
   const root = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const restore = useRef(false);

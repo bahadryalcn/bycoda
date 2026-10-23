@@ -6,6 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Alert } from "../../../shared/ui/Alert";
 import {
   saveSshConnection,
@@ -125,27 +126,17 @@ export function SshSettings({
     <Modal title={t("SSH settings")} onClose={() => onClose()} size="lg">
       <div className="flex flex-col gap-4 p-4">
         <p className="text-xs text-(--ui-text-muted)">{t("Local SSH keys and known hosts.")}</p>
-        <nav
-          aria-label={t("SSH settings sections")}
-          className="flex min-w-0 gap-1 overflow-x-auto border-b border-stroke pbe-2"
-        >
-          {[
-            ["keys", "Keys"],
-            ["hosts", "Known hosts"],
-            ["import", "Import SSH config"],
-          ].map(([id, label]) => (
-            <Button
-              key={id}
-              variant="tab"
-              className="shrink-0"
-              aria-pressed={securityPanel === id}
-              aria-controls={`${panelId}-security-${id}`}
-              onClick={() => setSecurityPanel(id)}
-            >
-              {t(label)}
-            </Button>
-          ))}
-        </nav>
+        <SegmentedControl
+          label={t("SSH settings sections")}
+          selectionRole="pressed"
+          value={securityPanel}
+          onValueChange={setSecurityPanel}
+          options={[
+            { value: "keys", label: t("Keys") },
+            { value: "hosts", label: t("Known hosts") },
+            { value: "import", label: t("Import SSH config") },
+          ]}
+        />
         {error ? (
           <Alert tone="danger" role="alert">
             {error}

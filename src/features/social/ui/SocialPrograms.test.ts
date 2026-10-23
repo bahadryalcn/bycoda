@@ -162,9 +162,9 @@ it("keeps schedule drafts and approval step policy when choosing visible native 
     expect(radio.checked).toBe(true);
   };
   const input = (label: string) => {
-    const element = Array.from(
-      host.querySelectorAll<HTMLLabelElement>(".social-program-field > label"),
-    ).find((item) => item.textContent === label)!;
+    const element = Array.from(host.querySelectorAll<HTMLLabelElement>("label")).find(
+      (item) => item.textContent === label,
+    )!;
     return document.getElementById(element.htmlFor) as HTMLInputElement;
   };
   await choose("Schedule mode", "times");
@@ -213,7 +213,7 @@ it("searches required projects and resets project facts while adopting the new b
   )!;
   await chooseSocialValue(facts, "fact-a");
   expect(
-    host.querySelector('[aria-label="Verified public facts: seçilenler"]')?.textContent,
+    host.querySelector('[aria-label="Verified public facts: selected items"]')?.textContent,
   ).toContain("Topic");
   // Multi-selection keeps its popup open until dismissed.
   await act(async () =>
@@ -227,7 +227,7 @@ it("searches required projects and resets project facts while adopting the new b
   expect((document.getElementById(voiceLabel.htmlFor) as HTMLTextAreaElement).value).toBe(
     "Beta voice",
   );
-  expect(host.querySelector('[aria-label="Verified public facts: seçilenler"]')).toBeNull();
+  expect(host.querySelector('[aria-label="Verified public facts: selected items"]')).toBeNull();
   vi.unstubAllGlobals();
 });
 
@@ -258,13 +258,13 @@ it("shares unchanged polling data without rendering and refreshes after hidden t
 it("associates adapter fields with visible labels and retains free-entry model and timezone values", async () => {
   const { host } = await render();
   const field = (text: string) => {
-    const label = Array.from(
-      host.querySelectorAll<HTMLLabelElement>(".social-program-field > label"),
-    ).find((item) => item.textContent === text)!;
+    const label = Array.from(host.querySelectorAll<HTMLLabelElement>("label")).find(
+      (item) => item.textContent === text,
+    )!;
     expect(label).toBeTruthy();
     const control = document.getElementById(label.htmlFor) as HTMLInputElement | HTMLSelectElement;
     expect(control).toBeTruthy();
-    expect(control.getAttribute("aria-labelledby")?.split(" ")).toContain(label.id);
+    expect(control.labels).toContain(label);
     return control;
   };
   expect(host.querySelector("label label")).toBeNull();

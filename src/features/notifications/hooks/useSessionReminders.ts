@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { loadNotificationsEnabled, NOTIFICATIONS_CHANGE_EVENT } from "../model/notifications";
 import { loadSoundsEnabled, SOUNDS_CHANGE_EVENT } from "../../settings/model/sounds";
 import {
@@ -27,8 +27,9 @@ export function useSessionReminders(
   const [reminders, setItems] = useState<SessionReminder[]>([]);
   const [now, setNow] = useState(Date.now);
   const [error, setError] = useState<string | null>(null);
-  const [, refreshPolicy] = useReducer((revision: number) => revision + 1, 0);
+  const [policyRevision, refreshPolicy] = useReducer((revision: number) => revision + 1, 0);
   const revision = useRef(0);
+  const configured = useRef(false);
   const configurationRevision = useRef(0);
   const configurationQueue = useRef<Promise<void>>(Promise.resolve());
   const remindersRef = useRef(reminders);
@@ -70,13 +71,23 @@ export function useSessionReminders(
   const refresh = useCallback(async () => {
     const request = ++revision.current;
     try {
-      const items = await listReminders();
+      const listed = await listReminders();
       if (request !== revision.current) return;
+      // The 30 s safety refresh usually finds nothing new: keep the same array and
+      // clock so the workspace does not re-render, and skip the native reconfigure.
+      const changed = !sameReminders(remindersRef.current, listed);
+      const items = changed ? listed : remindersRef.current;
       remindersRef.current = items;
       setItems(items);
-      setNow(Date.now());
+      const current = Date.now();
+      setNow((previous) =>
+        items.some((item) => item.dueAt > previous && item.dueAt <= current) ? current : previous,
+      );
       setError(null);
-      await configure();
+      if (changed || !configured.current) {
+        configured.current = true;
+        await configure();
+      }
     } catch (error) {
       if (request === revision.current) setError(String(error));
     }
@@ -227,14 +238,21 @@ export function useSessionReminders(
     }
   }, []);
 
+  const due = useMemo(
+    () =>
+      reminders.filter((reminder) => {
+        const project = knownNotificationProject(reminder.cwd);
+        if (!project || reminder.dueAt > now) return false;
+        const rule = getProjectNotificationRule(project.id, "reminders");
+        return rule.enabled && reminder.dueAt > rule.after;
+      }),
+    // policyRevision: notification rules live outside React state.
+    [reminders, now, policyRevision],
+  );
+
   return {
     reminders,
-    due: reminders.filter((reminder) => {
-      const project = knownNotificationProject(reminder.cwd);
-      if (!project || reminder.dueAt > now) return false;
-      const rule = getProjectNotificationRule(project.id, "reminders");
-      return rule.enabled && reminder.dueAt > rule.after;
-    }),
+    due,
     error,
     refresh,
     schedule,
@@ -242,4 +260,21 @@ export function useSessionReminders(
     dismissDue,
     open,
   };
+}
+
+function sameReminders(a: readonly SessionReminder[], b: readonly SessionReminder[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((item, index) => {
+      const other = b[index];
+      return (
+        item.sessionId === other.sessionId &&
+        item.dueAt === other.dueAt &&
+        item.firedAt === other.firedAt &&
+        item.title === other.title &&
+        item.harness === other.harness &&
+        item.cwd === other.cwd
+      );
+    })
+  );
 }

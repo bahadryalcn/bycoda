@@ -7,10 +7,13 @@ import { ChevronDown } from "../../../shared/ui/icons";
 export function NoteEditorPane({
   label,
   hidden = false,
+  split = false,
   children,
 }: {
   label: string;
   hidden?: boolean;
+  /** The visible pane caption is only needed when two panes share the view. */
+  split?: boolean;
   children: ReactNode;
 }) {
   useLocale();
@@ -35,7 +38,7 @@ export function NoteEditorPane({
 
   return (
     <div hidden={hidden} className={hidden ? "hidden" : "note-editor-pane"}>
-      <div className="note-pane-label">{label}</div>
+      {split ? <div className="note-pane-label">{label}</div> : null}
       <div
         ref={viewport}
         className="note-pane-scroll"
@@ -47,8 +50,8 @@ export function NoteEditorPane({
           {children}
         </div>
       </div>
-      <div className="note-pane-footer">
-        {more ? (
+      {more ? (
+        <div className="note-pane-footer">
           <Button
             variant="ghost"
             size="sm"
@@ -57,13 +60,11 @@ export function NoteEditorPane({
               if (node) node.scrollTop += node.clientHeight * 0.85;
             }}
           >
-            <ChevronDown className="size-3" />
+            <ChevronDown className="icon-xs" />
             {t("More below")}
           </Button>
-        ) : (
-          <span>{t("End of note")}</span>
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

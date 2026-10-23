@@ -22,17 +22,16 @@ export function RemoteOutboxNotice({
     <Alert role="alert" tone="warning">
       <p className="font-medium">{t("An unfinished request needs recovery")}</p>
       <p className="leading-relaxed text-content">
-        {issues.length}
-        {t(" saved request")}
-        {issues.length === 1 ? "" : "s"}
-        {t(
-          " could not be read. Check the conversations on the host before sending again; a request may already have run.",
-        )}
+        {issues.length === 1
+          ? t(
+              "1 saved request could not be read. Check the conversations on the host before sending again; a request may already have run.",
+            )
+          : t(
+              "{p0} saved requests could not be read. Check the conversations on the host before sending again; a request may already have run.",
+              { p0: issues.length },
+            )}
       </p>
-      <p className="break-all text-content">
-        {t("Project: ")}
-        {issue.project}
-      </p>
+      <p className="break-all text-content">{t("Project: {p0}", { p0: issue.project })}</p>
       <label className="flex items-start gap-2">
         <Checkbox
           checked={reviewed === issue.key}

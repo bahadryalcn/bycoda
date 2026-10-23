@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { ChevronRight } from "../../../shared/ui/icons";
 import { HARNESS_TITLE, type SecondOpinionMeta } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
@@ -8,7 +8,7 @@ type Props = {
 };
 
 export function SecondOpinionCard({ card }: Props) {
-  useLocale();
+  const t = useT();
   const files =
     card.files != null && card.files > 0
       ? `${card.files} ${card.files === 1 ? "file" : "files"}`
@@ -16,10 +16,10 @@ export function SecondOpinionCard({ card }: Props) {
 
   return (
     <div className="min-w-0 font-sans">
-      <div className="text-[13px] font-medium leading-snug text-(--ui-tone-neutral-fg)">
+      <div className="text-ui-secondary font-medium leading-snug text-(--ui-tone-neutral-fg)">
         {card.kind === "handoff" ? t("Handoff") : t("Second opinion")}
       </div>
-      <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-(--ui-text-secondary)">
+      <div className="mt-1 flex min-w-0 items-center gap-1.5 text-ui-micro leading-4 text-(--ui-text-secondary)">
         <HarnessIcon harness={card.from} className="size-3 shrink-0" />
         <span className="truncate">{HARNESS_TITLE[card.from]}</span>
         <ChevronRight className="size-3 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
@@ -27,7 +27,7 @@ export function SecondOpinionCard({ card }: Props) {
         <span className="truncate">{HARNESS_TITLE[card.to]}</span>
       </div>
       {files ? (
-        <div className="mt-1 text-[11px] leading-4 text-(--ui-text-secondary)">{files}</div>
+        <div className="mt-1 text-ui-micro leading-4 text-(--ui-text-secondary)">{files}</div>
       ) : null}
     </div>
   );

@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useId, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { formatLiveElapsed, shouldShowLiveAgents, type LiveAgent } from "../model/liveAgents";
@@ -45,7 +45,7 @@ export function LiveAgentsPreview({
   groupCustomColors: groupCustomColorsProp,
   groupMascots: groupMascotsProp,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [loadedGroupLabels] = useState(loadTabGroupLabels);
   const [loadedGroupColors] = useState(loadTabGroupColors);
   const [loadedGroupCustomColors] = useState(loadTabGroupCustomColors);
@@ -124,12 +124,12 @@ export function LiveAgentsPreview({
             }`}
           />
           <span
-            className={`min-w-0 flex-1 truncate text-(--ui-text-secondary) ${collapsible ? "text-[12px] font-medium" : "text-xs font-semibold"}`}
+            className={`min-w-0 flex-1 truncate text-(--ui-text-secondary) ${collapsible ? "text-ui-caption font-medium" : "text-xs font-semibold"}`}
           >
             {hasIssues ? t("Needs attention") : hasWorkingAgents ? t("Working") : t("Finished")}
           </span>
           <span
-            className={`text-[11px] font-medium tabular-nums text-(--ui-text-secondary) ${collapsible ? "" : "rounded-md bg-(--ui-tone-accent-subtle) px-1.5"}`}
+            className={`text-ui-micro font-medium tabular-nums text-(--ui-text-secondary) ${collapsible ? "" : "rounded-md bg-(--ui-tone-accent-subtle) px-1.5"}`}
           >
             {agents.length}
           </span>
@@ -203,7 +203,7 @@ function LiveAgentCard({
   groupCustomColors: Record<string, string>;
   groupMascots: Record<string, string>;
 }) {
-  useLocale();
+  const t = useT();
   const seed = projectName(agent.cwd);
   const key = projectKey(agent.cwd);
   const project = resolveTabGroupLabel(key, groupLabels, seed);

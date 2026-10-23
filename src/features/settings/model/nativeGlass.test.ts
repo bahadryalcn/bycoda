@@ -17,6 +17,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
 }));
 
 const BODY_GLASS_KEY = "bycoda.bodyGlass";
+const WINDOW_GLASS_KEY = "bycoda.windowGlass";
 
 function hasGlass() {
   return document.documentElement.classList.contains("has-native-glass");
@@ -90,6 +91,18 @@ describe("native glass", () => {
     expect(invoke).toHaveBeenCalledWith(
       "set_window_glass_enabled",
       expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("keeps the dark window opaque on Windows and macOS when window glass is off", async () => {
+    localStorage.setItem(WINDOW_GLASS_KEY, "0");
+    syncNativeGlass("dark");
+    expect(hasGlass()).toBe(false);
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("set_window_glass_enabled", {
+        enabled: false,
+        background: { r: 23, g: 23, b: 23 },
+      }),
     );
   });
 

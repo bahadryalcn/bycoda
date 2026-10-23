@@ -58,23 +58,23 @@ export function BackgroundSessionDialog({
             aria-label={t("Loading…")}
             className="grid h-20 place-items-center text-(--ui-text-secondary)"
           >
-            <LoaderCircle className="size-4 animate-spin" />
+            <LoaderCircle className="icon-md animate-spin" />
           </div>
         ) : (
           <>
             <div className="flex flex-col gap-1">
-              <p className="text-[12px] leading-snug text-(--ui-text-secondary)">
+              <p className="text-ui-caption leading-snug text-(--ui-text-secondary)">
                 {summary.status}
                 {t(" · on this computer’s host")}
               </p>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3 text-[12px] leading-relaxed text-(--ui-text-secondary)">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3 text-ui-caption leading-relaxed text-(--ui-text-secondary)">
               {summary.reply || (
                 <span className="text-(--ui-text-secondary)">{t("No reply yet.")}</span>
               )}
             </div>
             {summary.note ? (
-              <p className="whitespace-pre-wrap break-words text-[12px] leading-snug text-(--ui-text-secondary)">
+              <p className="whitespace-pre-wrap break-words text-ui-caption leading-snug text-(--ui-text-secondary)">
                 {summary.note}
               </p>
             ) : null}

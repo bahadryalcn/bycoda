@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import type { SocialAccount } from "./social";
 
 /** A saved account is not an active OAuth flow. */
@@ -8,13 +9,13 @@ export function accountConnectionStatus(
   now = Date.now(),
 ) {
   if (account.connected) {
-    if (account.expiresAt && account.expiresAt < now) return "Yeniden bağlantı gerekli";
-    return account.accessApproved ? "Bağlı" : "Platform erişim onayı gerekli";
+    if (account.expiresAt && account.expiresAt < now) return t("Reconnection required");
+    return account.accessApproved ? t("Connected") : t("Platform access approval required");
   }
-  if (!availability) return "Bağlantı ayarları kontrol ediliyor";
-  if (!availability.configured) return "Kurulum gerekli";
-  if (flowStatus === "waiting") return "Tarayıcıda izin bekleniyor";
-  if (flowStatus === "selection") return "Doğrulanan hesabı seçin";
-  if (flowStatus === "failed") return "Bağlantı tekrar denenmeli";
-  return "Bağlanmaya hazır";
+  if (!availability) return t("Checking connection settings");
+  if (!availability.configured) return t("Setup required");
+  if (flowStatus === "waiting") return t("Waiting for permission in the browser");
+  if (flowStatus === "selection") return t("Select the verified account");
+  if (flowStatus === "failed") return t("Connection needs a retry");
+  return t("Ready to connect");
 }

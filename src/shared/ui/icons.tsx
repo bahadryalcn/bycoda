@@ -135,7 +135,7 @@ export type IconComponent = ReturnType<typeof wrap>;
 
 function wrap(Icon: LucideIcon, name: string) {
   const Component = forwardRef<SVGSVGElement, IconProps>(function BycodaIcon(
-    { size = 24, strokeWidth = 2, title, children, ...props },
+    { size = 24, strokeWidth = 1.75, title, children, ...props },
     ref,
   ) {
     const id = useId();

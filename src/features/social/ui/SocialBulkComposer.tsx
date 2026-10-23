@@ -2,7 +2,9 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
+import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
+import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import type { HostProject } from "../../connections/model/protocol";
 import type { SocialPolicy, SocialSnapshot } from "../model/social";
@@ -41,6 +43,7 @@ export function SocialBulkComposer({
   content?: { text: string; factIds: string[] };
   onContentChange?: (value: { text: string; factIds: string[] }) => void;
 }) {
+  useLocale();
   const [kind, setKind] = useState<BulkKind>(replyOnly ? "reply" : "message");
   const [projectId, setProjectId] = useState(initialProject || projects[0]?.id || "");
   const [localText, setLocalText] = useState("");
@@ -118,6 +121,30 @@ export function SocialBulkComposer({
     );
   const recipientsChanged =
     !!batch && recipientSignature(targets) !== recipientSignature(batch.targets);
+  const selectionTitle = replyOnly
+    ? targets.length === 1
+      ? t("1 conversation selected")
+      : t("{p0} conversations selected", { p0: targets.length })
+    : targets.length === 1
+      ? t("1 contact selected")
+      : t("{p0} contacts selected", { p0: targets.length });
+  const eligibleAccounts = [
+    ...new Set(
+      eligible.flatMap((item) => {
+        const account = snapshot.accounts.find((entry) => entry.id === item.target.accountId);
+        return account ? [account.name] : [];
+      }),
+    ),
+  ];
+  const submitBlocker = busy
+    ? ""
+    : !targets.length
+      ? t("Select contacts or conversations from the list first.")
+      : !ready
+        ? t("Account limits are loading.")
+        : !eligible.length
+          ? t("No recipient is eligible. Review the recipient checks.")
+          : "";
   const prepareCurrentSelection = () => {
     if (!batch || busy) return;
     setPreviousPreparations((current) => [...current, { text: batch.text, rows: [...rows] }]);
@@ -156,11 +183,15 @@ export function SocialBulkComposer({
         if (!prepared.some((row) => row.status === "succeeded")) {
           throw new Error(
             prepared.some((row) => row.status === "failed")
-              ? "Hiçbir taslak hazırlanamadı. Alıcıların sonuçlarını kontrol edip başarısız taslakları yeniden deneyin."
-              : "Uygun alıcı bulunamadı. Alıcı kontrollerini inceleyip içeriği veya seçimi düzenleyin.",
+              ? t(
+                  "No draft could be prepared. Check each recipient's result and retry the failed drafts.",
+                )
+              : t(
+                  "No eligible recipient was found. Review the recipient checks and edit the content or selection.",
+                ),
           );
         }
-      }, "Taslak hazırlama tamamlandı. Her alıcının sonucunu aşağıda kontrol edin.");
+      }, t("Draft preparation finished. Check each recipient's result below."));
     } finally {
       active.current = false;
       setBusy(false);
@@ -176,28 +207,29 @@ export function SocialBulkComposer({
             void start();
           }}
         >
-          <Notice kind="info" title={`${targets.length} ${replyOnly ? "konuşma" : "kişi"} seçili`}>
-            Metni ve alıcıları kontrol edin. Hazırlanan taslakları ayrı ayrı onaylayıp
-            gönderebilirsiniz.
+          <Notice kind="info" title={selectionTitle}>
+            {t(
+              "Review the text and recipients. You can approve and send the prepared drafts individually.",
+            )}
           </Notice>
           {!replyOnly ? (
             <>
               <label>
-                İşlem
+                {t("Action")}
                 <NativeSelect
                   value={kind}
                   onChange={(event) => setKind(event.target.value as BulkKind)}
                 >
-                  <option value="message">Yeni mesaj</option>
-                  <option value="comment">Gönderiye yorum</option>
+                  <option value="message">{t("New message")}</option>
+                  <option value="comment">{t("Comment on post")}</option>
                 </NativeSelect>
               </label>
               <label>
-                Proje
+                {t("Project")}
                 <NativeSearchableSelect
-                  label="Proje"
+                  label={t("Project")}
                   options={[
-                    { value: "", label: "Proje seçin", disabled: true },
+                    { value: "", label: t("Select a project"), disabled: true },
                     ...projects.map((project) => ({
                       value: project.id,
                       label: project.name || project.cwd,
@@ -212,26 +244,26 @@ export function SocialBulkComposer({
           ) : null}
           {facts.length ? (
             <label>
-              Hazır bilgi (isteğe bağlı)
+              {t("Prepared fact (optional)")}
               <SearchableSelect
                 value=""
                 disabled={!ready}
-                label={"Hazır bilgi (isteğe bağlı)"}
+                label={t("Prepared fact (optional)")}
                 options={[
-                  { value: "", label: "Bilgi seçin" },
+                  { value: "", label: t("Select a fact") },
                   ...facts.map((fact) => ({ value: fact.id, label: fact.topic })),
                 ]}
                 onChange={(nextValue) => {
                   const fact = facts.find((item) => item.id === nextValue);
                   if (fact && ready) changeContent({ text: fact.text, factIds: [fact.id] });
                 }}
-                searchLocale="tr"
+                searchLocale={getLocale()}
               />
             </label>
           ) : null}
           {kind === "comment" ? (
             <fieldset className="social-bulk-posts">
-              <legend>Her kişi için yorum yapılacak gönderi</legend>
+              <legend>{t("Post to comment on for each contact")}</legend>
               {targets.map((target) => {
                 const contact = snapshot.contacts.find((item) => item.id === target.contactId);
                 const account = snapshot.accounts.find((item) => item.id === target.accountId);
@@ -247,19 +279,16 @@ export function SocialBulkComposer({
                   ),
                 ];
                 return (
-                  <label key={target.key}>
-                    {contact?.name ?? "Kişi"} · gönderi kimliği
+                  <div key={target.key}>
                     <TextField
-                      hideLabel
-                      label={`${contact?.name ?? "Kişi"} gönderi kimliği`}
-                      aria-label={`${contact?.name ?? "Kişi"} gönderi kimliği`}
+                      label={t("{p0} · post ID", { p0: contact?.name ?? t("Contact not found") })}
                       list={`posts-${target.key}`}
                       value={postIds[target.key] ?? ""}
                       onChange={(event) =>
                         setPostIds((current) => ({ ...current, [target.key]: event.target.value }))
                       }
                       maxLength={300}
-                      placeholder="Platformdaki gönderi kimliği"
+                      placeholder={t("Post ID on the platform")}
                     />
                     <datalist id={`posts-${target.key}`}>
                       {posts.map((id) => (
@@ -268,20 +297,17 @@ export function SocialBulkComposer({
                     </datalist>
                     {account?.platform === "x" ? (
                       <small>
-                        X gönderi bağlantısında status/ bölümünden sonra gelen sayıyı girin.
+                        {t("Enter the number that follows status/ in the X post link.")}
                       </small>
                     ) : null}
-                  </label>
+                  </div>
                 );
               })}
             </fieldset>
           ) : null}
-          <label>
-            {replyOnly ? "Yanıt" : "İçerik"}
+          <div>
             <TextareaField
-              label={replyOnly ? "Yanıt" : "Toplu içerik"}
-              hideLabel
-              aria-label={replyOnly ? "Yanıt" : "Toplu içerik"}
+              label={replyOnly ? t("Reply text") : t("Content")}
               required
               rows={5}
               value={text}
@@ -289,35 +315,42 @@ export function SocialBulkComposer({
               onChange={(event) => changeContent({ text: event.target.value, factIds: [] })}
             />
             <small>
-              {count} karakter
+              {t("{p0} characters", { p0: count })}
               {plan.some((item) => item.limit !== undefined)
-                ? ` · Hesap sınırları alıcı listesinde`
+                ? ` · ${t("Account limits are in the recipient list")}`
                 : ""}
             </small>
-          </label>
+          </div>
           {!targets.length ? (
-            <Notice kind="info">Önce listeden kişi veya konuşma seçin.</Notice>
+            <Notice kind="info">
+              {t("Select contacts or conversations from the list first.")}
+            </Notice>
           ) : !ready || Object.keys(policyErrors).length ? (
             <Notice kind={Object.keys(policyErrors).length ? "warning" : "loading"}>
               {Object.keys(policyErrors).length
-                ? "Sınırları alınamayan hesaplar atlanır. Diğer hesaplar için devam edebilirsiniz."
-                : "Hesapların içerik sınırları yükleniyor…"}
+                ? t(
+                    "Accounts whose limits could not be loaded are skipped. You can continue with the other accounts.",
+                  )
+                : t("Loading account content limits…")}
               {Object.keys(policyErrors).length ? (
                 <Button
                   variant="secondary"
                   type="button"
                   onClick={() => setPolicyAttempt((attempt) => attempt + 1)}
                 >
-                  Sınırları yeniden yükle
+                  {t("Reload limits")}
                 </Button>
               ) : null}
             </Notice>
           ) : null}
           <div className="social-batch-results">
             <h3>
-              Alıcı kontrolü{" "}
+              {t("Recipient check")}{" "}
               <small>
-                {eligible.length} uygun · {plan.length - eligible.length} uygun değil
+                {t("{p0} eligible · {p1} not eligible", {
+                  p0: eligible.length,
+                  p1: plan.length - eligible.length,
+                })}
               </small>
             </h3>
             {plan.map((item) => {
@@ -330,32 +363,52 @@ export function SocialBulkComposer({
                     <strong>{item.name}</strong>
                     <span className="social-muted">
                       {account?.name} · {account ? names[account.platform] : ""}
-                      {item.limit !== undefined ? ` · En fazla ${item.limit} karakter` : ""}
+                      {item.limit !== undefined
+                        ? ` · ${t("Up to {p0} characters", { p0: item.limit })}`
+                        : ""}
                     </span>
                   </div>
                   <StatusBadge
                     status={item.reason ? "review" : "available"}
-                    label={item.reason ? "Hazır değil" : "Uygun"}
+                    label={item.reason ? t("Not ready") : t("Eligible")}
                   />
                   {item.reason ? <p>{item.reason}</p> : null}
                 </article>
               );
             })}
           </div>
-          <Button
-            type="submit"
-            variant="primary"
-            loading={busy}
-            disabled={busy || !eligible.length || !ready}
-          >
-            {eligible.length > 1 ? `${eligible.length} taslak hazırla` : "Taslak kaydet"}
-          </Button>
+          {submitBlocker ? (
+            <small className="social-muted" role="status">
+              {submitBlocker}
+            </small>
+          ) : null}
+          <div className="social-actions">
+            <Button
+              type="submit"
+              variant="primary"
+              loading={busy}
+              disabled={busy || !eligible.length || !ready}
+            >
+              {eligible.length > 1
+                ? t("Prepare {p0} drafts", { p0: eligible.length })
+                : t("Save draft")}
+            </Button>
+            {eligible.length ? (
+              <small className="social-muted">
+                {t("Drafts for {p0} of {p1} recipients · {p2} · nothing is sent", {
+                  p0: eligible.length,
+                  p1: plan.length,
+                  p2: eligibleAccounts.join(", "),
+                })}
+              </small>
+            ) : null}
+          </div>
         </form>
       ) : (
         <>
           {recipientsChanged ? (
-            <Notice kind="info" title="Alıcı seçimi değişti.">
-              Bu sonuçlar önceki hazırlamaya ait.
+            <Notice kind="info" title={t("Recipient selection changed.")}>
+              {t("These results belong to the previous preparation.")}
               <Button
                 variant="secondary"
                 loading={busy}
@@ -363,15 +416,19 @@ export function SocialBulkComposer({
                 disabled={busy || !targets.length}
                 onClick={prepareCurrentSelection}
               >
-                Yeni seçilenler için hazırla
+                {t("Prepare for the new selection")}
               </Button>
             </Notice>
           ) : null}
           <Notice
             kind={busy ? "loading" : failed || skipped ? "warning" : "success"}
-            title={busy ? "Taslaklar hazırlanıyor…" : "Hazırlama sonucu"}
+            title={busy ? t("Preparing drafts…") : t("Preparation result")}
           >
-            {success} hazır · {skipped} atlandı · {failed} başarısız
+            {t("{p0} ready · {p1} skipped · {p2} failed", {
+              p0: success,
+              p1: skipped,
+              p2: failed,
+            })}
           </Notice>
           <p className="social-message">{batch.text}</p>
           <div className="social-batch-results" aria-live="polite">
@@ -382,11 +439,11 @@ export function SocialBulkComposer({
                   status={row.status === "skipped" ? "review" : row.status}
                   label={
                     {
-                      queued: "Bekliyor",
-                      running: "Hazırlanıyor",
-                      succeeded: "Taslak hazır",
-                      skipped: "Atlandı",
-                      failed: "Başarısız",
+                      queued: t("Waiting"),
+                      running: t("Preparing"),
+                      succeeded: t("Draft ready"),
+                      skipped: t("Skipped"),
+                      failed: t("Failed"),
                     }[row.status]
                   }
                 />
@@ -397,18 +454,20 @@ export function SocialBulkComposer({
           <div className="social-actions">
             {failed ? (
               <Button
-                type="submit"
+                type="button"
                 variant="secondary"
                 loading={busy}
                 disabled={busy}
                 onClick={() => void start(true)}
               >
-                Yalnızca {failed} başarısız taslağı yeniden dene
+                {failed === 1
+                  ? t("Retry only the failed draft")
+                  : t("Retry only the {p0} failed drafts", { p0: failed })}
               </Button>
             ) : null}
             {!recipientsChanged ? (
               <Button
-                type="submit"
+                type="button"
                 variant="secondary"
                 loading={busy}
                 disabled={busy}
@@ -422,7 +481,7 @@ export function SocialBulkComposer({
                   setPolicyAttempt((attempt) => attempt + 1);
                 }}
               >
-                {success && !failed ? "Yeni içerik hazırla" : "İçeriği düzenle"}
+                {success && !failed ? t("Prepare new content") : t("Edit content")}
               </Button>
             ) : null}
           </div>
@@ -441,8 +500,10 @@ export function SocialBulkComposer({
       {previousPreparations.map((preparation, index) => (
         <details key={index} className="social-settings">
           <summary>
-            Önceki hazırlama · {preparation.rows.length} alıcı ·{" "}
-            {preparation.rows.filter((row) => row.status === "succeeded").length} taslak
+            {t("Previous preparation · {p0} recipients · {p1} drafts", {
+              p0: preparation.rows.length,
+              p1: preparation.rows.filter((row) => row.status === "succeeded").length,
+            })}
           </summary>
           <p className="social-message">{preparation.text}</p>
           <div className="social-batch-results">
@@ -451,7 +512,7 @@ export function SocialBulkComposer({
                 <strong>{row.name}</strong>
                 <StatusBadge
                   status={row.status}
-                  label={row.status === "succeeded" ? "Taslak hazır" : undefined}
+                  label={row.status === "succeeded" ? t("Draft ready") : undefined}
                 />
                 {row.reason ? <p>{row.reason}</p> : null}
               </article>
@@ -472,4 +533,3 @@ export function SocialBulkComposer({
     </div>
   );
 }
-import { TextareaField } from "../../../shared/ui/TextareaField";

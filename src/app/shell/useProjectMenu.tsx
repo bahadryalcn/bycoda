@@ -1,5 +1,5 @@
 import { Alert } from "../../shared/ui/Alert";
-import { t } from "../../shared/i18n";
+import { t, useT } from "../../shared/i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   AppWindow,
@@ -353,6 +353,7 @@ export function useProjectMenu({
   activeProject,
   isProjectBusy,
 }: Options) {
+  const t = useT();
   const [projectMenu, setProjectMenu] = useState<
     (Point & { path: string; projectKey: string; onSelectForBulk?: () => void }) | null
   >(null);

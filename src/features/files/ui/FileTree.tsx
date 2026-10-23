@@ -1,9 +1,9 @@
 import { TextField } from "../../../shared/ui/TextField";
 import { TreeRow } from "../../../shared/ui/TreeRow";
 import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 import { getLocale, t, useLocale } from "../../../shared/i18n/technical";
 import {
-  CheckCircle,
   ChevronDown,
   ChevronRight,
   CircleAlert,
@@ -91,6 +91,14 @@ import {
   type TreeSelectionModifiers,
 } from "../model/treeSelection";
 
+// Status is never colour-only: each state also carries a letter marker.
+const GIT_STATUS_MARK: Record<string, { mark: string; label: string }> = {
+  modified: { mark: "M", label: "Modified" },
+  added: { mark: "A", label: "Added" },
+  untracked: { mark: "U", label: "Untracked" },
+  deleted: { mark: "D", label: "Deleted" },
+};
+
 const GIT_STATUS_COLOR: Record<string, string> = {
   modified: "text-warning",
   added: "text-diff-add-fg",
@@ -111,6 +119,8 @@ type Props = {
   /** Shown under the toolbar in place of the tree while project search is open. */
   search?: ReactNode;
   gitStatuses?: GitStatusMap;
+  /** False while another sidebar tab covers the tree: its refresh poll pauses. */
+  visible?: boolean;
 };
 
 type Creating = { id: number; parent: string; isDir: boolean };
@@ -394,6 +404,7 @@ export const FileTree = memo(function FileTree({
   onCloseSearch,
   search,
   gitStatuses,
+  visible = true,
 }: Props) {
   useLocale();
   const [expanded, setExpanded] = useState(() => loadExpanded(cwd));
@@ -1316,10 +1327,17 @@ export const FileTree = memo(function FileTree({
     };
   }, [cwd]);
 
+  const pollPaused = useRef(false);
   useEffect(() => {
+    if (!visible) {
+      pollPaused.current = true;
+      return;
+    }
     const remote = cwd.startsWith(REMOTE_PATH_PREFIX);
     // Local folders re-list only expanded directories, and only while the
-    // window has focus; returning to the window refreshes via `onResume`.
+    // window has focus and the tree is shown; returning to either refreshes.
+    if (pollPaused.current && !remote) notifyDirsChanged(cwd, true);
+    pollPaused.current = false;
     const timer = window.setInterval(
       () => {
         if (document.hidden) return;
@@ -1328,7 +1346,7 @@ export const FileTree = memo(function FileTree({
       remote ? 5000 : 3000,
     );
     return () => window.clearInterval(timer);
-  }, [cwd]);
+  }, [cwd, visible]);
 
   useEffect(() => {
     const sameRoot = rootStatePath.current === cwd;
@@ -1499,7 +1517,7 @@ export const FileTree = memo(function FileTree({
       <TreeStateCtx.Provider value={treeStore}>
         <div className="flex h-full min-h-0 flex-col">
           <div
-            className="flex min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 items-center gap-px overflow-visible border-b border-stroke px-2"
+            className="flex min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 items-center gap-0.5 overflow-visible border-b border-stroke px-2"
             onContextMenu={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -1544,6 +1562,7 @@ export const FileTree = memo(function FileTree({
             </HeaderIcon>
             {onSearch ? (
               <HeaderIcon
+                className="ms-auto"
                 label={t("Search in files ({p0}Shift+F)", { p0: MOD })}
                 active={!!search}
                 onClick={search ? onCloseSearch : onSearch}
@@ -1591,7 +1610,7 @@ export const FileTree = memo(function FileTree({
                       <ChevronRight className="size-3.5" strokeWidth={1.75} />
                     )}
                   </span>
-                  <span className="min-w-0 truncate text-[11px] font-semibold tracking-[0.08em] text-[var(--ui-text-secondary)] uppercase">
+                  <span className="min-w-0 truncate text-ui-caption font-medium text-[var(--ui-text-secondary)]">
                     {name}
                   </span>
                 </Button>
@@ -1599,13 +1618,12 @@ export const FileTree = memo(function FileTree({
               </div>
               <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
                 {opError ? (
-                  <p className="px-3 py-1 text-[12px] leading-4 text-danger">{opError}</p>
+                  <Alert tone="danger" inline className="mx-2 my-1">
+                    {opError}
+                  </Alert>
                 ) : null}
                 {refreshFailure?.cwd === cwd ? (
-                  <div
-                    role="alert"
-                    className="flex flex-wrap items-center gap-2 px-3 py-1 text-[12px] text-danger"
-                  >
+                  <Alert tone="danger" inline className="mx-2 my-1">
                     <span>
                       {t("File change saved. Refresh failed.")} {refreshFailure.message}
                     </span>
@@ -1618,7 +1636,7 @@ export const FileTree = memo(function FileTree({
                     >
                       {t("Retry")}
                     </Button>
-                  </div>
+                  </Alert>
                 ) : null}
                 {connectionFailure ? (
                   <RemoteLoadError
@@ -1679,8 +1697,10 @@ function HeaderIcon({
   label,
   onClick,
   active = false,
+  className,
   children,
 }: {
+  className?: string;
   label: string;
   onClick?: () => void;
   active?: boolean;
@@ -1699,9 +1719,7 @@ function HeaderIcon({
       aria-pressed={active || undefined}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
-      className={`  flex  min-w-0 flex-1 items-center justify-center self-center  ${
-        active ? "" : ""
-      }   `}
+      className={`grid shrink-0 place-items-center self-center ${className ?? ""}`}
     >
       {children}
     </Button>
@@ -1742,18 +1760,16 @@ function ExplorerSyncStatus({
       aria-busy={busy}
       role={state.phase === "error" ? "alert" : undefined}
       title={title || undefined}
-      className="flex shrink-0 items-center gap-1 pr-1.5 text-[11px] leading-none text-[var(--ui-text-muted)]"
+      className="flex shrink-0 items-center gap-1 pr-1.5 text-ui-micro leading-none text-[var(--ui-text-muted)]"
     >
-      <span className="hidden items-center gap-1 @min-[140px]/explorer-root:inline-flex">
-        {warn ? (
-          <CircleAlert aria-hidden className="size-3 shrink-0 text-warning" />
-        ) : (
-          <CheckCircle aria-hidden className="size-3 shrink-0" />
-        )}
-        {time ? (
-          <span className="hidden tabular-nums @min-[200px]/explorer-root:inline">{time}</span>
-        ) : null}
-      </span>
+      {warn ? (
+        <span className="hidden items-center gap-1 @min-[140px]/explorer-root:inline-flex">
+          <CircleAlert aria-hidden className="icon-xs shrink-0 text-warning" />
+          {time ? (
+            <span className="hidden tabular-nums @min-[200px]/explorer-root:inline">{time}</span>
+          ) : null}
+        </span>
+      ) : null}
       <Button
         size="sm"
         variant="ghost"
@@ -1887,9 +1903,7 @@ function TreeChildren({
             type="button"
             onClick={() => setLimit((n) => n + TREE_WINDOW_CHUNK)}
           >
-            {t("Show ")}
-            {Math.min(TREE_WINDOW_CHUNK, hidden)}
-            {t(" more…")}
+            {t("Show {p0} more…", { p0: Math.min(TREE_WINDOW_CHUNK, hidden) })}
           </Button>
           {hidden > TREE_WINDOW_CHUNK ? (
             <Button
@@ -1899,8 +1913,7 @@ function TreeChildren({
               type="button"
               onClick={() => setLimit(Number.POSITIVE_INFINITY)}
             >
-              {t("Show all ")}
-              {hidden}
+              {t("Show all {p0}", { p0: hidden })}
             </Button>
           ) : null}
         </p>
@@ -1955,6 +1968,7 @@ const TreeNode = memo(function TreeNode({
   );
   const children = cached ?? loaded;
   const gitColor = gitStatus ? GIT_STATUS_COLOR[gitStatus] : undefined;
+  const gitMark = gitStatus ? GIT_STATUS_MARK[gitStatus] : undefined;
 
   useEffect(() => {
     if (!entry.isDir || !open || cached) return;
@@ -2052,6 +2066,14 @@ const TreeNode = memo(function TreeNode({
           >
             {entry.name}
           </span>
+          {gitMark ? (
+            <span
+              className={`ms-auto shrink-0 pe-1 text-ui-micro font-medium ${gitColor ?? ""}`}
+              title={entry.isDir ? t("Contains changes") : t(gitMark.label)}
+            >
+              {entry.isDir ? "•" : gitMark.mark}
+            </span>
+          ) : null}
         </TreeRow>
       )}
       {entry.isDir && open ? (

@@ -75,11 +75,11 @@ it("filters visible results and offers retries only for confirmed failures", asy
   expect(container.querySelector("img")).toBeNull();
   expect(container.querySelector('a[href^="javascript:"]')).toBeNull();
   const uncertain = container.querySelector('[data-status="review"].social-history-record')!;
-  expect(uncertain.textContent).toContain("aynı içeriği yeniden göndermeyin");
+  expect(uncertain.textContent).toContain("do not resend the same content");
   expect(uncertain.querySelector("button")).toBeNull();
   await openFilters();
   const status = Array.from(document.querySelectorAll(".social-filter-panel label"))
-    .find((label) => label.firstChild?.textContent === "Gönderim durumu")!
+    .find((label) => label.firstChild?.textContent === "Send status")!
     .querySelector("select")!;
   await act(async () => {
     status.value = "failed";
@@ -149,7 +149,7 @@ it("clears a host date filter when the retained history controls are reset", asy
     await act(async () => render());
     await act(async () =>
       Array.from(container.querySelectorAll("button"))
-        .find((button) => button.textContent === "Filtreleri temizle")!
+        .find((button) => button.textContent === "Clear filters")!
         .click(),
     );
     await act(async () => vi.advanceTimersByTime(200));
@@ -212,13 +212,13 @@ it("keeps embedded job counts and local pages scoped to the selected conversatio
   );
   await openFilters();
   const select = document.querySelector<HTMLSelectElement>(".social-filter-panel select")!;
-  expect(select.querySelector('option[value=""]')?.textContent).toBe("Tüm işler · 35");
+  expect(select.querySelector('option[value=""]')?.textContent).toBe("All jobs · 35");
   expect(select.querySelector('option[value="failed"]')?.textContent).toContain("35");
   expect(select.querySelector('option[value="succeeded"]')?.textContent).toContain("0");
   expect(container.querySelectorAll(".social-history-record")).toHaveLength(30);
   await act(async () =>
     Array.from(container.querySelectorAll(".social-pagination button"))
-      .find((button) => button.textContent === "Sonraki")!
+      .find((button) => button.textContent === "Next")!
       .click(),
   );
   expect(container.querySelectorAll(".social-history-record")).toHaveLength(5);

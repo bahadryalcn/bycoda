@@ -1,9 +1,9 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useState, type ReactNode } from "react";
 import { Folder, Lock, LockOpen, Shield } from "../../../shared/ui/icons";
 import "./GroupPrivacy.css";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { Badge } from "../../../shared/ui/Badge";
 import { useGroupLock } from "../hooks/useGroupLock";
 import { AUTO_LOCK_MINUTES, autoLockLabel, parseAutoLockMinutes } from "../model/autoLock";
@@ -84,7 +84,7 @@ export function GroupLockSettings({
         id="group-lock-password"
         title={
           <span className="privacy-heading">
-            <Shield aria-hidden className="size-4" />
+            <Shield aria-hidden className="icon-md" />
             {t("Lock password")}
           </span>
         }
@@ -92,9 +92,9 @@ export function GroupLockSettings({
         {lock.hasPassword ? (
           <>
             <Row label={<span className="privacy-status">{t("Password is set")}</span>}>
-              <SecondaryButton onClick={() => setDialog({ kind: "change" })}>
+              <Button className="shrink-0" onClick={() => setDialog({ kind: "change" })}>
                 {t("Change password…")}
-              </SecondaryButton>
+              </Button>
             </Row>
             <section className="privacy-recovery">
               <h3>{t("Password recovery & removal")}</h3>
@@ -102,9 +102,13 @@ export function GroupLockSettings({
                 label={t("Remove protection")}
                 description={t("Removes the password and all group locks.")}
               >
-                <SecondaryButton danger onClick={() => setDialog({ kind: "remove" })}>
+                <Button
+                  variant="danger"
+                  className="shrink-0"
+                  onClick={() => setDialog({ kind: "remove" })}
+                >
                   {t("Remove password…")}
-                </SecondaryButton>
+                </Button>
               </Row>
               <Row
                 label={t("Forgot the password?")}
@@ -112,9 +116,13 @@ export function GroupLockSettings({
                   "Reset protection. Your projects and hidden preferences stay saved.",
                 )}
               >
-                <SecondaryButton danger onClick={() => setDialog({ kind: "forgot" })}>
+                <Button
+                  variant="danger"
+                  className="shrink-0"
+                  onClick={() => setDialog({ kind: "forgot" })}
+                >
                   {t("Forgot password…")}
-                </SecondaryButton>
+                </Button>
               </Row>
             </section>
           </>
@@ -123,9 +131,9 @@ export function GroupLockSettings({
             label={t("No password set")}
             description={t("Add a password to protect groups and hidden names.")}
           >
-            <SecondaryButton onClick={() => setDialog({ kind: "set" })}>
+            <Button className="shrink-0" onClick={() => setDialog({ kind: "set" })}>
               {t("Set lock password…")}
-            </SecondaryButton>
+            </Button>
           </Row>
         )}
         <AdvancedSettings
@@ -193,7 +201,8 @@ export function GroupLockSettings({
         }
         description={t("Choose which groups require your password.")}
         action={
-          <SecondaryButton
+          <Button
+            className="shrink-0"
             disabled={!hasLockable}
             tooltip={
               hasLockable
@@ -202,9 +211,9 @@ export function GroupLockSettings({
             }
             onClick={lockAllGroups}
           >
-            <Lock aria-hidden className="size-3.5" />
+            <Lock aria-hidden className="icon-sm" />
             {t("Lock all groups")}
-          </SecondaryButton>
+          </Button>
         }
       >
         <div className="privacy-group-list">
@@ -227,11 +236,11 @@ export function GroupLockSettings({
                     <span className="privacy-group-name">
                       <span className="privacy-group-icon" aria-hidden>
                         {locked ? (
-                          <Lock className="size-3.5" strokeWidth={1.75} />
+                          <Lock className="icon-sm" strokeWidth={1.75} />
                         ) : group.lockable ? (
-                          <LockOpen className="size-3.5" strokeWidth={1.75} />
+                          <LockOpen className="icon-sm" strokeWidth={1.75} />
                         ) : (
-                          <Folder className="size-3.5" />
+                          <Folder className="icon-sm" />
                         )}
                       </span>
                       <span className="privacy-group-title">{group.name}</span>
@@ -273,7 +282,7 @@ export function GroupLockSettings({
         <PasswordPromptDialog
           title={t("Remove lock password")}
           description={t("Removes the password and every group lock.")}
-          submitLabel="Remove password"
+          submitLabel={t("Remove password")}
           danger
           verify={removeLockPassword}
           onDone={close}
@@ -285,7 +294,7 @@ export function GroupLockSettings({
         <PasswordPromptDialog
           title={t("Remove lock from {p0}", { p0: dialog.name })}
           description={t("The group stays; it just stops asking for the password.")}
-          submitLabel="Remove lock"
+          submitLabel={t("Remove lock")}
           danger
           verify={(password) => removeGroupLock(dialog.id, password)}
           onDone={close}

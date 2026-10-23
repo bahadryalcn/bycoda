@@ -3,12 +3,12 @@ import "./UnifiedDiffView.css";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
-  Check,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   FoldVertical,
   MessageSquarePlus,
+  Plus,
   Undo2,
   UnfoldVertical,
 } from "../../../shared/ui/icons";
@@ -307,7 +307,9 @@ export function UnifiedDiffView({
 
   if (files.length === 0) {
     return (
-      <p className="px-4 py-6 text-[13px] text-[var(--ui-text-muted)]">{t("No file changes")}</p>
+      <p className="px-4 py-6 text-ui-secondary text-[var(--ui-text-muted)]">
+        {t("No file changes")}
+      </p>
     );
   }
 
@@ -324,7 +326,7 @@ export function UnifiedDiffView({
       }
     >
       <div
-        className={`flex h-8 shrink-0 items-center gap-3 border-b border-stroke px-3 text-[12px]`}
+        className={`flex h-8 shrink-0 items-center gap-3 border-b border-stroke px-3 text-ui-caption`}
       >
         <span className="text-[var(--ui-text-secondary)]">{fileLabel}</span>
         <DiffCounts additions={additions} deletions={deletions} />
@@ -340,7 +342,7 @@ export function UnifiedDiffView({
             aria-label={t("Expand all files")}
             onClick={() => setOpen(new Set(files.map((file) => file.id)))}
           >
-            <UnfoldVertical className="size-3.5" strokeWidth={1.75} />
+            <UnfoldVertical className="icon-sm" strokeWidth={1.75} />
           </Button>
           <Button
             iconOnly
@@ -353,7 +355,7 @@ export function UnifiedDiffView({
             disabled={open.size === 0}
             onClick={() => setOpen(new Set())}
           >
-            <FoldVertical className="size-3.5" strokeWidth={1.75} />
+            <FoldVertical className="icon-sm" strokeWidth={1.75} />
           </Button>
         </span>
       </div>
@@ -369,7 +371,7 @@ export function UnifiedDiffView({
         style={zoomStyle}
       >
         {truncated ? (
-          <p className="px-3 py-3 text-[12px] text-[var(--ui-text-muted)]">
+          <p className="px-3 py-3 text-ui-caption text-[var(--ui-text-muted)]">
             {t("Diff is too large to display in full. File list is shown without patches.")}
           </p>
         ) : null}
@@ -455,6 +457,10 @@ const FileSection = memo(function FileSection({
   useLocale();
   const Chevron = expanded ? ChevronDown : ChevronRight;
   const name = basename(file.path);
+  // Keep the file name readable: the directory is what truncates, not the name.
+  const labelSplit = file.label === file.path ? file.label.lastIndexOf("/") : -1;
+  const fileDir = labelSplit >= 0 ? file.label.slice(0, labelSplit + 1) : "";
+  const fileName = labelSplit >= 0 ? file.label.slice(labelSplit + 1) : file.label;
   const sectionRef = useRef<HTMLElement | null>(null);
   const [near, setNear] = useState(false);
   const [highlightReady, setHighlightReady] = useState(false);
@@ -519,7 +525,7 @@ const FileSection = memo(function FileSection({
         fileLayout === "cards"
           ? "overflow-hidden rounded-md border border-[var(--color-stroke)]"
           : ""
-      } ${focused ? "bg-content/[0.03]" : ""}`}
+      } ${focused ? "bg-[var(--ui-surface-hover)]" : ""}`}
     >
       <header
         className={`${
@@ -536,24 +542,35 @@ const FileSection = memo(function FileSection({
           onClick={() => onToggle(file.id)}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <Chevron className="size-3.5 shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
+          <Chevron className="icon-sm shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
           <FileTypeIcon name={name} isDir={false} size={16} />
           <span
-            className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--color-content)]"
+            className="flex min-w-0 flex-1 font-mono text-ui-caption text-[var(--color-content)]"
             title={file.label}
           >
-            {file.label}
+            {fileDir ? (
+              <span className="min-w-0 truncate text-[var(--ui-text-muted)]">{fileDir}</span>
+            ) : null}
+            <span className={fileDir ? "shrink-0 font-medium" : "min-w-0 truncate font-medium"}>
+              {fileName}
+            </span>
           </span>
           <DiffCounts additions={file.additions} deletions={file.deletions} />
         </Button>
         {file.canDiscard && onDiscardFile ? (
-          <IconButton
+          <Button
+            iconOnly
+            label={t("Discard file")}
+            variant="ghost"
+            motion="none"
+            type="button"
             title={t("Discard file")}
+            aria-label={t("Discard file")}
             disabled={busy}
             onClick={() => onDiscardFile(file.id)}
           >
-            <Undo2 className="size-3.5" strokeWidth={1.75} />
-          </IconButton>
+            <Undo2 className="icon-sm" strokeWidth={1.75} />
+          </Button>
         ) : null}
         {file.canStage && onStageFile ? (
           <Button
@@ -567,7 +584,7 @@ const FileSection = memo(function FileSection({
             disabled={busy}
             onClick={() => onStageFile(file.id)}
           >
-            <Check className="size-2.5" strokeWidth={2.5} />
+            <Plus className="icon-sm" strokeWidth={1.75} />
           </Button>
         ) : null}
       </header>
@@ -1008,6 +1025,15 @@ function VirtualRows({
 
   return (
     <>
+      {splitRows ? (
+        <div
+          aria-hidden="true"
+          className="flex border-b border-stroke text-ui-micro text-[var(--ui-text-muted)]"
+        >
+          <span className="min-w-0 flex-1 px-3 py-0.5">{t("Before")}</span>
+          <span className="min-w-0 flex-1 border-l border-stroke px-3 py-0.5">{t("After")}</span>
+        </div>
+      ) : null}
       <div
         ref={bodyRef}
         className="flex"
@@ -1391,7 +1417,7 @@ const DiffLineRow = memo(function DiffLineRow({
               hovered || commenting ? "opacity-100" : "pointer-events-none opacity-0"
             }`}
           >
-            <MessageSquarePlus className="size-2.5" strokeWidth={2} />
+            <MessageSquarePlus className="icon-xs" strokeWidth={1.75} />
           </Button>
         ) : null}
         {onStage ? (
@@ -1408,7 +1434,7 @@ const DiffLineRow = memo(function DiffLineRow({
               stageVisible ? "opacity-100" : "pointer-events-none opacity-0"
             }`}
           >
-            +
+            <Plus className="icon-xs" strokeWidth={1.75} />
           </Button>
         ) : null}
       </div>
@@ -1428,8 +1454,8 @@ const DiffLineRow = memo(function DiffLineRow({
         ) : null}
       </span>
       <span
-        className={`whitespace-pre pr-3 font-mono text-[length:var(--diff-code-font,12px)] leading-none text-[var(--color-content)] ${
-          line.kind === "context" ? "opacity-70" : ""
+        className={`whitespace-pre pr-3 font-mono text-[length:var(--diff-code-font,12px)] leading-none ${line.kind === "context" ? "" : "text-[var(--color-content)]"} ${
+          line.kind === "context" ? "text-[var(--ui-text-secondary)]" : ""
         }`}
       >
         {renderLineText(line, tokens)}
@@ -1456,45 +1482,17 @@ function renderLineText(line: UnifiedLine, tokens?: SyntaxToken[]) {
 
 function EmptyBody({ children }: { children: string }) {
   useLocale();
-  return <p className="px-3 py-3 text-[12px] text-[var(--ui-text-muted)]">{children}</p>;
+  return <p className="px-3 py-3 text-ui-caption text-[var(--ui-text-muted)]">{children}</p>;
 }
 
 function DiffCounts({ additions, deletions }: { additions: number; deletions: number }) {
   useLocale();
   if (additions <= 0 && deletions <= 0) return null;
   return (
-    <span className="flex shrink-0 items-center gap-1.5 font-sans text-[11px] font-semibold tabular-nums">
+    <span className="flex shrink-0 items-center gap-1.5 font-sans text-ui-micro font-semibold tabular-nums">
       {additions > 0 ? <span className="text-diff-add-fg">+{formatInteger(additions)}</span> : null}
       {deletions > 0 ? <span className="text-diff-del-fg">-{formatInteger(deletions)}</span> : null}
     </span>
-  );
-}
-
-function IconButton({
-  title,
-  disabled,
-  onClick,
-  children,
-}: {
-  title: string;
-  disabled?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  useLocale();
-  return (
-    <Button
-      variant="ghost"
-      motion="none"
-      type="button"
-      title={title}
-      aria-label={title}
-      disabled={disabled}
-      onClick={onClick}
-      className="grid size-6 place-items-center"
-    >
-      {children}
-    </Button>
   );
 }
 

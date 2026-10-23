@@ -37,6 +37,32 @@ export function useLocalSharedQueueClient(sessionId: string) {
     () => localQueues.get(sessionId)?.client,
   );
 }
+/** Idle queues change only through another device; their safety re-read is slow. */
+const IDLE_SYNC_MS = 60_000;
+const sessionIndexes = new WeakMap<Session[], Map<string, Session>>();
+/** O(1) lookup by id, built once per sessions array. */
+function sessionById(sessions: Session[], id: string): Session | undefined {
+  let index = sessionIndexes.get(sessions);
+  if (!index) {
+    index = new Map(sessions.map((session) => [session.id, session]));
+    sessionIndexes.set(sessions, index);
+  }
+  return index.get(id);
+}
+const interactiveSession = (session: Session) => !!session.busy || !!session.queuedMessages?.length;
+const sortedSessions = new WeakMap<Session[], Session[]>();
+/** Interactive sessions first, sorted once per sessions array. */
+function syncOrder(sessions: Session[]): Session[] {
+  let sorted = sortedSessions.get(sessions);
+  if (!sorted) {
+    sorted = [...sessions].sort(
+      (a, b) => Number(interactiveSession(b)) - Number(interactiveSession(a)),
+    );
+    sortedSessions.set(sessions, sorted);
+  }
+  return sorted;
+}
+
 const fields = (session: Session): RemoteQueue => ({
   messages: session.queuedMessages ?? [],
   status: session.queueStatus,
@@ -220,9 +246,15 @@ export function useSharedLocalQueues(
       if (running) return;
       for (const id of owned) {
         const entry = localQueues.get(id);
-        if (entry && !entry.claiming) entry.publish();
+        if (!entry || entry.claiming) continue;
+        const before = entry.observed;
+        entry.publish();
+        // A local edit (even one that empties the queue) goes out on this tick.
+        if (entry.observed !== before) entry.nextIdleSyncAt = 0;
       }
       if (!hostReachable.current) return;
+      // Hidden windows keep serving busy and queued sessions only.
+      const hidden = typeof document !== "undefined" && document.hidden;
       running = true;
       try {
         if (!machine || Date.now() - checkedAt > 15_000) {
@@ -236,11 +268,7 @@ export function useSharedLocalQueues(
         let idleInitializations = 0;
         // Interactive sessions go first; opening a project with much history
         // must not put its active queue behind every empty historical queue.
-        const candidates = [...sessionsRef.current].sort(
-          (a, b) =>
-            Number(!!b.busy || !!b.queuedMessages?.length) -
-            Number(!!a.busy || !!a.queuedMessages?.length),
-        );
+        const candidates = syncOrder(sessionsRef.current);
         for (const session of candidates) {
           if (stopped) return;
           if (
@@ -251,7 +279,9 @@ export function useSharedLocalQueues(
           )
             continue;
           let entry = localQueues.get(session.id);
-          const interactive = !!session.busy || !!session.queuedMessages?.length;
+          const interactive = interactiveSession(session);
+          // Sorted interactive-first: nothing after the first idle one needs a hidden sync.
+          if (!interactive && hidden) break;
           if (!entry && !interactive && idleInitializations++ >= 8) continue;
           if (
             entry &&
@@ -274,8 +304,7 @@ export function useSharedLocalQueues(
               nextIdleSyncAt: 0,
               apply: () => {},
               publish: () => true,
-              read: () =>
-                fields(sessionsRef.current.find((value) => value.id === session.id) ?? session),
+              read: () => fields(sessionById(sessionsRef.current, session.id) ?? session),
             };
             const current = entry;
             current.apply = (allowClaim = false) => {
@@ -294,7 +323,7 @@ export function useSharedLocalQueues(
               };
               current.observed = queue;
               setSessions((sessions) => {
-                const existing = sessions.find((value) => value.id === session.id);
+                const existing = sessionById(sessions, session.id);
                 if (!existing || sameQueueValue(fields(existing), queue)) return sessions;
                 const next = sessions.map((value) =>
                   value.id === session.id && !sameQueueValue(fields(value), queue)
@@ -305,7 +334,7 @@ export function useSharedLocalQueues(
               });
             };
             current.publish = () => {
-              const value = sessionsRef.current.find((row) => row.id === session.id);
+              const value = sessionById(sessionsRef.current, session.id);
               if (!value) return true;
               const next = fields(value);
               if (sameQueueValue(current.observed, next)) return true;
@@ -322,10 +351,10 @@ export function useSharedLocalQueues(
             notifyQueues();
             owned.add(session.id);
             await client.initialize(current.observed);
-            current.nextIdleSyncAt = Date.now() + 10_000;
+            current.nextIdleSyncAt = Date.now() + IDLE_SYNC_MS;
             current.apply();
           } else if (!entry.claiming) {
-            entry.nextIdleSyncAt = Date.now() + 10_000;
+            entry.nextIdleSyncAt = Date.now() + IDLE_SYNC_MS;
             if (!entry.client.snapshot().loaded) {
               await entry.client.initialize(entry.observed);
               entry.apply();
@@ -345,10 +374,16 @@ export function useSharedLocalQueues(
       }
     };
     const timer = setInterval(() => void tick(), 1500);
+    // Back on screen: catch up at once instead of waiting for the next tick.
+    const onVisible = () => {
+      if (!document.hidden) void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     void tick();
     return () => {
       stopped = true;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
       for (const id of owned) localQueues.delete(id);
       notifyQueues();
     };

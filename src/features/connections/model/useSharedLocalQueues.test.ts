@@ -229,8 +229,9 @@ it("polls empty idle queues less frequently but still discovers remotely added m
   await tick();
   expect(mocks.request.mock.calls).toHaveLength(before);
   queue = { ...queue, messages: [row("remote")], revision: queue.revision + 1 };
+  // Idle queues are re-read on a one-minute safety cadence.
   await act(async () => {
-    vi.advanceTimersByTime(10_000);
+    vi.advanceTimersByTime(60_000);
     for (let i = 0; i < 60; i++) await Promise.resolve();
   });
   expect(sessionsRef.current[0].queuedMessages?.map((message) => message.id)).toEqual(["remote"]);

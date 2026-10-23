@@ -146,8 +146,6 @@ export function TerminalPage() {
         <RemoteMachineShells />
       </Group>
       <p className="terminal-settings-note">
-        {t("Changes save automatically")}
-        {". "}
         {t(
           "Applies to new commands on this host. Already open terminals keep their current shell.",
         )}

@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openWorkspaceUrl } from "../../connections/model/workspaceUrls";
@@ -396,7 +396,7 @@ function FileRevealButton({ path }: { path: string }) {
 }
 
 function VerifiedFileRevealButton({ path }: { path: string }) {
-  useLocale();
+  const t = useT();
   const { onRevealFile } = useContext(FileOpenContext);
   const [exists, setExists] = useState(false);
   useEffect(() => {
@@ -434,7 +434,7 @@ function VerifiedFileRevealButton({ path }: { path: string }) {
 type MarkdownCodeProps = ComponentProps<"code"> & { node?: unknown };
 
 function EmailCopyButton({ text }: { text: string }) {
-  useLocale();
+  const t = useT();
   const [copied, setCopied] = useTransientFlag(1500);
   const [failed, setFailed] = useState(false);
   const label = failed ? t("Copy failed — try again") : copied ? t("Copied") : t("Copy");
@@ -584,7 +584,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
 }
 
 function MarkdownCodeShell({ code, children }: { code: string; children: ReactNode }) {
-  useLocale();
+  const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   const contentId = useId();
   const label = collapsed ? "Expand code block" : "Collapse code block";
@@ -692,7 +692,7 @@ function CodeCopyButton({
   copiedMessage?: string;
   className?: string;
 }) {
-  useLocale();
+  const t = useT();
   const [copied, setCopied] = useTransientFlag(1500);
   const [failed, setFailed] = useState(false);
 
@@ -836,7 +836,7 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
 }
 
 function MarkdownTable(props: ComponentProps<typeof defaultComponents.table>) {
-  useLocale();
+  const t = useT();
   const shell = useRef<HTMLDivElement>(null);
   // Read the rendered table on click so a table still streaming in is copied
   // as it is shown, and links and inline code come out as their text.
@@ -857,7 +857,44 @@ function MarkdownTable(props: ComponentProps<typeof defaultComponents.table>) {
   );
 }
 
+/** Task markers are document content, not disabled form actions. */
+function MarkdownInput({ node: _node, ...props }: ComponentProps<"input"> & { node?: unknown }) {
+  if (props.type !== "checkbox") return <input {...props} />;
+
+  return (
+    <span className="markdown-task-marker relative me-1 inline-flex size-4 shrink-0 align-middle">
+      <input {...props} disabled className="sr-only" />
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 16 16"
+        className="size-full"
+        fill={props.checked ? "var(--color-active)" : "var(--ui-surface)"}
+      >
+        <rect
+          x="1"
+          y="1"
+          width="14"
+          height="14"
+          rx="3"
+          stroke={props.checked ? "var(--color-active)" : "var(--ui-text-secondary)"}
+        />
+        {props.checked ? (
+          <path
+            d="m4 8 2.5 2.5L12 5"
+            fill="none"
+            stroke="var(--ui-text-on-active)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ) : null}
+      </svg>
+    </span>
+  );
+}
+
 const MARKDOWN_COMPONENTS = {
+  input: MarkdownInput,
   a: MarkdownLink,
   code: MarkdownCode,
   img: MarkdownImage,
@@ -1244,7 +1281,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
   header?: ReactNode;
   hardBreaks?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
 
   return (
@@ -1271,7 +1308,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
 });
 
 export const MarkdownSource = memo(function MarkdownSource({ text }: { text: string }) {
-  useLocale();
+  const t = useT();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
 
   return (
@@ -1282,7 +1319,7 @@ export const MarkdownSource = memo(function MarkdownSource({ text }: { text: str
       aria-label={t("Markdown source")}
       className="markdown-preview h-full overflow-y-auto overscroll-none [overflow-anchor:none]"
     >
-      <pre className="min-h-full min-w-0 whitespace-pre-wrap wrap-break-word px-4 py-3 font-mono text-[13px] leading-5 text-(--ui-text-secondary)">
+      <pre className="min-h-full min-w-0 whitespace-pre-wrap wrap-break-word px-4 py-3 font-mono text-ui-secondary leading-5 text-(--ui-text-secondary)">
         <MarkdownSourceHighlight text={text} />
       </pre>
     </div>
@@ -1357,13 +1394,13 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
 
   if (!svg) {
     return (
-      <div className="h-32 animate-pulse rounded-[10px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)" />
+      <div className="h-32 animate-pulse rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)" />
     );
   }
 
   return (
     <div
-      className="mermaid-block overflow-x-auto rounded-[10px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3"
+      className="mermaid-block overflow-x-auto rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3"
       data-streamdown="mermaid-block"
       dir="ltr"
       dangerouslySetInnerHTML={{ __html: svg }}

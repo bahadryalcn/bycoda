@@ -1,7 +1,8 @@
 import { NativeSelect } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
 import { Skeleton } from "../../../shared/ui/Skeleton";
-import { t } from "../../../shared/i18n";
+import { getLocale, t, useLocale } from "../../../shared/i18n";
+import { Badge } from "../../../shared/ui/Badge";
 import { TextField } from "../../../shared/ui/TextField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -74,7 +75,6 @@ import {
   MessageMultiple,
   Zap,
   Settings,
-  CircleHelp,
   MoreHorizontal,
 } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -90,18 +90,45 @@ import {
 import type { SocialClient } from "../model/socialClient";
 import { scopeSocialSnapshot } from "../model/socialWorkspace";
 
-type Tab = "Hesaplar" | "Kampanyalar" | "Gelen Kutusu" | "Hedef Kitle" | "Otomasyonlar" | "Ayarlar";
-const tabs: Tab[] = [
-  "Hesaplar",
-  "Kampanyalar",
-  "Gelen Kutusu",
-  "Hedef Kitle",
-  "Otomasyonlar",
-  "Ayarlar",
-];
+type Tab = "Accounts" | "Campaigns" | "Inbox" | "Audience" | "Automations" | "Settings";
+const tabs: Tab[] = ["Accounts", "Campaigns", "Inbox", "Audience", "Automations", "Settings"];
+function accountTypeLabel(id: string) {
+  return (
+    {
+      member: t("Member"),
+      professional: t("Professional"),
+      page: t("Page"),
+      channel: t("Channel"),
+      organization: t("Organization account"),
+      public_profile: t("Public profile"),
+      business: t("Business"),
+      bot: t("Bot"),
+    } as Record<string, string>
+  )[id];
+}
+function permissionLabels(): Record<string, string> {
+  return {
+    read: t("Read"),
+    draft: t("Draft"),
+    publish: t("Sharing"),
+    reply: t("Reply"),
+    message: t("Message"),
+    comment: t("Comment"),
+  };
+}
+function tabLabel(tab: Tab) {
+  return {
+    Accounts: t("Accounts"),
+    Campaigns: t("Campaigns"),
+    Inbox: t("Inbox"),
+    Audience: t("Audience"),
+    Automations: t("Automations"),
+    Settings: t("Settings"),
+  }[tab];
+}
 type Section = NonNullable<SocialWorkspaceQuery["section"]>;
 function workspaceSection(tab: Tab, automationMode: string): Section {
-  if (tab === "Otomasyonlar")
+  if (tab === "Automations")
     return (
       (
         { publish: "plans", reply: "rules", history: "history", sending: "sending" } as Record<
@@ -112,11 +139,11 @@ function workspaceSection(tab: Tab, automationMode: string): Section {
     );
   return (
     {
-      Hesaplar: "accounts",
-      Kampanyalar: "campaigns",
-      "Gelen Kutusu": "inbox",
-      "Hedef Kitle": "audience",
-      Ayarlar: "settings",
+      Accounts: "accounts",
+      Campaigns: "campaigns",
+      Inbox: "inbox",
+      Audience: "audience",
+      Settings: "settings",
     } as const
   )[tab];
 }
@@ -137,41 +164,43 @@ type HostWorkspaceState = {
   run?: Run;
 };
 const tabIcons = {
-  Hesaplar: Link,
-  Kampanyalar: Share,
-  "Gelen Kutusu": InboxIcon,
-  "Hedef Kitle": MessageMultiple,
-  Otomasyonlar: Zap,
-  Ayarlar: Settings,
+  Accounts: Link,
+  Campaigns: Share,
+  Inbox: InboxIcon,
+  Audience: MessageMultiple,
+  Automations: Zap,
+  Settings: Settings,
 };
-const actionMessages: Record<string, string> = {
-  "accounts.create": "Hesap eklendi. Bağlantıyı tamamlayın.",
-  "accounts.grant": "Proje izinleri kaydedildi.",
-  "accounts.pause": "Hesabın çalışma durumu güncellendi.",
-  "accounts.disconnect": "Hesap bağlantısı kaldırıldı.",
-  "campaigns.create": "Kampanya taslağı kaydedildi.",
-  "campaigns.update": "Kampanya güncellendi. Güncel içeriği yeniden onaylayın.",
-  "campaigns.approve": "Kampanya içeriği onaylandı.",
-  "campaigns.schedule": "Paylaşım kuyruğa alındı. Sonucunu İşlem geçmişinden izleyin.",
-  "campaigns.pause": "Kampanyanın çalışma durumu güncellendi.",
-  "contacts.upsert": "Kişi bilgileri kaydedildi.",
-  "contacts.import": "Kişiler içe aktarıldı.",
-  "segments.create": "Kişi grubu oluşturuldu.",
-  "replies.draft": "Yanıt taslağı hazır. Kontrol edip onaylayabilirsiniz.",
-  "messages.draft": "Mesaj taslağı hazır. Kontrol edip onaylayabilirsiniz.",
-  "comments.draft": "Yorum taslağı hazır. Kontrol edip onaylayabilirsiniz.",
-  "drafts.update": "Taslak güncellendi; önceki gönderim onayı kaldırıldı.",
-  "drafts.approve": "Taslak onaylandı. Gönderim için hazır.",
-  "replies.send": "Yanıt kuyruğa alındı. Gönderim sonucunu İşlem geçmişinden izleyin.",
-  "messages.send": "Mesaj kuyruğa alındı. Gönderim sonucunu İşlem geçmişinden izleyin.",
-  "comments.send": "Yorum kuyruğa alındı. Gönderim sonucunu İşlem geçmişinden izleyin.",
-  "jobs.cancel": "Kuyruktaki iş iptal edildi.",
-  "jobs.retry": "Başarısız iş yeniden kuyruğa alındı.",
-  "thread.assign": "Konuşmanın projesi güncellendi.",
-  "policy.update": "Ajan ve içerik sınırları kaydedildi.",
-  "automations.create": "Yanıt kuralı kaydedildi. Hazır olduğunuzda etkinleştirin.",
-  "automations.activate": "Yanıt kuralı etkinleştirildi.",
-  "automations.pause": "Yanıt kuralı durduruldu.",
+/** Sentinel stored in browser availability state; the visible text is translated when rendered. */
+const HOST_BROWSER_UNSUPPORTED = "host-browser-unsupported";
+const actionMessages: Record<string, () => string> = {
+  "accounts.create": () => t("Account added. Complete the connection."),
+  "accounts.grant": () => t("Project permissions saved."),
+  "accounts.pause": () => t("Account run state updated."),
+  "accounts.disconnect": () => t("Account disconnected."),
+  "campaigns.create": () => t("Campaign draft saved."),
+  "campaigns.update": () => t("Campaign updated. Approve the current content again."),
+  "campaigns.approve": () => t("Campaign content approved."),
+  "campaigns.schedule": () => t("Post queued. Track the result in Activity history."),
+  "campaigns.pause": () => t("Campaign run state updated."),
+  "contacts.upsert": () => t("Contact details saved."),
+  "contacts.import": () => t("Contacts imported."),
+  "segments.create": () => t("Contact group created."),
+  "replies.draft": () => t("Reply draft ready. Review and approve it."),
+  "messages.draft": () => t("Message draft ready. Review and approve it."),
+  "comments.draft": () => t("Comment draft ready. Review and approve it."),
+  "drafts.update": () => t("Draft updated; the earlier send approval was removed."),
+  "drafts.approve": () => t("Draft approved. Ready to send."),
+  "replies.send": () => t("Reply queued. Track the send result in Activity history."),
+  "messages.send": () => t("Message queued. Track the send result in Activity history."),
+  "comments.send": () => t("Comment queued. Track the send result in Activity history."),
+  "jobs.cancel": () => t("Queued job cancelled."),
+  "jobs.retry": () => t("Failed job queued again."),
+  "thread.assign": () => t("Conversation project updated."),
+  "policy.update": () => t("Agent and content limits saved."),
+  "automations.create": () => t("Reply rule saved. Activate it when you are ready."),
+  "automations.activate": () => t("Reply rule activated."),
+  "automations.pause": () => t("Reply rule paused."),
 };
 export function SocialView({
   cwd,
@@ -186,13 +215,14 @@ export function SocialView({
   onToggleSidebar?: () => void;
   onClose: () => void;
 }) {
+  useLocale();
   const [machines, setMachines] = useState<RemoteMachine[]>([]);
   const [machineId, setMachineId] = useState("");
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const headerMenuRef = useRef<HTMLButtonElement>(null);
   const [snapshot, setSnapshot] = useState<SocialSnapshot | null>(null);
   const [projects, setProjects] = useState<HostProject[]>([]);
-  const [tab, setTab] = useState<Tab>("Hesaplar");
+  const [tab, setTab] = useState<Tab>("Accounts");
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [updatedAt, setUpdatedAt] = useState(0);
@@ -202,7 +232,7 @@ export function SocialView({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
-  const [visited, setVisited] = useState<Tab[]>(["Hesaplar"]);
+  const [visited, setVisited] = useState<Tab[]>(["Accounts"]);
   const [automationMode, setAutomationMode] = useState("publish");
   const [filter, setFilter] = useState("");
   const [offsets, setOffsets] = useState<SocialWorkspaceQuery["offsets"]>({});
@@ -284,7 +314,7 @@ export function SocialView({
     if (answers[0].status === "fulfilled") {
       const result = answers[0].value;
       const next = result.snapshot ?? host.cursors.get(queryKey)?.snapshot;
-      if (!next) throw new Error("Sosyal medya yenileme yanıtı eksik.");
+      if (!next) throw new Error(t("The Social Media refresh response is incomplete."));
       host.cursors.set(queryKey, { ...result, snapshot: next });
       if (host.cursors.size > 16) host.cursors.delete(host.cursors.keys().next().value!);
       host.snapshot = next;
@@ -315,7 +345,9 @@ export function SocialView({
     } else if (answers[0].status === "fulfilled") {
       const reason = answers[1].reason;
       setLoadError(
-        `Proje listesi yenilenemedi: ${reason instanceof Error ? reason.message : String(reason)}`,
+        t("Project list could not be refreshed: {p0}", {
+          p0: reason instanceof Error ? reason.message : String(reason),
+        }),
       );
     }
     setLoading(false);
@@ -351,7 +383,9 @@ export function SocialView({
       if (preferred) setMachineId(preferred.id);
       else
         setLoadError(
-          "Sosyal Medya için bir bycoda Host bağlayın. Host çevrimdışıyken kuyruk çalışmaz.",
+          t(
+            "Connect a bycoda Host for Social Media. The queue does not run while the Host is offline.",
+          ),
         );
     };
     void load()
@@ -378,8 +412,8 @@ export function SocialView({
           projects: [],
           projectsLoaded: false,
           snapshot: null,
-          tab: "Hesaplar",
-          visited: ["Hesaplar"],
+          tab: "Accounts",
+          visited: ["Accounts"],
           filter: "",
           offsets: {},
           automationMode: "publish",
@@ -446,14 +480,14 @@ export function SocialView({
       await work();
       const completedMessage =
         successMessage ??
-        actionMessages[lastAction.current] ??
-        "İşlem tamamlandı; sonuçlar güncellendi.";
+        actionMessages[lastAction.current]?.() ??
+        t("Operation completed; results updated.");
       if (currentMachine.current === id) {
         const fresh = await refresh(id, false, true);
         setNotice(
           fresh
             ? completedMessage
-            : `${completedMessage} Liste yenilenemedi; son veriler gösteriliyor.`,
+            : `${completedMessage} ${t("The list could not be refreshed; showing the latest data.")}`,
         );
       }
       return true;
@@ -469,11 +503,11 @@ export function SocialView({
   const activeProject = projects.find((project) => pathKey(project.cwd) === pathKey(cwd))?.id;
   const scoped = useMemo(() => scopeSocialSnapshot(snapshot, filter), [snapshot, filter]);
   const openHistory = () => {
-    setTab("Otomasyonlar");
+    setTab("Automations");
     setAutomationMode("history");
     setNotice("");
     setVisited((current) =>
-      current.includes("Otomasyonlar") ? current : [...current, "Otomasyonlar"],
+      current.includes("Automations") ? current : [...current, "Automations"],
     );
   };
   const host = hostWorkspaces.current.get(machineId);
@@ -490,6 +524,20 @@ export function SocialView({
       collectionFilters,
     });
   }
+  const sendingMode: { label: string; tone: "neutral" | "success" | "warning" } = !snapshot
+    ? { label: "", tone: "neutral" }
+    : snapshot.stopped
+      ? { label: t("Sending paused"), tone: "warning" }
+      : snapshot.sendingEnabled
+        ? { label: t("Approved sends on"), tone: "success" }
+        : { label: t("Draft mode · sending off"), tone: "neutral" };
+  const hostLabel = snapshot
+    ? snapshot.hostOnline
+      ? t("Scheduling ready")
+      : t("Scheduling offline")
+    : loading
+      ? t("Loading accounts…")
+      : t("Could not connect");
   return (
     <div
       ref={root}
@@ -507,9 +555,9 @@ export function SocialView({
         {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
         {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-            <Globe className="size-3.5 text-(--ui-text-secondary)" aria-hidden />
-            <span>Sosyal Medya</span>
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
+            <Globe className="icon-sm text-(--ui-text-secondary)" aria-hidden />
+            <span>{t("Social Media")}</span>
           </div>
         </ToolHeader>
         {IS_MAC ? null : <WindowControls />}
@@ -518,101 +566,81 @@ export function SocialView({
         <header className="social-header">
           <div className="social-heading">
             <h1 id="social-title" className="social-sr-only">
-              {tab}
+              {tabLabel(tab)}
             </h1>
           </div>
           <div className="social-header-controls">
             <div className="social-header-field">
-              <span>Bilgisayar</span>
+              <span>{t("Computer")}</span>
               <SearchableSelect
                 value={machineId}
                 disabled={busy}
-                label={t("Yetkili host")}
+                label={t("Authoritative host")}
                 searchable={machines.length > 5}
-                searchPlaceholder="Bilgisayar ara…"
+                searchPlaceholder={t("Search computers…")}
                 options={machines.map((machine) => ({
                   value: machine.id,
-                  label: isLocalSyncMachine(machine) ? "Bu bilgisayar" : machine.name,
+                  label: isLocalSyncMachine(machine) ? t("This computer") : machine.name,
                 }))}
                 onChange={(nextValue) => setMachineId(nextValue)}
-                searchLocale="tr"
+                searchLocale={getLocale()}
               />
             </div>
             <div className="social-header-field social-project-filter">
-              <span>Proje</span>
+              <span>{t("Project")}</span>
               <SearchableSelect
-                label="Proje filtresi"
+                label={t("Project filter")}
                 value={filter}
                 onChange={(next) => {
                   setFilter(next);
                   setOffsets({});
                 }}
                 options={[
-                  { value: "", label: "Tüm projeler" },
+                  { value: "", label: t("All projects") },
                   ...projects.map((project) => ({
                     value: project.id,
                     label: project.name || project.cwd,
                     keywords: project.cwd,
                   })),
                 ]}
-                searchPlaceholder="Proje ara…"
-                emptyLabel="Proje bulunamadı"
+                searchPlaceholder={t("Search projects…")}
+                emptyLabel={t("No project found")}
                 disabled={busy}
               />
             </div>
           </div>
           <div className="social-host-status" role="status">
-            <span
-              className="social-status-dot"
-              data-online={snapshot?.hostOnline ?? false}
-              aria-hidden="true"
-            />
-            <span className="social-host-label">
-              {snapshot
-                ? snapshot.hostOnline
-                  ? "Zamanlama hazır"
-                  : "Zamanlama çevrimdışı"
-                : loading
-                  ? "Hesaplar yükleniyor…"
-                  : "Bağlantı kurulamadı"}
-            </span>
             {snapshot ? (
               <Button
                 variant="ghost"
                 type="button"
-                aria-label="Gönderim kontrolleri"
-                title="Gönderim kontrolleri"
                 size="sm"
+                aria-label={t("Sending controls: {p0}", { p0: sendingMode.label })}
+                title={t("Sending controls")}
                 onClick={() => {
-                  setTab("Otomasyonlar");
+                  setTab("Automations");
                   setAutomationMode("sending");
                   setVisited((current) =>
-                    current.includes("Otomasyonlar") ? current : [...current, "Otomasyonlar"],
+                    current.includes("Automations") ? current : [...current, "Automations"],
                   );
                 }}
               >
-                {snapshot.stopped
-                  ? "Gönderimler durduruldu"
-                  : snapshot.sendingEnabled
-                    ? "Onaylı gönderimler açık"
-                    : "Taslak modu · gönderim kapalı"}
+                <Badge size="sm" tone={sendingMode.tone}>
+                  {sendingMode.label}
+                </Badge>
               </Button>
             ) : null}
-            <SchedulingHelp />
-            {updatedAt ? (
-              <small className="social-updated-at">
-                Son yenileme{" "}
-                {new Date(updatedAt).toLocaleTimeString("tr-TR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </small>
-            ) : null}
+            <HostStatus
+              label={hostLabel}
+              online={snapshot?.hostOnline ?? false}
+              ready={!!snapshot?.hostOnline}
+              updatedAt={updatedAt}
+            />
             {refreshing && snapshot ? (
-              <StatusBadge status="loading" label="Veriler yenileniyor" />
+              <StatusBadge status="loading" label={t("Refreshing data")} />
             ) : null}
             {stale && snapshot ? (
-              <StatusBadge status="warning" label="Son veriler gösteriliyor" />
+              <StatusBadge status="warning" label={t("Showing latest data")} />
             ) : null}
           </div>
           <div className="social-header-actions">
@@ -626,7 +654,7 @@ export function SocialView({
               aria-expanded={headerMenuOpen}
               onClick={() => setHeaderMenuOpen((current) => !current)}
             >
-              <MoreHorizontal className="size-4" />
+              <MoreHorizontal className="icon-md" />
             </Button>
             {headerMenuOpen ? (
               <Popover
@@ -647,7 +675,7 @@ export function SocialView({
                       setHeaderMenuOpen(false);
                     }}
                   >
-                    Bu proje
+                    {t("This project")}
                   </Button>
                 ) : null}
                 <Button
@@ -660,7 +688,7 @@ export function SocialView({
                     setHeaderMenuOpen(false);
                   }}
                 >
-                  İşlem geçmişi
+                  {t("Activity history")}
                 </Button>
               </Popover>
             ) : null}
@@ -668,37 +696,33 @@ export function SocialView({
               type="button"
               iconOnly
               size="sm"
-              label="Yenile"
+              label={t("Refresh")}
               variant="ghost"
               loading={busy || refreshing}
-
               disabled={busy || refreshing || !machineId}
-              aria-label="Yenile"
-              title={refreshing ? "Yenileniyor…" : "Yenile"}
+              title={refreshing ? t("Refreshing…") : t("Refresh")}
               data-refreshing={refreshing}
               onClick={() => {
                 setNotice("");
                 void refresh(machineId, true);
               }}
             >
-              <RefreshCw className="size-4" aria-hidden="true" />
+              <RefreshCw className="icon-md" aria-hidden="true" />
             </Button>
             <Button
               type="button"
               iconOnly
               size="sm"
-              label="Sosyal Medya ekranını kapat"
+              label={t("Close Social Media")}
               variant="ghost"
-
-              aria-label="Sosyal Medya ekranını kapat"
-              title="Sosyal Medya ekranını kapat"
+              title={t("Close Social Media")}
               onClick={onClose}
             >
-              <X className="size-4" aria-hidden="true" />
+              <X className="icon-md" aria-hidden="true" />
             </Button>
           </div>
         </header>
-        <nav aria-label="Sosyal Medya bölümleri" className="social-tabs">
+        <nav aria-label={t("Social Media sections")} className="social-tabs">
           {tabs.map((item) => {
             const Icon = tabIcons[item];
             return (
@@ -706,7 +730,7 @@ export function SocialView({
                 type="button"
                 variant="tab"
                 key={item}
-                title={item}
+                title={tabLabel(item)}
                 aria-current={tab === item ? "page" : undefined}
                 onClick={() => {
                   setNotice("");
@@ -716,21 +740,21 @@ export function SocialView({
                 }}
               >
                 <Icon className="social-nav-icon" aria-hidden="true" />
-                <span className="social-nav-label">{item}</span>
-                {item !== "Ayarlar" && scoped ? (
+                <span className="social-nav-label">{tabLabel(item)}</span>
+                {item !== "Settings" && scoped ? (
                   <span aria-hidden="true" className="social-nav-count">
                     {
                       {
-                        Hesaplar: scoped.accounts.length,
-                        Kampanyalar: scoped.pages?.campaigns?.total ?? scoped.campaigns.length,
-                        "Gelen Kutusu": scoped.pages?.threads?.total ?? scoped.threads.length,
-                        "Hedef Kitle": scoped.pages?.contacts?.total ?? scoped.contacts.length,
-                        Otomasyonlar:
+                        Accounts: scoped.accounts.length,
+                        Campaigns: scoped.pages?.campaigns?.total ?? scoped.campaigns.length,
+                        Inbox: scoped.pages?.threads?.total ?? scoped.threads.length,
+                        Audience: scoped.pages?.contacts?.total ?? scoped.contacts.length,
+                        Automations:
                           (scoped.pages?.rules?.total ?? scoped.rules.length) +
                           (scoped.pages?.publishingPlans?.total ??
                             scoped.publishingPlans?.length ??
                             0),
-                        Ayarlar: 0,
+                        Settings: 0,
                       }[item]
                     }
                   </span>
@@ -741,7 +765,14 @@ export function SocialView({
         </nav>
         {error || loadError ? (
           <div className="social-error social-feedback-bar">
-            <Notice kind="error" title={error ? "İşlem tamamlanamadı" : "Bağlantı yenilenemedi"}>
+            <Notice
+              kind="error"
+              title={
+                error
+                  ? t("Operation could not be completed")
+                  : t("Connection could not be refreshed")
+              }
+            >
               {error || loadError}
             </Notice>
             <Button
@@ -755,7 +786,7 @@ export function SocialView({
                 else setRetryKey((value) => value + 1);
               }}
             >
-              {error ? "Bildirimi kapat" : "Tekrar dene"}
+              {error ? t("Dismiss notice") : t("Try again")}
             </Button>
           </div>
         ) : null}
@@ -764,7 +795,7 @@ export function SocialView({
             <div className="social-feedback-bar">
               <Notice
                 kind={busy ? "loading" : stale ? "warning" : "success"}
-                title={busy ? "İşlem sürüyor…" : notice}
+                title={busy ? t("Operation in progress…") : notice}
               />
             </div>
           ) : null}
@@ -798,7 +829,7 @@ export function SocialView({
                   onOpenHistory={openHistory}
                   onSelect={setMachineId}
                   onNavigate={(next) => {
-                    if (next === "Otomasyonlar") setAutomationMode("publish");
+                    if (next === "Automations") setAutomationMode("publish");
                     setTab(next);
                     setVisited((current) =>
                       current.includes(next) ? current : [...current, next],
@@ -819,13 +850,13 @@ export function SocialView({
           {!scoped || !hostWorkspaces.current.get(machineId)?.snapshots.has(section) ? (
             loading || refreshing || !!scoped ? (
               <div className="social-initial-loading">
-                <Notice kind="loading" title="Sosyal medya çalışma alanı yükleniyor" />
+                <Notice kind="loading" title={t("Loading Social Media workspace")} />
                 <Skeleton className="social-skeleton" aria-hidden="true" />
                 <Skeleton className="social-skeleton" aria-hidden="true" />
               </div>
             ) : (
-              <Empty title="Host bağlantısı gerekli">
-                Bağlantıyı yenileyin veya bağlı bir host seçin.
+              <Empty title={t("Host connection required")}>
+                {t("Refresh the connection or choose a connected host.")}
               </Empty>
             )
           ) : null}
@@ -845,15 +876,15 @@ const sectionCollections: Record<Section, SocialCollection[]> = {
   sending: [],
   settings: [],
 };
-const collectionLabels: Record<SocialCollection, string> = {
-  campaigns: "Kampanyalar",
-  publishingPlans: "Paylaşım planları",
-  threads: "Konuşmalar",
-  contacts: "Kişiler",
-  rules: "Yanıt kuralları",
-  jobs: "İşlem geçmişi",
-  drafts: "Taslaklar",
-};
+const collectionLabels = (): Record<SocialCollection, string> => ({
+  campaigns: t("Campaigns"),
+  publishingPlans: t("Sharing plans"),
+  threads: t("Conversations"),
+  contacts: t("Contacts"),
+  rules: t("Reply rules"),
+  jobs: t("Activity history"),
+  drafts: t("Drafts"),
+});
 function WorkspacePagination({
   snapshot,
   section,
@@ -865,8 +896,10 @@ function WorkspacePagination({
   disabled: boolean;
   onPage: (collection: SocialCollection, offset: number) => void;
 }) {
+  useLocale();
+  const labels = collectionLabels();
   return (
-    <nav aria-label="Sosyal medya veri sayfaları" className="social-filter-tabs">
+    <nav aria-label={t("Social Media data pages")} className="social-filter-tabs">
       {sectionCollections[section].map((collection) => {
         const page = snapshot.pages?.[collection];
         if (!page || (!page.offset && page.total <= page.limit)) return null;
@@ -874,10 +907,10 @@ function WorkspacePagination({
           <div
             key={collection}
             role="group"
-            aria-label={`${collectionLabels[collection]} sayfaları`}
+            aria-label={t("{p0} pages", { p0: labels[collection] })}
           >
             <span>
-              {collectionLabels[collection]} · {page.total ? page.offset + 1 : 0}–
+              {labels[collection]} · {page.total ? page.offset + 1 : 0}–
               {Math.min(page.offset + page.limit, page.total)} / {page.total}
             </span>
             <Button
@@ -886,7 +919,7 @@ function WorkspacePagination({
               disabled={disabled || page.offset === 0}
               onClick={() => onPage(collection, Math.max(0, page.offset - page.limit))}
             >
-              Önceki sayfa
+              {t("Previous page")}
             </Button>
             <Button
               variant="secondary"
@@ -894,7 +927,7 @@ function WorkspacePagination({
               disabled={disabled || page.offset + page.limit >= page.total}
               onClick={() => onPage(collection, page.offset + page.limit)}
             >
-              Sonraki sayfa
+              {t("Next page")}
             </Button>
           </div>
         );
@@ -933,6 +966,7 @@ function WorkspacePanels({
     filter: SocialCollectionFilter,
   ) => void;
 }) {
+  useLocale();
   const { tab, visited, filter, automationMode, projects } = host;
   const client = host.client!,
     run = host.run!;
@@ -951,38 +985,38 @@ function WorkspacePanels({
     visited.includes(tab) && host.snapshots.has(section);
   return (
     <fieldset disabled={busy} className="social-workspace social-workspace-root">
-      {present("Hesaplar", "accounts") ? (
-        <RetainedSocialPanel {...feedback} active={active && tab === "Hesaplar"}>
+      {present("Accounts", "accounts") ? (
+        <RetainedSocialPanel {...feedback} active={active && tab === "Accounts"}>
           <Accounts {...props("accounts")} onOpenHistory={onOpenHistory} onNavigate={onNavigate} />
         </RetainedSocialPanel>
       ) : null}
-      {present("Kampanyalar", "campaigns") ? (
-        <RetainedSocialPanel {...feedback} active={active && tab === "Kampanyalar"}>
+      {present("Campaigns", "campaigns") ? (
+        <RetainedSocialPanel {...feedback} active={active && tab === "Campaigns"}>
           <Campaigns {...props("campaigns")} />
         </RetainedSocialPanel>
       ) : null}
-      {present("Gelen Kutusu", "inbox") ? (
-        <RetainedSocialPanel {...feedback} active={active && tab === "Gelen Kutusu"}>
+      {present("Inbox", "inbox") ? (
+        <RetainedSocialPanel {...feedback} active={active && tab === "Inbox"}>
           <Inbox {...props("inbox")} />
         </RetainedSocialPanel>
       ) : null}
-      {present("Hedef Kitle", "audience") ? (
-        <RetainedSocialPanel {...feedback} active={active && tab === "Hedef Kitle"}>
+      {present("Audience", "audience") ? (
+        <RetainedSocialPanel {...feedback} active={active && tab === "Audience"}>
           <Audience {...props("audience")} />
         </RetainedSocialPanel>
       ) : null}
-      {visited.includes("Otomasyonlar") ? (
-        <RetainedSocialPanel {...feedback} active={active && tab === "Otomasyonlar"}>
+      {visited.includes("Automations") ? (
+        <RetainedSocialPanel {...feedback} active={active && tab === "Automations"}>
           <div
             className="social-filter-tabs social-automation-nav"
             role="group"
-            aria-label="Otomasyon türü"
+            aria-label={t("Automation type")}
           >
             {[
-              ["publish", "Paylaşım planları"],
-              ["reply", "Yanıt kuralları"],
-              ["sending", "Gönderim kontrolleri"],
-              ["history", "İşlem geçmişi"],
+              ["publish", t("Sharing plans")],
+              ["reply", t("Reply rules")],
+              ["sending", t("Sending controls")],
+              ["history", t("Activity history")],
             ].map(([value, label]) => (
               <Button
                 variant="tab"
@@ -998,7 +1032,7 @@ function WorkspacePanels({
           {host.snapshots.has("plans") ? (
             <RetainedSocialPanel
               {...feedback}
-              active={active && tab === "Otomasyonlar" && automationMode === "publish"}
+              active={active && tab === "Automations" && automationMode === "publish"}
             >
               <PublishingPlans {...props("plans")} />
             </RetainedSocialPanel>
@@ -1006,7 +1040,7 @@ function WorkspacePanels({
           {host.snapshots.has("rules") ? (
             <RetainedSocialPanel
               {...feedback}
-              active={active && tab === "Otomasyonlar" && automationMode === "reply"}
+              active={active && tab === "Automations" && automationMode === "reply"}
             >
               <Rules {...props("rules")} />
             </RetainedSocialPanel>
@@ -1014,7 +1048,7 @@ function WorkspacePanels({
           {host.snapshots.has("sending") ? (
             <RetainedSocialPanel
               {...feedback}
-              active={active && tab === "Otomasyonlar" && automationMode === "sending"}
+              active={active && tab === "Automations" && automationMode === "sending"}
             >
               <SocialSendingControls {...props("sending")} />
             </RetainedSocialPanel>
@@ -1022,17 +1056,17 @@ function WorkspacePanels({
           {host.snapshots.has("history") ? (
             <RetainedSocialPanel
               {...feedback}
-              active={active && tab === "Otomasyonlar" && automationMode === "history"}
+              active={active && tab === "Automations" && automationMode === "history"}
             >
               <SocialHistory {...props("history")} />
             </RetainedSocialPanel>
           ) : null}
         </RetainedSocialPanel>
       ) : null}
-      {present("Ayarlar", "settings") ? (
+      {present("Settings", "settings") ? (
         <RetainedSocialPanel
           {...feedback}
-          active={active && tab === "Ayarlar"}
+          active={active && tab === "Settings"}
           className="social-settings-page"
         >
           <SocialPolicySettings
@@ -1070,7 +1104,18 @@ function Collapsible({
     <>{children}</>
   );
 }
-function SchedulingHelp() {
+function HostStatus({
+  label,
+  online,
+  ready,
+  updatedAt,
+}: {
+  label: string;
+  online: boolean;
+  ready: boolean;
+  updatedAt: number;
+}) {
+  useLocale();
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   return (
@@ -1078,13 +1123,16 @@ function SchedulingHelp() {
       <Button
         ref={trigger}
         variant="ghost"
-        iconOnly
-        label="Zamanlama nasıl çalışır?"
+        size="sm"
+        type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-label={label}
+        title={label}
         onClick={() => setOpen(!open)}
       >
-        <CircleHelp aria-hidden="true" />
+        <span className="social-status-dot" data-online={online} aria-hidden="true" />
+        {ready ? null : <span className="social-host-label">{label}</span>}
       </Button>
       {open ? (
         <Popover
@@ -1092,18 +1140,31 @@ function SchedulingHelp() {
           align="end"
           width={320}
           role="dialog"
-          aria-label="Zamanlama nasıl çalışır?"
+          aria-label={t("Scheduling status")}
           onDismiss={() => setOpen(false)}
           className="social-help-popover"
         >
-          <strong>Zamanlama nasıl çalışır?</strong>
+          <strong>{label}</strong>
+          {updatedAt ? (
+            <p>
+              {t("Last refresh {p0}", {
+                p0: new Date(updatedAt).toLocaleTimeString(getLocale(), {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+              })}
+            </p>
+          ) : null}
+          <strong>{t("How scheduling works")}</strong>
           <p>
-            Seçili bilgisayar açık ve bycoda hizmeti bağlıyken planlanan işler çalışır. Bu ekranı
-            kapatabilirsiniz.
+            {t(
+              "Scheduled jobs run while the selected computer is on and the bycoda service is connected. You can close this screen.",
+            )}
           </p>
           <p>
-            Paylaşım için içerik onayı veya etkin bir kural gerekir. Bilgisayar çevrimdışıyken işler
-            bekler.
+            {t(
+              "Publishing needs content approval or an active rule. Jobs wait while the computer is offline.",
+            )}
           </p>
         </Popover>
       ) : null}
@@ -1120,6 +1181,7 @@ function Accounts({
   onNavigate,
   onOpenHistory,
 }: Props & { onNavigate?: (tab: Tab) => void; onOpenHistory?: () => void }) {
+  useLocale();
   const [oauthOperations, setOAuthOperations] = useState<SocialOperation[]>(["publish"]);
   const [resourceId, setResourceId] = useState("");
   const [platform, setPlatform] = useState<SocialAccount["platform"]>("x");
@@ -1154,7 +1216,8 @@ function Accounts({
         }
       })
       .catch(() => {
-        if (alive) setAvailabilityError("Bağlantı ayarları okunamadı. Yenile ile tekrar deneyin.");
+        if (alive)
+          setAvailabilityError(t("Connection settings could not be read. Try again with Refresh."));
       });
     return () => {
       alive = false;
@@ -1189,7 +1252,7 @@ function Accounts({
         return {
           status: "failed",
           candidates: [],
-          error: "Bağlantı durumu okunamadı. Bağlantıyı kontrol et ile tekrar deneyin.",
+          error: t("Connection status could not be read. Try again with Check connection."),
         };
       }
     },
@@ -1237,8 +1300,7 @@ function Accounts({
           alive &&
           setBrowserAvailability({
             available: false,
-            reason:
-              "Seçili host tarayıcı oturumu bağlantısını desteklemiyor. Host'u güncelleyip Yenile düğmesine basın.",
+            reason: HOST_BROWSER_UNSUPPORTED,
           }),
       );
     return () => {
@@ -1248,10 +1310,14 @@ function Accounts({
   return (
     <div className="social-page social-accounts-page">
       <div className="social-section-heading">
-        <h2>Hesaplar</h2>
-        <span className="social-muted">{snapshot.accounts.length} hesap</span>
+        <h2>{t("Accounts")}</h2>
+        <span className="social-muted">
+          {snapshot.accounts.length === 1
+            ? t("1 account")
+            : t("{p0} accounts", { p0: snapshot.accounts.length })}
+        </span>
       </div>
-      <Composer title="Hesap ekle">
+      <Composer title={t("Add account")}>
         <form
           onSubmit={(event) => {
             const form = event.currentTarget;
@@ -1275,36 +1341,22 @@ function Accounts({
           className="social-form"
         >
           <label>
-            Platform
+            {t("Platform")}
             <SearchableSelect
-              label="Platform"
-              triggerProps={{ "aria-label": "Platform" }}
+              label={t("Platform")}
+              triggerProps={{ "aria-label": t("Platform") }}
               value={platform}
               onChange={(value) => setPlatform(value as SocialAccount["platform"])}
               options={SOCIAL_PLATFORMS.map((id) => ({ value: id, label: names[id] }))}
             />
           </label>
+          <TextField label={t("Account name")} name="name" required maxLength={200} />
           <label>
-            Hesap adı
-            <TextField hideLabel label="" name="name" required maxLength={200} />
-          </label>
-          <label>
-            Hesap türü
+            {t("Account type")}
             <NativeSelect name="type" key={platform}>
               {SOCIAL_ACCOUNT_TYPES[platform].map((id) => (
                 <option key={id} value={id}>
-                  {
-                    {
-                      member: "Üye",
-                      professional: "Profesyonel",
-                      page: "Sayfa",
-                      channel: "Kanal",
-                      organization: "Organizasyon",
-                      public_profile: "Herkese açık profil",
-                      business: "İşletme",
-                      bot: "Bot",
-                    }[id]
-                  }
+                  {accountTypeLabel(id)}
                 </option>
               ))}
             </NativeSelect>
@@ -1315,11 +1367,11 @@ function Accounts({
             onChange={setSelectedProjects}
           />
           <Button variant="primary" type="submit">
-            Hesap ekle
+            {t("Add account")}
           </Button>
           {!selectedProjects.length ? (
             <small>
-              Bir proje seçerseniz bu proje hesapta okuma ve taslak hazırlama izni alır.
+              {t("If you select a project, it gets read and draft permission on the account.")}
             </small>
           ) : null}
         </form>
@@ -1329,10 +1381,10 @@ function Accounts({
         data-single={snapshot.accounts.length <= 1}
       >
         <section hidden={snapshot.accounts.length <= 1}>
-          <h2>Bağlı hesaplar</h2>
+          <h2>{t("Connected accounts")}</h2>
           {!snapshot.accounts.length ? (
-            <Empty title="İlk hesabınızı ekleyin" icon={Link}>
-              Hesap ekle ile başlayın; ardından platform bağlantısını tamamlayın.
+            <Empty title={t("Add your first account")} icon={Link}>
+              {t("Start with Add account, then complete the platform connection.")}
             </Empty>
           ) : null}
           <div className="social-list">
@@ -1356,13 +1408,13 @@ function Accounts({
                 <span>
                   {names[item.platform]} ·{" "}
                   {availabilityError
-                    ? "Bağlantı kontrolü gerekli"
+                    ? t("Connection check needed")
                     : accountConnectionStatus(
                         item,
                         availability[item.platform],
                         item.id === selected ? oauth?.status : undefined,
                       )}
-                  {item.paused ? " · Durduruldu" : ""}
+                  {item.paused ? ` · ${t("Paused")}` : ""}
                 </span>
               </Button>
             ))}
@@ -1380,27 +1432,22 @@ function Accounts({
                 />
                 <span>
                   {names[account.platform]} ·{" "}
-                  {account.connection === "browser" ? "Tarayıcı bağlantısı" : "API bağlantısı"}
+                  {account.connection === "browser" ? t("Browser connection") : t("API connection")}
                 </span>
                 {account.connected && onNavigate ? (
                   <div className="social-actions">
-                    <Button
-                      variant="primary"
-                      type="button"
-
-                      onClick={() => onNavigate("Kampanyalar")}
-                    >
-                      Paylaşım hazırla
+                    <Button variant="primary" type="button" onClick={() => onNavigate("Campaigns")}>
+                      {t("Prepare post")}
                     </Button>
                     <Button variant="secondary" type="button" onClick={onOpenHistory}>
-                      Geçmişi gör
+                      {t("View history")}
                     </Button>
                   </div>
                 ) : null}
               </div>
               {account.connected ? (
                 <section className="social-account-capabilities">
-                  <h3>Bu hesapla yapabilecekleriniz</h3>
+                  <h3>{t("What you can do with this account")}</h3>
                   <div className="social-capability-grid">
                     {(snapshot.capabilities[account.id] ?? [])
                       .filter((cap) =>
@@ -1415,8 +1462,9 @@ function Accounts({
                   </div>
                   {account.connection === "browser" ? (
                     <p className="social-muted">
-                      Paylaşım ve gönderiye yanıt desteklenir. Bahsetmeler ve eski web mesajlaşması
-                      tanınan yanıt biçimleriyle takip edilir; şifreli Sohbet desteklenmez.
+                      {t(
+                        "Posting and replying to posts are supported. Mentions and legacy web messaging are followed through recognized reply formats; encrypted Chat is not supported.",
+                      )}
                     </p>
                   ) : null}
                 </section>
@@ -1424,47 +1472,45 @@ function Accounts({
               <SocialBrowserWorkspace key={account.id} account={account} client={client} />
               {account.platform === "x" ? (
                 <details className="social-connection" open={!account.connected || undefined}>
-                  <summary>Tarayıcı bağlantısını yönet</summary>
+                  <summary>{t("Manage browser connection")}</summary>
                   <strong>
                     {account.connected && account.connection === "browser"
-                      ? "X hesabı bağlı"
-                      : "X hesabını bağlayın"}
+                      ? t("X account connected")
+                      : t("Connect your X account")}
                   </strong>
                   <details>
-                    <summary>Tarayıcı bağlantısı nasıl çalışır?</summary>
+                    <summary>{t("How the browser connection works")}</summary>
                     <p>
-                      X API ücretli olduğu için hesabı kendi X oturumunuzla bağlayabilirsiniz.
-                      Seçili host'ta ayrı bir Edge/Chrome penceresi açılır; X'e orada kendiniz giriş
-                      yapıp pencereyi kapatırsınız. Şifreniz bycoda'ya girilmez. Onaylanan
-                      gönderiler bu oturumla arka planda paylaşılır. Yalnız gönderi/görsel paylaşımı
-                      ve gönderi ID'sine yanıt desteklenir. Bahsetmeler ve eski web mesajlaşması
-                      tanınan yanıt biçimleriyle okunur; şifreli Sohbet desteklenmez. Sürekli yayın
-                      ve yanıtlar, etkin yayın programı ve otomasyon kurallarına bağlıdır.
+                      {t(
+                        "Because the X API is paid, you can connect the account with your own X session. A separate Edge/Chrome window opens on the selected host; you sign in to X there yourself and close the window. Your password is never entered into bycoda. Approved posts are shared in the background with this session. Only post/image sharing and replies to a post ID are supported. Mentions and legacy web messaging are read through recognized reply formats; encrypted Chat is not supported. Continuous publishing and replies depend on an active publishing program and automation rules.",
+                      )}
                     </p>
                   </details>
-                  <Notice kind="warning" title="Tarayıcı bağlantısı için risk onayı">
-                    Bu yöntem resmi değildir. X otomasyonu algılarsa hesabı kısıtlayabilir veya
-                    askıya alabilir.
+                  <Notice kind="warning" title={t("Risk confirmation for browser connection")}>
+                    {t(
+                      "This method is unofficial. If X detects automation, it may restrict or suspend the account.",
+                    )}
                   </Notice>
                   <label className="social-inline-check">
                     <Checkbox
                       checked={browserRisk}
                       onChange={(event) => setBrowserRisk(event.target.checked)}
                     />
-                    Riski anlıyorum; bu hesap için tarayıcı oturumunu kullan
+                    {t("I understand the risk; use the browser session for this account")}
                   </label>
                   {browserAvailability && !browserAvailability.available ? (
                     <p>
-                      {browserAvailability.reason.startsWith("Seçili host")
-                        ? browserAvailability.reason
-                        : "Seçili host'ta Microsoft Edge veya Google Chrome bulunamadı."}
+                      {browserAvailability.reason === HOST_BROWSER_UNSUPPORTED
+                        ? t(
+                            "The selected host does not support browser-session connections. Update the Host and press Refresh.",
+                          )
+                        : t("Microsoft Edge or Google Chrome was not found on the selected host.")}
                     </p>
                   ) : null}
                   <div className="social-actions">
                     <Button
                       type="button"
                       variant="primary"
-
                       disabled={
                         !browserRisk ||
                         !browserAvailability?.available ||
@@ -1480,8 +1526,8 @@ function Accounts({
                       }
                     >
                       {account.connected && account.connection === "browser"
-                        ? "Tarayıcıda yeniden giriş yap"
-                        : "Tarayıcıda X'e giriş yap"}
+                        ? t("Sign in again in the browser")
+                        : t("Sign in to X in the browser")}
                     </Button>
                     <Button
                       type="button"
@@ -1493,7 +1539,7 @@ function Accounts({
                         })
                       }
                     >
-                      Tarayıcı bağlantısını kontrol et
+                      {t("Check browser connection")}
                     </Button>
                   </div>
                   {browser && browser.status !== "idle" ? (
@@ -1501,10 +1547,11 @@ function Accounts({
                       {browser.error ||
                         (
                           {
-                            waiting:
-                              "Açılan Chrome penceresinde X'e giriş yapın (Google ile giriş de olur). Giriş bitince pencereyi kendiniz kapatın; bycoda oturumu sonra kontrol eder.",
-                            connected: "X hesabı tarayıcı oturumuyla bağlandı.",
-                            failed: "Bağlantı başarısız",
+                            waiting: t(
+                              "Sign in to X in the Chrome window that opened (Google sign-in works too). Close the window yourself when you are done; bycoda then checks the session.",
+                            ),
+                            connected: t("X account connected with the browser session."),
+                            failed: t("Connection failed"),
                           } as Record<string, string>
                         )[browser.status]}
                     </p>
@@ -1519,14 +1566,19 @@ function Accounts({
                   </strong>
                   <p>
                     {account.platform === "telegram"
-                      ? "Bot hesabıyla metin mesajlarını okuyup yanıtlayın. Mevcut webhook varsa okuma kapalıdır; bycoda başka uygulamaların webhook’unu silmez."
-                      : "WhatsApp Business hesabıyla gelen metin mesajlarını 24 saatlik yanıt penceresinde yanıtlayın. Kişisel hesap, şablon mesaj ve toplu ilk gönderim desteklenmez."}
+                      ? t(
+                          "Read and reply to text messages with a bot account. Reading is off when a webhook already exists; bycoda does not delete other apps' webhooks.",
+                        )
+                      : t(
+                          "Reply to incoming text messages with a WhatsApp Business account within the 24-hour reply window. Personal accounts, template messages and bulk first messages are not supported.",
+                        )}
                   </p>
                   <details>
-                    <summary>Host bağlantı ayarları</summary>
+                    <summary>{t("Host connection settings")}</summary>
                     <p>
-                      Anahtarları seçili host hizmetinin ortam ayarlarına ekleyin. Bağlantı düğmesi
-                      platformdaki hesap kimliğini doğrular.
+                      {t(
+                        "Add the keys to the environment settings of the selected host service. The connect button verifies the account identity on the platform.",
+                      )}
                     </p>
                     <code>BYCODA_SOCIAL_{account.platform.toUpperCase()}_TOKEN</code>
                     <br />
@@ -1540,8 +1592,9 @@ function Accounts({
                         <br />
                         <code>BYCODA_SOCIAL_WHATSAPP_WEBHOOK_VERIFY_TOKEN</code>
                         <p>
-                          Meta webhook adresi: /social/webhooks/whatsapp. İşletme hesabında messages
-                          alanına abone olun.
+                          {t(
+                            "Meta webhook address: /social/webhooks/whatsapp. Subscribe to the messages field on the business account.",
+                          )}
                         </p>
                       </>
                     ) : null}
@@ -1557,7 +1610,7 @@ function Accounts({
                         })
                       }
                     >
-                      {account.connected ? "Host hesabını yeniden bağla" : "Host hesabını bağla"}
+                      {account.connected ? t("Reconnect host account") : t("Connect host account")}
                     </Button>
                   </div>
                 </div>
@@ -1566,18 +1619,19 @@ function Accounts({
                 account.connection === "browser" ? null : (
                 <Collapsible
                   collapsed={account.platform === "x"}
-                  summary="Resmi X API ile bağla (ücretli geliştirici uygulaması gerekir)"
+                  summary={t("Connect with the official X API (requires a paid developer app)")}
                 >
                   {PROFILE_ONLY_PLATFORMS.includes(account.platform) ? (
                     <p role="note">
-                      Bu bağlantı profil kimliğini doğrular ve taslak hazırlamanızı sağlar.
-                      Paylaşım, yorum ve gelen kutusu işlemleri henüz desteklenmiyor.
+                      {t(
+                        "This connection verifies the profile identity and lets you prepare drafts. Publishing, comments and inbox operations are not supported yet.",
+                      )}
                     </p>
                   ) : null}
                   <div className="social-connection" role="status">
                     <strong>
                       {availabilityError
-                        ? "Bağlantı kontrolü gerekli"
+                        ? t("Connection check needed")
                         : accountConnectionStatus(
                             account,
                             availability[account.platform],
@@ -1587,41 +1641,61 @@ function Accounts({
                     <p>
                       {availabilityError ||
                         (availability[account.platform] === undefined
-                          ? "Platform bağlantı ayarları kontrol ediliyor…"
+                          ? t("Checking platform connection settings…")
                           : !availability[account.platform].configured
-                            ? `${names[account.platform]} bağlantısı hazır değil. Platform uygulamasını ve geri dönüş adresini seçili host üzerinde yapılandırın.`
+                            ? t(
+                                "{p0} connection is not ready. Configure the platform app and its redirect address on the selected host.",
+                                { p0: names[account.platform] },
+                              )
                             : !account.connected && oauth?.status === "waiting"
-                              ? "Açılan platform sayfasında hesabınıza giriş yapıp izin verin. Sonuç burada otomatik kontrol edilir. Sayfa açılmadıysa Tarayıcıda bağla ile yeniden deneyin."
+                              ? t(
+                                  "Sign in to your account and grant permission on the platform page that opened. The result is checked here automatically. If the page did not open, try again with Connect in browser.",
+                                )
                               : !account.connected && oauth?.status === "selection"
-                                ? "Platform hesabınızı doğruladı. Aşağıdaki listeden bağlamak istediğiniz hesabı seçin."
+                                ? t(
+                                    "The platform verified your account. Choose the account you want to connect from the list below.",
+                                  )
                                 : account.connected &&
                                     account.expiresAt &&
                                     account.expiresAt < Date.now()
-                                  ? "Bağlantı süresi doldu. Tarayıcıda yeniden bağla ile hesabınıza tekrar izin verin."
+                                  ? t(
+                                      "The connection expired. Grant permission to your account again with Reconnect in browser.",
+                                    )
                                   : account.connected
-                                    ? "Hesap bağlı. İşlemleri ve proje izinlerini aşağıdan yönetin."
-                                    : "İzinleri seçip Tarayıcıda bağla düğmesine basın. Açılan platform sayfasında hesabınıza giriş yapıp izin verin; sonuç burada otomatik kontrol edilir.")}
+                                    ? t(
+                                        "Account connected. Manage operations and project permissions below.",
+                                      )
+                                    : t(
+                                        "Select permissions and press Connect in browser. Sign in to your account and grant permission on the platform page that opens; the result is checked here automatically.",
+                                      ))}
                     </p>
                     {availability[account.platform]?.configured === false ? (
                       <details>
-                        <summary>Kurulum için gerekenler</summary>
+                        <summary>{t("Setup requirements")}</summary>
                         <p>
-                          Bu ayarlar sosyal hesap şifreniz değildir. Platform geliştirici
-                          uygulamasındaki bilgiler seçili host hizmetine eklenir; buraya gizli
-                          anahtar girmeyin.
+                          {t(
+                            "These settings are not your social account password. Details from the platform developer app are added to the selected host service; do not enter secret keys here.",
+                          )}
                         </p>
                         <ul>
-                          <li>Uygulama Client ID</li>
+                          <li>{t("App Client ID")}</li>
                           <li>
                             {account.platform === "x"
-                              ? "Gizli anahtar kullanan uygulamalarda Client Secret (public PKCE için isteğe bağlı)"
-                              : "Uygulama Client Secret"}
+                              ? t(
+                                  "Client Secret for apps that use a secret (optional for public PKCE)",
+                                )
+                              : t("App Client Secret")}
                           </li>
-                          <li>Platformda kayıtlı ve host'a ulaşan geri dönüş adresi</li>
+                          <li>
+                            {t(
+                              "Redirect address registered on the platform and reachable by the host",
+                            )}
+                          </li>
                         </ul>
                         <p>
-                          Host hizmetinin ortam ayarlarında aşağıdaki adlar kullanılır. Ayarlar
-                          uygulama içinde henüz düzenlenemiyor; host kurulumu üzerinden eklenmeli.
+                          {t(
+                            "The host service environment settings use the names below. The settings cannot be edited in the app yet; add them through the host setup.",
+                          )}
                         </p>
                         <code>BYCODA_SOCIAL_{account.platform.toUpperCase()}_CLIENT_ID</code>
                         <br />
@@ -1635,17 +1709,17 @@ function Accounts({
                           _REDIRECT_URI
                         </code>
                         <p>
-                          Geri dönüş adresinin host üzerindeki yolu:{" "}
-                          <code>/social/oauth/{account.platform}/callback</code>. Aynı adres
-                          platform uygulamasında da kayıtlı olmalı.
+                          {t("Redirect address path on the host:")}{" "}
+                          <code>/social/oauth/{account.platform}/callback</code>.{" "}
+                          {t("The same address must also be registered in the platform app.")}
                         </p>
-                        <p>Host ayarları güncellendikten sonra Yenile düğmesine basın.</p>
+                        <p>{t("After updating the host settings, press Refresh.")}</p>
                       </details>
                     ) : null}
                   </div>
                   {PROFILE_ONLY_PLATFORMS.includes(account.platform) ? null : (
                     <fieldset className="social-checks">
-                      <legend>OAuth ile istenecek yetenekler</legend>
+                      <legend>{t("Capabilities requested through OAuth")}</legend>
                       {(snapshot.capabilities[account.id] ?? [])
                         .filter((capability) => capability.status !== "unsupported")
                         .map((capability) => (
@@ -1667,27 +1741,23 @@ function Accounts({
                   )}
                   {PROFILE_ONLY_PLATFORMS.includes(account.platform) ? null : (
                     <p>
-                      Yalnız seçilen API ürünlerinin izinleri istenir. Platform onayı ve webhook
-                      aboneliği ayrıca gerekir.
+                      {t(
+                        "Only the permissions of the selected API products are requested. Platform approval and webhook subscription are required separately.",
+                      )}
                     </p>
                   )}
                   {account.accountType === "organization" ? (
-                    <label>
-                      LinkedIn organizasyon ID
-                      <TextField
-                        hideLabel
-                        label=""
-                        inputMode="numeric"
-                        value={resourceId}
-                        onChange={(event) => setResourceId(event.target.value)}
-                      />
-                    </label>
+                    <TextField
+                      label={t("LinkedIn organization ID")}
+                      inputMode="numeric"
+                      value={resourceId}
+                      onChange={(event) => setResourceId(event.target.value)}
+                    />
                   ) : null}
                   <div className="social-actions">
                     <Button
                       type="button"
                       variant="primary"
-
                       disabled={
                         (!oauthOperations.length &&
                           !PROFILE_ONLY_PLATFORMS.includes(account.platform)) ||
@@ -1710,7 +1780,7 @@ function Accounts({
                         })
                       }
                     >
-                      {account.connected ? "Tarayıcıda yeniden bağla" : "Tarayıcıda bağla"}
+                      {account.connected ? t("Reconnect in browser") : t("Connect in browser")}
                     </Button>
                     <Button
                       type="button"
@@ -1719,7 +1789,7 @@ function Accounts({
                         void run(async () => setOAuth(await client.oauthStatus(account.id)))
                       }
                     >
-                      Bağlantıyı kontrol et
+                      {t("Check connection")}
                     </Button>
                   </div>
                   {oauth && availability[account.platform]?.configured ? (
@@ -1728,12 +1798,15 @@ function Accounts({
                         {oauth.error ||
                           (
                             {
-                              idle: "Bağlantı başlatılmadı. Platform kurulumu tamamlandıysa Tarayıcıda bağla ile başlayın.",
-                              waiting:
-                                "Tarayıcıda hesap izni bekleniyor. Açılan platform sayfasında izin verin. Sayfa açılmadıysa Tarayıcıda bağla ile yeniden deneyin.",
-                              selection: "Doğrulanan hesabı seçin",
-                              connected: "Hesap bağlandı",
-                              failed: "Bağlantı başarısız",
+                              idle: t(
+                                "Connection not started. If platform setup is complete, start with Connect in browser.",
+                              ),
+                              waiting: t(
+                                "Waiting for account permission in the browser. Grant permission on the platform page that opened. If the page did not open, try again with Connect in browser.",
+                              ),
+                              selection: t("Choose the verified account"),
+                              connected: t("Account connected"),
+                              failed: t("Connection failed"),
                             } as Record<string, string>
                           )[oauth.status]}
                       </p>
@@ -1749,7 +1822,7 @@ function Accounts({
                             })
                           }
                         >
-                          {candidate.name} · Bağla
+                          {t("{p0} · Connect", { p0: candidate.name })}
                         </Button>
                       ))}
                     </div>
@@ -1769,27 +1842,33 @@ function Accounts({
                     )
                   }
                 >
-                  {account.paused ? "Hesabı devam ettir" : "Hesabı durdur"}
+                  {account.paused ? t("Resume account") : t("Pause account")}
                 </Button>
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="danger"
+                  className="ml-auto"
                   disabled={!account.connected}
                   onClick={() => setDisconnecting(true)}
                 >
-                  Bağlantıyı kaldır
+                  {t("Remove connection")}
                 </Button>
               </div>
               {disconnecting ? (
-                <div className="social-confirm" role="group" aria-label="Bağlantıyı kaldırma onayı">
+                <div
+                  className="social-confirm"
+                  role="group"
+                  aria-label={t("Disconnect confirmation")}
+                >
                   <p>
-                    {account.name} hesabının bağlantısı kaldırılacak ve bu hesaptan gönderim
-                    duracak.
+                    {t("{p0} will be disconnected and sending from this account will stop.", {
+                      p0: account.name,
+                    })}
                   </p>
                   <div className="social-actions">
                     <Button
                       type="button"
-                      variant="secondary"
+                      variant="danger"
                       onClick={() =>
                         void (async () => {
                           if (
@@ -1803,32 +1882,30 @@ function Accounts({
                         })()
                       }
                     >
-                      Bağlantıyı kaldırmayı onayla
+                      {t("Confirm disconnect")}
                     </Button>
                     <Button
                       type="button"
                       variant="secondary"
                       onClick={() => setDisconnecting(false)}
                     >
-                      Vazgeç
+                      {t("Cancel")}
                     </Button>
                   </div>
                 </div>
               ) : null}
               <details className="social-form">
-                <summary>Desteklenen işlemler</summary>
+                <summary>{t("Supported operations")}</summary>
                 <p className="social-muted">
-                  Bu hesap{" "}
                   {account.executorId === snapshot.executorId
-                    ? "seçili bilgisayarda"
-                    : "başka bir bilgisayarda"}{" "}
-                  bağlı.
+                    ? t("This account is connected on the selected computer.")
+                    : t("This account is connected on another computer.")}
                 </p>
                 <table>
                   <thead>
                     <tr>
-                      <th>İşlem</th>
-                      <th>Durum / gerekçe</th>
+                      <th>{t("Operation")}</th>
+                      <th>{t("Status / reason")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1838,10 +1915,10 @@ function Accounts({
                         <td>
                           <StatusBadge status={cap.status} />
                           <details>
-                            <summary>Ayrıntılar</summary>
+                            <summary>{t("Details")}</summary>
                             <p>{cap.reason}</p>
                             <a href={cap.source} target="_blank" rel="noreferrer">
-                              Resmi belge
+                              {t("Official documentation")}
                             </a>
                           </details>
                         </td>
@@ -1851,7 +1928,7 @@ function Accounts({
                 </table>
               </details>
               <details className="social-form social-account-permissions" open>
-                <summary>Proje erişimi</summary>
+                <summary>{t("Project access")}</summary>
                 <form
                   className="social-form"
                   onSubmit={(event) => {
@@ -1866,10 +1943,10 @@ function Accounts({
                   }}
                 >
                   <label>
-                    Proje
+                    {t("Project")}
                     <SearchableSelect
                       value={grantProject}
-                      label={"Proje"}
+                      label={t("Project")}
                       options={projects.map((project) => ({
                         value: project.id,
                         label: project.name,
@@ -1878,18 +1955,18 @@ function Accounts({
                         setGrantProject(nextValue);
                         setGrantPermissions(account.grants[nextValue] ?? []);
                       }}
-                      searchLocale="tr"
+                      searchLocale={getLocale()}
                     />
                   </label>
                   <fieldset className="social-checks">
-                    <legend>Okuma ve gönderim ayrı izinlerdir</legend>
+                    <legend>{t("Reading and sending are separate permissions")}</legend>
                     {[
-                      ["read", "Oku"],
-                      ["draft", "Taslak hazırla"],
-                      ["publish", "Yayınla"],
-                      ["reply", "Yanıtla"],
-                      ["message", "Yeni mesaj"],
-                      ["comment", "Yorum yap"],
+                      ["read", t("Can read")],
+                      ["draft", t("Prepare drafts")],
+                      ["publish", t("Publish")],
+                      ["reply", t("Can reply")],
+                      ["message", t("New message")],
+                      ["comment", t("Post a comment")],
                     ].map(([id, label]) => (
                       <label key={id}>
                         <Checkbox
@@ -1907,14 +1984,14 @@ function Accounts({
                     ))}
                   </fieldset>
                   <Button type="submit" variant="secondary" disabled={!grantProject}>
-                    İzinleri kaydet
+                    {t("Save permissions")}
                   </Button>
                   <p className="social-muted">
-                    Mevcut izinler:{" "}
+                    {t("Current permissions:")}{" "}
                     {Object.entries(account.grants)
                       .map(
                         ([id, allowed]) =>
-                          `${projects.find((item) => item.id === id)?.name ?? id}: ${allowed.map((permission) => ({ read: "Okuma", draft: "Taslak", publish: "Paylaşım", reply: "Yanıt", message: "Mesaj", comment: "Yorum" })[permission] ?? permission).join(", ") || "yok"}`,
+                          `${projects.find((item) => item.id === id)?.name ?? id}: ${allowed.map((permission) => permissionLabels()[permission] ?? permission).join(", ") || t("none")}`,
                       )
                       .join("; ")}
                   </p>
@@ -1923,12 +2000,14 @@ function Accounts({
             </>
           ) : (
             <Empty
-              title={snapshot.accounts.length ? "Hesabınızı yönetin" : "İlk hesabınızı ekleyin"}
+              title={
+                snapshot.accounts.length ? t("Manage your account") : t("Add your first account")
+              }
               icon={Link}
             >
               {snapshot.accounts.length
-                ? "Bağlantı durumunu ve proje erişimini görmek için bir hesap seçin."
-                : "Hesap ekle ile başlayın; ardından platform bağlantısını tamamlayın."}
+                ? t("Select an account to see its connection status and project access.")
+                : t("Start with Add account, then complete the platform connection.")}
             </Empty>
           )}
         </section>

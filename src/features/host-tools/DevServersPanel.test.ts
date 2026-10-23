@@ -49,9 +49,11 @@ const menuItem = async (text: string) => {
 const mount = (cwd = "/repo") =>
   act(async () => root.render(createElement(DevServersPanel, { cwd })));
 const setInput = (label: string, value: string) => {
-  const input = [...container.querySelectorAll("label")]
-    .find((node) => node.textContent === label)!
-    .querySelector("input")!;
+  const input = (
+    [...container.querySelectorAll("label")].find(
+      (node) => node.textContent === label,
+    )! as HTMLLabelElement
+  ).control as HTMLInputElement;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
 };
@@ -128,7 +130,7 @@ it("reveals a failed process request and restores the row after a failed stop", 
   vi.mocked(hostFeatureRequest).mockRejectedValueOnce(new Error("Host disconnected"));
   await act(async () => button("Confirm graceful stop").click());
   expect(document.activeElement?.textContent).toBe("Host disconnected");
-  expect(container.querySelector(".dev-server-row [role=status]")?.textContent).toBe("Running");
+  expect(container.querySelector(".dev-server-row")?.textContent).toContain("Running");
   expect(button("Confirm graceful stop").disabled).toBe(false);
 });
 
@@ -243,9 +245,11 @@ it("keeps observed external argv read-only until the user defines an exact resta
   await mount();
   await act(async () => button("Restart").click());
   const field = (label: string) =>
-    [...container.querySelectorAll("label")]
-      .find((node) => node.textContent === label)!
-      .querySelector("input")!;
+    (
+      [...container.querySelectorAll("label")].find(
+        (node) => node.textContent === label,
+      )! as HTMLLabelElement
+    ).control as HTMLInputElement;
   expect(container.querySelector(".dev-server-metadata")!.textContent).toContain(observedCommand);
   expect(field("Restart command").value).toBe("");
   expect(field("Restart working directory").value).toBe("/repo with spaces");

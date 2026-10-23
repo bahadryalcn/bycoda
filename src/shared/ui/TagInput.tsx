@@ -1,10 +1,10 @@
 import { TagInput as ArcTagInput, type TagInputProps } from "./arc/tag-input/tag-input";
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 
 export type { TagInputProps } from "./arc/tag-input/tag-input";
 
 export function TagInput({ className, ...props }: TagInputProps) {
-  useLocale();
+  const t = useT();
   return (
     <ArcTagInput
       placeholder={t("Add tag…")}

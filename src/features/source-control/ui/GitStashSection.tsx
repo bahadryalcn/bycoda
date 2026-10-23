@@ -2,7 +2,7 @@ import { Button } from "../../../shared/ui/Button";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useCallback, useState } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import {
   ChevronDown,
   ChevronRight,
@@ -23,7 +23,6 @@ import { useGitResource } from "../hooks/useGitResource";
 import { GitFeedback } from "./GitFeedback";
 import { useGitPanelState, withGitOperation, setGitFeedback } from "../model/gitPanelState";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { appName } from "../../../shared/lib/appName";
 
 type Props = {
   cwd: string;
@@ -54,6 +53,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
   const supported = useRemoteSupports(cwd, GIT_ACTIONS) === true;
   const active = enabled && !!cwd && cwd !== "~" && supported;
   const [open, setOpen] = useState(stashOpen);
+  const { confirm, dialog: confirmElement } = useConfirm();
   const [busy] = useGitPanelState(cwd, "busy");
   const read = useCallback(() => gitStashList(cwd), [cwd]);
   const { data, loading, error, refresh } = useGitResource(cwd, `stashes:${cwd}`, active, read);
@@ -85,16 +85,17 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
   };
 
   const drop = async (entry: GitStashEntry) => {
-    const confirmed = await ask(`Drop "${entry.message}"? The stashed changes are lost.`, {
-      title: appName(),
-      kind: "warning",
-      okLabel: "Drop",
+    const confirmed = await confirm({
+      title: t("Drop"),
+      message: t('Drop "{p0}"? The stashed changes are lost.', { p0: entry.message }),
+      confirmLabel: t("Drop"),
     });
     if (confirmed) await run(() => gitStashAction(cwd, "drop", entry.index, entry.sha));
   };
 
   return (
     <div className="shrink-0 border-t border-stroke">
+      {confirmElement}
       <div className="flex h-7 items-center gap-1 px-1.5">
         <Button
           variant="ghost"

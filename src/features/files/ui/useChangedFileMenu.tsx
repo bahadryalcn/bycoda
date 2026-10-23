@@ -1,6 +1,6 @@
 import { translateAt, useLocale, type LanguageDomain } from "../../../shared/i18n";
 import { useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
-import { message } from "@tauri-apps/plugin-dialog";
+import { FileActionError } from "./FileActionError";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { openPathWithDefaultApp, revealPath } from "../../../platform/tauri/fs";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
@@ -50,6 +50,7 @@ export function useChangedFileMenu({
   const t = (message: string, values?: Record<string, unknown>) =>
     translateAt(locale, message, values);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const trigger = useRef<HTMLElement | null>(null);
   const selected = position
     ? typeof selection === "function"
@@ -178,14 +179,7 @@ export function useChangedFileMenu({
           if (action && !action.disabled) await action.run();
         }
       }
-    })().catch((error) =>
-      message(String(error), {
-        get title() {
-          return t("File action failed");
-        },
-        kind: "error",
-      }),
-    );
+    })().catch((error) => setActionError(String(error)));
   };
   return {
     onContextMenu: (event: MouseEvent<HTMLElement>) => {
@@ -203,14 +197,21 @@ export function useChangedFileMenu({
       const rect = trigger.current.getBoundingClientRect();
       setPosition({ x: rect.left, y: rect.bottom });
     },
-    menu: position ? (
-      <ExplorerMenu
-        {...position}
-        ariaLabel={t("Changed file actions")}
-        items={items}
-        onPick={pick}
-        onClose={close}
-      />
-    ) : null,
+    menu: (
+      <>
+        {position ? (
+          <ExplorerMenu
+            {...position}
+            ariaLabel={t("Changed file actions")}
+            items={items}
+            onPick={pick}
+            onClose={close}
+          />
+        ) : null}
+        {actionError ? (
+          <FileActionError message={actionError} onDismiss={() => setActionError(null)} />
+        ) : null}
+      </>
+    ),
   };
 }

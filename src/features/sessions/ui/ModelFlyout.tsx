@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { t, useLocale } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import {
   ArrowLeft,
   Check,
@@ -86,7 +86,7 @@ export function ModelFlyout({
   /** Adds an Extras view for the current selection; only where changes are kept. */
   extras?: ModelFlyoutExtras;
 }) {
-  useLocale();
+  const t = useT();
   const source = useModelSource();
   const [view, setView] = useState<"models" | "extras">("models");
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
@@ -230,7 +230,7 @@ export function ModelFlyout({
                 value={query}
                 placeholder={t("Search models")}
                 aria-label={t("Search models")}
-                className="min-w-0 flex-1 bg-transparent text-[13px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
+                className="min-w-0 flex-1 bg-transparent text-ui-secondary text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
                 onChange={(event) => onQuery(event.target.value)}
                 onKeyDown={onSearchKey}
               />
@@ -243,7 +243,7 @@ export function ModelFlyout({
               className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1"
             >
               {models.length === 0 ? (
-                <div className="px-2 py-3 text-[12px] text-(--ui-text-secondary)">
+                <div className="px-2 py-3 text-ui-caption text-(--ui-text-secondary)">
                   {tab === "favorites" && !query.trim()
                     ? t("No favorite models")
                     : tab !== "favorites" && !source.available(tab)
@@ -362,7 +362,7 @@ export function ModelFlyout({
 
 /** Footer row that opens the current selection's extras. */
 function ExtrasEntry({ extras, onOpen }: { extras: ModelFlyoutExtras; onOpen: () => void }) {
-  useLocale();
+  const t = useT();
   const { available, changed } = useModelExtrasSummary(extras.harness, extras.model, extras.values);
   if (!available) return null;
   return (
@@ -388,7 +388,7 @@ function ExtrasEntry({ extras, onOpen }: { extras: ModelFlyoutExtras; onOpen: ()
 
 /** The whole flyout given over to the current selection's extras. */
 function ExtrasView({ extras, onBack }: { extras: ModelFlyoutExtras; onBack: () => void }) {
-  useLocale();
+  const t = useT();
   const source = useModelSource();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const name = source.resolve(extras.harness, extras.model).name;

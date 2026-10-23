@@ -1,7 +1,7 @@
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Button } from "../../shared/ui/Button";
 import { useMinuteNow } from "./RelativeSessionTime";
-import { t, useLocale, getLocale } from "../../shared/i18n";
+import { getLocale, useT } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { ChevronDown, Clock, Internet, Pin, PinOff } from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
@@ -132,7 +132,7 @@ export function LastSessionsSection({
   /** Reports whether the section is on screen: it has nothing to show without sessions. */
   onShownChange?: (shown: boolean) => void;
 } & Appearance) {
-  useLocale();
+  const t = useT();
   const { prefs, update, rows, hasRows, togglePin } = useLastSessionsRows({
     source,
     projectKeys,
@@ -161,7 +161,7 @@ export function LastSessionsSection({
           className={`min-w-0 flex-1 ${drag ? "cursor-grab" : ""}`}
         >
           <Clock
-            className="size-3.5 shrink-0 group-hover:hidden group-has-[button:focus-visible]:hidden"
+            className="icon-sm shrink-0 group-hover:hidden group-has-[button:focus-visible]:hidden"
             strokeWidth={1.75}
           />
           <ChevronDown
@@ -212,7 +212,7 @@ export function LastSessionsRows({
   onTogglePin: (row: RecentSessionRow) => void;
   className?: string;
 } & Appearance) {
-  useLocale();
+  const t = useT();
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
@@ -292,7 +292,7 @@ function CountPicker({
   count: RecentSessionsPrefs["count"];
   onChange: (count: RecentSessionsPrefs["count"]) => void;
 }) {
-  useLocale();
+  const t = useT();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   return (
@@ -312,7 +312,7 @@ function CountPicker({
         className="shrink-0 tabular-nums"
       >
         {count === 50 ? t("All") : count}
-        <ChevronDown className="size-3" strokeWidth={1.75} />
+        <ChevronDown className="icon-xs" strokeWidth={1.75} />
       </Button>
       {open ? (
         <DropdownMenu
@@ -358,7 +358,7 @@ function SessionRow({
   onTogglePin: () => void;
   onOpenMenu: (x: number, y: number) => void;
 } & Appearance) {
-  useLocale();
+  const t = useT();
   const key = projectKey(row.cwd);
   const seed = projectName(row.cwd);
   const project = resolveTabGroupLabel(key, groupLabels, basename(row.cwd));
@@ -415,7 +415,7 @@ function SessionRow({
         className="min-w-0 flex-1"
       >
         <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5">
+          <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium leading-5">
             {row.title}
           </span>
           {status ? (
@@ -427,13 +427,13 @@ function SessionRow({
             />
           ) : null}
           {time ? (
-            <span className="shrink-0 text-[11px] tabular-nums text-(--ui-text-secondary)">
+            <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
               {time}
             </span>
           ) : null}
         </span>
         <span
-          className={`flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-(--ui-text-secondary) ${row.pinnable ? "pe-7" : ""}`}
+          className={`flex min-w-0 items-center gap-1.5 text-ui-micro leading-4 text-(--ui-text-secondary) ${row.pinnable ? "pe-7" : ""}`}
         >
           <span className="grid size-3 shrink-0 place-items-center" aria-hidden="true">
             {logoPath && status !== "working" ? (
@@ -491,9 +491,9 @@ function SessionRow({
           className="absolute end-1 bottom-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
         >
           {row.pinned ? (
-            <PinOff className="size-3.5" strokeWidth={1.75} />
+            <PinOff className="icon-sm" strokeWidth={1.75} />
           ) : (
-            <Pin className="size-3.5" strokeWidth={1.75} />
+            <Pin className="icon-sm" strokeWidth={1.75} />
           )}
         </Button>
       ) : null}

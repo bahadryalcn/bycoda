@@ -94,7 +94,7 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
   return (
     <div
       ref={setHost}
-      className="max-h-[520px] overflow-y-auto rounded-xl border border-content/10 bg-background-base/45 text-content"
+      className="max-h-[520px] overflow-y-auto rounded-(--ui-radius-popup) border border-stroke bg-background-base/45 text-content"
     >
       <p ref={errorRef} role="alert" className="empty:hidden px-3 py-2 text-xs text-danger" />
       {host && request ? (
@@ -146,7 +146,7 @@ export function QuickGitPopupPicker({
   if (waiting)
     return (
       <div className="flex items-center gap-3 px-3 py-3 text-xs">
-        <p role="status" className="flex-1 text-content/60">
+        <p role="status" className="flex-1 text-(--ui-text-secondary)">
           {settled ? t("Couldn’t load branches for this project.") : t("Loading branches…")}
         </p>
         <Button variant="ghost" motion="none" type="button" className="" onClick={() => finish()}>

@@ -1,7 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { useEffect, useState } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import {
   providerAccounts,
@@ -22,7 +22,7 @@ export function ProviderAccountRecoveryDialog({
   onManage: () => void;
   onClose: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const [, refresh] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

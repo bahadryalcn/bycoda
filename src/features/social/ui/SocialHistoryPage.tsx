@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { useContext, useEffect, useState } from "react";
 import type { SocialContact, SocialPage } from "../model/social";
@@ -26,7 +27,8 @@ export function useSocialHistoryPage<T extends { id: string }>(
     void client
       .request<T>(action, { id, limit: 20, ...(offset === undefined ? {} : { offset }) })
       .then((value) => {
-        if (value?.id !== id) throw new Error("Geçmiş yanıtı bu kayıtla eşleşmiyor.");
+        if (value?.id !== id)
+          throw new Error(t("The history response does not match this record."));
         if (alive) setResult({ stamp, value });
       })
       .catch((error) => alive && setResult({ stamp, error: String(error) }));
@@ -55,6 +57,7 @@ export function HistoryPageControls({
   label: string;
   onPage: (offset: number) => void;
 }) {
+  useLocale();
   if (!page || !page.total || (page.total <= page.limit && !page.offset)) return null;
   return (
     <nav aria-label={label} className="social-filter-tabs">
@@ -68,7 +71,7 @@ export function HistoryPageControls({
         disabled={loading || !page.offset}
         onClick={() => onPage(Math.max(0, page.offset - page.limit))}
       >
-        Önceki kayıtlar
+        {t("Previous records")}
       </Button>
       <Button
         variant="secondary"
@@ -77,7 +80,7 @@ export function HistoryPageControls({
         disabled={loading || page.offset + page.limit >= page.total}
         onClick={() => onPage(page.offset + page.limit)}
       >
-        Sonraki kayıtlar
+        {t("Next records")}
       </Button>
     </nav>
   );
@@ -90,6 +93,7 @@ export function SocialContactHistory({
   contact: SocialContact;
   client: SocialClient;
 }) {
+  useLocale();
   const last = contact.history[contact.history.length - 1];
   const detail = useSocialHistoryPage<SocialContact>(
     client,
@@ -101,20 +105,20 @@ export function SocialContactHistory({
   const history = contact.historyPage ? (detail.value?.history ?? []) : contact.history;
   return (
     <>
-      {detail.loading ? <Notice kind="loading" title="Etkileşim geçmişi yükleniyor" /> : null}
+      {detail.loading ? <Notice kind="loading" title={t("Loading interaction history")} /> : null}
       {detail.error ? <Notice kind="error">{detail.error}</Notice> : null}
       <HistoryPageControls
         page={detail.value?.historyPage}
         loading={detail.loading}
-        label="Kişi etkileşim geçmişi sayfaları"
+        label={t("Contact interaction history pages")}
         onPage={detail.show}
       />
       {history.length ? (
         <table>
           <thead>
             <tr>
-              <th>Etkileşim</th>
-              <th>Tarih</th>
+              <th>{t("Interaction")}</th>
+              <th>{t("Date")}</th>
             </tr>
           </thead>
           <tbody>
@@ -127,7 +131,7 @@ export function SocialContactHistory({
           </tbody>
         </table>
       ) : !detail.loading && !detail.error ? (
-        <Empty>Bu kişiyle kayıtlı etkileşim yok.</Empty>
+        <Empty>{t("No recorded interactions with this contact.")}</Empty>
       ) : null}
     </>
   );

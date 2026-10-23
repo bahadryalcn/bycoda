@@ -120,6 +120,7 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
     expect(help.getAttribute("aria-expanded")).toBe("false");
     await act(async () => help.click());
     expect(document.body.textContent).toContain("-NoProfile");
+    expect(document.body.textContent).toContain("PSReadLine 2.4+");
     await act(async () => help.click());
     await act(async () =>
       document.querySelector<HTMLButtonElement>('[aria-label="Shell suggestions"]')!.click(),
@@ -127,7 +128,6 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
     const option = [...document.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')].find(
       (element) => element.textContent?.includes("PowerShell suggestions"),
     )!;
-    expect(option.textContent).toContain("PSReadLine 2.4+");
     await act(async () => option.click());
     expect(enable).toHaveBeenCalledExactlyOnceWith("powershell");
     expect(paste).not.toHaveBeenCalled();

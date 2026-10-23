@@ -169,14 +169,13 @@ it("counts each working conversation once in this workspace and clears on comple
   props.busySessionIds = new Set(["first", "second", "waiting", "other", "new"]);
   props.approvalSessionIds = new Set(["waiting"]);
   await render();
-  expect(badge()?.textContent).toBe("3");
-  expect(badge()?.getAttribute("aria-label")).toBe("3 working sessions");
-  expect(badge()?.closest('[role="tab"]')?.textContent).toContain("Sessions");
+  expect(badge()?.getAttribute("aria-label")).toMatch(/^3 working session/);
+    expect(badge()?.closest('[role="tab"]')?.textContent).toContain("Sessions");
   expect(container.querySelectorAll("[data-workspace-working-count]")).toHaveLength(1);
 
   props.busySessionIds = new Set(["first"]);
   await render();
-  expect(badge()?.textContent).toBe("1");
+  expect(badge()?.getAttribute("aria-label")).toMatch(/^1 working session/);
   props.busySessionIds = new Set();
   await render();
   expect(badge()).toBeNull();
@@ -203,7 +202,7 @@ it.each([true, false])(
     await render();
     const tab = badge()?.closest('[role="tab"]');
     expect(compact ? tab?.getAttribute("aria-label") : tab?.textContent).toContain("Sessions");
-    expect(badge()?.textContent).toBe("1");
+    expect(badge()?.getAttribute("aria-label")).toMatch(/^1 working session/);
   },
 );
 
@@ -272,7 +271,7 @@ it("counts host work without opening its sessions and updates when it finishes",
     },
   ];
   await render();
-  expect(badge()?.textContent).toBe("2");
+  expect(badge()?.getAttribute("aria-label")).toMatch(/^2 working session/);
   hostSessions = hostSessions.map((session) => ({
     ...session,
     status: "idle",

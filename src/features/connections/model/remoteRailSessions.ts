@@ -1,7 +1,9 @@
 import type { LiveAgent } from "../../sessions/model/liveAgents";
 import type { LiveSessionInfo } from "../../sessions/model/recentSessions";
 import { sessionDisplayTitle } from "../../sessions/model/session";
+import { sameProjectPath } from "../../projects/model/recents";
 import type { HostSessionSummary } from "./protocol";
+import type { RemoteCreateIntent } from "./remoteCreateIntent";
 
 /** A host session of a remote project on the rail, as its machine last listed it.
  * `fresh` is false while only the cached list is known, whose status is not trusted. */
@@ -11,13 +13,24 @@ export type RemoteRailSession = {
   fresh?: boolean;
 };
 
-/** Host sessions no open tab has loaded; a loaded one is already in the app's session state. */
+/** Host sessions no open tab has loaded; a loaded one is already in the app's session state.
+ * While a tab creates its host session (`creating`), the host lists that session
+ * before the tab is bound to it: any session of that project the create did not
+ * know about is the tab's own and is not offered as unopened. */
 export function unopenedRemoteSessions(
   listed: readonly RemoteRailSession[],
   loadedHostIds: ReadonlySet<string>,
+  creating: readonly Pick<RemoteCreateIntent, "project" | "knownSessionIds">[] = [],
 ): RemoteRailSession[] {
   return listed.filter(
-    ({ session }) => !session.archived && !session.draft && !loadedHostIds.has(session.id),
+    ({ project, session }) =>
+      !session.archived &&
+      !session.draft &&
+      !loadedHostIds.has(session.id) &&
+      !creating.some(
+        (intent) =>
+          sameProjectPath(intent.project, project) && !intent.knownSessionIds.has(session.id),
+      ),
   );
 }
 

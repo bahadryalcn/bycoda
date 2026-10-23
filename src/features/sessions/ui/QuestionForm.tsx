@@ -3,7 +3,7 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import styles from "./QuestionForm.module.css";
 import { TextField } from "../../../shared/ui/TextField";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useT } from "../../../shared/i18n";
 import { usePresentationVisible } from "./presentationVisibility";
 import {
   useEffect,
@@ -30,7 +30,7 @@ type Props = {
 };
 
 export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
-  useLocale();
+  const t = useT();
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [custom, setCustom] = useState<Record<string, string>>({});
@@ -219,7 +219,7 @@ function QuestionFields({
   onSelect: (optionId: string) => void;
   onCustom: (value: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const options = displayOptions(question);
   const customSelected = selected.some((id) => isCustomId(question, id));
   const [highlighted, setHighlighted] = useState(() => {

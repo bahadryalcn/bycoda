@@ -1,7 +1,7 @@
 .host-tools {
   color: var(--color-content);
   background: var(--color-background-base);
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   font-family: var(--font-sans, system-ui, sans-serif);
   line-height: 1.5;
   min-inline-size: 0;
@@ -41,7 +41,7 @@
   min-inline-size: 0;
 }
 .host-tools-heading strong {
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -53,7 +53,7 @@
   white-space: nowrap;
   min-inline-size: 0;
   flex: 1;
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 .host-tools-tabs {
   display: flex;
@@ -159,13 +159,13 @@
   gap: 5px;
 }
 .host-tool-intro h3 {
-  font-size: 16px;
+  font-size: var(--ui-font-title);
   font-weight: 600;
 }
 .host-tool-intro p,
 .host-tool-muted {
   color: var(--host-tool-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   line-height: 1.6;
 }
 .host-tool-intro p {
@@ -182,7 +182,7 @@
 .host-tool-card {
   padding: clamp(12px, 2cqi, 18px);
   border: 1px solid var(--color-stroke);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--ui-surface-raised);
 }
 .host-tool-card > button {
@@ -211,23 +211,23 @@
   display: grid;
   gap: 5px;
   color: var(--host-tool-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   min-inline-size: 0;
 }
 .host-tool-check {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .host-tool-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--ui-control-radius);
   background: var(--color-selection-subtle);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .host-tool-status::before {
   content: "";
@@ -247,16 +247,16 @@
 }
 .host-tool-empty {
   border: 1px dashed var(--color-stroke);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   padding: 16px;
   color: var(--host-tool-muted);
   line-height: 1.7;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .host-tool-help {
   border-block-start: 1px solid var(--color-stroke);
   padding-block-start: 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .host-tool-help summary {
   cursor: pointer;
@@ -278,7 +278,7 @@
 }
 .host-tool-preview {
   border: 1px solid var(--color-stroke);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   overflow: clip;
 }
 .host-browser-frame {
@@ -289,7 +289,7 @@
   cursor: crosshair;
 }
 .host-tool-location {
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   color: var(--host-tool-muted);
   overflow-wrap: anywhere;
 }
@@ -317,14 +317,14 @@
   gap: 8px;
   padding: 14px;
   border: 1px solid var(--color-stroke);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
 }
 .host-tool-metrics dt {
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   color: var(--host-tool-muted);
 }
 .host-tool-metrics dd {
-  font-size: 16px;
+  font-size: var(--ui-font-title);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
@@ -395,7 +395,7 @@
   gap: 8px;
   min-inline-size: 0;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--ui-surface);
   align-content: start;
 }
@@ -463,7 +463,7 @@
   gap: 8px;
   min-inline-size: 0;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--ui-surface);
 }
 .host-browser-side-section h4 {
@@ -489,7 +489,7 @@
   background: none;
 }
 .host-browser-disclosure {
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .host-browser-disclosure summary {
   cursor: pointer;

@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
@@ -37,7 +37,7 @@ export function ProviderAccountMenu({
   onSelect: (accountId: string) => void;
   onClose?: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState(0);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -84,7 +84,7 @@ export function ProviderAccountMenu({
         onClick={() => setOpen((value) => !value)}
       >
         {current ? <AccountColorDot account={current} /> : null}
-        <span className={variant === "pill" ? "min-w-0 truncate text-[11px]" : ""}>
+        <span className={variant === "pill" ? "min-w-0 truncate text-ui-micro" : ""}>
           {variant === "pill" ? label : t("Switch account")}
         </span>
         <ChevronDown

@@ -1,9 +1,10 @@
 import { MenuRow } from "../../shared/ui/MenuRow";
 import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
+import { t, useT } from "../../shared/i18n";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { LiveAgent } from "../../features/sessions/model/liveAgents";
+import { ChevronDown } from "../../shared/ui/icons";
 import { Popover } from "../../shared/ui/Popover";
 import { IS_MAC } from "../../platform/tauri/platform";
 import { WindowControls, toggleWindowMaximize } from "./WindowControls";
@@ -13,7 +14,7 @@ type Props = { agents: LiveAgent[]; onSelectAgent: (id: string) => void };
 
 export function detachedAgentStatus(agent: LiveAgent): string {
   if (agent.issue) return t(agent.issue === "retrying" ? "Retrying" : "Failed");
-  return agent.done ? "Done" : agent.needsApproval ? "Needs input" : "Working";
+  return agent.done ? t("Done") : agent.needsApproval ? t("Needs input") : t("Working");
 }
 
 /** The working picker is navigation, not a terminal preview. Never put tool
@@ -26,7 +27,7 @@ export function detachedAgentTitle(title: string): string {
 const interactive = "button, a, input, select, textarea, [role=menu], [data-no-window-drag]";
 
 export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [windowError, setWindowError] = useState<string | null>(null);
@@ -122,7 +123,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
       }}
       className={`flex h-8 min-w-0 shrink-0 select-none items-center gap-2 border-b border-stroke [padding-inline-start:0.75rem] ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
     >
-      <span className="text-[11px] text-content/50">{t("Working")}</span>
+      <span className="text-ui-micro text-(--ui-text-secondary)">{t("Working")}</span>
       <Button
         variant="ghost"
         motion="none"
@@ -144,17 +145,20 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         className="flex max-w-56 items-center gap-2"
       >
         <span
-          className={`size-1.5 shrink-0 rounded-full ${agents.some((agent) => agent.needsApproval) ? "bg-warning" : agents.some((agent) => !agent.done) ? "bg-active" : "bg-content/35"}`}
+          className={`size-1.5 shrink-0 rounded-full ${agents.some((agent) => agent.needsApproval) ? "bg-warning" : agents.some((agent) => !agent.done) ? "bg-active" : "bg-(--ui-text-muted)"}`}
         />
         <span className="truncate">{summary}</span>
-        <span aria-hidden="true" className="text-content/40">
-          ⌄
-        </span>
+        <ChevronDown className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
       </Button>
       <div className="min-w-4 flex-1 self-stretch" aria-hidden="true" />
       {!IS_MAC ? <WindowControls /> : null}
       {windowError ? (
-        <TransientNotice message={windowError} onDismiss={() => setWindowError(null)} />
+        <TransientNotice
+          tone="danger"
+          durationMs={null}
+          message={windowError}
+          onDismiss={() => setWindowError(null)}
+        />
       ) : null}
       {open ? (
         <Popover
@@ -186,13 +190,13 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
             >
               <span
                 aria-hidden="true"
-                className={`size-1.5 shrink-0 rounded-full ${agent.issue === "failed" ? "bg-danger" : agent.issue === "retrying" ? "bg-warning" : agent.done ? "bg-content/35" : agent.needsApproval ? "bg-warning" : "bg-active"}`}
+                className={`size-1.5 shrink-0 rounded-full ${agent.issue === "failed" ? "bg-danger" : agent.issue === "retrying" ? "bg-warning" : agent.done ? "bg-(--ui-text-muted)" : agent.needsApproval ? "bg-warning" : "bg-active"}`}
               />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs text-content/90">
+                <span className="block truncate text-ui-caption">
                   {detachedAgentTitle(agent.title)}
                 </span>
-                <span className="block truncate text-[11px] text-content/45">
+                <span className="block truncate text-ui-micro text-(--ui-text-secondary)">
                   {detachedAgentStatus(agent)}
                   {agent.ownerWindowLabel ? t(" · Other window") : t(" · This window")}
                 </span>

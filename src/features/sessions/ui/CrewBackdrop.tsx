@@ -1,11 +1,12 @@
-import { useSyncExternalStore } from "react";
+import { memo, useSyncExternalStore } from "react";
 import { loadCrewSceneEnabled, subscribeCrewSceneEnabled } from "../../settings/model/settings";
 import { CrewScene } from "./crewSurface";
 import "./BycodaSession.css";
 import type { Session } from "../model/session";
 
-/** Kept outside transcript scrolling so the gathering stays behind the work. */
-export function CrewBackdrop({
+/** Kept outside transcript scrolling so the gathering stays behind the work.
+ * Memoized: the pane passes a session that keeps its identity across streamed text. */
+export const CrewBackdrop = memo(function CrewBackdrop({
   visible = true,
   session,
 }: {
@@ -22,4 +23,4 @@ export function CrewBackdrop({
       className="bycoda-session-backdrop"
     />
   );
-}
+});

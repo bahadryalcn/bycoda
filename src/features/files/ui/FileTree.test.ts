@@ -451,7 +451,7 @@ describe("FileTree render isolation", () => {
 
     const rootButton = container.querySelector<HTMLButtonElement>(`button[title="${cwd}"]`)!;
     expect(rootButton.textContent).toContain("mc/update-readme-tests");
-    expect(rootButton.lastElementChild?.className).toContain("uppercase");
+    expect(rootButton.lastElementChild?.className).not.toContain("uppercase");
     expect(container.querySelector('[role="tree"]')?.getAttribute("aria-label")).toBe(
       "mc/update-readme-tests files",
     );

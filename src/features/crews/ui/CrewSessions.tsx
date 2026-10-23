@@ -2,14 +2,24 @@ import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { Progress } from "../../../shared/ui/Progress";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { ChevronDown, ChevronRight, Pause, Play, Plus, Square } from "../../../shared/ui/icons";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { taskSessionIds } from "../../tasks/model/backgroundSession";
 import { useProjectCrews, type CrewRunView } from "../model/crewClient";
 import { crewRunTitle } from "../model/crewRoster";
-import { CrewEditDialog, StartCrewDialog } from "./CrewDialogs";
+import { lazySurface } from "../../../shared/ui/lazySurface";
 import { crewWorkStatus, crewWorkStatusLabel } from "./CrewRailSection";
+
+const CrewEditDialog = lazySurface(async () => ({
+  default: (await import("./CrewDialogs")).CrewEditDialog,
+}));
+const StartCrewDialog = lazySurface(async () => ({
+  default: (await import("./CrewDialogs")).StartCrewDialog,
+}));
 
 export function CrewSidebar({
   cwd,
@@ -121,7 +131,7 @@ export function CrewSessions({
       className="flex flex-col gap-1.5 border-b border-(--ui-tone-neutral-border) px-2 py-2"
     >
       <div className="flex items-center gap-1">
-        <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-(--ui-text-secondary)">
+        <span className="min-w-0 flex-1 truncate px-1 text-ui-caption font-medium text-(--ui-text-secondary)">
           {t("Crew work")}
         </span>
         {finished.length ? (
@@ -145,7 +155,7 @@ export function CrewSessions({
           disabled={!data || pending}
           onClick={() => setDialog(data?.definitions.length ? { kind: "start" } : { kind: "edit" })}
         >
-          <Plus className="size-3.5" />
+          <Plus className="icon-sm" />
         </Button>
       </div>
       {error && <Alert tone="danger">{error}</Alert>}
@@ -155,7 +165,7 @@ export function CrewSessions({
         </Button>
       )}
       {data && !listed.length ? (
-        <p className="px-1 text-xs text-(--ui-text-secondary)">
+        <p className="px-1 text-ui-caption text-(--ui-text-secondary)">
           {q
             ? t("No matching crew work.")
             : view === "ongoing"
@@ -235,10 +245,22 @@ function CrewWorkRow({
   onStop: () => void;
 }) {
   const title = crewRunTitle(run);
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const done = run.tasks.filter((task) => task.status === "done").length;
   const requests = run.messages.filter((m) => !m.resolvedAt);
   const blocked = run.tasks.filter((task) => task.status === "blocked");
-  const status = run.status === "finished" ? t("Done") : crewWorkStatusLabel(crewWorkStatus(run));
+  const workStatus = run.status === "finished" ? undefined : crewWorkStatus(run);
+  const status = workStatus ? crewWorkStatusLabel(workStatus) : t("Done");
+  const statusTone: BadgeTone =
+    workStatus === "input"
+      ? "warning"
+      : workStatus === "blocked"
+        ? "danger"
+        : workStatus === "working"
+          ? "info"
+          : workStatus === "paused"
+            ? "neutral"
+            : "success";
   const progress = run.tasks.length
     ? t("{p0}/{p1} tasks", { p0: done, p1: run.tasks.length })
     : t("Planning");
@@ -257,9 +279,22 @@ function CrewWorkRow({
           onClick={() => run.coordinatorSessionId && onOpen(run.coordinatorSessionId)}
         >
           <span className="min-w-0 flex-1 text-start">
-            <span className="block truncate text-sm font-medium">{title}</span>
-            <span className="block truncate text-xs text-(--ui-text-secondary)">
-              {[run.definition.name, status, progress].join(" · ")}
+            <span className="block truncate text-ui-body font-medium">{title}</span>
+            <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
+              {run.definition.name}
+            </span>
+            <span className="mt-1 flex min-w-0 items-center gap-2">
+              <Badge tone={statusTone} className="shrink-0">
+                {status}
+              </Badge>
+              {run.tasks.length ? (
+                <span className="w-12 shrink-0">
+                  <Progress compact value={done} max={run.tasks.length} aria-label={progress} />
+                </span>
+              ) : null}
+              <span className="min-w-0 truncate text-ui-micro tabular-nums text-(--ui-text-secondary)">
+                {progress}
+              </span>
             </span>
           </span>
         </Button>
@@ -274,9 +309,9 @@ function CrewWorkRow({
               onClick={onPause}
             >
               {run.status === "paused" ? (
-                <Play className="size-3.5" />
+                <Play className="icon-sm" />
               ) : (
-                <Pause className="size-3.5" />
+                <Pause className="icon-sm" />
               )}
             </Button>
             <Button
@@ -286,9 +321,17 @@ function CrewWorkRow({
               label={t("Stop work")}
               tooltip={t("Stop work and cancel running assignments")}
               disabled={pending}
-              onClick={onStop}
+              onClick={() =>
+                void confirm({
+                  title: t("Stop work"),
+                  message: t("Stop work and cancel running assignments"),
+                  confirmLabel: t("Stop work"),
+                }).then((ok) => {
+                  if (ok) onStop();
+                })
+              }
             >
-              <Square className="size-3.5" />
+              <Square className="icon-sm" />
             </Button>
           </>
         ) : null}
@@ -301,13 +344,13 @@ function CrewWorkRow({
           className="me-1"
           onClick={onToggle}
         >
-          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          {expanded ? <ChevronDown className="icon-sm" /> : <ChevronRight className="icon-sm" />}
         </Button>
       </div>
       {requests.length ? (
         <div className="flex min-w-0 items-center gap-2 border-t border-(--ui-tone-neutral-border) px-2 py-1">
           <span
-            className="min-w-0 flex-1 truncate text-xs text-warning"
+            className="min-w-0 flex-1 truncate text-ui-caption text-warning"
             title={requests.map((r) => r.text).join("\n")}
           >
             {t("Needs decision: {p0}", { p0: requests[0].text })}
@@ -322,7 +365,7 @@ function CrewWorkRow({
           </Button>
         </div>
       ) : blocked.length ? (
-        <p className="truncate border-t border-(--ui-tone-neutral-border) px-2 py-1 text-xs text-danger">
+        <p className="truncate border-t border-(--ui-tone-neutral-border) px-2 py-1 text-ui-caption text-danger">
           {t("Blocked: {p0}", { p0: blocked[0].error ?? blocked[0].title })}
         </p>
       ) : null}
@@ -331,13 +374,10 @@ function CrewWorkRow({
           <Alert tone="warning">{run.error}</Alert>
         </div>
       ) : null}
+      {confirmDialog}
       {expanded ? (
         <div className="flex flex-col gap-px border-t border-(--ui-tone-neutral-border) p-1">
-          <div className="flex min-w-0 flex-col gap-1 px-2 py-1 text-xs">
-            <p className="break-words font-medium">{title}</p>
-            <p className="break-words text-(--ui-text-secondary)">
-              {[run.definition.name, status, progress].join(" · ")}
-            </p>
+          <div className="flex min-w-0 flex-col gap-1 px-2 py-1 text-ui-caption">
             {requests.map((request) => (
               <p key={request.id} className="whitespace-pre-wrap break-words text-warning">
                 {t("Needs decision: {p0}", { p0: request.text })}
@@ -358,7 +398,7 @@ function CrewWorkRow({
             <span className="min-w-0 flex-1 truncate text-start font-medium">
               {t("Coordinator")}
             </span>
-            <span className="text-xs text-(--ui-text-secondary)">
+            <span className="text-ui-caption text-(--ui-text-secondary)">
               {run.coordinatorStatus === "running"
                 ? t("Working")
                 : run.coordinatorStatus === "interrupted"
@@ -382,11 +422,11 @@ function CrewWorkRow({
                 >
                   <span className="min-w-0 flex-1 text-start">
                     <span className="block truncate">{agent?.name ?? task.title}</span>
-                    <span className="block truncate text-xs text-(--ui-text-secondary)">
+                    <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
                       {task.title}
                     </span>
                   </span>
-                  <span className="max-w-[42%] shrink-0 text-end text-xs text-(--ui-text-secondary)">
+                  <span className="max-w-[42%] shrink-0 text-end text-ui-caption text-(--ui-text-secondary)">
                     {taskStatusLabel(task.status)}
                     <span className="block truncate">{catalogName(task.harness, task.model)}</span>
                   </span>
@@ -402,7 +442,7 @@ function CrewWorkRow({
                     <span className="min-w-0 flex-1 truncate text-start">
                       {t("Reviewer")} · {task.title}
                     </span>
-                    <span className="text-xs text-(--ui-text-secondary)">
+                    <span className="text-ui-caption text-(--ui-text-secondary)">
                       {task.verification?.review?.verdict === "pass"
                         ? t("Passed")
                         : task.verification?.review?.verdict === "fail"

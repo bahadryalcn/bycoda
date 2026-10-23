@@ -1,4 +1,5 @@
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Badge } from "../../../shared/ui/Badge";
 import { labelColor } from "../../../shared/lib/colorUtils";
 import { t, useLocale } from "../../../shared/i18n";
 import type { CiRepairRequest } from "../model/ciRepair";
@@ -72,8 +73,8 @@ export function InboxProjectMark({
     return (
       <ProjectLogoIcon
         path={project.logoPath}
-        className="size-3.5 shrink-0 rounded-sm"
-        imageClassName="size-3.5"
+        className="icon-sm shrink-0 rounded-sm"
+        imageClassName="icon-sm"
       />
     );
   }
@@ -82,7 +83,7 @@ export function InboxProjectMark({
       project={project.name}
       color={project.mascotColor}
       name={project.mascotName}
-      className="size-3 shrink-0"
+      className="icon-xs shrink-0"
     />
   );
 }
@@ -133,6 +134,50 @@ export function inboxStatusMark(item: InboxItem): InboxStatusMark {
   };
 }
 
+export function InboxAvatar({
+  name,
+  avatarUrl,
+  size = 20,
+}: {
+  name: string;
+  avatarUrl?: string;
+  size?: number;
+}) {
+  useLocale();
+  const [failed, setFailed] = useState(!avatarUrl);
+  const initial = name.trim().charAt(0).toUpperCase() || "?";
+
+  useEffect(() => {
+    setFailed(!avatarUrl);
+  }, [avatarUrl]);
+
+  return avatarUrl && !failed ? (
+    <img
+      src={avatarUrl}
+      alt=""
+      width={size}
+      height={size}
+      referrerPolicy="no-referrer"
+      draggable={false}
+      onError={() => setFailed(true)}
+      className="shrink-0 rounded-full bg-(--ui-surface-raised) object-cover"
+      style={{ width: size, height: size }}
+    />
+  ) : (
+    <span
+      aria-hidden
+      className="grid shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) font-medium text-(--ui-text-secondary)"
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.max(9, Math.round(size * 0.45)),
+      }}
+    >
+      {initial}
+    </span>
+  );
+}
+
 export function InboxPerson({
   name,
   avatarUrl,
@@ -145,40 +190,9 @@ export function InboxPerson({
   className?: string;
 }) {
   useLocale();
-  const [failed, setFailed] = useState(!avatarUrl);
-  const initial = name.trim().charAt(0).toUpperCase() || "?";
-
-  useEffect(() => {
-    setFailed(!avatarUrl);
-  }, [avatarUrl]);
-
   return (
     <span className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}>
-      {avatarUrl && !failed ? (
-        <img
-          src={avatarUrl}
-          alt=""
-          width={size}
-          height={size}
-          referrerPolicy="no-referrer"
-          draggable={false}
-          onError={() => setFailed(true)}
-          className="shrink-0 rounded-full bg-(--ui-surface-raised) object-cover"
-          style={{ width: size, height: size }}
-        />
-      ) : (
-        <span
-          aria-hidden
-          className="grid shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) font-medium text-(--ui-text-secondary)"
-          style={{
-            width: size,
-            height: size,
-            fontSize: Math.max(9, Math.round(size * 0.45)),
-          }}
-        >
-          {initial}
-        </span>
-      )}
+      <InboxAvatar name={name} avatarUrl={avatarUrl} size={size} />
       <span className="min-w-0 truncate">{name}</span>
     </span>
   );
@@ -218,20 +232,23 @@ export function InboxLabel({ label, compact = false }: { label: GithubLabel; com
   useLocale();
   const color = labelColor(label.color);
   return (
-    <span
-      className={`inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-px text-(length:--ui-font-caption) text-(--ui-text-secondary) bg-(--ui-surface-raised) ${
-        compact ? "max-w-20" : ""
-      }`}
+    <Badge
+      tone="neutral"
+      appearance="subtle"
+      size="sm"
+      className={compact ? "max-w-20" : undefined}
+      icon={
+        color ? (
+          <span
+            aria-hidden
+            className="size-1.5 shrink-0 rounded-full"
+            style={{ backgroundColor: color }}
+          />
+        ) : undefined
+      }
     >
-      {color ? (
-        <span
-          aria-hidden
-          className="size-1.5 shrink-0 rounded-full"
-          style={{ backgroundColor: color }}
-        />
-      ) : null}
       <span className="min-w-0 truncate">{label.name}</span>
-    </span>
+    </Badge>
   );
 }
 

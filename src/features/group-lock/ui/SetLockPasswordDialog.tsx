@@ -53,19 +53,19 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
     const password = next.current?.value ?? "";
     const problem = passwordProblem(password);
     if (mode === "change" && !currentPassword) {
-      setError("Enter the current password.");
+      setError(t("Enter the current password."));
       return;
     }
     if (problem === "short") {
-      setError(`Use at least ${PASSWORD_MIN_LENGTH} characters.`);
+      setError(t("Use at least {p0} characters.", { p0: PASSWORD_MIN_LENGTH }));
       return;
     }
     if (problem === "long") {
-      setError("That password is too long.");
+      setError(t("That password is too long."));
       return;
     }
     if (password !== (confirm.current?.value ?? "")) {
-      setError("The two passwords do not match.");
+      setError(t("The two passwords do not match."));
       return;
     }
     setBusy(true);
@@ -133,7 +133,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
             {message}
           </Alert>
         ) : null}
-        <ul className="flex list-disc flex-col gap-1 pl-4 text-[11px] leading-snug text-content/50">
+        <ul className="flex list-disc flex-col gap-1 pl-4 text-ui-micro leading-snug text-(--ui-text-muted)">
           <li>
             {t("This hides locked groups inside ")}
             {PRODUCT_IDENTITY.displayName}

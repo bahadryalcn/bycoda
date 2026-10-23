@@ -1,7 +1,7 @@
 .project-notification-collection {
   background: var(--ui-surface);
   border: 1px solid var(--color-stroke);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   overflow: clip;
 }
 
@@ -26,7 +26,7 @@
   flex: none;
   margin-inline-start: auto;
   color: var(--ui-text-secondary);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 
@@ -64,7 +64,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   font-weight: 500;
   color: var(--color-content);
 }
@@ -72,7 +72,7 @@
 .project-notification-summary,
 .project-notification-empty {
   color: var(--ui-text-secondary);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   line-height: 1.5;
 }
 
@@ -82,7 +82,7 @@
 
 .project-notification-categories {
   padding: 4px 16px;
-  background: var(--ui-surface-muted);
+  background: var(--ui-surface);
 }
 
 .project-notification-category-grid {
@@ -98,7 +98,7 @@
   min-block-size: 44px;
   gap: 16px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   color: var(--color-content);
 }
 
@@ -106,12 +106,12 @@
   grid-column: 1 / -1;
   padding-block: 8px;
   color: var(--ui-text-secondary);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 
 .project-notification-footnote {
   margin-block-start: 8px;
   color: var(--ui-text-secondary);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   line-height: 1.5;
 }

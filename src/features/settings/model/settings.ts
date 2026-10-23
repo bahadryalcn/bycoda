@@ -791,6 +791,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "glass translucent vibrancy backdrop",
   },
   {
+    id: "window-glass",
+    section: "appearance",
+    get label() {
+      return t("Window glass");
+    },
+    keywords: "acrylic mica vibrancy transparent opaque performance gpu",
+  },
+  {
     id: "main-pane-glass",
     section: "appearance",
     get label() {
@@ -888,6 +896,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "full width chat bubble message",
   },
   {
+    id: "voice-companion",
+    section: "chat",
+    get label() { return t("Voice companion"); },
+    keywords: "voice speech microphone whisper voxcpm python models ses konuşma mikrofon sesli model kurulum",
+  },
+  {
     id: "anchor-prompts",
     section: "chat",
     get label() {
@@ -975,7 +989,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Crew theme");
     },
-    keywords: "crew theme ekip tema classic star wars starwars yoda obi wan vader luke leia r2 d2 lord of the rings lotr yüzüklerin efendisi gandalf sauron nazgul orc ork dwarf cüce hobbit",
+    keywords: "crew theme ekip tema classic star wars starwars yoda obi wan vader luke leia r2 d2 lord of the rings lotr yüzüklerin efendisi gandalf sauron nazgul elf legolas orc ork dwarf cüce hobbit",
   },
   {
     id: "crew-growth",

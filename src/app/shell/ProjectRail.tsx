@@ -4,7 +4,7 @@ import { Button } from "../../shared/ui/Button";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
 import { ExpandingButtonGroup } from "../../shared/ui/ExpandingButtonGroup";
-import { t, useLocale } from "../../shared/i18n";
+import { useLocale, useT } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
 import {
   ProjectMultiSelect,
@@ -34,6 +34,7 @@ import {
   Pin,
   PinOff,
   File,
+  StickyNote,
   Plus,
   Search,
   Settings,
@@ -171,8 +172,7 @@ import {
   keepFocus,
   moveStepForKey,
   RAIL_DRAG_HANDLE,
-  RAIL_SECTION_HEADER,
-  SectionMenuButton,
+  RailSectionHeader,
   useRailSections,
   type RailSectionDrag,
 } from "./useRailSections";
@@ -281,7 +281,7 @@ export function ProjectRail({
   onOpenWhatsNew,
   onDismissUpdate,
 }: Props) {
-  useLocale();
+  const t = useT();
   const workspaceFeatures = useWorkspaceFeatures();
   const inboxShortcut = useKeybindingShortcut("App: Open Inbox");
   const notesShortcut = useKeybindingShortcut("App: Open Notes");
@@ -760,6 +760,8 @@ export function ProjectRail({
           key={cwd}
           cwd={cwd}
           drag={rail.drag("crews")}
+          collapsed={rail.collapsed.crews}
+          onToggleCollapsed={() => rail.toggleCollapsed("crews")}
           onShownChange={setCrewsShown}
           onOpenSession={onOpenCrewSession}
         />
@@ -918,7 +920,7 @@ export function ProjectRail({
                         {
                           id: "notes",
                           label: t("Notes"),
-                          icon: <File />,
+                          icon: <StickyNote />,
                           active: notesActive,
                           shortcut: notesShortcut,
                           onSelect: onOpenNotes,
@@ -1008,7 +1010,7 @@ export function ProjectRail({
               {notesEnabled ? (
                 <RailAction
                   label={t("Notes")}
-                  icon={File}
+                  icon={StickyNote}
                   onClick={onOpenNotes}
                   active={notesActive}
                   ariaLabel="Notes"
@@ -1148,7 +1150,7 @@ export function ProjectRail({
         {...resize.separatorProps}
         aria-label={t("Resize project sidebar")}
         className={`absolute inset-y-0 end-0 z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-content/15" : "hover:bg-content/10"
+          resize.dragging ? "bg-content/15" : "hover:bg-(--ui-surface-hover)"
         }`}
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}
@@ -1228,7 +1230,7 @@ function ProjectSection({
         onToggleCollapsed={onToggleCollapsed}
       />
       {items.length === 0 && emptyLabel && !drag.folded && !collapsed ? (
-        <p className="px-4 pb-1 text-(length:--ui-font-caption) leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
+        <p className="px-4 pb-1 text-ui-caption leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
           {emptyLabel}
         </p>
       ) : null}
@@ -1272,6 +1274,7 @@ function RemoteProjectSuggestions({
   projects: readonly RemoteOnlyProject[];
   onOpen: (projectId: string, name: string) => void | Promise<void>;
 }) {
+  const t = useT();
   const [stored, setStored] = useState<Set<string>>(() => new Set());
   const anchor = useRef<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null);
@@ -1385,6 +1388,7 @@ function RemoteProjectSuggestion({
   onMenu: (x: number, y: number) => void;
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }) {
+  const t = useT();
   const match = remoteOpenMatch(project);
   return (
     <>
@@ -1420,9 +1424,9 @@ function RemoteProjectSuggestion({
         className="flex min-w-0 select-none items-center gap-2 text-left @max-[140px]/rail:justify-center"
       >
         {selected ? (
-          <Check className="size-4 shrink-0" strokeWidth={1.75} />
+          <Check className="icon-md shrink-0" strokeWidth={1.75} />
         ) : (
-          <LinkIcon className="size-4 shrink-0" strokeWidth={1.75} />
+          <LinkIcon className="icon-md shrink-0" strokeWidth={1.75} />
         )}
         <span className={nameClassName}>{project.name}</span>
       </Button>
@@ -1445,59 +1449,38 @@ function ProjectSectionHeader({
   onAdd?: () => void;
   onAddGroup?: (x: number, y: number) => void;
 }) {
-  useLocale();
+  const t = useT();
   return (
-    <div
-      {...drag.headerProps}
-      tabIndex={0}
-      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-      title={t("Drag to reorder")}
-      className={`${RAIL_SECTION_HEADER} ${RAIL_DRAG_HANDLE} rounded-md outline-none focus-visible:bg-content/8 @max-[140px]/rail:justify-center @max-[140px]/rail:px-0`}
-    >
-      {onToggleCollapsed ? (
-        <Button
-          variant="item"
-          motion="none"
-          aria-expanded={!collapsed}
-          onClick={onToggleCollapsed}
-          className="min-w-0 flex-1 @max-[140px]/rail:hidden"
-        >
-          {collapsed ? (
-            <ChevronRight className="size-3 shrink-0" />
-          ) : (
-            <ChevronDown className="size-3 shrink-0" />
-          )}
-          <span className="truncate">{label}</span>
-        </Button>
-      ) : (
-        <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-(--ui-text-secondary) @max-[140px]/rail:hidden">
-          {label}
-        </span>
-      )}
-      {onAddGroup ? (
-        <Button
-          iconOnly
-          label={t("New project group")}
-          variant="ghost"
-          motion="none"
-          type="button"
-          data-no-drag
-          title={t("New project group")}
-          aria-label={t("New project group")}
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            onAddGroup(rect.left, rect.bottom);
-          }}
-          className="grid size-5 shrink-0 place-items-center"
-        >
-          <FolderPlus className="size-3.5" strokeWidth={1.75} />
-        </Button>
-      ) : null}
-      {onAdd ? <AddProjectButton onOpenFolder={onAdd} /> : null}
-      <span className="contents @max-[140px]/rail:hidden">
-        <SectionMenuButton label={label} onOpen={drag.openMenu} />
-      </span>
-    </div>
+    <RailSectionHeader
+      label={label}
+      drag={drag}
+      collapsed={collapsed}
+      onToggleCollapsed={onToggleCollapsed}
+      actions={
+        <>
+          {onAddGroup ? (
+            <Button
+              iconOnly
+              label={t("New project group")}
+              variant="ghost"
+              motion="none"
+              type="button"
+              data-no-drag
+              title={t("New project group")}
+              aria-label={t("New project group")}
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                onAddGroup(rect.left, rect.bottom);
+              }}
+              className="grid size-5 shrink-0 place-items-center"
+            >
+              <FolderPlus className="icon-sm" strokeWidth={1.75} />
+            </Button>
+          ) : null}
+          {onAdd ? <AddProjectButton onOpenFolder={onAdd} /> : null}
+        </>
+      }
+    />
   );
 }
 
@@ -1560,7 +1543,7 @@ function ProjectGroupSection({
   groupLogos: ReturnType<typeof useTabGroupLogos>;
   groupMascots: Record<string, string>;
 }) {
-  useLocale();
+  const t = useT();
   const nestedSortable = useAnimatedReorder(workspaceIds, reorderProjectGroups, "y", undefined, {
     foldOnDrag: true,
   });
@@ -1628,7 +1611,7 @@ function ProjectGroupSection({
       aria-label={group.name}
     >
       <div
-        className={`project-reorder-item group relative flex h-8 items-stretch rounded-md px-2 text-content/85 @max-[140px]/rail:px-0 ${RAIL_DRAG_HANDLE}`}
+        className={`project-reorder-item group relative flex h-8 items-stretch rounded-md px-2 text-content @max-[140px]/rail:px-0 ${RAIL_DRAG_HANDLE}`}
         style={{ backgroundColor: railBackgroundColor(loadRailBackgrounds(group.id).header) }}
         aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
         onPointerDown={(event) => {
@@ -1723,7 +1706,7 @@ function ProjectGroupSection({
             <span className={`${nameClassName} ps-1.5`}>{group.name}</span>
           )}
           {group.workspaceFile && !locked ? (
-            <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary) @max-[200px]/rail:hidden">
+            <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1 text-ui-caption leading-4 text-(--ui-text-secondary) @max-[200px]/rail:hidden">
               {t("Workspace")}
             </span>
           ) : null}
@@ -1741,13 +1724,13 @@ function ProjectGroupSection({
                   : t("Linked to {p0}", { p0: group.workspaceFile })
               }
               className={`grid size-4 shrink-0 place-items-center ${
-                linkStatus ? "text-warning" : "text-content/45"
+                linkStatus ? "text-warning" : "text-(--ui-text-secondary)"
               } @max-[140px]/rail:hidden`}
             >
               {linkStatus ? (
-                <AlertCircle className="size-3" strokeWidth={1.75} aria-hidden="true" />
+                <AlertCircle className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
               ) : (
-                <File className="size-3" strokeWidth={1.75} aria-hidden="true" />
+                <File className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
               )}
             </span>
           ) : null}
@@ -1776,7 +1759,7 @@ function ProjectGroupSection({
               size="sm"
               className="min-w-6 shrink-0 tabular-nums"
             >
-              <GitBranch className="size-3" strokeWidth={1.75} />
+              <GitBranch className="icon-xs" strokeWidth={1.75} />
               {gitSummary.dirty > 0 ? (
                 <span className="text-warning">{gitSummary.dirty}</span>
               ) : null}
@@ -1805,9 +1788,9 @@ function ProjectGroupSection({
             }`}
           >
             {locked ? (
-              <Lock className="size-3.5" strokeWidth={1.75} />
+              <Lock className="icon-sm" strokeWidth={1.75} />
             ) : (
-              <LockOpen className="size-3.5" strokeWidth={1.75} />
+              <LockOpen className="icon-sm" strokeWidth={1.75} />
             )}
           </Button>
           <Button
@@ -1827,7 +1810,7 @@ function ProjectGroupSection({
             }}
             className="hidden size-6 shrink-0 place-items-center group-hover:grid group-has-[button:focus-visible]:grid"
           >
-            <MoreHorizontal className="size-4" strokeWidth={1.75} />
+            <MoreHorizontal className="icon-md" strokeWidth={1.75} />
           </Button>
         </div>
         {overviewOpen && !locked && !workspaceRoot ? (
@@ -1898,7 +1881,7 @@ function ProjectGroupSection({
 }
 
 const nameClassName =
-  "min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden";
+  "min-w-0 flex-1 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden";
 
 function ProjectCard({
   item,
@@ -1939,7 +1922,7 @@ function ProjectCard({
   groupLogos: ReturnType<typeof useTabGroupLogos>;
   groupMascots: Record<string, string>;
 }) {
-  useLocale();
+  const t = useT();
   const multi = useProjectMultiSelect();
   const multiSelected = multi?.selected.has(pathKey(item.path)) ?? false;
   const fallbackName = basename(item.path);
@@ -1982,7 +1965,7 @@ function ProjectCard({
     busy,
   );
   const labelClassName = machine
-    ? "min-w-0 max-w-[75%] shrink-0 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden"
+    ? "min-w-0 max-w-[75%] shrink-0 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden"
     : nameClassName;
 
   return (
@@ -2004,7 +1987,7 @@ function ProjectCard({
       className={`reorder-item project-reorder-item group relative flex touch-none items-stretch rounded-md px-2 h-8 @max-[140px]/rail:px-0 ${
         multiSelected || selected
           ? "bg-accent/12 text-content ring-1 ring-inset ring-accent/25"
-          : "text-content/85"
+          : "text-content"
       } cursor-default`}
       onPointerDown={(event) => {
         if (multi?.active || event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -2123,7 +2106,7 @@ function ProjectCard({
           <span className={labelClassName}>{name}</span>
         )}
         {machine ? (
-          <span className="min-w-0 flex-1 truncate text-(length:--ui-font-caption) leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
+          <span className="min-w-0 flex-1 truncate text-ui-caption leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
             {machine.name}
           </span>
         ) : null}
@@ -2149,11 +2132,11 @@ function ProjectCard({
                   }
                 : undefined
             }
-            className={`relative grid size-4 shrink-0 place-items-center text-content/45 @max-[140px]/rail:hidden ${
+            className={`relative grid size-4 shrink-0 place-items-center text-(--ui-text-secondary) @max-[140px]/rail:hidden ${
               reconnectable ? "cursor-pointer hover:text-content" : ""
             }`}
           >
-            <Internet className="size-3" strokeWidth={1.75} aria-hidden="true" />
+            <Internet className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
             <span
               aria-hidden="true"
               className={`absolute right-0 bottom-0 size-1.5 rounded-full ring-1 ring-background-base ${
@@ -2173,7 +2156,7 @@ function ProjectCard({
             title={muteStatus}
             className="grid size-4 shrink-0 place-items-center text-warning @max-[140px]/rail:hidden"
           >
-            <BellOff className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+            <BellOff className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
           </span>
         ) : null}
       </Button>
@@ -2209,7 +2192,7 @@ function ProjectCard({
             }}
             className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center group-hover:grid group-has-[button:focus-visible]:grid @max-[140px]/rail:hidden!"
           >
-            <MoreHorizontal className="size-4" strokeWidth={1.75} />
+            <MoreHorizontal className="icon-md" strokeWidth={1.75} />
           </Button>
           <Button
             iconOnly
@@ -2229,9 +2212,9 @@ function ProjectCard({
             className="absolute left-2 top-1/2 grid -translate-y-1/2 place-items-center opacity-0 pointer-events-none transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-has-[button:focus-visible]:pointer-events-auto group-has-[button:focus-visible]:opacity-100 @max-[140px]/rail:hidden!"
           >
             {pinned ? (
-              <PinOff className="size-3.5" strokeWidth={1.75} />
+              <PinOff className="icon-sm" strokeWidth={1.75} />
             ) : (
-              <Pin className="size-3.5" strokeWidth={1.75} />
+              <Pin className="icon-sm" strokeWidth={1.75} />
             )}
           </Button>
         </>
@@ -2258,7 +2241,7 @@ function CompactLiveAgents({
   groupCustomColors: Record<string, string>;
   groupMascots: Record<string, string>;
 }) {
-  useLocale();
+  const t = useT();
   if (!shouldShowLiveAgents(agents, activeSessionId)) return null;
   const working = agents.filter((agent) => !agent.done).length;
   const heading = working > 0 ? "Working" : "Finished";
@@ -2272,9 +2255,7 @@ function CompactLiveAgents({
         aria-label={`${heading}, ${agents.length}`}
         title={`${heading} · ${agents.length}`}
         className={`my-1 size-1.5 shrink-0 rounded-full ${
-          working > 0
-            ? "bg-accent shadow-[0_0_8px_var(--color-accent)] motion-safe:animate-pulse"
-            : "bg-content/35"
+          working > 0 ? "bg-accent" : "bg-(--ui-text-muted)"
         }`}
       />
       <div className="flex max-h-[30vh] w-full flex-col gap-px overflow-y-auto overscroll-none">
@@ -2334,7 +2315,7 @@ function isBusyPath(path: string, busy: Set<string>): boolean {
 }
 
 function ProjectDiffStat({ additions, deletions }: { additions: number; deletions: number }) {
-  useLocale();
+  const t = useT();
   if (additions <= 0 && deletions <= 0) return null;
 
   const label = [
@@ -2347,7 +2328,7 @@ function ProjectDiffStat({ additions, deletions }: { additions: number; deletion
   return (
     <span
       title={t("{p0} uncommitted", { p0: label })}
-      className="flex shrink-0 items-center gap-1 font-sans text-[11px] font-semibold tabular-nums"
+      className="flex shrink-0 items-center gap-1 font-sans text-ui-micro font-semibold tabular-nums"
     >
       {additions > 0 ? <span className="text-diff-add-fg">+{formatInteger(additions)}</span> : null}
       {deletions > 0 ? <span className="text-diff-del-fg">-{formatInteger(deletions)}</span> : null}
@@ -2396,7 +2377,7 @@ function projectCardAriaLabel(name: string, stats: GitDiffStats | null, busy: bo
 
 /** Adds a folder on this computer, or one on a connected machine. */
 function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
-  useLocale();
+  const t = useT();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   return (
@@ -2416,7 +2397,7 @@ function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
         onClick={() => setOpen((value) => !value)}
         className="grid size-5 shrink-0 place-items-center"
       >
-        <Plus className="size-3.5" strokeWidth={1.75} />
+        <Plus className="icon-sm" strokeWidth={1.75} />
       </Button>
       {open ? (
         <DropdownMenu
@@ -2435,25 +2416,25 @@ function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
               kind: "item",
               id: "folder",
               label: t("Open folder…"),
-              icon: <FolderPlus className="size-3.5" />,
+              icon: <FolderPlus className="icon-sm" />,
             },
             {
               kind: "item",
               id: OPEN_CODE_WORKSPACE_EVENT,
               label: t("Open VS Code workspace…"),
-              icon: <FolderPlus className="size-3.5" />,
+              icon: <FolderPlus className="icon-sm" />,
             },
             {
               kind: "item",
               id: OPEN_REMOTE_PROJECT_EVENT,
               label: t("Open folder on a machine…"),
-              icon: <Internet className="size-3.5" />,
+              icon: <Internet className="icon-sm" />,
             },
             {
               kind: "item",
               id: OPEN_SESSION_IMPORT_EVENT,
               label: t("Import Claude Code / Codex sessions…"),
-              icon: <Archive className="size-3.5" />,
+              icon: <Archive className="icon-sm" />,
             },
           ]}
         />

@@ -2,7 +2,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { RefreshCw, X } from "../../../shared/ui/icons";
+import { Play, X } from "../../../shared/ui/icons";
 import { startLocalHost, useLocalHostState } from "../model/localHostService";
 
 /** Starts this computer's stopped host; reports the reason when it cannot. */
@@ -36,7 +36,7 @@ export function LocalHostStartButton({
       size="sm"
       loading={starting}
       loadingLabel={t("Starting host…")}
-      startIcon={<RefreshCw className="size-3.5" aria-hidden />}
+      startIcon={<Play className="icon-sm" aria-hidden />}
       onClick={() => void start()}
     >
       {t("Start host")}
@@ -103,7 +103,7 @@ export function LocalHostDownNotice({
           size="sm"
           loading={notice.starting}
           loadingLabel={t("Starting host…")}
-          startIcon={<RefreshCw className="size-3.5" aria-hidden />}
+          startIcon={<Play className="icon-sm" aria-hidden />}
           onClick={() => void notice.start()}
         >
           {t("Start host")}
@@ -117,7 +117,7 @@ export function LocalHostDownNotice({
         tooltip={t("Dismiss")}
         onClick={notice.dismiss}
       >
-        <X className="size-3.5" aria-hidden />
+        <X className="icon-sm" aria-hidden />
       </Button>
     </Alert>
   );

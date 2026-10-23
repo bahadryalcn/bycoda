@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { t, useLocale } from "../i18n";
+import { t, useLocale, useT } from "../i18n";
 import { Button } from "./Button";
 import { Popover } from "./Popover";
 import { TextField } from "./TextField";
@@ -23,6 +23,7 @@ export function DateTimeRangePicker({
   minDate?: Date;
   maxDate?: Date;
 }) {
+  const t = useT();
   const locale = useLocale();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);

@@ -8,6 +8,7 @@ import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelec
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useState } from "react";
+import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SocialContactHistory } from "./SocialHistoryPage";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
 import { JobHistory } from "./SocialHistory";
@@ -32,6 +33,8 @@ import {
   type Props,
   type Run,
 } from "./socialShared";
+const selectedContacts = (count: number) =>
+  count === 1 ? t("1 contact selected") : t("{p0} contacts selected", { p0: count });
 export function Audience({
   client,
   snapshot,
@@ -40,6 +43,7 @@ export function Audience({
   run,
   onFilterChange,
 }: Props) {
+  useLocale();
   const [selectedProjects, setSelectedProjects] = useState<string[]>(
     initialProject ? [initialProject] : [],
   );
@@ -70,13 +74,14 @@ export function Audience({
             selectedSegment.tags.every((tag) => contact.tags.includes(tag)) &&
             selectedSegment.projectIds.some((id) => contact.projectIds.includes(id)))) &&
         `${contact.name} ${contact.platformId} ${contact.tags.join(" ")}`
-          .toLocaleLowerCase()
-          .includes(query.toLocaleLowerCase())),
+          .toLocaleLowerCase(getLocale())
+          .includes(query.toLocaleLowerCase(getLocale()))),
   );
+  const checkedVisible = checkedIds.filter((id) => contacts.some((contact) => contact.id === id));
   return (
     <div className="social-page social-collection-page">
       <div className="social-collection-actions">
-        <Composer title="Kişi ekle">
+        <Composer title={t("Add contact")}>
           <ContactForm
             client={client}
             snapshot={snapshot}
@@ -85,7 +90,7 @@ export function Audience({
             run={run}
           />
         </Composer>
-        <Composer title="Segment oluştur">
+        <Composer title={t("Create segment")}>
           <form
             className="social-form"
             onSubmit={(event) => {
@@ -104,7 +109,7 @@ export function Audience({
                           .filter(Boolean),
                         ...(data.get("language") ? { language: data.get("language") } : {}),
                       }),
-                    "Kişi grubu oluşturuldu. Segment filtresinden seçebilirsiniz.",
+                    t("Contact group created. You can pick it from the segment filter."),
                   )
                 ) {
                   form.reset();
@@ -113,19 +118,14 @@ export function Audience({
               })();
             }}
           >
-            <h3>Segment oluştur</h3>
-            <label>
-              Ad
-              <TextField hideLabel label="" name="name" maxLength={200} required />
-            </label>
-            <label>
-              Kullanıcının verdiği etiketler
-              <TextField hideLabel label="" name="tags" placeholder="Virgülle ayırın" />
-            </label>
-            <label>
-              Dil
-              <TextField hideLabel label="" name="language" maxLength={30} placeholder="tr" />
-            </label>
+            <h3>{t("Create segment")}</h3>
+            <TextField label={t("Name")} name="name" maxLength={200} required />
+            <TextField
+              label={t("User-provided tags")}
+              name="tags"
+              placeholder={t("Separate with commas")}
+            />
+            <TextField label={t("Language")} name="language" maxLength={30} placeholder="tr" />
             <Projects
               projects={projects}
               selected={selectedProjects}
@@ -139,7 +139,7 @@ export function Audience({
                 selectedProjects.some((id) => !projects.some((project) => project.id === id))
               }
             >
-              Segment kaydet
+              {t("Save segment")}
             </Button>
           </form>
         </Composer>
@@ -150,11 +150,11 @@ export function Audience({
       >
         <section className="social-collection-list">
           <h2>
-            Kişiler <small>{contacts.length}</small>
+            {t("Contacts")} <small>{contacts.length}</small>
           </h2>
           <div className="social-list-tools">
             <label>
-              Kişi veya etiket ara
+              {t("Search contacts or tags")}
               <SearchInput
                 appearance="field"
                 value={query}
@@ -169,42 +169,42 @@ export function Audience({
               }}
             >
               <label>
-                Segment
+                {t("Segment")}
                 <SearchableSelect
                   value={segment}
-                  label={"Segment"}
+                  label={t("Segment")}
                   options={[
-                    { value: "", label: "Tüm kişiler" },
+                    { value: "", label: t("All contacts") },
                     ...snapshot.segments.map((item) => ({
                       value: item.id,
                       label: item.name,
                     })),
                   ]}
                   onChange={(nextValue) => setSegment(nextValue)}
-                  searchLocale="tr"
+                  searchLocale={getLocale()}
                 />
               </label>
               <label>
-                Hesap
+                {t("Account")}
                 <SearchableSelect
                   value={accountFilter}
-                  label={"Hesap"}
+                  label={t("Account")}
                   options={[
-                    { value: "", label: "Tüm hesaplar" },
+                    { value: "", label: t("All accounts") },
                     ...snapshot.accounts.map((account) => ({
                       value: account.id,
                       label: account.name,
                     })),
                   ]}
                   onChange={(nextValue) => setAccountFilter(nextValue)}
-                  searchLocale="tr"
+                  searchLocale={getLocale()}
                 />
               </label>
             </SocialFilters>
           </div>
           <label className="social-select-all" hidden={!contacts.length}>
             <Checkbox
-              aria-label="Görünen tüm kişileri seç"
+              aria-label={t("Select all visible contacts")}
               checked={
                 contacts.length > 0 && contacts.every((contact) => checkedIds.includes(contact.id))
               }
@@ -213,24 +213,21 @@ export function Audience({
                 setCheckedIds(event.target.checked ? contacts.map((contact) => contact.id) : [])
               }
             />
-            Görünen tüm kişileri seç ({contacts.length})
+            {t("Select all visible contacts")} ({contacts.length})
           </label>
           <div hidden={!contacts.some((contact) => checkedIds.includes(contact.id))}>
             <div className="social-bulk-toolbar">
-              <span>
-                {checkedIds.filter((id) => contacts.some((contact) => contact.id === id)).length}{" "}
-                kişi seçili
-              </span>
+              <span>{selectedContacts(checkedVisible.length)}</span>
               <Button
                 variant="secondary"
                 type="button"
                 disabled={!checkedIds.length}
                 onClick={() => setCheckedIds([])}
               >
-                Seçimi temizle
+                {t("Clear selection")}
               </Button>
             </div>
-            <Composer title="Seçili kişilere mesaj veya yorum hazırla">
+            <Composer title={t("Prepare a message or comment for the selected contacts")}>
               <SocialBulkComposer
                 client={client}
                 snapshot={snapshot}
@@ -250,7 +247,7 @@ export function Audience({
               disabled={!contacts.length}
               onClick={() => setCheckedIds(contacts.map((contact) => contact.id))}
             >
-              Bu grubun tüm kişilerini seç ({contacts.length})
+              {t("Select all contacts in this group ({p0})", { p0: contacts.length })}
             </Button>
           ) : null}
           {contacts.length ? (
@@ -259,7 +256,7 @@ export function Audience({
                 <div className="social-selection-row" key={contact.id}>
                   <label>
                     <Checkbox
-                      aria-label={`${contact.name} kişisini seç`}
+                      aria-label={t("Select contact {p0}", { p0: contact.name })}
                       checked={checkedIds.includes(contact.id)}
                       onChange={(event) =>
                         setCheckedIds((current) =>
@@ -282,7 +279,7 @@ export function Audience({
                     <strong>{contact.name}</strong>
                     <span>
                       {snapshot.accounts.find((account) => account.id === contact.accountId)
-                        ?.name ?? "Hesap bulunamadı"}{" "}
+                        ?.name ?? t("Account not found")}{" "}
                       · {contact.platformId}
                     </span>
                     <span>
@@ -290,7 +287,7 @@ export function Audience({
                         .map(
                           (id) =>
                             projects.find((project) => project.id === id)?.name ??
-                            "Erişilemeyen proje",
+                            t("Inaccessible project"),
                         )
                         .join(", ")}
                       {contact.tags.length ? ` · ${contact.tags.join(", ")}` : ""}
@@ -305,10 +302,10 @@ export function Audience({
                       }
                       label={
                         contact.optedOut
-                          ? "İletişim kapalı"
+                          ? t("Contact closed")
                           : contact.consent?.allowed
-                            ? "Mesaj izni var"
-                            : "Mesaj izni yok"
+                            ? t("Messaging allowed")
+                            : t("No messaging consent")
                       }
                     />
                   </Button>
@@ -318,40 +315,39 @@ export function Audience({
           ) : (
             <Empty
               title={
-                query || segment || accountFilter ? "Kişi bulunamadı" : "Hedef kitlenizi oluşturun"
+                query || segment || accountFilter
+                  ? t("No contacts found")
+                  : t("Build your audience")
               }
             >
               {query || segment || accountFilter
-                ? "Aramanıza uygun kişi bulunamadı. "
-                : "Kişi ekleyin veya kişi listenizi içe aktarın. "}
+                ? t("No contact matches your search.")
+                : t("Add a contact or import your contact list.")}
             </Empty>
           )}
           <details className="social-settings">
-            <summary>Kişileri içe aktar</summary>
-            <label>
-              JSON kişi listesi
-              <TextField
-                hideLabel
-                label=""
-                type="file"
-                accept="application/json,.json"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file)
-                    void run(async () => {
-                      if (file.size > 1024 * 1024)
-                        throw new Error("İçe aktarma en fazla 1 MiB olabilir.");
-                      const contacts = JSON.parse(await file.text());
-                      if (!Array.isArray(contacts))
-                        throw new Error("Dosya bir JSON kişi listesi içermelidir.");
-                      await client.request("contacts.import", { contacts });
-                    });
-                }}
-              />
-            </label>
+            <summary>{t("Import contacts")}</summary>
+            <TextField
+              label={t("JSON contact list")}
+              type="file"
+              accept="application/json,.json"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file)
+                  void run(async () => {
+                    if (file.size > 1024 * 1024)
+                      throw new Error(t("The import can be at most 1 MiB."));
+                    const contacts = JSON.parse(await file.text());
+                    if (!Array.isArray(contacts))
+                      throw new Error(t("The file must contain a JSON contact list."));
+                    await client.request("contacts.import", { contacts });
+                  });
+              }}
+            />
             <p>
-              accountId, platformId, name, projectIds, tags ve language alanları kullanılabilir. İçe
-              aktarma gönderim izni oluşturmaz.
+              {t(
+                "The accountId, platformId, name, projectIds, tags and language fields can be used. Importing does not create sending permission.",
+              )}
             </p>
           </details>
         </section>
@@ -360,7 +356,7 @@ export function Audience({
             <>
               <div className="social-detail-header">
                 <h3>{selected.name}</h3>
-                <Composer title="Mesaj veya yorum hazırla">
+                <Composer title={t("Prepare a message or comment")}>
                   <SocialBulkComposer
                     key={selected.id}
                     client={client}
@@ -374,12 +370,12 @@ export function Audience({
               </div>
               <p>
                 {snapshot.accounts.find((account) => account.id === selected.accountId)?.name ??
-                  "Hesap bulunamadı"}{" "}
+                  t("Account not found")}{" "}
                 · {selected.platformId}
               </p>
               {selected.profileUrl ? (
                 <a href={selected.profileUrl} target="_blank" rel="noreferrer">
-                  Profil
+                  {t("Profile")}
                 </a>
               ) : null}
               <Notice
@@ -388,33 +384,18 @@ export function Audience({
                 }
                 title={
                   selected.optedOut
-                    ? "İletişim durduruldu"
+                    ? t("Contact stopped")
                     : selected.consent?.allowed
-                      ? "Yeni mesaj izni kayıtlı"
-                      : "Yeni mesaj izni kayıtlı değil"
+                      ? t("Consent for new messages is on record")
+                      : t("No consent for new messages on record")
                 }
               >
                 {selected.consent?.source ??
-                  "İzin bilgisini kişi düzenleme bölümünden kaydedebilirsiniz."}
+                  t("You can record consent in the contact edit section.")}
                 {selected.consent?.at ? ` · ${time(selected.consent.at)}` : ""}
               </Notice>
-              <Button
-                type="submit"
-                variant="secondary"
-                disabled={selected.optedOut}
-                onClick={() =>
-                  void run(
-                    () => client.request("contacts.optout", { id: selected.id }),
-                    "Bu kişiyle iletişim durduruldu ve bekleyen işler iptal edildi.",
-                  )
-                }
-              >
-                {selected.optedOut
-                  ? "Bu kişiyle iletişim durduruldu"
-                  : "İletişimi durdur ve bekleyen işleri iptal et"}
-              </Button>
               <details className="social-settings">
-                <summary>Kişi bilgilerini ve izinlerini düzenle</summary>
+                <summary>{t("Edit contact details and consent")}</summary>
                 <ContactForm
                   key={selected.id}
                   client={client}
@@ -435,14 +416,44 @@ export function Audience({
                 run={run}
                 snapshot={snapshot}
               />
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) pt-3">
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={selected.optedOut}
+                  onClick={() =>
+                    void run(
+                      () => client.request("contacts.optout", { id: selected.id }),
+                      t("Contact with this person was stopped and pending jobs were cancelled."),
+                    )
+                  }
+                >
+                  {selected.optedOut
+                    ? t("Contact with this person is stopped")
+                    : t("Stop contact and cancel pending jobs")}
+                </Button>
+                {!selected.optedOut ? (
+                  <small className="social-muted">
+                    {t("Affects {p0} only. Pending jobs for this contact are cancelled.", {
+                      p0: selected.name,
+                    })}
+                  </small>
+                ) : null}
+              </div>
             </>
           ) : (
             <Empty
-              title={snapshot.contacts.length ? "Bir kişi seçin" : "Kişiler ve iletişim geçmişi"}
+              title={
+                snapshot.contacts.length
+                  ? t("Select a contact")
+                  : t("Contacts and conversation history")
+              }
             >
               {snapshot.contacts.length
-                ? "Kişinin geçmişini, izinlerini ve taslaklarını burada yönetin."
-                : "Kişi ekleyin veya listenizi içe aktarın. Mesaj ve yorumları göndermeden önce inceleyebilirsiniz."}
+                ? t("Manage the contact's history, consent and drafts here.")
+                : t(
+                    "Add a contact or import your list. You can review messages and comments before sending them.",
+                  )}
             </Empty>
           )}
         </section>
@@ -458,6 +469,7 @@ function ContactForm({
   run,
   contact,
 }: Props & { contact?: SocialContact }) {
+  useLocale();
   const [projectIds, setProjectIds] = useState<string[]>(
     contact?.projectIds ?? (initialProject ? [initialProject] : []),
   );
@@ -475,13 +487,14 @@ function ContactForm({
           if (
             await run(
               async () => {
-                if (!validProjects) throw new Error("Kişi için en az bir mevcut proje seçin.");
+                if (!validProjects)
+                  throw new Error(t("Select at least one existing project for the contact."));
                 const consentAt = new Date(String(data.get("date"))).getTime();
                 if (
                   addConsent &&
                   (!Number.isFinite(consentAt) || consentAt <= 0 || consentAt > Date.now())
                 )
-                  throw new Error("İzin için geçmişteki geçerli bir tarih ve kaynak girin.");
+                  throw new Error(t("Enter a valid past date and a source for the consent."));
                 return client.request("contacts.upsert", {
                   ...(contact ? { id: contact.id } : {}),
                   accountId: data.get("account"),
@@ -509,8 +522,8 @@ function ContactForm({
                 });
               },
               contact
-                ? "Kişi bilgileri güncellendi."
-                : "Kişi eklendi. Listeden seçerek mesaj veya yorum hazırlayabilirsiniz.",
+                ? t("Contact details updated.")
+                : t("Contact added. Select it from the list to prepare a message or comment."),
             )
           ) {
             if (!contact) {
@@ -522,15 +535,15 @@ function ContactForm({
         })();
       }}
     >
-      <h3>{contact ? "Kişiyi güncelle" : "Yeni kişi"}</h3>
+      <h3>{contact ? t("Update contact") : t("New contact")}</h3>
       <label>
-        Hesap
+        {t("Account")}
         <NativeSearchableSelect
-          label="Hesap"
+          label={t("Account")}
           options={
             snapshot.accounts.length
               ? snapshot.accounts.map((account) => ({ value: account.id, label: account.name }))
-              : [{ value: "", label: "Önce bir hesap ekleyin" }]
+              : [{ value: "", label: t("Add an account first") }]
           }
           name="account"
           required
@@ -539,138 +552,113 @@ function ContactForm({
         />
       </label>
       {contact ? <input type="hidden" name="account" value={contact.accountId} /> : null}
-      <label>
-        Platform kimliği
-        <TextField
-          hideLabel
-          label=""
-          name="identity"
-          required
-          maxLength={300}
-          defaultValue={contact?.platformId}
-          readOnly={!!contact}
-          placeholder="Platformun verdiği alıcı kimliği"
-        />
-        <small>
-          Gelen kutusundaki kişiler için bu kimlik otomatik alınır. Elle eklerken platformun verdiği
-          alıcı kimliğini kullanın.
-        </small>
-      </label>
-      <label>
-        Ad
-        <TextField
-          hideLabel
-          label=""
-          name="name"
-          required
-          maxLength={300}
-          defaultValue={contact?.name}
-        />
-      </label>
-      <label>
-        Profil URL
-        <TextField
-          hideLabel
-          label=""
-          name="url"
-          type="url"
-          defaultValue={contact?.profileUrl}
-          placeholder="https://"
-        />
-      </label>
-      <label>
-        Etiketler
-        <TextField
-          hideLabel
-          label=""
-          name="tags"
-          defaultValue={contact?.tags.join(", ")}
-          placeholder="Virgülle ayırın"
-        />
-      </label>
-      <label>
-        Dil
-        <TextField
-          hideLabel
-          label=""
-          name="language"
-          maxLength={30}
-          defaultValue={contact?.language}
-          placeholder="tr"
-        />
-      </label>
+      <TextField
+        label={t("Platform ID")}
+        description={t(
+          "For contacts from the inbox this ID is taken automatically. When adding manually, use the recipient ID the platform gave you.",
+        )}
+        name="identity"
+        required
+        maxLength={300}
+        defaultValue={contact?.platformId}
+        readOnly={!!contact}
+        placeholder={t("Recipient ID issued by the platform")}
+      />
+      <TextField
+        label={t("Name")}
+        name="name"
+        required
+        maxLength={300}
+        defaultValue={contact?.name}
+      />
+      <TextField
+        label={t("Profile URL")}
+        name="url"
+        type="url"
+        defaultValue={contact?.profileUrl}
+        placeholder="https://"
+      />
+      <TextField
+        label={t("Tags")}
+        name="tags"
+        defaultValue={contact?.tags.join(", ")}
+        placeholder={t("Separate with commas")}
+      />
+      <TextField
+        label={t("Language")}
+        name="language"
+        maxLength={30}
+        defaultValue={contact?.language}
+        placeholder="tr"
+      />
       <Projects projects={projects} selected={projectIds} onChange={setProjectIds} />
       <details className="social-settings">
-        <summary>İletişim uygunluğu ve açık izin</summary>
+        <summary>{t("Contact eligibility and explicit consent")}</summary>
         <p className="social-muted">
-          Kişiyi eklemek gönderim izni vermez. Uygunlukları yalnızca doğruladığınızda seçin. Mevcut
-          mesaj izni, yeni izin kaydetmedikçe korunur.
+          {t(
+            "Adding a contact does not grant sending permission. Select eligibilities only after you verify them. Existing messaging consent is kept unless you record new consent.",
+          )}
         </p>
         <fieldset className="social-checks" disabled={contact?.optedOut}>
-          <legend>Uygunlukları ayrı doğrulayın</legend>
+          <legend>{t("Verify eligibilities separately")}</legend>
           <label>
             <Checkbox name="reply" defaultChecked={contact?.replyEligible} />
-            Yanıt vermeye uygun
+            {t("Eligible for replies")}
           </label>
           <label>
             <Checkbox name="comment" defaultChecked={contact?.commentEligible} />
-            Gönderisine yorum yapmaya uygun
+            {t("Eligible for comments on their posts")}
           </label>
           <label>
             <Checkbox
               name="consent"
-
               checked={addConsent}
               onChange={(event) => setAddConsent(event.target.checked)}
             />
-            Yeni mesaj için açık iletişim izni kaydet
+            {t("Record explicit contact consent for new messages")}
           </label>
         </fieldset>
         {addConsent ? (
           <>
-            <label>
-              İzin kaynağı
-              <TextField
-                hideLabel
-                label=""
-                name="source"
-                maxLength={1000}
-                required
-                placeholder="İzin veren kişi ve doğrulama kaynağı"
-              />
-            </label>
-            <label>
-              İzin tarihi
-              <TextField hideLabel label="" name="date" type="datetime-local" required />
-            </label>
+            <TextField
+              label={t("Consent source")}
+              name="source"
+              maxLength={1000}
+              required
+              placeholder={t("Person who gave consent and verification source")}
+            />
+            <TextField label={t("Consent date")} name="date" type="datetime-local" required />
           </>
         ) : null}
       </details>
       {contact?.optedOut ? (
         <p className="social-muted">
-          Bu kişi iletişimi durdurdu. Bilgileri güncellemek iletişim iznini yeniden açmaz.
+          {t(
+            "This person stopped contact. Updating details does not turn contact consent back on.",
+          )}
         </p>
+      ) : null}
+      {!validProjects ? (
+        <p className="social-muted">{t("Select a project to save the contact.")}</p>
       ) : null}
       <Button
         type="submit"
         variant="secondary"
         disabled={!snapshot.accounts.length || !validProjects}
       >
-        Kişiyi kaydet
+        {t("Save contact")}
       </Button>
-      {!validProjects ? (
-        <p className="social-muted">Kişiyi kaydetmek için bir proje seçin.</p>
-      ) : null}
     </form>
   );
 }
 export function Rules({ client, snapshot, projects, initialProject, run }: Props) {
+  useLocale();
   const [selectedRuleId, setSelectedRuleId] = useState(snapshot.rules[0]?.id ?? "");
   const [ruleQuery, setRuleQuery] = useState("");
   const selectedRule =
     snapshot.rules.find((rule) => rule.id === selectedRuleId) ?? snapshot.rules[0];
   const visibleRules = snapshot.rules.filter((rule) =>
-    rule.name.toLocaleLowerCase("tr").includes(ruleQuery.toLocaleLowerCase("tr")),
+    rule.name.toLocaleLowerCase(getLocale()).includes(ruleQuery.toLocaleLowerCase(getLocale())),
   );
   const [chosenAccount, setAccountId] = useState(snapshot.accounts[0]?.id ?? "");
   const [chosenProject, setProjectId] = useState(initialProject ?? projects[0]?.id ?? "");
@@ -696,10 +684,15 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
     (item) => item.operation === (trigger === "comment" ? "comments.read" : "inbox.read"),
   );
   const validFact = facts.some((fact) => fact.id === factId);
+  const modeLabels: Record<string, string> = {
+    draft: t("Draft only"),
+    approval: t("Send with user approval"),
+    automatic: t("Automatic within the rules"),
+  };
   return (
     <div className="social-page social-rules-page social-collection-page">
       <div className="social-collection-actions">
-        <Composer title="Otomasyon kuralı oluştur">
+        <Composer title={t("Create automation rule")}>
           <form
             className="social-form"
             onSubmit={(event) => {
@@ -717,7 +710,9 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                       triggerCapability?.status === "unsupported"
                     )
                       throw new Error(
-                        "Kural için uygun hesap, proje, tetikleyici ve doğrulanmış bilgi seçin.",
+                        t(
+                          "Select a suitable account, project, trigger and verified fact for the rule.",
+                        ),
                       );
                     return client.request("automations.create", {
                       name: data.get("name"),
@@ -753,11 +748,11 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
               })();
             }}
           >
-            <h3>Kural oluştur</h3>
+            <h3>{t("Create rule")}</h3>
             <details className="social-settings">
-              <summary>Bu kural için farklı AI ajanı kullan</summary>
+              <summary>{t("Use a different AI agent for this rule")}</summary>
               <label>
-                Bu kuralın AI ajanı
+                {t("AI agent for this rule")}
                 <NativeSelect
                   value={agent}
                   onChange={(event) => {
@@ -765,7 +760,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                     setAgentModel("");
                   }}
                 >
-                  <option value="">Global / platform ajanını devral</option>
+                  <option value="">{t("Inherit the global / platform agent")}</option>
                   {REMOTE_PROVIDERS.map((id) => (
                     <option key={id} value={id}>
                       {HARNESS_TITLE[id]}
@@ -774,34 +769,27 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                 </NativeSelect>
               </label>
               {agent ? (
-                <label>
-                  Bu kuralın AI modeli
-                  <TextField
-                    hideLabel
-                    label=""
-                    value={agentModel}
-                    maxLength={200}
-                    placeholder="Boş: ajanın varsayılan modeli"
-                    onChange={(event) => setAgentModel(event.target.value)}
-                  />
-                </label>
+                <TextField
+                  label={t("AI model for this rule")}
+                  value={agentModel}
+                  maxLength={200}
+                  placeholder={t("Empty: the agent's default model")}
+                  onChange={(event) => setAgentModel(event.target.value)}
+                />
               ) : null}
             </details>
+            <TextField label={t("Name")} name="name" required maxLength={200} />
             <label>
-              Ad
-              <TextField hideLabel label="" name="name" required maxLength={200} />
-            </label>
-            <label>
-              Hesap
+              {t("Account")}
               <SearchableSelect
                 value={accountId}
-                label={"Hesap"}
+                label={t("Account")}
                 options={[
                   ...(!accounts.length
                     ? [
                         {
                           value: "",
-                          label: "Seçili proje için taslak erişimi olan hesap yok",
+                          label: t("No account with draft access for the selected project"),
                         },
                       ]
                     : []),
@@ -811,14 +799,14 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                   })),
                 ]}
                 onChange={(nextValue) => setAccountId(nextValue)}
-                searchLocale="tr"
+                searchLocale={getLocale()}
               />
             </label>
             <label>
-              Proje
+              {t("Project")}
               <SearchableSelect
                 value={projectId}
-                label={"Proje"}
+                label={t("Project")}
                 options={projects.map((project) => ({
                   value: project.id,
                   label: project.name || project.cwd,
@@ -827,21 +815,21 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                   setProjectId(nextValue);
                   setFactId("");
                 }}
-                searchLocale="tr"
+                searchLocale={getLocale()}
               />
             </label>
             <label>
-              Mod
+              {t("Mode")}
               <NativeSelect value={mode} onChange={(event) => setMode(event.target.value)}>
-                <option value="draft">Yalnızca taslak</option>
-                <option value="approval">Kullanıcı onayıyla gönderim</option>
+                <option value="draft">{t("Draft only")}</option>
+                <option value="approval">{t("Send with user approval")}</option>
                 <option value="automatic" disabled={!canAutomate}>
-                  Açık kural kapsamında otomatik gönderim
+                  {t("Automatic sending within an explicit rule")}
                 </option>
               </NativeSelect>
             </label>
             <label>
-              Tetikleyici
+              {t("Trigger")}
               <NativeSelect
                 name="trigger"
                 value={trigger}
@@ -853,7 +841,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                     (item) => item.operation === "comments.read" && item.status === "unsupported",
                   )}
                 >
-                  Gelen yorum
+                  {t("Incoming comment")}
                 </option>
                 <option
                   value="message"
@@ -861,32 +849,28 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                     (item) => item.operation === "inbox.read" && item.status === "unsupported",
                   )}
                 >
-                  Gelen mesaj
+                  {t("Incoming message")}
                 </option>
               </NativeSelect>
             </label>
-            <label>
-              Tam eşleşecek gelen ifade
-              <TextField
-                hideLabel
-                label=""
-                name="keyword"
-                required
-                maxLength={100}
-                placeholder="Örn. fiyatı nedir"
-              />
-            </label>
+            <TextField
+              label={t("Incoming phrase to match exactly")}
+              name="keyword"
+              required
+              maxLength={100}
+              placeholder={t("E.g. what is the price")}
+            />
             {!facts.length ? (
               <p className="social-muted">
-                Bu projede doğrulanmış bilgi yok. Kampanyalar bölümünden bir bilgi ekleyin.
+                {t("This project has no verified facts. Add one in the Campaigns section.")}
               </p>
             ) : null}
             <label>
-              İzin verilen yanıt bilgisi
+              {t("Allowed reply fact")}
               <NativeSearchableSelect
-                label="İzin verilen yanıt bilgisi"
+                label={t("Allowed reply fact")}
                 options={[
-                  { value: "", label: "Doğrulanmış bilgi seç", disabled: true },
+                  { value: "", label: t("Select a verified fact"), disabled: true },
                   ...facts.map((fact) => ({
                     value: fact.id,
                     label: `${fact.topic}: ${fact.text}`,
@@ -898,40 +882,42 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
               />
             </label>
             <details className="social-settings">
-              <summary>İleri seçenekler: günlük sınır ve durdurma ifadeleri</summary>
-              <label>
-                Günlük sınır
-                <TextField
-                  hideLabel
-                  label=""
-                  name="limit"
-                  type="number"
-                  min={1}
-                  max={100}
-                  defaultValue={10}
-                  required
-                />
-              </label>
-              <label>
-                Durdurma ifadeleri
-                <TextField hideLabel label="" name="stop" placeholder="Virgülle ayırın" />
-              </label>
+              <summary>{t("Advanced options: daily limit and stop phrases")}</summary>
+              <TextField
+                label={t("Daily limit")}
+                name="limit"
+                type="number"
+                min={1}
+                max={100}
+                defaultValue={10}
+                required
+              />
+              <TextField
+                label={t("Stop phrases")}
+                name="stop"
+                placeholder={t("Separate with commas")}
+              />
             </details>
             {triggerCapability?.status === "unsupported" ? (
               <Alert tone="danger">
                 {account?.connection === "browser"
-                  ? "Tarayıcı bağlantısı gelen kutusunu otomatik okuyamaz. Bu tetikleyici için resmi API bağlantısı gerekir."
+                  ? t(
+                      "The browser connection cannot read the inbox automatically. This trigger needs an official API connection.",
+                    )
                   : triggerCapability.reason}
               </Alert>
             ) : null}
             {mode === "automatic" && !canAutomate ? (
               <Alert tone="danger">
-                Otomatik gönderim için desteklenen bir hesap ve bu projeye yanıt izni gerekli.
+                {t(
+                  "Automatic sending needs a supported account and reply permission for this project.",
+                )}
               </Alert>
             ) : null}
             <p className="social-muted">
-              Kural durdurulmuş olarak kaydedilir. İçeriği ve izinleri kontrol edip ayrıca
-              etkinleştirin. AI ajanı ve içerik sınırları Ayarlar bölümünden devralınır.
+              {t(
+                "The rule is saved paused. Review the content and permissions, then enable it separately. The AI agent and content limits are inherited from Settings.",
+              )}
             </p>
             <Button
               type="submit"
@@ -944,7 +930,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                 triggerCapability?.status === "unsupported"
               }
             >
-              Durdurulmuş kuralı kaydet
+              {t("Save paused rule")}
             </Button>
           </form>
         </Composer>
@@ -955,15 +941,15 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
       >
         <section className="social-collection-list">
           <h2>
-            Yanıt kuralları <small>{snapshot.rules.length}</small>
+            {t("Reply rules")} <small>{snapshot.rules.length}</small>
           </h2>
           <label className="social-collection-search">
-            <span className="sr-only">Kural ara</span>
+            <span className="sr-only">{t("Search rules")}</span>
             <SearchInput
               appearance="field"
               value={ruleQuery}
               onChange={(event) => setRuleQuery(event.target.value)}
-              placeholder="Kural ara"
+              placeholder={t("Search rules")}
             />
           </label>
           <div className="social-list">
@@ -980,19 +966,21 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                 <strong>{rule.name}</strong>
                 <span>
                   {snapshot.accounts.find((item) => item.id === rule.accountId)?.name ??
-                    "Hesap bulunamadı"}{" "}
-                  · {rule.trigger === "comment" ? "Yorum" : "Mesaj"}
+                    t("Account not found")}{" "}
+                  · {rule.trigger === "comment" ? t("Comment") : t("Message")}
                 </span>
                 <StatusBadge status={rule.enabled ? "active" : "paused"} />
               </Button>
             ))}
             {!visibleRules.length ? (
               <Empty
-                title={snapshot.rules.length ? "Kural bulunamadı" : "Yanıtları AI ile hazırlayın"}
+                title={snapshot.rules.length ? t("No rules found") : t("Prepare replies with AI")}
               >
                 {snapshot.rules.length
-                  ? "Aramanızı değiştirin."
-                  : "Bir yanıt kuralı oluşturun. Hangi hesaba, hangi konuda ve nasıl yanıt hazırlanacağını belirleyin."}
+                  ? t("Change your search.")
+                  : t(
+                      "Create a reply rule. Define which account, which topic and how replies are prepared.",
+                    )}
               </Empty>
             ) : null}
           </div>
@@ -1002,92 +990,91 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
           hidden={!snapshot.rules.length && !snapshot.drafts.length}
         >
           {selectedRule
-            ? [selectedRule].map((rule) => (
-                <article className="social-preview" key={rule.id}>
-                  <h3>{rule.name}</h3>
-                  <p>
-                    {snapshot.accounts.find((item) => item.id === rule.accountId)?.name ??
-                      "Hesap bulunamadı"}{" "}
-                    ·{" "}
-                    {projects.find((item) => item.id === rule.projectId)?.name ??
-                      "Proje bulunamadı"}{" "}
-                    · {rule.trigger === "comment" ? "Gelen yorum" : "Gelen mesaj"}
-                  </p>
-                  <p>
-                    {
-                      (
-                        {
-                          draft: "Yalnızca taslak",
-                          approval: "Kullanıcı onayıyla gönderim",
-                          automatic: "Kurallar kapsamında otomatik",
-                        } as Record<string, string>
-                      )[rule.mode]
-                    }{" "}
-                    · Günlük {rule.dailyLimit}
-                  </p>
-                  <StatusBadge status={rule.enabled ? "active" : "paused"} />
-                  <p>{rule.topics.join(", ")}</p>
-                  {rule.pausedReason ? (
-                    <Notice kind="warning" title="Kural durduruldu">
-                      {rule.pausedReason}
-                    </Notice>
-                  ) : null}
-                  <p>
-                    Ajan:{" "}
-                    {(() => {
-                      const account = snapshot.accounts.find((item) => item.id === rule.accountId);
-                      const agent = account
-                        ? effectiveSocialPolicy(
-                            snapshot.policies ?? DEFAULT_SOCIAL_POLICIES,
-                            account.platform,
-                            rule.agent,
-                          ).agent
-                        : rule.agent;
-                      return agent
-                        ? `${HARNESS_TITLE[agent.provider]} · ${agent.model || "varsayılan model"}${rule.agent ? " · kurala özel" : " · global / platform ayarı"}`
-                        : "Seçilmedi · doğrulanmış sabit yanıt";
-                    })()}
-                  </p>
-                  <div className="social-actions">
-                    <Button
-                      type="submit"
-                      variant="secondary"
-                      disabled={!rule.enabled}
-                      onClick={() =>
-                        void run(() => client.request("automations.pause", { id: rule.id }))
-                      }
-                    >
-                      Durdur
-                    </Button>
-                    {!rule.enabled ? (
+            ? [selectedRule].map((rule) => {
+                const ruleAccount = snapshot.accounts.find((item) => item.id === rule.accountId);
+                const ruleProject = projects.find((item) => item.id === rule.projectId);
+                return (
+                  <article className="social-preview" key={rule.id}>
+                    <h3>{rule.name}</h3>
+                    <p>
+                      {ruleAccount?.name ?? t("Account not found")} ·{" "}
+                      {ruleProject?.name ?? t("Project not found")} ·{" "}
+                      {rule.trigger === "comment" ? t("Incoming comment") : t("Incoming message")}
+                    </p>
+                    <p>
+                      {modeLabels[rule.mode]} · {t("Daily {p0}", { p0: rule.dailyLimit })}
+                    </p>
+                    <StatusBadge status={rule.enabled ? "active" : "paused"} />
+                    <p>{rule.topics.join(", ")}</p>
+                    {rule.pausedReason ? (
+                      <Notice kind="warning" title={t("Rule paused")}>
+                        {rule.pausedReason}
+                      </Notice>
+                    ) : null}
+                    <p>
+                      {t("Agent:")}{" "}
+                      {(() => {
+                        const agent = ruleAccount
+                          ? effectiveSocialPolicy(
+                              snapshot.policies ?? DEFAULT_SOCIAL_POLICIES,
+                              ruleAccount.platform,
+                              rule.agent,
+                            ).agent
+                          : rule.agent;
+                        return agent
+                          ? `${HARNESS_TITLE[agent.provider]} · ${agent.model || t("default model")} · ${rule.agent ? t("rule-specific") : t("global / platform setting")}`
+                          : t("Not selected · verified fixed reply");
+                      })()}
+                    </p>
+                    {!rule.enabled && rule.mode === "automatic" ? (
+                      <small className="social-muted" role="status">
+                        {t("Automatic replies will be sent from {p0} for {p1}.", {
+                          p0: ruleAccount?.name ?? t("Account not found"),
+                          p1: ruleProject?.name ?? t("Project not found"),
+                        })}
+                      </small>
+                    ) : null}
+                    <div className="social-actions">
                       <Button
-                        type="submit"
+                        type="button"
                         variant="secondary"
+                        disabled={!rule.enabled}
                         onClick={() =>
-                          void run(() =>
-                            client.request("automations.activate", {
-                              id: rule.id,
-                              ...(rule.mode === "automatic"
-                                ? { confirm: "ENABLE_AUTOMATIC_REPLIES" }
-                                : {}),
-                            }),
-                          )
+                          void run(() => client.request("automations.pause", { id: rule.id }))
                         }
                       >
-                        {rule.mode === "automatic"
-                          ? "Bu kuralın otomatik gönderimini etkinleştir"
-                          : "Etkinleştir"}
+                        {t("Pause rule")}
                       </Button>
-                    ) : null}
-                  </div>
-                </article>
-              ))
+                      {!rule.enabled ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() =>
+                            void run(() =>
+                              client.request("automations.activate", {
+                                id: rule.id,
+                                ...(rule.mode === "automatic"
+                                  ? { confirm: "ENABLE_AUTOMATIC_REPLIES" }
+                                  : {}),
+                              }),
+                            )
+                          }
+                        >
+                          {rule.mode === "automatic"
+                            ? t("Enable automatic sending for this rule")
+                            : t("Activate")}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })
             : null}
-          <h2>İncelenecek yanıtlar</h2>
+          <h2>{t("Replies to review")}</h2>
 
           <DraftList drafts={snapshot.drafts} client={client} run={run} snapshot={snapshot} />
           {!snapshot.drafts.length ? (
-            <p className="social-muted">İncelenecek yanıt taslağı yok.</p>
+            <p className="social-muted">{t("No reply drafts to review.")}</p>
           ) : null}
         </section>
       </div>

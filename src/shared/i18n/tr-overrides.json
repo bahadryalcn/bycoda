@@ -843,8 +843,6 @@
   "{p0} result in {p2} files": "{p2} dosyada {p0} sonuç",
   "{p0} results in {p2} file": "{p2} dosyada {p0} sonuç",
   "{p0} results in {p2} files": "{p2} dosyada {p0} sonuç",
-  "Remove {p1} to favorites": "{p1} favorilerden kaldır",
-  "Add {p1} from favorites": "{p1} favorilere ekle",
   "Background agents, {p0}. Hide list": "Arka plan ajanları, {p0}. Listeyi gizle",
   "Background agents, {p0}. Show list": "Arka plan ajanları, {p0}. Listeyi göster",
   "{p0} finished agent": "{p0} tamamlanan ajan",

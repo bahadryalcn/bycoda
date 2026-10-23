@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useCallback, useEffect, useState } from "react";
 import { loginHarness } from "../../../integrations/harness/core/auth";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
@@ -20,7 +20,7 @@ export function ProviderSignInDialog({
   onSignedIn,
   completeDescription,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [state, setState] = useState<ProviderSignInState>("idle");
   const [error, setError] = useState<string | null>(null);
 

@@ -1,0 +1,10 @@
+{
+  "Archive settings": "Archive",
+  "Timeline update": "update",
+  "Timeline updates": "updates",
+  "textFocus && turnRunning && !popup": "Composing during a running turn, with popups closed",
+  "!overlay && (!textFocus || emptyComposer)": "Outside text fields or in an empty composer, with overlays closed",
+  "!editorFocus": "Outside the editor",
+  "workspaceFocus": "Workspace focused",
+  "editorFocus": "Editor focused"
+}

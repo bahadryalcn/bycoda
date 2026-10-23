@@ -1,6 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { Internet } from "../../../shared/ui/icons";
 import { isLocalSyncMachine } from "../model/localSync";
 import type { PhoneConnectionPanelProps } from "../model/phonePairingTypes";
@@ -26,10 +25,10 @@ export function PhoneConnectionPanel({
       aria-label={t("Connect your phone")}
     >
       <div className="flex flex-wrap items-center gap-3">
-        <Internet className="size-5 shrink-0 text-(--ui-text-muted)" />
+        <Internet className="icon-lg shrink-0 text-(--ui-text-muted)" />
         <div className="min-w-0 flex-1 basis-48">
-          <h2 className="text-[14px] font-medium text-content">{t("Connect your phone")}</h2>
-          <p className="mbs-1 text-[13px] leading-relaxed text-(--ui-text-muted)">
+          <h2 className="text-ui-body font-medium text-content">{t("Connect your phone")}</h2>
+          <p className="mbs-1 text-ui-secondary leading-relaxed text-(--ui-text-muted)">
             {t("Scan a QR code to manage your computers from your phone.")}
           </p>
         </div>
@@ -46,20 +45,22 @@ export function PhoneConnectionPanel({
         </Button>
       </div>
       {machine ? (
-        <p className="text-[12px] text-(--ui-text-muted)">
+        <p className="text-ui-caption text-(--ui-text-muted)">
           {t("Pairing target: {p0}. You can choose another computer in the pairing screen.", {
             p0: isLocalSyncMachine(machine) ? t("This computer") : machine.name,
           })}
         </p>
       ) : null}
       {loaded && !loading && !machine ? (
-        <div className="flex flex-wrap items-center gap-3 text-[12px] text-(--ui-text-muted)">
+        <div className="flex flex-wrap items-center gap-3 text-ui-caption text-(--ui-text-muted)">
           <p>
             {t(
               "Your local host is not connected yet. Check again after bycoda finishes starting, or add a computer below.",
             )}
           </p>
-          <SecondaryButton onClick={() => void onRefresh()}>{t("Check again")}</SecondaryButton>
+          <Button type="button" className="shrink-0" onClick={() => void onRefresh()}>
+            {t("Check again")}
+          </Button>
         </div>
       ) : null}
       {state.stage !== "closed" ? (

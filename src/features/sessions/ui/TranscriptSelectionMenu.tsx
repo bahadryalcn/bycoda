@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { FilePlusCorner, MessageSquarePlus } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { Popover } from "../../../shared/ui/Popover";
@@ -24,7 +24,7 @@ export function TranscriptSelectionMenu({
   onDismiss,
   onTranslate,
 }: Props) {
-  useLocale();
+  const t = useT();
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
 

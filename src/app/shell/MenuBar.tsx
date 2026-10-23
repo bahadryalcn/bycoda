@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../features/files/ui/ExplorerMenu";
@@ -21,6 +21,7 @@ import {
   subscribeAutosave,
   subscribeKeybindings,
 } from "../../features/settings/model/settings";
+import { useStableHandlers } from "../../shared/hooks/useStableHandlers";
 
 type MenuKey = "file" | "view" | "terminal";
 
@@ -48,7 +49,7 @@ type Props = {
   layout?: TitleBarLayout;
 };
 
-export const MenuBar = memo(function MenuBar({
+const MemoMenuBar = memo(function MenuBar({
   onNew,
   onNewTerminal,
   onToggleTerminal,
@@ -71,7 +72,7 @@ export const MenuBar = memo(function MenuBar({
   onZoomReset,
   layout,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuKey | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
@@ -533,7 +534,7 @@ export const MenuBar = memo(function MenuBar({
     <div
       ref={barRef}
       data-workspace-menubar
-      className="flex h-7 shrink-0 items-center gap-0.5 border-b border-stroke bg-content/5 px-2 text-[12px]"
+      className="flex h-7 shrink-0 items-center gap-0.5 border-b border-stroke bg-(--ui-surface-raised) px-2 text-ui-caption"
       data-tauri-drag-region="deep"
     >
       {MENUS.map(({ key, label }) => {
@@ -578,3 +579,8 @@ export const MenuBar = memo(function MenuBar({
     </div>
   );
 });
+
+/** The workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function MenuBar(props: Props) {
+  return <MemoMenuBar {...useStableHandlers(props)} />;
+}

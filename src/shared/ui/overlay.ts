@@ -95,20 +95,47 @@ function modalRoots() {
     : [];
 }
 function syncInert() {
-  for (const [el, original] of inert) el.inert = original;
-  inert.clear();
   const roots = modalRoots();
-  if (!roots.length) return;
+  const next = new Set<HTMLElement>();
   const visit = (el: HTMLElement) => {
     if (roots.some((root) => root === el)) return;
     if (roots.some((root) => el.contains(root))) {
       for (const child of el.children) if (child instanceof HTMLElement) visit(child);
     } else {
-      inert.set(el, el.inert);
-      el.inert = true;
+      next.add(el);
     }
   };
-  for (const child of document.body.children) if (child instanceof HTMLElement) visit(child);
+  if (roots.length)
+    for (const child of document.body.children) if (child instanceof HTMLElement) visit(child);
+  for (const [el, original] of inert) {
+    if (next.has(el)) continue;
+    el.inert = original;
+    inert.delete(el);
+  }
+  for (const el of next) {
+    if (inert.has(el)) continue;
+    inert.set(el, el.inert);
+    el.inert = true;
+  }
+}
+function onMutation(records: MutationRecord[]) {
+  const roots = modalRoots();
+  if (!roots.length) return;
+  // Text/children streamed inside an already isolated subtree cannot change the
+  // modal boundary. Still reconcile when a portal root is inserted or moved.
+  if (
+    records.some((record) => {
+      const movedRoot = [...record.addedNodes, ...record.removedNodes].some((node) =>
+        roots.some((root) => node === root || node.contains(root)),
+      );
+      if (movedRoot) return true;
+      return (
+        !roots.some((root) => root.contains(record.target)) &&
+        ![...inert.keys()].some((el) => el.contains(record.target))
+      );
+    })
+  )
+    syncInert();
 }
 function onKey(event: KeyboardEvent) {
   if (event.defaultPrevented || isImeComposition(event)) return;
@@ -176,7 +203,7 @@ export function useOverlay(
     if (entries.length === 1) {
       window.addEventListener("keydown", onKey, true);
       document.addEventListener("focusin", onFocus);
-      observer = new MutationObserver(syncInert);
+      observer = new MutationObserver(onMutation);
       observer.observe(document.body, { childList: true, subtree: true });
     }
     syncInert();

@@ -145,7 +145,10 @@ test("crew work lists deliveries with status, progress and conversations", async
   await page.goto("/tests/browser/crews.html");
   const work = page.locator('[data-crew-run="run"]');
   await expect(work).toContainText("Build settings page");
-  await expect(work).toContainText("Website Crew · Needs decision · 0/1 tasks");
+  await expect(work).toContainText("Website Crew");
+  await expect(work.getByText("Needs decision", { exact: true })).toBeVisible();
+  await expect(work.getByText("0/1 tasks", { exact: true })).toBeVisible();
+  await expect(work.getByRole("progressbar")).toHaveCount(1);
   await expect(work).toContainText("Needs decision: Need image generation for the hero");
   await work.getByRole("button", { name: "Show details" }).click();
   await work.getByRole("button", { name: /UI.*Awaiting acceptance/ }).click();

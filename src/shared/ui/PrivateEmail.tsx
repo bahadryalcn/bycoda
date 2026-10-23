@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 import { Button } from "./Button";
 import { useMaskEmails } from "../../features/settings/model/displayPrefs";
 
@@ -8,7 +8,7 @@ import { useMaskEmails } from "../../features/settings/model/displayPrefs";
  * explicitly revealed; otherwise show them as plain text.
  */
 export function PrivateEmail({ email }: { email: string }) {
-  useLocale();
+  const t = useT();
   const masked = useMaskEmails();
   const [revealed, setRevealed] = useState(false);
   const [wasMasked, setWasMasked] = useState(masked);

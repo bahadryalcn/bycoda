@@ -27,6 +27,7 @@ export const claudeAdapter: HarnessAdapter = {
   sendTurn: sendClaudeTurn,
   compactContext: compactClaudeContext,
   steerTurn: steerClaudeTurn,
+  steerAppliesSettings: true,
   cancelTurn: cancelClaudeTurn,
   stopBackgroundWork: stopClaudeBackgroundWork,
   respondApproval: respondClaudeApproval,

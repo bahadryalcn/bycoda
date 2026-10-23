@@ -180,16 +180,16 @@ export function CheckRepairForm({
     >
       <div className="flex shrink-0 items-start gap-2.5 px-3.5 pb-3 pt-3.5">
         <Sparkles
-          className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)"
+          className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
           strokeWidth={1.75}
         />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium leading-5 text-(--ui-tone-neutral-fg)">
+          <p className="text-ui-secondary font-medium leading-5 text-(--ui-tone-neutral-fg)">
             {t("Fix with AI")}
           </p>
           <p
             title={checks.map((check) => check.name).join(", ")}
-            className="mt-0.5 truncate text-[11px] leading-4 text-(--ui-text-secondary)"
+            className="mt-0.5 truncate text-ui-micro leading-4 text-(--ui-text-secondary)"
           >
             {checks.length === 1 ? checks[0].name : t("{p0} failed checks", { p0: checks.length })}{" "}
             {t("· PR #")}
@@ -205,11 +205,11 @@ export function CheckRepairForm({
           onClick={() => dismiss()}
           className="shrink-0"
         >
-          <X className="size-3.5" strokeWidth={1.75} />
+          <X className="icon-sm" strokeWidth={1.75} />
         </Button>
       </div>
       <SearchInputGroup appearance="field" className="mx-1.5 shrink-0">
-        <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
+        <Search className="icon-sm shrink-0" strokeWidth={1.75} />
         <SearchInput
           focusOwner="group"
           ref={searchRef}
@@ -262,21 +262,18 @@ export function CheckRepairForm({
               onFocus={() => setActive(index)}
               onClick={() => setSessionId(session.id)}
             >
-              <Icon className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+              <Icon className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
               <span className="min-w-0 flex-1 truncate" title={session.title || t("Untitled chat")}>
                 {session.title || t("Untitled chat")}
               </span>
               {selected ? (
-                <Check
-                  className="size-3.5 shrink-0 text-(--ui-text-secondary)"
-                  strokeWidth={1.75}
-                />
+                <Check className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
               ) : null}
             </Button>
           );
         })}
         {choices.length === 1 && query.trim() ? (
-          <p className="px-2.5 py-3 text-[12px] text-(--ui-text-secondary)">
+          <p className="px-2.5 py-3 text-ui-caption text-(--ui-text-secondary)">
             {t("No matching chats")}
           </p>
         ) : null}
@@ -287,12 +284,15 @@ export function CheckRepairForm({
         </Alert>
       ) : null}
       {blocked && !busy ? (
-        <p role="status" className="px-3.5 pb-3 text-[12px] leading-4 text-(--ui-text-secondary)">
+        <p
+          role="status"
+          className="px-3.5 pb-3 text-ui-caption leading-4 text-(--ui-text-secondary)"
+        >
           {t("Wait for the latest checks before starting a fix.")}
         </p>
       ) : null}
       <div className="flex shrink-0 items-center gap-3 border-t border-(--ui-tone-neutral-border) px-3 py-2.5">
-        <div className="min-w-0 flex-1 text-[11px] leading-4">
+        <div className="min-w-0 flex-1 text-ui-micro leading-4">
           <p className="truncate text-(--ui-text-secondary)" title={selectedTitle}>
             {selectedTitle}
           </p>
@@ -305,9 +305,9 @@ export function CheckRepairForm({
           onClick={() => void start()}
           className="shrink-0"
         >
-          {busy ? <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} /> : null}
+          {busy ? <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} /> : null}
           {busy ? t("Preparing...") : t("Start fix")}
-          {!busy ? <ChevronRight className="size-3" strokeWidth={1.75} /> : null}
+          {!busy ? <ChevronRight className="icon-xs" strokeWidth={1.75} /> : null}
         </Button>
       </div>
     </Popover>

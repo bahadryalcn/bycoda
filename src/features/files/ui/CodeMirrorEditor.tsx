@@ -184,6 +184,7 @@ function StandardCodeMirrorEditor({
   canAutosave,
   onStageGit,
   onDocChange,
+  onEdit,
   saveRequestRef,
   onOpenFile,
   formatOnSave = true,
@@ -201,7 +202,10 @@ function StandardCodeMirrorEditor({
   onSave: (content: string) => Promise<void>;
   canAutosave: () => boolean;
   onStageGit?: (contents: string) => Promise<void>;
+  /** Receives the whole text after each change: pass it only while it is shown. */
   onDocChange?: (content: string) => void;
+  /** Cheap per-change notice that copies no text. */
+  onEdit?: () => void;
   /** Runs the same save flow as Ctrl/Cmd+S before an external preview. */
   saveRequestRef?: { current: (() => Promise<boolean>) | null };
   /** Lets the conflict bar step to the next conflicted file. */
@@ -222,6 +226,7 @@ function StandardCodeMirrorEditor({
   const onStageGitRef = useRef(onStageGit);
   const canStage = onStageGit !== undefined;
   const onDocChangeRef = useRef(onDocChange);
+  const onEditRef = useRef(onEdit);
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
   const valueRef = useRef(value);
@@ -295,6 +300,7 @@ function StandardCodeMirrorEditor({
   canAutosaveRef.current = canAutosave;
   onStageGitRef.current = onStageGit;
   onDocChangeRef.current = onDocChange;
+  onEditRef.current = onEdit;
   valueRef.current = value;
   gitOriginalRef.current = gitOriginal;
 
@@ -585,6 +591,7 @@ function StandardCodeMirrorEditor({
         }
         if (!update.docChanged) return;
         setConflictCount(conflictBlocks(update.state).length);
+        onEditRef.current?.();
         onDocChangeRef.current?.(update.state.doc.toString());
         if (update.transactions.some((tr) => tr.annotation(diskReload))) {
           return;

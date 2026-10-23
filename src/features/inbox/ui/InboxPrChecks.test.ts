@@ -120,14 +120,14 @@ it("filters attention checks without hiding cancelled or unknown outcomes", () =
       onRefresh: () => {},
     }),
   );
-  const attention = buttonByLabel("Needs attention: 4");
+  const attention = container.querySelector<HTMLButtonElement>('button[data-value="attention"]');
   expect(attention?.getAttribute("aria-pressed")).toBe("true");
   const visibleNames = () =>
     Array.from(container.querySelectorAll("li:not([hidden]) [data-check-name]"))
       .filter((el) => !el.closest("[hidden]"))
       .map((el) => el.textContent);
   expect(visibleNames()).toEqual(["Tests", "Build", "Deploy", "External scan"]);
-  act(() => buttonByLabel("All checks: 6")?.click());
+  act(() => container.querySelector<HTMLButtonElement>('button[data-value="all"]')?.click());
   expect(visibleNames()).toEqual(["Tests", "Build", "Deploy", "External scan", "Lint", "Publish"]);
   act(() => attention?.click());
   expect(visibleNames()).toEqual(["Tests", "Build", "Deploy", "External scan"]);

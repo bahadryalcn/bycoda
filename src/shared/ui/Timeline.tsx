@@ -1,7 +1,7 @@
 import { dateTimeFormat } from "../lib/intl";
 import { useEffect, useState } from "react";
 import { Timeline as ArcTimeline, type TimelineProps } from "./arc/timeline/timeline";
-import { getLocale, t, useLocale } from "../i18n";
+import { getLocale, useT } from "../i18n";
 
 /** Locale-aware history using the current machine's local time zone. */
 export function Timeline({
@@ -9,7 +9,7 @@ export function Timeline({
   now: providedNow,
   ...props
 }: Omit<TimelineProps, "now" | "messages" | "formatRelativeTime"> & { now?: number }) {
-  useLocale();
+  const t = useT();
   const [clock, setClock] = useState<number | null>(null);
   useEffect(() => {
     if (providedNow !== undefined) return;

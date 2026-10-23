@@ -23,6 +23,7 @@ const BLUR_KEY = "bycoda.sidebarBlur";
 const PROJECT_RAIL_OPEN_KEY = "bycoda.projectRailOpen";
 const SESSION_SIDEBAR_OPEN_KEY = "bycoda.sessionSidebarOpen";
 const BODY_KEY = "bycoda.bodyGlass";
+const WINDOW_GLASS_KEY = "bycoda.windowGlass";
 const SCHEME_KEY = "bycoda.colorScheme";
 const SIDEBAR_TAB_ORDER_KEY = "bycoda.sidebarTabOrder";
 const PROJECT_RAIL_WIDTH_KEY = "bycoda.projectRailWidth";
@@ -157,6 +158,9 @@ export const SESSION_SIDEBAR_WIDTH_MAX = 560;
 export const SESSION_SIDEBAR_WIDTH_DEFAULT = 244;
 
 export const BODY_GLASS_DEFAULT = false;
+/** Windows and macOS: the desktop shows through the window in dark mode (Linux uses
+ * Main pane glass). Off gives an opaque window, which costs less to composite. */
+export const WINDOW_GLASS_DEFAULT = true;
 
 export const CHAT_BACKGROUND_OPACITY_MIN = 0.05;
 export const CHAT_BACKGROUND_OPACITY_MAX = 0.65;
@@ -347,6 +351,7 @@ const SHARED_APPEARANCE_KEYS = new Set([
   MAIN_OPACITY_KEY,
   BLUR_KEY,
   BODY_KEY,
+  WINDOW_GLASS_KEY,
   CHAT_BACKGROUND_PATH_KEY,
   CHAT_BACKGROUND_OPACITY_KEY,
   CHAT_BACKGROUND_EMPTY_OPACITY_KEY,
@@ -382,6 +387,8 @@ function applyStoredAppearance(key: string | null = null) {
     applyBodyGlass(loadBodyGlass());
     if (nativeGlassReady && IS_LINUX) syncNativeGlass(isLightScheme() ? "light" : "dark");
   }
+  if (key === WINDOW_GLASS_KEY && nativeGlassReady && !IS_LINUX)
+    syncNativeGlass(isLightScheme() ? "light" : "dark");
   if (
     key === null ||
     key === CHAT_BACKGROUND_PATH_KEY ||
@@ -519,7 +526,7 @@ function glassFadeMs(): number {
  * overtaken is dropped rather than left to settle last.
  */
 export function syncNativeGlass(scheme: ColorScheme) {
-  const enabled = scheme === "dark" && (!IS_LINUX || loadBodyGlass());
+  const enabled = scheme === "dark" && (IS_LINUX ? loadBodyGlass() : loadWindowGlass());
   const root = document.documentElement;
   const generation = ++glassSyncGeneration;
   const setWindow = () =>
@@ -629,6 +636,15 @@ export function loadBodyGlass(): boolean {
 export function saveBodyGlass(value: boolean) {
   writeFlag(BODY_KEY, value);
   notifyAppearance(BODY_KEY);
+}
+
+export function loadWindowGlass(): boolean {
+  return readFlag(WINDOW_GLASS_KEY) ?? WINDOW_GLASS_DEFAULT;
+}
+
+export function saveWindowGlass(value: boolean) {
+  writeFlag(WINDOW_GLASS_KEY, value);
+  notifyAppearance(WINDOW_GLASS_KEY);
 }
 
 export function applyBodyGlass(value: boolean) {

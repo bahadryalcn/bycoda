@@ -177,7 +177,7 @@ const menuAction = async (relative: string, label: string) => {
 };
 const FILE_SECTIONS = ["Merge Conflicts", "Staged Changes", "Changes"];
 const sectionTitles = () =>
-  [...container.querySelectorAll("span.uppercase")]
+  [...container.querySelectorAll("[data-file-section-title]")]
     .map((node) => node.textContent)
     .filter((title) => FILE_SECTIONS.includes(title ?? ""));
 

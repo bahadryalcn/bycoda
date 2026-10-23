@@ -5,7 +5,7 @@
   max-inline-size: 100%;
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--badge-border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-control);
   color: var(--badge-foreground);
   background: var(--badge-background);
   font-size: var(--text-xs);
@@ -76,4 +76,26 @@
   --badge-foreground: var(--ui-tone-danger-fg);
   --badge-background: var(--ui-tone-danger-subtle);
   --badge-border: var(--ui-tone-danger-border);
+}
+.subtle {
+  border-color: transparent;
+}
+.dot {
+  padding-inline: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.dotMark {
+  flex: 0 0 auto;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--badge-foreground);
+}
+.count {
+  justify-content: center;
+  min-inline-size: 1.25rem;
+  padding-inline: var(--space-1);
+  font-variant-numeric: tabular-nums;
 }

@@ -6,7 +6,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { bridgeQueryEvents } from "../../shared/lib/queryClient";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
-import { t, useLocale } from "../../shared/i18n";
+import { useLocale, useT } from "../../shared/i18n";
 import { RefreshCw, Terminal } from "../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
@@ -32,10 +32,8 @@ import {
   type RunningTerminal,
 } from "../../features/terminal/model/terminalTab";
 import { MOD } from "../../platform/tauri/platform";
-import {
-  ConversationToolsButton,
-  type ConversationTools,
-} from "../../features/host-tools/SessionHostTools";
+import { ConversationToolsButton } from "../../features/host-tools/ConversationToolsButton";
+import type { ConversationTools } from "../../features/host-tools/SessionHostTools";
 import { UsageProviderChip } from "./UsageProviderChip";
 import {
   saveUsageDisplayAccount,
@@ -102,7 +100,7 @@ export function UsageFooter({
   onSelectAccount?: (provider: ProviderAccountProvider, accountId: string) => void;
   onManageAccounts?: (provider: ProviderAccountProvider) => void;
 }) {
-  useLocale();
+  const t = useT();
   const wantClaude = providers.includes("claude");
   const wantCodex = providers.includes("codex");
   const wantOpencode = providers.includes("opencode");
@@ -307,7 +305,7 @@ export function UsageFooter({
   return (
     <footer
       aria-label={ariaLabel}
-      className={`@container/usage flex h-7 min-w-0 items-center gap-1.5 px-1.5 text-[11px] text-(--ui-text-secondary) ${embedded ? "flex-1" : "shrink-0 border-t border-stroke"}`}
+      className={`@container/usage flex h-7 min-w-0 items-center gap-1.5 px-1.5 text-ui-micro text-(--ui-text-secondary) ${embedded ? "flex-1" : "shrink-0 border-t border-stroke"}`}
     >
       <div
         data-provider-usage
@@ -398,7 +396,7 @@ export function UsageFooter({
               aria-description={terminalUnavailableReason}
               onClick={onTerminalClick}
             >
-              <Terminal className="size-3.5" strokeWidth={1.75} aria-hidden />
+              <Terminal className="icon-sm" strokeWidth={1.75} aria-hidden />
             </Button>
           ) : null}
         </div>
@@ -419,7 +417,7 @@ function TerminalLiveMark() {
 }
 
 function SessionChip({ session }: { session: UsageFooterSession }) {
-  useLocale();
+  const t = useT();
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [loginState, setLoginState] = useState<ProviderSignInState>("idle");
@@ -477,9 +475,7 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
       >
         <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
         <span>{HARNESS_LABEL[session.harness]}</span>
-        {authRequired ? (
-          <span className="text-(length:--ui-font-caption) text-warning dark:text-warning">{t("sign in")}</span>
-        ) : null}
+        {authRequired ? <span className="text-ui-caption text-warning">{t("sign in")}</span> : null}
       </Button>
       {open ? (
         <Popover
@@ -516,7 +512,7 @@ function RunningTerminalChip({
   open: boolean;
   onToggle?: (fileId: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const root = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const label = runningTerminalChipLabel(terminals);
@@ -589,7 +585,7 @@ function RunningTerminalChip({
               onClick={() => toggle(terminal.id)}
             >
               <span className="min-w-0 flex-1 truncate">{terminal.process}</span>
-              <span className="max-w-[7rem] shrink-0 truncate text-[11px] text-content/40">
+              <span className="max-w-[7rem] shrink-0 truncate text-ui-micro text-(--ui-text-secondary)">
                 {terminal.label}
               </span>
             </Button>

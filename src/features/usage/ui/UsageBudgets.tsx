@@ -2,6 +2,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -121,14 +122,15 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
       deleteUsageBudget(id);
       setSaved(false);
       setError("");
-    } catch {
+    } catch (cause) {
       setError(t("Usage budget settings could not be saved."));
+      throw cause;
     }
   };
   return (
     <section className="mb-7 space-y-3" aria-label={t("Usage budgets")} aria-busy={pending}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-medium">{t("Usage budgets")}</h2>
+        <h2 className="text-ui-body font-medium">{t("Usage budgets")}</h2>
         <Button
           ref={addButton}
           onClick={() => {
@@ -139,7 +141,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           {t("Add budget")}
         </Button>
       </div>
-      <p className="text-xs text-content/60">
+      <p className="text-ui-caption text-(--ui-text-secondary)">
         {t(
           "Budgets apply to local desktop turns. Host tasks, remote sessions and other machines are not covered.",
         )}
@@ -181,7 +183,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
         </Alert>
       ) : null}
       {!pending && !visible.length && !editor && !error ? (
-        <p className="text-xs text-content/60">
+        <p className="text-ui-caption text-(--ui-text-secondary)">
           {t("No usage budgets. Add a project, session or workspace budget.")}
         </p>
       ) : null}
@@ -194,8 +196,8 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           <div key={budget.id} className="space-y-2 border-b border-stroke py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">
-                <h3 className="break-words text-xs font-medium">{budget.label}</h3>
-                <p className="text-xs text-content/60">
+                <h3 className="break-words text-ui-caption font-medium">{budget.label}</h3>
+                <p className="text-ui-caption text-(--ui-text-secondary)">
                   {t(scopeLabel[budget.scope])} · {t(periodLabel[budget.period])} ·{" "}
                   {t(budget.action === "block" ? "Block new turns" : "Monitor only")}
                 </p>
@@ -211,9 +213,13 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 >
                   {t("Edit")}
                 </Button>
-                <Button variant="ghost" disabled={pending} onClick={() => remove(budget.id)}>
-                  {t("Remove")}
-                </Button>
+                <ConfirmMorph
+                  label={t("Remove")}
+                  tone="danger"
+                  confirmMode="press"
+                  disabled={pending}
+                  onConfirm={() => remove(budget.id)}
+                />
               </div>
             </div>
             {known && reading ? (
@@ -226,7 +232,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   compact
                   showRemaining={false}
                 />
-                <p className="text-xs">
+                <p className="text-ui-caption">
                   {format(reading.used!)} / {format(reading.limit)} ·{" "}
                   {t(
                     reading.state === "exceeded"
@@ -247,7 +253,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
               </Alert>
             )}
             {budget.metric === "accountPercent" ? (
-              <p className="text-xs text-content/60">
+              <p className="text-ui-caption text-(--ui-text-secondary)">
                 {budget.provider} ·{" "}
                 {providerAccounts(budget.provider).find((a) => a.id === budget.accountId)?.label ??
                   t("Account unavailable")}{" "}
@@ -259,12 +265,12 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             ) : null}
             {budget.scope === "workspace" &&
             !loadProjectGroups().some((g) => g.id === budget.target) ? (
-              <p className="text-xs text-danger">{t("Workspace unavailable")}</p>
+              <p className="text-ui-caption text-danger">{t("Workspace unavailable")}</p>
             ) : null}
           </div>
         );
       })}
-      <details className="text-xs text-content/60">
+      <details className="text-ui-caption text-(--ui-text-secondary)">
         <summary>{t("How budgets are measured")}</summary>
         <p className="mt-2">
           {t(
@@ -449,7 +455,7 @@ function BudgetEditor({
 function BudgetSelect(props: ComponentProps<typeof SearchableSelect>) {
   return (
     <div className="space-y-1">
-      <span className="text-xs font-medium">{props.label}</span>
+      <span className="text-ui-caption font-medium">{props.label}</span>
       <SearchableSelect {...props} />
     </div>
   );

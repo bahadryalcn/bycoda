@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "../../../i18n";
+import { useT } from "../../../i18n";
 import { isImeComposition } from "../../../lib/keyboard";
 
 import {
@@ -215,6 +215,7 @@ export function InlineEdit({
   as: Tag = "span",
   className,
 }: InlineEditProps) {
+  const t = useT();
   const reduced = useReduced();
   const ids = useId();
   const displayHintId = `${ids}-display`,

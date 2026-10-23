@@ -28,6 +28,7 @@ import { TemplatesSettings } from "./TemplatesSettings";
 import { ConversationDisplaySettings } from "./ConversationDisplaySettings";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 import "./ChatSettings.css";
+import { VoiceSettings } from "../../voice/ui/VoiceSettings";
 
 export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
@@ -59,7 +60,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
   };
   return (
     <div className="chat-settings">
-      <p className="chat-save-note">{t("Changes save automatically")}</p>
+      <VoiceSettings />
       <Group title={t("Translation")} layout="full">
         <TranslationSettings embedded />
       </Group>

@@ -1,6 +1,6 @@
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useState, type FormEvent } from "react";
 import { Modal } from "../../../shared/ui/Modal";
 import type { LinkedWorkItem } from "../model/session";
@@ -17,7 +17,7 @@ export function LinkSessionWorkItemDialog({
   onSave: (item: LinkedWorkItem | undefined) => void;
   onClose: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const [url, setUrl] = useState(initial?.url ?? "");
   const [error, setError] = useState("");
 
@@ -38,7 +38,7 @@ export function LinkSessionWorkItemDialog({
       size="sm"
       onClose={onClose}
     >
-      <form onSubmit={submit} className="flex flex-col gap-4 p-4 text-[12px]">
+      <form onSubmit={submit} className="flex flex-col gap-4 p-4 text-ui-caption">
         <label className="flex flex-col gap-1.5">
           <span className="font-medium text-(--ui-text-secondary)">
             {t("Issue or pull request URL")}
@@ -62,12 +62,12 @@ export function LinkSessionWorkItemDialog({
             <span
               id="linked-work-item-error"
               role="alert"
-              className="text-[11px] text-(--ui-tone-danger-fg)"
+              className="text-ui-micro text-(--ui-tone-danger-fg)"
             >
               {error}
             </span>
           ) : (
-            <span className="text-[11px] text-(--ui-text-secondary)">
+            <span className="text-ui-micro text-(--ui-text-secondary)">
               {t("Paste the full github.com URL. The linked item will appear on the session card.")}
             </span>
           )}
@@ -76,6 +76,7 @@ export function LinkSessionWorkItemDialog({
           {initial ? (
             <Button
               variant="ghost"
+              tone="danger"
               type="button"
               onClick={() => onSave(undefined)}
               className="mr-auto"
@@ -86,7 +87,7 @@ export function LinkSessionWorkItemDialog({
           <Button variant="ghost" type="button" onClick={onClose}>
             {t("Cancel")}
           </Button>
-          <Button variant="ghost" type="submit">
+          <Button variant="primary" type="submit">
             {initial ? t("Update link") : t("Link")}
           </Button>
         </div>

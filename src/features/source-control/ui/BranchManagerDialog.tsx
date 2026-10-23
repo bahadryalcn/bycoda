@@ -4,8 +4,9 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useState, type FormEvent } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
-import { Check, GitBranch, Plus } from "../../../shared/ui/icons";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
+import { Check, GitBranch, MoreHorizontal, Plus } from "../../../shared/ui/icons";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { Modal } from "../../../shared/ui/Modal";
 import {
   gitCheckout,
@@ -19,7 +20,6 @@ import {
 } from "../../../platform/tauri/fs";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { deleteLocalBranch } from "../model/deleteBranch";
-import { appName } from "../../../shared/lib/appName";
 import { useGitPanelState, withGitOperation } from "../model/gitPanelState";
 
 type Props = {
@@ -51,6 +51,8 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Editing | null>(null);
   const [draft, setDraft] = useState("");
+  const [menu, setMenu] = useState<{ branch: GitBranchInfo; anchor: HTMLElement } | null>(null);
+  const { confirm, dialog: confirmElement } = useConfirm();
   const current = branches?.detached ? null : (branches?.current ?? null);
 
   const needle = query.trim().toLowerCase();
@@ -83,10 +85,14 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
   const removeRemote = async (branch: GitBranchInfo) => {
     const { remote, name } = branch;
     if (!remote) return;
-    const confirmed = await ask(
-      `Delete branch ${name} on ${remote}? This removes it from the remote for everyone who uses it.`,
-      { title: appName(), kind: "warning", okLabel: "Delete" },
-    );
+    const confirmed = await confirm({
+      title: t("Delete"),
+      message: t(
+        "Delete branch {p0} on {p1}? This removes it from the remote for everyone who uses it.",
+        { p0: name, p1: remote },
+      ),
+      confirmLabel: t("Delete"),
+    });
     if (!confirmed) return;
     await run(() => gitDeleteRemoteBranch(cwd, remote, name));
   };
@@ -170,16 +176,16 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
     return (
       <li key={reference} className="flex h-8 items-center gap-1 px-1">
         {isCurrent ? (
-          <Check className="size-3.5 shrink-0" strokeWidth={1.75} />
+          <Check className="icon-sm shrink-0" strokeWidth={1.75} />
         ) : (
           <GitBranch
-            className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
+            className="icon-sm shrink-0 text-[var(--ui-text-secondary)]"
             strokeWidth={1.75}
           />
         )}
         <span
           title={reference}
-          className={`min-w-0 flex-1 truncate text-[13px] text-content ${
+          className={`min-w-0 flex-1 truncate text-ui-secondary text-content ${
             isCurrent ? "font-medium" : ""
           }`}
         >
@@ -203,76 +209,74 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             {t("Checkout")}
           </Button>
         )}
-        {current && !isCurrent ? (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={busy}
-              title={t("Merge {p0} into {p1}", { p0: reference, p1: current })}
-              onClick={() => void run(() => gitMerge(cwd, reference))}
-              className={ACTION}
-            >
-              {t("Merge")}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={busy}
-              title={t("Rebase {p0} onto {p1}", { p0: current, p1: reference })}
-              onClick={() => void run(() => gitRebase(cwd, reference))}
-              className={ACTION}
-            >
-              {t("Rebase")}
-            </Button>
-          </>
-        ) : null}
-        {branch.remote ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            disabled={busy}
-            title={t("Delete {p0} from {p1}", { p0: branch.name, p1: branch.remote })}
-            onClick={() => void removeRemote(branch)}
-            className={ACTION}
-          >
-            {t("Delete")}
-          </Button>
-        ) : (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={busy}
-              onClick={() => startEditing({ kind: "rename", from: branch.name })}
-              className={ACTION}
-            >
-              {t("Rename")}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={busy || isCurrent}
-              title={isCurrent ? t("Cannot delete the current branch") : undefined}
-              onClick={() => void run(() => deleteLocalBranch(cwd, branch.name))}
-              className={ACTION}
-            >
-              {t("Delete")}
-            </Button>
-          </>
-        )}
+        <Button
+          iconOnly
+          size="sm"
+          variant="ghost"
+          motion="none"
+          type="button"
+          label={t("More actions")}
+          aria-haspopup="menu"
+          aria-expanded={menu?.branch === branch}
+          disabled={busy}
+          onClick={(event) =>
+            setMenu(menu?.branch === branch ? null : { branch, anchor: event.currentTarget })
+          }
+        >
+          <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+        </Button>
       </li>
     );
+  };
+
+  const menuItems = (branch: GitBranchInfo): DropdownMenuItem[] => {
+    const reference = branchRef(branch);
+    const isCurrent = !branch.remote && branch.name === current;
+    const items: DropdownMenuItem[] = [];
+    if (current && !isCurrent) {
+      items.push(
+        {
+          kind: "item",
+          id: "merge",
+          label: t("Merge"),
+          title: t("Merge {p0} into {p1}", { p0: reference, p1: current }),
+        },
+        {
+          kind: "item",
+          id: "rebase",
+          label: t("Rebase"),
+          title: t("Rebase {p0} onto {p1}", { p0: current, p1: reference }),
+        },
+      );
+    }
+    if (!branch.remote) items.push({ kind: "item", id: "rename", label: t("Rename") });
+    if (items.length) items.push({ kind: "sep" });
+    items.push({
+      kind: "item",
+      id: "delete",
+      label: t("Delete"),
+      danger: true,
+      disabled: isCurrent,
+      title: branch.remote
+        ? t("Delete {p0} from {p1}", { p0: branch.name, p1: branch.remote })
+        : isCurrent
+          ? t("Cannot delete the current branch")
+          : undefined,
+    });
+    return items;
+  };
+
+  const pickMenu = (id: string) => {
+    if (!menu) return;
+    const { branch } = menu;
+    const reference = branchRef(branch);
+    if (id === "merge") void run(() => gitMerge(cwd, reference));
+    else if (id === "rebase") void run(() => gitRebase(cwd, reference));
+    else if (id === "rename") startEditing({ kind: "rename", from: branch.name });
+    else if (id === "delete") {
+      if (branch.remote) void removeRemote(branch);
+      else void run(() => deleteLocalBranch(cwd, branch.name));
+    }
   };
 
   const section = (title: string, rows: GitBranchInfo[]) =>
@@ -347,6 +351,16 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
           </ul>
         )}
       </div>
+      {confirmElement}
+      {menu ? (
+        <DropdownMenu
+          anchor={menu.anchor}
+          label={t("Branch actions")}
+          items={menuItems(menu.branch)}
+          onPick={pickMenu}
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
     </Modal>
   );
 }

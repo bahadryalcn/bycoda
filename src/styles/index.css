@@ -82,6 +82,20 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
 @theme {
   /* Preserve descenders in compact labels, including two 10px lines in a 30px tab. */
   --leading-label: 1.4;
+  /* Semantic type scale (compact desktop). Use text-ui-micro|caption|secondary|body|title|heading.
+     Sizes come from the --ui-font-* roles in :root; do not add text-[Npx]. */
+  --text-ui-micro: var(--ui-font-micro);
+  --text-ui-micro--line-height: var(--ui-leading-micro);
+  --text-ui-caption: var(--ui-font-caption);
+  --text-ui-caption--line-height: var(--ui-leading-caption);
+  --text-ui-secondary: var(--ui-font-secondary);
+  --text-ui-secondary--line-height: var(--ui-leading-secondary);
+  --text-ui-body: var(--ui-font-body);
+  --text-ui-body--line-height: var(--ui-leading-body);
+  --text-ui-title: var(--ui-font-title);
+  --text-ui-title--line-height: var(--ui-leading-title);
+  --text-ui-heading: var(--ui-font-heading);
+  --text-ui-heading--line-height: var(--ui-leading-heading);
   --color-background-base: hsl(
     var(--theme-hue) var(--theme-saturation) var(--background-lightness)
   );
@@ -300,6 +314,8 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
 }
 
 html.theme-light {
+  --ui-elevation-floating: 0 8px 24px color-mix(in oklab, var(--color-scrim) 14%, transparent),
+    0 1px 3px color-mix(in oklab, var(--color-scrim) 10%, transparent);
   --ui-tone-neutral-on-solid: var(--palette-solidInk);
   --ui-primary-pressed: color-mix(in oklab, var(--color-content) 90%, var(--color-background-base));
   --ui-tone-status-on-solid: var(--palette-solidInk);
@@ -307,8 +323,28 @@ html.theme-light {
 }
 
 :root {
-  --ui-font-secondary: 0.8125rem;
+  --ui-font-micro: 0.6875rem;
   --ui-font-caption: 0.75rem;
+  --ui-font-secondary: 0.8125rem;
+  --ui-font-body: 0.875rem;
+  --ui-font-title: 1rem;
+  --ui-font-heading: 1.25rem;
+  --ui-leading-micro: 1rem;
+  --ui-leading-caption: 1rem;
+  --ui-leading-secondary: 1.125rem;
+  --ui-leading-body: 1.25rem;
+  --ui-leading-title: 1.5rem;
+  --ui-leading-heading: 1.75rem;
+  /* Icon scale: pair with --ui-icon-stroke (set strokeWidth={1.75} on lucide-style icons). */
+  --ui-icon-xs: 0.75rem;
+  --ui-icon-sm: 0.875rem;
+  --ui-icon-md: 1rem;
+  --ui-icon-lg: 1.25rem;
+  --ui-icon-stroke: 1.75;
+  /* One floating family for Popover, Modal, Select, Menu and Combobox surfaces. */
+  --ui-radius-popup: 0.75rem;
+  --ui-elevation-floating: 0 8px 24px color-mix(in oklab, var(--color-scrim) 32%, transparent),
+    0 1px 3px color-mix(in oklab, var(--color-scrim) 24%, transparent);
   /* The pane owns the backdrop; growing history must not paint over it. */
   --ui-transcript-surface: transparent;
   --ui-text-on-active: var(--palette-oklch_0_29_0_066_243);
@@ -365,6 +401,7 @@ html.theme-light {
   --ui-control-height-lg: 2.5rem;
   --ui-control-radius: 0.375rem;
   --ui-control-checkbox-size: 1rem;
+  --ui-disabled-opacity: 0.5;
   --ui-overlay-backdrop: var(--palette-oklch_0_08_0_none_0_68);
   --ui-focus-ring-color: var(--color-accent);
   --ui-focus-width: 2px;
@@ -4115,4 +4152,22 @@ html:is(.is-reordering, .is-resizing)
   --syntax-comment: var(--palette-hex6e7781);
   --syntax-property: var(--palette-hex0550ae);
   --syntax-meta: var(--palette-hex8250df);
+}
+
+/* Icon sizes: icon-xs 12px, icon-sm 14px, icon-md 16px, icon-lg 20px. */
+@utility icon-xs {
+  width: var(--ui-icon-xs);
+  height: var(--ui-icon-xs);
+}
+@utility icon-sm {
+  width: var(--ui-icon-sm);
+  height: var(--ui-icon-sm);
+}
+@utility icon-md {
+  width: var(--ui-icon-md);
+  height: var(--ui-icon-md);
+}
+@utility icon-lg {
+  width: var(--ui-icon-lg);
+  height: var(--ui-icon-lg);
 }

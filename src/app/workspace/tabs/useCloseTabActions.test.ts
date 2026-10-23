@@ -228,3 +228,31 @@ it("batch close reconfirms files that became dirty during the first confirmation
   expect(deps.tabsRef.current).toBe(latest);
   expect(deps.dirtyFilesRef.current.has("new-dirty")).toBe(true);
 });
+
+it("keeps tabs that stopped being closable while the close confirmation waited", async () => {
+  const pending = deferred();
+  deps.tabsRef.current = [tab("a"), tab("b"), tab("c")];
+  await act(async () => setLiveTabs(deps.tabsRef.current));
+  deps.dirtyFilesRef.current = new Set();
+  confirms.dirty.mockReturnValueOnce(pending.promise);
+  const closable = new Set(["a", "b"]);
+  // An unsaved file forces the confirmation await, as a user-visible close would.
+  deps.tabsRef.current[0] = withFile(deps.tabsRef.current[0], file("dirty"));
+  deps.dirtyFilesRef.current.add("dirty");
+  actions.onCloseTabs(["a", "b"], "c", {
+    stillClosable: (id) => closable.has(id),
+  });
+  closable.delete("a");
+  await act(async () => pending.resolve(true));
+  expect(deps.tabsRef.current.map((value) => value.id)).toEqual(["a", "c"]);
+});
+
+it("closes nothing when no tab is closable any more", async () => {
+  const pending = deferred();
+  deps.tabsRef.current[0] = withFile(deps.tabsRef.current[0], file("dirty"));
+  confirms.dirty.mockReturnValueOnce(pending.promise);
+  actions.onCloseTabs(["a"], "b", { stillClosable: () => false });
+  await act(async () => pending.resolve(true));
+  expect(deps.tabsRef.current.map((value) => value.id)).toEqual(["a", "b"]);
+  expect(deps.activateTab).not.toHaveBeenCalled();
+});

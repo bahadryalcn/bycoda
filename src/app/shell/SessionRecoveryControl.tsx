@@ -1,6 +1,6 @@
 import { Badge } from "../../shared/ui/Badge";
 import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { useState } from "react";
 import { Check, Clock } from "../../shared/ui/icons";
 import "./session-recovery.css";
@@ -14,7 +14,7 @@ export function SessionRecoveryControl({
   onOpen: () => void;
   onClear?: () => Promise<void>;
 }) {
-  useLocale();
+  const t = useT();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
   if (!count) return null;

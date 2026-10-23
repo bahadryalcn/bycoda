@@ -1,5 +1,4 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { Badge } from "../../../shared/ui/Badge";
 import { useState, type ReactNode } from "react";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
@@ -17,7 +16,7 @@ import {
   saveQuickComposerEnabled,
   type FileTabMode,
 } from "../model/settings";
-import { Group, Row, Segmented, Toggle } from "./settingsControls";
+import { Group, Row, Segmented, SettingsFeedback, Toggle } from "./settingsControls";
 import { WorkspaceFeatureSettings, WorkspaceToolsHelp } from "./WorkspaceFeatureSettings";
 import "./WorkspaceSettings.css";
 
@@ -49,10 +48,11 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
 
   return (
     <div className="workspace-settings">
-      <p className="workspace-save-note">
-        {t("Applies across projects. Changes save automatically.")}
-      </p>
-      <Group title={t("Files and navigation")} layout="full">
+      <Group
+        title={t("Files and navigation")}
+        layout="full"
+        scope={t("Applies across projects. Changes save automatically.")}
+      >
         <Row
           id="file-tabs"
           label={t("File tabs")}
@@ -87,6 +87,11 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
           <Row
             id="quick-composer"
             label={t("Quick composer")}
+            feedback={
+              quickComposerError ? (
+                <SettingsFeedback state="error">{quickComposerError}</SettingsFeedback>
+              ) : undefined
+            }
             description={t(
               "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.",
               {
@@ -95,11 +100,6 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
               },
             )}
           >
-            {quickComposerError ? (
-              <Badge tone="danger" role="alert">
-                {quickComposerError}
-              </Badge>
-            ) : null}
             <Toggle
               label={t("Quick composer")}
               on={quickComposerEnabled}

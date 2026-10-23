@@ -6,6 +6,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { ToolHeader, ToolNavigationContext, ToolPanel } from "./ToolNavigation";
 import type { ToolId, WorkspaceToolId } from "../model/toolWindows";
 import { routeWindowDestination } from "../model/windowNavigation";
+import { preloadToolSurface } from "../workspace/surfaces/lazySurfaces";
+
+vi.mock("../workspace/surfaces/lazySurfaces", () => ({ preloadToolSurface: vi.fn() }));
 
 vi.mock("../model/windowNavigation", () => ({
   routeWindowDestination: vi.fn().mockResolvedValue(false),
@@ -55,6 +58,19 @@ async function mount(
   );
   return { container, onSelect };
 }
+
+it("preloads a tool on pointer and keyboard intent without navigating", async () => {
+  const { container, onSelect } = await mount();
+  const inbox = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (tab) => tab.textContent === "Inbox",
+  )!;
+  await act(() => inbox.dispatchEvent(new MouseEvent("pointerover", { bubbles: true })));
+  expect(preloadToolSurface).toHaveBeenCalledWith("inbox");
+  vi.mocked(preloadToolSurface).mockClear();
+  await act(() => inbox.focus());
+  expect(preloadToolSurface).toHaveBeenCalledWith("inbox");
+  expect(onSelect).not.toHaveBeenCalled();
+});
 
 it("includes Servers in the main workspace and offers the combined tools window", async () => {
   const { container, onSelect } = await mount(true, true, "servers", true);

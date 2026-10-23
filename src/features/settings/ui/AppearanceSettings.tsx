@@ -10,7 +10,6 @@ import { AppearanceStudio, AppearanceInterface, AppearanceTypography } from "./A
 import { ColorPickerPopover, ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../shared/ui/Popover";
 import { Button } from "../../../shared/ui/Button";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 
 import { GradientBlurBackground } from "./GradientBlurBackground";
 import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
@@ -19,9 +18,11 @@ import { SessionListSettings } from "./SessionListSettings";
 import { COLLAPSED_PROJECT_RAIL_MODE_DEFAULT } from "../model/settings";
 
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
+import { IS_LINUX } from "../../../platform/tauri/platform";
 import {
   ACCENT_COLOR_DEFAULT,
   BODY_GLASS_DEFAULT,
+  WINDOW_GLASS_DEFAULT,
   SIDEBAR_OPACITY_DEFAULT,
   MAIN_OPACITY_DEFAULT,
   SIDEBAR_BLUR_DEFAULT,
@@ -77,6 +78,8 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
   const percent = Math.round(appearance.opacity * 100);
   const mainPercent = Math.round(appearance.mainOpacity * 100);
   const glassDisabled = useColorScheme() === "light";
+  // Off on Windows/macOS means an opaque window: the translucency values do not apply.
+  const translucencyOff = glassDisabled || (!IS_LINUX && !appearance.windowGlass);
   const decorativeMotion = useDecorativeMotionPreference();
   const reducedMotion = usePrefersReducedMotion();
 
@@ -230,6 +233,7 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
                 appearance.onMainOpacity(Math.round(MAIN_OPACITY_DEFAULT * 100));
                 appearance.onBlur(SIDEBAR_BLUR_DEFAULT);
                 appearance.onBodyGlass(BODY_GLASS_DEFAULT);
+                appearance.onWindowGlass(WINDOW_GLASS_DEFAULT);
               }}
             >
               {t("Reset translucency")}
@@ -247,6 +251,22 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
                 )
           }
         >
+          {IS_LINUX ? null : (
+            <Row
+              id="window-glass"
+              label={t("Window glass")}
+              description={t(
+                "Let the desktop show through in dark mode. Off draws an opaque window, which is lighter on the GPU.",
+              )}
+            >
+              <Toggle
+                label={t("Window glass")}
+                on={appearance.windowGlass}
+                onChange={appearance.onWindowGlass}
+                disabled={glassDisabled}
+              />
+            </Row>
+          )}
           <Row
             id="sidebar-opacity"
             label={t("Sidebar opacity")}
@@ -260,7 +280,7 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
               min={Math.round(SIDEBAR_OPACITY_MIN * 100)}
               max={Math.round(SIDEBAR_OPACITY_MAX * 100)}
               onChange={appearance.onOpacity}
-              disabled={glassDisabled}
+              disabled={translucencyOff}
             />
           </Row>
           <Row
@@ -276,7 +296,7 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
               min={SIDEBAR_BLUR_MIN}
               max={SIDEBAR_BLUR_MAX}
               onChange={appearance.onBlur}
-              disabled={glassDisabled}
+              disabled={translucencyOff}
             />
           </Row>
           <Row
@@ -290,13 +310,13 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
               label={t("Main pane glass")}
               on={appearance.bodyGlass}
               onChange={appearance.onBodyGlass}
-              disabled={glassDisabled}
+              disabled={translucencyOff}
             />
           </Row>
           <Row
             id="main-pane-opacity"
             dependency={
-              !glassDisabled && !appearance.bodyGlass
+              !translucencyOff && !appearance.bodyGlass
                 ? t("Enable Main pane glass to adjust its opacity. Your value is preserved.")
                 : undefined
             }
@@ -310,7 +330,7 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
               min={Math.round(MAIN_OPACITY_MIN * 100)}
               max={Math.round(MAIN_OPACITY_MAX * 100)}
               onChange={appearance.onMainOpacity}
-              disabled={glassDisabled || !appearance.bodyGlass}
+              disabled={translucencyOff || !appearance.bodyGlass}
             />
           </Row>
         </Group>
@@ -396,7 +416,7 @@ function LiveBackgroundCard() {
             label={t("Previous scene")}
             onClick={() => saveLiveBackground(stepLiveBackground(effect, -1))}
           >
-            <ChevronLeft className="size-4" aria-hidden />
+            <ChevronLeft className="icon-md" aria-hidden />
           </Button>
           <div className="relative h-36 min-w-0 flex-1 overflow-hidden rounded-lg border border-stroke bg-background-base">
             {effect !== "none" ? (
@@ -414,12 +434,14 @@ function LiveBackgroundCard() {
             label={t("Next scene")}
             onClick={() => saveLiveBackground(stepLiveBackground(effect, 1))}
           >
-            <ChevronRight className="size-4" aria-hidden />
+            <ChevronRight className="icon-md" aria-hidden />
           </Button>
         </div>
         <div className="mt-2 text-center">
-          <p className="text-[13px] font-medium text-content">{liveBackgroundLabel(effect)}</p>
-          <p className="mt-0.5 text-[12px] leading-relaxed text-(--ui-text-secondary)">
+          <p className="text-ui-secondary font-medium text-content">
+            {liveBackgroundLabel(effect)}
+          </p>
+          <p className="mt-0.5 text-ui-caption leading-relaxed text-(--ui-text-secondary)">
             {liveBackgroundDescription(effect)}
           </p>
         </div>
@@ -501,7 +523,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
                   }}
                 />
               )}
-              <span className="pointer-events-none absolute bottom-2 left-2 text-[11px] text-(--ui-text-secondary)">
+              <span className="pointer-events-none absolute bottom-2 left-2 text-ui-micro text-(--ui-text-secondary)">
                 {t("Empty chat preview at ")}
                 {emptyVisibility}%
               </span>
@@ -512,7 +534,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
                 onClick={() => void appearance.onChooseChatBackground()}
                 loading={busy}
                 loadingLabel={t("Loading…")}
-                startIcon={<ImagePlus className="size-4" aria-hidden />}
+                startIcon={<ImagePlus className="icon-md" aria-hidden />}
               >
                 {t("Choose an image")}
               </Button>
@@ -521,20 +543,22 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
         </div>
         {hasImage ? (
           <div className="mt-3 flex items-center justify-end gap-2">
-            <SecondaryButton
+            <Button
+              className="shrink-0"
               onClick={() => void appearance.onChooseChatBackground()}
               disabled={busy}
             >
-              {busy ? <Loader className="size-3.5 motion-safe:animate-spin" aria-hidden /> : null}
+              {busy ? <Loader className="icon-sm motion-safe:animate-spin" aria-hidden /> : null}
               {t("Change")}
-            </SecondaryButton>
-            <SecondaryButton
+            </Button>
+            <Button
+              className="shrink-0"
               onClick={() => void appearance.onClearChatBackground()}
               disabled={busy}
-              danger
+              variant="danger"
             >
               {t("Remove")}
-            </SecondaryButton>
+            </Button>
           </div>
         ) : null}
         {appearance.chatBackgroundError ? (

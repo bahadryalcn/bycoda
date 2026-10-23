@@ -112,9 +112,9 @@ function CheckAnnotation({
   const [messageTitle, ...messageLines] = annotation.message.split(/\r?\n/);
   const Mark = annotation.level === "failure" ? CircleX : AlertCircle;
   return (
-    <div className="min-w-0 overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface)">
+    <div className="min-w-0 overflow-hidden rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface)">
       {annotation.path ? (
-        <div className="flex min-w-0 items-center gap-1.5 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) px-3 py-2 text-[12px] text-(--ui-text-secondary)">
+        <div className="flex min-w-0 items-center gap-1.5 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
           <FileTypeIcon name={annotation.path} isDir={false} size={13} />
           <span title={location} className="min-w-0 flex-1 truncate">
             {location}
@@ -130,14 +130,14 @@ function CheckAnnotation({
               onClick={() => void openUrl(fileUrl)}
               className="-my-1 -mr-1 shrink-0"
             >
-              <ExternalLink className="size-3" strokeWidth={1.75} />
+              <ExternalLink className="icon-xs" strokeWidth={1.75} />
             </Button>
           ) : null}
         </div>
       ) : null}
       {excerpt.length ? (
         <div
-          className="overflow-x-auto py-2 font-mono text-[11px] leading-5"
+          className="overflow-x-auto py-2 font-mono text-ui-micro leading-5"
           aria-label={t("Source at {p0}", { p0: headOid })}
         >
           {excerpt.map((line, index) => (
@@ -157,20 +157,20 @@ function CheckAnnotation({
         className={`flex min-w-0 items-start gap-2 px-3 py-3 ${excerpt.length ? "border-t border-(--ui-tone-neutral-border)" : ""}`}
       >
         <Mark
-          className={`mt-0.5 size-3 shrink-0 ${annotation.level === "failure" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-tone-warning-fg)"}`}
+          className={`mt-0.5 icon-xs shrink-0 ${annotation.level === "failure" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-tone-warning-fg)"}`}
           strokeWidth={1.75}
         />
         <div className="min-w-0 flex-1">
-          <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-[12px] text-(--ui-text-secondary)">
+          <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
             {messageTitle}
           </p>
           {messageLines.length ? (
-            <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-(--ui-text-secondary)">
+            <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-ui-micro leading-relaxed text-(--ui-text-secondary)">
               {messageLines.join("\n")}
             </pre>
           ) : null}
           {canRead && source?.key === sourceKey && !excerpt.length ? (
-            <p className="mt-2 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+            <p className="mt-2 text-ui-caption text-(--ui-text-secondary)">
               {t("Source preview unavailable for this commit.")}
             </p>
           ) : null}

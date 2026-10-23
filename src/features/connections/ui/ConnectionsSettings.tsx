@@ -9,7 +9,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { RemoteReconnectGroup } from "../../settings/ui/ConnectionRecoverySettings";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import "./connections-settings.css";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { Modal } from "../../../shared/ui/Modal";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { RemoteOutboxNotice } from "./RemoteOutboxNotice";
 import { LocalHostUpdateNotice } from "./LocalHostUpdateNotice";
@@ -17,7 +21,7 @@ import { PhoneConnectionPanel } from "./PhoneConnectionPanel";
 import { ExternalTunnelsPanel } from "./ExternalTunnelsPanel";
 import { RemoteDataStatus } from "./RemoteDataStatus";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Internet, Loader, Pencil, Plus, RefreshCw, Trash2 } from "../../../shared/ui/icons";
+import { Internet, Loader, MoreHorizontal, Plus, RefreshCw } from "../../../shared/ui/icons";
 import {
   connectMachine,
   disconnectMachine,
@@ -56,6 +60,28 @@ import {
   type SshSetup,
 } from "../model/protocol";
 
+/** What this page's own check learned about a machine. */
+type MachineProbe = "connected" | "provider" | "update" | "offline";
+
+const PROBE_DETAIL: Record<MachineProbe, string> = {
+  connected: "Connected",
+  provider: "Connected · install a supported provider on the host",
+  update: "Connected · host update needed for Explorer and Changes",
+  offline: "Offline · reconnect to check access",
+};
+const PROBE_LABEL: Record<MachineProbe, string> = {
+  connected: "Connected",
+  provider: "Provider needed",
+  update: "Update needed",
+  offline: "Offline",
+};
+const PROBE_TONE: Record<MachineProbe, BadgeTone> = {
+  connected: "success",
+  provider: "warning",
+  update: "warning",
+  offline: "warning",
+};
+
 /** A machine's connection line. Until this page's own check returns, it shows
  * what the rest of the app (the project rail) last learned about the machine,
  * so the two never disagree. */
@@ -64,7 +90,7 @@ function MachineConnectionLine({
   probed,
 }: {
   environmentId: string;
-  probed?: string;
+  probed?: MachineProbe;
 }) {
   const shared = useSyncExternalStore(
     subscribeChanges,
@@ -72,20 +98,22 @@ function MachineConnectionLine({
     () => readRemoteConnection(environmentId),
   );
   const indicator = connectionIndicator(shared, false);
-  const label =
+  const kind: MachineProbe | undefined =
     indicator.tone === "down"
-      ? indicator.label
-      : (probed ?? (indicator.tone === "connected" ? "Connected" : "Checking connection…"));
-  const tone: BadgeTone =
-    indicator.tone === "down" || label.startsWith("Offline")
-      ? "warning"
-      : indicator.tone === "connected" || label.startsWith("Connected")
-        ? "success"
-        : "neutral";
+      ? "offline"
+      : (probed ?? (indicator.tone === "connected" ? "connected" : undefined));
+  const label = kind ? PROBE_LABEL[kind] : "Checking connection…";
+  const tone: BadgeTone = kind ? PROBE_TONE[kind] : "neutral";
+  const detail = kind && kind !== "connected" ? t(PROBE_DETAIL[kind]) : undefined;
   return (
-    <Badge tone={tone} className="mbs-1">
-      {t(label)}
-    </Badge>
+    <>
+      <Badge variant="dot" size="sm" tone={tone} title={t(kind ? PROBE_DETAIL[kind] : label)}>
+        {t(label)}
+      </Badge>
+      {detail ? (
+        <span className="basis-full text-ui-caption text-(--ui-text-muted)">{detail}</span>
+      ) : null}
+    </>
   );
 }
 
@@ -116,7 +144,7 @@ function SyncLine({ machineId }: { machineId: string }) {
         label={t("Sync now")}
         type="button"
       >
-        <RefreshCw className="size-3.5" />
+        <RefreshCw className="icon-sm" />
       </Button>
     </div>
   );
@@ -144,11 +172,13 @@ export function ConnectionsSettings() {
   const [notice, setNotice] = useState("");
   const [answer, setAnswer] = useState("");
   const [answering, setAnswering] = useState(false);
-  const [status, setStatus] = useState<Record<string, string>>({});
+  const [status, setStatus] = useState<Record<string, MachineProbe>>({});
   const [needsUpdate, setNeedsUpdate] = useState<Record<string, boolean>>({});
   const [updatingMachine, setUpdatingMachine] = useState<string>();
   const [removing, setRemoving] = useState<string>();
   const [revoking, setRevoking] = useState(false);
+  const [removeMode, setRemoveMode] = useState<"revoke" | "local">("local");
+  const [rowMenu, setRowMenu] = useState<{ machine: RemoteMachine; anchor: HTMLElement }>();
   const [url, setUrl] = useState("http://127.0.0.1:3776");
   const [token, setToken] = useState("");
   const alive = useRef(true);
@@ -208,7 +238,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             setUpdatingMachine(undefined);
             setStatus((current) => ({
               ...current,
-              [next.machine!.id]: "Connected",
+              [next.machine!.id]: "connected",
             }));
             refreshRemoteMachines();
             // Views that were waiting on this machine reload now.
@@ -255,7 +285,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       if (!busy && !document.hidden)
         await Promise.all(
           machines.map(async (machine) => {
-            let label = "Connected";
+            let label: MachineProbe = "connected";
             try {
               const host = await remoteRequest<HostDescriptor>(machine.id, "environment.describe", {
                 supportedProviders: REMOTE_PROVIDERS,
@@ -265,19 +295,18 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               recordRemoteCapabilities(host.environmentId, host.capabilities);
               // The project rail shows the same machine; keep both in step.
               reportRemoteMachineStatus(machine.id, true);
-              if (!host.providers.length)
-                label = "Connected · install a supported provider on the host";
+              if (!host.providers.length) label = "provider";
               const update =
                 !host.capabilities?.includes("workspace.run") ||
                 !host.capabilities?.includes("git.worktreeCreate");
-              if (update) label = "Connected · host update needed for Explorer and Changes";
+              if (update) label = "update";
               if (!disposed)
                 setNeedsUpdate((current) => ({
                   ...current,
                   [machine.id]: update,
                 }));
             } catch (reason) {
-              label = "Offline · reconnect to check access";
+              label = "offline";
               reportRemoteMachineStatus(machine.id, false, reason);
             }
             if (!disposed) setStatus((current) => ({ ...current, [machine.id]: label }));
@@ -481,6 +510,9 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       if (alive.current) setRevoking(false);
     }
   };
+  const removingMachine = removing
+    ? machines.find((machine) => machine.id === removing)
+    : undefined;
   const suggestion = hostnameSuggestion(target, editing?.name ?? "");
   const draft = parseMachineDraft({
     name,
@@ -501,12 +533,11 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
     >
       <RemoteOutboxNotice />
       <LocalHostUpdateNotice />
-      <fieldset disabled={busy || revoking} className="min-w-0 border-0 p-0 m-0">
+      <fieldset className="min-w-0 border-0 p-0 m-0">
         <SegmentedControl
           label={t("Connections")}
           value={view}
           onValueChange={(next) => {
-            if (busy || revoking) return;
             setView(next);
             setVisited((previous) => (previous.includes(next) ? previous : [...previous, next]));
           }}
@@ -518,7 +549,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         />
       </fieldset>
       {busy || revoking ? (
-        <p className="text-[12px] text-(--ui-text-muted)">
+        <p className="text-ui-caption text-(--ui-text-muted)">
           {t("Finish or cancel the current connection before adding another machine.")}
         </p>
       ) : null}
@@ -541,16 +572,11 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             onRefresh={refresh}
           />
         ) : null}
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div className="min-w-0">
-            <h2 className="text-[14px] font-medium text-content">
-              {t("Your machines")}{" "}
-              <span className="text-(--ui-text-muted)">· {machines.length}</span>
-            </h2>
-            <p className="mt-1 text-[12px] leading-relaxed text-(--ui-text-muted)">
-              {t("Manage the computers where your agents run.")}
-            </p>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h2 className="sr-only">{t("Your machines")}</h2>
+          <Badge variant="count" label={t("Your machines")}>
+            {machines.length}
+          </Badge>
           <div className="flex items-center gap-2">
             <Button
               iconOnly
@@ -559,11 +585,16 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               disabled={busy || loading}
               onClick={() => void refresh()}
             >
-              <RefreshCw className="size-4" />
+              <RefreshCw aria-hidden className="icon-md" />
             </Button>
-            <Button disabled={busy} onClick={startAdd} variant="primary" type="button">
-              <Plus className="size-4" />
-              {t(" Add machine")}
+            <Button
+              disabled={busy}
+              onClick={startAdd}
+              variant="primary"
+              type="button"
+              startIcon={<Plus aria-hidden className="icon-md" />}
+            >
+              {t("Add machine")}
             </Button>
           </div>
         </div>
@@ -577,25 +608,80 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               void (editing ? save() : begin());
             }}
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-[14px] font-medium">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-ui-body font-medium">
                 {editing ? t("Edit {p0}", { p0: editing.name }) : t("Add a new machine")}
               </h3>
-              <span className="rounded bg-selection px-2 py-1 text-[11px] text-(--ui-text-muted)">
-                {"SSH"}
-              </span>
+              <div className="flex items-center gap-1">
+                <Badge size="sm">{"SSH"}</Badge>
+                <InfoPopover label={t("Connection help")} width={360}>
+                  <p>
+                    {editing
+                      ? t(
+                          "Changes apply to this machine. To connect a different computer, choose Add machine.",
+                        )
+                      : t(
+                          "Connect a different computer with its own SSH address. Existing machines stay saved.",
+                        )}
+                  </p>
+                  <p>
+                    {t("A hostname works too, such as a Mac's Bonjour name (")}
+                    <code>{"user@MacBook-Pro.local"}</code>
+                    {t(") or an alias from")} <code>{"~/.ssh/config"}</code>
+                    {t(". Then the address does not need editing when the IP changes.")}
+                  </p>
+                  <p>
+                    {t(
+                      "Optional fallback for this same machine, such as its Tailscale address. If the first address cannot connect,",
+                    )}{" "}
+                    {PRODUCT_IDENTITY.displayName}
+                    {t(
+                      " automatically tries this one. Both addresses stay saved and use the same SSH port. The other address is checked against this machine's known host key.",
+                    )}
+                  </p>
+                  <p>
+                    {t(
+                      "Enable SSH on the target computer and make sure this computer can reach it with your SSH key or password. Sign in to the agent provider on the target computer before running agents.",
+                    )}
+                  </p>
+                  {editing ? (
+                    <p>
+                      {t(
+                        "Saving a new address closes the current connection and connects to it. If this computer has not connected to that address before, SSH asks you here whether to trust its host key. The machine's projects, sessions and history stay linked to it. If the address turns out to be another machine, the change stays saved so you can fix it; nothing is installed there.",
+                      )}
+                    </p>
+                  ) : (
+                    <>
+                      <p>
+                        {PRODUCT_IDENTITY.displayName}
+                        {t(
+                          " installs and starts its background host, then connects securely. Your SSH keys and config are used automatically. Enable SSH on the host and sign in to Codex or Claude Code there. On Windows and Mac, keep the host’s desktop account signed in and the machine awake. Locking the desktop is fine.",
+                        )}
+                      </p>
+                      <p>
+                        {t(
+                          "On Linux, setup installs a systemd user service and turns on lingering for your account (",
+                        )}
+                        <code>{"loginctl enable-linger"}</code>
+                        {t(
+                          "), so the host and your other user services keep running after you log out. The host keeps running until you stop it on that machine; removing it here only disconnects this desktop.",
+                        )}
+                      </p>
+                    </>
+                  )}
+                </InfoPopover>
+              </div>
             </div>
-            <p className="text-xs text-(--ui-text-muted)">
+            <p className="text-ui-caption text-(--ui-text-muted)">
               {editing
                 ? t("Saving reconnects this machine with the updated address.")
                 : t("Installs bycoda Host over SSH so you can run agents on this machine.")}
             </p>
-            <div className="flex flex-col gap-1.5 text-xs text-(--ui-text-muted)">
+            <div className="flex flex-col gap-1.5">
               <TextField
                 autoFocus
                 required
                 disabled={busy}
-
                 value={target}
                 onChange={(event) => setTarget(event.target.value)}
                 placeholder={t("user@my-mac-mini or an SSH alias")}
@@ -604,26 +690,14 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 label={t("SSH address")}
                 fieldClassName="min-w-0 flex-1"
               />
-              <details className="text-xs leading-relaxed text-(--ui-text-muted)">
-                <summary className="cursor-pointer">{t("Address help")}</summary>
-                <p className="mbs-2">
-                  {t("A hostname works too, such as a Mac's Bonjour name (")}
-                  <code className="rounded bg-(--ui-surface-raised) px-1">
-                    {"user@MacBook-Pro.local"}
-                  </code>
-                  {t(") or an alias from")}{" "}
-                  <code className="rounded bg-(--ui-surface-raised) px-1">{"~/.ssh/config"}</code>
-                  {t(". Then the address does not need editing when the IP changes.")}
-                </p>
-              </details>
               {suggestion && (
                 <Button
                   type="button"
                   disabled={busy}
-
                   title={t("Fills the address. Nothing is saved or tested until you save.")}
                   onClick={() => setTarget(suggestion)}
                   variant="secondary"
+                  align="start"
                 >
                   {t("Use ")}
                   {suggestion}
@@ -631,135 +705,56 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 </Button>
               )}
             </div>
-            <div className="flex flex-col gap-1.5 text-xs text-(--ui-text-muted)">
-              <TextField
-                disabled={busy}
-
-                value={alternate}
-                onChange={(event) => setAlternate(event.target.value)}
-                placeholder={t("Optional, e.g. user@100.64.0.5 (Tailscale)")}
-                autoComplete="off"
-                spellCheck={false}
-                label={t("Other address (optional)")}
-                fieldClassName="min-w-0 flex-1"
-              />
-              <details className="text-xs leading-relaxed text-(--ui-text-muted)">
-                <summary className="cursor-pointer">{t("Fallback address help")}</summary>
-                <p className="mbs-2">
-                  {t(
-                    "Optional fallback for this same machine, such as its Tailscale address. If the first address cannot connect,",
-                  )}{" "}
-                  {PRODUCT_IDENTITY.displayName}
-                  {t(
-                    " automatically tries this one. Both addresses stay saved and use the same SSH port. The other address is checked against this machine's known host key.",
-                  )}
-                </p>
-              </details>
-            </div>
-            <label className="flex flex-col gap-1.5 text-[12px] text-(--ui-text-muted)">
-              {t("Name (optional)")}
-              <TextField
-                disabled={busy}
-
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={t("Optional, e.g. Home Mac mini")}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                label=""
-                hideLabel
-                fieldClassName="min-w-0 flex-1"
-              />
-            </label>
+            <TextField
+              disabled={busy}
+              value={alternate}
+              onChange={(event) => setAlternate(event.target.value)}
+              placeholder={t("Optional, e.g. user@100.64.0.5 (Tailscale)")}
+              autoComplete="off"
+              spellCheck={false}
+              label={t("Other address (optional)")}
+              fieldClassName="min-w-0 flex-1"
+            />
+            <TextField
+              disabled={busy}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={t("Optional, e.g. Home Mac mini")}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              label={t("Name (optional)")}
+              fieldClassName="min-w-0 flex-1"
+            />
             {editing ? (
-              <label className="flex flex-col gap-1.5 text-[12px] text-(--ui-text-muted)">
-                {t("Host port")}
-                <NumberField
-                  aria-label={t("Host port")}
-                  disabled={busy}
-
-                  min={1}
-                  max={65535}
-
-                  value={remotePort}
-                  onChange={(event) => setRemotePort(event.target.value)}
-                  label=""
-                  hideLabel
-                  fieldClassName="min-w-0 flex-1"
-                />
-                <span className="text-[11px] leading-relaxed text-(--ui-text-muted)">
-                  {t(
-                    "The Host service port on this machine, separate from the SSH port. Saving reconnects to this port without changing the service. Reconnects keep this value.",
-                  )}
-                </span>
-              </label>
+              <NumberField
+                disabled={busy}
+                min={1}
+                max={65535}
+                name="hostPort"
+                value={remotePort}
+                onChange={(event) => setRemotePort(event.target.value)}
+                label={t("Host port")}
+                description={t(
+                  "The Host service port on this machine, separate from the SSH port. Saving reconnects to this port without changing the service. Reconnects keep this value.",
+                )}
+                fieldClassName="min-w-0 flex-1"
+              />
             ) : null}
-            <details className="text-[12px] text-(--ui-text-muted)">
+            <details className="text-ui-caption text-(--ui-text-muted)">
               <summary className="cursor-pointer py-1">{t("Advanced")}</summary>
-              <label className="mt-3 flex max-w-40 flex-col gap-1.5">
-                {t("SSH port")}
+              <div className="mt-3 max-w-40">
                 <NumberField
                   disabled={busy}
-
                   min={1}
                   max={65535}
-
                   value={port}
                   onChange={(event) => setPort(event.target.value)}
                   placeholder={t("From SSH config")}
-                  label=""
-                  hideLabel
+                  label={t("SSH port")}
                   fieldClassName="min-w-0 flex-1"
                 />
-              </label>
-            </details>
-            <details className="text-[12px] text-(--ui-text-muted)">
-              <summary className="cursor-pointer py-1">{t("Connection help")}</summary>
-              <div className="mbs-3 flex flex-col gap-2">
-                <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
-                  {editing
-                    ? t(
-                        "Changes apply to this machine. To connect a different computer, choose Add machine.",
-                      )
-                    : t(
-                        "Connect a different computer with its own SSH address. Existing machines stay saved.",
-                      )}
-                </p>
-                <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
-                  {t(
-                    "Enable SSH on the target computer and make sure this computer can reach it with your SSH key or password. Sign in to the agent provider on the target computer before running agents.",
-                  )}
-                </p>
-
-                {editing ? (
-                  <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
-                    {t(
-                      "Saving a new address closes the current connection and connects to it. If this computer has not connected to that address before, SSH asks you here whether to trust its host key. The machine's projects, sessions and history stay linked to it. If the address turns out to be another machine, the change stays saved so you can fix it; nothing is installed there.",
-                    )}
-                  </p>
-                ) : (
-                  <>
-                    <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
-                      {PRODUCT_IDENTITY.displayName}
-                      {t(
-                        " installs and starts its background host, then connects securely. Your SSH keys and config are used automatically. Enable SSH on the host and sign in to Codex or Claude Code there. On Windows and Mac, keep the host’s desktop account signed in and the machine awake. Locking the desktop is fine.",
-                      )}
-                    </p>
-                    <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
-                      {t(
-                        "On Linux, setup installs a systemd user service and turns on lingering for your account (",
-                      )}
-                      <code className="rounded bg-(--ui-surface-raised) px-1">
-                        {"loginctl enable-linger"}
-                      </code>
-                      {t(
-                        "), so the host and your other user services keep running after you log out. The host keeps running until you stop it on that machine; removing it here only disconnects this desktop.",
-                      )}
-                    </p>
-                  </>
-                )}
               </div>
             </details>
             {error && (
@@ -795,9 +790,11 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             role="status"
             ref={progress}
           >
-            <div className="break-all text-[13px] font-medium text-content">{connectionName}</div>
-            <div className="flex items-center gap-2 text-[13px]">
-              <Loader className="size-4 animate-spin" />
+            <div className="break-all text-ui-secondary font-medium text-content">
+              {connectionName}
+            </div>
+            <div className="flex items-center gap-2 text-ui-secondary">
+              <Loader aria-hidden className="icon-md motion-safe:animate-spin" />
               {job?.message ?? t("Starting connection…")}
             </div>
             {job?.prompt && (
@@ -808,7 +805,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   void respond(job.prompt!.confirm ? "yes" : answer);
                 }}
               >
-                <p className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-content">
+                <p className="whitespace-pre-wrap break-words text-ui-caption leading-relaxed text-content">
                   {job.prompt.message}
                 </p>
                 {!job.prompt.confirm && (
@@ -831,10 +828,9 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   {job.prompt.confirm && (
                     <Button
                       type="button"
-
                       disabled={answering}
                       onClick={() => void respond("no")}
-                      variant="primary"
+                      variant="secondary"
                     >
                       {t("Reject")}
                     </Button>
@@ -844,39 +840,47 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             )}
             <Button
               type="button"
-
+              className="self-start"
               onClick={() => {
                 if (jobId)
                   void invoke("remote_ssh_cancel", { jobId }).catch((reason) =>
                     setError(String(reason)),
                   );
               }}
-              variant="secondary"
+              variant="ghost"
             >
               {t("Cancel connection")}
             </Button>
           </div>
         )}
-        {error && !adding && (
+        {error && !adding && !removing && (
           <Alert role="alert" tone="danger">
             {error}
           </Alert>
         )}
         {error && !adding && !busy && retryMachine ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[12px] text-(--ui-text-muted)">
+            <span className="text-ui-caption text-(--ui-text-muted)">
               {t("Remote target: {p0}", { p0: retryMachine.name })}
             </span>
-            <SecondaryButton onClick={() => startEdit(retryMachine)}>
+            <Button
+              variant="secondary"
+              className="shrink-0"
+              onClick={() => startEdit(retryMachine)}
+            >
               {t("Edit name and address…")}
-            </SecondaryButton>
-            <SecondaryButton onClick={() => void begin(retryMachine)}>
+            </Button>
+            <Button
+              variant="secondary"
+              className="shrink-0"
+              onClick={() => void begin(retryMachine)}
+            >
               {t("Retry connection")}
-            </SecondaryButton>
+            </Button>
           </div>
         ) : null}
         {notice && (
-          <p role="status" className="text-[13px] text-success">
+          <p role="status" className="text-ui-secondary text-success">
             {notice}
           </p>
         )}
@@ -887,19 +891,13 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 <div
                   className={`flex flex-wrap items-center gap-3 px-4 py-3 ${editing?.id === machine.id ? "bg-selection" : ""}`}
                 >
-                  <Internet className="size-5 shrink-0 text-(--ui-text-muted)" />
+                  <Internet aria-hidden className="icon-lg shrink-0 text-(--ui-text-muted)" />
                   <div className="min-w-0 flex-1 basis-48">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="truncate text-[13px] font-medium">{machine.name}</span>
-                      {isLocalSyncMachine(machine) ? (
-                        <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
-                          {t("Local")}
-                        </span>
-                      ) : (
-                        <span className="shrink-0 text-[11px] text-(--ui-text-muted)">
-                          {t("Remote computer")}
-                        </span>
-                      )}
+                      <span className="truncate text-ui-secondary font-medium">{machine.name}</span>
+                      <Badge size="sm" className="shrink-0">
+                        {isLocalSyncMachine(machine) ? t("Local") : t("Remote computer")}
+                      </Badge>
                       <MachineConnectionLine
                         environmentId={machine.environmentId}
                         probed={status[machine.id]}
@@ -909,12 +907,12 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                     <details className="connection-details">
                       <summary>{t("Connection details")}</summary>
                       {machine.ssh?.alternate && (
-                        <div className="mt-1 break-all text-[12px] text-(--ui-text-muted)">
+                        <div className="mt-1 break-all text-ui-caption text-(--ui-text-muted)">
                           {t("Other address · ")}
                           {machine.ssh.alternate}
                         </div>
                       )}
-                      <div className="mt-1 break-all text-[12px] text-(--ui-text-muted)">
+                      <div className="mt-1 break-all text-ui-caption text-(--ui-text-muted)">
                         {isLocalSyncMachine(machine)
                           ? t("Syncs projects and groups with the {p0} on this computer", {
                               p0: PRODUCT_IDENTITY.displayName,
@@ -924,7 +922,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                             : machine.endpoint}
                       </div>
                       {machine.ssh ? (
-                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-(--ui-text-muted)">
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-ui-micro text-(--ui-text-muted)">
                           <span>
                             {t("SSH port")}{" "}
                             <span className="font-mono text-content">
@@ -939,143 +937,195 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                       ) : null}
                     </details>
                     {machine.ssh && needsUpdate[machine.id] ? (
-                      <div className="mt-1 text-[11px] text-(--ui-text-muted)">
+                      <div className="mt-1 text-ui-micro text-(--ui-text-muted)">
                         {t("Updating restarts the host and interrupts active agent turns.")}
                       </div>
                     ) : null}
                   </div>
-                  {machine.ssh && (
-                    <div className="flex shrink-0 flex-wrap items-center gap-2">
-                      {needsUpdate[machine.id] ? (
-                        <Button
-                          disabled={busy}
-                          title={t(
-                            "Downloads the matching host package and restarts the host; active agent turns will be interrupted",
-                          )}
-                          onClick={() => void begin(machine, true)}
-                          variant="secondary"
-                          type="button"
-                        >
-                          {t("Update Host")}
-                        </Button>
-                      ) : null}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {machine.ssh && needsUpdate[machine.id] ? (
+                      <Button
+                        disabled={busy}
+                        title={t(
+                          "Downloads the matching host package and restarts the host; active agent turns will be interrupted",
+                        )}
+                        onClick={() => void begin(machine, true)}
+                        variant="secondary"
+                        className="shrink-0"
+                        type="button"
+                      >
+                        {t("Update Host")}
+                      </Button>
+                    ) : machine.ssh && status[machine.id] === "offline" ? (
                       <Button
                         disabled={busy}
                         onClick={() => void begin(machine)}
                         variant="secondary"
+                        className="shrink-0"
                         type="button"
                       >
                         {t("Reconnect")}
                       </Button>
-                      <Button
-                        disabled={busy}
-                        aria-label={t("Edit {p0}", { p0: machine.name })}
-                        title={t("Edit name and address…")}
-                        onClick={() => startEdit(machine)}
-                        variant="secondary"
-                        type="button"
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
-                    </div>
-                  )}
-                  <Button
-                    disabled={busy || revoking}
-
-                    aria-label={t("Remove {p0}", { p0: machine.name })}
-                    title={t("Remove connection…")}
-                    onClick={() => {
-                      closeForm();
-                      setRetryMachine(undefined);
-                      setError("");
-                      setNotice("");
-                      setRemoving(machine.id);
-                    }}
-                    variant="secondary"
-                    type="button"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-                {removing === machine.id && (
-                  <div
-                    role="group"
-                    aria-label={t("Confirm removing {p0}", { p0: machine.name })}
-                    className="flex flex-col gap-3 border-t border-stroke bg-(--ui-surface-raised) px-4 py-4 text-[12px] leading-relaxed text-(--ui-text-muted)"
-                  >
-                    <p className="text-[13px] font-medium text-content">
-                      {t("Remove ")}
-                      {machine.name}
-                      {t(" from this desktop?")}
-                    </p>
-                    {isLocalSyncMachine(machine) ? (
-                      <p>
-                        {t("Removing this stops syncing projects and groups with the")}{" "}
-                        {PRODUCT_IDENTITY.displayName}
-                        {t(
-                          " on this computer. It is created again automatically the next time",
-                        )}{" "}
-                        {PRODUCT_IDENTITY.displayName}
-                        {t(" starts.")}
-                      </p>
-                    ) : (
-                      <p>
-                        {t(
-                          "This closes this desktop’s connection to the machine. It does not stop the host, and its sessions keep running and stay on that machine. You can add it again later.",
-                        )}
-                      </p>
-                    )}
-                    <p>
-                      {t(
-                        "Removing alone leaves this desktop’s credential valid on the host. Revoke access to invalidate it first; the machine must be reachable.",
-                      )}
-                    </p>
-                    <p>
-                      {t("To stop the host and turn off its background service, run")}{" "}
-                      <code className="rounded bg-(--ui-surface-raised) px-1">
-                        {"~/.bycoda-host/bin/bycoda-host service uninstall"}
-                      </code>{" "}
-                      {t("on that machine (")}
-                      <code className="rounded bg-(--ui-surface-raised) px-1">
-                        {"%USERPROFILE%\\.bycoda-host\\bin\\bycoda-host.cmd service uninstall"}
-                      </code>{" "}
-                      {t("on Windows). Its sessions and history are kept.")}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        disabled={revoking}
-                        onClick={() => void remove(machine, true)}
-                        variant="secondary"
-                        type="button"
-                      >
-                        {t("Revoke access and remove")}
-                      </Button>
-                      <Button
-                        disabled={revoking}
-                        onClick={() => void remove(machine, false)}
-                        variant="secondary"
-                        type="button"
-                      >
-                        {t("Remove from this desktop only")}
-                      </Button>
-                      <Button
-                        disabled={revoking}
-                        onClick={() => setRemoving(undefined)}
-                        variant="secondary"
-                        type="button"
-                      >
-                        {t("Cancel")}
-                      </Button>
-                    </div>
+                    ) : null}
+                    <Button
+                      iconOnly
+                      variant="ghost"
+                      label={t("Actions for {p0}", { p0: machine.name })}
+                      aria-haspopup="menu"
+                      aria-expanded={rowMenu?.machine.id === machine.id}
+                      disabled={busy || revoking}
+                      onClick={(event) =>
+                        setRowMenu(
+                          rowMenu?.machine.id === machine.id
+                            ? undefined
+                            : { machine, anchor: event.currentTarget },
+                        )
+                      }
+                      type="button"
+                    >
+                      <MoreHorizontal aria-hidden className="icon-md" />
+                    </Button>
                   </div>
-                )}
+                </div>
               </div>
             ))}
           </div>
         ) : loaded && !loading && !loadError && !adding ? (
-          <div className="rounded-xl border border-dashed border-stroke px-5 py-8 text-center text-[13px] text-(--ui-text-muted)">
-            {t("Add your always-on Windows, Mac, or Linux machine to get started.")}
-          </div>
+          <EmptyState
+            icon={<Internet aria-hidden className="icon-lg" />}
+            description={t("Add your always-on Windows, Mac, or Linux machine to get started.")}
+            action={
+              <Button variant="primary" disabled={busy} onClick={startAdd}>
+                {t("Add machine")}
+              </Button>
+            }
+          />
+        ) : null}
+        {rowMenu ? (
+          <DropdownMenu
+            anchor={rowMenu.anchor}
+            label={t("Actions for {p0}", { p0: rowMenu.machine.name })}
+            items={[
+              ...(rowMenu.machine.ssh
+                ? [
+                    { kind: "item" as const, id: "reconnect", label: t("Reconnect") },
+                    {
+                      kind: "item" as const,
+                      id: "edit",
+                      label: t("Edit name and address…"),
+                    },
+                    { kind: "sep" as const },
+                  ]
+                : []),
+              {
+                kind: "item" as const,
+                id: "remove",
+                label: t("Remove connection…"),
+                danger: true,
+              },
+            ]}
+            onClose={() => setRowMenu(undefined)}
+            onPick={(id) => {
+              const machine = rowMenu.machine;
+              setRowMenu(undefined);
+              if (id === "reconnect") void begin(machine);
+              else if (id === "edit") startEdit(machine);
+              else if (id === "remove") {
+                closeForm();
+                setRetryMachine(undefined);
+                setError("");
+                setNotice("");
+                setRemoveMode("local");
+                setRemoving(machine.id);
+              }
+            }}
+          />
+        ) : null}
+        {removingMachine ? (
+          <Modal
+            onClose={() => {
+              if (!revoking) setRemoving(undefined);
+            }}
+            title={t("Remove {p0} from this desktop?", { p0: removingMachine.name })}
+            size="md"
+            footer={
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={revoking}
+                  onClick={() => setRemoving(undefined)}
+                >
+                  {t("Cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  loading={revoking}
+                  onClick={() => void remove(removingMachine, removeMode === "revoke")}
+                >
+                  {removeMode === "revoke"
+                    ? t("Revoke access and remove")
+                    : t("Remove from this desktop only")}
+                </Button>
+              </>
+            }
+          >
+            <div className="flex flex-col gap-3 px-4 py-3 text-ui-caption leading-relaxed text-(--ui-text-muted)">
+              {isLocalSyncMachine(removingMachine) ? (
+                <p>
+                  {t("Removing this stops syncing projects and groups with the")}{" "}
+                  {PRODUCT_IDENTITY.displayName}
+                  {t(" on this computer. It is created again automatically the next time")}{" "}
+                  {PRODUCT_IDENTITY.displayName}
+                  {t(" starts.")}
+                </p>
+              ) : (
+                <p>
+                  {t(
+                    "This closes this desktop’s connection to the machine. It does not stop the host, and its sessions keep running and stay on that machine. You can add it again later.",
+                  )}
+                </p>
+              )}
+              <RadioGroup
+                label={t("Remove")}
+                value={removeMode}
+                onValueChange={(next) => setRemoveMode(next === "revoke" ? "revoke" : "local")}
+                options={[
+                  {
+                    value: "local",
+                    label: t("Remove from this desktop only"),
+                    description: t(
+                      "Removing alone leaves this desktop’s credential valid on the host. Revoke access to invalidate it first; the machine must be reachable.",
+                    ),
+                    disabled: revoking,
+                  },
+                  {
+                    value: "revoke",
+                    label: t("Revoke access and remove"),
+                    disabled: revoking,
+                  },
+                ]}
+              />
+              <details>
+                <summary className="cursor-pointer">{t("Details")}</summary>
+                <p className="mbs-2">
+                  {t("To stop the host and turn off its background service, run")}{" "}
+                  <code>{"~/.bycoda-host/bin/bycoda-host service uninstall"}</code>{" "}
+                  {t("on that machine (")}
+                  <code>
+                    {"%USERPROFILE%\\.bycoda-host\\bin\\bycoda-host.cmd service uninstall"}
+                  </code>{" "}
+                  {t("on Windows). Its sessions and history are kept.")}
+                </p>
+              </details>
+              {error ? (
+                <Alert role="alert" tone="danger">
+                  {error}
+                </Alert>
+              ) : null}
+            </div>
+          </Modal>
         ) : null}
         {!adding && !removing ? (
           <details className="connection-disclosure">
@@ -1103,22 +1153,17 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   "Connect this desktop to an already running host at the URL below. Use a device token issued by that host. A loopback address targets this computer; a remote address targets that computer.",
                 )}
               </p>
-              <label>
-                {t("Host URL")}
-                <TextField
-                  required
-                  disabled={busy}
-                  type="url"
-                  autoComplete="url"
-                  spellCheck={false}
-
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
-                  label=""
-                  hideLabel
-                  fieldClassName="min-w-0 flex-1"
-                />
-              </label>
+              <TextField
+                required
+                disabled={busy}
+                type="url"
+                autoComplete="url"
+                spellCheck={false}
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                label={t("Host URL")}
+                fieldClassName="min-w-0 flex-1"
+              />
               <PasswordField
                 label={t("Device token")}
                 required

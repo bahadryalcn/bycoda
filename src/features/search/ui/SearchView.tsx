@@ -1,4 +1,5 @@
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Alert } from "../../../shared/ui/Alert";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
@@ -402,13 +403,13 @@ export function SearchView({
   const empty = !trimmed;
   const noResults = !empty && rowCount === 0 && !loading && !error && !conversation.error;
   const limitNotice = truncated ? (
-    <p className="px-2.5 py-1 text-[11px] text-content/45">
+    <p className="px-2.5 py-1 text-ui-micro text-(--ui-text-muted)">
       {t("Results limited to the first matches")}
     </p>
   ) : null;
   const indexNotice =
     pendingIndex > 0 && scope !== "files" && scope !== "projects" ? (
-      <p className="px-2.5 py-1 text-[11px] text-content/45">
+      <p className="px-2.5 py-1 text-ui-micro text-(--ui-text-muted)">
         {t("Indexing ")}
         {pendingIndex}
         {t(" conversation")}
@@ -544,9 +545,7 @@ export function SearchView({
               </Button>
             </p>
           ) : null}
-          {rowCount > 0 ? (
-            <p className="text-content/75">{t("Results below may be incomplete.")}</p>
-          ) : null}
+          {rowCount > 0 ? <p>{t("Results below may be incomplete.")}</p> : null}
         </Alert>
       ) : null}
 
@@ -566,7 +565,7 @@ export function SearchView({
           />
         ) : noResults ? (
           <>
-            <p className="px-2 py-1.5 text-[12px] text-content/50">{t("No results")}</p>
+            <p className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">{t("No results")}</p>
             {indexNotice}
             {limitNotice}
           </>
@@ -598,13 +597,14 @@ export function SearchView({
       </div>
       <footer className="app-search-footer">
         <span>
-          <kbd>↑</kbd> <kbd>↓</kbd> {t("Search results")}
+          <ShortcutKbd size="xs">↑</ShortcutKbd> <ShortcutKbd size="xs">↓</ShortcutKbd>{" "}
+          {t("Navigate")}
         </span>
         <span>
-          <kbd>Enter</kbd> {t("Open")}
+          <ShortcutKbd size="xs">Enter</ShortcutKbd> {t("Open")}
         </span>
         <span>
-          <kbd>Esc</kbd> {t("Close")}
+          <ShortcutKbd size="xs">Esc</ShortcutKbd> {t("Close")}
         </span>
       </footer>
     </div>
@@ -722,7 +722,7 @@ function rowCopy(
   }
   if (hit.kind === "message") {
     return {
-      icon: <MessageSquare className="size-3.5 text-content/55" strokeWidth={1.75} />,
+      icon: <MessageSquare className="size-3.5 text-(--ui-text-secondary)" strokeWidth={1.75} />,
       title: hit.title,
       preview: <Highlight text={hit.preview || hit.title} query={query} />,
       meta: projectDisplayName(hit.cwd),
@@ -752,18 +752,14 @@ function rowCopy(
 
 function Highlight({ text, query }: { text: string; query: string }) {
   useLocale();
-  const needle = query.trim();
-  if (!needle) return <>{text}</>;
-  const index = text.toLowerCase().indexOf(needle.toLowerCase());
-  if (index < 0) return <>{text}</>;
-  const end = index + needle.length;
-  return (
-    <>
-      {text.slice(0, index)}
-      <span className="text-accent">{text.slice(index, end)}</span>
-      {text.slice(end)}
-    </>
-  );
+  const needle = query.trim().toLowerCase();
+  const haystack = text.toLowerCase();
+  const positions: number[] = [];
+  for (let from = needle ? haystack.indexOf(needle) : -1; from >= 0;) {
+    for (let i = 0; i < needle.length; i++) positions.push(from + i);
+    from = haystack.indexOf(needle, from + needle.length);
+  }
+  return <MatchText text={text} positions={positions} active={positions.length > 0} />;
 }
 
 function namePositions(hit: { name: string; relative: string; positions: number[] }) {

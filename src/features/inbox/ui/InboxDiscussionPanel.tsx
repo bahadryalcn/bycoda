@@ -2,7 +2,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
-import { PanelLeft, RotateCcw } from "../../../shared/ui/icons";
+import { X, RotateCcw } from "../../../shared/ui/icons";
 
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { inboxItemRef, type InboxItem } from "../model/githubTasks";
@@ -79,7 +79,7 @@ export function InboxDiscussionPanel({
         className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize max-[1100px]:hidden"
       />
       <header className="flex h-11 shrink-0 items-center border-b border-(--ui-tone-neutral-border) px-3">
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+        <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium">
           {t("Ask · ")}
           {inboxItemRef(item)}
         </span>
@@ -105,10 +105,10 @@ export function InboxDiscussionPanel({
               });
           }}
         >
-          <RotateCcw className="size-3.5" />
+          <RotateCcw className="icon-sm" />
         </Button>
         <Button variant="ghost" iconOnly label={t("Close panel")} onClick={onClose}>
-          <PanelLeft className="size-3.5" />
+          <X className="icon-sm" />
         </Button>
       </header>
       {error ? (
@@ -120,7 +120,7 @@ export function InboxDiscussionPanel({
         </Alert>
       ) : null}
       {loading ? (
-        <p role="status" className="p-3 text-xs text-(--ui-text-secondary)">
+        <p role="status" className="p-3 text-ui-caption text-(--ui-text-secondary)">
           {t("Loading…")}
         </p>
       ) : null}

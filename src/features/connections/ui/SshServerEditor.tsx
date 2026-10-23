@@ -3,6 +3,7 @@ import { SshCertificateInspection } from "./SshCertificateInspection";
 import { SshIdentityField } from "./SshIdentityField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { SshJumpPolicyEditor } from "./SshJumpPolicyEditor";
+import { NumberField } from "../../../shared/ui/NumberField";
 import { Switch } from "../../../shared/ui/Switch";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import {
@@ -177,9 +178,8 @@ export function SshServerEditor({
               onChange={(event) => setHost(event.target.value)}
               disabled={saving}
             />
-            <TextField
+            <NumberField
               label={t("SSH port")}
-              type="number"
               value={port}
               min={1}
               max={65535}
@@ -238,15 +238,12 @@ export function SshServerEditor({
               )}
             />
             <SshCertificateInspection reference={certificateFile} disabled={saving} />
-            <div className="flex items-center gap-2 text-xs">
-              <Switch
-                checked={perHopPolicy}
-                onCheckedChange={setPerHopPolicy}
-                disabled={saving}
-                aria-label={t("Per-hop SSH policy")}
-              />
-              <span>{t("Per-hop SSH policy")}</span>
-            </div>
+            <Switch
+              checked={perHopPolicy}
+              onCheckedChange={setPerHopPolicy}
+              disabled={saving}
+              label={t("Per-hop SSH policy")}
+            />
             {perHopPolicy ? (
               <SshJumpPolicyEditor
                 value={policyDrafts}
@@ -261,15 +258,12 @@ export function SshServerEditor({
         <details className="text-xs text-(--ui-text-muted)">
           <summary className="cursor-pointer py-1">{t("Connection proxy")}</summary>
           <div className="mbs-2 flex min-w-0 flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={proxyEnabled}
-                onCheckedChange={setProxyEnabled}
-                disabled={saving}
-                aria-label={t("HTTP CONNECT upstream")}
-              />
-              <span>{t("HTTP CONNECT upstream")}</span>
-            </div>
+            <Switch
+              checked={proxyEnabled}
+              onCheckedChange={setProxyEnabled}
+              disabled={saving}
+              label={t("HTTP CONNECT upstream")}
+            />
             {proxyEnabled ? (
               <>
                 <fieldset disabled={saving} className="border-0 p-0">

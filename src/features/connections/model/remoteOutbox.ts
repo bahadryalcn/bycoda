@@ -1,6 +1,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { isRemoteProvider, type HostCommand } from "./protocol";
 import { RUNTIME_MODES } from "../../sessions/model/session";
+import { t } from "../../../shared/i18n";
 
 const PREFIX = "bycoda.remote-command.v1:";
 const ARCHIVE_PREFIX = "bycoda.remote-command-quarantine.v1:";
@@ -346,7 +347,9 @@ export function savePendingRemoteCommand(
 ) {
   if (remoteOutboxIssues(project, environment).length)
     throw new Error(
-      "An unfinished request needs recovery. Check the host and review the request above before sending again.",
+      t(
+        "An unfinished request needs recovery. Check the host and review the request above before sending again.",
+      ),
     );
   const entry: PendingEntry = {
     v: 1,
@@ -362,7 +365,7 @@ export function savePendingRemoteCommand(
   };
   const json = JSON.stringify(entry);
   if (json.length * 2 > 2 * 1024 * 1024)
-    throw new Error("Remote request is too large to save safely.");
+    throw new Error(t("Remote request is too large to save safely."));
   let pendingBytes = 0;
   let pendingCount = 0;
   for (let index = 0; index < localStorage.length; index++) {
@@ -376,13 +379,13 @@ export function savePendingRemoteCommand(
     pendingBytes += (localStorage.getItem(key)?.length ?? 0) * 2;
   }
   if (pendingCount >= 100 || pendingBytes + json.length * 2 > 8 * 1024 * 1024)
-    throw new Error("Remote outbox is full. Recover pending requests before sending more.");
+    throw new Error(t("Remote outbox is full. Recover pending requests before sending more."));
   if (!readPendingEntry(json, command.commandId))
-    throw new Error("Cannot save an invalid remote request.");
+    throw new Error(t("Cannot save an invalid remote request."));
   try {
     localStorage.setItem(`${pendingPrefix(project, environment)}${command.commandId}`, json);
   } catch {
-    throw new Error("Cannot save your request locally. Free up app storage before sending.");
+    throw new Error(t("Cannot save your request locally. Free up app storage before sending."));
   }
   changed();
 }

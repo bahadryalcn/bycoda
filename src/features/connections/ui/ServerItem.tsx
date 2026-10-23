@@ -47,13 +47,13 @@ export function ServerItem({
     <Badge size="sm">SSH</Badge>
   );
   const favorite = server.metadata.favorite ? (
-    <Star aria-label={t("Favorite")} className="size-3 shrink-0 text-(--ui-text-muted)" />
+    <Star aria-label={t("Favorite")} className="icon-xs shrink-0 text-(--ui-text-muted)" />
   ) : null;
   // Color is a stripe on the leading edge of a row or the top edge of a card. No color keeps the same space.
   const accentBar = (
     <span
       aria-hidden
-      className={cards ? "block h-1 w-full shrink-0" : "w-1 shrink-0 self-stretch rounded-full"}
+      className={cards ? "block h-1 w-full shrink-0" : "w-0.5 shrink-0 self-stretch"}
       style={accent ? { background: accent } : undefined}
     />
   );
@@ -119,7 +119,7 @@ export function ServerItem({
             {accentBar}
             <span className="flex min-w-0 flex-col gap-2 p-3">
               <span className="flex min-w-0 items-center gap-2">
-                <Server aria-hidden className="size-4 shrink-0 text-(--ui-text-muted)" />
+                <Server aria-hidden className="icon-md shrink-0 text-(--ui-text-muted)" />
                 <span title={server.name} className="min-w-0 flex-1 truncate font-medium">
                   {server.name}
                 </span>
@@ -150,7 +150,6 @@ export function ServerItem({
         ) : (
           <>
             {accentBar}
-            <Server aria-hidden className="size-4 shrink-0 text-(--ui-text-muted)" />
             <span className="min-w-0 flex-1 @min-[36rem]/servers:flex @min-[36rem]/servers:items-center @min-[36rem]/servers:gap-3">
               <span
                 title={server.name}

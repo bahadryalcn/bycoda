@@ -1,7 +1,7 @@
 import { Switch } from "../../../shared/ui/Switch";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useState, type ComponentType, type FormEvent, type ReactNode } from "react";
+import { useActionState, useState, type ComponentType, type ReactNode } from "react";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { type Worktree } from "../model/worktrees";
 import { Modal } from "../../../shared/ui/Modal";
@@ -33,8 +33,8 @@ function Consequence({
   useLocale();
   return (
     <li className="flex items-start gap-2.5">
-      <Icon className={`mt-px size-3.5 shrink-0 ${TONE[tone]}`} />
-      <span className="min-w-0 flex-1">{children}</span>
+      <Icon className={`mt-px icon-sm shrink-0 ${TONE[tone]}`} />
+      <span className={`min-w-0 flex-1 ${tone === "muted" ? "" : TONE[tone]}`}>{children}</span>
     </li>
   );
 }
@@ -55,25 +55,17 @@ export function DeleteWorktreeDialog({
   onDeleted: () => void;
 }) {
   useLocale();
-  const [busy, setBusy] = useState(false);
   const [deleteSessions, setDeleteSessions] = useState(false);
-  const [error, setError] = useState<string>();
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setError(undefined);
+  const [error, submit, busy] = useActionState<string | undefined, FormData>(async () => {
     try {
       // Confirmation covers the complete destructive action, including any
       // local changes that appeared after the last status refresh.
       await onRemove(cwd, tree.path, true, deleteSessions);
       onDeleted();
     } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
+      return String(e);
     }
-  };
+  }, undefined);
   return (
     <Modal
       languageDomain="git"
@@ -83,19 +75,16 @@ export function DeleteWorktreeDialog({
         if (!busy) onClose();
       }}
     >
-      <form
-        className="flex flex-col gap-3.5 p-4 text-[13px] leading-[1.5]"
-        onSubmit={(e) => void submit(e)}
-      >
+      <form className="flex flex-col gap-3 p-4 text-ui-secondary leading-[1.5]" action={submit}>
         <p className="text-[var(--ui-text-secondary)]">
           {t("This permanently deletes the working copy and everything inside it.")}
         </p>
-        <div className="rounded-lg border border-[var(--color-stroke)] bg-[var(--ui-surface)] p-3">
-          <p className="flex items-start gap-2.5 text-[12px] text-[var(--ui-text-secondary)]">
-            <Folder className="mt-px size-3.5 shrink-0 text-[var(--ui-text-muted)]" />
+        <div>
+          <p className="flex items-start gap-2.5 text-ui-caption text-[var(--ui-text-secondary)]">
+            <Folder className="mt-px icon-sm shrink-0 text-[var(--ui-text-muted)]" />
             <span className="min-w-0 flex-1 break-all font-mono">{prettyCwd(tree.path)}</span>
           </p>
-          <ul className="mt-2.5 flex flex-col gap-2 border-t border-[var(--color-stroke)] pt-2.5 text-[12.5px] text-[var(--ui-text-secondary)]">
+          <ul className="mt-2.5 flex flex-col gap-2 text-ui-caption text-[var(--ui-text-secondary)]">
             {sessionCount > 0 && (
               <Consequence icon={MessageSquare} tone={deleteSessions ? "danger" : "muted"}>
                 {deleteSessions
@@ -140,10 +129,10 @@ export function DeleteWorktreeDialog({
           </ul>
         </div>
         {sessionCount > 0 && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-stroke)] p-3">
+          <div className="flex items-center justify-between gap-3">
             <span
               id="delete-worktree-sessions-label"
-              className="text-[12.5px] text-[var(--ui-text-secondary)]"
+              className="text-ui-caption text-[var(--ui-text-secondary)]"
             >
               {t("Also delete associated sessions")}
             </span>
@@ -156,7 +145,7 @@ export function DeleteWorktreeDialog({
           </div>
         )}
         {error && (
-          <p role="alert" className="break-words text-[12.5px] text-danger">
+          <p role="alert" className="break-words text-ui-caption text-danger">
             {error}
           </p>
         )}
@@ -165,13 +154,13 @@ export function DeleteWorktreeDialog({
             {t("Cancel")}
           </Button>
           <Button
-            variant="primary"
+            variant="danger"
             motion="none"
             type="submit"
             disabled={busy}
             className="inline-flex items-center gap-1.5"
           >
-            {busy && <Loader className="size-3.5 animate-spin" />}
+            {busy && <Loader className="icon-sm animate-spin" />}
             {sessionCount && deleteSessions
               ? t(
                   sessionCount === 1

@@ -1,5 +1,5 @@
 import { Badge } from "../../../shared/ui/Badge";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useId, useRef, useState, type MouseEvent } from "react";
 import {
@@ -56,7 +56,7 @@ export function UserLinkPreview({
 }
 
 function GenericLinkPreview({ link }: { link: UserLink }) {
-  useLocale();
+  const t = useT();
   const [metadata, setMetadata] = useState<LinkPreviewMetadata | null>(null);
   const [faviconFailed, setFaviconFailed] = useState(false);
 
@@ -88,7 +88,7 @@ function GenericLinkPreview({ link }: { link: UserLink }) {
       className="user-link-preview group mx-0.5 text-(--ui-tone-info-fg) hover:text-(--ui-tone-info-fg) hover:underline"
       onClick={(event) => openExternalLink(event, link.url)}
     >
-      <span className="mr-1 inline-flex size-4 items-center justify-center overflow-hidden rounded bg-(--ui-surface) align-[-0.125em] text-[9px] font-semibold uppercase text-(--ui-text-secondary)">
+      <span className="mr-1 inline-flex size-4 items-center justify-center overflow-hidden rounded bg-(--ui-surface) align-[-0.125em] text-ui-micro font-semibold uppercase text-(--ui-text-secondary)">
         {favicon ? (
           <img
             src={favicon}
@@ -120,7 +120,7 @@ function GithubWorkItemPreview({
   cwd?: string;
   compact: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const anchor = useRef<HTMLAnchorElement>(null);
   const openTimer = useRef<number | null>(null);
   const closeTimer = useRef<number | null>(null);
@@ -237,7 +237,7 @@ function GithubWorkItemPreview({
         })}
         aria-describedby={open ? tooltipId : undefined}
         className={`group mx-px inline-flex max-w-full items-center gap-1 rounded-md border-0 bg-transparent p-0 text-(--ui-text-secondary) no-underline shadow-none outline-none transition-[color,transform] duration-[140ms] ease-[var(--motion-ease-out)] hover:text-(--ui-tone-neutral-fg) focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color) active:scale-[0.98] motion-reduce:transition-none pb-px ${
-          compact ? "align-middle text-xs leading-4" : "align-[-0.25em] text-[11px] leading-4"
+          compact ? "align-middle text-xs leading-4" : "align-[-0.25em] text-ui-micro leading-4"
         }`}
         onMouseEnter={showAfterDelay}
         onMouseLeave={hideAfterDelay}
@@ -250,7 +250,7 @@ function GithubWorkItemPreview({
       >
         <span
           className={` inline-flex shrink-0 items-center font-medium ${
-            compact ? "h-[18px] gap-0.5 rounded-[6px] px-1.5" : "h-5 gap-1 rounded-[5px] px-1.5"
+            compact ? "h-[18px] gap-0.5 rounded-md px-1.5" : "h-5 gap-1 rounded-[5px] px-1.5"
           } ${
             workItem.kind === "pr"
               ? "bg-(--ui-tone-accent-subtle) text-(--ui-tone-accent-fg)"
@@ -304,7 +304,7 @@ function GithubWorkItemCard({
   details: GithubWorkItemDetails | null;
   loadState: "idle" | "loading" | "ready" | "unavailable";
 }) {
-  useLocale();
+  const t = useT();
   const status = workItemStatus(parsed.kind, item);
   const summary = plainTextSummary(details?.body ?? "");
   const updated = item?.updatedAt ? formatRelativeTime(item.updatedAt) : "";
@@ -314,7 +314,7 @@ function GithubWorkItemCard({
 
   return (
     <div className="min-w-0 text-left">
-      <div className="flex min-w-0 items-center gap-2 text-[11px]">
+      <div className="flex min-w-0 items-center gap-2 text-ui-micro">
         <status.Icon className={`size-4 shrink-0 ${status.className}`} aria-hidden="true" />
         <span className="min-w-0 truncate font-medium text-(--ui-text-secondary)">
           {parsed.repo}
@@ -328,11 +328,11 @@ function GithubWorkItemCard({
 
       {item ? (
         <>
-          <h3 className="mt-2 line-clamp-2 text-[13px] font-semibold leading-[1.35] text-(--ui-tone-neutral-fg)">
+          <h3 className="mt-2 line-clamp-2 text-ui-secondary font-semibold leading-[1.35] text-(--ui-tone-neutral-fg)">
             {item.title}
           </h3>
           {summary ? (
-            <p className="mt-1.5 line-clamp-3 text-[11px] leading-[1.45] text-(--ui-text-secondary)">
+            <p className="mt-1.5 line-clamp-3 text-ui-micro leading-[1.45] text-(--ui-text-secondary)">
               {summary}
             </p>
           ) : null}
@@ -341,15 +341,15 @@ function GithubWorkItemCard({
         <GithubWorkItemCardSkeleton />
       ) : (
         <div className="mt-2">
-          <h3 className="text-[13px] font-semibold text-(--ui-tone-neutral-fg)">
+          <h3 className="text-ui-secondary font-semibold text-(--ui-tone-neutral-fg)">
             {parsed.kind === "pr" ? t("Pull request") : t("Issue")} #{parsed.number}
           </h3>
           {summary ? (
-            <p className="mt-1.5 line-clamp-3 text-[11px] leading-[1.45] text-(--ui-text-secondary)">
+            <p className="mt-1.5 line-clamp-3 text-ui-micro leading-[1.45] text-(--ui-text-secondary)">
               {summary}
             </p>
           ) : (
-            <p className="mt-1 text-[11px] leading-relaxed text-(--ui-text-secondary)">
+            <p className="mt-1 text-ui-micro leading-relaxed text-(--ui-text-secondary)">
               {t("Details aren't available here, but the link can still be opened on GitHub.")}
             </p>
           )}
@@ -428,7 +428,7 @@ function GithubWorkItemCard({
 }
 
 function GithubWorkItemCardSkeleton() {
-  useLocale();
+  const t = useT();
   return (
     <div aria-label={t("Loading GitHub details")} className="mt-2.5 space-y-2">
       <div className="h-3 w-4/5 rounded bg-(--ui-surface-raised) motion-safe:animate-pulse" />

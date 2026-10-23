@@ -1,8 +1,6 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
-import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
-import { createPortal } from "react-dom";
-import { LAYER } from "../../../shared/lib/layers";
+import { Modal } from "../../../shared/ui/Modal";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
@@ -34,86 +32,60 @@ export function ProjectNameConflictDialog({
   const [value, setValue] = useState(suggested);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const dialogRoot = useRef<HTMLFormElement>(null);
-  const overlayId = useOverlay(dialogRoot, true, onCancel);
 
   useEffect(() => {
     input.current?.focus();
     input.current?.select();
   }, []);
 
-  return createPortal(
-    <OverlayParent.Provider value={overlayId}>
-      <div
-        className="fixed inset-0"
-        style={{ zIndex: LAYER.dialog }}
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) {
-            event.preventDefault();
-            onCancel();
-          }
+  return (
+    <Modal
+      size="sm"
+      title={t("Rename project")}
+      description={`${t('A project named "')}${name}${t('" already exists. Give this one a different name.')}`}
+      onClose={onCancel}
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          const problem = validate(value);
+          setError(problem);
+          if (!problem) onConfirm(value.trim());
         }}
+        className="flex flex-col gap-3 px-4 pt-2 pb-4"
       >
-        <div className="pointer-events-none absolute inset-0 bg-(--ui-overlay-backdrop)" />
-        <form
-          ref={dialogRoot}
-          tabIndex={-1}
-          role="dialog"
-          aria-modal="true"
-          aria-label={t("Rename project")}
-          onMouseDown={(event) => event.stopPropagation()}
-          onSubmit={(event) => {
-            event.preventDefault();
-            const problem = validate(value);
-            setError(problem);
-            if (!problem) onConfirm(value.trim());
+        <p className="truncate text-ui-micro leading-tight text-(--ui-text-muted)" title={path}>
+          {prettyCwd(path)}
+        </p>
+        <TextField
+          label={t("Project name")}
+          hideLabel
+          ref={input}
+          aria-label={t("Project name")}
+          aria-invalid={error ? true : undefined}
+          value={value}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(event) => {
+            setValue(event.target.value);
+            setError(null);
           }}
-          className="absolute left-1/2 top-[22%] flex w-[min(420px,calc(100vw-24px))] -translate-x-1/2 flex-col gap-3 rounded-lg border border-stroke bg-(--ui-surface) p-4 shadow-xl backdrop-blur-xl"
-        >
-          <div className="flex flex-col gap-1">
-            <h2 className="text-[13px] font-medium leading-tight text-content">
-              {t("Rename project")}
-            </h2>
-            <p className="text-[12px] leading-snug text-(--ui-text-secondary)">
-              {t('A project named "')}
-              {name}
-              {t('" already exists. Give this one a different name.')}
-            </p>
-            <p className="truncate text-[11px] leading-tight text-(--ui-text-muted)">
-              {prettyCwd(path)}
-            </p>
-          </div>
-          <TextField
-            label={t("Project name")}
-            hideLabel
-            ref={input}
-            aria-label={t("Project name")}
-            aria-invalid={error ? true : undefined}
-            value={value}
-            spellCheck={false}
-            autoComplete="off"
-            onChange={(event) => {
-              setValue(event.target.value);
-              setError(null);
-            }}
-          />
-          {error ? <Alert tone="danger">{error}</Alert> : null}
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              onClick={onCancel}
-              title={t('Keep "{p0}"', { p0: suggested })}
-              variant="secondary"
-            >
-              {t("Cancel")}
-            </Button>
-            <Button type="submit" variant="primary">
-              {t("Rename")}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </OverlayParent.Provider>,
-    document.body,
+        />
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            onClick={onCancel}
+            title={t('Keep "{p0}"', { p0: suggested })}
+            variant="ghost"
+          >
+            {t("Cancel")}
+          </Button>
+          <Button type="submit" variant="primary">
+            {t("Rename")}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

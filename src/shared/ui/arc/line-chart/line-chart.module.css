@@ -326,3 +326,7 @@
     animation: none;
   }
 }
+:global(html[data-decorative-motion="off"]) .chart[data-loading] .series,
+:global(html[data-decorative-motion="off"]) .skeleton {
+  animation: none;
+}

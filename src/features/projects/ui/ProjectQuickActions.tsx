@@ -4,7 +4,7 @@ import {
   type ExpandingButtonGroupItem,
 } from "../../../shared/ui/ExpandingButtonGroup";
 import { t, useLocale } from "../../../shared/i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   listExternalEditors,
@@ -18,7 +18,7 @@ import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu
 import { Modal } from "../../../shared/ui/Modal";
 import { ExternalEditorIcon } from "./ExternalEditorIcon";
 import { ProjectActionDialog } from "./ProjectActionDialog";
-import { DevServersPanel } from "../../host-tools/DevServersPanel";
+import { lazySurface } from "../../../shared/ui/lazySurface";
 import type { DevServerStart, DevServerStartResult } from "../../host-tools/devServerTypes";
 import { hostFeatureRequest } from "../../connections/model/hostFeatureClient";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
@@ -29,6 +29,7 @@ import {
   CodeBlock,
   FolderOpen,
   Globe,
+  CheckList,
   Play,
   Plus,
   Terminal,
@@ -41,6 +42,10 @@ import {
   PROJECT_ACTIONS_CHANGED,
   type ProjectAction,
 } from "../model/projectActions";
+
+const DevServersPanel = lazySurface(async () => ({
+  default: (await import("../../host-tools/DevServersPanel")).DevServersPanel,
+}));
 
 const ICONS = {
   play: Play,
@@ -62,12 +67,15 @@ export function ProjectQuickActions({
   onRun,
   shortcutsEnabled = true,
   additionalItems = [],
+  trailing,
 }: {
   cwd: string;
   actionsCwd?: string;
   onRun?: (action: ProjectAction) => void;
   shortcutsEnabled?: boolean;
   additionalItems?: readonly ExpandingButtonGroupItem[];
+  /** Structural control kept outside the action group, after a gap. */
+  trailing?: ReactNode;
 }) {
   useLocale();
   const [menu, setMenu] = useState<{
@@ -285,6 +293,7 @@ export function ProjectQuickActions({
       <ExpandingButtonGroup
         label={t("Project actions")}
         size="sm"
+        chrome="bare"
         fit
         defaultExpanded={null}
         items={[
@@ -307,7 +316,7 @@ export function ProjectQuickActions({
             id: "project-actions",
             label: t("Project actions"),
             tooltip: `${t("Project actions")}\n${cwd}`,
-            icon: <Play className="size-3.5" />,
+            icon: <CheckList className="size-3.5" />,
             render: (renderTrigger) =>
               renderTrigger({
                 ref: actionsTrigger,
@@ -354,6 +363,7 @@ export function ProjectQuickActions({
           ...additionalItems,
         ]}
       />
+      {trailing ? <div className="ms-1 flex items-center">{trailing}</div> : null}
       {menu ? (
         <ExplorerMenu
           anchor={menu.anchor}

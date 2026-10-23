@@ -7,6 +7,7 @@ import type {
   SocialThread,
 } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
+import { t } from "../../../shared/i18n";
 import { socialCharacterCount, socialLimit } from "../model/socialPolicy";
 
 export type BulkKind = "reply" | "message" | "comment";
@@ -86,61 +87,61 @@ export function planBulkDrafts(
           )
         : undefined;
       let reason = "";
-      if (!snapshot.hostOnline) reason = "Host bağlantısı yok.";
+      if (!snapshot.hostOnline) reason = t("The host is not connected.");
       else if (!contact || contact.accountId !== target.accountId)
-        reason = "Kişi bu hesaba bağlı değil.";
-      else if (contact.optedOut) reason = "Bu kişi iletişim istemiyor.";
-      else if (!account?.connected || account.paused) reason = "Hesap bağlı değil veya durduruldu.";
+        reason = t("This contact is not linked to this account.");
+      else if (contact.optedOut) reason = t("This contact has opted out of contact.");
+      else if (!account?.connected || account.paused) reason = t("The account is not connected or is paused.");
       else if (account.expiresAt !== undefined && account.expiresAt <= now)
-        reason = "Hesap bağlantısının süresi doldu.";
+        reason = t("The account connection has expired.");
       else if (!projectId || !projects.some((project) => project.id === projectId))
-        reason = "Erişilebilir bir proje seçin.";
+        reason = t("Select an accessible project.");
       else if (!contact.projectIds.includes(projectId))
-        reason = "Kişi seçilen projeye bağlı değil.";
+        reason = t("This contact is not linked to the selected project.");
       else if (!account.grants[projectId]?.includes("draft"))
-        reason = "Bu proje için taslak izni yok.";
+        reason = t("There is no draft permission for this project.");
       else if (
         options.kind === "reply" &&
         (!thread || thread.accountId !== target.accountId || thread.contactId !== target.contactId)
       )
-        reason = "Konuşma eşleşmesi geçersiz.";
+        reason = t("The conversation match is invalid.");
       else if (options.kind === "reply" && thread?.reviewReason)
-        reason = "Konuşmanın proje eşleşmesini inceleyin.";
+        reason = t("Review the conversation's project match.");
       else if (
         options.kind === "reply" &&
         (!contact.replyEligible || thread?.replyAllowed === false)
       )
-        reason = "Bu konuşmaya yanıt izni yok.";
+        reason = t("Replying to this conversation is not allowed.");
       else if (options.kind === "reply" && thread?.replyUntil && thread.replyUntil <= now)
-        reason = "Yanıt süresi doldu.";
+        reason = t("The reply window has expired.");
       else if (
         options.kind === "reply" &&
         thread?.kind === "message" &&
         (account.platform === "instagram" || account.platform === "facebook") &&
         !thread.replyUntil
       )
-        reason = "Geçerli bir yanıt süresi yok.";
+        reason = t("There is no valid reply window.");
       else if (
         options.kind === "reply" &&
         !thread?.hasInbound && !thread?.events.some((event) => event.direction === "inbound")
       )
-        reason = "Yanıtlanacak gelen ileti yok.";
+        reason = t("There is no inbound message to reply to.");
       else if (
         options.kind === "message" &&
         (!contact.consent?.allowed || !contact.consent.source || !contact.consent.at)
       )
-        reason = "Yeni mesaj için kayıtlı iletişim izni yok.";
+        reason = t("There is no recorded contact consent for a new message.");
       else if (options.kind === "comment" && !contact.commentEligible)
-        reason = "Yorum uygunluğu doğrulanmadı.";
+        reason = t("Comment eligibility has not been verified.");
       else if (capability?.status !== "available")
         reason =
           account.connection === "browser" && options.kind !== "comment"
-            ? "X tarayıcı bağlantısı mesajları ve gelen yorumları okuyamaz. Resmî API bağlantısı gerekli."
-            : capability?.reason || "Hesap bu işlemi desteklemiyor.";
+            ? t("The X browser connection cannot read messages or incoming comments. An official API connection is required.")
+            : capability?.reason || t("The account does not support this operation.");
       else if (options.kind === "comment" && !options.postIds[target.key]?.trim())
-        reason = "Yorum yapılacak gönderi kimliğini girin.";
+        reason = t("Enter the ID of the post to comment on.");
       else if (policyErrors[target.accountId]) reason = policyErrors[target.accountId];
-      else if (!policy) reason = "Hesap sınırları yükleniyor.";
+      else if (!policy) reason = t("Account limits are loading.");
       else if (
         options.factIds?.some(
           (id) =>
@@ -149,11 +150,11 @@ export function planBulkDrafts(
               ?.facts.some((fact) => fact.id === id),
         )
       )
-        reason = "Kaynak bilgi bu projede bulunamadı.";
-      else if (!options.text.trim()) reason = "İçerik yazın.";
+        reason = t("The source fact was not found in this project.");
+      else if (!options.text.trim()) reason = t("Write the content.");
       else if (limit !== undefined && socialCharacterCount(options.text) > limit)
-        reason = `Metin ${limit} karakter sınırını aşıyor.`;
-      return { target, name: contact?.name ?? "Kişi bulunamadı", projectId, limit, reason };
+        reason = t("The text exceeds the {p0} character limit.", { p0: limit });
+      return { target, name: contact?.name ?? t("Contact not found"), projectId, limit, reason };
     },
   );
 }
@@ -171,7 +172,7 @@ export async function readBulkPolicies(client: SocialClient, targets: BulkTarget
           throw new Error("Invalid policy response");
         policies[accountId] = result.effective;
       } catch {
-        errors[accountId] = "Hesap sınırları alınamadı. Yeniden deneyin.";
+        errors[accountId] = t("Account limits could not be loaded. Try again.");
       }
     }),
   );
@@ -224,7 +225,7 @@ export async function prepareBulkDrafts(
       rows[index] = {
         ...row,
         status: "failed",
-        reason: error instanceof Error ? error.message : "Taslak hazırlanamadı.",
+        reason: error instanceof Error ? error.message : t("The draft could not be prepared."),
       };
     }
     publish();

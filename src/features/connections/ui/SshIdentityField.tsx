@@ -99,7 +99,7 @@ export function SshIdentityField({
           disabled={disabled || selecting || loading}
           onClick={refreshKeys}
         >
-          <RefreshCw aria-hidden className="size-3.5" />
+          <RefreshCw aria-hidden className="icon-sm" />
         </Button>
       </div>
       <SearchableSelect
@@ -155,7 +155,7 @@ export function SshIdentityField({
             }
           }}
         >
-          <Folder aria-hidden className="size-3.5" />
+          <Folder aria-hidden className="icon-sm" />
           {t("Choose key file…")}
         </Button>
         {value ? (

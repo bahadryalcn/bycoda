@@ -1,3 +1,4 @@
+import { Badge } from "../../shared/ui/Badge";
 import { Button } from "../../shared/ui/Button";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import type { IconComponent } from "../../shared/ui/icons";
@@ -63,18 +64,21 @@ export function RailAction({
       className={`relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center`}
     >
       {badge != null ? (
-        <span
+        <Badge
+          variant="count"
+          size="sm"
+          max={99}
           aria-hidden
-          className="absolute left-1 top-1/2 grid min-h-4 min-w-4 -translate-y-1/2 place-items-center rounded-full bg-(--ui-surface-selected) px-1 text-(length:--ui-font-caption) font-semibold leading-4 text-content tabular-nums"
+          className="absolute left-1 top-1/2 -translate-y-1/2"
         >
-          {badge > 99 ? "99+" : badge}
-        </span>
+          {badge}
+        </Badge>
       ) : null}
       <Icon
-        className={`size-4 shrink-0 ${active ? "text-accent" : "text-(--ui-text-secondary)"} ${badge != null ? "ml-4" : ""}`}
+        className={`icon-md shrink-0 ${active ? "text-accent" : "text-(--ui-text-secondary)"} ${badge != null ? "ml-4" : ""}`}
         strokeWidth={1.75}
       />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden">
+      <span className="min-w-0 flex-1 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden">
         {label}
       </span>
       {dot ? (
@@ -85,7 +89,7 @@ export function RailAction({
       ) : shortcut ? (
         <span
           aria-hidden
-          className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary) @max-[200px]/rail:hidden"
+          className="shrink-0 text-ui-caption text-(--ui-text-secondary) @max-[200px]/rail:hidden"
         >
           {shortcut}
         </span>
@@ -130,7 +134,7 @@ export function RailSearch({
       <Icon className="size-4 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
       <span
         data-rail-search-label
-        className="min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden"
+        className="min-w-0 flex-1 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden"
       >
         {label}
       </span>
@@ -138,7 +142,7 @@ export function RailSearch({
         <span
           data-rail-search-shortcut
           aria-hidden
-          className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary) @max-[200px]/rail:hidden"
+          className="shrink-0 text-ui-caption text-(--ui-text-secondary) @max-[200px]/rail:hidden"
         >
           {shortcut}
         </span>

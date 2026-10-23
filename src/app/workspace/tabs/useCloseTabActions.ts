@@ -189,7 +189,18 @@ export function useCloseTabActions({
   );
 
   const onCloseTabs = useCallback(
-    (ids: string[], fallbackId: string, opts?: { confirmed?: boolean }) => {
+    (
+      ids: string[],
+      fallbackId: string,
+      opts?: {
+        confirmed?: boolean;
+        /**
+         * Automatic closes only: decided again right before the tabs are removed,
+         * after any confirmation await. A tab for which it returns false is kept.
+         */
+        stillClosable?: (tabId: string) => boolean;
+      },
+    ) => {
       if (windowTransferPendingRef.current || ids.some((id) => movingTabIds.current.has(id)))
         return;
       const current = tabsRef.current;
@@ -208,6 +219,9 @@ export function useCloseTabActions({
       const terminals = closingFiles.filter((file) => file.terminal);
 
       const finishClose = () => {
+        for (const id of ids) if (opts?.stillClosable?.(id) === false) closingIds.delete(id);
+        const remainingIds = ids.filter((id) => closingIds.has(id));
+        if (remainingIds.length === 0) return;
         const latest = tabsRef.current;
         const latestClosing = latest.filter((tab) => closingIds.has(tab.id));
         const latestFallback =
@@ -233,7 +247,7 @@ export function useCloseTabActions({
           )
         ) {
           // The caller's approval cannot cover files added while it waited.
-          onCloseTabs(ids, latestFallback.id);
+          onCloseTabs(remainingIds, latestFallback.id, opts);
           return;
         }
         commitClose((previous) => {

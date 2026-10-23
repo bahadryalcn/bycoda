@@ -1,7 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { projectDisplayName } from "../../projects/model/projectNames";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { LAYER } from "../../../shared/lib/layers";
@@ -44,7 +44,7 @@ export function ReminderNotices({
   onOpenSettings: () => void;
   onHeightChange?: (height: number) => void;
 }) {
-  useLocale();
+  const t = useT();
   const panelRef = useRef<HTMLElement>(null);
   const [snooze, setSnooze] = useState<{
     reminder: SessionReminder;
@@ -73,17 +73,17 @@ export function ReminderNotices({
         ref={panelRef}
         aria-label={t("Due reminders")}
         style={{ zIndex: LAYER.popover - 1 }}
-        className="fixed top-3 right-3 w-[min(320px,calc(100vw-24px))] overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface) text-(--ui-tone-neutral-fg) shadow-xl backdrop-blur-xl"
+        className="fixed top-3 right-3 w-[min(320px,calc(100vw-24px))] overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface) text-(--ui-tone-neutral-fg) shadow-(--ui-elevation-floating)"
       >
         <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2.5">
           <Clock className="size-3.5 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
-          <span className="flex-1 text-[12px] font-semibold">{t("Due reminders")}</span>
-          <span role="status" className="text-[11px] text-(--ui-text-secondary)">
+          <span className="flex-1 text-ui-caption font-semibold">{t("Due reminders")}</span>
+          <span role="status" className="text-ui-micro text-(--ui-text-secondary)">
             {reminders.length || ""}
           </span>
         </div>
         {error ? (
-          <Alert tone="info" role="alert">
+          <Alert tone="danger" role="alert">
             {t("Couldn’t load reminders.")}{" "}
             <Button variant="ghost" type="submit" onClick={onRetry}>
               {t("Retry")}
@@ -100,17 +100,17 @@ export function ReminderNotices({
                 className="block w-full text-left"
                 onClick={() => onOpen(reminder)}
               >
-                <span className="block truncate text-[13px] font-medium hover:underline">
+                <span className="block truncate text-ui-secondary font-medium hover:underline">
                   {sessionDisplayTitle(reminder.title, reminder.harness)}
                 </span>
                 <span
-                  className="mt-1 block truncate text-[11px] text-(--ui-text-secondary)"
+                  className="mt-1 block truncate text-ui-micro text-(--ui-text-secondary)"
                   title={formatReminderTime(reminder.dueAt)}
                 >
                   {projectDisplayName(reminder.cwd)} · {formatReminderTime(reminder.dueAt)}
                 </span>
               </Button>
-              <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+              <div className="mt-2 flex items-center gap-1.5 text-ui-micro">
                 <Button
                   variant="ghost"
                   type="submit"

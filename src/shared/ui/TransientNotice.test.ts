@@ -38,3 +38,41 @@ it("announces the message and does not restart expiry when a parent rerenders", 
     vi.unstubAllGlobals();
   }
 });
+
+it("keeps a sticky danger notice with an action and announces it assertively", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onDismiss = vi.fn();
+  const onClick = vi.fn();
+  try {
+    act(() =>
+      root.render(
+        createElement(TransientNotice, {
+          tone: "danger",
+          title: "Update failed",
+          message: "Try again",
+          durationMs: null,
+          action: { label: "Retry", onClick },
+          onDismiss,
+        }),
+      ),
+    );
+    const alert = document.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain("Update failed");
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(onDismiss).not.toHaveBeenCalled();
+    const retry = [...alert.querySelectorAll("button")].find((b) => b.textContent === "Retry")!;
+    act(() => retry.click());
+    expect(onClick).toHaveBeenCalledOnce();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});

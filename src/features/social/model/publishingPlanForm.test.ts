@@ -51,23 +51,23 @@ describe("Publishing plan form", () => {
       publishingScheduleSummary(
         publishingSchedule({ ...fields, startTime: "22:00", endTime: "03:00" }).schedule!,
       ),
-    ).toContain("gece yarısını geçer");
+    ).toContain("crosses midnight");
     expect(
       publishingScheduleSummary(
         publishingSchedule({ ...fields, startTime: "00:00", endTime: "00:00", maxHours: "2" })
           .schedule!,
       ),
-    ).toContain("günün tamamında, 2 saatte bir");
+    ).toContain("all day, every 2 hours");
     expect(publishingScheduleSummary(publishingSchedule(fields).schedule!)).toContain(
-      "en az 2, en çok 5 saat",
+      "at least 2 and at most 5 hours",
     );
     expect(publishingScheduleSummary(publishingSchedule(fields).schedule!)).toContain(
-      "bir sonraki başlangıç saatini bekler",
+      "waits for the next start time",
     );
   });
 
   it("formats run dates in the selected timezone and handles unavailable dates", () => {
-    expect(publishingPlanTime(Date.UTC(2026, 9, 12, 6), "Europe/Istanbul")).toContain("09:00");
+    expect(publishingPlanTime(Date.UTC(2026, 9, 12, 6), "Europe/Istanbul")).toMatch(/0?9:00/);
     expect(publishingPlanTime(undefined, "Europe/Istanbul")).toBe("—");
     expect(publishingPlanTime(Number.NaN, "Europe/Istanbul")).toBe("—");
   });

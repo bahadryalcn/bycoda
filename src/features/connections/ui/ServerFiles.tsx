@@ -166,7 +166,7 @@ export function ServerFiles({
               title={t("Parent directory")}
               onClick={() => void load(sftpParent(path))}
             >
-              <ArrowUp className="size-3.5" />
+              <ArrowUp className="icon-sm" />
             </Button>
             <TextField
               label={t("Remote directory")}
@@ -177,7 +177,7 @@ export function ServerFiles({
               fieldClassName="min-w-0 flex-1"
             />
             <Button type="submit" loading={busy}>
-              {loaded ? <RefreshCw className="size-3.5" /> : null}
+              {loaded ? <RefreshCw className="icon-sm" /> : null}
               {t(loaded ? "Refresh" : "Open")}
             </Button>
             <Button
@@ -426,9 +426,9 @@ export function ServerFiles({
                 className="flex items-center gap-2 border-b border-stroke py-1.5 text-xs"
               >
                 {entry.kind === "directory" ? (
-                  <Folder className="size-3.5 shrink-0" />
+                  <Folder className="icon-sm shrink-0" />
                 ) : (
-                  <File className="size-3.5 shrink-0" />
+                  <File className="icon-sm shrink-0" />
                 )}
                 {entry.kind === "directory" ? (
                   <Button

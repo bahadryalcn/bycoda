@@ -65,7 +65,7 @@ export function CrewLibrary({
         action={
           <Button
             variant="ghost"
-            startIcon={<Plus className="size-3.5" />}
+            startIcon={<Plus className="icon-sm" />}
             onClick={() => setEditing("new")}
           >
             {t("New member")}
@@ -103,7 +103,7 @@ export function CrewLibrary({
                 aria-expanded={groupMenu}
                 onClick={() => setGroupMenu(true)}
               >
-                <MoreHorizontal className="size-4" />
+                <MoreHorizontal className="icon-md" />
               </Button>
             ) : null}
           </div>
@@ -269,7 +269,7 @@ function LibraryMemberDialog({
           {saved && data.deleteSupported ? (
             <ConfirmMorph
               label={t("Delete")}
-              icon={<Trash2 aria-hidden className="size-3.5" />}
+              icon={<Trash2 aria-hidden className="icon-sm" />}
               tone="danger"
               confirmMode="press"
               onConfirm={async () => {
@@ -314,7 +314,7 @@ function LibraryMemberDialog({
           autoFocus={!saved}
         />
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium">{t("Available in")}</span>
+          <span className="text-ui-body font-medium">{t("Available in")}</span>
           {saved ? (
             <Badge size="md">
               {saved.projectId ? t("This project") : t("All projects on this host")}
@@ -331,7 +331,7 @@ function LibraryMemberDialog({
             />
           )}
         </div>
-        <p className="text-xs text-(--ui-text-secondary)">
+        <p className="text-ui-caption text-(--ui-text-secondary)">
           {t("Crews keep their own copy. Changes here reach a crew only when you update it there.")}
         </p>
       </fieldset>
@@ -422,7 +422,7 @@ function GroupDialog({
             onChange={(event) => setName(event.target.value)}
           />
         ) : (
-          <p className="text-sm">
+          <p className="text-ui-body">
             {t("{p0} members leave this group. The members themselves are kept.", {
               p0: members.length,
             })}

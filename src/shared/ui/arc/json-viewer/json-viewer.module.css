@@ -98,7 +98,7 @@
 }
 .tool:disabled {
   cursor: default;
-  opacity: 0.4;
+  opacity: var(--ui-disabled-opacity, 0.5);
 }
 .tool:active:not(:disabled) {
   background: var(--surface-muted);

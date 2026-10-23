@@ -66,6 +66,7 @@ import { canRewindConversation } from "../../sessions/model/conversationRewind";
 import { parseShellCommand, SHELL_FOLLOW_UP_PROMPT } from "../../sessions/model/shellRun";
 import { loadResumeAtReset } from "../../settings/model/settings";
 import {
+  cachedRemoteSessionIds,
   clearPendingRemoteCommand,
   loadRemoteBlock,
   loadRemoteHistoryPage,
@@ -80,10 +81,12 @@ import {
   reportRemoteMachineStatus,
   remotePendingWorktree,
   remoteSessionFor,
+  remoteShellBoundTo,
   savePendingRemoteCommand,
   sessionAccessForMachine,
   useRemoteMachines,
 } from "../model/connections";
+import { beginRemoteCreate, endRemoteCreate } from "../model/remoteCreateIntent";
 import { blocksSending, needsSignIn, sendAfterReconnect } from "../model/remoteConnection";
 import { CONTINUE_PROMPT } from "../../sessions/model/inFlight";
 import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
@@ -708,7 +711,7 @@ function ConnectedRemoteSession({
             }),
           );
           if (host.environmentId !== machine.environmentId)
-            throw new Error("Host identity changed. Reconnect this machine before continuing.");
+            throw new Error(t("Host identity changed. Reconnect this machine before continuing."));
           if (stale()) return;
           boundedSet(cachedDescriptors, machine.id, host);
           setDescriptor(host);
@@ -753,9 +756,9 @@ function ConnectedRemoteSession({
                   publishRemoteDataState({
                     phase: currentData.updatedAt ? "stale" : "error",
                     updatedAt: currentData.updatedAt,
-                    error: "This conversation was deleted on the host.",
+                    error: t("This conversation was deleted on the host."),
                   });
-                  setError("This conversation was deleted on the host.");
+                  setError(t("This conversation was deleted on the host."));
                   return;
                 }
                 if (changes.reset) {
@@ -894,7 +897,7 @@ function ConnectedRemoteSession({
                 snapshotRef.current = undefined;
                 forceTailRead.current = true;
                 historyGeneration.failed();
-                setError(`History loading failed: ${String(reason)}. Retrying.`);
+                setError(t("History loading failed: {p0}. Retrying.", { p0: String(reason) }));
               },
               onPreviews: (preview) => {
                 const current = snapshotRef.current;
@@ -1242,7 +1245,7 @@ function ConnectedRemoteSession({
           dispatchDone();
         }
       }
-      if (!receipt) throw new Error("The host did not confirm the request.");
+      if (!receipt) throw new Error(t("The host did not confirm the request."));
       recordPerformanceEvent("host-ack", { revision: receipt.revision }, traceId);
       const stopped =
         (generation !== undefined && generation !== submissionGeneration.current) ||
@@ -1264,9 +1267,18 @@ function ConnectedRemoteSession({
           (command.type === "create" && command.firstTurn?.type === "send")
         ) {
           throw new Error(
-            "The host confirmed the stopped request without its run ID. It was kept for recovery; check the host before retrying.",
+            t(
+              "The host confirmed the stopped request without its run ID. It was kept for recovery; check the host before retrying.",
+            ),
           );
         }
+        // The host made the session even though the turn was stopped: keep it
+        // reachable from this tab unless a newer turn is already creating its own.
+        if (command.type === "create" && !preparingTurn.current)
+          adoptCreatedSession(
+            receipt.sessionId,
+            alive.current && version === bindingVersion.current,
+          );
         clearPendingRemoteCommand(project.key, machine.environmentId, command.commandId);
         const handedOff =
           command.type === "create" ? command.firstTurn?.commandId : command.commandId;
@@ -1275,7 +1287,6 @@ function ConnectedRemoteSession({
           void ownership.replaceDurable(`submit:${handedOff}`, []).catch(console.warn);
         }
         if (alive.current && version === bindingVersion.current) {
-          if (command.type === "create" && !preparingTurn.current) openSession(receipt.sessionId);
           setStarting((current) =>
             current?.commandId === optimistic?.commandId ? undefined : current,
           );
@@ -1303,7 +1314,7 @@ function ConnectedRemoteSession({
             { ...next, sessionId: receipt.sessionId },
             shell.id,
           );
-        if (version === bindingVersion.current) openSession(receipt.sessionId);
+        adoptCreatedSession(receipt.sessionId, version === bindingVersion.current);
       }
       clearPendingRemoteCommand(project.key, machine.environmentId, command.commandId);
       const handedOff =
@@ -1421,10 +1432,22 @@ function ConnectedRemoteSession({
     }
   };
 
+  // Not a reset for the REMOTE_HISTORY_CHANGE handler above: `boundSession` is
+  // set first, so the binding it then reads is already ours and the optimistic
+  // turn, `starting` and the snapshot survive our own bind.
   const openSession = (id: string) => {
     boundSession.current = id;
     rememberRemoteSession(shell.id, id);
     setSessionId(id);
+  };
+
+  // Binds the host session a create made to this tab. When the tab's binding
+  // changed while the create ran (`current` false), the session is still bound if
+  // the tab has none and no other tab shows it: skipping would orphan it. Only a
+  // tab meanwhile bound to another session, or the session open elsewhere, keeps it.
+  const adoptCreatedSession = (id: string, current: boolean) => {
+    if (!current && (remoteSessionFor(shell.id) || remoteShellBoundTo(id, shell.id))) return;
+    openSession(id);
   };
 
   // Model, effort and permission changes apply directly, as locally. A
@@ -1527,6 +1550,14 @@ function ConnectedRemoteSession({
 
   const startSession = async (turn: OptimisticTurn, generation = submissionGeneration.current) => {
     const version = bindingVersion.current;
+    // The host lists the new session before the create receipt binds it to this
+    // tab; the intent keeps the rail, openers and tab cleanup from claiming it.
+    const createIntent = beginRemoteCreate(
+      shell.id,
+      shell.cwd,
+      machine.environmentId,
+      cachedRemoteSessionIds(shell.cwd),
+    );
     try {
       const uploaded = await uploadRemoteAttachments(machine.id, turn.attachments, {
         environmentId: machine.environmentId,
@@ -1649,6 +1680,9 @@ function ConnectedRemoteSession({
         setStarting({ ...turn, failed: true });
       }
     } finally {
+      // The receipt has bound the session by now, or the create failed with its
+      // outbox entry (which keeps the tab pending) still saved.
+      endRemoteCreate(shell.id, createIntent);
       ownership?.finishJob(`submit:${turn.commandId}`);
       if (generation === submissionGeneration.current) {
         preparingRef.current = false;
@@ -1829,11 +1863,11 @@ function ConnectedRemoteSession({
    * retried, and a refused one stays in the composer. */
   const runShell = (command: string): boolean => {
     if (!descriptor) {
-      setError("This project’s machine isn’t connected yet.");
+      setError(t("This project’s machine isn’t connected yet."));
       return false;
     }
     if (!descriptor.capabilities.includes(SESSION_SHELL)) {
-      setError(HOST_UPDATE_NOTICE);
+      setError(t(HOST_UPDATE_NOTICE));
       return false;
     }
     if (sendingRef.current || preparingRef.current) return false;
@@ -1851,7 +1885,7 @@ function ConnectedRemoteSession({
     // A new conversation: the command needs a session to run in.
     if (sessionId || !draft.model) return false;
     if (draftWorkspaceMode === "worktree") {
-      setError("Send a message first to create the worktree, then run commands in it.");
+      setError(t("Send a message first to create the worktree, then run commands in it."));
       return false;
     }
     preparingRef.current = true;
@@ -1940,7 +1974,7 @@ function ConnectedRemoteSession({
         !queue.current().messages.some((message) => message.id === unsent.id) &&
         !canEnqueueRemoteMessage(queue.current(), unsent)
       ) {
-        setError("Remote queue is full. Send or remove queued messages before adding more.");
+        setError(t("Remote queue is full. Send or remove queued messages before adding more."));
         return false;
       }
       // Reserve recovery space while upload/steering is in flight. New queued
@@ -1992,7 +2026,7 @@ function ConnectedRemoteSession({
         } catch (reason) {
           if (alive.current && version === bindingVersion.current) {
             holdFollowUp();
-            setError(`Could not deliver the follow-up: ${String(reason)}`);
+            setError(t("Could not deliver the follow-up: {p0}", { p0: String(reason) }));
           }
         } finally {
           onAcceptance?.(accepted);
@@ -2032,7 +2066,7 @@ function ConnectedRemoteSession({
           ? { ...currentQueue, messages: [...currentQueue.messages, reserved] }
           : currentQueue;
       if (!canEnqueueRemoteMessage(capacityQueue, queued)) {
-        setError("Remote queue is full. Send or remove queued messages before adding more.");
+        setError(t("Remote queue is full. Send or remove queued messages before adding more."));
         return false;
       }
       return queue.enqueue(queued) !== false;
@@ -2097,7 +2131,7 @@ function ConnectedRemoteSession({
         (target.harness !== saved.harness &&
           !descriptor?.capabilities.includes("sessions.harnessSwitch"))
       ) {
-        setError("The queued message's provider is unavailable on this machine.");
+        setError(t("The queued message's provider is unavailable on this machine."));
         return;
       }
       setChanges({
@@ -2307,7 +2341,9 @@ function ConnectedRemoteSession({
         );
       } catch (reason) {
         setError(
-          `Couldn’t check whether the host accepted this request: ${String(reason).replace(/^Error: /, "")}`,
+          t("Couldn’t check whether the host accepted this request: {p0}", {
+            p0: String(reason).replace(/^Error: /, ""),
+          }),
         );
         return;
       }
@@ -2317,7 +2353,9 @@ function ConnectedRemoteSession({
       (risky || needsVerification || stopped)
     ) {
       setError(
-        "The host cannot confirm whether this request ran. Check the host before clearing it; it was kept for recovery.",
+        t(
+          "The host cannot confirm whether this request ran. Check the host before clearing it; it was kept for recovery.",
+        ),
       );
       return;
     }
@@ -2351,7 +2389,7 @@ function ConnectedRemoteSession({
       }
     : pending && !sending
       ? {
-          text: "Waiting for the host to confirm your request.",
+          text: t("Waiting for the host to confirm your request."),
           detail: error,
           action: {
             get label() {
@@ -2362,7 +2400,9 @@ function ConnectedRemoteSession({
         }
       : starting?.failed
         ? {
-            text: `Couldn’t ${starting.draft ? "save the draft" : "send the message"} on ${machine.name}.`,
+            text: starting.draft
+              ? t("Couldn’t save the draft on {p0}.", { p0: machine.name })
+              : t("Couldn’t send the message on {p0}.", { p0: machine.name }),
             detail: error,
             action: {
               get label() {
@@ -2417,7 +2457,7 @@ function ConnectedRemoteSession({
             }
           : catalogProblem
             ? {
-                text: `Couldn’t load models from ${machine.name}.`,
+                text: t("Couldn’t load models from {p0}.", { p0: machine.name }),
                 detail: catalogProblem,
                 action: {
                   get label() {
@@ -2431,9 +2471,9 @@ function ConnectedRemoteSession({
   const selectWorktree = async (tree: Worktree) => {
     const parsed = parseRemotePath(tree.path);
     if (!parsed || parsed.environmentId !== machine.environmentId)
-      throw new Error("Choose a worktree on this machine");
+      throw new Error(t("Choose a worktree on this machine"));
     if (sessionId)
-      throw new Error("This session’s worktree is fixed. Start a new session to use another.");
+      throw new Error(t("This session’s worktree is fixed. Start a new session to use another."));
     if (parsed.hostPath === executionCwd) return;
     rememberRemotePendingWorktree(shell.id, parsed.hostPath);
     setSelectedCwd(parsed.hostPath);
@@ -2450,7 +2490,7 @@ function ConnectedRemoteSession({
         target.model !== configuration.model ||
         !sameModelSettings(target.modelSettings, configuration.settings))
     ) {
-      setError("Select that model in the composer before building this remote plan.");
+      setError(t("Select that model in the composer before building this remote plan."));
       return;
     }
     submit(`Build the approved plan:\n\n${block.text}`, [], { intent: "build" }, false, blockId);
@@ -2493,7 +2533,7 @@ function ConnectedRemoteSession({
           commandId: crypto.randomUUID(),
           ...target,
         })
-        .catch((reason) => setError(`Could not stop the turn: ${String(reason)}`));
+        .catch((reason) => setError(t("Could not stop the turn: {p0}", { p0: String(reason) })));
     }
   };
   const approve = (requestId: number, decision: Parameters<SessionPaneProps["onApproval"]>[2]) => {
@@ -2712,7 +2752,9 @@ function ConnectedRemoteSession({
         historyPageRequest.current === request
       )
         setRemoteHistoryError(
-          `Couldn’t load earlier messages: ${String(reason).replace(/^Error: /, "")}`,
+          t("Couldn’t load earlier messages: {p0}", {
+            p0: String(reason).replace(/^Error: /, ""),
+          }),
         );
       return 0;
     } finally {
@@ -2772,7 +2814,7 @@ function ConnectedRemoteSession({
         bindingVersion.current === binding
       )
         setRemoteHistoryError(
-          `Couldn’t load full output: ${String(reason).replace(/^Error: /, "")}`,
+          t("Couldn’t load full output: {p0}", { p0: String(reason).replace(/^Error: /, "") }),
         );
     } finally {
       loadingRemoteBlocks.current.delete(blockId);
@@ -2810,19 +2852,23 @@ function ConnectedRemoteSession({
     onLoadRemoteHistory: loadEarlierRemote,
     onLoadRemoteBlock: loadLargeRemoteBlock,
     sendBlockedReason: remoteDeleted
-      ? "This conversation was deleted on the host."
+      ? t("This conversation was deleted on the host.")
       : pageCacheOnly
-        ? "Showing a saved transcript preview. Reconnect to confirm the host before sending."
+        ? t("Showing a saved transcript preview. Reconnect to confirm the host before sending.")
         : queue.error
-          ? "Could not load queued messages. Retry loading the saved queue above."
+          ? t("Could not load queued messages. Retry loading the saved queue above.")
           : snapshot?.historyLoading
-            ? "Loading earlier messages…"
+            ? t("Loading earlier messages…")
             : outboxIssues.length
-              ? "An unfinished request needs recovery. Check the host and review the request above."
+              ? t(
+                  "An unfinished request needs recovery. Check the host and review the request above.",
+                )
               : blocksSending(connection.status)
                 ? needsSignIn(connection.status)
-                  ? `${machine.name} needs you to sign in first. Use “Sign in and reconnect” above.`
-                  : `Can’t reach ${machine.name}. Send reconnects first.`
+                  ? t("{p0} needs you to sign in first. Use “Sign in and reconnect” above.", {
+                      p0: machine.name,
+                    })
+                  : t("Can’t reach {p0}. Send reconnects first.", { p0: machine.name })
                 : undefined,
     allowedModelHarnesses:
       hostSession && !descriptor?.capabilities.includes("sessions.harnessSwitch")

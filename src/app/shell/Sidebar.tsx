@@ -18,7 +18,7 @@ import { themePalette } from "../../shared/theme/palette";
 import { motion as layoutMotion } from "motion/react";
 import { sessionStatusOrder } from "../../features/sessions/model/sessionStatusOrder";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
-import { t, useLocale } from "../../shared/i18n";
+import { t, useLocale, useT } from "../../shared/i18n";
 import { SocialShortcut } from "../../features/social/ui/SocialShortcut";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { prefetchGithubWorkItem } from "../../features/inbox/model/githubTasks";
@@ -545,7 +545,7 @@ function SidebarComponent({
   onDismissUpdate,
 }: Props) {
   "use memo";
-  useLocale();
+  const t = useT();
   const remoteProject = isRemoteProjectPath(cwd);
   const tab: SidebarTabId = requestedTab;
   const remote = useRemoteProjectSessions(cwd, remoteProject);
@@ -709,7 +709,9 @@ function SidebarComponent({
   ).size;
   const workingSessionsBadge =
     workingSessionCount > 0 ? (
-      <span
+      <Badge
+        variant="count"
+        tone="info"
         data-workspace-working-count
         aria-live="polite"
         aria-label={t(
@@ -719,10 +721,10 @@ function SidebarComponent({
         title={t(workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions", {
           p0: workingSessionCount,
         })}
-        className="ml-2 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 px-1.5 text-[11px] font-semibold tabular-nums leading-none text-accent"
+        className="ml-2 shrink-0"
       >
         {workingSessionCount}
-      </span>
+      </Badge>
     ) : null;
   const remoteExecutionCwd =
     remote.sessions.find((session) => session.id === activeRemoteId)?.cwd ??
@@ -1074,14 +1076,8 @@ function SidebarComponent({
   const gitStatuses = useGitFileStatuses(gitRoot, panelOpen && tab === "files");
   const changeStats = useProjectDiffStats(gitRoot, panelOpen && sidebarAvailable);
 
-  useEffect(() => {
-    if (!drawerMode || !sidebarAvailable) setDrawerOpen(false);
-  }, [drawerMode, sidebarAvailable]);
-
-  useEffect(() => {
-    if (drawerVisible) setDrawerMounted(true);
-    else if (!drawerClosing) setDrawerMounted(false);
-  }, [drawerVisible, drawerClosing]);
+  if (drawerOpen && (!drawerMode || !sidebarAvailable)) setDrawerOpen(false);
+  if (drawerMounted !== drawerVisible && !drawerClosing) setDrawerMounted(drawerVisible);
 
   // Grow the drawer's width so the workspace is pushed along with it. A
   // reversal mid-slide starts from wherever the width currently is.
@@ -1172,7 +1168,11 @@ function SidebarComponent({
     return () => observer.disconnect();
   }, [tab, hasMoreSessions, shownUngroupedCount, loadMoreElement]);
 
-  useEffect(() => {
+  const [sessionStateCwd, setSessionStateCwd] = useState(cwd);
+  // Reset project-owned state before children render the next project. React
+  // retries this component immediately instead of committing stale folder rows.
+  if (sessionStateCwd !== cwd) {
+    setSessionStateCwd(cwd);
     setSessionFolders(loadSessionFolders(cwd));
     setSessionOrder(loadSessionOrder(cwd));
     setListNotice(null);
@@ -1182,6 +1182,8 @@ function SidebarComponent({
     setFolderMenu(null);
     setSessionDrop(null);
     setSelectionMode(false);
+  }
+  useEffect(() => {
     pendingFolderSessionIds.current.clear();
   }, [cwd]);
 
@@ -2365,7 +2367,7 @@ function SidebarComponent({
           className="pointer-events-none absolute inset-x-1 bottom-0 z-20 h-0.5 rounded-full bg-accent"
         />
         <div
-          className={`overflow-hidden rounded-md ${shellFill ? "" : "bg-content/5"}`}
+          className={`overflow-hidden rounded-md ${shellFill ? "" : "bg-(--ui-surface-raised)"}`}
           style={shellFill ? { background: shellFill } : undefined}
         >
           {renamingFolderId === entry.folder.id ? (
@@ -2434,8 +2436,8 @@ function SidebarComponent({
                     onClick={() => onNewInFolder(entry.folder.id)}
                     className="relative flex w-full items-center gap-1"
                   >
-                    <Plus className="size-3 shrink-0" strokeWidth={1.75} />
-                    <span className="text-[13px] font-semibold leading-snug">
+                    <Plus className="icon-xs shrink-0" strokeWidth={1.75} />
+                    <span className="text-ui-secondary font-semibold leading-snug">
                       {t("New session")}
                     </span>
                   </Button>
@@ -2578,7 +2580,7 @@ function SidebarComponent({
             switchError={workspaceSwitchError}
           />
         ) : (
-          <span className="min-w-0 truncate text-sm font-medium leading-tight">
+          <span className="min-w-0 truncate text-ui-body font-medium leading-tight">
             {t("Workspace")}
           </span>
         )}
@@ -2694,6 +2696,7 @@ function SidebarComponent({
                   ) : undefined
                 }
                 gitStatuses={gitStatuses}
+                visible={tab === "files"}
               />
             </div>
           ) : filesSearchOpen ? (
@@ -2704,7 +2707,7 @@ function SidebarComponent({
               onClose={closeFilesSearch}
             />
           ) : (
-            <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
+            <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
               {t("No project folder")}
             </p>
           )}
@@ -2715,7 +2718,7 @@ function SidebarComponent({
             className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2"
           >
             <SearchInputGroup appearance="field" className="min-w-0 flex-1">
-              <Search className="size-3 shrink-0" />
+              <Search className="icon-xs shrink-0" />
               {sessionSearchInput}
             </SearchInputGroup>
             {remoteProject ? (
@@ -2746,7 +2749,7 @@ function SidebarComponent({
                   setSelectionMode(true);
                 }}
               >
-                <CheckList className="size-3" strokeWidth={1.75} />
+                <CheckList className="icon-xs" strokeWidth={1.75} />
               </SessionsHeaderButton>
             </span>
             <SessionsHeaderButton
@@ -2756,7 +2759,7 @@ function SidebarComponent({
               hasPopup
               onClick={onFilterButtonClick}
             >
-              <ListFilter className="size-3" strokeWidth={1.75} />
+              <ListFilter className="icon-xs" strokeWidth={1.75} />
             </SessionsHeaderButton>
           </div>
         ) : null}
@@ -2766,7 +2769,7 @@ function SidebarComponent({
             aria-label={t("Selected conversations")}
             data-session-bulk-bar
             data-session-selection-keep
-            className="flex min-h-8 shrink-0 flex-wrap items-center gap-x-1 gap-y-0.5 border-b border-stroke bg-(--ui-surface-raised) px-2 py-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
+            className="flex min-h-8 shrink-0 flex-wrap items-center gap-x-1 gap-y-0.5 border-b border-stroke bg-(--ui-surface-raised) px-2 py-1 text-ui-caption text-(--ui-text-secondary)"
           >
             <span className="mr-auto shrink-0 pl-0.5 tabular-nums text-content">
               {selectedSessionIds.size}
@@ -2804,7 +2807,7 @@ function SidebarComponent({
                       clearSessionSelection();
                     }}
                   >
-                    <SplitSquare className="size-3" strokeWidth={1.75} />
+                    <SplitSquare className="icon-xs" strokeWidth={1.75} />
                   </BulkBarAction>
                 ) : null}
                 {onPinSession || onPinSessions ? (
@@ -2813,7 +2816,7 @@ function SidebarComponent({
                     disabled={deleting}
                     onClick={() => pinSessions(selectedOrderedIds, !allSelectedPinned)}
                   >
-                    <Pin className="size-3" strokeWidth={1.75} />
+                    <Pin className="icon-xs" strokeWidth={1.75} />
                   </BulkBarAction>
                 ) : null}
                 {onArchiveSession || onArchiveSessions ? (
@@ -2822,7 +2825,7 @@ function SidebarComponent({
                     disabled={deleting}
                     onClick={() => archiveSessions(selectedOrderedIds, !allSelectedArchived)}
                   >
-                    <Archive className="size-3" strokeWidth={1.75} />
+                    <Archive className="icon-xs" strokeWidth={1.75} />
                   </BulkBarAction>
                 ) : null}
                 {onDeleteSession || onDeleteSessions ? (
@@ -2833,9 +2836,9 @@ function SidebarComponent({
                     onClick={() => void bulkDeleteSessions(selectedOrderedIds)}
                   >
                     {deleting ? (
-                      <Loader className="size-3 motion-safe:animate-spin" aria-hidden />
+                      <Loader className="icon-xs motion-safe:animate-spin" aria-hidden />
                     ) : (
-                      <Trash2 className="size-3" strokeWidth={1.75} />
+                      <Trash2 className="icon-xs" strokeWidth={1.75} />
                     )}
                   </BulkBarAction>
                 ) : null}
@@ -2850,14 +2853,14 @@ function SidebarComponent({
             aria-live={deleteNoticeError && !deleteProgress ? "assertive" : "polite"}
             aria-atomic="true"
             data-session-delete-status
-            className={`flex shrink-0 items-start gap-2 border-b border-stroke px-3 py-2 text-[12px] ${deleteNoticeError && !deleteProgress ? "text-danger" : "text-(--ui-text-secondary)"}`}
+            className={`flex shrink-0 items-start gap-2 border-b border-stroke px-3 py-2 text-ui-caption ${deleteNoticeError && !deleteProgress ? "text-danger" : "text-(--ui-text-secondary)"}`}
           >
             {deleteProgress ? (
-              <Loader className="mt-0.5 size-3.5 shrink-0 motion-safe:animate-spin" aria-hidden />
+              <Loader className="mt-0.5 icon-sm shrink-0 motion-safe:animate-spin" aria-hidden />
             ) : deleteNoticeError ? (
-              <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              <CircleAlert className="mt-0.5 icon-sm shrink-0" aria-hidden />
             ) : (
-              <Check className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              <Check className="mt-0.5 icon-sm shrink-0" aria-hidden />
             )}
             <span className="min-w-0 flex-1 break-words">
               {deleteProgress
@@ -2911,7 +2914,7 @@ function SidebarComponent({
           }`}
         >
           {!cwd || cwd === "~" ? (
-            <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
+            <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
               {t("No project folder")}
             </p>
           ) : (
@@ -2932,10 +2935,10 @@ function SidebarComponent({
               !["ready", "empty"].includes(remote.dataState.phase) ? null : pendingFirstLoad ? (
                 <p
                   role="status"
-                  className="flex items-center gap-2 px-3 py-2 text-[12px] text-(--ui-text-secondary)"
+                  className="flex items-center gap-2 px-3 py-2 text-ui-caption text-(--ui-text-secondary)"
                 >
                   <Loader
-                    className="size-3.5 shrink-0 motion-safe:animate-spin"
+                    className="icon-sm shrink-0 motion-safe:animate-spin"
                     strokeWidth={1.75}
                     aria-hidden
                   />
@@ -2971,7 +2974,7 @@ function SidebarComponent({
                 // just typed, so it stays a quiet line of text. Only the genuine
                 // "this project has nothing in it" case earns the illustration.
                 narrowedByUser ? (
-                  <div className="flex flex-col items-start gap-1.5 px-3 py-2 text-[12px] text-(--ui-text-secondary)">
+                  <div className="flex flex-col items-start gap-1.5 px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
                     <p>
                       {searchNarrowed
                         ? t("No matching sessions")
@@ -2992,7 +2995,7 @@ function SidebarComponent({
                     ) : null}
                   </div>
                 ) : remoteProject && !remote.machine ? (
-                  <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
+                  <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
                     {t("This project’s machine isn’t connected on this computer.")}
                   </p>
                 ) : (
@@ -3019,7 +3022,7 @@ function SidebarComponent({
                           data-reminder-sessions={isReminders ? "" : undefined}
                           className={`relative ${styles.folder} ${expanded || beforeUngrouped ? "mb-1.5" : ""}`}
                         >
-                          <div className="overflow-hidden rounded-md bg-content/5">
+                          <div className="overflow-hidden rounded-md bg-(--ui-surface-raised)">
                             <FolderRow
                               folder={
                                 isReminders
@@ -3043,9 +3046,9 @@ function SidebarComponent({
                               )}
                               groupIcon={
                                 isReminders ? (
-                                  <Clock className="size-3.5" strokeWidth={1.75} />
+                                  <Clock className="icon-sm" strokeWidth={1.75} />
                                 ) : (
-                                  <Pin className="size-3.5 text-content" strokeWidth={1.75} />
+                                  <Pin className="icon-sm text-content" strokeWidth={1.75} />
                                 )
                               }
                               onToggle={() => {
@@ -3265,7 +3268,7 @@ function SidebarComponent({
         {...resize.separatorProps}
         aria-label={t("Resize sidebar")}
         className={`absolute inset-y-0 end-0 z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-content/15" : "hover:bg-content/10"
+          resize.dragging ? "bg-(--ui-surface-pressed)" : "hover:bg-(--ui-surface-hover)"
         }`}
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}
@@ -3465,7 +3468,7 @@ function SidebarProjectPicker({
   socialActive?: boolean;
   inboxUnseen?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(null);
   const inboxTrigger = useRef<HTMLElement | null>(null);
   return (
@@ -3486,7 +3489,7 @@ function SidebarProjectPicker({
       <div className="ml-auto flex shrink-0 items-center">
         {onNew ? (
           <IconButton label={t("New tab")} command="Tab: New" onClick={onNew}>
-            <Plus className="size-3.5" strokeWidth={1.75} />
+            <Plus className="icon-sm" strokeWidth={1.75} />
           </IconButton>
         ) : null}
         {onSearch ? (
@@ -3496,7 +3499,7 @@ function SidebarProjectPicker({
             active={searchActive}
             onClick={onSearch}
           >
-            <Search className="size-3.5" strokeWidth={1.75} />
+            <Search className="icon-sm" strokeWidth={1.75} />
           </IconButton>
         ) : null}
         {onOpenInbox ? (
@@ -3513,7 +3516,7 @@ function SidebarProjectPicker({
               }}
             >
               <span className="relative">
-                <Inbox className="size-3.5" strokeWidth={1.75} />
+                <Inbox className="icon-sm" strokeWidth={1.75} />
                 {inboxUnseen ? (
                   <span
                     aria-hidden
@@ -3526,7 +3529,7 @@ function SidebarProjectPicker({
         ) : null}
         {onOpenServers ? (
           <IconButton label={t("Servers")} active={serversActive} onClick={onOpenServers}>
-            <Server className="size-3.5" strokeWidth={1.75} />
+            <Server className="icon-sm" strokeWidth={1.75} />
           </IconButton>
         ) : null}
         {onOpenNotes ? (
@@ -3537,7 +3540,7 @@ function SidebarProjectPicker({
               active={notesActive}
               onClick={onOpenNotes}
             >
-              <StickyNote className="size-3.5" strokeWidth={1.75} />
+              <StickyNote className="icon-sm" strokeWidth={1.75} />
             </IconButton>
           </span>
         ) : null}
@@ -3550,7 +3553,7 @@ function SidebarProjectPicker({
                 active={automationsActive}
                 onClick={onOpenAutomations}
               >
-                <Zap className="size-3.5" strokeWidth={1.75} />
+                <Zap className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             </WorkspaceFeatureGate>
           </span>
@@ -3565,7 +3568,7 @@ function SidebarProjectPicker({
                 active={tasksActive}
                 onClick={onOpenTasks}
               >
-                <DashboardSquare className="size-3.5" strokeWidth={1.75} />
+                <DashboardSquare className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             </WorkspaceFeatureGate>
           </span>
@@ -3663,7 +3666,7 @@ function CompactProjectRail({
   onSelectAgent?: (sessionId: string) => void;
   onPreviewSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
 }) {
-  useLocale();
+  const t = useT();
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(null);
   const inboxTrigger = useRef<HTMLElement | null>(null);
   const action = (active: boolean, open?: () => void) =>
@@ -3909,7 +3912,7 @@ function CompactRailAction({
         <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent" />
       ) : null}
       {badge ? (
-        <span className="pointer-events-none absolute -right-1 -top-1 [&>span]:ml-0 [&>span]:min-h-4 [&>span]:h-auto [&>span]:min-w-4 [&>span]:text-(length:--ui-font-caption) [&>span]:leading-4">
+        <span className="pointer-events-none absolute -right-1 -top-1 [&>span]:ml-0 [&>span]:min-h-4 [&>span]:h-auto [&>span]:min-w-4 [&>span]:text-ui-caption [&>span]:leading-4">
           {badge}
         </span>
       ) : null}
@@ -3935,7 +3938,7 @@ function CompactLastSessionsAction({
   onOpenSession?: (sessionId: string) => void;
   onOpenProject: (path: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const projectKeys = useMemo(
     () => new Set(collectRailProjects(recents, cwd).keys()),
     [recents, cwd],
@@ -4001,18 +4004,18 @@ function CompactLastSessionsAction({
 }
 
 function WorkspaceTitleActions({ onSearch, onNew }: { onSearch?: () => void; onNew?: () => void }) {
-  useLocale();
+  const t = useT();
   if (!onSearch && !onNew) return null;
   return (
     <div className="flex shrink-0 items-center gap-0.5" data-tauri-drag-region="false">
       {onSearch ? (
         <IconButton label={t("Go to File")} command="App: Go to File" onClick={onSearch}>
-          <Search className="size-3.5" strokeWidth={1.75} />
+          <Search className="icon-sm" strokeWidth={1.75} />
         </IconButton>
       ) : null}
       {onNew ? (
         <IconButton label={t("New session")} command="Tab: New" onClick={onNew}>
-          <Plus className="size-3.5" strokeWidth={1.75} />
+          <Plus className="icon-sm" strokeWidth={1.75} />
         </IconButton>
       ) : null}
     </div>
@@ -4032,7 +4035,7 @@ function BulkBarAction({
   onClick: () => void;
   children: ReactNode;
 }) {
-  useLocale();
+  const t = useT();
   return (
     <Button
       tone={danger ? "danger" : "neutral"}
@@ -4236,7 +4239,7 @@ function FolderRow({
   onContextMenu?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onRename?: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const count = sessions.length;
   const accent = folderAccent(folder.colorIndex, folder.customColor);
   return (
@@ -4262,11 +4265,11 @@ function FolderRow({
     >
       <div
         data-drop-highlight={dropTarget ? "true" : "false"}
-        className="pointer-events-none absolute inset-0 hidden rounded-md bg-accent/20 data-[drop-highlight=true]:block"
+        className="pointer-events-none absolute inset-0 hidden rounded-md bg-(--ui-surface-selected) data-[drop-highlight=true]:block"
       />
       <span
         className={`relative grid size-4 shrink-0 place-items-center ${
-          accent ? "" : "text-content/50"
+          accent ? "" : "text-(--ui-text-secondary)"
         }`}
         style={accent ? { color: accent } : undefined}
       >
@@ -4275,40 +4278,40 @@ function FolderRow({
             <>
               <span className="group-hover:hidden group-focus-visible:hidden">{groupIcon}</span>
               <ChevronDown
-                className="hidden size-3.5 text-content group-hover:block group-focus-visible:block"
+                className="hidden icon-sm text-content group-hover:block group-focus-visible:block"
                 strokeWidth={1.75}
               />
             </>
           ) : (
-            <ChevronDown className="size-3.5 text-content" strokeWidth={1.75} />
+            <ChevronDown className="icon-sm text-content" strokeWidth={1.75} />
           )
         ) : (
           <>
             <span className="group-hover:hidden group-focus-visible:hidden">
-              {groupIcon ?? <Folder className="size-3.5 text-content" strokeWidth={1.75} />}
+              {groupIcon ?? <Folder className="icon-sm text-content" strokeWidth={1.75} />}
             </span>
             <ChevronRight
-              className="hidden size-3.5 group-hover:block group-focus-visible:block text-content"
+              className="hidden icon-sm group-hover:block group-focus-visible:block text-content"
               strokeWidth={1.75}
             />
           </>
         )}
       </span>
-      <span className="relative min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug text-content">
+      <span className="relative min-w-0 flex-1 truncate text-ui-secondary font-semibold leading-snug text-content">
         {folder.name}
       </span>
-      <span className="relative flex shrink-0 items-center gap-1 text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)">
+      <span className="relative flex shrink-0 items-center gap-1 text-ui-caption tabular-nums text-(--ui-text-secondary)">
         {busy ? (
           <span role="img" aria-label={t("Working")} title={t("Working")}>
-            <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-active" />
+            <TerminalSpinner className="inline-block w-3 select-none text-center text-ui-micro leading-none text-active" />
           </span>
         ) : null}
         {needsApproval ? (
           <span role="img" aria-label={t("Needs input")} title={t("Needs input")}>
-            <CircleAlert className="size-3 text-warning" strokeWidth={1.75} />
+            <CircleAlert className="icon-xs text-warning" strokeWidth={1.75} />
           </span>
         ) : !expanded && !busy && done ? (
-          <Check className="size-3 text-success" strokeWidth={2.25} />
+          <Check className="icon-xs text-success" strokeWidth={2.25} />
         ) : null}
         <span>{count}</span>
       </span>
@@ -4329,7 +4332,7 @@ function FolderRenameRow({
   onCommit: (name: string) => void;
   onCancel: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const finished = useRef(false);
   const [value, setValue] = useState(folder.name);
@@ -4365,10 +4368,10 @@ function FolderRenameRow({
     >
       <div
         data-drop-highlight={dropTarget ? "true" : "false"}
-        className="pointer-events-none absolute inset-0 hidden rounded-md bg-accent/20 data-[drop-highlight=true]:block"
+        className="pointer-events-none absolute inset-0 hidden rounded-md bg-(--ui-surface-selected) data-[drop-highlight=true]:block"
       />
-      <span className="relative grid size-4 shrink-0 place-items-center text-content/50">
-        <ChevronDown className="size-3.5" strokeWidth={1.75} />
+      <span className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-secondary)">
+        <ChevronDown className="icon-sm" strokeWidth={1.75} />
       </span>
       <TextField
         fieldClassName="min-w-0 flex-1"
@@ -4391,7 +4394,7 @@ function FolderRenameRow({
         }}
         className="relative min-w-0 flex-1 leading-snug"
       />
-      <span className="relative shrink-0 text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)">
+      <span className="relative shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
         {memberCount}
       </span>
     </div>
@@ -4564,7 +4567,7 @@ const SessionCard = memo(function SessionCard({
   onDelete?: (sessionId: string) => void;
 }) {
   "use memo";
-  useLocale();
+  const t = useT();
   const skipClickUntil = useRef(0);
   const skipNextClick = useRef(false);
   const cancelSessionDrag = useRef<(() => void) | null>(null);
@@ -4610,7 +4613,7 @@ const SessionCard = memo(function SessionCard({
             : "neutral";
   const status =
     !issue && !needsApproval && !busy && !opening && !done && !draft ? (
-      <span className="shrink-0 text-[11px] tabular-nums text-(--ui-text-secondary)">
+      <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
         <RelativeSessionTime at={session.updatedAt} />
       </span>
     ) : !issue && !needsApproval && busy ? (
@@ -4619,12 +4622,12 @@ const SessionCard = memo(function SessionCard({
       <Badge size="sm" tone={statusTone} className="shrink-0 whitespace-nowrap tabular-nums">
         {issue ? (
           <>
-            <CircleAlert className="size-3" strokeWidth={1.75} />
+            <CircleAlert className="icon-xs" strokeWidth={1.75} />
             <span>{t(issue === "retrying" ? "Retrying" : "Failed")}</span>
           </>
         ) : needsApproval ? (
           <>
-            <CircleAlert className="size-3" strokeWidth={1.75} />
+            <CircleAlert className="icon-xs" strokeWidth={1.75} />
             <span>
               {orchestration
                 ? t("Needs input")
@@ -4633,17 +4636,17 @@ const SessionCard = memo(function SessionCard({
           </>
         ) : opening ? (
           <>
-            <Loader className="size-3 motion-safe:animate-spin" strokeWidth={1.75} aria-hidden />
+            <Loader className="icon-xs motion-safe:animate-spin" strokeWidth={1.75} aria-hidden />
             <span>{t("Opening…")}</span>
           </>
         ) : done ? (
           <>
-            <Check className="size-3" strokeWidth={2.25} />
+            <Check className="icon-xs" strokeWidth={2.25} />
             <span>{t("Done")}</span>
           </>
         ) : draft ? (
           <>
-            <CircleDashed className="size-3" strokeWidth={1.75} />
+            <CircleDashed className="icon-xs" strokeWidth={1.75} />
             <span>{t("Draft")}</span>
           </>
         ) : (
@@ -4706,9 +4709,9 @@ const SessionCard = memo(function SessionCard({
       className="flex shrink-0 items-center gap-0.5 tabular-nums"
     >
       {linkedWorkItem.kind === "pr" ? (
-        <GitPullRequest className="size-3" strokeWidth={1.75} />
+        <GitPullRequest className="icon-xs" strokeWidth={1.75} />
       ) : (
-        <CircleDot className="size-3" strokeWidth={1.75} />
+        <CircleDot className="icon-xs" strokeWidth={1.75} />
       )}
       <span>#{linkedWorkItem.number}</span>
     </Button>
@@ -4981,7 +4984,7 @@ const SessionCard = memo(function SessionCard({
     <span
       data-session-row-model
       title={model}
-      className="flex min-w-0 shrink items-center gap-1 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)"
+      className="flex min-w-0 shrink items-center gap-1 text-ui-caption font-medium text-(--ui-text-secondary)"
     >
       <HarnessIcon harness={session.harness} className="size-3 shrink-0" />
       {compact ? null : <span className="session-row-model-full min-w-0 truncate">{model}</span>}
@@ -4997,7 +5000,7 @@ const SessionCard = memo(function SessionCard({
     showBranch && !compact && branchText ? (
       <span
         data-session-row-branch
-        className="session-row-branch flex min-w-0 items-center gap-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
+        className="session-row-branch flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)"
         title={session.worktreeCwd ? `${gitLabel}\n${session.worktreeCwd}` : gitLabel}
       >
         <BranchIcon className="size-3 shrink-0" strokeWidth={1.75} />
@@ -5024,28 +5027,7 @@ const SessionCard = memo(function SessionCard({
           }}
           className="pointer-events-none grid size-5 place-items-center opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
         >
-          <Archive className="size-3 shrink-0" strokeWidth={1.75} />
-        </Button>
-      ) : null}
-      {onDelete ? (
-        <Button
-          iconOnly
-          label={`${t("Delete")} ${title}`}
-          variant="ghost"
-          motion="none"
-          type="button"
-          data-no-drag
-          data-tauri-drag-region="false"
-          title={t("Delete")}
-          aria-label={`${t("Delete")} ${title}`}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete(session.id);
-          }}
-          className="pointer-events-none grid size-5 place-items-center opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
-        >
-          <Trash2 className="size-3 shrink-0" strokeWidth={1.75} />
+          <Archive className="icon-xs shrink-0" strokeWidth={1.75} />
         </Button>
       ) : null}
       {workItemBadge}
@@ -5057,7 +5039,7 @@ const SessionCard = memo(function SessionCard({
           aria-label={t("Started by an automation")}
           className="grid size-5 -mr-1 shrink-0 place-items-center text-warning"
         >
-          <Zap className="size-3" strokeWidth={1.75} />
+          <Zap className="icon-xs" strokeWidth={1.75} />
         </span>
       ) : null}
       {orchestration ? (
@@ -5099,7 +5081,7 @@ const SessionCard = memo(function SessionCard({
             }}
             className="grid shrink-0 place-items-center"
           >
-            <Share className="size-3" />
+            <Share className="icon-xs" />
           </Button>
         </div>
       ) : null}
@@ -5134,20 +5116,20 @@ const SessionCard = memo(function SessionCard({
         onContextMenu={onContextMenu ? (event) => onContextMenu(session.id, event) : undefined}
         className={`relative border flex w-full ${onPlaceOnPane || onListDrop || onPopOut ? "cursor-grab" : "cursor-default"} select-none touch-none flex-col rounded-md px-2.5 text-left ${cardPaddingY} ${
           dragging ? "opacity-40" : ""
-        } ${draft && !dropTarget ? "border-dashed border-content/25" : "border-transparent"} ${
+        } ${draft && !dropTarget ? "border-dashed border-stroke" : "border-transparent"} ${
           dropTarget
             ? "text-content"
             : isSelected
-              ? "bg-accent/15 text-content"
+              ? "bg-(--ui-surface-selected) text-content"
               : pressing
-                ? "bg-content/10 text-content transition-colors duration-500 ease-linear"
+                ? "bg-(--ui-surface-pressed) text-content transition-colors duration-500 ease-linear"
                 : isActive
                   ? "bg-selection text-content"
-                  : "text-content/80 hover:bg-content/5 hover:text-content"
+                  : "text-(--ui-text-secondary) hover:bg-(--ui-surface-hover) hover:text-content"
         }`}
       >
         {dropTarget ? (
-          <div className="pointer-events-none absolute inset-0 rounded-md bg-accent/20" />
+          <div className="pointer-events-none absolute inset-0 rounded-md bg-(--ui-surface-selected)" />
         ) : null}
         {isSelected ? (
           <span
@@ -5169,14 +5151,14 @@ const SessionCard = memo(function SessionCard({
             aria-hidden
             data-session-dwell={dropTarget ? "ready" : "waiting"}
             style={{ "--session-dwell-ms": `${groupDelayMs}ms` } as CSSProperties}
-            className="pointer-events-none absolute right-1.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1.5 rounded-full border border-stroke bg-background-base py-0.5 pl-1 pr-2 text-[11px] text-content/80 shadow-sm"
+            className="pointer-events-none absolute right-1.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1.5 rounded-md border border-stroke bg-(--ui-surface-raised) py-0.5 pl-1 pr-2 text-ui-micro text-(--ui-text-secondary)"
           >
             <svg viewBox="0 0 16 16" className="session-row-dwell-ring size-3.5 -rotate-90">
               <circle
                 cx="8"
                 cy="8"
                 r="6"
-                className="fill-none stroke-content/15"
+                className="fill-none stroke-(--ui-surface-pressed)"
                 strokeWidth="2.5"
               />
               <circle
@@ -5229,20 +5211,18 @@ const SessionCard = memo(function SessionCard({
                 aria-hidden
                 data-session-checkbox={isSelected ? "checked" : "unchecked"}
                 className={`grid size-3.5 shrink-0 place-items-center rounded-[4px] border ${
-                  isSelected ? "border-active bg-active text-on-solid" : "border-content/35"
+                  isSelected ? "border-active bg-active text-on-solid" : "border-(--ui-text-muted)"
                 }`}
               >
                 {isSelected ? <Check className="size-2.5" strokeWidth={2.5} /> : null}
               </span>
             ) : null}
             {session.pinned ? (
-              <Pin className="size-3 shrink-0 text-content/45" strokeWidth={1.75} />
+              <Pin className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
             ) : null}
             <ParticleText
               text={title}
-              className={`line-clamp-1 min-w-0 flex-1 text-[13px] font-medium leading-snug ${
-                isActive || isSelected ? "text-content" : "text-content/85"
-              }`}
+              className="line-clamp-1 min-w-0 flex-1 text-ui-secondary font-medium leading-snug text-content"
             />
             {compact ? modelLabel : null}
             {density === "detailed" ? null : (
@@ -5261,7 +5241,7 @@ const SessionCard = memo(function SessionCard({
                 {modelLabel && branchLabel ? (
                   <span
                     aria-hidden
-                    className="session-row-separator size-0.5 shrink-0 rounded-full bg-content/30"
+                    className="session-row-separator size-0.5 shrink-0 rounded-full bg-(--ui-text-muted)"
                   />
                 ) : null}
                 {branchLabel}
@@ -5297,10 +5277,8 @@ const SessionCard = memo(function SessionCard({
           className="pointer-events-none overflow-y-auto p-2.5"
         >
           <div className="flex items-center justify-between gap-3">
-            <span className="text-(length:--ui-font-caption) font-semibold text-content">
-              {t("Subagents")}
-            </span>
-            <span className="shrink-0 text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)">
+            <span className="text-ui-caption font-semibold text-content">{t("Subagents")}</span>
+            <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
               {orchestrationDone}/{orchestration.tasks.length}
               {t(" done")}
             </span>
@@ -5314,11 +5292,11 @@ const SessionCard = memo(function SessionCard({
                   className="flex min-w-0 items-center gap-1.5 rounded-md px-1 py-1"
                 >
                   <HarnessIcon harness={task.harness} className="size-3.5 shrink-0 opacity-75" />
-                  <span className="min-w-0 flex-1 truncate text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                  <span className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)">
                     {task.title}
                   </span>
                   <span
-                    className={`shrink-0 text-(length:--ui-font-caption) ${
+                    className={`shrink-0 text-ui-caption ${
                       task.needsInput ||
                       task.status === "failed" ||
                       task.status === "blocked" ||
@@ -5354,7 +5332,7 @@ function SessionRenameRow({
   onCommit: (title: string) => void | Promise<void>;
   onCancel: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const finished = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -5418,7 +5396,7 @@ function SessionRenameRow({
   return (
     <div
       className={`flex w-full flex-col rounded-md px-2.5 py-2 ${
-        isActive ? "bg-selection text-content" : "text-content/80"
+        isActive ? "bg-selection text-content" : "text-(--ui-text-secondary)"
       }`}
     >
       <TextField
@@ -5443,7 +5421,7 @@ function SessionRenameRow({
 }
 
 function DiffStat({ additions, deletions }: { additions: number; deletions: number }) {
-  useLocale();
+  const t = useT();
   if (additions <= 0 && deletions <= 0) return null;
 
   const label = [
@@ -5458,7 +5436,7 @@ function DiffStat({ additions, deletions }: { additions: number; deletions: numb
       title={t("{p0} uncommitted", { p0: label })}
       className="scrollbar-none flex h-full w-full min-w-0 items-center [justify-content:safe_center] overflow-x-auto overflow-y-hidden overscroll-contain"
     >
-      <span className="flex shrink-0 items-center gap-[0.55em] whitespace-nowrap font-sans text-[11px] font-semibold tabular-nums">
+      <span className="flex shrink-0 items-center gap-[0.55em] whitespace-nowrap font-sans text-ui-micro font-semibold tabular-nums">
         {additions > 0 ? (
           <span className="text-diff-add-fg">
             +<TightDiffNumber value={additions} />

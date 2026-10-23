@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Audience, Rules } from "./SocialManagement";
 import { SocialBulkComposer } from "./SocialBulkComposer";
 import { Campaigns as QueryCampaigns } from "./SocialCampaigns";
+import { closeComposer } from "./socialShared";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
 import type { SocialClient } from "../model/socialClient";
 import type { SocialSnapshot } from "../model/social";
@@ -137,23 +138,22 @@ async function render(
 }
 function form(title: string): HTMLFormElement {
   return Array.from(container.querySelectorAll("form")).find(
-    (item) =>
-      item.querySelector("h3")?.textContent === title ||
-      item.closest(".social-editor")?.getAttribute("aria-label") === title,
+    (item) => item.querySelector("h3")?.textContent === title,
   )!;
 }
 function outreach(): HTMLElement {
-  return container.querySelector<HTMLElement>(
-    '.social-editor[aria-label="Mesaj veya yorum hazırla"]',
-  )!;
+  return container.querySelector<HTMLElement>(".social-detail-header [data-social-composer]")!;
 }
 function control(
   label: string,
   scope: ParentNode = container,
 ): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement {
-  const element = Array.from(scope.querySelectorAll("label"))
-    .find((item) => item.textContent?.trim().startsWith(label))
-    ?.querySelector('input,select,textarea,button[aria-haspopup="dialog"]');
+  const owner = Array.from(scope.querySelectorAll("label")).find((item) =>
+    item.textContent?.trim().startsWith(label),
+  );
+  const element = owner?.htmlFor
+    ? document.getElementById(owner.htmlFor)
+    : owner?.querySelector('input,select,textarea,button[aria-haspopup="dialog"]');
   expect(element, `Missing control: ${label}`).toBeTruthy();
   return element as HTMLInputElement;
 }
@@ -202,7 +202,7 @@ describe("Social management workflows", () => {
     const project = container.querySelector<HTMLSelectElement>("select[required]")!;
     expect(project.value).toBe("a");
     await chooseSocialValue(
-      container.querySelector<HTMLButtonElement>('button[aria-label^="Proje:"]')!,
+      container.querySelector<HTMLButtonElement>('button[aria-label^="Project:"]')!,
       "b",
     );
     expect(project.value).toBe("b");
@@ -217,24 +217,24 @@ describe("Social management workflows", () => {
     const value = snapshot();
     value.accounts.push({ ...value.accounts[0], id: "second", name: "Second account" });
     await render(Audience, value);
-    const create = form("Yeni kişi");
+    const create = form("New contact");
     const account = create.querySelector<HTMLSelectElement>('select[name="account"]')!;
     expect(account.required).toBe(true);
     expect(account.value).toBe("account");
     await chooseSocialValue(
-      create.querySelector<HTMLButtonElement>('button[aria-label^="Hesap:"]')!,
+      create.querySelector<HTMLButtonElement>('button[aria-label^="Account:"]')!,
       "second",
     );
     expect(new FormData(create).get("account")).toBe("second");
     await act(async () => create.reset());
     expect(account.value).toBe("account");
-    expect(create.querySelector('button[aria-label^="Hesap:"]')?.textContent).toContain(
+    expect(create.querySelector('button[aria-label^="Account:"]')?.textContent).toContain(
       "Test account",
     );
     await click("Test contact");
-    const edit = form("Kişiyi güncelle");
+    const edit = form("Update contact");
     expect(edit.querySelector<HTMLSelectElement>('select[name="account"]')?.disabled).toBe(true);
-    expect(edit.querySelector<HTMLButtonElement>('button[aria-label^="Hesap:"]')?.disabled).toBe(
+    expect(edit.querySelector<HTMLButtonElement>('button[aria-label^="Account:"]')?.disabled).toBe(
       true,
     );
     expect(edit.querySelectorAll('input[type="hidden"][name="account"]')).toHaveLength(1);
@@ -244,21 +244,22 @@ describe("Social management workflows", () => {
     await render(Campaigns, snapshot());
     const profileDetails = Array.from(container.querySelectorAll("details")).find(
       (item) =>
-        item.querySelector("summary")?.textContent === "Ürün bilgisi ve doğrulanmış duyurular",
+        item.querySelector("summary")?.textContent ===
+        "Product information and verified announcements",
     )!;
-    await change(control("Ürün adı", profileDetails), "Unsaved Alpha");
-    await change(control("Proje", profileDetails), "b");
-    expect(control("Ürün adı", profileDetails).value).toBe("Beta project");
-    await change(control("Proje", profileDetails), "a");
-    expect(control("Ürün adı", profileDetails).value).toBe("Unsaved Alpha");
-    const factForm = form("Doğrulanmış bilgi ekle");
-    await change(control("Bilgi konusu", factForm), "Saved topic");
-    await change(control("Doğrulanmış, duyurulabilir bilgi", factForm), "Saved text");
-    await change(control("Doğrulama kaynağı", factForm), "Saved source");
+    await change(control("Product name", profileDetails), "Unsaved Alpha");
+    await change(control("Project", profileDetails), "b");
+    expect(control("Product name", profileDetails).value).toBe("Beta project");
+    await change(control("Project", profileDetails), "a");
+    expect(control("Product name", profileDetails).value).toBe("Unsaved Alpha");
+    const factForm = form("Add verified fact");
+    await change(control("Fact topic", factForm), "Saved topic");
+    await change(control("Verified, announceable fact", factForm), "Saved text");
+    await change(control("Verification source", factForm), "Saved source");
     request.mockRejectedValueOnce(new Error("Offline"));
     await submit(factForm);
-    expect(control("Bilgi konusu", factForm).value).toBe("Saved topic");
-    expect(control("Doğrulanmış, duyurulabilir bilgi", factForm).value).toBe("Saved text");
+    expect(control("Fact topic", factForm).value).toBe("Saved topic");
+    expect(control("Verified, announceable fact", factForm).value).toBe("Saved text");
   });
   it("uses current contact state after opt-out and filters segments without stale async results", async () => {
     const value = snapshot();
@@ -270,7 +271,7 @@ describe("Social management workflows", () => {
       tags: [],
     });
     await render(Audience, value);
-    await click("Filtreler");
+    await click("Filters");
     await change(control("Segment", document), "vip");
     expect(container.textContent).not.toContain("Other contact");
     expect(request.mock.calls.some((call) => call[0] !== "policy.get")).toBe(false);
@@ -282,10 +283,10 @@ describe("Social management workflows", () => {
       ),
     };
     await render(Audience, updated);
-    expect(container.textContent).toContain("Bu kişiyle iletişim durduruldu");
+    expect(container.textContent).toContain("Contact with this person is stopped");
     expect(
       Array.from(container.querySelectorAll("button")).find(
-        (item) => item.textContent === "Taslak kaydet",
+        (item) => item.textContent === "Save draft",
       )?.disabled,
     ).toBe(true);
   });
@@ -293,18 +294,18 @@ describe("Social management workflows", () => {
     await render(Audience, snapshot());
     await click("Test contact");
     const editor = outreach();
-    expect(control("Proje", editor).textContent).toContain("Alpha project");
-    await change(control("İçerik", editor), "abc");
+    expect(control("Project", editor).textContent).toContain("Alpha project");
+    await change(control("Content", editor), "abc");
     request.mockResolvedValueOnce({ effective: { maxMessageCharacters: 2 } });
     await submit(editor.querySelector("form")!);
     expect(request).toHaveBeenCalledWith("policy.get", {
       accountId: "account",
     });
     expect(request.mock.calls.some((call) => call[0] === "messages.draft")).toBe(false);
-    expect(editor.textContent).toContain("Metin 2 karakter sınırını aşıyor");
+    expect(editor.textContent).toContain("The text exceeds the 2 character limit");
     expect(editor.textContent).toContain("abc");
-    await click("İçeriği düzenle");
-    expect(control("İçerik", editor).value).toBe("abc");
+    await click("Edit content");
+    expect(control("Content", editor).value).toBe("abc");
     request.mockImplementation(async (action, input) =>
       action === "policy.get"
         ? { effective: { maxMessageCharacters: 5 } }
@@ -329,7 +330,7 @@ describe("Social management workflows", () => {
       }),
       expect.any(String),
     );
-    expect(editor.textContent).toContain("Taslak hazır");
+    expect(editor.textContent).toContain("Draft ready");
     expect(
       request.mock.calls.some(
         (call) => call[0] === "messages.send" || call[0] === "drafts.approve",
@@ -361,7 +362,7 @@ describe("Social management workflows", () => {
     await click("Test campaign");
     const schedule = () =>
       Array.from(container.querySelectorAll("button")).find(
-        (item) => item.textContent === "Yayını planla",
+        (item) => item.textContent === "Schedule posts",
       )!;
     expect(schedule().disabled).toBe(true);
     request.mockResolvedValueOnce({
@@ -374,11 +375,11 @@ describe("Social management workflows", () => {
         },
       ],
     });
-    await click("Hesap ve içeriği kontrol et");
+    await click("Check account and content");
     expect(schedule().disabled).toBe(true);
     expect(
       Array.from(container.querySelectorAll("button")).find(
-        (item) => item.textContent === "Yayın onayı ver",
+        (item) => item.textContent === "Give publishing approval",
       )?.disabled,
     ).toBe(true);
     await act(async () =>
@@ -394,11 +395,11 @@ describe("Social management workflows", () => {
         },
       ],
     });
-    await click("Yayın onayı ver");
+    await click("Give publishing approval");
     expect(request).toHaveBeenCalledWith("campaigns.approve", { id: campaign.id });
     expect(request).not.toHaveBeenCalledWith("campaigns.schedule", expect.anything());
     expect(schedule().disabled).toBe(false);
-    await click("Yayını planla");
+    await click("Schedule posts");
     expect(request).toHaveBeenCalledWith("campaigns.schedule", { id: campaign.id });
     await render(Campaigns, {
       ...value,
@@ -422,8 +423,8 @@ describe("Social management workflows", () => {
     value.campaigns = [campaign];
     await render(Campaigns, value);
     await click("Saved campaign");
-    await click("Taslağı düzenle");
-    await change(control("Kampanya adı"), "Unsaved owner edit");
+    await click("Edit draft");
+    await change(control("Campaign name", document.body), "Unsaved owner edit");
     await render(Campaigns, {
       ...value,
       campaigns: [{ ...campaign, name: "Newer owner edit", revision: 2 }],
@@ -433,7 +434,7 @@ describe("Social management workflows", () => {
       if (action === "campaigns.create") throw new Error("Campaign changed in another client");
       return {};
     });
-    const editForm = container.querySelector<HTMLFormElement>(".social-composer form")!;
+    const editForm = document.body.querySelector<HTMLFormElement>("[data-social-composer] form")!;
     await act(async () =>
       editForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
     );
@@ -441,7 +442,7 @@ describe("Social management workflows", () => {
       "campaigns.create",
       expect.objectContaining({ id: campaign.id, expectedRevision: 1, name: "Unsaved owner edit" }),
     );
-    expect(control("Kampanya adı").value).toBe("Unsaved owner edit");
+    expect(control("Campaign name", document.body).value).toBe("Unsaved owner edit");
   });
 
   it("can reopen editing for the same saved campaign after closing its form", async () => {
@@ -461,34 +462,34 @@ describe("Social management workflows", () => {
     ];
     await render(Campaigns, value);
     await click("Saved campaign");
-    await click("Taslağı düzenle");
-    const details = container.querySelector<HTMLDetailsElement>(".social-composer")!;
-    expect(details.open).toBe(true);
-    expect(details.querySelector("summary")?.textContent).toContain("Kampanya taslağını düzenle");
-    await click("Kampanya taslağını düzenle formunu kapat");
-    expect(details.open).toBe(false);
-    await click("Taslağı düzenle");
-    expect(details.open).toBe(true);
-    expect(control("Kampanya adı", details).value).toBe("Saved campaign");
+    await click("Edit draft");
+    const dialog = () => document.body.querySelector<HTMLElement>('[role="dialog"]');
+    expect(dialog()).toBeTruthy();
+    expect(dialog()!.textContent).toContain("Edit campaign draft");
+    await act(async () => closeComposer(control("Campaign name", document.body).closest("form")!));
+    expect(dialog()).toBeNull();
+    await click("Edit draft");
+    expect(dialog()).toBeTruthy();
+    expect(control("Campaign name", document.body).value).toBe("Saved campaign");
     expect(request).not.toHaveBeenCalled();
   });
   it("does not crash when a campaign date is cleared and counts links against the content policy", async () => {
     await render(Campaigns, snapshot());
-    await click("Sosyal hesaplar");
+    await click("Social accounts");
     const account = document.body.querySelector<HTMLButtonElement>('[role="option"]')!;
     await act(async () => account.click());
     const done = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
-      (button) => button.textContent === "Bitti",
+      (button) => button.textContent === "Done",
     )!;
     await act(async () => done.click());
-    await change(control("Bu hesaba özel içerik"), "abc");
-    await change(control("Bağlantı"), "https://example.test");
-    expect(container.textContent).toContain("İçerik sınırını aşıyor");
-    await change(control("Tek seferlik planlama zamanı"), "");
-    expect(control("Tek seferlik planlama zamanı").value).toBe("");
+    await change(control("Content for this account"), "abc");
+    await change(control("Link"), "https://example.test");
+    expect(container.textContent).toContain("The content exceeds the limit");
+    await change(control("One-time schedule time"), "");
+    expect(control("One-time schedule time").value).toBe("");
     expect(
       Array.from(container.querySelectorAll("button")).find(
-        (item) => item.textContent === "Kampanya taslağını kaydet",
+        (item) => item.textContent === "Save campaign draft",
       )?.disabled,
     ).toBe(true);
   });
@@ -496,7 +497,7 @@ describe("Social management workflows", () => {
     const value = snapshot();
     await render(Rules, value);
     const factLabel = Array.from(container.querySelectorAll("label")).find((item) =>
-      item.textContent?.trim().startsWith("İzin verilen yanıt bilgisi"),
+      item.textContent?.trim().startsWith("Allowed reply fact"),
     )!;
     const factSelect = factLabel.querySelector("select")!;
     expect(factSelect.required).toBe(true);
@@ -508,7 +509,7 @@ describe("Social management workflows", () => {
     expect(factSelect.value).toBe("fact-a");
     const save = () =>
       Array.from(container.querySelectorAll("button")).find(
-        (item) => item.textContent === "Durdurulmuş kuralı kaydet",
+        (item) => item.textContent === "Save paused rule",
       )!;
     expect(save().disabled).toBe(false);
     await render(Rules, {

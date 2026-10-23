@@ -1,4 +1,4 @@
-import { Button } from "../../../shared/ui/Button";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -30,30 +30,22 @@ export function DelimitedFileView(props: ComponentProps<typeof FileEditorType>) 
   }, [props.navigation, props.showDiff]);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div
-        className="flex shrink-0 items-center gap-1 border-b border-stroke px-3 py-1.5"
-        role="group"
-        aria-label={t("Table view")}
-      >
-        {(["preview", "source"] as const).map((value) => (
-          <Button
-            variant="ghost"
-            motion="none"
-            key={value}
-            type="button"
-            aria-pressed={mode === value}
-            onClick={() => {
-              if (value === "source") setSourceMounted(true);
-              setMode(value);
-            }}
-            className={" "}
-          >
-            {t(value === "preview" ? "Preview" : "Source")}
-          </Button>
-        ))}
+      <div className="flex shrink-0 items-center border-b border-stroke px-3 py-1.5">
+        <SegmentedControl
+          label={t("Table view")}
+          value={mode}
+          onValueChange={(value) => {
+            if (value === "source") setSourceMounted(true);
+            setMode(value as "preview" | "source");
+          }}
+          options={[
+            { value: "preview", label: t("Preview") },
+            { value: "source", label: t("Source") },
+          ]}
+        />
       </div>
       {mode === "preview" && dirty ? (
-        <p role="status" className="px-3 py-1 text-xs text-[var(--ui-text-secondary)]">
+        <p role="status" className="px-3 py-1 text-ui-caption text-[var(--ui-text-secondary)]">
           {t("Preview shows the saved file. Your source edits are kept in the Source view.")}
         </p>
       ) : null}

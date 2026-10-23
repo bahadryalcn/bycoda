@@ -346,7 +346,11 @@ it("reorders queued cards with drag and drop and supports equivalent buttons", a
     ["tasks", "tasks.todo", "tasks.workspaces"],
   );
   await render();
-  expect(button(card("Second"), "Move earlier")).toBeTruthy();
+  await act(async () => button(card("Second"), "More actions")!.click());
+  expect(button(document.body.querySelector('[role="menu"]')!, "Move earlier")).toBeTruthy();
+  await act(async () =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
   const transfer = { setData: vi.fn(), effectAllowed: "", dropEffect: "" };
   const dispatch = (target: HTMLElement, type: string) => {
     const event = new Event(type, { bubbles: true, cancelable: true });
@@ -431,12 +435,22 @@ it("lays tasks out in six columns with the actions each status allows", async ()
   ).toEqual(["To do", "Queued", "Running", "Review", "Done", "Blocked"]);
   const actions = (status: string) =>
     Array.from(column(status).querySelectorAll("button"), buttonName);
-  expect(actions("todo")).toEqual(["Mark done", "Start", "Edit", "Delete"]);
-  expect(actions("queued")).toEqual(["Move to To do", "Edit", "Delete"]);
+  // A card offers its lead action; everything else, Delete last, is in the menu.
+  expect(actions("todo")).toEqual(["Start", "More actions"]);
+  expect(actions("queued")).toEqual(["More actions"]);
   expect(actions("running")).toEqual(["Stop"]);
-  expect(actions("review")).toEqual(["Approve", "Run again", "Delete"]);
-  expect(actions("done")).toEqual(["Run again", "Reopen", "Delete"]);
-  expect(actions("blocked")).toEqual(["Task failed", "Retry", "Move to To do", "Edit", "Delete"]);
+  expect(actions("review")).toEqual(["Approve", "More actions"]);
+  expect(actions("done")).toEqual(["Run again", "More actions"]);
+  expect(actions("blocked")).toEqual(["Task failed", "Retry", "More actions"]);
+  await act(async () => button(column("blocked"), "More actions")!.click());
+  expect(Array.from(document.body.querySelectorAll('[role="menu"] button'), buttonName)).toEqual([
+    "Move to To do",
+    "Edit",
+    "Delete",
+  ]);
+  await act(async () =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
   expect(column("running").textContent).toContain("Needs input");
   expect(column("blocked").textContent).not.toContain("Not signed in");
   await act(async () => button(column("blocked"), "Task failed")!.click());
@@ -757,19 +771,19 @@ it("confirms before discarding the branch of an unmerged task", async () => {
   await act(async () => button(column("blocked"), "Task failed")!.click());
   expect(document.body.textContent).toContain("Check command failed (exit code 1)");
   await act(async () => button(document.body.querySelector('[role="dialog"]')!, "Close")!.click());
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   await pickAction(column("blocked"), "Delete");
-  expect(confirm.mock.calls[0][0]).toContain(
+  const dialog = () => document.body.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog().textContent).toContain(
     "Its work on mc/abcd1234 was never merged, and the branch will be discarded.",
   );
+  await act(async () => button(dialog(), "Cancel")!.click());
   expect(requests.some((request) => request.method === "tasks.delete")).toBe(false);
-  confirm.mockReturnValue(true);
   await pickAction(column("blocked"), "Delete");
+  await act(async () => button(dialog(), "Delete")!.click());
   expect(requests).toContainEqual({
     method: "tasks.delete",
     params: { taskId: "main", discard: true },
   });
-  confirm.mockRestore();
 });
 
 it("offers the branch, check and review options on a new task", async () => {
@@ -1076,7 +1090,10 @@ it("shows a retained owner delivery request as automatic delivery and lets the o
   expect(column("review").textContent).toContain("Waiting for automatic delivery");
   expect(column("review").textContent).not.toContain("Waiting for your merge approval");
 
-  expect(button(document.body, "Pause automatic merge")).toBeTruthy();
+  await act(async () => button(column("review"), "More actions")!.click());
+  expect(
+    button(document.body.querySelector('[role="menu"]')!, "Pause automatic merge"),
+  ).toBeTruthy();
 });
 
 it("edits an existing goal on its own host without replanning", async () => {
@@ -1529,9 +1546,9 @@ it("opens the current worker and active reviewer from the task card and details"
   ]);
   await render(openSession);
   const taskCard = card("Ship the report");
-  await act(async () => button(taskCard, "Open worker session")!.click());
+  await pickAction(taskCard, "Open worker session");
   await promoteSession();
-  await act(async () => button(taskCard, "Open review session")!.click());
+  await pickAction(taskCard, "Open review session");
   await promoteSession();
   expect(panel()).toBeNull();
   expect(openSession.mock.calls.map(([target]) => target)).toEqual([
@@ -1579,8 +1596,13 @@ it("retained worker and reviewer links are usable while attempt summaries stay c
     }),
   ]);
   await render(openSession);
-  expect(button(card("Ship the report"), "Open worker session")).toBeTruthy();
-  expect(button(card("Ship the report"), "Open review session")).toBeTruthy();
+  await act(async () => button(card("Ship the report"), "More actions")!.click());
+  const sessionMenu = document.body.querySelector('[role="menu"]')!;
+  expect(button(sessionMenu, "Open worker session")).toBeTruthy();
+  expect(button(sessionMenu, "Open review session")).toBeTruthy();
+  await act(async () =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
   await act(async () => card("Ship the report").click());
   const history = panel()!.querySelector('[aria-label="Attempt history"]')!;
   expect(history.querySelector("[data-timeline-trigger]")!.getAttribute("aria-expanded")).toBe(
@@ -1603,7 +1625,7 @@ it("retained worker and reviewer links are usable while attempt summaries stay c
 it("shows a navigation failure without mutating the task", async () => {
   const requests = host([task({ status: "running", sessionId: "worker-unavailable" })]);
   await render(vi.fn().mockRejectedValue(new Error("This session is no longer available.")));
-  await act(async () => button(card("Ship the report"), "Open worker session")!.click());
+  await pickAction(card("Ship the report"), "Open worker session");
   await promoteSession();
   expect(document.body.textContent).toContain("This session is no longer available.");
   expect(
@@ -1619,7 +1641,7 @@ it("previews sessions without navigating and prevents duplicate promotion", asyn
   const open = vi.fn(() => pending);
   const requests = host([task({ status: "running", sessionId: "worker-loading" })]);
   await render(open);
-  await act(async () => button(card("Ship the report"), "Open worker session")!.click());
+  await pickAction(card("Ship the report"), "Open worker session");
   expect(open).not.toHaveBeenCalled();
   expect(document.body.textContent).toContain("Session preview reply");
   expect(requests.filter((request) => request.method === "sessions.get")).toHaveLength(1);
@@ -1699,11 +1721,10 @@ it("gives the panel the card's actions, and closes it when the task is gone", as
     method: "tasks.move",
     params: { taskId: "main", to: "done" },
   });
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   await pickAction(panel()!, "Delete");
+  await act(async () => button(document.body.querySelector('[role="dialog"]')!, "Delete")!.click());
   await act(async () => {});
   expect(panel()).toBeNull();
-  confirm.mockRestore();
 });
 
 it("will not start a to-do item without a description", async () => {
@@ -1769,6 +1790,7 @@ it("lists stewards in a panel with their schedule and last run", async () => {
   expect(card.textContent).toContain("The steward’s reply has no json block.");
   expect(card.textContent).toContain("Next run");
   expect(Array.from(card.querySelectorAll("button"), buttonName)).toEqual([
+    "Enabled",
     "Run now",
     "Edit",
     "More actions",
@@ -1785,7 +1807,7 @@ it("lists stewards in a panel with their schedule and last run", async () => {
     params: { stewardId: "steward-1" },
   });
   await act(async () =>
-    card.querySelector<HTMLInputElement>('input[aria-label="Enabled"]')!.click(),
+    card.querySelector<HTMLButtonElement>('button[aria-label="Enabled"]')!.click(),
   );
   const saved = requests.find((request) => request.method === "stewards.save")!;
   expect(saved.params).toMatchObject({
@@ -1836,10 +1858,8 @@ it("marks a steward's suggestion and declines it instead of deleting it", async 
   expect(suggested.querySelector("[data-task-suggested]")!.textContent).toBe("Suggested");
   expect(card("Mine").querySelector("[data-task-suggested]")).toBeNull();
   expect(Array.from(suggested.querySelectorAll("button"), buttonName)).toEqual([
-    "Mark done",
     "Start",
-    "Edit",
-    "Decline",
+    "More actions",
   ]);
 
   // The detail panel carries the badge and the same action.
@@ -2254,9 +2274,9 @@ it("disables unrelated task, goal, steward and note mutations while a board acti
   expect(button(goalCard, "Approve")!.disabled).toBe(true);
   const stewardRow = stewardCard()!;
   expect(button(stewardRow, "Run now")!.disabled).toBe(true);
-  expect(stewardRow.querySelector<HTMLInputElement>('input[aria-label="Enabled"]')!.disabled).toBe(
-    true,
-  );
+  expect(
+    stewardRow.querySelector<HTMLButtonElement>('button[aria-label="Enabled"]')!.disabled,
+  ).toBe(true);
   await act(async () => button(panel()!, "Stop")!.click());
   expect(stops).toEqual(["a"]);
   await act(async () => release(task({ id: "a", title: "Running A", status: "blocked" })));

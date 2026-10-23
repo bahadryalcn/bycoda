@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import { accountChoicesSnapshot, modelAccountLabel } from "../model/accountModelChoices";
 import { subscribeProviderAccounts } from "../../providers/model/providerAccounts";
@@ -18,7 +18,7 @@ export function SessionAgentIdentity({
   running: boolean;
   showAccount: boolean;
 }) {
-  useLocale();
+  const t = useT();
   useSyncExternalStore(subscribeProviderAccounts, accountChoicesSnapshot, accountChoicesSnapshot);
   const source = useModelSource();
   const resolved = source.resolve(harness, model);

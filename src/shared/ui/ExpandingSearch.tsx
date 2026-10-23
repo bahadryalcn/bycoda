@@ -2,7 +2,7 @@ import {
   ExpandingSearch as ArcExpandingSearch,
   type ExpandingSearchProps,
 } from "./arc/expanding-search/expanding-search";
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 
 export type {
   ExpandingSearchItem,
@@ -11,7 +11,7 @@ export type {
 
 /** Navigation search; filtering and persisted form selection have separate owners. */
 export function ExpandingSearch(props: ExpandingSearchProps) {
-  useLocale();
+  const t = useT();
   return (
     <ArcExpandingSearch
       clearLabel={t("Clear search")}

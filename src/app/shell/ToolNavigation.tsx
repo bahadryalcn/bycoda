@@ -20,13 +20,14 @@ import {
   Wrench,
   Terminal,
 } from "../../shared/ui/icons";
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { TOOL_IDS, type WorkspaceToolId } from "../model/toolWindows";
 import { routeWindowDestination } from "../model/windowNavigation";
 import { Button } from "../../shared/ui/Button";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { useSshRunbookQueue } from "../../features/connections/model/sshRunbookQueue";
 import "./toolNavigation.css";
+import { preloadToolSurface } from "../workspace/surfaces/lazySurfaces";
 
 // Retained panels own separate headers. Carry keyboard focus into the header
 // revealed by switching tools, after the previous tablist becomes hidden.
@@ -93,7 +94,13 @@ export function ToolPanel({
   keepEffects?: boolean;
 }) {
   const visited = useRef(false);
-  if (active) visited.current = true;
+  // A hidden panel keeps the element it last showed: React skips an identical
+  // element, so workspace renders do not re-render the hidden tool's tree.
+  const shown = useRef(children);
+  if (active) {
+    visited.current = true;
+    shown.current = children;
+  }
   if (visited.current && keepEffects)
     return (
       <div
@@ -105,13 +112,13 @@ export function ToolPanel({
     );
   return visited.current ? (
     <Activity mode={active ? "visible" : "hidden"}>
-      <div className="ui-page-enter flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+      <div className="ui-page-enter flex min-h-0 min-w-0 flex-1 flex-col">{shown.current}</div>
     </Activity>
   ) : null;
 }
 
 export function ToolNavigation() {
-  useLocale();
+  const t = useT();
   const sshReviews = useSshRunbookQueue();
   const navigation = useContext(ToolNavigationContext);
   const [opening, setOpening] = useState(false);
@@ -227,6 +234,8 @@ export function ToolNavigation() {
                 else tabRefs.current.delete(tool);
               }}
               aria-selected={navigation.active === tool}
+              onPointerEnter={() => preloadToolSurface(tool)}
+              onFocus={() => preloadToolSurface(tool)}
               tabIndex={navigation.active === tool ? 0 : -1}
               title={t(labels[tool])}
               onClick={() => navigation.onSelect(tool)}
@@ -252,7 +261,7 @@ export function ToolNavigation() {
           aria-label={t("Open in new window")}
           title={t("Open in new window")}
         >
-          <AppWindow className="size-3.5" aria-hidden />
+          <AppWindow className="icon-sm" aria-hidden />
         </Button>
         <Button
           variant="ghost"
@@ -263,7 +272,7 @@ export function ToolNavigation() {
           aria-label={t("Open all tools in one window")}
           title={t("Open all tools in one window")}
         >
-          <DashboardSquare className="size-3.5" aria-hidden />
+          <DashboardSquare className="icon-sm" aria-hidden />
           <span className="tool-action-label">
             {opening ? t("Opening new window…") : t("All tools in one window")}
           </span>

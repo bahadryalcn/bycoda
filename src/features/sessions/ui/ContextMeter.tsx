@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useId, useRef, useState } from "react";
+import { useT } from "../../../shared/i18n";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { contextRatio, formatTokens, type ContextUsage } from "../model/contextUsage";
 import { formatApiTime, formatCost, type SessionUsage } from "../model/sessionUsage";
 import { Popover } from "../../../shared/ui/Popover";
@@ -9,6 +9,8 @@ import type { Block } from "../model/session";
 import { completedResponseSpeed, responseSpeedFill } from "../model/responseSpeed";
 import { isHiddenTool, isSubagentBlock, subagentName } from "../model/transcriptActivity";
 import "./chat-controls.css";
+
+const NO_BLOCKS: readonly Block[] = [];
 
 /** The outer ring turns amber then red as the context window fills. */
 function ringClass(ratio: number): string {
@@ -27,7 +29,7 @@ function ringClass(ratio: number): string {
 export function ContextMeter({
   usage,
   sessionUsage,
-  contextBlocks = [],
+  contextBlocks = NO_BLOCKS,
   onCompact,
   compactDisabled = false,
   working = false,
@@ -42,7 +44,7 @@ export function ContextMeter({
   /** The conversation is confirmed to have no messages or prior usage. */
   empty?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const [hovered, setHovered] = useState(false);
   const [open, setOpen] = useState(false);
   const [speedInfoOpen, setSpeedInfoOpen] = useState(false);
@@ -72,19 +74,9 @@ export function ContextMeter({
   }
   useEffect(() => () => cancelHoverClose(), []);
   const ratio = contextRatio(usage);
-  const speed = completedResponseSpeed(contextBlocks);
-  const agents = new Map<string, { name: string; usage?: ContextUsage }>();
-  for (const block of contextBlocks) {
-    if (!isSubagentBlock(block) || isHiddenTool(block)) continue;
-    const id = block.tool?.callId ?? block.id;
-    const reading = block.tool?.agentContext;
-    const used = reading?.used;
-    agents.set(id, {
-      name: subagentName(block),
-      usage:
-        used !== undefined && Number.isFinite(used) && used >= 0 ? reading : agents.get(id)?.usage,
-    });
-  }
+  // Scans the whole transcript: only redo it when the blocks change, not per keystroke.
+  const speed = useMemo(() => completedResponseSpeed(contextBlocks), [contextBlocks]);
+  const agents = useMemo(() => subagentReadings(contextBlocks), [contextBlocks]);
   if ((!usage || ratio === null) && agents.size === 0 && !speed) {
     return empty && !usage && !sessionUsage ? (
       <span
@@ -362,4 +354,20 @@ function ContextSignal({
       </span>
     </span>
   );
+}
+
+function subagentReadings(blocks: readonly Block[]) {
+  const agents = new Map<string, { name: string; usage?: ContextUsage }>();
+  for (const block of blocks) {
+    if (!isSubagentBlock(block) || isHiddenTool(block)) continue;
+    const id = block.tool?.callId ?? block.id;
+    const reading = block.tool?.agentContext;
+    const used = reading?.used;
+    agents.set(id, {
+      name: subagentName(block),
+      usage:
+        used !== undefined && Number.isFinite(used) && used >= 0 ? reading : agents.get(id)?.usage,
+    });
+  }
+  return agents;
 }

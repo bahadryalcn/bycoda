@@ -678,6 +678,7 @@ describe("settings search", () => {
   it("ranks label matches over keyword matches, and pages last", () => {
     expect(searchSettings("glass").map((result) => result.label)).toEqual([
       "Main pane glass",
+      "Window glass",
       "Blur radius",
       "Main pane opacity",
       "Sidebar opacity",

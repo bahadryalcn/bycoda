@@ -6,7 +6,7 @@ import {
   savePerformanceTraceEnabled,
 } from "../../../shared/lib/performanceTraceSettings";
 import { copyText } from "../../../platform/tauri/clipboard";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { Button } from "../../../shared/ui/Button";
 import { Group, Row, Toggle } from "./settingsControls";
 
 /** Timings only: the copied JSON holds stage names, times, durations and counters. */
@@ -57,8 +57,15 @@ export function DiagnosticsGroup() {
         label={t("Trace data")}
         description={t("Copy the recorded timings as JSON, or clear them.")}
       >
-        <SecondaryButton onClick={onCopy}>{copied ? t("Copied") : t("Copy trace")}</SecondaryButton>
-        <SecondaryButton onClick={onClear}>{cleared ? t("Cleared") : t("Clear")}</SecondaryButton>
+        <span role="status" className="text-ui-caption text-(--ui-text-secondary)">
+          {copied ? t("Copied") : cleared ? t("Cleared") : ""}
+        </span>
+        <Button className="shrink-0" onClick={onCopy}>
+          {t("Copy trace")}
+        </Button>
+        <Button className="shrink-0" onClick={onClear}>
+          {t("Clear")}
+        </Button>
       </Row>
     </Group>
   );

@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale, getLocale } from "../../../shared/i18n";
+import { getLocale, useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { ModalPanel } from "../../../shared/ui/Modal";
 import { claudeSessions, type ClaudeSessionSummary } from "../../../platform/tauri/fs";
@@ -14,7 +14,7 @@ type Props = {
 
 /** Conversations Claude Code already recorded for this project, newest first. */
 export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }: Props) {
-  useLocale();
+  const t = useT();
   const [sessions, setSessions] = useState<ClaudeSessionSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);

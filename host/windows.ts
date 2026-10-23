@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import aclScript from "./windows-acl.ps1?raw";
+import taskAccessScript from "./windows-task-access.ps1?raw";
 import { windowsServiceLauncherSource } from "./windows-service-launcher";
 
 export const psQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
@@ -64,6 +65,14 @@ export async function runPowerShell(script: string): Promise<string> {
 
 export async function protectWindowsDirectory(directory: string): Promise<void> {
   await runPowerShell(`${aclScript}\nProtect-BycodaDirectory ${psQuote(directory)}`);
+}
+
+export function windowsUninstallPreflightScript(): string {
+  return `${taskAccessScript}\nAssert-BycodaTaskRemovalAccess ("Bycoda Host-" + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)`;
+}
+
+export async function preflightWindowsHostUninstall(): Promise<void> {
+  await runPowerShell(windowsUninstallPreflightScript());
 }
 
 export type WindowsServiceOptions = {

@@ -7,9 +7,16 @@
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface-raised);
+}
+/* Flat icon buttons for headers: no tray surface, matching window controls. */
+.group[data-chrome="bare"] {
+  gap: var(--space-1);
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
 }
 /* Official measured width/label reveal; standard action presentation stays in Button. */
 .group .item {

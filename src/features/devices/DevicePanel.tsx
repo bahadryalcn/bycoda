@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { Button } from "../../shared/ui/Button";
 import { Switch } from "../../shared/ui/Switch";
-import { ImagePlus, Plus, RefreshCw } from "../../shared/ui/icons";
+import { ImagePlus, MessageSquarePlus, RefreshCw } from "../../shared/ui/icons";
 import "./DevicePanel.css";
 import type {
   DeviceAction,
@@ -385,7 +385,7 @@ export function DevicePanel({
                 disabled={busy || loadingDevices}
                 onClick={refreshDevices}
               >
-                <RefreshCw size={16} aria-hidden />
+                <RefreshCw className="icon-md" aria-hidden />
               </Button>
               {devices.length ? (
                 <Button
@@ -395,7 +395,7 @@ export function DevicePanel({
                   disabled={!canView}
                   onClick={() => void execute(() => capture(selected), setFrame)}
                 >
-                  <ImagePlus size={16} aria-hidden />
+                  <ImagePlus className="icon-md" aria-hidden />
                 </Button>
               ) : null}
               {onAddDevice && devices.length ? (
@@ -423,7 +423,7 @@ export function DevicePanel({
                     }, setDeviceNotice);
                   }}
                 >
-                  <Plus size={16} aria-hidden />
+                  <MessageSquarePlus className="icon-md" aria-hidden />
                 </Button>
               ) : null}
             </div>
@@ -518,37 +518,29 @@ export function DevicePanel({
           {control && status.agentInstalled && selected && (
             <div className="device-panel-manual host-tool-controls">
               <div className="host-tool-toolbar">
-                <label className="host-tool-field host-tool-grow">
-                  {t("App name or bundle ID")}
-                  <TextField
-                    disabled={!canControl}
-                    value={app}
-                    maxLength={256}
-                    placeholder={windowsAndroid ? "com.example.app" : undefined}
-                    onChange={(event) => setApp(event.target.value)}
-                    label=""
-                    hideLabel
-                    fieldClassName="min-w-0 flex-1"
-                  />
-                </label>
+                <TextField
+                  label={t("App name or bundle ID")}
+                  disabled={!canControl}
+                  value={app}
+                  maxLength={256}
+                  placeholder={windowsAndroid ? "com.example.app" : undefined}
+                  onChange={(event) => setApp(event.target.value)}
+                  fieldClassName="host-tool-grow min-w-0 flex-1"
+                />
                 <Button
                   disabled={!canControl || !app.trim()}
                   onClick={() => action({ type: "openApp", app: app.trim() })}
                 >
                   {t("Open app")}
                 </Button>
-                <label className="host-tool-field host-tool-grow">
-                  {t("Text to type on device")}
-                  <TextField
-                    disabled={!canControl}
-                    value={text}
-                    maxLength={4096}
-                    onChange={(event) => setText(event.target.value)}
-                    label=""
-                    hideLabel
-                    fieldClassName="min-w-0 flex-1"
-                  />
-                </label>
+                <TextField
+                  label={t("Text to type on device")}
+                  disabled={!canControl}
+                  value={text}
+                  maxLength={4096}
+                  onChange={(event) => setText(event.target.value)}
+                  fieldClassName="host-tool-grow min-w-0 flex-1"
+                />
                 <Button
                   disabled={!canControl || !text}
                   onClick={() => action({ type: "type", text })}
@@ -579,36 +571,28 @@ export function DevicePanel({
               <details className="host-tool-help">
                 <summary>{t("Coordinate controls")}</summary>
                 <div className="host-tool-toolbar">
-                  <label className="host-tool-field">
-                    X
-                    <NumberField
-                      aria-label={t("Device X coordinate")}
-                      disabled={!canControl}
-                      min={0}
-                      max={20000}
+                  <NumberField
+                    label="X"
+                    aria-label={t("Device X coordinate")}
+                    disabled={!canControl}
+                    min={0}
+                    max={20000}
 
-                      value={x}
-                      onChange={(event) => setX(Number(event.target.value))}
-                      label=""
-                      hideLabel
-                      fieldClassName="min-w-0 flex-1"
-                    />
-                  </label>
-                  <label className="host-tool-field">
-                    Y
-                    <NumberField
-                      aria-label={t("Device Y coordinate")}
-                      disabled={!canControl}
-                      min={0}
-                      max={20000}
+                    value={x}
+                    onChange={(event) => setX(Number(event.target.value))}
+                    fieldClassName="min-w-0 flex-1"
+                  />
+                  <NumberField
+                    label="Y"
+                    aria-label={t("Device Y coordinate")}
+                    disabled={!canControl}
+                    min={0}
+                    max={20000}
 
-                      value={y}
-                      onChange={(event) => setY(Number(event.target.value))}
-                      label=""
-                      hideLabel
-                      fieldClassName="min-w-0 flex-1"
-                    />
-                  </label>
+                    value={y}
+                    onChange={(event) => setY(Number(event.target.value))}
+                    fieldClassName="min-w-0 flex-1"
+                  />
                   <Button
                     disabled={!canControl || !coordinatesValid}
                     onClick={() => action({ type: "press", x, y })}

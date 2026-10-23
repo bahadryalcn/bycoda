@@ -31,15 +31,14 @@
 .danger:disabled { color: color-mix(in oklab, var(--danger) 55%, var(--surface-muted)); }
 .ghost:disabled { opacity: 1; color: var(--text-muted); }
 @media (hover: hover) and (pointer: fine) {
-  .primary:hover:not(:disabled) { opacity: .91; box-shadow: var(--shadow-resting); }
+  .primary:hover:not(:disabled) { box-shadow: var(--shadow-resting); }
   .secondary:hover:not(:disabled) { background: var(--surface-muted); box-shadow: var(--shadow-resting); }
   .ghost:hover:not(:disabled) { color: var(--foreground); background: var(--surface-muted); }
   .danger:hover:not(:disabled) { border-color: var(--danger); background: var(--surface-muted); }
 }
-/* Color feedback on press, so touch and menu triggers (which never scale) still answer the finger. */
-.primary:active:not(:disabled) { opacity: .84; }
-.secondary:active:not(:disabled), .ghost:active:not(:disabled) { color: var(--foreground); background: var(--surface-muted); }
-.danger:active:not(:disabled) { border-color: var(--danger); background: var(--surface-muted); }
+/* Press feedback is one layer: buttons scale (see button.tsx). Triggers that anchor a layer never scale, so only they step their tone. */
+.button:is([aria-haspopup]:not([aria-haspopup="false"]), [data-state], [role="combobox"]):active:not(:disabled) { background: var(--surface-muted); }
+.primary:is([aria-haspopup]:not([aria-haspopup="false"]), [data-state], [role="combobox"]):active:not(:disabled) { background: var(--foreground); }
 .loader { position: absolute; left: 50%; top: 50%; display: grid; width: var(--space-4); height: var(--space-4); margin: calc(var(--space-4) / -2); }
 .spinner { border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
 .loadingLabel { opacity: 0; }

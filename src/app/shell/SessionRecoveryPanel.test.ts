@@ -11,6 +11,7 @@ import type { RemoteRailSession } from "../../features/connections/model/remoteR
 import type { SessionRecovery } from "../../features/workspace/model/sessionRecovery";
 import { markTurnInterrupted } from "../../features/sessions/model/inFlight";
 import { getSession } from "../../features/sessions/data/sessionStore";
+import { rememberRemoteSession } from "../../features/connections/model/connections";
 import type { Session } from "../../features/sessions/model/session";
 
 vi.mock("../../features/sessions/data/sessionStore", async (original) => ({
@@ -249,5 +250,37 @@ describe("session recovery navigation", () => {
     expect(container.textContent).toContain("Working");
     await click("Open all");
     expect(onOpen).toHaveBeenCalledWith(["alpha"], false);
+  });
+  it("hides remote entries whose host session is already open and keeps the rest", () => {
+    const stub = recovery.workspace.sessions[0];
+    const stubs = [
+      {
+        ...stub,
+        id: "r-open",
+        cwd: "remote://machine-a/repo",
+        remoteSessionId: "host-open",
+      },
+      {
+        ...stub,
+        id: "r-new",
+        cwd: "remote://machine-a/repo",
+        remoteSessionId: "host-new",
+      },
+    ];
+    const remoteRecovery = {
+      ...recovery,
+      workspace: { ...recovery.workspace, sessions: stubs },
+    };
+    const shown = {
+      ...newSession("codex", "remote://machine-a/repo"),
+      id: "live-shell",
+    };
+    localStorage.clear();
+    rememberRemoteSession(shown.id, "host-open");
+    render([], remoteRecovery, [shown]);
+    expect(container.textContent).toContain("1 previous sessions");
+    render([], remoteRecovery, []);
+    expect(container.textContent).toContain("2 previous sessions");
+    localStorage.clear();
   });
 });

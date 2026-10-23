@@ -24,10 +24,6 @@
 .jira-board-toolbar select {
   max-inline-size: min(350px, 70vw);
 }
-.jira-board-tabs {
-  display: flex;
-  gap: 4px;
-}
 
 .jira-board-toolbar .jira-board-search {
   flex: 1;

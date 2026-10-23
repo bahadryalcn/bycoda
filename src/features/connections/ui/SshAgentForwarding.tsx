@@ -180,11 +180,11 @@ export function SshAgentForwarding({
   return (
     <Modal title={t("Forward SSH agent")} onClose={onClose} size="sm">
       <div className="flex min-w-0 flex-col gap-3 p-4">
-        <p className="text-sm">
+        <Alert tone="warning">
           {t(
             "The remote target can use identities from your SSH agent while this terminal is connected. Approve only a trusted target.",
           )}
-        </p>
+        </Alert>
         {active?.loading ? (
           <p role="status" className="text-xs text-(--ui-text-muted)">
             {t("Loading…")}

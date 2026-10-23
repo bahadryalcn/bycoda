@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { useGitPanelState, withGitOperation, setGitFeedback } from "../model/gitPanelState";
 import {
   gitOperationAbort,
@@ -10,7 +10,6 @@ import {
 } from "../../../platform/tauri/fs";
 import { operationLabel } from "../model/commitActions";
 import { operationSummary } from "../model/conflictSection";
-import { appName } from "../../../shared/lib/appName";
 
 type Props = {
   cwd: string;
@@ -31,6 +30,7 @@ const ACTION = "shrink-0";
 export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }: Props) {
   useLocale();
   const [busy] = useGitPanelState(cwd, "busy");
+  const { confirm, dialog: confirmElement } = useConfirm();
   const label = operationLabel(operation);
 
   const run = async (work: () => Promise<unknown>) => {
@@ -56,21 +56,25 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
   };
 
   const abort = async () => {
-    const confirmed = await ask(
-      `Abort the ${label.toLowerCase()}? Changes made while resolving it are discarded.`,
-      { title: appName(), kind: "warning", okLabel: "Abort" },
-    );
+    const confirmed = await confirm({
+      title: t("Abort"),
+      message: t("Abort the {p0}? Changes made while resolving it are discarded.", {
+        p0: label.toLowerCase(),
+      }),
+      confirmLabel: t("Abort"),
+    });
     if (confirmed) await run(() => gitOperationAbort(cwd));
   };
 
   return (
     <div
       role="status"
-      className="flex shrink-0 items-center gap-1 border-b border-stroke bg-[var(--ui-surface)] px-3 py-1.5 text-[12px] text-[var(--color-content)]"
+      className="flex shrink-0 items-center gap-1 border-b border-stroke bg-[var(--ui-surface)] px-3 py-1.5 text-ui-caption text-[var(--color-content)]"
     >
+      {confirmElement}
       <span className="min-w-0 flex-1 truncate">{operationSummary(label, conflictCount)}</span>
       <Button
-        variant="ghost"
+        variant="secondary"
         motion="none"
         type="button"
         disabled={!!busy || conflictCount > 0}
@@ -86,6 +90,7 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
       </Button>
       <Button
         variant="ghost"
+        tone="danger"
         motion="none"
         type="button"
         disabled={!!busy}

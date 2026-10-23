@@ -93,7 +93,7 @@ export function AutomationAssistant({
           {t("Open assistant")}
         </Button>
       </div>
-      <p className="text-[12px] text-(--ui-text-muted)">
+      <p className="text-ui-caption text-(--ui-text-muted)">
         {t("Continue in a full AI session with automation tools and approval controls.")}
       </p>
       {error ? <Alert tone="danger">{error}</Alert> : null}

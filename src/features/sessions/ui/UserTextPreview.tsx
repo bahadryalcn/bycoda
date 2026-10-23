@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale, getLocale } from "../../../shared/i18n";
+import { useLocale, getLocale, useT } from "../../../shared/i18n";
 import { memo, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Modal } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
@@ -18,7 +18,7 @@ function TextCard({
   attachments?: Attachment[];
   renderActions: (dismiss: () => void, showLabels?: boolean) => ReactNode;
 }) {
-  useLocale();
+  const t = useT();
   const trigger = useRef<HTMLButtonElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hovered, setHovered] = useState(false);

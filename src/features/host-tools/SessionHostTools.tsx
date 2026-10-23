@@ -18,14 +18,21 @@ import type { RemoteMachine } from "../connections/model/protocol";
 import { lazySurface } from "../../shared/ui/lazySurface";
 import type { DevicePanelApi } from "../devices/types";
 import { attachDeviceToComposer } from "../devices/deviceComposer";
-import { Gauge, Globe, AppWindow, Terminal, Wrench, RefreshCw } from "../../shared/ui/icons";
-import { Popover, type PopoverDismissReason } from "../../shared/ui/Popover";
+import {
+  Gauge,
+  Globe,
+  AppWindow,
+  Terminal,
+  Wrench,
+  Server,
+  PanelRight,
+  RefreshCw,
+} from "../../shared/ui/icons";
 import { Button } from "../../shared/ui/Button";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import type { OpenFileFn } from "../search/model/search";
 import "./host-tools.css";
 import { dockHostTools, openHostToolsWindow } from "./ToolsWorkspace";
-import { useDockedTools } from "./toolPaneState";
 import type { ToolsTab } from "./toolsUiControl";
 
 const DevicePanel = lazySurface(async () => ({
@@ -63,65 +70,6 @@ export type ConversationTools = {
   initialUrl?: string;
   onPresented?: () => void;
 };
-
-/** Status bar entry: the panel opens above the button and mounts only while open. */
-export function ConversationToolsButton({ tools }: { tools: ConversationTools }) {
-  useLocale();
-  const trigger = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const docked = useDockedTools(tools);
-  const active = open || docked;
-  const dismiss = (reason: PopoverDismissReason) => {
-    setOpen(false);
-    if (reason === "escape") requestAnimationFrame(() => trigger.current?.focus());
-  };
-  return (
-    <>
-      <Button
-        iconOnly
-        label={t("Conversation tools")}
-        variant="ghost"
-        motion="none"
-        className="size-7"
-        size="sm"
-        ref={trigger}
-        type="button"
-
-        aria-label={t("Conversation tools")}
-        aria-pressed={active}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        title={t("Conversation tools")}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Wrench className="size-3.5" strokeWidth={1.75} aria-hidden />
-      </Button>
-      {open ? (
-        <Popover
-          anchor={trigger}
-          side="top"
-          align="end"
-          gap={7}
-          width={expanded ? Math.min(1200, window.innerWidth - 24) : 720}
-          maxHeight={expanded ? window.innerHeight - 70 : 680}
-          onDismiss={dismiss}
-          ignore="select, option, [data-dialog-popover]"
-          role="dialog"
-          aria-label={t("Conversation tools")}
-          className={`flex flex-col text-content ${expanded ? "h-[calc(100dvh-70px)]" : "h-[min(680px,80dvh)]"}`}
-        >
-          <SessionHostTools
-            key={`${tools.cwd}:${tools.sessionId}`}
-            {...tools}
-            onExpand={() => setExpanded((value) => !value)}
-            onPresented={() => setOpen(false)}
-          />
-        </Popover>
-      ) : null}
-    </>
-  );
-}
 
 /** Only the visible tool mounts: closed panes do not own polling or background work. */
 export function SessionHostTools(props: ConversationTools) {
@@ -259,7 +207,7 @@ function ConversationHostTools({
         <div className="host-tools-topbar">
           {!hideHeading ? (
             <header className="host-tools-heading">
-              <Wrench className="size-4 shrink-0" aria-hidden />
+              <Wrench className="icon-md shrink-0" aria-hidden />
               <strong>{onlyTab ? t("Logs") : t("Conversation tools")}</strong>
               <span className="host-tools-context" title={`${title}\n${cwd}`}>
                 {title}
@@ -267,6 +215,9 @@ function ConversationHostTools({
               {!hidePresentation ? (
                 <Button
                   variant="ghost"
+                  iconOnly
+                  label={t("Panel placement")}
+                  tooltip={t("Panel placement")}
                   ref={placementTrigger}
                   type="button"
                   className="host-tools-placement-trigger"
@@ -274,7 +225,7 @@ function ConversationHostTools({
                   aria-expanded={placementOpen}
                   onClick={() => setPlacementOpen((value) => !value)}
                 >
-                  {t("Panel placement")}
+                  <PanelRight className="icon-md" aria-hidden />
                 </Button>
               ) : null}
             </header>
@@ -327,7 +278,7 @@ function ConversationHostTools({
                 const Icon = {
                   devices: AppWindow,
                   browser: Globe,
-                  servers: Wrench,
+                  servers: Server,
                   logs: Terminal,
                   resources: Gauge,
                 }[id];
@@ -390,7 +341,6 @@ function ConversationHostTools({
             <div className="host-tools-machine" aria-busy={machinesLoading}>
               <div className="host-tool-toolbar host-tools-machine-toolbar">
                 <div className="host-tool-field host-tools-machine-field">
-                  <span>{t("Tool machine")}</span>
                   <SearchableSelect
                     label={t("Tool machine")}
                     value={targetValue}
@@ -424,7 +374,7 @@ function ConversationHostTools({
                   disabled={machinesLoading}
                   onClick={() => setMachinesRefresh((value) => value + 1)}
                 >
-                  <RefreshCw size={16} aria-hidden />
+                  <RefreshCw className="icon-md" aria-hidden />
                 </Button>
               </div>
               {machinesError ? (

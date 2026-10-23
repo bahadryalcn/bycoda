@@ -94,7 +94,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
         className="space-y-1 overflow-y-auto p-3"
       >
         <div className="space-y-1">
-          <p className="px-1 text-xs font-medium text-(--ui-text-secondary)">
+          <p className="px-1 text-ui-caption font-medium text-(--ui-text-secondary)">
             {t("Mute all projects")}
           </p>
         </div>
@@ -116,8 +116,8 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
       onClose={onClose}
       header={
         <div className="space-y-1 px-2 py-1.5">
-          <p className="text-xs font-medium text-(--ui-tone-neutral-fg)">{t("Inbox")}</p>
-          <p role="status" className="text-xs text-(--ui-text-secondary)">
+          <p className="text-ui-caption font-medium text-(--ui-tone-neutral-fg)">{t("Inbox")}</p>
+          <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
             {t(allIds.length === 1 ? "{p0} project · {p2} muted" : "{p0} projects · {p2} muted", {
               p0: allIds.length,
               p2: mutedIds.length,

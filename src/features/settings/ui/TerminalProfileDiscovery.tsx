@@ -162,7 +162,7 @@ export function TerminalProfileDiscovery({
         aria-controls={`${settingId}-popover`}
         onClick={() => setOpenPopover((current) => !current)}
       >
-        <UserRound className="size-4" strokeWidth={1.75} aria-hidden />
+        <UserRound className="icon-md" strokeWidth={1.75} aria-hidden />
         {showLabel
           ? providerProfiles
             ? t("Profiles ({p0})", { p0: providerProfiles.length })
@@ -192,12 +192,12 @@ export function TerminalProfileDiscovery({
             aria-label={t("Terminal account profiles")}
             aria-busy={busy}
           >
-            <p className="text-[11px] leading-relaxed text-(--ui-text-secondary)">
+            <p className="text-ui-micro leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Accounts on this machine. The default account belongs to its provider; it does not select the default provider or model.",
               )}
             </p>
-            <p className="text-[11px] leading-relaxed text-(--ui-text-secondary)">
+            <p className="text-ui-micro leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Separate sign-ins per provider. New conversations use the default account; each conversation can pick its own account from the composer.",
               )}

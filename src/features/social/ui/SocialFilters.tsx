@@ -3,6 +3,7 @@ import { SocialPanelActiveContext } from "./socialContext";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { SlidersHorizontal } from "../../../shared/ui/icons";
+import { t, useLocale } from "../../../shared/i18n";
 
 /** Collection filters stay near search without occupying the collection itself. */
 export function SocialFilters({
@@ -14,6 +15,7 @@ export function SocialFilters({
   onReset: () => void;
   children: ReactNode;
 }) {
+  useLocale();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const active = useContext(SocialPanelActiveContext);
@@ -28,9 +30,9 @@ export function SocialFilters({
         variant="secondary"
         size="sm"
         iconOnly={!activeCount}
-        label="Filtreler"
-        title="Filtreler"
-        aria-label={activeCount ? `Filtreler · ${activeCount} etkin` : "Filtreler"}
+        label={t("Filters")}
+        title={t("Filters")}
+        aria-label={activeCount ? t("Filters · {p0} active", { p0: activeCount }) : t("Filters")}
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((value) => !value)}
@@ -44,12 +46,12 @@ export function SocialFilters({
           align="end"
           width={300}
           role="dialog"
-          aria-label="Filtreler"
+          aria-label={t("Filters")}
           className="social-filter-panel"
           onDismiss={() => setOpen(false)}
         >
           <div className="social-filter-heading">
-            <strong>Filtreler</strong>
+            <strong>{t("Filters")}</strong>
             <Button
               type="button"
               variant="ghost"
@@ -57,12 +59,12 @@ export function SocialFilters({
               disabled={!activeCount}
               onClick={onReset}
             >
-              Sıfırla
+              {t("Reset")}
             </Button>
           </div>
           {children}
           <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(false)}>
-            Tamam
+            {t("Done")}
           </Button>
         </Popover>
       ) : null}

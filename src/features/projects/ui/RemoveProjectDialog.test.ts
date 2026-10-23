@@ -100,7 +100,7 @@ it("keeps a failed deletion open and prevents dismissal while it is pending", as
         (item) => item.getAttribute("aria-label") === label || item.textContent === label,
       )!;
     await act(async () => button("Delete").click());
-    expect(document.querySelector('[role="dialog"]')?.getAttribute("aria-busy")).toBe("true");
+    expect(document.querySelector('[role="dialog"] [aria-busy="true"]')).not.toBeNull();
     expect(button("Cancel").disabled).toBe(true);
     await act(async () =>
       window.dispatchEvent(
@@ -182,7 +182,7 @@ it("prevents a dismissed backdrop's default press from stealing restored focus",
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
     const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
     act(() => {
-      dialog.parentElement!.dispatchEvent(press);
+      dialog.parentElement!.parentElement!.dispatchEvent(press);
     });
     expect(press.defaultPrevented).toBe(true);
     expect(cancel).toHaveBeenCalledTimes(1);

@@ -134,6 +134,8 @@ it("preserves edited group drafts on save conflict and in-use deletion errors, w
   expect(native.apply).not.toHaveBeenCalled();
   native.remove.mockRejectedValue(new Error("group in use"));
   await act(async () => button("Delete group").click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 320)));
+  await act(async () => button("Confirm delete").click());
   expect(native.remove).toHaveBeenCalledExactlyOnceWith(group.id, 4);
   expect(document.body.textContent).toContain("group in use");
   expect(button("Save group")).toBeTruthy();

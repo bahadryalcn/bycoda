@@ -28,13 +28,13 @@ export function RemoteLoadError({
   useLocale();
   const { machine, status, reconnecting, reconnect } = useRemoteConnection(cwd);
   const [reconnectError, setReconnectError] = useState("");
-  const name = machine?.name ?? "this machine";
+  const name = machine?.name ?? t("this machine");
   const title =
     failure.kind === "unreachable"
-      ? `Can’t reach ${name}`
+      ? t("Can’t reach {p0}", { p0: name })
       : failure.kind === "outdated"
-        ? `${PRODUCT_IDENTITY.displayName} Host on ${name} needs an update`
-        : "Couldn’t load from the machine";
+        ? t("{p0} Host on {p1} needs an update", { p0: PRODUCT_IDENTITY.displayName, p1: name })
+        : t("Couldn’t load from the machine");
   const needsAuth = needsSignIn(status);
   const startReconnect = () => {
     setReconnectError("");
@@ -48,7 +48,7 @@ export function RemoteLoadError({
       <p className="font-medium text-content">{title}</p>
       {compact ? (
         <details className="text-(--ui-text-muted)">
-          <summary className="cursor-pointer text-[11px] hover:text-content">
+          <summary className="cursor-pointer text-ui-micro hover:text-content">
             {t("Details")}
           </summary>
           <p className="mt-1 break-words">{failure.message}</p>
@@ -72,9 +72,11 @@ export function RemoteLoadError({
 
             disabled={reconnecting}
             onClick={startReconnect}
-            variant="secondary"
+            variant="primary"
           >
-            {reconnecting ? <Loader className="size-3 animate-spin" aria-hidden="true" /> : null}
+            {reconnecting ? (
+              <Loader className="icon-xs motion-safe:animate-spin" aria-hidden="true" />
+            ) : null}
             {reconnecting
               ? t("Reconnecting…")
               : needsAuth

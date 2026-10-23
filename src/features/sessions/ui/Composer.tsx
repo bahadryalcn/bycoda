@@ -21,7 +21,7 @@ import { TranslationResultDialog } from "./TranslationResultDialog";
 import { registerBrowserComposer } from "../../host-tools/browserComposer";
 import { registerLogsComposer } from "../../host-tools/logsComposer";
 import { releaseAttachments } from "../model/releaseAttachments";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import type { QueueAction } from "../model/queueAction";
 import { useComposerSpelling } from "../../settings/model/composerSpelling";
 import { ComposerTips } from "./ComposerTips";
@@ -30,11 +30,13 @@ import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   ArrowUp,
   AiIdea,
+  Bot,
   Check,
   CircleDashed,
   CornerDownRight,
   CursorMagicSelection,
   FilePlus,
+  GripVertical,
   ListEnd,
   Pause,
   Pencil,
@@ -50,6 +52,7 @@ import {
 import {
   memo,
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -118,6 +121,7 @@ import type {
   Attachment,
   HarnessId,
   MessageQueueStatus,
+  ModelTarget,
   QueuedMessage,
   UsageLimit,
   RuntimeMode,
@@ -125,7 +129,10 @@ import type {
   ComposerTurnOptions,
 } from "../model/session";
 import { parseShellCommand } from "../model/shellRun";
-import { canSteerHarness } from "../../../integrations/harness/core/registry";
+import {
+  canSteerHarness,
+  steerAppliesModelSettings,
+} from "../../../integrations/harness/core/registry";
 import {
   HARNESS_TITLE,
   harnessSupportsAttachments,
@@ -133,7 +140,14 @@ import {
   unavailableRuntimeModes,
 } from "../model/session";
 import { hasMissingAttachment } from "../model/queuePersistence";
-import { moveQueuedMessage, resolveFollowUpRoute } from "../model/messageQueue";
+import {
+  moveQueuedMessage,
+  queuedSteerRoute,
+  queuedTargetSummary,
+  resolveFollowUpRoute,
+  runningTargetOf,
+} from "../model/messageQueue";
+import { HarnessIcon } from "./HarnessIcon";
 import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import type { UserQuestionPrompt, UserQuestionReply } from "../model/userQuestion";
 import { historyKey, type HistoryBrowse } from "../model/composerHistory";
@@ -172,6 +186,7 @@ import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { HandoffMiniCard } from "./HandoffMiniCard";
 import { ModelPicker } from "./ModelPicker";
 import { Button } from "../../../shared/ui/Button";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
 import { QuestionForm } from "./QuestionForm";
 import { ComposerSuggestions } from "./ComposerSuggestions";
@@ -337,6 +352,8 @@ type Props = {
   promptHistory?: () => string[];
   queuedMessages?: QueuedMessage[];
   queueStatus?: MessageQueueStatus;
+  /** Model and settings of the turn in progress; queued rows saved for another one cannot steer it. */
+  runningModelTarget?: ModelTarget;
   usageLimit?: UsageLimit;
   hotkeys?: boolean;
   onFocus: () => void;
@@ -439,6 +456,7 @@ function MessageQueue({
   canAttach,
   remote = false,
   busy = false,
+  runningTarget,
   steerSupported = false,
   onEdit,
   onEditingChange,
@@ -453,6 +471,13 @@ function MessageQueue({
   /** The turn runs on another machine: it cannot be steered, and the queue is this app's. */
   remote?: boolean;
   busy?: boolean;
+  /** The running turn's model and settings, for rows that must wait for their own turn. */
+  runningTarget?: {
+    harness: HarnessId;
+    model: string;
+    modelSettings: Record<string, string>;
+    runningModelTarget?: ModelTarget;
+  };
   steerSupported?: boolean;
   onDelete?: (messageId: string) => void;
   onEdit?: (messageId: string, text: string, attachments: Attachment[]) => void;
@@ -461,7 +486,7 @@ function MessageQueue({
   onSteer?: (messageId: string) => QueueAction;
   onResume?: () => QueueAction;
 }) {
-  useLocale();
+  const t = useT();
   const delivery = useDeliveryProgress(sessionId);
   const pendingDelivery = deliveryIsPending(delivery?.stage);
   const actionRef = useRef(false);
@@ -564,6 +589,14 @@ function MessageQueue({
   if (messages.length === 0 && !pendingAction && !activeFeedback) return null;
   const paused = (status === "paused" || status === "resuming") && messages.length > 0;
   const restored = status === "restored" && messages.length > 0;
+  const steerRoute = (message: QueuedMessage) =>
+    runningTarget
+      ? queuedSteerRoute(
+          { ...runningTarget, busy },
+          message,
+          steerAppliesModelSettings(runningTargetOf(runningTarget).harness),
+        )
+      : "join";
   const canSend = (message: QueuedMessage) =>
     !pendingAction &&
     !pendingDelivery &&
@@ -584,12 +617,12 @@ function MessageQueue({
   return (
     <div className="px-2 text-(--ui-text-secondary)" data-message-queue data-usage-guide="queue">
       <div
-        className="relative z-0 rounded-t-[10px] border border-b-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-1"
+        className="relative z-0 rounded-t-xl border border-b-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-1"
         data-message-queue-card
         ref={card}
       >
         {paused ? (
-          <div className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-[12px]">
+          <div className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-ui-caption">
             <Pause className="size-3.5" />
             <span className="min-w-0 flex-1 truncate">
               {t("Queue paused because you interrupted")}
@@ -616,7 +649,7 @@ function MessageQueue({
           </div>
         ) : null}
         {restored ? (
-          <div className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-[12px]">
+          <div className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-ui-caption">
             <Pause className="size-3.5" />
             <span className="min-w-0 flex-1 truncate">
               {messages.length === 1
@@ -655,6 +688,25 @@ function MessageQueue({
         >
           {messages.map((message, index) => {
             const attachmentGone = hasMissingAttachment(message);
+            const route = attachmentGone ? "join" : steerRoute(message);
+            const target = message.modelTarget;
+            const summary = target ? queuedTargetSummary(target) : undefined;
+            const targetLabel =
+              target && summary
+                ? [
+                    HARNESS_TITLE[target.harness],
+                    summary.model,
+                    summary.effort && t(summary.effort),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : undefined;
+            const routeNote =
+              route === "switch"
+                ? t("Steer switches provider")
+                : route === "restart"
+                  ? t("Steer restarts with this model")
+                  : undefined;
             const label =
               message.text.trim() ||
               `${message.attachments.length} attachment${message.attachments.length === 1 ? "" : "s"}`;
@@ -662,7 +714,7 @@ function MessageQueue({
               <div
                 key={message.id}
                 ref={(node) => sortable.setItemRef(message.id, node)}
-                className={`reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-[12px] data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg ${
+                className={`reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-ui-caption data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg ${
                   index > 0 ? "border-t border-(--ui-tone-neutral-border)" : ""
                 }`}
               >
@@ -682,7 +734,7 @@ function MessageQueue({
                     onKeyDown={(event) => moveByKey(event, message.id, index)}
                     className="shrink-0"
                   >
-                    <ListEnd className="size-3.5" />
+                    <GripVertical className="size-3.5" />
                   </Button>
                 ) : (
                   <ListEnd className="size-3.5 shrink-0" />
@@ -701,6 +753,18 @@ function MessageQueue({
                       {t("Attachment missing")}
                     </span>
                   ) : null}
+                  {target && targetLabel ? (
+                    <span
+                      className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)"
+                      data-queue-target
+                    >
+                      <HarnessIcon harness={target.harness} className="size-3 shrink-0" />
+                      <span className="truncate" title={t("Queued for {p0}", { p0: targetLabel })}>
+                        {targetLabel}
+                      </span>
+                      {routeNote ? <span className="shrink-0">· {routeNote}</span> : null}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   {remote ? null : (
@@ -711,7 +775,15 @@ function MessageQueue({
                       title={
                         busy && (message.intent === "plan" || message.intent === "orchestrate")
                           ? t("New messages wait until this turn finishes. Stop pauses the queue.")
-                          : undefined
+                          : route === "switch"
+                            ? t(
+                                "Steer stops the running turn, including its background work, and continues this conversation on the saved provider, as switching provider in the composer does.",
+                              )
+                            : route === "restart"
+                              ? t(
+                                  "Steer stops the running turn, including its background work, and starts this message as a new turn with its saved model.",
+                                )
+                              : undefined
                       }
                       loading={
                         pendingAction === message.id ||
@@ -743,19 +815,13 @@ function MessageQueue({
                   >
                     <Pencil className="size-3.5" />
                   </Button>
-                  <Button
-                    iconOnly
-                    label={t("Remove queued message")}
+                  <ConfirmMorph
+                    label={t("Remove")}
+                    icon={<Trash2 className="icon-sm" />}
+                    prompt={t("Remove queued message")}
                     disabled={!!pendingAction || pendingDelivery}
-                    variant="ghost"
-                    type="button"
-                    title={t("Remove queued message")}
-                    aria-label={t("Remove queued message")}
-                    onClick={() => onDelete?.(message.id)}
-                    className="shrink-0"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
+                    onConfirm={() => onDelete?.(message.id)}
+                  />
                 </div>
               </div>
             );
@@ -768,7 +834,7 @@ function MessageQueue({
           <div
             role={activeFeedback?.error ? "alert" : "status"}
             aria-live="polite"
-            className="py-1 text-[12px] [overflow-wrap:anywhere]"
+            className="py-1 text-ui-caption [overflow-wrap:anywhere]"
             data-queue-feedback
           >
             {pendingAction
@@ -777,7 +843,7 @@ function MessageQueue({
           </div>
         ) : null}
         {remote ? (
-          <div className="border-t border-(--ui-tone-neutral-border) py-1 text-[11px] text-(--ui-text-secondary)">
+          <div className="border-t border-(--ui-tone-neutral-border) py-1 text-ui-micro text-(--ui-text-secondary)">
             {t("Sent one at a time when the host finishes this turn, while {p0} is open.", {
               p0: PRODUCT_IDENTITY.displayName,
             })}
@@ -850,6 +916,7 @@ export const Composer = memo(function Composer({
   promptHistory,
   queuedMessages = [],
   queueStatus,
+  runningModelTarget,
   usageLimit,
   onFocus,
   onCwdChange,
@@ -903,7 +970,7 @@ export const Composer = memo(function Composer({
   children,
 }: Props) {
   "use memo";
-  useLocale();
+  const t = useT();
   const ref = useRef<HTMLTextAreaElement>(null);
   const translationContext = useMemo(
     () => ({ cwd: executionCwd, harness, model, modelSettings, providerAccountId }),
@@ -963,7 +1030,16 @@ export const Composer = memo(function Composer({
   const historyRef = useRef<HistoryBrowse | null>(null);
   const escapeArmedRef = useRef<number | null>(null);
   const [draft, setDraft] = useState(initialDraft ?? "");
-  const clearComposer = useClearComposerDraft(ref, setDraft, onDraftChange);
+  const publishedDraft = useRef<string | undefined>(undefined);
+  const publishDraft = useCallback(
+    (text: string) => {
+      if (publishedDraft.current === text) return;
+      publishedDraft.current = text;
+      onDraftChange?.(text);
+    },
+    [onDraftChange],
+  );
+  const clearComposer = useClearComposerDraft(ref, setDraft, publishDraft);
   // Updating defaultValue rewrites WebKit's text node and commits an active IME.
   // Apply later external drafts through the existing synchronization effect.
   const [mountDraft] = useState(initialDraft);
@@ -1009,7 +1085,21 @@ export const Composer = memo(function Composer({
     if (sessionId) setComposerDraftMode(sessionId, draftSelected ? "save" : undefined);
   }, [sessionId, draftSelected]);
   const [slash, setSlash] = useState<SlashToken | null>(null);
-  const [skillActive, setSkillActive] = useState(0);
+  const [skillSelection, setSkillSelection] = useState({ query: "", cwd, index: 0 });
+  if (skillSelection.query !== (slash?.query ?? "") || skillSelection.cwd !== cwd) {
+    setSkillSelection({ query: slash?.query ?? "", cwd, index: 0 });
+  }
+  const setSkillActive = (next: number | ((index: number) => number)) => {
+    setSkillSelection((previous) => {
+      const index =
+        previous.query === (slash?.query ?? "") && previous.cwd === cwd ? previous.index : 0;
+      return {
+        query: slash?.query ?? "",
+        cwd,
+        index: typeof next === "function" ? next(index) : next,
+      };
+    });
+  };
   const [creatingSkill, setCreatingSkill] = useState(false);
   const [sessionFolderOpen, setSessionFolderOpen] = useState(false);
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>([]);
@@ -1040,7 +1130,21 @@ export const Composer = memo(function Composer({
   );
   const [notes, setNotes] = useState<NoteSummary[]>(() => peekNoteSummaries() ?? []);
   const [mention, setMention] = useState<MentionToken | null>(null);
-  const [mentionActive, setMentionActive] = useState(0);
+  const [mentionSelection, setMentionSelection] = useState({ query: "", cwd, index: 0 });
+  if (mentionSelection.query !== (mention?.query ?? "") || mentionSelection.cwd !== cwd) {
+    setMentionSelection({ query: mention?.query ?? "", cwd, index: 0 });
+  }
+  const setMentionActive = (next: number | ((index: number) => number)) => {
+    setMentionSelection((previous) => {
+      const index =
+        previous.query === (mention?.query ?? "") && previous.cwd === cwd ? previous.index : 0;
+      return {
+        query: mention?.query ?? "",
+        cwd,
+        index: typeof next === "function" ? next(index) : next,
+      };
+    });
+  };
   const [resendEdited, setResendEdited] = useState(false);
   const groupLogos = useTabGroupLogos();
   const projectLogoPath = resolveTabGroupLogo(projectKey(cwd), groupLogos);
@@ -1208,15 +1312,24 @@ export const Composer = memo(function Composer({
   useLayoutEffect(() => {
     mentionIndexRef.current = mentionIndex;
   }, [mentionIndex]);
+  const deferredMentionQuery = useDeferredValue(mention?.query ?? "");
   const rankedFiles = useMemo(() => {
     if (!mentionOpen) return [];
     const fileHits = looksLikeProject(executionCwd)
-      ? rankMentionFiles(files, mention?.query ?? "", recentOpenedFiles(executionCwd))
+      ? rankMentionFiles(files, deferredMentionQuery, recentOpenedFiles(executionCwd))
       : [];
-    const noteHits = !remote && notesEnabled ? rankNoteFiles(notes, mention?.query ?? "") : [];
+    const noteHits = !remote && notesEnabled ? rankNoteFiles(notes, deferredMentionQuery) : [];
     const seen = new Set(noteHits.map((file) => file.path));
     return [...noteHits, ...fileHits.filter((file) => !seen.has(file.path))];
-  }, [executionCwd, files, mention?.query, mentionOpen, notes, notesEnabled, remote]);
+  }, [executionCwd, files, deferredMentionQuery, mentionOpen, notes, notesEnabled, remote]);
+  const skillActive =
+    skillSelection.query === (slash?.query ?? "") && skillSelection.cwd === cwd
+      ? Math.max(0, Math.min(skillSelection.index, rankedSkills.length - 1))
+      : 0;
+  const mentionActive =
+    mentionSelection.query === (mention?.query ?? "") && mentionSelection.cwd === cwd
+      ? Math.max(0, Math.min(mentionSelection.index, rankedFiles.length - 1))
+      : 0;
 
   const syncHasValue = useCallback(
     (text: string, files: Attachment[]) => {
@@ -1243,7 +1356,7 @@ export const Composer = memo(function Composer({
     resizeComposer(el);
     el.setSelectionRange(0, 0);
     setDraft(next);
-    onDraftChange?.(next);
+    publishDraft(next);
     syncHasValue(next, attachmentsRef.current);
   };
 
@@ -1513,19 +1626,9 @@ export const Composer = memo(function Composer({
     syncHasValue(ref.current?.value ?? "", []);
   }, [harness, syncHasValue]);
   useEffect(() => {
-    setSkillActive(0);
-  }, [slash?.query, cwd]);
-
-  useEffect(() => {
     setSessionFolderOpen(false);
     setSessionFolderSelected(false);
   }, [cwd]);
-
-  useEffect(() => {
-    setSkillActive((index) =>
-      rankedSkills.length === 0 ? 0 : Math.min(index, rankedSkills.length - 1),
-    );
-  }, [rankedSkills.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1564,16 +1667,6 @@ export const Composer = memo(function Composer({
   }, [mentionOpen, notesEnabled, remote]);
 
   useEffect(() => {
-    setMentionActive(0);
-  }, [mention?.query, cwd]);
-
-  useEffect(() => {
-    setMentionActive((index) =>
-      rankedFiles.length === 0 ? 0 : Math.min(index, rankedFiles.length - 1),
-    );
-  }, [rankedFiles.length]);
-
-  useEffect(() => {
     const el = ref.current;
     if (!el || !initialDraft) return;
     if (el.value !== initialDraft) el.value = initialDraft;
@@ -1600,8 +1693,8 @@ export const Composer = memo(function Composer({
   }, [enabled]);
 
   useEffect(() => {
-    onDraftChange?.(draft);
-  }, [draft, onDraftChange]);
+    publishDraft(draft);
+  }, [draft, publishDraft]);
   useEffect(() => {
     if (draftResetToken == null || draftResetTokenRef.current === draftResetToken) {
       return;
@@ -1703,13 +1796,13 @@ export const Composer = memo(function Composer({
       resizeComposer(el);
       draftRevisionRef.current += 1;
       setDraft("");
-      onDraftChange?.("");
+      publishDraft("");
       syncHasValue("", attachmentsRef.current);
       setSlash(null);
       setMention(null);
       return true;
     },
-    [handoffCard, inboxCard, noteCard, onBtwCommand, onDraftChange, syncHasValue],
+    [handoffCard, inboxCard, noteCard, onBtwCommand, publishDraft, syncHasValue],
   );
 
   const pickSkill = useCallback(
@@ -1728,7 +1821,7 @@ export const Composer = memo(function Composer({
         mcpInsertAt.current = token.start;
         el.setSelectionRange(token.start, token.start);
         setDraft(next);
-        onDraftChange?.(next);
+        publishDraft(next);
         syncHasValue(next, attachmentsRef.current);
         setSlash(null);
         openMcpPicker();
@@ -1762,7 +1855,7 @@ export const Composer = memo(function Composer({
         resizeComposer(el);
         el.setSelectionRange(token.start, token.start);
         setDraft(cleared);
-        onDraftChange?.(cleared);
+        publishDraft(cleared);
         syncHasValue(cleared, attachmentsRef.current);
         setSlash(null);
         setCreatingSkill(false);
@@ -1796,7 +1889,7 @@ export const Composer = memo(function Composer({
     },
     [
       enterBtwFromPrefix,
-      onDraftChange,
+      publishDraft,
       onPlaceInFolder,
       openMcpPicker,
       onResumeProviderSession,
@@ -1987,7 +2080,7 @@ export const Composer = memo(function Composer({
     (text: string, nextAttachments: Attachment[], borrowedIds?: ReadonlySet<string>) => {
       const restoredBorrowedIds = borrowedIds ?? borrowedAttachmentIdsRef.current;
       setDraft(text);
-      onDraftChange?.(text);
+      publishDraft(text);
       if (ref.current) {
         ref.current.value = text;
         ref.current.style.height = "auto";
@@ -2004,7 +2097,7 @@ export const Composer = memo(function Composer({
       syncHasValue(text, nextAttachments);
       ref.current?.focus();
     },
-    [onDraftChange, syncHasValue],
+    [publishDraft, syncHasValue],
   );
 
   const exitEditMode = useCallback(() => {
@@ -2145,7 +2238,7 @@ export const Composer = memo(function Composer({
       // the navigation command before switching tabs so it cannot reappear.
       if (ref.current) ref.current.value = "";
       setDraft("");
-      onDraftChange?.("");
+      publishDraft("");
       setSlash(null);
       syncHasValue("", attachmentsRef.current);
       onNewSession();
@@ -2285,7 +2378,7 @@ export const Composer = memo(function Composer({
     const resendDraftRevision = draftRevisionRef.current;
     const resendBorrowedAttachmentIds = new Set(borrowedAttachmentIdsRef.current);
     const resendSelectedMcp = selectedMcp;
-    onDraftChange?.("");
+    publishDraft("");
     const accepted = onSubmit(
       shellLine
         ? value.trim()
@@ -2796,6 +2889,7 @@ export const Composer = memo(function Composer({
         canAttach={attachmentsSupported}
         remote={remote && !remoteFeatures?.steer}
         busy={busy}
+        runningTarget={remote ? undefined : { harness, model, modelSettings, runningModelTarget }}
         steerSupported={remote ? !!remoteFeatures?.steer : canSteerHarness(harness)}
         onDelete={onDeleteQueuedMessage}
         onEdit={onEditQueuedMessage}
@@ -2959,9 +3053,10 @@ export const Composer = memo(function Composer({
         <div
           ref={boxRef}
           data-composer-box
+          data-ui-focus-group=""
           onPointerDown={focusFromComposerSpace}
           data-composer-editing={resendEdited ? "" : undefined}
-          className={`relative z-10 border bg-(--ui-surface-raised) backdrop-blur-sm ${
+          className={`relative z-10 border bg-(--ui-surface-raised) ${
             resendEdited
               ? "edit-last-turn-composer rounded-lg"
               : "rounded-lg border-(--ui-tone-neutral-border) has-focus:border-(--ui-tone-neutral-border)"
@@ -2974,7 +3069,7 @@ export const Composer = memo(function Composer({
           }`}
         >
           {fileDrag ? (
-            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-(--ui-tone-accent-subtle) text-[12px] text-(--ui-text-secondary)">
+            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-(--ui-tone-accent-subtle) text-ui-caption text-(--ui-text-secondary)">
               {t("Drop files to attach")}
             </div>
           ) : null}
@@ -3044,6 +3139,7 @@ export const Composer = memo(function Composer({
             ) : null}
             <textarea
               ref={ref}
+              data-ui-focus="group"
               data-composer-empty={navigationEmpty ? "true" : undefined}
               data-composer-plain={plainDraft ? "true" : undefined}
               style={{ textIndent: modeIndent }}
@@ -3182,7 +3278,7 @@ export const Composer = memo(function Composer({
                   data-composer-plus
                   className="p-1.5"
                 >
-                  <p className="px-2 pb-1 pt-0.5 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
+                  <p className="px-2 pb-1 pt-0.5 text-ui-caption font-medium text-(--ui-text-secondary)">
                     {t("Add to message")}
                   </p>
                   <Button
@@ -3200,8 +3296,8 @@ export const Composer = memo(function Composer({
                   >
                     <FilePlus className="mt-0.5 size-4 shrink-0" />
                     <span className="min-w-0">
-                      <span className="block text-[13px]">{t("Upload file")}</span>
-                      <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
+                      <span className="block text-ui-secondary">{t("Upload file")}</span>
+                      <span className="block truncate whitespace-nowrap text-ui-micro leading-4 text-(--ui-text-secondary)">
                         {attachmentsSupported
                           ? t("Attach files or images")
                           : remote && !remoteFeatures?.attachments
@@ -3245,8 +3341,8 @@ export const Composer = memo(function Composer({
                     >
                       <CursorMagicSelection className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[13px]">{t("Skills")}</span>
-                        <span className="block text-[11px] leading-4 text-(--ui-text-secondary)">
+                        <span className="block text-ui-secondary">{t("Skills")}</span>
+                        <span className="block text-ui-micro leading-4 text-(--ui-text-secondary)">
                           {harness === "codex"
                             ? t("Choose a skill or type $name")
                             : t("Choose a skill or type /name")}
@@ -3254,6 +3350,10 @@ export const Composer = memo(function Composer({
                       </span>
                     </Button>
                   ) : null}
+                  <div role="separator" className="mx-1 my-1.5 h-px bg-(--color-stroke)" />
+                  <p className="px-2 pb-1 pt-0.5 text-ui-caption font-medium text-(--ui-text-secondary)">
+                    {t("Mode")}
+                  </p>
                   {!remote || remoteFeatures?.plan ? (
                     <Button
                       fullWidth
@@ -3275,10 +3375,10 @@ export const Composer = memo(function Composer({
                       }}
                       className="w-full text-left"
                     >
-                      <AiIdea className="mt-0.5 size-4 shrink-0 text-(--ui-tone-warning-fg)" />
+                      <AiIdea className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[13px]">{t("Plan mode")}</span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
+                        <span className="block text-ui-secondary">{t("Plan mode")}</span>
+                        <span className="block truncate whitespace-nowrap text-ui-micro leading-4 text-(--ui-text-secondary)">
                           {planUnavailableReason(harness)
                             ? t("Unavailable: {p0}", { p0: planUnavailableReason(harness) })
                             : t("Review a plan before building")}
@@ -3310,15 +3410,15 @@ export const Composer = memo(function Composer({
                       }}
                       className="w-full text-left"
                     >
-                      <CursorMagicSelection className="mt-0.5 size-4 shrink-0 text-(--ui-tone-info-fg)" />
+                      <Bot className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[13px]">{t("Operator")}</span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
+                        <span className="block text-ui-secondary">{t("Operator")}</span>
+                        <span className="block truncate whitespace-nowrap text-ui-micro leading-4 text-(--ui-text-secondary)">
                           {t("Give this thread access to")} {PRODUCT_IDENTITY.displayName}
                         </span>
                       </span>
                       {operatorActive ? (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-info-fg)" />
+                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-accent-fg)" />
                       ) : null}
                     </Button>
                   ) : null}
@@ -3343,20 +3443,20 @@ export const Composer = memo(function Composer({
                       }}
                       className="w-full text-left"
                     >
-                      <Share className="mt-0.5 size-4 shrink-0 text-orchestration/65" />
+                      <Share className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5">
-                          <span className="text-[13px]">{t("Orchestrator")}</span>
+                          <span className="text-ui-secondary">{t("Orchestrator")}</span>
                           <Badge tone="neutral" className="mb-px">
                             v1
                           </Badge>
                         </span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
+                        <span className="block truncate whitespace-nowrap text-ui-micro leading-4 text-(--ui-text-secondary)">
                           {t("Plan and coordinate agent work")}
                         </span>
                       </span>
                       {orchestrationActive && (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-orchestration/80" />
+                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-accent-fg)" />
                       )}
                     </Button>
                   )}
@@ -3381,8 +3481,8 @@ export const Composer = memo(function Composer({
                     >
                       <CircleDashed className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[13px]">{t("Draft")}</span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
+                        <span className="block text-ui-secondary">{t("Draft")}</span>
+                        <span className="block truncate whitespace-nowrap text-ui-micro leading-4 text-(--ui-text-secondary)">
                           {t("Save this message without starting the agent")}
                         </span>
                       </span>
@@ -3736,7 +3836,7 @@ export function ComposerAction({
   stopShortcut?: string | null;
   onStop: () => void;
 }) {
-  useLocale();
+  const t = useT();
   if (disabled && !busy) {
     return (
       <Button variant="primary" motion="none" iconOnly label={label} shortcut="Enter" disabled>

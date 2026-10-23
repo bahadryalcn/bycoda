@@ -105,9 +105,9 @@ it("shows loading, recoverable status failures and a retry action", async () => 
       }),
   );
   await mount();
-  expect(container.textContent).toContain("Host ayarı yükleniyor");
+  expect(container.textContent).toContain("Loading host setting");
   await act(async () => fail(new Error("Host kapalı")));
-  expect(container.textContent).toContain("Merkezi host ayarı okunamadı: Host kapalı");
+  expect(container.textContent).toContain("The central host setting could not be read: Host kapalı");
   expect(container.querySelector("form")).toBeNull();
   await act(async () => container.querySelector("button")!.click());
   expect(container.querySelector("form")).not.toBeNull();
@@ -125,7 +125,7 @@ it("validates explicit mappings and endpoint before changing authority", async (
   await mount();
   await input("https://local.test");
   await save();
-  expect(container.textContent).toContain("En az bir projeyi");
+  expect(container.textContent).toContain("Match at least one project");
   await map();
   for (const value of [
     "http://public.test",
@@ -135,7 +135,7 @@ it("validates explicit mappings and endpoint before changing authority", async (
   ]) {
     await input(value);
     await save();
-    expect(container.textContent).toContain("HTTPS adresi kullanın");
+    expect(container.textContent).toContain("Use an HTTPS address");
   }
   expect(mocks.invoke).not.toHaveBeenCalledWith("social_authority_connect", expect.anything());
   await input(" https://local.test/ ");
@@ -153,7 +153,7 @@ it("never reuses project mappings or endpoint values for another host", async ()
   await map();
   await mount("other");
   expect(container.querySelector('button[aria-haspopup="dialog"]')?.textContent).toContain(
-    "Bu projeyi paylaşma",
+    "Do not share this project",
   );
   expect(container.querySelector<HTMLInputElement>('input[type="url"]')!.value).toBe("");
   await save();
@@ -165,9 +165,9 @@ it("rejects stale mappings after a target project disappears", async () => {
   await map();
   await mount("remote", machines, []);
   expect(container.querySelector('button[aria-haspopup="dialog"]')?.textContent).toContain(
-    "Bu projeyi paylaşma",
+    "Do not share this project",
   );
-  expect(container.textContent).toContain("Bazı kayıtlı projeler artık bulunamıyor");
+  expect(container.textContent).toContain("Some saved projects no longer exist");
   await save();
   expect(mocks.invoke).not.toHaveBeenCalledWith("social_authority_connect", expect.anything());
 });
@@ -202,13 +202,13 @@ it("retains the form after a connect failure and allows retry", async () => {
   await input("https://local.test");
   await map();
   await save();
-  expect(container.textContent).toContain("Host ayarı değiştirilemedi: Host erişilemiyor");
+  expect(container.textContent).toContain("The host setting could not be changed: Host erişilemiyor");
   expect(container.querySelector<HTMLInputElement>('input[type="url"]')!.value).toBe(
     "https://local.test",
   );
   mocks.invoke.mockImplementation(async () => localStatus);
   await save();
-  expect(container.textContent).toContain("Merkezi host kaydedildi");
+  expect(container.textContent).toContain("Central host saved");
 });
 it("resets to the local host through an explicit action and does not enable sending", async () => {
   mocks.invoke.mockImplementation(async () => ({
@@ -221,7 +221,7 @@ it("resets to the local host through an explicit action and does not enable send
   }));
   await mount("local");
   const reset = Array.from(container.querySelectorAll("button")).find((button) =>
-    button.textContent?.startsWith("Bu bilgisayara dön"),
+    button.textContent?.startsWith("Return to this computer"),
   )!;
   await act(async () => reset.click());
   expect(mocks.invoke).toHaveBeenCalledWith("social_authority_connect", {
@@ -230,7 +230,7 @@ it("resets to the local host through an explicit action and does not enable send
     sourceEndpoint: null,
   });
   expect(onSelect).toHaveBeenCalledWith("local");
-  expect(container.textContent).toContain("Gönderimler durdurulmuş durumda");
+  expect(container.textContent).toContain("Sending is stopped");
 });
 it("does not claim authority changed when the parent skips a busy operation", async () => {
   await mount("remote", machines, projects, true);
@@ -238,6 +238,6 @@ it("does not claim authority changed when the parent skips a busy operation", as
   await map();
   await save();
   expect(mocks.invoke).not.toHaveBeenCalledWith("social_authority_connect", expect.anything());
-  expect(container.textContent).toContain("Başka bir işlem sürüyor");
-  expect(container.textContent).not.toContain("Merkezi host kaydedildi");
+  expect(container.textContent).toContain("Another operation is in progress");
+  expect(container.textContent).not.toContain("Central host saved");
 });

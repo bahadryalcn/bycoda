@@ -1,4 +1,4 @@
-import { t, useLocale } from "../i18n";
+import { useLocale, useT } from "../i18n";
 import { LineChart as ArcLineChart, type LineChartProps } from "./arc/line-chart/line-chart";
 import { BarChart as ArcBarChart, type BarChartProps } from "./arc/bar-chart/bar-chart";
 import { DonutChart as ArcDonutChart, type DonutChartProps } from "./arc/donut-chart/donut-chart";
@@ -9,7 +9,7 @@ import {
 
 export type { LineChartDatum, LineChartSeries } from "./arc/line-chart/line-chart";
 export function LineChart(props: LineChartProps) {
-  useLocale();
+  const t = useT();
   return (
     <ArcLineChart
       emptyLabel={t("No records")}
@@ -21,7 +21,7 @@ export function LineChart(props: LineChartProps) {
   );
 }
 export function BarChart(props: BarChartProps) {
-  useLocale();
+  const t = useT();
   return (
     <div className="bycoda-arc bycoda-arc-chart">
       <ArcBarChart
@@ -34,7 +34,7 @@ export function BarChart(props: BarChartProps) {
   );
 }
 export function DonutChart(props: DonutChartProps) {
-  useLocale();
+  const t = useT();
   return (
     <div style={{ containerType: "inline-size", minInlineSize: 0 }}>
       <ArcDonutChart
@@ -48,6 +48,7 @@ export function DonutChart(props: DonutChartProps) {
   );
 }
 export function ActivityHeatmap(props: ActivityHeatmapProps) {
+  const t = useT();
   const locale = useLocale();
   return (
     <ArcActivityHeatmap

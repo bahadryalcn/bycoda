@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, isValidElement, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { forwardRef, isValidElement, useEffect, useLayoutEffect, useRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode, Ref, RefObject } from "react";
 import { AnimatePresence, animate, motion, useIsPresent, useMotionValue, useReducedMotion } from "motion/react";
 import type { TargetAndTransition, Variants } from "motion/react";
@@ -16,13 +16,11 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   loading?: boolean;
 }
 
-/** Icon buttons press a little deeper, wide buttons a little less, so every size reads as the same push. */
+/** One quick press for every size: a 2% push, back on release. Menu and popup triggers never scale (see below) and answer with a tone step instead. */
 const pressVariants: Variants = {
-  pressed: (button: RefObject<HTMLButtonElement | null>) => {
-    const width = button.current?.offsetWidth ?? 0;
-    return { scale: width > 220 ? .985 : width && width <= 48 ? .96 : .97, transition: { duration: motionTokens.duration.instant, ease: [...motionTokens.ease.standard] } };
-  },
+  pressed: { scale: .98, transition: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] } },
 };
+const pressRelease = { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] } as const;
 
 const rest: TargetAndTransition = { opacity: 1, y: 0, scale: 1,};
 /** Text rises about .3em with a short fade; the outgoing label lifts away a little faster. */
@@ -82,14 +80,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   const reduceMotion = useReducedMotion() ?? false;
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLSpanElement>(null);
   const key = labelKey(children);
   const width = useMorphWidth(contentRef, key, reduceMotion);
-  const setRefs = useCallback((node: HTMLButtonElement | null) => {
-    buttonRef.current = node;
-    if (typeof ref === "function") ref(node); else if (ref) ref.current = node;
-  }, [ref]);
   // A trigger that anchors a menu, popover, or dialog keeps its rect still while pressed, so the layer never measures a scaled anchor.
   // Radix triggers (asChild) pass aria-haspopup or data-state through; the stylesheet repeats the guard.
   const popup = props["aria-haspopup"];
@@ -99,15 +92,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
   return (
     <motion.button
-      ref={setRefs}
+      ref={ref}
       tabIndex={props.tabIndex ?? 0}
       className={classes}
       disabled={disabled}
       aria-busy={loading || undefined}
-      custom={buttonRef}
       variants={pressVariants}
       whileTap={reduceMotion || anchorsLayer || inert ? undefined : "pressed"}
-      transition={motionTokens.spring.snappy}
+      transition={pressRelease}
       {...props}
       // Loading keeps the button focusable (a disabled button would drop keyboard focus mid-action) and swallows presses instead.
       aria-disabled={loading || props["aria-disabled"] || undefined}

@@ -56,7 +56,7 @@ it("shows the specific encrypted Chat setup blocker", async () => {
     ),
   );
   await open();
-  expect(element.textContent).toContain("erişim kodu kurulumu gerekiyor");
+  expect(element.textContent).toContain("access code setup");
 });
 async function open() {
   const details = element.querySelector("details")!;
@@ -70,17 +70,17 @@ it("loads on disclosure, requires owner acknowledgement and tracks signup separa
   expect(status).not.toHaveBeenCalled();
   await open();
   expect(status).toHaveBeenCalledWith("tiktok");
-  expect(button("Tarayıcıda aç").disabled).toBe(true);
+  expect(button("Open in browser").disabled).toBe(true);
   await act(async () =>
     element.querySelector<HTMLButtonElement>('[aria-haspopup="listbox"]')!.click(),
   );
   const signup = [...document.body.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-    (item) => item.textContent === "Kayıt ol",
+    (item) => item.textContent === "Sign up",
   )!;
   await act(async () => signup.click());
   expect(element.textContent).toContain("CAPTCHA");
   await act(async () => element.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-  await act(async () => button("Tarayıcıda aç").click());
+  await act(async () => button("Open in browser").click());
   expect(begin).toHaveBeenCalledExactlyOnceWith("tiktok", "signup", undefined);
   expect(element.textContent).not.toContain("hesap bağlandı");
 });
@@ -91,7 +91,7 @@ it("shows interrupted work and gives an explicit retry without relaunching it", 
   });
   await act(async () => root.render(createElement(Component, { account, client })));
   await open();
-  expect(element.textContent).toContain("Host yeniden başladı; yeniden açın");
+  expect(element.textContent).toContain("The host restarted; open it again");
   expect(begin).not.toHaveBeenCalled();
 });
 it("prevents another window while work is active and allows cancellation", async () => {
@@ -102,8 +102,8 @@ it("prevents another window while work is active and allows cancellation", async
   await act(async () => root.render(createElement(Component, { account, client })));
   await open();
   await act(async () => element.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-  expect(button("Tarayıcıda aç").disabled).toBe(true);
-  await act(async () => button("İşlemi iptal et").click());
+  expect(button("Open in browser").disabled).toBe(true);
+  await act(async () => button("Cancel action").click());
   expect(cancel).toHaveBeenCalledExactlyOnceWith("tiktok");
 });
 it("disables reads when the panel is inactive and exposes read failures with retry", async () => {
@@ -118,9 +118,9 @@ it("disables reads when the panel is inactive and exposes read failures with ret
   expect(status).not.toHaveBeenCalled();
   status.mockRejectedValue(new Error("Unavailable"));
   await act(async () => root.render(render(true)));
-  expect(element.querySelector('[role="alert"]')?.textContent).toContain("Host sürümünü");
+  expect(element.querySelector('[role="alert"]')?.textContent).toContain("host version");
   status.mockResolvedValue({ available: true, workflows: [] });
-  await act(async () => button("Durumu yenile").click());
+  await act(async () => button("Refresh status").click());
   expect(element.querySelector('[role="alert"]')).toBeNull();
 });
 it("distinguishes disabled polling from successful historical reads and refreshes partial channel status", async () => {
@@ -129,11 +129,11 @@ it("distinguishes disabled polling from successful historical reads and refreshe
     root.render(createElement(Component, { account: { ...account, connected: true }, client })),
   );
   await open();
-  expect(element.textContent).toContain("Kapalı");
-  expect(element.textContent).not.toContain("Son kontrol başarılı");
+  expect(element.textContent).toContain("Off");
+  expect(element.textContent).not.toContain("Last check succeeded");
   monitoring.mockResolvedValue({ status: "partial", pollingEnabled: true, accountActive: true });
-  await act(async () => button("Durumu yenile").click());
-  expect(element.textContent).toContain("bazı kanallar okunamadı");
+  await act(async () => button("Refresh status").click());
+  expect(element.textContent).toContain("some channels could not be read");
 });
 it("offers mobile setup guidance instead of a non-working WhatsApp registration", async () => {
   await act(async () =>
@@ -142,13 +142,13 @@ it("offers mobile setup guidance instead of a non-working WhatsApp registration"
     ),
   );
   await open();
-  expect(element.textContent).toContain("mobil uygulamada");
+  expect(element.textContent).toContain("mobile app");
   await act(async () =>
     element.querySelector<HTMLButtonElement>('[aria-haspopup="listbox"]')!.click(),
   );
   expect(
     [...document.body.querySelectorAll('[role="option"]')].some(
-      (item) => item.textContent === "Kayıt ol",
+      (item) => item.textContent === "Sign up",
     ),
   ).toBe(false);
 });

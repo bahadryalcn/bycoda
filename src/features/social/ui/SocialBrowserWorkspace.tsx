@@ -1,5 +1,7 @@
 import { useContext, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { getLocale, t, useLocale } from "../../../shared/i18n";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Select } from "../../../shared/ui/Select";
@@ -19,13 +21,27 @@ import { SocialPanelActiveContext } from "./socialContext";
 import { XProfileManager } from "./XProfileManager";
 
 const statuses: Record<SocialBrowserWorkflow["status"], string> = {
-  queued: "Tarayıcı sırası bekleniyor",
-  awaiting_owner: "Tarayıcıda kullanıcı işlemi bekleniyor",
-  window_closed: "Pencere kapandı; sonuç doğrulanmadı",
-  cancelled: "İptal edildi",
-  expired: "Süre doldu; yeniden açın",
-  interrupted: "Host yeniden başladı; yeniden açın",
-  failed: "Açılamadı; host bağlantısını kontrol edin",
+  get queued() {
+    return t("Waiting for the browser queue");
+  },
+  get awaiting_owner() {
+    return t("Waiting for your action in the browser");
+  },
+  get window_closed() {
+    return t("Window closed; the result was not verified");
+  },
+  get cancelled() {
+    return t("Cancelled");
+  },
+  get expired() {
+    return t("Expired; open it again");
+  },
+  get interrupted() {
+    return t("The host restarted; open it again");
+  },
+  get failed() {
+    return t("Could not open; check the host connection");
+  },
 };
 
 /** Owner-assisted work is shown separately from verified send and inbox adapters. */
@@ -36,6 +52,7 @@ export function SocialBrowserWorkspace({
   account: SocialAccount;
   client: SocialClient;
 }) {
+  useLocale();
   const active = useContext(SocialPanelActiveContext);
   const visible = useQueryVisible();
   const [open, setOpen] = useState(false);
@@ -85,64 +102,78 @@ export function SocialBrowserWorkspace({
       ]);
     } catch {
       setError(
-        "İşlem tamamlanamadı. Seçili host'u ve açık tarayıcı işlemini kontrol edip yeniden deneyin.",
+        t(
+          "The action could not be completed. Check the selected host and the open browser action, then try again.",
+        ),
       );
     } finally {
       setBusy(false);
     }
   };
+  const openBlocker = current
+    ? t("A browser action is already in progress.")
+    : !acknowledged
+      ? t("Confirm the separate browser profile to continue.")
+      : query.data && !query.data.available
+        ? t("Chrome or Edge was not found on the selected host.")
+        : intent === "comments" && !target.trim()
+          ? t("Enter the post link to continue.")
+          : "";
   return (
     <details
       className="social-connection"
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary>Tarayıcı çalışma alanı</summary>
+      <summary>{t("Browser workspace")}</summary>
       {account.platform === "x" && account.connection === "browser" && account.connected ? (
-        <XProfileManager accountId={account.id} client={client} />
+        <XProfileManager accountId={account.id} accountName={account.name} client={client} />
       ) : null}
       {monitor.data ? (
         <p role="status">
-          Otomatik takip:{" "}
+          {t("Automatic monitoring")}:{" "}
           {monitor.data.pollingEnabled === false
-            ? "Kapalı"
+            ? t("Off")
             : monitor.data.accountActive === false
-              ? "Bu hesap için duraklatıldı"
+              ? t("Paused for this account")
               : {
-                  idle: "Henüz kontrol edilmedi",
-                  healthy: "Son kontrol başarılı",
-                  partial: "Kısmi takip; bazı kanallar okunamadı",
-                  blocked: "Takip engellendi; bağlantıyı kontrol edin",
+                  idle: t("Not checked yet"),
+                  healthy: t("Last check succeeded"),
+                  partial: t("Partial monitoring; some channels could not be read"),
+                  blocked: t("Monitoring blocked; check the connection"),
                 }[monitor.data.status]}
           {monitor.data.checkedAt
-            ? ` · ${new Date(monitor.data.checkedAt).toLocaleString("tr-TR")}`
+            ? ` · ${new Date(monitor.data.checkedAt).toLocaleString(getLocale())}`
             : ""}
         </p>
       ) : null}
       {monitor.data?.coverage?.some((channel) => channel.reason === "chat_setup_required") ? (
-        <p role="status">X Sohbet için tarayıcıda erişim kodu kurulumu gerekiyor.</p>
+        <p role="status">{t("X Chat needs access code setup in the browser.")}</p>
       ) : monitor.data?.coverage?.some(
           (channel) => channel.reason === "encrypted_chat_unsupported",
         ) ? (
-        <p role="status">X’in şifreli Sohbet kanalı bu bağlantıyla okunamıyor.</p>
+        <p role="status">{t("X encrypted Chat cannot be read with this connection.")}</p>
       ) : null}
-      {monitor.isError ? <p role="alert">Otomatik takip durumu okunamadı.</p> : null}
+      {monitor.isError ? (
+        <p role="alert">{t("Automatic monitoring status could not be read.")}</p>
+      ) : null}
       {monitor.data?.coverage?.length ? (
         <p role="status">
           {monitor.data.coverage
             .map(
               (item) =>
-                `${{ mentions: "Bahsetmeler", messages: "Mesajlar", comments: "Tweet yorumları" }[item.channel]}: ${item.status === "read" ? "okundu" : "okunamadı"}`,
+                `${{ mentions: t("Mentions"), messages: t("Messages"), comments: t("Tweet comments") }[item.channel]}: ${item.status === "read" ? t("read") : t("could not be read")}`,
             )
             .join(" · ")}
         </p>
       ) : null}
       <p className="social-muted">
-        Bu bölüm kayıt ve bağlantı kurtarma içindir. Bağlı hesapların otomatik takibi host'ta,
-        gönderimleri etkin yayın programları ve yanıt kurallarıyla yürür.
+        {t(
+          "This section is for sign-up and connection recovery. Connected accounts are monitored automatically on the host, and sending follows active publishing programs and reply rules.",
+        )}
       </p>
       <Select
-        label="Tarayıcı işlemi"
+        label={t("Browser action")}
         value={intent}
         options={options}
         onValueChange={(value) => setIntent(value as SocialBrowserIntent)}
@@ -150,7 +181,7 @@ export function SocialBrowserWorkspace({
       />
       {intent === "comments" ? (
         <TextField
-          label="Gönderi bağlantısı"
+          label={t("Post link")}
           value={target}
           onChange={(event) => setTarget(event.target.value)}
           disabled={busy || !!current}
@@ -162,30 +193,35 @@ export function SocialBrowserWorkspace({
           onChange={(event) => setAcknowledged(event.target.checked)}
           disabled={busy}
         />
-        Bu hesap için ayrı tarayıcı profilini aç
+        {t("Open a separate browser profile for this account")}
       </label>
       {intent === "signup" ? (
         <p>
-          Kayıt koşulları, parola, doğrulama kodu ve CAPTCHA adımlarını açılan tarayıcıda
-          tamamlayın.
+          {t(
+            "Complete the terms, password, verification code and CAPTCHA steps in the browser that opens.",
+          )}
         </p>
       ) : null}
       {account.platform === "whatsapp" || account.platform === "telegram" ? (
         <p className="social-muted">
-          Yeni hesap kaydı mobil uygulamada yapılır; burada web oturumu açılır.
+          {t("New accounts are registered in the mobile app; this opens a web session.")}
         </p>
       ) : null}
       {!query.data?.available && query.data ? (
-        <p role="status">Seçili host'ta Chrome veya Edge bulunamadı.</p>
+        <p role="status">{t("Chrome or Edge was not found on the selected host.")}</p>
       ) : null}
       {query.isError ? (
         <p role="alert">
-          Tarayıcı durumu okunamadı. Host sürümünü ve bağlantısını kontrol edip yenileyin.
+          {t(
+            "Browser status could not be read. Check the host version and connection, then refresh.",
+          )}
         </p>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
+      {openBlocker ? <p className="social-muted">{openBlocker}</p> : null}
       <div className="social-actions">
         <Button
+          type="button"
           disabled={
             busy ||
             !!current ||
@@ -203,20 +239,29 @@ export function SocialBrowserWorkspace({
             )
           }
         >
-          Tarayıcıda aç
+          {t("Open in browser")}
         </Button>
+        <Badge variant="label" appearance="outline">
+          {t("Account: {p0}", { p0: account.name })}
+        </Badge>
         <Button
+          type="button"
+          variant="secondary"
           disabled={busy || query.isFetching}
           onClick={() => void perform(async () => undefined)}
         >
-          Durumu yenile
+          {t("Refresh status")}
         </Button>
         {current ? (
           <Button
+            type="button"
+            variant="secondary"
+            tone="danger"
+            className="ml-auto"
             disabled={busy}
             onClick={() => void perform(() => client.browserWorkflowCancel(account.id))}
           >
-            İşlemi iptal et
+            {t("Cancel action")}
           </Button>
         ) : null}
       </div>
@@ -230,7 +275,7 @@ export function SocialBrowserWorkspace({
       </div>
       {query.data && query.data.workflows.length > 1 ? (
         <details>
-          <summary>Önceki tarayıcı işlemleri</summary>
+          <summary>{t("Previous browser actions")}</summary>
           <ul>
             {query.data.workflows.slice(1).map((item) => (
               <li key={item.id}>

@@ -23,9 +23,15 @@ import {
 import type { SocialClient } from "../model/socialClient";
 
 const labels = {
-  maxContentCharacters: "Paylaşım karakter sınırı",
-  maxCommentCharacters: "Yorum ve yanıt karakter sınırı",
-  maxMessageCharacters: "Mesaj karakter sınırı",
+  get maxContentCharacters() {
+    return t("Post character limit");
+  },
+  get maxCommentCharacters() {
+    return t("Comment and reply character limit");
+  },
+  get maxMessageCharacters() {
+    return t("Message character limit");
+  },
 };
 const platforms = SOCIAL_PLATFORM_NAMES;
 type Scope = "global" | SocialPlatform;
@@ -115,17 +121,22 @@ export function SocialPolicySettings({
       return next;
     });
     setError("");
-    setNotice("Kayıtlı ayarlar yüklendi.");
+    setNotice(t("Saved settings loaded."));
   };
 
   return (
-    <section className="social-policy-panel" aria-label="Sosyal medya ajan ve içerik ayarları">
-      <h2>{t("AI ve içerik")}</h2>
+    <section
+      className="social-policy-panel"
+      aria-label={t("Social media agent and content settings")}
+    >
+      <h2>{t("AI and content")}</h2>
       <p className="social-muted">
-        {t("Ajanı ve içerik sınırlarını seçin. Boş platform ayarları ortak ayarı kullanır.")}
+        {t(
+          "Choose the agent and content limits. Platforms without settings use the shared settings.",
+        )}
       </p>
       <label className="social-policy-scope">
-        Ayar kapsamı
+        {t("Settings scope")}
         <NativeSelect
           value={scope}
           disabled={saving}
@@ -135,7 +146,7 @@ export function SocialPolicySettings({
             setNotice("");
           }}
         >
-          <option value="global">Tüm platformlar</option>
+          <option value="global">{t("All platforms")}</option>
           {SOCIAL_PLATFORMS.map((platform) => (
             <option key={platform} value={platform}>
               {platforms[platform]}
@@ -144,16 +155,17 @@ export function SocialPolicySettings({
         </NativeSelect>
       </label>
       <p className="social-policy-effective">
-        {t("Etkin ajan")}:{" "}
+        {t("Active agent")}:{" "}
         {effective.agent
-          ? `${HARNESS_TITLE[effective.agent.provider]} · ${effective.agent.model || "varsayılan model"}`
-          : t("AI kapalı · doğrulanmış sabit yanıt")}
-        {scope !== "global" && !policies.platforms[scope]?.agent ? " · ortak ayar" : ""}
+          ? `${HARNESS_TITLE[effective.agent.provider]} · ${effective.agent.model || t("default model")}`
+          : t("AI off · verified fixed reply")}
+        {scope !== "global" && !policies.platforms[scope]?.agent ? ` · ${t("shared setting")}` : ""}
       </p>
       {conflict ? (
         <Alert tone="danger">
-          Bu ayarlar başka bir oturumda güncellendi. Düzenlediğiniz değerler korunuyor. Devam etmek
-          için kayıtlı ayarları yükleyin.
+          {t(
+            "These settings were updated in another session. Your edited values are preserved. Load the saved settings to continue.",
+          )}
         </Alert>
       ) : null}
       <form
@@ -174,7 +186,9 @@ export function SocialPolicySettings({
             if (raw) {
               const limit = Number(raw);
               if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20_000) {
-                setError(`${labels[field]} 1 ile 20000 arasında tam sayı olmalı.`);
+                setError(
+                  t("{p0} must be a whole number between 1 and 20000.", { p0: labels[field] }),
+                );
                 return;
               }
               policy[field] = limit;
@@ -192,7 +206,7 @@ export function SocialPolicySettings({
             );
           } catch {
             setError(
-              "Ajanı ve model adını kontrol edin. Model adı en fazla 200 karakter olabilir.",
+              t("Check the agent and model name. The model name can be at most 200 characters."),
             );
             return;
           }
@@ -211,18 +225,22 @@ export function SocialPolicySettings({
                 [savedScope]: draftFor(policy),
               }));
               setNotice(
-                `${savedScope === "global" ? "Ortak" : platforms[savedScope]} ayarlar kaydedildi.`,
+                savedScope === "global"
+                  ? t("Shared settings saved.")
+                  : t("{p0} settings saved.", { p0: platforms[savedScope] }),
               );
             } catch (error) {
-              setError(`Ayarlar kaydedilemedi: ${errorText(error)}`);
+              setError(t("Settings could not be saved: {p0}", { p0: errorText(error) }));
               throw error;
             }
           })
             .then((success) => {
               if (!success && !started)
-                setError("Başka bir işlem sürüyor. Kaydetmeyi tekrar deneyin.");
+                setError(t("Another operation is in progress. Try saving again."));
             })
-            .catch((error) => setError(`Ayarlar kaydedilemedi: ${errorText(error)}`))
+            .catch((error) =>
+              setError(t("Settings could not be saved: {p0}", { p0: errorText(error) })),
+            )
             .finally(() => {
               savingRef.current = false;
               setSaving(false);
@@ -231,13 +249,13 @@ export function SocialPolicySettings({
       >
         <fieldset className="social-workspace" disabled={saving}>
           <label>
-            AI ajanı
+            {t("AI agent")}
             <NativeSelect
               value={draft.provider}
               onChange={(event) => update({ provider: event.target.value, model: "" })}
             >
               <option value="">
-                {scope === "global" ? t("AI kullanma") : "Ortak ajan ayarını kullan"}
+                {scope === "global" ? t("Do not use AI") : t("Use the shared agent setting")}
               </option>
               {REMOTE_PROVIDERS.map((id) => (
                 <option key={id} value={id}>
@@ -247,63 +265,56 @@ export function SocialPolicySettings({
             </NativeSelect>
           </label>
           <details className="social-settings">
-            <summary>{t("Modeli özelleştir")}</summary>
-            <label>
-              AI modeli
-              <TextField
-                hideLabel
-                label=""
-                value={draft.model}
-                disabled={!draft.provider}
-                maxLength={200}
-                placeholder="Boş: ajanın varsayılan modeli"
-                onChange={(event) => update({ model: event.target.value })}
-              />
-            </label>
+            <summary>{t("Customize the model")}</summary>
+            <TextField
+              label={t("AI model")}
+              value={draft.model}
+              disabled={!draft.provider}
+              maxLength={200}
+              placeholder={t("Empty: the agent's default model")}
+              onChange={(event) => update({ model: event.target.value })}
+            />
           </details>
           <section className="social-policy-limits">
-            <h3>{t("Karakter sınırları")}</h3>
+            <h3>{t("Character limits")}</h3>
             <div className="social-field-grid">
               {SOCIAL_LIMIT_FIELDS.map((field) => (
-                <label key={field}>
-                  {labels[field]}
-                  <TextField
-                    hideLabel
-                    label=""
-                    name={field}
-                    type="number"
-                    min={1}
-                    max={20000}
-                    step={1}
-                    value={draft.limits[field]}
-                    onChange={(event) =>
-                      update({
-                        limits: { ...draft.limits, [field]: event.target.value },
-                      })
-                    }
-                    placeholder={
-                      scope !== "global" && policies.global[field]
-                        ? `Ortak sınır: ${policies.global[field]}`
-                        : t("Sınır yok")
-                    }
-                  />
-                  <small>
-                    Kayıtlı sınır: {effective[field] ?? "ek sınır yok"}
-                    {scope !== "global" && policies.platforms[scope]?.[field] === undefined
-                      ? " · ortak ayar"
-                      : ""}
-                  </small>
-                </label>
+                <TextField
+                  key={field}
+                  label={labels[field]}
+                  name={field}
+                  type="number"
+                  min={1}
+                  max={20000}
+                  step={1}
+                  value={draft.limits[field]}
+                  onChange={(event) =>
+                    update({
+                      limits: { ...draft.limits, [field]: event.target.value },
+                    })
+                  }
+                  placeholder={
+                    scope !== "global" && policies.global[field]
+                      ? t("Shared limit: {p0}", { p0: policies.global[field] })
+                      : t("No limit")
+                  }
+                  description={
+                    t("Saved limit: {p0}", { p0: effective[field] ?? t("no extra limit") }) +
+                    (scope !== "global" && policies.platforms[scope]?.[field] === undefined
+                      ? ` · ${t("shared setting")}`
+                      : "")
+                  }
+                />
               ))}
             </div>
           </section>
           <div className="social-actions">
             <Button variant="primary" type="submit" disabled={conflict} loading={saving}>
-              {saving ? "Kaydediliyor…" : "Ayarları kaydet"}
+              {saving ? t("Saving…") : t("Save settings")}
             </Button>
             {isEdited(draft) || conflict ? (
               <Button variant="secondary" type="button" onClick={reset}>
-                Kayıtlı ayarları yükle
+                {t("Load saved settings")}
               </Button>
             ) : null}
           </div>
@@ -311,10 +322,10 @@ export function SocialPolicySettings({
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {notice ? <Notice kind="success" title={notice} /> : null}
         <details className="social-settings">
-          <summary>{t("Bu ayarlar nasıl uygulanır?")}</summary>
+          <summary>{t("How are these settings applied?")}</summary>
           <p className="social-muted">
             {t(
-              "Platform sınırları ve gönderim onayı geçerlidir. Seçili ajan kullanılamazsa başka ajana geçilmez.",
+              "Platform limits and send approval still apply. If the selected agent is unavailable, no other agent is used.",
             )}
           </p>
         </details>

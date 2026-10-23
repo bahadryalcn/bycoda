@@ -24,7 +24,7 @@ export function InboxConnectMenu({
         kind: "item",
         id: source,
         label: t("Connect ") + INBOX_SOURCE_LABELS[source],
-        icon: <InboxProviderMark provider={source} className="block size-3.5 shrink-0" />,
+        icon: <InboxProviderMark provider={source} className="block icon-sm shrink-0" />,
       }))}
       onClose={onClose}
       onPick={(id) => {

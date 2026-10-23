@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "../../../shared/ui/Button";
 
@@ -44,7 +44,7 @@ type ToggleProps = {
 };
 
 export function MarkdownModeToggle({ mode, onChange }: ToggleProps) {
-  useLocale();
+  const t = useT();
   return (
     <div
       role="tablist"

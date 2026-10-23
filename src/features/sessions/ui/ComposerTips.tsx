@@ -1,5 +1,5 @@
 import { memo, useEffect, useState, type CSSProperties } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { AiIdea } from "../../../shared/ui/icons";
 import "./ComposerTips.css";
 
@@ -71,6 +71,7 @@ function FoldTip({ text, animate }: { text: string; animate: boolean }) {
 }
 
 export const ComposerTips = memo(function ComposerTips({ active }: { active: boolean }) {
+  const t = useT();
   const locale = useLocale();
   const [index, setTip] = useState(() => Math.floor(Math.random() * COMPOSER_TIPS.length));
   const [hovered, setHovered] = useState(false);

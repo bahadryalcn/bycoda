@@ -27,6 +27,7 @@ export const openCodeAdapter: HarnessAdapter = {
   sendTurn: sendOpenCodeTurn,
   compactContext: compactOpenCodeContext,
   steerTurn: steerOpenCodeTurn,
+  steerAppliesSettings: true,
   cancelTurn: cancelOpenCodeTurn,
   respondApproval: respondOpenCodeApproval,
   respondQuestion: respondOpenCodeQuestion,

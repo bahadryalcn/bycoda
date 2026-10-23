@@ -227,7 +227,7 @@ export function ShortcutEditor({
             disabled={busy || disabled}
             onClick={() => void run(onReset)}
           >
-            <RotateCcw className="size-3.5" />
+            <RotateCcw className="icon-sm" />
           </Button>
         ) : null}
       </div>
@@ -478,7 +478,7 @@ export function KeybindingsPage() {
             aria-haspopup="dialog"
             onClick={() => setFiltersOpen(!filtersOpen)}
           >
-            <ListFilter className="size-4" />
+            <ListFilter className="icon-md" />
           </Button>
           <Button
             ref={helpAnchor}
@@ -489,7 +489,7 @@ export function KeybindingsPage() {
             aria-haspopup="dialog"
             onClick={() => setHelpOpen(!helpOpen)}
           >
-            <CircleHelp className="size-4" />
+            <CircleHelp className="icon-md" />
           </Button>
           {filtersOpen ? (
             <Popover

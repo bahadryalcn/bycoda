@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { GitCompare, GripVertical, Terminal, X } from "../../../shared/ui/icons";
+import { CircleAlert, GitCompare, GripVertical, Terminal, X } from "../../../shared/ui/icons";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
@@ -674,16 +674,11 @@ export function SurfaceTabs({
                   <FileTypeIcon name={iconName} isDir={false} size={14} />
                 )}
                 <TabLabel
-                  className={`flex-1 ${file.preview ? "italic" : ""} ${
-                    errors
-                      ? active
-                        ? "text-danger"
-                        : "text-danger/75 group-hover:text-danger"
-                      : ""
-                  }`}
+                  className={`flex-1 ${file.preview ? "italic" : ""} ${errors ? "text-danger" : ""}`}
                 >
                   {label}
                 </TabLabel>
+                {errors ? <CircleAlert aria-hidden className="icon-xs shrink-0 text-danger" /> : null}
               </Button>
               <Button
                 iconOnly

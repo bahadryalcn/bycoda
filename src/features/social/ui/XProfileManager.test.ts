@@ -31,7 +31,7 @@ it("reads only on request, applies a public field diff and keeps exact follow ac
       act(async () =>
         [...element.querySelectorAll("button")].find((el) => el.textContent === text)!.click(),
       );
-    await click("Profili oku");
+    await click("Read profile");
     expect(read).toHaveBeenCalledWith("account");
     const bio = element.querySelector("textarea")!;
     await act(async () => {
@@ -47,7 +47,7 @@ it("reads only on request, applies a public field diff and keeps exact follow ac
         .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
     );
     expect(update).toHaveBeenCalledWith("account", { bio: "New" });
-    expect(element.textContent).toContain("yeniden okunarak doğrulandı");
+    expect(element.textContent).toContain("verified by reading it back");
     expect(follow).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());

@@ -37,7 +37,7 @@ function Picker({ busy = false, initial = ["local"] }: { busy?: boolean; initial
     SocialBusyContext.Provider,
     { value: busy },
     createElement(SocialMultiSelect, {
-      label: "İlgili projeler",
+      label: "Related projects",
 
       options,
 
@@ -101,7 +101,7 @@ async function search(value: string) {
 it("searches folder paths to distinguish duplicate project names and keeps multiple selections", async () => {
   await mount();
 
-  await click('[aria-label="İlgili projeler"]');
+  await click('[aria-label="Related projects"]');
 
   expect(
     document.body.querySelector('[role="listbox"]')?.getAttribute("aria-multiselectable"),
@@ -131,7 +131,7 @@ it("toggles an option from the keyboard without submitting its enclosing form an
     ),
   );
 
-  await click('[aria-label="İlgili projeler"]');
+  await click('[aria-label="Related projects"]');
 
   const input = await search("worktrees");
 
@@ -153,15 +153,15 @@ it("toggles an option from the keyboard without submitting its enclosing form an
 
   expect(document.body.querySelector('[role="dialog"]')).toBeNull();
 
-  expect(document.activeElement).toBe(container.querySelector('[aria-label="İlgili projeler"]'));
+  expect(document.activeElement).toBe(container.querySelector('[aria-label="Related projects"]'));
 });
 
 it("keeps unavailable selected IDs visible and removable instead of silently dropping them", async () => {
   await mount({ initial: ["missing"] });
 
-  expect(container.textContent).toContain("Erişilemeyen seçim");
+  expect(container.textContent).toContain("Unavailable selection");
 
-  await click('[aria-label="Erişilemeyen seçim seçimini kaldır"]');
+  await click('[aria-label="Remove Unavailable selection"]');
 
   expect(changed).toHaveBeenLastCalledWith([]);
 });
@@ -169,7 +169,7 @@ it("keeps unavailable selected IDs visible and removable instead of silently dro
 it("blocks unauthorized options and closes an open picker while a host operation is running", async () => {
   await mount();
 
-  await click('[aria-label="İlgili projeler"]');
+  await click('[aria-label="Related projects"]');
 
   await search("Private");
 
@@ -186,23 +186,23 @@ it("blocks unauthorized options and closes an open picker while a host operation
   expect(document.body.querySelector('[role="dialog"]')).toBeNull();
 
   expect(
-    container.querySelector<HTMLButtonElement>('[aria-label="İlgili projeler"]')!.disabled,
+    container.querySelector<HTMLButtonElement>('[aria-label="Related projects"]')!.disabled,
   ).toBe(true);
 });
 
 it("shows a useful empty search and clears selection only on an explicit action", async () => {
   await mount();
 
-  await click('[aria-label="İlgili projeler"]');
+  await click('[aria-label="Related projects"]');
 
   await search("does-not-exist");
 
-  expect(document.body.querySelector('[role="status"]')?.textContent).toContain("Aramanıza uygun");
+  expect(document.body.querySelector('[role="status"]')?.textContent).toContain("No options match");
 
   expect(changed).not.toHaveBeenCalled();
 
   const clear = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
-    (button) => button.textContent === "Temizle",
+    (button) => button.textContent === "Clear",
   )!;
 
   await act(async () => clear.click());
@@ -210,11 +210,11 @@ it("shows a useful empty search and clears selection only on an explicit action"
   expect(changed).toHaveBeenLastCalledWith([]);
 });
 
-it("keeps an unfinished form when its creation panel is closed and reopened", async () => {
+it("keeps an unfinished form when its creation dialog is closed and reopened", async () => {
   await act(async () =>
     root.render(
       createElement(Composer, {
-        title: "Kişi ekle",
+        title: "Add contact",
 
         children: createElement(
           "form",
@@ -225,25 +225,29 @@ it("keeps an unfinished form when its creation panel is closed and reopened", as
     ),
   );
 
-  const details = container.querySelector("details")!;
+  const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+    (button) => button.textContent === "Add contact",
+  )!;
 
-  expect(details.open).toBe(false);
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
 
-  details.open = true;
+  await act(async () => trigger.click());
 
-  await click('[aria-label="Kişi ekle formunu kapat"]');
+  expect(document.body.querySelector('[role="dialog"]')).toBeTruthy();
 
-  expect(details.open).toBe(false);
+  await click('[role="dialog"] [aria-label="Close"]');
 
-  details.open = true;
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
 
-  expect(container.querySelector("input")?.value).toBe("Unfinished contact");
+  await act(async () => trigger.click());
+
+  expect(document.body.querySelector("input")?.value).toBe("Unfinished contact");
 });
 
 it("keeps composition Enter from selecting and restores focus with Done", async () => {
   await mount({ initial: [] });
 
-  await click('[aria-label="İlgili projeler"]');
+  await click('[aria-label="Related projects"]');
 
   const input = await search("worktrees");
 
@@ -261,12 +265,12 @@ it("keeps composition Enter from selecting and restores focus with Done", async 
   expect(changed).not.toHaveBeenCalled();
 
   const done = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
-    (button) => button.textContent === "Bitti",
+    (button) => button.textContent === "Done",
   )!;
 
   await act(async () => done.click());
 
   expect(document.body.querySelector('[role="dialog"]')).toBeNull();
 
-  expect(document.activeElement).toBe(container.querySelector('[aria-label="İlgili projeler"]'));
+  expect(document.activeElement).toBe(container.querySelector('[aria-label="Related projects"]'));
 });

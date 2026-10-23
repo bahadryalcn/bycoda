@@ -6,29 +6,45 @@ export const CLOSED_SIGNAL: LiveSignal = { presence: 0, open: 0, energy: 0 };
  * Turns streamed text into a `LiveSignal`. Each burst of characters adds energy
  * that decays quickly; a syllable rhythm opens and closes the lips while
  * energy remains. A negative length means nothing is streaming.
+ *
+ * `activityLength` counts everything the running turn streams (reply, reasoning
+ * and tool progress), so presence and energy last through tool steps; only the
+ * reply text in `textLength` moves the lips. It defaults to the reply length.
  */
 export function createLiveSignalDriver() {
   let energy = 0;
+  let voice = 0;
   let presence = 0;
   let length = -1;
+  let activity = -1;
   let open = 0;
   return {
-    update(time: number, delta: number, textLength: number): LiveSignal {
+    update(
+      time: number,
+      delta: number,
+      textLength: number,
+      activityLength = textLength,
+    ): LiveSignal {
       if (length >= 0 && textLength > length) {
-        energy = Math.min(1, energy + (textLength - length) / 24);
+        voice = Math.min(1, voice + (textLength - length) / 24);
+      }
+      if (activity >= 0 && activityLength > activity) {
+        energy = Math.min(1, energy + (activityLength - activity) / 24);
       }
       length = textLength;
+      activity = activityLength;
+      voice *= Math.exp(-delta * 2.6);
       energy *= Math.exp(-delta * 2.6);
-      const talking = energy > 0.03;
-      // The face stays for the whole reply; only the lips rest between bursts.
+      const talking = voice > 0.03;
+      // The face stays for the whole turn; only the lips rest between bursts.
       presence =
-        talking || length >= 0
+        talking || energy > 0.03 || activity >= 0
           ? Math.min(1, presence + delta * 2.5)
           : Math.max(0, presence - delta * 0.7);
       // Two incommensurate rhythms read as syllables rather than a metronome.
       const syllable =
         0.5 + 0.3 * Math.sin(time * 9.3) + 0.2 * Math.sin(time * 15.1 + Math.sin(time * 2.1) * 3);
-      const target = talking ? Math.min(1, energy * 1.5) * Math.max(0.08, syllable) : 0;
+      const target = talking ? Math.min(1, voice * 1.5) * Math.max(0.08, syllable) : 0;
       // Lips have mass: ease toward the target instead of snapping.
       open += (target - open) * Math.min(1, delta * 18);
       return { presence, open, energy };

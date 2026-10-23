@@ -21,10 +21,21 @@ import styles from "./badge.module.css";
 export type BadgeTone = "neutral" | "success" | "info" | "warning" | "danger";
 export type BadgeSize = "sm" | "md";
 
+/** `label` is the bordered default; `dot` is a status dot with optional text; `count` is a compact numeric counter. */
+export type BadgeVariant = "label" | "dot" | "count";
+/** `outline` keeps the toned border; `subtle` is the borderless tone-subtle fill. */
+export type BadgeAppearance = "outline" | "subtle";
+
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   tone?: BadgeTone;
   size?: BadgeSize;
   icon?: ReactNode;
+  variant?: BadgeVariant;
+  appearance?: BadgeAppearance;
+  /** Accessible name. Required for a `dot` without text, which renders as a labelled image. */
+  label?: string;
+  /** For `count`: numbers above this render as `max+`. */
+  max?: number;
 }
 
 const exitFast: Transition = {
@@ -70,13 +81,22 @@ export function Badge({
   tone = "neutral",
   size = "md",
   icon,
+  variant = "label",
+  appearance = "outline",
+  label,
+  max,
   className,
   children,
   ...props
 }: BadgeProps) {
   const reduce = useReducedMotion();
   const text =
-    typeof children === "string" || typeof children === "number" ? String(children) : null;
+    typeof children === "number" && variant === "count" && max !== undefined && children > max
+      ? `${max}+`
+      : typeof children === "string" || typeof children === "number"
+        ? String(children)
+        : null;
+  const dotOnly = variant === "dot" && (children === undefined || children === null);
   const glyphKey = icon ? iconKey(icon) : "";
   const body = useRef<HTMLSpanElement>(null);
   const content = useRef<HTMLSpanElement>(null);
@@ -122,12 +142,23 @@ export function Badge({
   const enter: Transition = reduce
     ? { duration: motionTokens.duration.instant }
     : { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] };
-  const classes = [styles.badge, styles[tone], styles[size], className].filter(Boolean).join(" ");
+  const classes = [
+    styles.badge,
+    styles[tone],
+    styles[size],
+    variant !== "label" && styles[variant],
+    appearance === "subtle" && styles.subtle,
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const a11y = label ? { "aria-label": label, ...(dotOnly ? { role: "img" } : {}) } : {};
   // The pill follows its content: text and icon swap in place while the width springs to the new size.
   return (
-    <span {...props} className={classes}>
+    <span {...a11y} {...props} className={classes}>
       <motion.span ref={body} className={styles.body} style={{ width }}>
         <span ref={content} className={styles.content}>
+          {variant === "dot" ? <span className={styles.dotMark} aria-hidden="true" /> : null}
           {icon ? (
             <span className={styles.icon} aria-hidden="true">
               <AnimatePresence mode="popLayout" initial={false}>

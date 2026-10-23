@@ -1,12 +1,10 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
-import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
-import { LAYER } from "../../../shared/lib/layers";
-import { Check, Loader, X } from "../../../shared/ui/icons";
+import { TransientNotice } from "../../../shared/ui/TransientNotice";
+import { Check, Loader } from "../../../shared/ui/icons";
 import { isPickerProviderVisible } from "../../sessions/model/models";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
@@ -56,7 +54,6 @@ export function HarnessUpdateNotice({
   onHeightChange?: (height: number) => void;
 }) {
   useLocale();
-  const panelRef = useRef<HTMLElement>(null);
   const [updates, setUpdates] = useState<HarnessUpdate[]>([]);
   const { runs } = useSyncExternalStore(
     subscribeHarnessUpdates,
@@ -86,18 +83,6 @@ export function HarnessUpdateNotice({
   }, []);
 
   const visible = updates.length > 0;
-  useLayoutEffect(() => {
-    const panel = panelRef.current;
-    if (!panel || !onHeightChange) return;
-    const measure = () => onHeightChange(panel.offsetHeight);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(panel);
-    return () => {
-      observer.disconnect();
-      onHeightChange(0);
-    };
-  }, [visible, onHeightChange]);
   if (!visible) return null;
 
   const stateOf = (harness: HarnessId): HarnessUpdateRun => runs[harness] ?? { status: "idle" };
@@ -107,6 +92,7 @@ export function HarnessUpdateNotice({
     return status === "idle" || status === "failed";
   });
   const anyUpdated = updates.some((update) => stateOf(update.harness).status === "updated");
+  const allUpdated = updates.every((update) => stateOf(update.harness).status === "updated");
 
   const start = (targets: HarnessUpdate[]) => {
     for (const update of targets) void runHarnessUpdate(update);
@@ -117,61 +103,41 @@ export function HarnessUpdateNotice({
     setUpdates([]);
   };
 
-  return createPortal(
-    <section
-      ref={panelRef}
+  return (
+    <TransientNotice
       aria-label={t("Harness updates")}
-      role="status"
-      style={{ zIndex: LAYER.toast, top: topOffset }}
-      className="fixed right-3 isolate w-[min(340px,calc(100vw-24px))] overflow-hidden rounded-xl border border-content/10 text-content shadow-xl"
-    >
-      <GlassBackdrop />
-      <div className="relative z-[1]">
-        <div className="flex items-center gap-2 border-b border-stroke px-3 py-2">
-          <span className="min-w-0 flex-1 truncate text-[12px] font-semibold">
-            {updates.length === 1 ? t("Harness update available") : t("Harness updates available")}
-          </span>
-          {pending.length > 1 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-
-              onClick={() => start(pending)}
-            >
-              {t("Update all")}
-            </Button>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            iconOnly
-            label={t("Dismiss harness updates")}
-            disabled={busy}
-            onClick={dismiss}
-          >
-            <X className="size-3" strokeWidth={2} />
+      tone="info"
+      title={updates.length === 1 ? t("Harness update available") : t("Harness updates available")}
+      durationMs={allUpdated ? 5000 : null}
+      placement="top-end"
+      offset={topOffset}
+      onDismiss={dismiss}
+      dismissDisabled={busy}
+      onHeightChange={onHeightChange}
+      actions={
+        pending.length > 1 ? (
+          <Button variant="ghost" size="sm" type="button" onClick={() => start(pending)}>
+            {t("Update all")}
           </Button>
-        </div>
-        <div className="divide-y divide-stroke">
-          {updates.map((update) => (
-            <HarnessUpdateRow
-              key={update.harness}
-              update={update}
-              state={stateOf(update.harness)}
-              onUpdate={() => start([update])}
-            />
-          ))}
-        </div>
-        <p className="border-t border-stroke px-3 py-2 text-[11px] text-content/50">
-          {anyUpdated
-            ? t("Model picker refreshed with the new version’s models.")
-            : t("New models often need the latest version.")}
-        </p>
+        ) : null
+      }
+    >
+      <div className="divide-y divide-stroke">
+        {updates.map((update) => (
+          <HarnessUpdateRow
+            key={update.harness}
+            update={update}
+            state={stateOf(update.harness)}
+            onUpdate={() => start([update])}
+          />
+        ))}
       </div>
-    </section>,
-    document.body,
+      <p className="pt-2 text-ui-micro text-(--ui-text-muted)">
+        {anyUpdated
+          ? t("Model picker refreshed with the new version’s models.")
+          : t("New models often need the latest version.")}
+      </p>
+    </TransientNotice>
   );
 }
 
@@ -186,21 +152,21 @@ function HarnessUpdateRow({
 }) {
   useLocale();
   return (
-    <article className="px-3 py-2.5">
+    <article className="py-2.5">
       <div className="flex items-center gap-2">
-        <HarnessIcon harness={update.harness} className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+        <HarnessIcon harness={update.harness} className="icon-md shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium">
           {HARNESS_TITLE[update.harness]}
         </span>
         {state.status === "updated" ? (
-          <span className="flex shrink-0 items-center gap-1 text-[11px] text-success">
-            <Check className="size-3.5" />
+          <span className="flex shrink-0 items-center gap-1 text-ui-micro text-success">
+            <Check className="icon-sm" />
             {t("Updated to ")}
             {state.version}
           </span>
         ) : (
           <>
-            <span className="shrink-0 font-mono text-[11px] text-content/50">
+            <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-muted)">
               {update.installed} → {update.latest}
             </span>
             <Button
@@ -213,7 +179,7 @@ function HarnessUpdateRow({
             >
               {state.status === "updating" ? (
                 <>
-                  <Loader className="size-3 animate-spin" />
+                  <Loader className="icon-xs animate-spin" />
                   {t("Updating")}
                 </>
               ) : state.status === "failed" ? (
@@ -226,13 +192,8 @@ function HarnessUpdateRow({
         )}
       </div>
       {state.status === "failed" ? (
-        <Alert
-          tone="danger"
-          role="alert"
-
-          title={state.error}
-        >
-          {state.error}
+        <Alert tone="danger" role="alert">
+          <div className="max-h-40 overflow-auto whitespace-pre-wrap">{state.error}</div>
         </Alert>
       ) : null}
     </article>

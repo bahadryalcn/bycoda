@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Modal } from "../../../shared/ui/Modal";
@@ -250,13 +251,11 @@ export function TermiusImportDialog({
                       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                         <span className="break-words font-medium">{host.name}</span>
                         {duplicate ? (
-                          <span className="text-xs text-(--ui-text-muted)">
+                          <Badge size="sm" tone="info">
                             {t("Already in Servers")}
-                          </span>
+                          </Badge>
                         ) : host.hasKey ? (
-                          <span className="text-xs text-(--ui-text-muted)">
-                            {t("SSH key available")}
-                          </span>
+                          <Badge size="sm">{t("SSH key available")}</Badge>
                         ) : null}
                       </div>
                       <p className="break-all text-xs text-(--ui-text-muted)">

@@ -6,10 +6,11 @@ import { useQueuedMessageActions } from "./useQueuedMessageActions";
 import { gateUsageBudget } from "./submit/submitUsageBudget";
 import type { SubmitDeps, SubmitPreflight } from "./submit/submitTypes";
 import type { Submit } from "../helpers/types";
-import { newSession } from "../../../features/sessions/model/session";
+import { newSession, type Session } from "../../../features/sessions/model/session";
 import {
   getSessions,
   resetSessionsStore,
+  sessionsRef,
   setSessions,
   useLiveSessions,
 } from "../../../features/sessions/model/sessionsStore";
@@ -24,20 +25,25 @@ vi.mock("../../../features/connections/model/useSharedLocalQueues", () => ({
   resumeSharedLocalQueue: async () => {},
 }));
 
-async function queueHarness(status: "paused" | "restored", busy: boolean, submit: Submit) {
+async function queueHarness(
+  status: "paused" | "restored" | "active",
+  busy: boolean,
+  submit: Submit,
+  patch: Partial<Session> = {},
+  onStop: (sessionId: string) => void = () => undefined,
+) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const initial = {
     ...newSession("codex", "/fake"),
     busy,
     queueStatus: status,
     queuedMessages: [{ id: "head", text: "Saved task", attachments: [] }],
+    ...patch,
   };
   resetSessionsStore([initial]);
   let actions!: ReturnType<typeof useQueuedMessageActions>;
   function Harness() {
     const sessions = useLiveSessions();
-    const sessionsRef = useRef(sessions);
-    sessionsRef.current = sessions;
     const moves = useRef(new Set<string>());
     const retiring = useRef(new Map<string, number>());
     const pending = useRef(false);
@@ -53,6 +59,7 @@ async function queueHarness(status: "paused" | "restored", busy: boolean, submit
       onSubmit: submit,
       enqueueHarnessEvent: vi.fn(),
       flushHarnessEvents: vi.fn(),
+      onStopRef: { current: onStop },
     });
     return null;
   }
@@ -68,6 +75,70 @@ async function queueHarness(status: "paused" | "restored", busy: boolean, submit
     },
   };
 }
+
+it("stops the running turn before steering a row queued for another model", async () => {
+  const running = { harness: "codex" as const, model: "running", modelSettings: {} };
+  const saved = { ...running, model: "saved" };
+  const submit = vi.fn<Submit>(() => {
+    expect(getSessions()[0].busy).toBe(false);
+    return true;
+  });
+  const stop = vi.fn((sessionId: string) =>
+    setSessions((all) =>
+      all.map((s) => (s.id === sessionId ? { ...s, busy: false, queueStatus: "paused" } : s)),
+    ),
+  );
+  const harness = await queueHarness(
+    "active",
+    true,
+    submit,
+    {
+      runningModelTarget: running,
+      queuedMessages: [{ id: "head", text: "Saved task", attachments: [], modelTarget: saved }],
+    },
+    stop,
+  );
+  try {
+    await act(async () => {
+      expect(await harness.actions.onSteerQueuedMessage(harness.id, "head")).toBe(true);
+    });
+    expect(stop).toHaveBeenCalledExactlyOnceWith(harness.id);
+    expect(submit).toHaveBeenCalledExactlyOnceWith(
+      harness.id,
+      "Saved task",
+      [],
+      expect.objectContaining({ queuedMessageId: "head", followUpBehavior: "steer" }),
+    );
+    expect(getSessions()[0].queueStatus).toBe("active");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+it("steers a row queued for the running model without stopping the turn", async () => {
+  const running = { harness: "codex" as const, model: "running", modelSettings: {} };
+  const submit = vi.fn<Submit>(() => true);
+  const stop = vi.fn();
+  const harness = await queueHarness(
+    "active",
+    true,
+    submit,
+    {
+      runningModelTarget: running,
+      queuedMessages: [{ id: "head", text: "Saved task", attachments: [], modelTarget: running }],
+    },
+    stop,
+  );
+  try {
+    await act(async () => {
+      expect(await harness.actions.onSteerQueuedMessage(harness.id, "head")).toBe(true);
+    });
+    expect(stop).not.toHaveBeenCalled();
+    expect(submit).toHaveBeenCalledOnce();
+  } finally {
+    await harness.cleanup();
+  }
+});
 
 it("resumes a busy queue without submitting an extra continue turn", async () => {
   const submit = vi.fn<Submit>(() => true);
@@ -205,6 +276,7 @@ it("holds a budget-rejected head exactly once until an explicit queue resume", a
       onSubmit: submit,
       enqueueHarnessEvent: ctx.enqueueHarnessEvent,
       flushHarnessEvents: ctx.flushHarnessEvents,
+      onStopRef: { current: () => undefined },
     });
     return null;
   }

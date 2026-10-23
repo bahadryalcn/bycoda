@@ -448,9 +448,9 @@ describe("a queue restored after a restart", () => {
     });
     expect(steer).toHaveBeenCalledOnce();
     expect(send.disabled).toBe(true);
-    expect(container.querySelector('[role="status"]')?.textContent).toContain(
-      "Waiting for confirmation",
-    );
+    expect(
+      container.querySelector('[role="status"]:not([class*="srOnly"])')?.textContent,
+    ).toContain("Waiting for confirmation");
     await act(async () => finish(false));
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("It remains queued");
     expect(container.textContent).toContain("first");
@@ -482,9 +482,9 @@ describe("a queue restored after a restart", () => {
         message: "Queue resumed. Messages will send when this turn finishes.",
       }),
     );
-    expect(container.querySelector('[role="status"]')?.textContent).toContain(
-      "when this turn finishes",
-    );
+    expect(
+      container.querySelector('[role="status"]:not([class*="srOnly"])')?.textContent,
+    ).toContain("when this turn finishes");
   });
 
   it("preserves the acceptance result after the last queued row disappears", async () => {
@@ -497,7 +497,9 @@ describe("a queue restored after a restart", () => {
     )!;
     await act(async () => button.click());
     await renderQueue([]);
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("Message accepted");
+    expect(
+      container.querySelector('[role="status"]:not([class*="srOnly"])')?.textContent,
+    ).toContain("Message accepted");
   });
 
   it("holds a message whose attachment is gone", async () => {

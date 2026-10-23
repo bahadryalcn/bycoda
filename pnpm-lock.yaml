@@ -5,6 +5,10 @@ importers:
 
   .:
     configDependencies: {}
+    dependencies:
+      '@lezer/markdown':
+        specifier: ^1.7.2
+        version: 1.8.0
     packageManagerDependencies:
       '@pnpm/exe':
         specifier: 12.8.2

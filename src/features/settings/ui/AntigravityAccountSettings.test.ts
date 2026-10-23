@@ -50,7 +50,11 @@ function render() {
   act(() => root.render(createElement(AntigravityAccountSettings)));
 }
 function button() {
-  return container.querySelector<HTMLButtonElement>("button")!;
+  return Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+    (node) =>
+      node.textContent?.includes("Check installation and models") ||
+      node.textContent?.includes("Checking"),
+  )!;
 }
 
 it("opens shared-account setup from Accounts without offering unsupported named profiles", () => {

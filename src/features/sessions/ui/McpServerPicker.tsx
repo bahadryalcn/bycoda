@@ -1,7 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, Search, Settings } from "../../../shared/ui/icons";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
@@ -29,7 +29,7 @@ export function McpServerPicker({
   onManage: () => void;
   onDismiss: (reason: "escape" | "outside") => void;
 }) {
-  useLocale();
+  const t = useT();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const listboxId = `mcp-server-picker-${useId()}`;
@@ -78,7 +78,7 @@ export function McpServerPicker({
           onDismiss("escape");
         }
       }}
-      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) shadow-xl backdrop-blur-xl"
+      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) shadow-(--ui-elevation-floating)"
     >
       <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
         <Search className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
@@ -110,7 +110,7 @@ export function McpServerPicker({
               if (server?.availability === "available") onPick(server);
             }
           }}
-          className="min-w-0 flex-1 bg-transparent text-[13px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
+          className="min-w-0 flex-1 bg-transparent text-ui-secondary text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
           placeholder={t("Search MCP servers…")}
         />
         <Button
@@ -134,7 +134,7 @@ export function McpServerPicker({
         className="max-h-[min(184px,45vh)] overflow-y-auto overscroll-none p-1"
       >
         {loading ? (
-          <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
+          <p className="px-2 py-2 text-ui-caption text-(--ui-text-secondary)">
             {t("Checking MCP servers…")}
           </p>
         ) : error ? (
@@ -142,7 +142,7 @@ export function McpServerPicker({
             {error}
           </Alert>
         ) : servers.length === 0 ? (
-          <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
+          <p className="px-2 py-2 text-ui-caption text-(--ui-text-secondary)">
             {query ? t("No matching MCP servers") : t("No MCP servers found")}
           </p>
         ) : (
@@ -175,13 +175,13 @@ export function McpServerPicker({
                   className="size-4 shrink-0"
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px]">{server.name}</span>
-                  <span className="block truncate text-[11px] text-(--ui-text-secondary)">
+                  <span className="block truncate text-ui-secondary">{server.name}</span>
+                  <span className="block truncate text-ui-micro text-(--ui-text-secondary)">
                     {MCP_PROVIDER_LABELS[server.provider]} · {server.scope}
                   </span>
                 </span>
                 <span
-                  className={`max-w-[40%] shrink-0 truncate text-[11px] ${server.availability === "authentication" ? "text-(--ui-tone-warning-fg)" : "text-(--ui-text-secondary)"}`}
+                  className={`max-w-[40%] shrink-0 truncate text-ui-micro ${server.availability === "authentication" ? "text-(--ui-tone-warning-fg)" : "text-(--ui-text-secondary)"}`}
                 >
                   {server.availability === "authentication"
                     ? t("Needs authentication")

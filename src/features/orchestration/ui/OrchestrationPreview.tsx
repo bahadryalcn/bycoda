@@ -192,12 +192,12 @@ function AssignmentModel({
         }}
         className="max-w-full"
       >
-        <HarnessIcon harness={task.harness} className="size-3.5 shrink-0" />
+        <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
         <span className="truncate">
           {selected?.name ?? task.model}
           {selectedEffortLabel ? ` · ${selectedEffortLabel}` : ""} · {HARNESS_TITLE[task.harness]}
         </span>
-        <ChevronDown className="size-3 shrink-0" />
+        <ChevronDown className="icon-xs shrink-0" />
       </Button>
       {open && (
         <Popover
@@ -216,7 +216,7 @@ function AssignmentModel({
           className="flex flex-col overflow-hidden"
         >
           <label className="flex shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2.5 text-(--ui-text-secondary)">
-            <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
+            <Search className="icon-sm shrink-0" strokeWidth={1.75} />
             <SearchInput
               ref={search}
               type="text"
@@ -231,7 +231,7 @@ function AssignmentModel({
                 setInEffort(false);
               }}
               onKeyDown={onSearchKey}
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
+              className="min-w-0 flex-1 bg-transparent text-ui-secondary text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
             />
           </label>
           <div
@@ -266,28 +266,28 @@ function AssignmentModel({
                   openEffortOrPick(choice);
                 }}
               >
-                <HarnessIcon harness={choice.harness} className="size-4 shrink-0" />
+                <HarnessIcon harness={choice.harness} className="icon-md shrink-0" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] leading-tight text-(--ui-tone-neutral-fg)">
+                  <span className="block truncate text-ui-secondary leading-tight text-(--ui-tone-neutral-fg)">
                     {choice.name}
                   </span>
-                  <span className="mt-0.5 block truncate text-[11px] leading-tight text-(--ui-text-secondary)">
+                  <span className="mt-0.5 block truncate text-ui-micro leading-tight text-(--ui-text-secondary)">
                     {HARNESS_TITLE[choice.harness]}
                   </span>
                 </span>
                 {choice === selected && (
-                  <Check className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />
+                  <Check className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />
                 )}
                 {effortForChoice(choice)?.options.length ? (
                   <ChevronRight
-                    className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+                    className="icon-sm shrink-0 text-(--ui-text-secondary)"
                     strokeWidth={1.75}
                   />
                 ) : null}
               </Button>
             ))}
             {!matches.length && (
-              <p className="px-2 py-3 text-[12px] text-(--ui-text-secondary)">
+              <p className="px-2 py-3 text-ui-caption text-(--ui-text-secondary)">
                 {t("No matching models")}
               </p>
             )}
@@ -329,7 +329,7 @@ function AssignmentModel({
               >
                 <span className="min-w-0 flex-1 truncate">{option.label}</span>
                 {selectedOption ? (
-                  <Check className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />
+                  <Check className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />
                 ) : null}
               </MenuRow>
             );
@@ -363,7 +363,7 @@ function WorkerHelp() {
         onBlur={() => setHovered(false)}
         className="shrink-0"
       >
-        <CircleHelp className="size-3.5" strokeWidth={1.75} />
+        <CircleHelp className="icon-sm" strokeWidth={1.75} />
       </Button>
       {(hovered || open) && (
         <Popover
@@ -374,10 +374,10 @@ function WorkerHelp() {
           onDismiss={() => setOpen(false)}
           className={`px-2.5 py-2 ${open ? "" : "pointer-events-none"}`}
         >
-          <div className="text-[12px] leading-4 text-(--ui-tone-neutral-fg)">
+          <div className="text-ui-caption leading-4 text-(--ui-tone-neutral-fg)">
             {t("How many workers run at once")}
           </div>
-          <div className="mt-1 text-[11px] leading-4 text-(--ui-text-secondary)">
+          <div className="mt-1 text-ui-micro leading-4 text-(--ui-text-secondary)">
             {t(
               "Tasks wait for available workers and for their dependencies to finish. A lower number runs fewer agent sessions at the same time.",
             )}
@@ -474,27 +474,27 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
       tasks: proposal.tasks.map((task) => (task.id === id ? { ...task, ...patch } : task)),
     });
   };
-  const fieldLabel = "mb-1 block text-[11px] leading-tight text-(--ui-text-secondary)";
+  const fieldLabel = "mb-1 block text-ui-micro leading-tight text-(--ui-text-secondary)";
   return (
     <div
-      className="mb-2 overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) font-sans"
+      className="mb-2 overflow-hidden rounded-(--radius-panel) border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) font-sans"
       aria-label={t("Orchestration proposal")}
       data-orchestration-review
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2.5 px-3 py-2.5">
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-(--ui-surface-raised) text-(--ui-text-secondary)">
+        <span className="grid size-6 shrink-0 place-items-center text-(--ui-text-secondary)">
           {planning || proposal.status === "starting" ? (
-            <CircleDashed className="size-4 animate-spin" />
+            <CircleDashed className="icon-md animate-spin" />
           ) : (
-            <MessageMultiple className="size-4" strokeWidth={1.75} />
+            <MessageMultiple className="icon-md" strokeWidth={1.75} />
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium leading-tight text-(--ui-text-secondary)">
+          <div className="truncate text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
             {planning ? t("Planning assignments…") : proposal.title}
           </div>
-          <div className="mt-1 flex items-center gap-1.5 text-[11px] leading-tight text-(--ui-text-secondary)">
-            <HarnessIcon harness={proposal.author.harness} className="size-3 shrink-0" />
+          <div className="mt-1 flex items-center gap-1.5 text-ui-micro leading-tight text-(--ui-text-secondary)">
+            <HarnessIcon harness={proposal.author.harness} className="icon-xs shrink-0" />
             <span className="truncate" title={HARNESS_TITLE[proposal.author.harness]}>
               {t("Lead · ")}
               {proposal.author.name}
@@ -525,7 +525,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
               disabled={!editable}
               onClick={() => void perform(() => actions!.confirm(proposal.leadId, block.id))}
             >
-              <Play className="size-3" strokeWidth={1.75} />
+              <Play className="icon-xs" strokeWidth={1.75} />
               {starting ? t("Starting…") : t("Confirm & start")}
             </Button>
           )}
@@ -551,7 +551,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
         </div>
       </div>
       {planning && (
-        <p className="px-3 pb-2.5 text-[12px] leading-5 text-(--ui-text-secondary)">
+        <p className="px-3 pb-2.5 text-ui-caption leading-5 text-(--ui-text-secondary)">
           {proposal.settings.choices.length
             ? t(
                 "Your lead is choosing tasks and worker models. Review the assignments here before starting.",
@@ -589,11 +589,11 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                     className="min-w-0 flex-1 text-left"
                   >
                     {open ? (
-                      <ChevronDown className="size-3.5 shrink-0" />
+                      <ChevronDown className="icon-sm shrink-0" />
                     ) : (
-                      <ChevronRight className="size-3.5 shrink-0" />
+                      <ChevronRight className="icon-sm shrink-0" />
                     )}
-                    <span className="truncate text-[12px]" title={task.title}>
+                    <span className="truncate text-ui-caption" title={task.title}>
                       {task.title}
                     </span>
                   </Button>
@@ -612,10 +612,10 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                       />
                     ) : (
                       <span
-                        className="flex min-w-0 items-center gap-1.5 text-[11px] text-(--ui-text-secondary)"
+                        className="flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)"
                         title={HARNESS_TITLE[task.harness]}
                       >
-                        <HarnessIcon harness={task.harness} className="size-3 shrink-0" />
+                        <HarnessIcon harness={task.harness} className="icon-xs shrink-0" />
                         <span className="truncate">
                           {taskChoice?.name ?? task.model}
                           {taskEffort ? ` · ${taskEffort}` : ""}
@@ -625,7 +625,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                   </div>
                 </div>
                 {open && (
-                  <div className="space-y-2.5 px-3 pb-3 pl-8 text-[11px] leading-4 text-(--ui-text-secondary)">
+                  <div className="space-y-2.5 px-3 pb-3 pl-8 text-ui-micro leading-4 text-(--ui-text-secondary)">
                     {editable ? (
                       <>
                         <label className="block">
@@ -649,7 +649,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                         </label>
                       </>
                     ) : (
-                      <p className="whitespace-pre-wrap text-[12px] leading-5 text-(--ui-text-secondary)">
+                      <p className="whitespace-pre-wrap text-ui-caption leading-5 text-(--ui-text-secondary)">
                         {task.prompt}
                       </p>
                     )}
@@ -676,7 +676,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           onClick={() => setShowAll(!showAll)}
           className="w-full text-left"
         >
-          {showAll ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          {showAll ? <ChevronDown className="icon-sm" /> : <ChevronRight className="icon-sm" />}
           {showAll
             ? t("Show fewer tasks")
             : t(proposal.tasks.length === 4 ? "Show {p0} more task" : "Show {p0} more tasks", {
@@ -690,7 +690,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
         </Alert>
       )}
       {!planning && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-(--ui-tone-neutral-border) px-3 py-2 text-[11px] text-(--ui-text-secondary)">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-(--ui-tone-neutral-border) px-3 py-2 text-ui-micro text-(--ui-text-secondary)">
           <div className="flex items-center gap-1.5">
             {editable ? (
               <>
@@ -720,13 +720,18 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
             <WorkerHelp />
           </div>
           <span>
-            {run?.status ??
-              (proposal.status === "approved"
-                ? t("Approved")
-                : proposal.status === "ready"
-                  ? t("Awaiting confirmation")
-                  : "")}{" "}
-            {t("· Shared project folder")}
+            {[
+              run?.status
+                ? t(run.status.charAt(0).toUpperCase() + run.status.slice(1))
+                : proposal.status === "approved"
+                  ? t("Approved")
+                  : proposal.status === "ready"
+                    ? t("Awaiting confirmation")
+                    : "",
+              t("Shared project folder"),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
         </div>
       )}

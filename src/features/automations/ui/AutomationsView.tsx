@@ -25,6 +25,8 @@ import {
   type ReactNode,
 } from "react";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
+import { Row } from "../../settings/ui/settingsControls";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
   AlertCircle,
@@ -190,8 +192,8 @@ export function AutomationsView({
         {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
         {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-            <Zap className="size-3.5 shrink-0 text-(--ui-text-muted)" strokeWidth={1.75} />
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
+            <Zap className="icon-sm shrink-0 text-(--ui-text-muted)" strokeWidth={1.75} />
             <span className="min-w-0 truncate text-(--ui-tone-neutral-fg)">{t("Automations")}</span>
           </div>
         </ToolHeader>
@@ -221,6 +223,7 @@ function AutomationsContent({
   "cwd" | "recents" | "onLaunch" | "onOpenSession" | "onOpenBackgroundSession" | "onLaunchAssistant"
 >) {
   useLocale();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const queryClient = useQueryClient();
   const queryVisible = useQueryVisible();
   const localQuery = useQuery({
@@ -520,7 +523,14 @@ function AutomationsContent({
       setError(t("Wait for the current run to finish before deleting this automation."));
       return;
     }
-    if (!window.confirm(`Delete “${automation.name}” and its run history?`)) return;
+    if (
+      !(await confirm({
+        title: t("Delete automation"),
+        message: t("Delete “{p0}” and its run history?", { p0: automation.name }),
+        confirmLabel: t("Delete"),
+      }))
+    )
+      return;
     setDeleting(automationKey(automation));
     try {
       if (automation.host) {
@@ -565,6 +575,7 @@ function AutomationsContent({
       className="automation-layout flex min-h-0 min-w-0 flex-1 flex-col sm:flex-row text-(--ui-tone-neutral-fg)"
       data-list-open={compactListOpen || undefined}
     >
+      {confirmDialog}
       <div className="automation-compact-navigation">
         <Button
           variant="ghost"
@@ -599,7 +610,7 @@ function AutomationsContent({
             aria-expanded={filterOpen}
             onClick={() => setFilterOpen((open) => !open)}
           >
-            <Search className="size-3.5" strokeWidth={1.75} />
+            <Search className="icon-sm" strokeWidth={1.75} />
           </Button>
           {filterOpen ? (
             <Popover
@@ -653,7 +664,7 @@ function AutomationsContent({
             label={t("New automation")}
             size="sm"
           >
-            <Plus className="size-3.5" strokeWidth={1.75} />
+            <Plus className="icon-sm" strokeWidth={1.75} />
           </Button>
         </div>
         <div ref={listLock} className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5">
@@ -666,7 +677,7 @@ function AutomationsContent({
           ) : null}
           {loading ? (
             <div className="grid place-items-center py-12 text-(--ui-text-muted)">
-              <LoaderCircle className="size-4 animate-spin" />
+              <LoaderCircle className="icon-md animate-spin" />
             </div>
           ) : visible.length > 0 ? (
             <ul className="space-y-0.5">
@@ -706,11 +717,11 @@ function AutomationsContent({
 
       <main className="automation-workspace flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
-          <span className="mr-auto text-[12px] text-(--ui-text-muted)">
+          <span className="mr-auto text-ui-caption text-(--ui-text-muted)">
             {t("Automations")} · {automations.length}
           </span>
           <Button variant="ghost" onClick={beginCreate}>
-            <Plus className="size-3.5" />
+            <Plus className="icon-sm" />
             {t("New automation")}
           </Button>
           {onLaunchAssistant ? (
@@ -743,7 +754,7 @@ function AutomationsContent({
         ) : null}
         {loading && !editorDraft ? (
           <div className="grid min-h-0 flex-1 place-items-center text-(--ui-text-muted)">
-            <LoaderCircle className="size-4 animate-spin" />
+            <LoaderCircle className="icon-md animate-spin" />
           </div>
         ) : editorDraft ? (
           <HostModelSource
@@ -862,10 +873,7 @@ function AutomationCard({
     : null;
   const model = resolveModel(automation.harness, automation.model);
   return (
-    <div
-      className="group relative rounded-md border border-(--ui-tone-neutral-border)"
-      style={{ background: "var(--ui-surface)" }}
-    >
+    <div className="group relative rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface)">
       <Button
         type="button"
         aria-current={active ? "true" : undefined}
@@ -875,10 +883,10 @@ function AutomationCard({
         selected={active}
         layout="stacked"
       >
-        <span className="flex min-w-0 items-center gap-1.5 pr-8 text-(length:--ui-font-caption) text-(--ui-text-muted)">
+        <span className="flex min-w-0 items-center gap-1.5 pr-8 text-ui-caption text-(--ui-text-muted)">
           <TriggerMark
             kind={automationTriggers(automation)[0]?.kind ?? automation.triggerKind}
-            className="size-3"
+            className="icon-xs"
           />
           <span className="min-w-0 truncate">
             {triggerLabel(automation)}
@@ -886,22 +894,31 @@ function AutomationCard({
             {automation.host?.stale ? t(" (offline, last known)") : ""}
           </span>
         </span>
-        <span className="mt-1 block truncate text-[13px] font-semibold text-(--ui-tone-neutral-fg)">
-          {automation.name}
+        <span className="mt-1 flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 truncate text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+            {automation.name}
+          </span>
+          {automation.host?.needsInput ? (
+            <Badge tone="warning" className="shrink-0">
+              {t("Needs input")}
+            </Badge>
+          ) : automation.lastRunStatus === "failed" || automation.lastRunStatus === "running" ? (
+            <RunStatusPill status={automation.lastRunStatus} />
+          ) : null}
         </span>
-        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-(--ui-text-muted)">
+        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-muted)">
           {logoPath ? (
             <ProjectLogoIcon
               path={logoPath}
-              className="size-3.5 shrink-0 rounded-sm"
-              imageClassName="size-3.5"
+              className="icon-sm shrink-0 rounded-sm"
+              imageClassName="icon-sm"
             />
           ) : (
             <ProjectMascot
               project={seed}
               color={mascotColor}
               name={mascotName}
-              className="size-3 shrink-0"
+              className="icon-xs shrink-0"
             />
           )}
           <span className="min-w-0 truncate">{project}</span>
@@ -915,7 +932,7 @@ function AutomationCard({
             title={model.name}
             className="ml-auto flex min-w-0 max-w-28 items-center gap-1 text-(--ui-text-muted)"
           >
-            <HarnessIcon harness={automation.harness} className="size-3.5 shrink-0" />
+            <HarnessIcon harness={automation.harness} className="icon-sm shrink-0" />
             <span className="min-w-0 truncate">{model.name}</span>
           </span>
         </span>
@@ -953,10 +970,10 @@ function AutomationPicker({
   return (
     <div ref={lockOverscroll} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none">
       <div className="automation-content">
-        <h1 className="text-[20px] font-semibold leading-tight text-(--ui-tone-neutral-fg)">
+        <h1 className="text-ui-heading font-medium leading-tight text-(--ui-tone-neutral-fg)">
           {t("New automation")}
         </h1>
-        <p className="mt-1.5 text-[13px] text-(--ui-text-muted)">
+        <p className="mt-1.5 text-ui-secondary text-(--ui-text-muted)">
           {t("Pick an example or start from scratch.")}
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -979,7 +996,7 @@ function AutomationPicker({
           />
         </div>
         {templates.length === 0 ? (
-          <p role="status" className="mt-4 text-[13px] text-(--ui-text-muted)">
+          <p role="status" className="mt-4 text-ui-secondary text-(--ui-text-muted)">
             {t("No matching options")}
           </p>
         ) : null}
@@ -993,13 +1010,13 @@ function AutomationPicker({
           >
             <div className="flex gap-3">
               <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
-                <Plus className="size-4" strokeWidth={1.75} />
+                <Plus className="icon-md" strokeWidth={1.75} />
               </span>
               <span className="min-w-0">
-                <span className="line-clamp-2 text-[13px] font-medium text-(--ui-tone-neutral-fg)">
+                <span className="line-clamp-2 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
                   {t("Start from scratch")}
                 </span>
-                <span className="mt-1 line-clamp-3 text-[12px] leading-snug text-(--ui-text-muted)">
+                <span className="mt-1 line-clamp-3 text-ui-caption leading-snug text-(--ui-text-muted)">
                   {t("Write your own instructions and choose a trigger.")}
                 </span>
               </span>
@@ -1022,19 +1039,19 @@ function AutomationPicker({
               >
                 <div className="flex gap-3">
                   <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
-                    <Icon className="size-4" strokeWidth={1.75} />
+                    <Icon className="icon-md" strokeWidth={1.75} />
                   </span>
                   <span className="min-w-0">
-                    <span className="line-clamp-2 text-[13px] font-medium text-(--ui-tone-neutral-fg)">
+                    <span className="line-clamp-2 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
                       {t(template.name)}
                     </span>
-                    <span className="mt-1 line-clamp-3 text-[12px] leading-snug text-(--ui-text-muted)">
+                    <span className="mt-1 line-clamp-3 text-ui-caption leading-snug text-(--ui-text-muted)">
                       {t(template.description)}
                     </span>
                   </span>
                 </div>
-                <span className="mt-auto flex min-w-0 items-center gap-1.5 pt-3 text-[11px] text-(--ui-text-muted)">
-                  <TriggerMark kind={template.trigger.kind} className="size-3" />
+                <span className="mt-auto flex min-w-0 items-center gap-1.5 pt-3 text-ui-micro text-(--ui-text-muted)">
+                  <TriggerMark kind={template.trigger.kind} className="icon-xs" />
                   <span className="min-w-0 truncate">{t(template.triggerLabel)}</span>
                 </span>
               </Button>
@@ -1085,7 +1102,7 @@ function RunRow({
         style={{ display: "grid" }}
       >
         <span className="flex min-w-0 items-center gap-2 text-(--ui-tone-neutral-fg)">
-          <TriggerMark kind={trigger.kind} className="size-3.5 shrink-0 text-(--ui-text-muted)" />
+          <TriggerMark kind={trigger.kind} className="icon-sm shrink-0 text-(--ui-text-muted)" />
           <span className="min-w-0 truncate">{trigger.label}</span>
         </span>
         <span className="truncate text-(--ui-tone-neutral-fg)">
@@ -1104,6 +1121,14 @@ function RunRow({
         <span className="text-right tabular-nums text-(--ui-text-muted)">
           {formatAutomationRunDuration(run)}
         </span>
+        {run.error && (run.status === "failed" || run.status === "skipped") ? (
+          <span
+            title={run.error}
+            className="col-span-full truncate text-start text-ui-micro text-(--ui-tone-danger-fg)"
+          >
+            {run.error}
+          </span>
+        ) : null}
       </Button>
     </li>
   );
@@ -1113,7 +1138,7 @@ function RunStatusPill({ status }: { status: AutomationRun["status"] }) {
   return (
     <Badge
       tone={runStatusTone(status)}
-      icon={status === "running" ? <LoaderCircle className="size-3 animate-spin" /> : undefined}
+      icon={status === "running" ? <LoaderCircle className="icon-xs animate-spin" /> : undefined}
     >
       {runStatusLabel(status)}
     </Badge>
@@ -1373,9 +1398,9 @@ function AutomationEditor({
                 {onRun ? (
                   <Button type="button" onClick={onRun} disabled={running} variant="secondary">
                     {running ? (
-                      <LoaderCircle className="size-3.5 animate-spin" />
+                      <LoaderCircle className="icon-sm animate-spin" />
                     ) : (
-                      <Play className="size-3.5" />
+                      <Play className="icon-sm" />
                     )}
                     {t("Run now")}
                   </Button>
@@ -1386,12 +1411,12 @@ function AutomationEditor({
                   variant="primary"
                   loading={saving}
                 >
-                  {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+                  {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
                   {draft.id ? t("Save") : t("Create")}
                 </Button>
               </div>
             </div>
-            <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[12px] text-(--ui-text-muted)">
+            <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-ui-caption text-(--ui-text-muted)">
               <ToggleSwitch
                 label={draft.enabled ? t("Pause automation") : t("Enable automation")}
                 on={draft.enabled}
@@ -1399,7 +1424,7 @@ function AutomationEditor({
                 compact
               />
               <span className="shrink-0">{draft.enabled ? t("Active") : t("Inactive")}</span>
-              <span aria-hidden className="h-3 ml-2 w-px shrink-0 bg-(--ui-surface-raised)" />
+              <span aria-hidden className="h-3 ml-2 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
               <SearchableProjectPicker
                 cwd={draft.cwd}
                 recents={recents}
@@ -1411,7 +1436,7 @@ function AutomationEditor({
               />
               {onDelete ? (
                 <>
-                  <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+                  <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
                   <Button
                     ref={menuButton}
                     type="button"
@@ -1424,7 +1449,7 @@ function AutomationEditor({
                     iconOnly
                     label={t("Automation actions")}
                   >
-                    <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
+                    <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
                   </Button>
                   {menuOpen ? (
                     <DropdownMenu
@@ -1493,51 +1518,6 @@ function AutomationEditor({
         {!showingHistory ? (
           <div className="automation-content automation-editor-grid">
             <section>
-              <SectionTitle>{t("Triggers")}</SectionTitle>
-              {draft.triggers.some(
-                (trigger) => trigger.kind === "tasks" || trigger.kind === "social",
-              ) ? (
-                <p className="mt-2 text-[12px] text-(--ui-text-muted)">
-                  {t(
-                    "Task and social events run while this app is open. Connect the source machine; social accounts must be linked to this project.",
-                  )}
-                </p>
-              ) : null}
-              <div className="mt-3 rounded-md border border-(--ui-tone-neutral-border)">
-                {draft.triggers.length > 0 ? (
-                  <ul className="px-3 py-1.5">
-                    {draft.triggers.map((trigger) => (
-                      <li key={trigger.id}>
-                        <TriggerRow
-                          trigger={trigger}
-                          cwd={draft.cwd}
-                          background={draft.runInBackground}
-                          machineId={backgroundMachineId}
-                          onChange={updateTrigger}
-                          onRemove={() =>
-                            setTriggers(draft.triggers.filter((entry) => entry.id !== trigger.id))
-                          }
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                {draft.triggers.length > 0 ? (
-                  <div className="border-t border-(--ui-tone-neutral-border)" />
-                ) : null}
-                <SearchableSelect
-                  label={t("Add Trigger")}
-                  value=""
-                  placeholder={t("Add Trigger")}
-                  options={triggerOptions}
-                  onChange={selectTrigger}
-                  disabled={draft.triggers.length >= 20}
-                  searchPlaceholder={t("Search triggers")}
-                />
-              </div>
-            </section>
-
-            <section>
               <SectionTitle>{t("Instructions")}</SectionTitle>
               <div
                 data-ui-focus-group=""
@@ -1581,14 +1561,59 @@ function AutomationEditor({
                   </div>
                 </div>
               </div>
-              <p className="mt-2 px-1 text-[11px] text-(--ui-text-muted)">
+              <p className="mt-2 px-1 text-ui-micro text-(--ui-text-muted)">
                 {t("Skills, @file references, and built-in commands work here.")}
               </p>
             </section>
 
             <section>
+              <SectionTitle>{t("Triggers")}</SectionTitle>
+              {draft.triggers.some(
+                (trigger) => trigger.kind === "tasks" || trigger.kind === "social",
+              ) ? (
+                <p className="mt-2 text-ui-caption text-(--ui-text-muted)">
+                  {t(
+                    "Task and social events run while this app is open. Connect the source machine; social accounts must be linked to this project.",
+                  )}
+                </p>
+              ) : null}
+              <div className="mt-3 rounded-md border border-(--ui-tone-neutral-border)">
+                {draft.triggers.length > 0 ? (
+                  <ul className="px-3 py-1.5">
+                    {draft.triggers.map((trigger) => (
+                      <li key={trigger.id}>
+                        <TriggerRow
+                          trigger={trigger}
+                          cwd={draft.cwd}
+                          background={draft.runInBackground}
+                          machineId={backgroundMachineId}
+                          onChange={updateTrigger}
+                          onRemove={() =>
+                            setTriggers(draft.triggers.filter((entry) => entry.id !== trigger.id))
+                          }
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {draft.triggers.length > 0 ? (
+                  <div className="border-t border-(--ui-tone-neutral-border)" />
+                ) : null}
+                <SearchableSelect
+                  label={t("Add Trigger")}
+                  value=""
+                  placeholder={t("Add Trigger")}
+                  options={triggerOptions}
+                  onChange={selectTrigger}
+                  disabled={draft.triggers.length >= 20}
+                  searchPlaceholder={t("Search triggers")}
+                />
+              </div>
+            </section>
+
+            <section>
               <SectionTitle>{t("Session")}</SectionTitle>
-              <div className="mt-3 divide-y divide-stroke rounded-md border border-(--ui-tone-neutral-border)">
+              <div className="mt-3 overflow-hidden rounded-md border border-(--ui-tone-neutral-border)">
                 <SettingsRow
                   label={t("Runs")}
                   hint={
@@ -1668,19 +1693,19 @@ function AutomationEditor({
               </div>
             </section>
 
-            <details className="rounded-md border border-(--ui-tone-neutral-border)">
-              <summary className="flex min-h-14 cursor-default list-none items-center justify-between gap-3 px-4 active:opacity-75">
+            <details className="group/advanced rounded-md border border-(--ui-tone-neutral-border)">
+              <summary className="flex min-h-14 cursor-default list-none items-center justify-between gap-3 px-4">
                 <span>
-                  <span className="block text-[13px] font-medium text-(--ui-tone-neutral-fg)">
+                  <span className="block text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
                     {t("Advanced")}
                   </span>
-                  <span className="mt-0.5 block text-[11px] text-(--ui-text-muted)">
+                  <span className="mt-0.5 block text-ui-micro text-(--ui-text-muted)">
                     {t("Catch-up window and run limits")}
                   </span>
                 </span>
-                <ChevronDown className="size-3.5 text-(--ui-text-muted)" />
+                <ChevronDown className="icon-sm text-(--ui-text-muted) transition-transform group-open/advanced:rotate-180" />
               </summary>
-              <div className="divide-y divide-stroke border-t border-(--ui-tone-neutral-border)">
+              <div className="border-t border-(--ui-tone-neutral-border)">
                 <SettingsRow
                   label={t("Missed-run grace")}
                   hint={
@@ -1726,7 +1751,7 @@ function AutomationEditor({
           <section className="automation-content">
             <SectionTitle>{t("Run history")}</SectionTitle>
             {historyLoading ? (
-              <p role="status" className="p-3 text-[12px] text-(--ui-text-muted)">
+              <p role="status" className="p-3 text-ui-caption text-(--ui-text-muted)">
                 {t("Loading…")}
               </p>
             ) : null}
@@ -1746,7 +1771,7 @@ function AutomationEditor({
             {runs.length > 0 ? (
               <div className="mt-3 overflow-x-auto rounded-md border border-(--ui-tone-neutral-border)">
                 <div
-                  className={`${RUN_GRID} min-w-[560px] h-10 text-[11px] text-(--ui-text-muted)`}
+                  className={`${RUN_GRID} min-w-[560px] h-10 text-ui-micro text-(--ui-text-muted)`}
                 >
                   <span>{t("Trigger")}</span>
                   <span>{t("Triggered")}</span>
@@ -1796,7 +1821,7 @@ function PromptField({
 
 function SectionTitle({ children }: { children: ReactNode }) {
   useLocale();
-  return <h2 className="px-1 text-[12px] font-medium text-(--ui-text-muted)">{children}</h2>;
+  return <h2 className="px-1 text-ui-caption font-medium text-(--ui-text-muted)">{children}</h2>;
 }
 
 function SettingsRow({
@@ -1809,18 +1834,11 @@ function SettingsRow({
   children: ReactNode;
 }) {
   useLocale();
+  // The shared settings Row keeps optional help behind its information control.
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-2.5">
-      <span className="min-w-0">
-        <span className="block text-[12px] text-(--ui-tone-neutral-fg)">{label}</span>
-        {hint ? (
-          <span className="mt-0.5 block text-[11px] leading-snug text-(--ui-text-muted)">
-            {hint}
-          </span>
-        ) : null}
-      </span>
-      <span className="shrink-0">{children}</span>
-    </div>
+    <Row label={label} description={hint ? t(hint) : undefined}>
+      {children}
+    </Row>
   );
 }
 
@@ -2376,8 +2394,8 @@ export function TriggerRow({
 
   return (
     <div className="group flex min-h-10 items-center gap-2.5 py-1">
-      <TriggerMark kind={trigger.kind} className="size-3.5 shrink-0 text-(--ui-text-muted)" />
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-(--ui-tone-neutral-fg)">
+      <TriggerMark kind={trigger.kind} className="icon-sm shrink-0 text-(--ui-text-muted)" />
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-ui-secondary text-(--ui-tone-neutral-fg)">
         {trigger.kind === "time" ? (
           <TimeTriggerSentence
             trigger={trigger}
@@ -2403,7 +2421,7 @@ export function TriggerRow({
         className="opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
         label={t("Remove trigger")}
       >
-        <X className="size-3.5" />
+        <X className="icon-sm" />
       </Button>
     </div>
   );

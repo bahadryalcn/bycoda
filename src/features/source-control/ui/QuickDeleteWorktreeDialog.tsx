@@ -88,7 +88,7 @@ export function QuickDeleteWorktreeDialog({
         if (!busy) onClose();
       }}
     >
-      <div className="flex min-w-0 flex-col gap-3 p-4 text-[12px]">
+      <div className="flex min-w-0 flex-col gap-3 p-4 text-ui-caption">
         {!request.deletePath && trees ? (
           <SearchableSelect
             label={t("Worktree")}

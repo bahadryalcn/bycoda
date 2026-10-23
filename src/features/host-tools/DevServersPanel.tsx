@@ -1,4 +1,5 @@
 import { EmptyState } from "../../shared/ui/EmptyState";
+import { Badge } from "../../shared/ui/Badge";
 import { Alert } from "../../shared/ui/Alert";
 import { NumberField } from "../../shared/ui/NumberField";
 import { TextField } from "../../shared/ui/TextField";
@@ -55,6 +56,20 @@ const stateLabels = {
   stopped: "Stopped",
   error: "Error",
 };
+const stateTones = {
+  starting: "info",
+  running: "success",
+  stopping: "warning",
+  stopped: "neutral",
+  error: "danger",
+} as const;
+function StateBadge({ state }: { state: keyof typeof stateLabels }) {
+  return (
+    <Badge variant="dot" size="sm" tone={stateTones[state]}>
+      {t(stateLabels[state])}
+    </Badge>
+  );
+}
 const target = (server: DevServer, tree = false): DevServerTarget => ({
   id: server.id,
   identity: server.process
@@ -370,14 +385,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         aria-pressed={server.id === selected?.id}
         onClick={() => choose(server)}
       >
-        <span
-          className="dev-server-state"
-          data-state={server.state}
-          role="status"
-          title={t(stateLabels[server.state])}
-        >
-          {t(stateLabels[server.state])}
-        </span>
+        <StateBadge state={server.state} />
         <strong className="dev-server-name">{server.name}</strong>
         <code className="dev-server-ports">
           {[...new Set(server.endpoints.map((item) => `:${item.port}`))].join(" ") ||
@@ -407,7 +415,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           disabled={disabled}
           onClick={() => setDetails(undefined)}
         >
-          <X size={16} aria-hidden />
+          <X className="icon-md" aria-hidden />
         </Button>
       </div>
       <dl className="dev-server-metadata">
@@ -457,26 +465,18 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           <p className="host-tool-muted">
             {t("Define the exact command and working directory to restart this external server.")}
           </p>
-          <label className="host-tool-field">
-            {t("Restart command")}
-            <TextField
-              hideLabel
-              label={t("Restart command")}
-              value={restartCommand}
-              disabled={disabled}
-              onChange={(event) => setRestartCommand(event.target.value)}
-            />
-          </label>
-          <label className="host-tool-field">
-            {t("Restart working directory")}
-            <TextField
-              hideLabel
-              label={t("Restart working directory")}
-              value={restartCwd}
-              disabled={disabled}
-              onChange={(event) => setRestartCwd(event.target.value)}
-            />
-          </label>
+          <TextField
+            label={t("Restart command")}
+            value={restartCommand}
+            disabled={disabled}
+            onChange={(event) => setRestartCommand(event.target.value)}
+          />
+          <TextField
+            label={t("Restart working directory")}
+            value={restartCwd}
+            disabled={disabled}
+            onChange={(event) => setRestartCwd(event.target.value)}
+          />
         </div>
       ) : null}
       {intent !== "details" ? (
@@ -556,9 +556,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     <aside className="dev-server-selection" aria-label={server.name}>
       <div className="dev-server-heading">
         <h4>{server.name}</h4>
-        <span className="dev-server-state" data-state={server.state}>
-          {t(stateLabels[server.state])}
-        </span>
+        <StateBadge state={server.state} />
       </div>
       <p className="host-tool-muted">
         {server.process
@@ -603,7 +601,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           disabled={disabled || !endpoint}
           onClick={() => endpoint && openLocal(server, endpoint)}
         >
-          <ExternalLink size={16} aria-hidden />
+          <ExternalLink className="icon-md" aria-hidden />
         </Button>
         <Button
           iconOnly
@@ -611,7 +609,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           disabled={disabled || !endpoint}
           onClick={() => endpoint && copyUrl(server, endpoint)}
         >
-          <Copy size={16} aria-hidden />
+          <Copy className="icon-md" aria-hidden />
         </Button>
         <span className="dev-server-actions-gap" aria-hidden="true" />
         <Button disabled={disabled} onClick={() => void select(server, "details")}>
@@ -642,7 +640,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             setMenu((current) => (current ? null : button));
           }}
         >
-          <MoreHorizontal size={16} aria-hidden />
+          <MoreHorizontal className="icon-md" aria-hidden />
         </Button>
       </div>
       {menu ? (
@@ -656,14 +654,14 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
               kind: "item",
               id: "host",
               label: t("Open in external browser on host"),
-              icon: <AppWindow className="size-3.5" />,
+              icon: <AppWindow className="icon-sm" />,
               disabled: disabled || !endpoint,
             },
             {
               kind: "item",
               id: "share",
               label: t("Share server"),
-              icon: <Share className="size-3.5" />,
+              icon: <Share className="icon-sm" />,
               disabled: disabled || server.state !== "running" || !endpoint,
             },
             { kind: "sep" },
@@ -671,7 +669,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
               kind: "item",
               id: "kill",
               label: t("Force terminate"),
-              icon: <CircleX className="size-3.5" />,
+              icon: <CircleX className="icon-sm" />,
               danger: true,
               disabled: disabled || !hasIdentity(server),
             },
@@ -707,7 +705,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     >
       <header className="dev-servers-header">
         <div className="dev-servers-title">
-          <h3>{t("Development servers")}</h3>
+          <h3 className="sr-only">{t("Development servers")}</h3>
           <span className="host-tool-muted">
             {scanning && !scan
               ? t("Scanning servers…")
@@ -764,7 +762,11 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             label={autoRefresh ? t("Pause automatic refresh") : t("Resume automatic refresh")}
             onClick={() => setAutoRefresh((value) => !value)}
           >
-            {autoRefresh ? <Pause size={16} aria-hidden /> : <Play size={16} aria-hidden />}
+            {autoRefresh ? (
+              <Pause className="icon-md" aria-hidden />
+            ) : (
+              <Play className="icon-md" aria-hidden />
+            )}
           </Button>
           <Button
             variant="ghost"
@@ -773,7 +775,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             disabled={disabled}
             onClick={() => setSharing("3000")}
           >
-            <Share size={16} aria-hidden />
+            <Share className="icon-md" aria-hidden />
           </Button>
           <Button
             variant="primary"
@@ -855,53 +857,37 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             });
           }}
         >
-          <label className="host-tool-field">
-            {t("Server name")}
-            <TextField
-              hideLabel
-              label={t("Server name")}
-              value={name}
-              required
-              maxLength={80}
-              disabled={disabled}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <label className="host-tool-field">
-            {t("Server command")}
-            <TextField
-              hideLabel
-              label={t("Server command")}
-              value={command}
-              required
-              maxLength={32768}
-              disabled={disabled}
-              onChange={(event) => setCommand(event.target.value)}
-            />
-          </label>
-          <label className="host-tool-field">
-            {t("Working directory")}
-            <TextField
-              hideLabel
-              label={t("Working directory")}
-              value={workingDirectory}
-              disabled={disabled}
-              onChange={(event) => setWorkingDirectory(event.target.value)}
-            />
-          </label>
-          <label className="host-tool-field">
-            {t("Expected port (optional)")}
-            <NumberField
-              hideLabel
-              label={t("Expected port (optional)")}
+          <TextField
+            label={t("Server name")}
+            value={name}
+            required
+            maxLength={80}
+            disabled={disabled}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <TextField
+            label={t("Server command")}
+            value={command}
+            required
+            maxLength={32768}
+            disabled={disabled}
+            onChange={(event) => setCommand(event.target.value)}
+          />
+          <TextField
+            label={t("Working directory")}
+            value={workingDirectory}
+            disabled={disabled}
+            onChange={(event) => setWorkingDirectory(event.target.value)}
+          />
+          <NumberField
+            label={t("Expected port (optional)")}
 
-              min={1}
-              max={65535}
-              value={port}
-              disabled={disabled}
-              onChange={(event) => setPort(event.target.value)}
-            />
-          </label>
+            min={1}
+            max={65535}
+            value={port}
+            disabled={disabled}
+            onChange={(event) => setPort(event.target.value)}
+          />
           <p className="host-tool-muted">
             {t(
               "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.",
@@ -931,7 +917,14 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         </section>
       ) : null}
       {scan && scan.servers.length === 0 && !scanError ? (
-        <EmptyState description={t("No servers found")} />
+        <EmptyState
+          description={t("No servers found")}
+          action={
+            <Button variant="primary" disabled={disabled} onClick={() => setShowStart(true)}>
+              {t("Start server")}
+            </Button>
+          }
+        />
       ) : scan && visibleServers.length === 0 && query ? (
         <EmptyState description={t("No servers match your search.")} />
       ) : null}

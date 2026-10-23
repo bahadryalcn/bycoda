@@ -13,7 +13,6 @@ import {
   Plus,
   SplitSquare,
   Terminal,
-  Trash2,
   X,
 } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
@@ -266,6 +265,7 @@ export function ProjectTerminalDock({
         }}
       />
       <header className="terminal-header">
+        <span className="terminal-header-title">{t("Terminals")}</span>
         <div className="terminal-toolbar">
           <div className="flex min-w-0 items-center gap-0.5">
             <IconButton
@@ -424,7 +424,7 @@ export function ProjectTerminalDock({
                     title={t("Close")}
                     onClick={() => onCloseTerminal(file.id)}
                   >
-                    <Trash2 className="size-3" strokeWidth={1.75} />
+                    <X className="size-3" strokeWidth={1.75} />
                   </Button>
                 </div>
               </div>
@@ -597,7 +597,7 @@ export function ProjectTerminalDock({
               kind: "item",
               id: "close",
               label: t("Close Active Terminal"),
-              icon: <Trash2 className="size-3.5" />,
+              icon: <X className="size-3.5" />,
             },
             {
               kind: "item",

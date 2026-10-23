@@ -17,7 +17,6 @@ import {
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import "./ProviderSettings.css";
 
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { Button } from "../../../shared/ui/Button";
 
 import {
@@ -153,7 +152,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
         get label() {
           return t("Global");
         },
-        icon: <Globe className="size-3.5 shrink-0 text-content/60" strokeWidth={1.75} />,
+        icon: <Globe className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />,
       },
     ];
     const seen = new Set<string>();
@@ -293,7 +292,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
         persistence={{ mode: "automatic" }}
         action={
           <div className="provider-cli-scope">
-            <span className="text-[11px] text-content/60">{t("Apply defaults to")}</span>
+            <span className="text-ui-micro text-(--ui-text-secondary)">{t("Apply defaults to")}</span>
             <Select
               label={t("Provider defaults scope")}
               value={scope}
@@ -343,14 +342,20 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                     .join(", ")}
                   onClick={() => setSelectedProvider(harness)}
                 >
-                  <HarnessIcon harness={harness} className="size-4 shrink-0" />
+                  <HarnessIcon harness={harness} className="icon-md shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{HARNESS_TITLE[harness]}</span>
-                  <span
-                    className={`size-1.5 shrink-0 rounded-full ${available ? "bg-success" : "bg-content/30"}`}
-                    aria-hidden
-                  />
                   {isDefault ? (
-                    <Check className="size-3.5 shrink-0 text-accent" aria-hidden />
+                    <Badge size="sm" className="shrink-0">
+                      {t("Default")}
+                    </Badge>
+                  ) : !inPicker ? (
+                    <Badge size="sm" className="shrink-0">
+                      {t("Hidden")}
+                    </Badge>
+                  ) : !available && hasProbedHarnessAvailability() ? (
+                    <Badge size="sm" tone="warning" className="shrink-0">
+                      {t("Not installed")}
+                    </Badge>
                   ) : null}
                 </Button>
               );
@@ -513,24 +518,25 @@ export function HarnessUpdatesGroup() {
       action={
         <div className="flex items-center gap-2">
           {pending.length > 1 ? (
-            <SecondaryButton onClick={() => start(pending)}>
-              <ArrowDownCircle className="size-3.5 text-accent" aria-hidden />
+            <Button className="shrink-0" onClick={() => start(pending)}>
+              <ArrowDownCircle className="icon-sm text-accent" aria-hidden />
               {t("Update all")}
-            </SecondaryButton>
+            </Button>
           ) : null}
-          <SecondaryButton
+          <Button
+            className="shrink-0"
             onClick={() =>
               void checkInstalledHarnessVersions({ force: true }).catch(() => undefined)
             }
             disabled={checking}
           >
             {checking ? (
-              <Loader className="size-3.5 animate-spin" aria-hidden />
+              <Loader className="icon-sm animate-spin" aria-hidden />
             ) : (
-              <RefreshCw className="size-3.5" strokeWidth={1.75} aria-hidden />
+              <RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />
             )}
             {t("Check for updates")}
-          </SecondaryButton>
+          </Button>
         </div>
       }
     >
@@ -587,42 +593,45 @@ export function HarnessUpdateSettingsRow({
       : state.status === "updating"
         ? t("Updating…")
         : state.status === "updated"
-          ? `Updated to ${state.version}.`
+          ? t("Updated to {p0}.", { p0: state.version })
           : check.status === "unknown"
-            ? `Could not check: ${check.error}`
+            ? t("Could not check: {p0}", { p0: check.error })
             : check.status === "current"
               ? t("Up to date.")
-              : `Version ${check.latest} is available.`;
+              : t("Version {p0} is available.", { p0: check.latest });
 
   return (
     <Row
       label={
         <span className="flex items-center gap-2">
-          <HarnessIcon harness={check.harness} className="size-4 shrink-0" />
+          <HarnessIcon harness={check.harness} className="icon-md shrink-0" />
           {title}
           {check.status !== "unknown" ? (
-            <span className="font-mono text-[12px] text-content/45">{check.installed}</span>
+            <span className="font-mono text-ui-caption text-(--ui-text-muted)">{check.installed}</span>
           ) : null}
         </span>
       }
       feedback={
-        <SettingsFeedback
-          state={
-            state.status === "failed"
-              ? "error"
-              : state.status === "updating"
-                ? "loading"
-                : state.status === "updated" || check.status === "current"
-                  ? "success"
-                  : "warning"
-          }
-        >
-          {description}
-        </SettingsFeedback>
+        check.status === "current" && state.status === "idle" ? undefined : (
+          <SettingsFeedback
+            state={
+              state.status === "failed"
+                ? "error"
+                : state.status === "updating"
+                  ? "loading"
+                  : state.status === "updated"
+                    ? "success"
+                    : "warning"
+            }
+          >
+            {description}
+          </SettingsFeedback>
+        )
       }
     >
       {check.status === "behind" ? (
-        <SecondaryButton
+        <Button
+          className="shrink-0"
           onClick={() => onUpdate(check)}
           disabled={state.status === "updating"}
           loading={state.status === "updating"}
@@ -633,14 +642,17 @@ export function HarnessUpdateSettingsRow({
           }
         >
           {state.status === "updating" ? (
-            <Loader className="size-3.5 animate-spin" aria-hidden />
+            <Loader className="icon-sm animate-spin" aria-hidden />
           ) : (
-            <ArrowDownCircle className="size-3.5 text-accent" aria-hidden />
+            <ArrowDownCircle className="icon-sm text-accent" aria-hidden />
           )}
           {state.status === "failed" ? t("Retry") : t("Update")}
-        </SecondaryButton>
+        </Button>
       ) : check.status === "current" ? (
-        <Check className="size-4 text-success" aria-hidden />
+        <span className="inline-flex items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
+          <Check className="icon-md text-success" aria-hidden />
+          {description}
+        </span>
       ) : null}
     </Row>
   );
@@ -658,7 +670,7 @@ export function ProjectScopeIcon({ path }: { path: string }) {
   const logoPath = resolveTabGroupLogo(key, logos);
   if (logoPath) {
     return (
-      <ProjectLogoIcon path={logoPath} className="size-4 rounded-sm" imageClassName="size-4" />
+      <ProjectLogoIcon path={logoPath} className="icon-md rounded-sm" imageClassName="size-4" />
     );
   }
   return (
@@ -677,13 +689,13 @@ function ProviderCliHeader({ harness }: { harness: HarnessId }) {
   return (
     <div className="provider-cli-header">
       <div className="provider-cli-header-main">
-        <HarnessIcon harness={harness} className="size-4 shrink-0" />
+        <HarnessIcon harness={harness} className="icon-md shrink-0" />
         <div className="provider-cli-header-copy">
           <div className="provider-cli-title-line">
             <h3>{HARNESS_TITLE[harness]}</h3>
             <span className="provider-cli-status">
               <span
-                className={`size-1.5 rounded-full ${available ? "bg-success" : "bg-content/30"}`}
+                className={`size-1.5 rounded-full ${available ? "bg-success" : "bg-(--ui-text-muted)"}`}
                 aria-hidden
               />
               {available
@@ -692,7 +704,7 @@ function ProviderCliHeader({ harness }: { harness: HarnessId }) {
                   ? t("CLI not found")
                   : t("Checking CLI…")}
               {available ? (
-                <span className="text-content/45">
+                <span className="text-(--ui-text-muted)">
                   · {models.length} {models.length === 1 ? t("model") : t("models")}
                 </span>
               ) : null}
@@ -836,7 +848,7 @@ export function ProviderRow({
             ) : (
               <div className="provider-cli-field">
                 <span>{t("Model")}</span>
-                <p className="py-1 text-[12px] text-content/45">
+                <p className="py-1 text-ui-caption text-(--ui-text-muted)">
                   {available ? t("Loading models…") : t("Available after CLI setup")}
                 </p>
               </div>
@@ -956,7 +968,8 @@ export function ProviderRow({
           </div>
         </section>
         <div className="provider-cli-footer">
-          <SecondaryButton
+          <Button
+            className="shrink-0"
             aria-label={
               isDefault
                 ? t("{p0} is the default provider", { p0: HARNESS_TITLE[harness] })
@@ -965,12 +978,12 @@ export function ProviderRow({
             onClick={() => current && onDefault(harness, current.id)}
             disabled={isDefault || !current}
           >
-            {isDefault ? <Check className="size-3.5" /> : null}
+            {isDefault ? <Check className="icon-sm" /> : null}
             {isDefault ? t("Default provider") : t("Use by default")}
-          </SecondaryButton>
+          </Button>
           {available ? (
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-content/60">
+              <span className="text-ui-micro text-(--ui-text-secondary)">
                 {pickerLocked ? t("Hidden globally") : t("Show in picker")}
               </span>
               <Toggle
@@ -981,7 +994,7 @@ export function ProviderRow({
               />
             </div>
           ) : (
-            <span className="text-[11px] text-content/45">{t("Not in picker")}</span>
+            <span className="text-ui-micro text-(--ui-text-muted)">{t("Not in picker")}</span>
           )}
         </div>
       </article>

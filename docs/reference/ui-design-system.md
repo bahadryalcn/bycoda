@@ -286,6 +286,57 @@ Use the shared interface and code font variables. Product labels/body use 400 or
 numbers tabular. New type roles must be shared tokens; do not scatter arbitrary
 font sizes or enforce Arc marketing headings in the workbench.
 
+### Type scale
+
+Roles are `:root` tokens in `src/styles/index.css` and Tailwind utilities from its
+`@theme` block. Existing `--ui-font-caption` (12px) and `--ui-font-secondary` (13px)
+keep their values; the rest are additive. Utilities set size and line height together.
+
+| Role      | Token                 | Size | Line | Utility             |
+| --------- | --------------------- | ---- | ---- | ------------------- |
+| micro     | `--ui-font-micro`     | 11px | 16px | `text-ui-micro`     |
+| caption   | `--ui-font-caption`   | 12px | 16px | `text-ui-caption`   |
+| secondary | `--ui-font-secondary` | 13px | 18px | `text-ui-secondary` |
+| body      | `--ui-font-body`      | 14px | 20px | `text-ui-body`      |
+| title     | `--ui-font-title`     | 16px | 24px | `text-ui-title`     |
+| heading   | `--ui-font-heading`   | 20px | 28px | `text-ui-heading`   |
+
+Mechanical migration of ad-hoc sizes:
+
+| Found                                                       | Use                 |
+| ----------------------------------------------------------- | ------------------- |
+| `text-[9px]`, `[10px]`, `[10.5px]`, `[11px]`                | `text-ui-micro`     |
+| `text-[12px]`, `text-xs`, `text-(length:--ui-font-caption)` | `text-ui-caption`   |
+| `text-[13px]`, `text-(length:--ui-font-secondary)`          | `text-ui-secondary` |
+| `text-[14px]`, `text-sm`                                    | `text-ui-body`      |
+| `text-[15px]`, `[16px]`, `text-base`                        | `text-ui-title`     |
+| `text-[17px]`..`[20px]`, `text-lg`/`xl`                     | `text-ui-heading`   |
+
+Larger display sizes (welcome, brand) stay local to their theme class. Weights are 400
+and 500 only: replace `font-semibold`/`font-bold`/520/550/560/600/650 with
+`font-medium` unless the surface is a code or diff marker.
+
+### Icon scale
+
+| Token / utility            | Size | Replaces   |
+| -------------------------- | ---- | ---------- |
+| `--ui-icon-xs` / `icon-xs` | 12px | `size-3`   |
+| `--ui-icon-sm` / `icon-sm` | 14px | `size-3.5` |
+| `--ui-icon-md` / `icon-md` | 16px | `size-4`   |
+| `--ui-icon-lg` / `icon-lg` | 20px | `size-5`   |
+
+The single stroke is `--ui-icon-stroke` (1.75); pass `strokeWidth={1.75}` for 1.5, 1.75 and
+1.9 alike (use 2 only for tiny check/close marks at 12px). Icons inside shared Button keep
+the Button's `1em` sizing; do not add a size class there. Note: `icons.tsx` `wrap()` still
+defaults to `size=24, strokeWidth=2` and relies on CSS overrides.
+
+### Floating surfaces
+
+Popover, Modal, Select, Menu and Combobox share `--ui-radius-popup` (12px),
+`--ui-elevation-floating` (light and dark variants), `border-stroke` and
+`--ui-overlay-backdrop`. Replace `rounded-xl/2xl`, `shadow-xl/2xl`, `border-content/10`
+and `bg-scrim/40` on those surfaces with these tokens.
+
 The shared control-density preference lives in `appearancePreferences` and uses
 the existing versioned preference record. Missing or invalid values normalize to
 `compact`, preserving 28px compact and 36px standard controls at default scale.

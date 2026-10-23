@@ -5,6 +5,7 @@ import {
   isTextOnlyChange,
 } from "../../../features/sessions/model/sessionsStore";
 import { useLocale } from "../../../shared/i18n";
+import { NavigationBoundary } from "../../shell/NavigationBoundary";
 import { SearchView } from "../surfaces/lazySurfaces";
 import { type ComponentProps, useMemo } from "react";
 
@@ -22,5 +23,9 @@ export function LiveSearchView({
       live.filter((session) => !session.inboxAsk && !isProjectLockedIn(lockSnapshot, session.cwd)),
     [live, lockSnapshot],
   );
-  return <SearchView {...props} sessions={sessions} />;
+  return (
+    <NavigationBoundary name="Search" onBack={props.onClose}>
+      <SearchView {...props} sessions={sessions} />
+    </NavigationBoundary>
+  );
 }

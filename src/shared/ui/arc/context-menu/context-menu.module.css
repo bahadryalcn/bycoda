@@ -12,10 +12,10 @@
   overflow-y: auto;
   padding: 5px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
+  border-radius: var(--ui-radius-popup);
   background: var(--surface-raised);
   color: var(--foreground);
-  box-shadow: var(--shadow-floating);
+  box-shadow: var(--ui-elevation-floating);
   outline: none;
 }
 .highlight {
@@ -23,7 +23,7 @@
   top: 0;
   right: 5px;
   left: 5px;
-  border-radius: calc(var(--radius-panel) - 6px);
+  border-radius: calc(var(--ui-radius-popup) - 6px);
   background: var(--surface-muted);
   opacity: 0;
   pointer-events: none;
@@ -41,7 +41,7 @@
   gap: 9px;
   padding: 0 11px;
   border: 0;
-  border-radius: calc(var(--radius-panel) - 6px);
+  border-radius: calc(var(--ui-radius-popup) - 6px);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -54,8 +54,6 @@
   transition:
     background-color var(--duration-instant) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
-  animation: context-item-in var(--duration-standard) var(--ease-enter) both;
-  animation-delay: calc(min(var(--i, 0), 4) * 35ms);
 }
 /* The gliding highlight is the focus indicator, as in the dropdown menu. */
 .item:focus-visible {
@@ -66,7 +64,7 @@
   background: color-mix(in oklab, var(--foreground) 5%, transparent);
 }
 .item:disabled {
-  opacity: 0.45;
+  opacity: var(--ui-disabled-opacity, 0.5);
   cursor: default;
 }
 .item.destructive {
@@ -88,12 +86,6 @@
 }
 .destructive .icon {
   color: currentColor;
-}
-@keyframes context-item-in {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   .item,

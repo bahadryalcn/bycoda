@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { DocumentMessage } from "../../files/ui/DocumentMessage";
 import type { Attachment } from "../model/session";
 import { isAttachmentFolder } from "../model/attachments";
@@ -38,7 +38,7 @@ export function canOpenFileAttachment(attachment: Attachment): boolean {
 
 /** Render attachment bytes as text, never as executable HTML or SVG. */
 function AttachmentTextPreview({ readBytes }: { readBytes: () => Promise<Uint8Array> }) {
-  useLocale();
+  const t = useT();
   const [state, setState] = useState<{ text: string } | { error: true } | null>(null);
   const [retry, setRetry] = useState(0);
   useEffect(() => {

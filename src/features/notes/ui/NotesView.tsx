@@ -1806,7 +1806,7 @@ function NoteEditor({
               {t("Add to chat")}
             </Button>
             <Button
-              variant="secondary"
+              variant={dirty || saveError ? "secondary" : "ghost"}
               size="sm"
               loading={saving}
               disabled={deleting}
@@ -1814,6 +1814,7 @@ function NoteEditor({
             >
               {t("Save")}
             </Button>
+            <span className="note-detail-delete">
             <ConfirmMorph
               disabled={deleting}
               label={t("Delete")}
@@ -1837,22 +1838,21 @@ function NoteEditor({
                 }
               }}
             />
+            </span>
           </div>
-          <Badge
-            role="status"
-            tone={saveError ? "danger" : saving ? "info" : dirty ? "warning" : "neutral"}
-            className="note-detail-status"
-          >
-            {saveError
-              ? t("Unsaved changes")
-              : saving
-                ? t("Saving…")
-                : dirty
-                  ? t("Unsaved changes")
-                  : t("Saved")}
-            {" · "}
-            <NoteWordCount body={body} />
-          </Badge>
+          <span role="status" className="note-detail-status">
+            {saveError || saving || dirty ? (
+              <Badge
+                tone={saveError ? "danger" : saving ? "info" : "warning"}
+                appearance="subtle"
+              >
+                {saving && !saveError ? t("Saving…") : t("Unsaved changes")}
+              </Badge>
+            ) : null}
+            <span className="note-detail-words">
+              <NoteWordCount body={body} />
+            </span>
+          </span>
           {saveError ? (
             <Alert tone="danger" className="note-detail-error">
               <span>
@@ -1992,7 +1992,11 @@ function NoteEditor({
           ) : null}
           <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>
             {/* Stays mounted in preview so undo history survives the switch. */}
-            <NoteEditorPane label={t("Source")} hidden={visibleMode === "preview"}>
+            <NoteEditorPane
+              label={t("Source")}
+              hidden={visibleMode === "preview"}
+              split={visibleMode === "split"}
+            >
               <NoteMarkdownEditor
                 viewRef={editorViewRef}
                 minHeight={0}
@@ -2008,7 +2012,7 @@ function NoteEditor({
               />
             </NoteEditorPane>
             {visibleMode === "source" ? null : (
-              <NoteEditorPane label={t("Edit preview")}>
+              <NoteEditorPane label={t("Edit preview")} split={visibleMode === "split"}>
                 <NoteEditablePreview
                   value={body}
                   cwd={sourceCwd}

@@ -2,7 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ComponentProps, CSSProperties, FocusEvent, KeyboardEvent, ReactNode } from "react";
+import type { ComponentProps, FocusEvent, KeyboardEvent, ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, Copy, MoreHorizontal, Trash2 } from "lucide-react";
 import { motionTokens } from "../lib/motion-tokens";
@@ -329,7 +329,6 @@ export function ContextMenu({ children, items, label = "Context menu" }: Context
                       tabIndex={-1}
                       data-index={index}
                       data-tone={item.destructive ? "danger" : undefined}
-                      style={{ "--i": index } as CSSProperties}
                       disabled={item.disabled}
                       className={[styles.item, item.destructive ? styles.destructive : ""]
                         .filter(Boolean)

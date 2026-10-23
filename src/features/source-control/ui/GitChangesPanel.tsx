@@ -2,13 +2,14 @@ import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Badge } from "../../../shared/ui/Badge";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Popover } from "../../../shared/ui/Popover";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { collator } from "../../../shared/lib/intl";
 import { useVirtualizer, defaultRangeExtractor } from "@tanstack/react-virtual";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { relativeDirname as dirname } from "../../../shared/lib/paths";
 import { useOwnedTimeout } from "../../../shared/hooks/useOwnedTimeout";
-import { t, useLocale } from "../../../shared/i18n/git";
+import { t, useLocale, useT } from "../../../shared/i18n/git";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -26,6 +27,7 @@ import {
   ListBullet,
   Loader,
   Minus,
+  MoreHorizontal,
   Plus,
   PanelLeft,
   PanelRight,
@@ -254,7 +256,7 @@ export function GitChangesPanel({
   onOpenCommit,
 }: Props) {
   "use memo";
-  useLocale();
+  const t = useT();
   const paneRef = useRef<HTMLDivElement>(null);
   const {
     index,
@@ -1603,7 +1605,8 @@ function ChangedFiles({
                     get title() {
                       return t("Open All Changes");
                     },
-                    icon: <FileDiff className="size-3.5" strokeWidth={1.75} />,
+                    icon: <FileDiff className="icon-sm" strokeWidth={1.75} />,
+                    overflow: true,
                     onClick: () => onOpenAllChanges("staged"),
                   },
                   {
@@ -1648,14 +1651,17 @@ function ChangedFiles({
                     get title() {
                       return t("Open All Changes");
                     },
-                    icon: <FileDiff className="size-3.5" strokeWidth={1.75} />,
+                    icon: <FileDiff className="icon-sm" strokeWidth={1.75} />,
+                    overflow: true,
                     onClick: () => onOpenAllChanges("unstaged"),
                   },
                   {
                     get title() {
                       return t("Discard All Changes");
                     },
-                    icon: <Undo2 className="size-3.5" strokeWidth={1.75} />,
+                    icon: <Undo2 className="icon-sm" strokeWidth={1.75} />,
+                    overflow: true,
+                    danger: true,
                     onClick: () => void runAll("discard"),
                   },
                   {
@@ -1774,7 +1780,8 @@ function GitSyncActions({
     ? `Create a pull request into ${index.defaultBranch}`
     : "Create pull request";
   const viewTitle = pr?.title ? `View PR #${pr.number}: ${pr.title}` : "View pull request";
-  const showCreatePr = !hasOpenPr && !onDefault;
+  // A permanently disabled Create PR is noise: offer it only when it can run.
+  const showCreatePr = !hasOpenPr && !onDefault && (canCreatePr || busy === "pr");
   const showViewPr = hasOpenPr;
   if (!canPublish && !canSync && !showCreatePr && !showViewPr) return null;
 
@@ -1895,12 +1902,33 @@ export function FileSection({
     icon?: ReactNode;
     /** Short text shown instead of an icon. */
     label?: string;
+    /** Secondary action: lives in the overflow menu instead of the header. */
+    overflow?: boolean;
+    /** Destructive action, set apart in the overflow menu. */
+    danger?: boolean;
     onClick: () => void;
   }[];
   headerExtra?: ReactNode;
   children: ReactNode;
 }) {
   useLocale();
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
+  const overflow = headerActions.filter((action) => action.overflow);
+  const direct = headerActions.filter((action) => !action.overflow);
+  const toItem = (action: (typeof headerActions)[number]): DropdownMenuItem => ({
+    kind: "item",
+    id: action.title,
+    label: action.title,
+    icon: action.icon,
+    danger: action.danger,
+  });
+  const normal = overflow.filter((action) => !action.danger).map(toItem);
+  const danger = overflow.filter((action) => action.danger).map(toItem);
+  const overflowItems: DropdownMenuItem[] = [
+    ...normal,
+    ...(normal.length && danger.length ? ([{ kind: "sep" }] as DropdownMenuItem[]) : []),
+    ...danger,
+  ];
   return (
     <div>
       <div className="flex h-7 items-center gap-1 px-1.5">
@@ -1923,12 +1951,15 @@ export function FileSection({
               strokeWidth={1.75}
             />
           )}
-          <span className="min-w-0 truncate text-(length:--ui-font-caption) font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
+          <span
+            data-file-section-title
+            className="min-w-0 truncate text-ui-caption font-semibold text-[var(--ui-text-secondary)]"
+          >
             {title}
           </span>
-          <span className="ml-1 grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-[var(--ui-surface-selected)] px-1 text-(length:--ui-font-caption) font-semibold text-content tabular-nums">
+          <Badge size="sm" className="ml-1 shrink-0 tabular-nums">
             {count}
-          </span>
+          </Badge>
         </Button>
         {headerExtra}
         {view && onToggleView ? (
@@ -1943,7 +1974,17 @@ export function FileSection({
             )}
           </IconAction>
         ) : null}
-        {headerActions.map((action) =>
+        {overflow.length ? (
+          <IconAction
+            title={t("More actions")}
+            onClick={(event) => setMoreAnchor(moreAnchor ? null : event.currentTarget)}
+            haspopup="menu"
+            expanded={!!moreAnchor}
+          >
+            <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+          </IconAction>
+        ) : null}
+        {direct.map((action) =>
           action.label ? (
             <Button
               size="sm"
@@ -1965,6 +2006,15 @@ export function FileSection({
           ),
         )}
       </div>
+      {moreAnchor ? (
+        <DropdownMenu
+          anchor={moreAnchor}
+          label={t("More actions")}
+          items={overflowItems}
+          onPick={(id) => overflow.find((action) => action.title === id)?.onClick()}
+          onClose={() => setMoreAnchor(null)}
+        />
+      ) : null}
       {open ? <ul>{children}</ul> : null}
     </div>
   );
@@ -2081,12 +2131,26 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
     while (parent && !/(auto|scroll)/.test(getComputedStyle(parent).overflowY))
       parent = parent.parentElement;
     setScrollElement(parent);
-    if (parent) {
+    const measure = () => {
+      if (!parent) return;
       const margin =
         list.getBoundingClientRect().top - parent.getBoundingClientRect().top + parent.scrollTop;
       setScrollMargin((previous) => (Math.abs(previous - margin) < 0.5 ? previous : margin));
+    };
+    measure();
+    // Preceding sections and container resizes can move the list without a
+    // React render. Observe their sizes instead of forcing layout every render.
+    const observer = new ResizeObserver(measure);
+    for (let element: HTMLElement | null = list; element; element = element.parentElement) {
+      observer.observe(element);
+      const owner: HTMLElement | null = element.parentElement;
+      if (owner)
+        for (const sibling of owner.children)
+          if (sibling instanceof HTMLElement && sibling !== element) observer.observe(sibling);
+      if (element === parent) break;
     }
-  });
+    return () => observer.disconnect();
+  }, [view, rest.kind, virtualized]);
   const toggleDir = useStableCallback((path: string) => {
     const key = `${rest.kind}:${path}`;
     if (collapsedDirs.has(key)) collapsedDirs.delete(key);
@@ -2500,14 +2564,14 @@ const ChangeRow = memo(function ChangeRow({
           <FileTypeIcon name={name} isDir={false} size={16} />
           <span className="min-w-0 flex-1 truncate">
             <span
-              className={`text-[13px] font-medium ${statusColor(file.status)} ${
+              className={`text-ui-secondary font-medium ${
                 file.status === "deleted" ? "line-through" : ""
               }`}
             >
               {name}
             </span>
             {dir ? (
-              <span className="ml-1.5 text-[11px] text-[var(--ui-text-muted)] @max-[240px]/changes:hidden">
+              <span className="ml-1.5 text-ui-micro text-[var(--ui-text-muted)] @max-[240px]/changes:hidden">
                 {dir}
               </span>
             ) : null}
@@ -2520,36 +2584,33 @@ const ChangeRow = memo(function ChangeRow({
             strokeWidth={1.75}
           />
         ) : null}
+        {/* Fixed-width slot so the row never shifts. Discard lives in the context menu and the section menu. */}
         <div
-          className={` shrink-0 items-center ${
-            busy ? "hidden" : active ? "flex" : "hidden group-focus-within:flex group-hover:flex pointer-coarse:flex"
+          className={`flex size-6 shrink-0 items-center justify-center ${
+            busy
+              ? "hidden"
+              : active
+                ? ""
+                : "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
           }`}
         >
-          {kind === "unstaged" ? (
-            <IconAction
-              title={t("Discard Changes")}
-              disabled={busy}
-              onClick={() => perform("discard")}
-            >
-              <Undo2 className="size-3.5" strokeWidth={1.75} />
-            </IconAction>
-          ) : null}
           {kind === "staged" ? (
             <IconAction
               title={t("Unstage Changes")}
               disabled={busy}
               onClick={() => perform("unstage")}
             >
-              <Minus className="size-3.5" strokeWidth={1.75} />
+              <Minus className="icon-sm" strokeWidth={1.75} />
             </IconAction>
           ) : (
             <IconAction title={t("Stage Changes")} disabled={busy} onClick={() => perform("stage")}>
-              <Plus className="size-3.5" strokeWidth={1.75} />
+              <Plus className="icon-sm" strokeWidth={1.75} />
             </IconAction>
           )}
         </div>
         <span
-          className={`w-3.5 shrink-0 text-right font-mono text-[11px] font-semibold ${statusColor(file.status)}`}
+          title={statusLabel(file.status)}
+          className={`w-3.5 shrink-0 text-right font-mono text-ui-micro font-semibold ${statusColor(file.status)}`}
         >
           {statusLetter(file.status)}
         </span>
@@ -2563,11 +2624,15 @@ function IconAction({
   title,
   disabled,
   onClick,
+  haspopup,
+  expanded,
   children,
 }: {
   title: string;
   disabled?: boolean;
-  onClick: () => void;
+  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  haspopup?: "menu";
+  expanded?: boolean;
   children: ReactNode;
 }) {
   useLocale();
@@ -2581,6 +2646,8 @@ function IconAction({
       aria-label={title}
       disabled={disabled}
       onClick={onClick}
+      aria-haspopup={haspopup}
+      aria-expanded={haspopup ? !!expanded : undefined}
       className="grid place-items-center"
     >
       {children}
@@ -2595,11 +2662,19 @@ function statusLetter(status: string): string {
   return "M";
 }
 
+function statusLabel(status: string): string {
+  if (status === "untracked") return t("Untracked");
+  if (status === "added") return t("Added");
+  if (status === "deleted") return t("Deleted");
+  return t("Modified");
+}
+
+// The marker carries the status; plain modifications stay neutral so the list is not an amber wall.
 function statusColor(status: string): string {
   if (status === "untracked") return "text-info";
   if (status === "added") return "text-diff-add-fg";
   if (status === "deleted") return "text-diff-del-fg";
-  return "text-warning";
+  return "text-[var(--ui-text-secondary)]";
 }
 
 function useDiffIndex(

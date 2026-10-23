@@ -2,10 +2,10 @@ import {
   ImageCompare as ArcImageCompare,
   type ImageCompareProps,
 } from "./arc/image-compare/image-compare";
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 
 export function ImageCompare(props: ImageCompareProps) {
-  useLocale();
+  const t = useT();
   return (
     <ArcImageCompare
       label={t("Compare images")}

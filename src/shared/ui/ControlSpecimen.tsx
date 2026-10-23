@@ -1,7 +1,7 @@
 import { Button, type ButtonTone } from "./Button";
 import { TextField } from "./TextField";
 import { TextareaField } from "./TextareaField";
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 import { useRef, useState } from "react";
 import { Select } from "./Select";
 import { Switch } from "./Switch";
@@ -21,7 +21,7 @@ import { Checkbox } from "./Checkbox";
 
 /** Local-only control samples. Appearance and browser checks share these adapters. */
 export function ControlSpecimen({ expanded = false }: { expanded?: boolean }) {
-  useLocale();
+  const t = useT();
   const [enabled, setEnabled] = useState(false);
   const [value, setValue] = useState("compact");
   const [amount, setAmount] = useState(50);

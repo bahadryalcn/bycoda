@@ -1,6 +1,7 @@
 import { t, useLocale } from "../../../shared/i18n/technical";
-import { AlertCircle, Folder, RotateCcw, Save } from "../../../shared/ui/icons";
+import { Folder, RotateCcw, Save } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
@@ -538,10 +539,12 @@ export function FileEditor({
     (count: number) => onErrorCountChange?.(path, count),
     [onErrorCountChange, path],
   );
-  const docChange = useCallback((content: string) => {
+  const edited = useCallback(() => {
     editVersion.current += 1;
-    setDraft(content);
   }, []);
+  // Only previews read the draft; copying the whole text and re-rendering on
+  // every keystroke is skipped while the source is what is on screen.
+  const docChange = mode === "preview" ? setDraft : undefined;
 
   const relativePath = path.startsWith(`${cwd}/`) ? path.slice(cwd.length + 1) : path;
   const footerBlameReason = useInlineBlameUnavailableReason(cwd, path);
@@ -557,7 +560,7 @@ export function FileEditor({
 
   if (loadState.status === "loading" || diffPending) {
     return (
-      <div className="grid h-full place-items-center text-[12px] text-[var(--ui-text-muted)]">
+      <div className="grid h-full place-items-center text-ui-caption text-[var(--ui-text-muted)]">
         {t("Opening ")}
         {basename(path)}…
       </div>
@@ -567,44 +570,39 @@ export function FileEditor({
   if (loadState.status === "error") {
     return (
       <div className="grid h-full place-items-center p-6">
-        <div className="max-w-md text-center">
-          <AlertCircle className="mx-auto mb-3 size-5 text-danger" />
-          <p className="text-[13px] text-content">
-            {t("Couldn’t open ")}
-            {basename(path)}
-          </p>
-          <p className="mt-1 text-[12px] leading-5 text-[var(--ui-text-secondary)]">
-            {loadState.message}
-          </p>
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            onClick={() => setReloadKey((value) => value + 1)}
-            className="mx-auto mt-4 flex items-center gap-1.5"
-          >
-            <RotateCcw className="size-3" strokeWidth={1.75} />
-            {t("Retry")}
-          </Button>
-          {isRemoteProjectPath(path) ? null : (
+        <Alert tone="danger" className="max-w-md" title={`${t("Couldn’t open ")}${basename(path)}`}>
+          <p>{loadState.message}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-1">
             <Button
               size="sm"
               variant="ghost"
               motion="none"
               type="button"
-              onClick={() =>
-                void revealPath(path).catch((error) => {
-                  console.warn("FileEditor operation failed", error);
-                })
-              }
-              className="mx-auto mt-2 flex items-center gap-1.5"
+              onClick={() => setReloadKey((value) => value + 1)}
+              className="shrink-0"
             >
-              <Folder className="size-3" strokeWidth={1.75} />
-              {REVEAL_LABEL}
+              <RotateCcw className="icon-xs" strokeWidth={1.75} />
+              {t("Retry")}
             </Button>
-          )}
-        </div>
+            {isRemoteProjectPath(path) ? null : (
+              <Button
+                size="sm"
+                variant="ghost"
+                motion="none"
+                type="button"
+                onClick={() =>
+                  void revealPath(path).catch((error) => {
+                    console.warn("FileEditor operation failed", error);
+                  })
+                }
+                className="shrink-0"
+              >
+                <Folder className="icon-xs" strokeWidth={1.75} />
+                {REVEAL_LABEL}
+              </Button>
+            )}
+          </div>
+        </Alert>
       </div>
     );
   }
@@ -613,16 +611,17 @@ export function FileEditor({
   const saveAction = (
     <Button
       size="sm"
-      variant="ghost"
-      iconOnly
-      label={t("Save")}
+      variant={dirty || saveState.status === "error" ? "secondary" : "ghost"}
+      aria-label={t("Save")}
       tooltip={`${t("Save")} (${IS_MAC ? "⌘S" : "Ctrl+S"})`}
       disabled={!dirty && saveState.status !== "error"}
       loading={saveState.status === "saving"}
       loadingLabel={t("Saving…")}
       onClick={() => void requestSave()}
+      className="shrink-0"
     >
-      <Save className="size-3" />
+      <Save className="icon-xs" />
+      {t("Save")}
     </Button>
   );
 
@@ -631,7 +630,7 @@ export function FileEditor({
       {diskConflict && (
         <div
           role="alert"
-          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1 text-[12px] text-content"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1 text-ui-caption text-content"
         >
           <span className="min-w-0 flex-1">
             {t(
@@ -641,6 +640,7 @@ export function FileEditor({
           <Button
             size="sm"
             variant="ghost"
+            tone="danger"
             disabled={saveState.status === "saving"}
             onClick={() => void reloadFromDisk(true)}
           >
@@ -649,6 +649,7 @@ export function FileEditor({
           <Button
             size="sm"
             variant="secondary"
+            tone="danger"
             disabled={saveState.status === "saving"}
             onClick={() => {
               overwriteVersion.current = diskChangeVersion.current;
@@ -716,6 +717,7 @@ export function FileEditor({
                 canAutosave={() => !pendingDiskRef.current}
                 onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
                 onDocChange={docChange}
+                onEdit={edited}
                 onOpenFile={onOpenFile}
               />
             </div>
@@ -736,7 +738,7 @@ export function FileEditor({
           onDirtyChange={dirtyChange}
           onErrorCountChange={errorCountChange}
           onSave={save}
-          onDocChange={docChange}
+          onEdit={edited}
           canAutosave={() => !pendingDiskRef.current}
           onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
           onOpenFile={onOpenFile}
@@ -745,15 +747,15 @@ export function FileEditor({
       {chromeError ? (
         <p
           role="alert"
-          className="shrink-0 border-t border-stroke px-2.5 py-1 text-[12px] text-danger"
+          className="shrink-0 border-t border-stroke px-2.5 py-1 text-ui-caption text-danger"
         >
           {chromeError}
         </p>
       ) : null}
       <footer
-        className={`flex min-h-6 shrink-0 items-center border-t border-stroke px-2.5 font-mono text-[10.5px] text-[var(--ui-text-muted)] ${saveState.status === "error" ? "flex-wrap" : "h-6"}`}
+        className={`flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center gap-1 border-t border-stroke px-2.5 text-ui-micro text-[var(--ui-text-muted)] ${saveState.status === "error" ? "flex-wrap" : ""}`}
       >
-        <span className="min-w-0 flex-1 truncate" title={path}>
+        <span className="min-w-0 flex-1 truncate font-mono" title={path}>
           {relativePath}
         </span>
         {html ? (
@@ -771,7 +773,7 @@ export function FileEditor({
             title={REVEAL_LABEL}
             aria-label={REVEAL_LABEL}
           >
-            <Folder className="size-3" />
+            <Folder className="icon-xs" />
           </Button>
         ) : null}
         {html ? (

@@ -147,7 +147,7 @@ function roleIcon(role: CrewRole) {
         : role === "advisor"
           ? AiIdea
           : Bot;
-  return <Icon className="size-4" aria-hidden />;
+  return <Icon className="icon-md" aria-hidden />;
 }
 
 function issueText(
@@ -498,7 +498,7 @@ function ConnectedCrewEditor({
       />
       {isNew ? (
         <div className="flex flex-col gap-1">
-          <span className="text-sm font-medium">{t("Available in")}</span>
+          <span className="text-ui-body font-medium">{t("Available in")}</span>
           <SegmentedControl
             label={t("Available in")}
             value={draft.projectId ? "project" : "global"}
@@ -525,7 +525,7 @@ function ConnectedCrewEditor({
     <div className="flex min-w-0 flex-col gap-4">
       {draft.agents.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed border-(--ui-tone-neutral-border) p-4">
-          <p className="text-sm text-(--ui-text-secondary)">
+          <p className="text-ui-body text-(--ui-text-secondary)">
             {t(
               "A crew needs a coordinator, at least one specialist and a reviewer. Pick members from your library or start with one of each.",
             )}
@@ -533,7 +533,7 @@ function ConnectedCrewEditor({
           <div className="flex flex-wrap gap-2">
             <Button
               variant="primary"
-              startIcon={<Plus className="size-3.5" />}
+              startIcon={<Plus className="icon-sm" />}
               onClick={() => openAdd()}
             >
               {t("Add members")}
@@ -557,8 +557,8 @@ function ConnectedCrewEditor({
               className="flex min-w-0 flex-col gap-1.5"
             >
               <div className="flex min-w-0 items-baseline gap-2">
-                <h4 className="text-sm font-semibold">{section.title}</h4>
-                <span className="min-w-0 flex-1 truncate text-xs text-(--ui-text-secondary)">
+                <h4 className="text-ui-body font-medium">{section.title}</h4>
+                <span className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)">
                   {section.hint}
                 </span>
                 {section.role === "specialist" ||
@@ -567,7 +567,7 @@ function ConnectedCrewEditor({
                   <Button
                     variant="ghost"
                     size="sm"
-                    startIcon={<Plus className="size-3.5" />}
+                    startIcon={<Plus className="icon-sm" />}
                     onClick={() => openAdd(section.role)}
                   >
                     {t("Add")}
@@ -575,7 +575,7 @@ function ConnectedCrewEditor({
                 ) : null}
               </div>
               {section.issue ? (
-                <p role="status" className="text-xs text-danger">
+                <p role="status" className="text-ui-caption text-danger">
                   {section.issue}
                 </p>
               ) : null}
@@ -598,17 +598,17 @@ function ConnectedCrewEditor({
                             {roleIcon(agent.role)}
                           </span>
                           <span className="min-w-0 flex-1 text-start">
-                            <span className="block truncate text-sm font-medium">
+                            <span className="block truncate text-ui-body font-medium">
                               {agent.name || t("Unnamed member")}
                             </span>
                             {detail ? (
-                              <span className="block truncate text-xs text-(--ui-text-secondary)">
+                              <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
                                 {detail}
                               </span>
                             ) : null}
                           </span>
                           <span
-                            className={`max-w-[38%] shrink-0 truncate text-xs ${problem ? "text-danger" : "text-(--ui-text-secondary)"}`}
+                            className={`max-w-[38%] shrink-0 truncate text-ui-caption ${problem ? "text-danger" : "text-(--ui-text-secondary)"}`}
                           >
                             {problem === "model"
                               ? t("Choose a model")
@@ -616,7 +616,7 @@ function ConnectedCrewEditor({
                                 ? t("Add a name")
                                 : `${agent.selection === "automatic" ? `${t("Automatic")} · ` : ""}${candidateLabel(data.catalog, agent.candidates[0])}`}
                           </span>
-                          <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+                          <ChevronRight className="icon-sm shrink-0" aria-hidden />
                         </Button>
                         <Button
                           variant="ghost"
@@ -631,7 +631,7 @@ function ConnectedCrewEditor({
                             })
                           }
                         >
-                          <Trash2 className="size-3.5" />
+                          <Trash2 className="icon-sm" />
                         </Button>
                       </li>
                     );
@@ -641,7 +641,7 @@ function ConnectedCrewEditor({
                 <Button
                   variant="secondary"
                   className="self-start"
-                  startIcon={<Plus className="size-3.5" />}
+                  startIcon={<Plus className="icon-sm" />}
                   onClick={() => openAdd(section.role)}
                 >
                   {section.role === "coordinator"
@@ -656,7 +656,7 @@ function ConnectedCrewEditor({
         })
       )}
       {issues.size === "large" ? (
-        <p role="status" className="text-xs text-danger">
+        <p role="status" className="text-ui-caption text-danger">
           {t("A crew can have at most 20 members.")}
         </p>
       ) : null}
@@ -782,7 +782,7 @@ function ConnectedCrewEditor({
           />
         </Row>
         {draft.policy.costWeight !== undefined || draft.policy.qualityWeight !== undefined ? (
-          <p className="px-3 pb-2 text-xs text-(--ui-text-secondary)">
+          <p className="px-3 pb-2 text-ui-caption text-(--ui-text-secondary)">
             {t("Custom weights are active. Choose a preset to reset them.")}
           </p>
         ) : null}
@@ -930,9 +930,10 @@ function ConnectedCrewEditor({
         </Row>
       </Group>
       {latest ? (
-        <div className="flex flex-wrap items-start justify-between gap-2 border-t border-(--ui-tone-neutral-border) pt-3">
+        <div className="flex flex-col gap-4 border-t border-(--ui-tone-neutral-border) pt-3">
           <Button
             variant="ghost"
+            className="self-start"
             disabled={pending}
             onClick={() => {
               const id = crypto.randomUUID();
@@ -949,14 +950,16 @@ function ConnectedCrewEditor({
           >
             {draft.projectId ? t("Copy to all projects") : t("Copy to this project")}
           </Button>
-          <CrewDeleteButton
-            state={state}
-            crew={latest}
-            onDeleted={() => {
-              forgetDraft(latest.id);
-              onClose();
-            }}
-          />
+          <div className="flex flex-col gap-2 border-t border-(--ui-tone-neutral-border) pt-3 empty:hidden">
+            <CrewDeleteButton
+              state={state}
+              crew={latest}
+              onDeleted={() => {
+                forgetDraft(latest.id);
+                onClose();
+              }}
+            />
+          </div>
         </div>
       ) : null}
     </div>
@@ -965,7 +968,7 @@ function ConnectedCrewEditor({
   const footer =
     page.kind === "add" ? (
       <>
-        <span role="status" className="min-w-0 flex-1 truncate text-xs text-danger">
+        <span role="status" className="min-w-0 flex-1 truncate text-ui-caption text-danger">
           {addMode === "new" &&
           addIssues &&
           (!newMember.name.trim() || !newMember.candidates.length)
@@ -985,7 +988,7 @@ function ConnectedCrewEditor({
       <>
         <span
           role="status"
-          className={`min-w-0 flex-1 truncate text-xs ${issueSummary && (showIssues || draft.agents.length) ? "text-danger" : "text-(--ui-text-secondary)"}`}
+          className={`min-w-0 flex-1 truncate text-ui-caption ${issueSummary && (showIssues || draft.agents.length) ? "text-danger" : "text-(--ui-text-secondary)"}`}
         >
           {issueSummary && (showIssues || draft.agents.length)
             ? issueSummary
@@ -1071,9 +1074,13 @@ function ConnectedCrewEditor({
                 label={t("Back to team")}
                 onClick={() => setPage({ kind: "team" })}
               >
-                <ChevronLeft className="size-4" />
+                <ChevronLeft className="icon-md" />
               </Button>
-              <h3 tabIndex={-1} data-page-heading className="text-base font-semibold outline-none">
+              <h3
+                tabIndex={-1}
+                data-page-heading
+                className="text-ui-title font-medium outline-none"
+              >
                 {t("Add members")}
               </h3>
             </div>
@@ -1103,16 +1110,16 @@ function ConnectedCrewEditor({
                 label={t("Back to team")}
                 onClick={() => setPage({ kind: "team", focus: page.id })}
               >
-                <ChevronLeft className="size-4" />
+                <ChevronLeft className="icon-md" />
               </Button>
               <h3
                 tabIndex={-1}
                 data-page-heading
-                className="min-w-0 truncate text-base font-semibold outline-none"
+                className="min-w-0 truncate text-ui-title font-medium outline-none"
               >
                 {selectedMember?.name || t("Unnamed member")}
               </h3>
-              <span className="text-xs text-(--ui-text-secondary)">
+              <span className="text-ui-caption text-(--ui-text-secondary)">
                 {selectedMember ? roleLabel(selectedMember.role) : ""}
               </span>
             </div>
@@ -1139,7 +1146,7 @@ function ConnectedCrewEditor({
               {page.kind === "team" && draft.agents.length ? (
                 <Button
                   variant="secondary"
-                  startIcon={<Plus className="size-3.5" />}
+                  startIcon={<Plus className="icon-sm" />}
                   onClick={() => openAdd()}
                 >
                   {t("Add members")}
@@ -1237,7 +1244,7 @@ function MemberPage({
                 {t("Inspect saved capabilities")}
               </Button>
               {inspection?.map((c) => (
-                <p key={c.model} className="text-xs text-(--ui-text-secondary)">
+                <p key={c.model} className="text-ui-caption text-(--ui-text-secondary)">
                   {c.model} · {t("Image generation")}:{" "}
                   {t(
                     c.imageGeneration === true
@@ -1261,9 +1268,9 @@ function MemberPage({
         aria-label={t("Member library")}
         className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-(--ui-tone-neutral-border) p-3"
       >
-        <span className="min-w-0 flex-1 text-sm">
+        <span className="min-w-0 flex-1 text-ui-body">
           <span className="block font-medium">{t("Member library")}</span>
-          <span className="block text-xs text-(--ui-text-secondary)">
+          <span className="block text-ui-caption text-(--ui-text-secondary)">
             {source
               ? t("From library: {p0}", { p0: source.name })
               : t("Reuse this member in other crews.")}
@@ -1290,7 +1297,7 @@ function MemberPage({
         variant="ghost"
         tone="danger"
         className="self-start"
-        startIcon={<Trash2 className="size-3.5" />}
+        startIcon={<Trash2 className="icon-sm" />}
         onClick={onRemove}
       >
         {t("Remove from crew")}

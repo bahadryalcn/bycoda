@@ -11,7 +11,8 @@ import {
   rememberRemoteSession,
   remoteSessionFor,
 } from "../../../features/connections/model/connections";
-import { findRemoteSessionTab } from "../../../features/connections/model/remoteSessionNavigation";
+import { resolveRemoteSessionTarget } from "../../../features/connections/model/remoteSessionNavigation";
+import { remoteCreateShellFor } from "../../../features/connections/model/remoteCreateIntent";
 import {
   worktreeFocus,
   type WorktreeFocus,
@@ -131,12 +132,14 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
       setAutomationsViewOpen(false);
       setServersViewOpen?.(false);
       workspaceNavigation.cancel();
-      const existing = findRemoteSessionTab(
+      // A session still being created by an open tab is that tab's, not a new one.
+      const existing = resolveRemoteSessionTarget(
         tabsRef.current,
         sessionsRef.current,
         project,
         remoteSessionId,
         remoteSessionFor,
+        remoteCreateShellFor,
       );
       if (existing) {
         if (!options?.preview)

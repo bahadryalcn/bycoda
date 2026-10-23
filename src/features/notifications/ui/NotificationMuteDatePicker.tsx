@@ -58,7 +58,9 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
         }
       }}
     >
-      <p className="mb-3 px-1 text-[11px] text-content/45">{t("Mute all notifications until")}</p>
+      <p className="mb-3 px-1 text-ui-micro text-(--ui-text-secondary)">
+        {t("Mute all notifications until")}
+      </p>
       <DateTimePicker
         value={value}
         onChange={(next) => {

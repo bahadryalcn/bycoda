@@ -11,7 +11,9 @@ import {
   canDispatchQueuedHead,
   dequeueQueuedMessage,
   queuedMessageForSubmit,
+  queuedSteerRoute,
   reorderSessionQueue,
+  runningTargetOf,
 } from "../../../features/sessions/model/messageQueue";
 import { applyQueuedEdit } from "../../../features/sessions/model/queuedMessageEdit";
 import { CONTINUE_PROMPT } from "../../../features/sessions/model/inFlight";
@@ -25,7 +27,7 @@ import {
   clearDeliveryProgress,
   readDeliveryProgress,
 } from "../../../features/sessions/model/deliveryProgress";
-import { type HarnessEvent } from "../../../integrations/harness";
+import { steerAppliesModelSettings, type HarnessEvent } from "../../../integrations/harness";
 import { type Submit } from "../helpers/types";
 
 export interface QueuedMessageActionDeps {
@@ -40,7 +42,12 @@ export interface QueuedMessageActionDeps {
   onSubmit: Submit;
   enqueueHarnessEvent: (sessionId: string, event: HarnessEvent) => void;
   flushHarnessEvents: () => void;
+  /** Stop-turn action; filled in after this hook is created. */
+  onStopRef: MutableRefObject<(sessionId: string) => void>;
 }
+
+/** How long Steer waits for Stop before giving up on a restart. */
+const STOP_WAIT_MS = 20_000;
 
 /** Queued follow-up dispatch and queue edits. Queue ordering and dedup are copied verbatim. */
 export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
@@ -56,6 +63,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
     onSubmit,
     enqueueHarnessEvent,
     flushHarnessEvents,
+    onStopRef,
   } = deps;
   const queueDispatchingRef = useRef(new Set<string>());
   const manualActions = useRef(new Set<string>());
@@ -190,6 +198,20 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
     [],
   );
 
+  /** Resolves true once Stop has settled the turn and the row is still queued. */
+  const waitUntilIdle = (sessionId: string, messageId: string) =>
+    new Promise<boolean>((resolve) => {
+      const started = Date.now();
+      const check = () => {
+        const latest = sessionsRef.current.find((entry) => entry.id === sessionId);
+        if (!latest?.queuedMessages?.some((entry) => entry.id === messageId)) return resolve(false);
+        if (!latest.busy && !retiringTurns.current.has(sessionId)) return resolve(true);
+        if (Date.now() - started > STOP_WAIT_MS) return resolve(false);
+        window.setTimeout(check, 100);
+      };
+      check();
+    });
+
   const onSteerQueuedMessage = useCallback(
     async (sessionId: string, messageId: string): Promise<QueueActionResult> => {
       if (manualActions.current.has(sessionId)) return false;
@@ -197,20 +219,6 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       const message = session ? queuedMessageForSubmit(session, messageId, "steer") : undefined;
       if (!session) return false;
       if (!message) {
-        if (
-          session.queuedMessages?.some(
-            (entry) =>
-              entry.id === messageId &&
-              entry.modelTarget &&
-              !entry.attachments.some((file) => file.missing),
-          )
-        ) {
-          enqueueHarnessEvent(sessionId, {
-            type: "status",
-            text: "This queued message uses a different model or effort. Resume the queue to send it as a new turn with its saved settings.",
-          });
-          flushHarnessEvents();
-        }
         throw new Error(
           "This message cannot be sent now. Check its attachments and saved model settings, or resume the queue.",
         );
@@ -223,15 +231,40 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
         flushHarnessEvents();
         return false;
       }
+      const restart =
+        queuedSteerRoute(
+          session,
+          message,
+          steerAppliesModelSettings(runningTargetOf(session).harness),
+        ) === "restart";
+      const queueStatus = session.queueStatus;
       manualActions.current.add(sessionId);
       try {
-        return await onSubmit(sessionId, message.text, message.attachments, {
+        // The running turn cannot change model: stop it, then send the row as
+        // a new turn with the model it was queued for.
+        if (restart) {
+          onStopRef.current(sessionId);
+          const stopped = await waitUntilIdle(sessionId, messageId);
+          if (!stopped)
+            throw new Error("The running turn did not stop. The message remains queued.");
+        }
+        const accepted = await onSubmit(sessionId, message.text, message.attachments, {
           followUpBehavior: "steer",
           queuedMessageId: message.id,
           noteCard: message.noteCard,
           handoffCard: message.handoffCard,
           intent: message.intent,
         });
+        // Stop paused the queue; the rows behind this one keep their old status.
+        if (restart && accepted && queueStatus !== "paused" && queueStatus !== "resuming")
+          setSessions((prev) =>
+            prev.map((entry) =>
+              entry.id === sessionId && entry.queueStatus === "paused"
+                ? { ...entry, queueStatus: queueStatus === "restored" ? "restored" : "active" }
+                : entry,
+            ),
+          );
+        return accepted;
       } finally {
         manualActions.current.delete(sessionId);
       }

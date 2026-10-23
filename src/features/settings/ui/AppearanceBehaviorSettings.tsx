@@ -87,7 +87,7 @@ export function CrewSettings() {
                 )
               : crewTheme === "lotr"
                 ? t(
-                    "Gandalf leads, Sauron advises; a Nazgûl, an Orc, a Dwarf and a Hobbit join as subagents.",
+                    "Gandalf leads, Sauron advises; a Nazgûl, an Elf, a Dwarf and a Hobbit join as subagents. Orcs arrive when more than six subagents work.",
                   )
                 : t("The original tea crew, drawn in monochrome code art.")
           }

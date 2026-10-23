@@ -36,7 +36,7 @@
   background: var(--surface-muted);
 }
 .control.disabled {
-  opacity: 0.5;
+  opacity: var(--ui-disabled-opacity, 0.5);
   cursor: not-allowed;
 }
 .search {
@@ -110,11 +110,11 @@
   overflow: hidden;
   transform-origin: top center;
   border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
+  border-radius: var(--ui-radius-popup);
   padding: 5px;
   background: var(--surface-raised);
   color: var(--foreground);
-  box-shadow: var(--shadow-floating);
+  box-shadow: var(--ui-elevation-floating);
 }
 .autoHeight {
   overflow: hidden;
@@ -131,7 +131,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  border-radius: calc(var(--radius-panel) - 5px);
+  border-radius: calc(var(--ui-radius-popup) - 5px);
   padding: 0 12px;
   color: var(--foreground);
   font-size: var(--text-sm);
@@ -152,7 +152,7 @@
   background: var(--surface-muted);
 }
 .option[data-disabled="true"] {
-  opacity: 0.42;
+  opacity: var(--ui-disabled-opacity, 0.5);
   cursor: not-allowed;
 }
 .check {

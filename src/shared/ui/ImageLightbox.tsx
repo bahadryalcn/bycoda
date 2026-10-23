@@ -1,4 +1,4 @@
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { LAYER } from "../lib/layers";
@@ -15,7 +15,7 @@ type Props = {
 };
 
 export function ImageLightbox({ src, alt, onClose }: Props) {
-  useLocale();
+  const t = useT();
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
@@ -42,7 +42,7 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
       role="dialog"
       aria-modal="true"
       aria-label={t("Image preview: {p0}", { p0: alt })}
-      className="fixed inset-0 flex items-center justify-center bg-scrim/85 p-6 backdrop-blur-sm"
+      className="fixed inset-0 flex items-center justify-center bg-(--ui-overlay-backdrop) p-6"
       style={{ zIndex: LAYER.dialog }}
       onMouseDown={(event) => {
         event.stopPropagation();
@@ -141,7 +141,6 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
         label={t("Close image preview")}
         tooltip={t("Close")}
         variant="secondary"
-        shape="pill"
         size="lg"
         onClick={onClose}
         className="absolute [inset-inline-end:1rem] [inset-block-start:1rem]"

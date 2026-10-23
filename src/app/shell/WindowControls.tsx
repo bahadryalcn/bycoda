@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "../../shared/ui/icons";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
@@ -20,7 +20,7 @@ export function WindowControls() {
 }
 
 function NativeWindowControls() {
-  useLocale();
+  const t = useT();
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,16 +92,23 @@ function NativeWindowControls() {
       className="flex h-full shrink-0 items-stretch border-s border-stroke"
       data-tauri-drag-region="false"
     >
-      {error ? <TransientNotice message={error} onDismiss={() => setError(null)} /> : null}
+      {error ? (
+        <TransientNotice
+          tone="danger"
+          durationMs={null}
+          message={error}
+          onDismiss={() => setError(null)}
+        />
+      ) : null}
       <button
         type="button"
         title={t("Minimize")}
         aria-label={t("Minimize window")}
         data-tauri-drag-region="false"
         onClick={handleMinimize}
-        className="flex w-10 items-center justify-center text-content/60 transition-colors hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-content/60 active:bg-content/20"
+        className="flex w-10 items-center justify-center text-(--ui-text-secondary) transition-colors hover:bg-(--ui-surface-hover) hover:text-content focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--ui-text-secondary) active:bg-(--ui-surface-pressed)"
       >
-        <Minus className="size-3.5" strokeWidth={1.75} />
+        <Minus className="icon-sm" strokeWidth={1.75} />
       </button>
       <button
         type="button"
@@ -109,12 +116,12 @@ function NativeWindowControls() {
         aria-label={isMaximized || isFullscreen ? t("Restore window") : t("Maximize window")}
         data-tauri-drag-region="false"
         onClick={handleToggleMaximize}
-        className="flex w-10 items-center justify-center text-content/60 transition-colors hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-content/60 active:bg-content/20"
+        className="flex w-10 items-center justify-center text-(--ui-text-secondary) transition-colors hover:bg-(--ui-surface-hover) hover:text-content focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--ui-text-secondary) active:bg-(--ui-surface-pressed)"
       >
         {isMaximized || isFullscreen ? (
-          <Copy className="size-3" strokeWidth={1.75} />
+          <Copy className="icon-sm" strokeWidth={1.75} />
         ) : (
-          <Square className="size-3" strokeWidth={1.75} />
+          <Square className="icon-sm" strokeWidth={1.75} />
         )}
       </button>
       <button
@@ -123,9 +130,9 @@ function NativeWindowControls() {
         aria-label={t("Close window")}
         data-tauri-drag-region="false"
         onClick={handleClose}
-        className="flex w-10 items-center justify-center text-content/60 transition-colors hover:bg-danger hover:text-on-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-content/60 active:bg-danger"
+        className="flex w-10 items-center justify-center text-(--ui-text-secondary) transition-colors hover:bg-danger hover:text-on-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--ui-text-secondary) active:bg-danger"
       >
-        <X className="size-3.5" strokeWidth={1.75} />
+        <X className="icon-sm" strokeWidth={1.75} />
       </button>
     </div>
   );

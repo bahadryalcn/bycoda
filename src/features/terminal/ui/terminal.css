@@ -12,12 +12,20 @@
 .terminal-header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   flex: 0 0 30px;
   min-inline-size: 0;
   padding-inline: 7px 4px;
   border-block-end: 1px solid var(--terminal-border);
   background: var(--bycoda-panel);
+}
+.terminal-header-title {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-muted);
 }
 .terminal-toolbar {
   display: flex;
@@ -102,7 +110,8 @@
   place-items: center;
   cursor: pointer;
 }
-.terminal-list-row:focus-within .terminal-row-actions {
+.terminal-list-row:focus-within .terminal-row-actions,
+.terminal-list-row:has([aria-selected="true"]) .terminal-row-actions {
   opacity: 1;
   pointer-events: auto;
 }

@@ -1,7 +1,8 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
-import { ChevronDown, ChevronRight, FileDiff } from "../../../shared/ui/icons";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
+import { useLocale, useT } from "../../../shared/i18n";
+import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   keepSessionChanges,
@@ -40,7 +41,7 @@ function SessionReviewContent({
   onOpenFile,
   onOpenDiff,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [files, setFiles] = useState<CheckpointFile[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [acting, setActing] = useState<"keep" | "undo" | null>(null);
@@ -165,7 +166,7 @@ function SessionReviewContent({
   );
 
   const run = (action: "keep" | "undo") => {
-    if (actingRef.current) return;
+    if (actingRef.current) return undefined;
     actingRef.current = true;
     const generation = ++request.current;
     setActing(action);
@@ -173,7 +174,7 @@ function SessionReviewContent({
     const op =
       action === "keep" ? keepSessionChanges(sessionId, cwd) : undoSessionChanges(sessionId, cwd);
     const previous = filesRef.current.map((file) => file.path);
-    void op
+    return op
       .then((status) => {
         notifyGitChanged();
         invalidateWatchedFiles(previous);
@@ -198,15 +199,12 @@ function SessionReviewContent({
       >
         {errorNotice}
         <div className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-(--ui-surface-raised) text-(--ui-text-secondary)">
-            <FileDiff className="size-4" strokeWidth={1.75} />
-          </span>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[12px] font-medium text-(--ui-text-secondary)">
+            <div className="truncate text-ui-caption font-medium text-(--ui-text-secondary)">
               {t("Changed ")}
               {files.length} {files.length === 1 ? t("file") : t("files")}
             </div>
-            <div className="flex items-center gap-1.5 font-sans text-[11px] font-semibold tabular-nums -mt-0.5">
+            <div className="flex items-center gap-1.5 font-sans text-ui-micro font-semibold tabular-nums -mt-0.5">
               <span className="text-diff-add-fg">+{formatInteger(totals.additions)}</span>
               <span className="text-diff-del-fg">-{formatInteger(totals.deletions)}</span>
             </div>
@@ -215,6 +213,22 @@ function SessionReviewContent({
             <Button
               variant="ghost"
               type="button"
+              title={t("Keep all session changes and dismiss this card")}
+              disabled={disabled}
+              onClick={() => void run("keep")}
+            >
+              {t("Keep")}
+            </Button>
+            <Button
+              variant="secondary"
+              type="button"
+              title={t("Review changes")}
+              onClick={() => onOpenDiff(undefined, { sessionId, cwd })}
+            >
+              {t("Review")}
+            </Button>
+            <span
+              className="ms-1.5 border-s border-(--color-stroke) ps-1.5"
               title={
                 canUndoAll
                   ? t("Undo all session changes")
@@ -222,28 +236,16 @@ function SessionReviewContent({
                     ? t("Undo is unavailable while another session is running in this project")
                     : t("Undo is unavailable because a file changed outside this session")
               }
-              disabled={disabled || !canUndoAll}
-              onClick={() => run("undo")}
             >
-              {t("Undo")}
-            </Button>
-            <Button
-              variant="ghost"
-              type="button"
-              title={t("Keep all session changes and dismiss this card")}
-              disabled={disabled}
-              onClick={() => run("keep")}
-            >
-              {t("Keep")}
-            </Button>
-            <Button
-              variant="ghost"
-              type="button"
-              title={t("Review changes")}
-              onClick={() => onOpenDiff(undefined, { sessionId, cwd })}
-            >
-              {t("Review")}
-            </Button>
+              <ConfirmMorph
+                label={t("Undo")}
+                prompt={t("Undo all session changes")}
+                confirmLabel={t("Undo")}
+                pendingLabel={t("Restoring…")}
+                disabled={disabled || !canUndoAll}
+                onConfirm={() => run("undo")}
+              />
+            </span>
           </div>
         </div>
         <ul
@@ -325,7 +327,7 @@ function FileRow({
         className="w-full min-w-0 text-left"
       >
         <FileTypeIcon name={name} isDir={false} size={15} />
-        <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{file.relative}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-ui-caption">{file.relative}</span>
         <DiffCounts file={file} />
       </Button>
       {menu}
@@ -334,16 +336,16 @@ function FileRow({
 }
 
 function DiffCounts({ file }: { file: CheckpointFile }) {
-  useLocale();
+  const t = useT();
   if (!file.exact) {
     return (
-      <span className="shrink-0 text-[11px] font-medium text-(--ui-tone-warning-fg)">
+      <span className="shrink-0 text-ui-micro font-medium text-(--ui-tone-warning-fg)">
         {t("Mixed changes")}
       </span>
     );
   }
   return (
-    <span className="flex shrink-0 gap-2 font-sans text-[11px] font-semibold tabular-nums">
+    <span className="flex shrink-0 gap-2 font-sans text-ui-micro font-semibold tabular-nums">
       <span className="text-diff-add-fg">+{formatInteger(file.additions)}</span>
       <span className="text-diff-del-fg">-{formatInteger(file.deletions)}</span>
     </span>

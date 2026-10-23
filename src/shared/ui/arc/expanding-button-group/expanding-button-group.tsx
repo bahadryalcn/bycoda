@@ -64,6 +64,8 @@ export interface ExpandingButtonGroupProps {
   onAction?: (id: string) => void;
   /** How long the confirmation stays, in milliseconds. */
   confirmDuration?: number;
+  /** `tray` draws the grouped surface; `bare` keeps flat icon buttons for headers and window chrome. */
+  chrome?: "tray" | "bare";
   className?: string;
   style?: CSSProperties;
 }
@@ -260,7 +262,6 @@ function ItemButton({
       aria-expanded={trigger?.["aria-expanded"]}
       variant="ghost"
       motion="none"
-      shape="pill"
       size={size}
       selected={item.active ?? expanded}
       tone={showDone ? "success" : (item.tone ?? "neutral")}
@@ -351,7 +352,7 @@ function ItemButton({
 }
 
 /**
- * A compact pill of icon buttons for actions. One action always shows its label; the one you point at or focus takes over the
+ * A compact tray of icon buttons for actions. One action always shows its label; the one you point at or focus takes over the
  * label while its neighbours slide aside, and an action can confirm in place: the icon draws a check and the label becomes a past tense word.
  * On touch, the first tap reveals the label and a second tap runs the action.
  */
@@ -364,6 +365,7 @@ export function ExpandingButtonGroup({
   defaultExpanded,
   onAction,
   confirmDuration = 1400,
+  chrome = "tray",
   className,
   style,
 }: ExpandingButtonGroupProps) {
@@ -608,6 +610,7 @@ export function ExpandingButtonGroup({
       data-full-width={fullWidth || undefined}
       aria-label={label}
       aria-orientation="horizontal"
+      data-chrome={chrome}
       className={[styles.group, styles[size], className].filter(Boolean).join(" ")}
       style={vars}
       onKeyDown={onKeyDown}

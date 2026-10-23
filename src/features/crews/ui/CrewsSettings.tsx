@@ -7,8 +7,12 @@ import { Group, Row, Toggle } from "../../settings/ui/settingsControls";
 import { useProjectCrews } from "../model/crewClient";
 import { saveCrewsOnRail, useCrewsOnRail } from "../model/crewAppearance";
 import { CrewAvatar } from "./CrewAvatar";
-import { CrewEditDialog } from "./CrewDialogs";
+import { lazySurface } from "../../../shared/ui/lazySurface";
 import { CrewLibrary } from "./CrewLibrary";
+
+const CrewEditDialog = lazySurface(async () => ({
+  default: (await import("./CrewDialogs")).CrewEditDialog,
+}));
 
 /** Settings → Crews: where crews show, each crew one click away, and the member library. */
 export function CrewsSettings({ cwd }: { cwd: string }) {
@@ -37,7 +41,7 @@ export function CrewsSettings({ cwd }: { cwd: string }) {
         action={
           <Button
             variant="ghost"
-            startIcon={<Plus className="size-3.5" />}
+            startIcon={<Plus className="icon-sm" />}
             disabled={!data}
             onClick={() => setDialog({ createScope: "project" })}
           >
@@ -64,7 +68,7 @@ export function CrewsSettings({ cwd }: { cwd: string }) {
               key={crew.id}
               label={
                 <span className="flex min-w-0 items-center gap-2">
-                  <CrewAvatar crew={crew} className="size-4" />
+                  <CrewAvatar crew={crew} className="icon-md" />
                   <span className="truncate">{crew.name}</span>
                 </span>
               }

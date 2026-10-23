@@ -52,9 +52,9 @@ export function RemoteDataStatus({
   if (!needsAttention) {
     const detail = `${message}${time ? ` · ${t("Last verified {p0}", { p0: new Date(state.updatedAt!).toLocaleString(getLocale()) })}` : ""}`;
     const icon = busy ? (
-      <Loader aria-hidden className="size-3.5 motion-safe:animate-spin" />
+      <Loader aria-hidden className="icon-sm motion-safe:animate-spin" />
     ) : (
-      <Check aria-hidden className="size-3.5" />
+      <Check aria-hidden className="icon-sm" />
     );
     return (
       <span
@@ -90,8 +90,8 @@ export function RemoteDataStatus({
       aria-live="polite"
       aria-busy={busy}
       role={state.phase === "error" ? "alert" : "group"}
-      tone={state.phase === "error" || state.phase === "stale" ? "warning" : "info"}
-      icon={busy ? <Loader aria-hidden className="size-3.5 motion-safe:animate-spin" /> : undefined}
+      tone={state.phase === "error" ? "danger" : "info"}
+      icon={busy ? <Loader aria-hidden className="icon-sm motion-safe:animate-spin" /> : undefined}
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
@@ -130,7 +130,7 @@ export function RemoteDataStatus({
           >
             <RefreshCw
               aria-hidden
-              className={`size-3.5 ${busy ? "motion-safe:animate-spin" : ""}`}
+              className={`icon-sm ${busy ? "motion-safe:animate-spin" : ""}`}
             />
           </Button>
         ) : null}

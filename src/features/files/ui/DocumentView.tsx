@@ -115,6 +115,33 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
     <p className="ui-caption-text mt-1 break-all font-mono">{displayPath(path, cwd)}</p>
   );
 
+  const pdfReady = kind === "pdf" && state.status === "ready";
+  const openButton = externalPath ? (
+    <Button
+      size="sm"
+      variant="ghost"
+      motion="none"
+      type="button"
+      title={t(
+        localCopy
+          ? "Changes to this local copy are not saved to the connected machine."
+          : "Open in default app",
+      )}
+      onClick={() => {
+        setActionError(null);
+        const request = ++actionRequest.current;
+        void openPathWithDefaultApp(externalPath).catch((cause: unknown) => {
+          if (request === actionRequest.current)
+            setActionError(cause instanceof Error ? cause.message : String(cause));
+        });
+      }}
+      className="flex items-center gap-1.5"
+    >
+      <ExternalLink className="icon-xs" strokeWidth={1.75} />
+      {t(localCopy ? "Open local copy" : "Open in default app")}
+    </Button>
+  ) : null;
+
   let body: ReactNode;
   if (kind === "doc") {
     body = (
@@ -147,7 +174,7 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
   } else {
     body = (
       <Suspense fallback={<Loading name={name} />}>
-        <FormatViewer kind={kind as DocumentKind} bytes={state.bytes} />
+        <FormatViewer kind={kind as DocumentKind} bytes={state.bytes} trailing={openButton} />
       </Suspense>
     );
   }
@@ -162,38 +189,16 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
       >
         {body}
       </SurfaceSelection>
-      <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-stroke px-3 text-[11px] text-[var(--ui-text-secondary)]">
-        <span className="truncate">{name}</span>
-        {state.status === "ready" ? (
-          <span className="tabular-nums">{formatFileSize(state.bytes.byteLength)}</span>
-        ) : null}
-        <span className="flex-1" />
-        {externalPath ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            title={t(
-              localCopy
-                ? "Changes to this local copy are not saved to the connected machine."
-                : "Open in default app",
-            )}
-            onClick={() => {
-              setActionError(null);
-              const request = ++actionRequest.current;
-              void openPathWithDefaultApp(externalPath).catch((cause: unknown) => {
-                if (request === actionRequest.current)
-                  setActionError(cause instanceof Error ? cause.message : String(cause));
-              });
-            }}
-            className="flex items-center gap-1.5"
-          >
-            <ExternalLink className="size-3" strokeWidth={1.75} />
-            {t(localCopy ? "Open local copy" : "Open in default app")}
-          </Button>
-        ) : null}
-      </footer>
+      {pdfReady ? null : (
+        <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-stroke px-3 text-ui-micro text-[var(--ui-text-secondary)]">
+          <span className="truncate">{name}</span>
+          {state.status === "ready" ? (
+            <span className="tabular-nums">{formatFileSize(state.bytes.byteLength)}</span>
+          ) : null}
+          <span className="flex-1" />
+          {openButton}
+        </footer>
+      )}
       {actionError ? (
         <FileActionError message={actionError} onDismiss={() => setActionError(null)} />
       ) : null}
@@ -201,9 +206,17 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
   );
 }
 
-function FormatViewer({ kind, bytes }: { kind: DocumentKind; bytes: Uint8Array }) {
+function FormatViewer({
+  kind,
+  bytes,
+  trailing,
+}: {
+  kind: DocumentKind;
+  bytes: Uint8Array;
+  trailing?: ReactNode;
+}) {
   useLocale();
-  if (kind === "pdf") return <PdfViewer bytes={bytes} />;
+  if (kind === "pdf") return <PdfViewer bytes={bytes} trailing={trailing} />;
   if (kind === "docx") return <DocxViewer bytes={bytes} />;
   return <SheetViewer bytes={bytes} format={kind === "csv" || kind === "tsv" ? kind : undefined} />;
 }

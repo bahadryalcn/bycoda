@@ -9,6 +9,7 @@ import { NOTHING_LOCKED } from "../../../features/group-lock/model/lockState";
 
 const rendered = vi.hoisted(() => vi.fn());
 vi.mock("../surfaces/lazySurfaces", () => ({
+  preloadToolSurface: vi.fn(),
   SearchView: (props: { sessions: Session[] }) => {
     rendered(props.sessions);
     return null;

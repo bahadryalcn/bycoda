@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { remoteRequest } from "../../connections/model/connections";
 import type {
   SocialBrowserIntent,
@@ -120,7 +121,7 @@ export function socialClient(machineId: string) {
         accountId,
       }),
     upload: async (file: File) => {
-      if (file.size > 5 * 1024 * 1024) throw new Error("Görsel en fazla 5 MiB olabilir.");
+      if (file.size > 5 * 1024 * 1024) throw new Error(t("Images can be at most 5 MiB."));
       const bytes = new Uint8Array(await file.arrayBuffer());
       let binary = "";
       for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -130,7 +131,7 @@ export function socialClient(machineId: string) {
     },
     uploadVideo: async (file: File, progress?: (percent: number) => void) => {
       if (file.size < 12 || file.size > 64 * 1024 * 1024)
-        throw new Error("MP4/WebM video en fazla 64 MiB olabilir.");
+        throw new Error(t("MP4/WebM videos can be at most 64 MiB."));
       const upload = (params: Record<string, unknown>) =>
         remoteRequest<{ uploadId: string; offset?: number }>(
           machineId,
@@ -152,7 +153,7 @@ export function socialClient(machineId: string) {
             base64: btoa(binary),
           });
           if (result.offset !== offset + bytes.length)
-            throw new Error("Video yükleme sırası doğrulanamadı.");
+            throw new Error(t("Video upload order could not be verified."));
           progress?.(Math.round(((offset + bytes.length) / file.size) * 100));
         }
         return await upload({ mode: "finish", uploadId });

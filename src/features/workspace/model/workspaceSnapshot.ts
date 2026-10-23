@@ -29,6 +29,7 @@ import {
   cachedRemoteSessionSummary,
   rememberRemoteSession,
   remoteSessionFor,
+  remoteShellBoundTo,
 } from "../../connections/model/connections";
 import {
   reconcileProjectReturn,
@@ -277,13 +278,30 @@ export function hydrateWorkspaceSnapshot(
   const stubs = new Map(parsed.sessions.map((stub) => [stub.id, stub]));
   const sessions = new Map<string, Session>();
 
+  // Host session id -> the shell that holds it in this snapshot. One host session is
+  // shown by one shell, so a second stub for the same id is a duplicate and is dropped.
+  const claimedHostIds = new Map<string, string>();
+  const duplicateIds = new Set<string>();
+
   const take = (id: string): Session | null => {
     const existing = sessions.get(id);
     if (existing) return existing;
+    if (duplicateIds.has(id)) return null;
     const record = loaded.get(id);
     const stub = stubs.get(id);
-    if (stub?.remoteSessionId && parseRemotePath(stub.cwd) && !remoteSessionFor(id)) {
-      rememberRemoteSession(id, stub.remoteSessionId);
+    if (stub?.remoteSessionId && parseRemotePath(stub.cwd)) {
+      const bound = remoteSessionFor(id);
+      if (!bound) {
+        // Decide before binding: binding takes the host id away from any other shell.
+        const owner =
+          remoteShellBoundTo(stub.remoteSessionId, id) ?? claimedHostIds.get(stub.remoteSessionId);
+        if (owner && owner !== id) {
+          duplicateIds.add(id);
+          return null;
+        }
+        rememberRemoteSession(id, stub.remoteSessionId);
+      }
+      claimedHostIds.set(bound ?? stub.remoteSessionId, id);
     }
     const base = record ?? (stub ? sessionFromStub(stub) : null);
     if (!base || base.inboxAsk) return null;
@@ -295,9 +313,15 @@ export function hydrateWorkspaceSnapshot(
   for (const stub of parsed.sessions) take(stub.id);
 
   const tabs: WorkspaceTab[] = [];
-  for (const tab of parsed.tabs) {
-    for (const id of leafIds(tab.layout)) {
+  for (const parsedTab of parsed.tabs) {
+    let tab: WorkspaceTab | null = parsedTab;
+    for (const id of leafIds(parsedTab.layout)) {
       if (paneIds.has(id) || take(id)) continue;
+      if (duplicateIds.has(id)) {
+        // The host session is already shown elsewhere: drop this pane, not the tab's other panes.
+        tab = tab && closeLeaf(tab, id);
+        continue;
+      }
       sessions.set(
         id,
         sessionFromStub({
@@ -311,7 +335,7 @@ export function hydrateWorkspaceSnapshot(
         }),
       );
     }
-    tabs.push(tab);
+    if (tab) tabs.push(tab);
   }
 
   for (const id of interruptedIds) {

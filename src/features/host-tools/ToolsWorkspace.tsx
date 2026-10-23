@@ -308,7 +308,7 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
             {panes.map((pane) => (
               <section className="tools-workspace-pane" key={pane.id}>
                 <header className="tools-workspace-toolbar">
-                  <Wrench className="size-4 tools-workspace-kind" aria-hidden />
+                  <Wrench className="icon-md tools-workspace-kind" aria-hidden />
                   <div className="tools-workspace-title" title={`${pane.title}\n${pane.cwd}`}>
                     <strong>{pane.onlyTab ? t("Logs") : t("Conversation tools")}</strong>
                     <span>{pane.title}</span>
@@ -324,18 +324,21 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
                     onClick={async () => {
                       try {
                         const current = views.current.get(pane.id);
-                        await openHostToolsWindow({
-                          ...pane,
-                          initialTab: current?.tab ?? pane.initialTab,
-                          initialMachine: current?.machine ?? pane.initialMachine,
-                        }, pane.onlyTab);
+                        await openHostToolsWindow(
+                          {
+                            ...pane,
+                            initialTab: current?.tab ?? pane.initialTab,
+                            initialMachine: current?.machine ?? pane.initialMachine,
+                          },
+                          pane.onlyTab,
+                        );
                         close(pane.id);
                       } catch (cause) {
                         setError(String(cause));
                       }
                     }}
                   >
-                    <ExternalLink className="size-4" aria-hidden />
+                    <ExternalLink className="icon-md" aria-hidden />
                   </Button>
                   {panes.length > 1 ? (
                     <Button
@@ -347,7 +350,7 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
                       title={t("Close panels")}
                       onClick={() => setPanes([])}
                     >
-                      <CircleX className="size-4" aria-hidden />
+                      <CircleX className="icon-md" aria-hidden />
                     </Button>
                   ) : null}
                   <Button
@@ -359,7 +362,7 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
                     aria-label={t("Close panel")}
                     title={t("Close panel")}
                   >
-                    <X className="size-4" aria-hidden />
+                    <X className="icon-md" aria-hidden />
                   </Button>
                 </header>
                 <SessionHostTools

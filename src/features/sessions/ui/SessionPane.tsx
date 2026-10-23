@@ -1,7 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
-import { t, useLocale, getLocale } from "../../../shared/i18n";
-import { ChevronDown, File, GripVertical, Loader, X } from "../../../shared/ui/icons";
+import { useLocale, getLocale, useT } from "../../../shared/i18n";
+import { ChevronDown, GripVertical, Loader, StickyNote, X } from "../../../shared/ui/icons";
 import { sessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
 import {
@@ -136,7 +136,7 @@ import {
 import type { SessionFolderTarget } from "../model/sessionFolders";
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
 import { RemoteSession } from "../../connections/ui/RemoteSession";
-import { useSession } from "../model/sessionsStore";
+import { usePaneSession } from "../model/sessionsStore";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import type { HostSession } from "../../connections/model/protocol";
 import {
@@ -281,7 +281,7 @@ function RewoundHistoryDisclosure({
   history: NonNullable<Session["rewindHistory"]>;
   truncated?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   return (
     <details
       data-rewind-history
@@ -350,8 +350,10 @@ function sameRemoteFeatures(a: Props["remoteFeatures"], b: Props["remoteFeatures
 export const SessionPane = memo(function SessionPane(props: SessionPaneProps) {
   useLocale();
   // The shell hands down sessions that lag behind by streamed text; the store
-  // holds the live one, and this subscription is what repaints the stream.
-  const live = useSession(props.session.id) ?? props.session;
+  // holds the live one, and this subscription is what repaints the stream. A
+  // hidden pane only follows the shell, so a busy background tab does not
+  // re-render on every streamed frame.
+  const live = usePaneSession(props.session.id, props.visible) ?? props.session;
   // Sessions in a project on another machine render this same pane, backed by
   // the host instead of this computer's session runtime.
   if (isRemoteProjectPath(props.session.cwd))
@@ -453,7 +455,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onLoadRemoteHistory,
   onLoadRemoteBlock,
 }: Props) {
-  useLocale();
+  const t = useT();
   const orchestrationRuns = useSyncExternalStore(
     orchestrator.subscribe,
     orchestrator.snapshot,
@@ -768,6 +770,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
     onQuestionInteraction?.(session.id, id),
   );
   const composerFocus = useStableCallback(() => onFocus(session.id));
+  const composerNewSession = useStableCallback((options?: NewSessionOptions) =>
+    onNewSession?.(session.id, options),
+  );
   const composerCwdChange = useStableCallback((cwd: string) => onCwdChange(session.id, cwd));
   const composerBranchChange = useStableCallback(() => onBranchChange(session.id));
   const composerWorktreeChange = useStableCallback(
@@ -1075,7 +1080,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       hideBranchPicker={!!session.inboxAsk || managed}
       hideTopBar={!!session.inboxAsk}
       context={session.context}
-      contextBlocks={session.blocks}
+      contextBlocks={stableBlocks}
       contextEmpty={
         isEmpty &&
         !session.providerSessionId &&
@@ -1145,11 +1150,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onBtwCommand={composerBtwCommand}
       onStop={composerStop}
       onCompactContext={composerCompactContext}
-      onNewSession={onNewSession ? (options) => onNewSession(session.id, options) : undefined}
+      onNewSession={onNewSession ? composerNewSession : undefined}
       onPlaceInFolder={composerPlaceInFolder}
       onResumeProviderSession={composerResumeProviderSession}
       queuedMessages={session.queuedMessages}
       queueStatus={session.queueStatus}
+      runningModelTarget={session.runningModelTarget}
       onDeleteQueuedMessage={composerDeleteQueuedMessage}
       onEditQueuedMessage={composerEditQueuedMessage}
       onQueuedMessageEditingChange={composerQueuedMessageEditingChange}
@@ -1215,19 +1221,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
             label: t("Notes"),
             ariaLabel: t("Open notes panel"),
             shortcut: notesShortcut,
-            icon: <File className="size-3.5" strokeWidth={1.75} />,
+            icon: <StickyNote className="size-3.5" strokeWidth={1.75} />,
             onSelect: toggleNotesPanel,
-          },
-        ]
-      : []),
-    ...(hasPaneHeader
-      ? [
-          {
-            id: "close-pane",
-            label: t("Close pane"),
-            shortcut: closeShortcut,
-            icon: <X className="size-3" strokeWidth={1.75} />,
-            onSelect: () => onClose(session.id),
           },
         ]
       : []),
@@ -1238,6 +1233,22 @@ const LocalSessionPane = memo(function LocalSessionPane({
       actionsCwd={session.cwd}
       shortcutsEnabled={focused}
       additionalItems={paneActions}
+      trailing={
+        hasPaneHeader ? (
+          <Button
+            iconOnly
+            label={t("Close pane")}
+            variant="ghost"
+            size="sm"
+            type="button"
+            tooltip={t("Close pane")}
+            shortcut={closeShortcut}
+            onClick={() => onClose(session.id)}
+          >
+            <X className="size-3.5" strokeWidth={1.75} />
+          </Button>
+        ) : null
+      }
       onRun={
         onRunProjectAction && !session.worktreeRemoved
           ? (action) => onRunProjectAction(session.id, action)
@@ -1263,8 +1274,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
         active={focused}
         visible={visible}
         speech={streamingReplyLength(session)}
+        activity={liveTurnActivity(session)}
       />
-      {!isEmpty ? <CrewBackdrop visible={visible} session={session} /> : null}
+      {!isEmpty ? <CrewBackdrop visible={visible} session={stableSession} /> : null}
       {projectBackground?.effect === "gradient-blur" ||
       (!projectBackground && globalBackgroundPath && globalBackgroundEffect === "gradient-blur") ? (
         <GradientBlurBackground />
@@ -1385,7 +1397,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           {remoteSessionLoading ? (
             <div
               role="status"
-              className="flex h-full min-h-0 items-center justify-center gap-2 text-[13px] text-(--ui-text-secondary)"
+              className="flex h-full min-h-0 items-center justify-center gap-2 text-ui-secondary text-(--ui-text-secondary)"
             >
               <Loader className="size-4 shrink-0 animate-spin" strokeWidth={1.75} aria-hidden />
               {t("Loading conversation…")}
@@ -1640,6 +1652,22 @@ const LocalSessionPane = memo(function LocalSessionPane({
 function streamingReplyLength(session: Session): number {
   const last = session.blocks[session.blocks.length - 1];
   return session.busy && last?.role === "assistant" && last.streaming ? last.text.length : -1;
+}
+
+/**
+ * Everything the running turn has streamed since the latest user message:
+ * reply, reasoning and tool progress. Each step also counts as a short burst,
+ * so the live background reacts to tool calls that stream no text. -1 when idle.
+ */
+function liveTurnActivity(session: Session): number {
+  if (!session.busy) return -1;
+  let length = 0;
+  for (let i = session.blocks.length - 1; i >= 0; i--) {
+    const block = session.blocks[i];
+    if (block.role === "user") break;
+    length += 12 + block.text.length + (block.tool?.detail?.length ?? 0);
+  }
+  return length;
 }
 
 const LatestTurnAccessory = memo(function LatestTurnAccessory({

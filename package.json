@@ -65,6 +65,7 @@
     "@hugeicons/react": "^1.1.10",
     "@lezer/common": "1.5.3",
     "@lezer/highlight": "^1.2.5",
+    "@lezer/markdown": "^1.7.2",
     "@radix-ui/react-select": "^2.4.0",
     "@radix-ui/react-switch": "^1.4.0",
     "@streamdown/code": "^2.0.0",

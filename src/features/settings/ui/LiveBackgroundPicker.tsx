@@ -139,7 +139,7 @@ function LiveBackgroundTile({
           <LiveBackgroundCanvas effect={scene} intensity={1} still className="absolute inset-0" />
         ) : null}
       </span>
-      <span className="truncate px-0.5 text-[11px] leading-4">{label}</span>
+      <span className="truncate px-0.5 text-ui-micro leading-4">{label}</span>
     </Button>
   );
 }

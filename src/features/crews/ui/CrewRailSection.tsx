@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import type { PopoverAnchor } from "../../../shared/ui/Popover";
@@ -15,20 +16,25 @@ import {
   Square,
   Trash2,
 } from "../../../shared/ui/icons";
-import {
-  RAIL_DRAG_HANDLE,
-  RAIL_SECTION_HEADER,
-  SectionMenuButton,
-  type RailSectionDrag,
-} from "../../../app/shell/useRailSections";
+import { RailSectionHeader, type RailSectionDrag } from "../../../app/shell/useRailSections";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import type { CrewDefinition } from "../model/crew";
 import { useProjectCrews, type CrewRunView } from "../model/crewClient";
 import { useCrewsOnRail } from "../model/crewAppearance";
 import { activeCrewRuns, crewRunTitle } from "../model/crewRoster";
 import { CrewAvatar } from "./CrewAvatar";
-import { CrewDeleteDialog, CrewEditDialog, StartCrewDialog } from "./CrewDialogs";
+import { lazySurface } from "../../../shared/ui/lazySurface";
 import type { CrewEditorPage } from "./CrewEditor";
+
+const CrewDeleteDialog = lazySurface(async () => ({
+  default: (await import("./CrewDialogs")).CrewDeleteDialog,
+}));
+const CrewEditDialog = lazySurface(async () => ({
+  default: (await import("./CrewDialogs")).CrewEditDialog,
+}));
+const StartCrewDialog = lazySurface(async () => ({
+  default: (await import("./CrewDialogs")).StartCrewDialog,
+}));
 
 export type CrewWorkStatus = "input" | "blocked" | "working" | "paused" | "active";
 
@@ -86,23 +92,28 @@ type Menu = { kind: "crew" | "work"; crewId: string; anchor: PopoverAnchor };
 export function CrewRailSection({
   cwd,
   drag,
+  collapsed = false,
+  onToggleCollapsed,
   onShownChange,
   onOpenSession,
 }: {
   cwd: string;
   drag: RailSectionDrag;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
   onShownChange?: (shown: boolean) => void;
   onOpenSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
 }) {
   useLocale();
-  const state = useProjectCrews(cwd);
+  const onRail = useCrewsOnRail();
+  // Hidden from the rail: no host polling for a section that is not shown.
+  const state = useProjectCrews(cwd, onRail);
   const data = state.data;
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const pendingGate = useRef(false);
-  const onRail = useCrewsOnRail();
   const shown = !!data && onRail;
   useEffect(() => {
     onShownChange?.(shown);
@@ -156,7 +167,7 @@ export function CrewRailSection({
                 id: "open",
                 label: t("Open coordinator"),
                 description: crewRunTitle(single),
-                icon: <Bot className="size-3.5" />,
+                icon: <Bot className="icon-sm" />,
               },
             ]
           : []),
@@ -166,7 +177,7 @@ export function CrewRailSection({
                 kind: "item" as const,
                 id: "work",
                 label: t("Ongoing work ({p0})", { p0: menuRuns.length }),
-                icon: <Bot className="size-3.5" />,
+                icon: <Bot className="icon-sm" />,
               },
             ]
           : []),
@@ -174,31 +185,31 @@ export function CrewRailSection({
           kind: "item",
           id: "start",
           label: t("Start work"),
-          icon: <Play className="size-3.5" />,
+          icon: <Play className="icon-sm" />,
         },
         {
           kind: "item",
           id: "edit",
           label: t("Edit crew"),
-          icon: <Pencil className="size-3.5" />,
+          icon: <Pencil className="icon-sm" />,
         },
         {
           kind: "item",
           id: "members",
           label: t("Add members"),
-          icon: <Plus className="size-3.5" />,
+          icon: <Plus className="icon-sm" />,
         },
         {
           kind: "item",
           id: "duplicate",
           label: t("Duplicate"),
-          icon: <Copy className="size-3.5" />,
+          icon: <Copy className="icon-sm" />,
         },
         {
           kind: "item",
           id: "scope",
           label: menuCrew.projectId ? t("Copy to all projects") : t("Copy to this project"),
-          icon: <Globe className="size-3.5" />,
+          icon: <Globe className="icon-sm" />,
         },
         ...(single
           ? [
@@ -210,17 +221,18 @@ export function CrewRailSection({
                 description: crewRunTitle(single),
                 icon:
                   single.status === "paused" ? (
-                    <Play className="size-3.5" />
+                    <Play className="icon-sm" />
                   ) : (
-                    <Pause className="size-3.5" />
+                    <Pause className="icon-sm" />
                   ),
               },
               {
                 kind: "item" as const,
                 id: "stop",
                 label: t("Stop work"),
+                danger: true,
                 description: t("Cancels running assignments"),
-                icon: <Square className="size-3.5" />,
+                icon: <Square className="icon-sm" />,
               },
             ]
           : []),
@@ -232,7 +244,7 @@ export function CrewRailSection({
                 id: "delete",
                 label: t("Delete crew"),
                 danger: true,
-                icon: <Trash2 className="size-3.5" />,
+                icon: <Trash2 className="icon-sm" />,
               },
             ]
           : []),
@@ -269,44 +281,39 @@ export function CrewRailSection({
 
   return (
     <div ref={drag.setRef} className="reorder-item rail-reorder-block mb-2 shrink-0">
-      <div
-        {...drag.headerProps}
-        tabIndex={0}
-        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-        title={t("Drag to reorder")}
-        className={`${RAIL_SECTION_HEADER} ${RAIL_DRAG_HANDLE} rounded-md outline-none @max-[140px]/rail:justify-center @max-[140px]/rail:px-0`}
-      >
-        <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-content/70 @max-[140px]/rail:hidden">
-          {label}
-        </span>
-        <Button
-          iconOnly
-          label={t("New crew")}
-          variant="ghost"
-          motion="none"
-          type="button"
-          data-no-drag
-          aria-haspopup="dialog"
-          onClick={() => setDialog({ kind: "edit", createScope: "project" })}
-          className="grid size-5 shrink-0 place-items-center"
-        >
-          <Plus className="size-3.5" strokeWidth={1.75} />
-        </Button>
-        <span className="contents @max-[140px]/rail:hidden">
-          <SectionMenuButton label={label} onOpen={drag.openMenu} />
-        </span>
-      </div>
+      <RailSectionHeader
+        label={label}
+        drag={drag}
+        collapsed={collapsed}
+        onToggleCollapsed={onToggleCollapsed}
+        actions={
+          <Button
+            iconOnly
+            label={t("New crew")}
+            variant="ghost"
+            motion="none"
+            type="button"
+            data-no-drag
+            aria-haspopup="dialog"
+            onClick={() => setDialog({ kind: "edit", createScope: "project" })}
+            className="grid icon-lg shrink-0 place-items-center"
+          >
+            <Plus className="icon-sm" strokeWidth={1.75} />
+          </Button>
+        }
+      />
       <div
         role="list"
         aria-label={label}
-        className={`flex-col gap-px px-2 ${drag.folded ? "hidden" : "flex"}`}
+        hidden={drag.folded || collapsed}
+        className={`flex-col gap-px px-2 ${drag.folded || collapsed ? "hidden" : "flex"}`}
       >
         {data.definitions.length === 0 ? (
           <span className="@max-[140px]/rail:hidden">
             <Button
               variant="ghost"
               motion="none"
-              startIcon={<Plus className="size-3.5" />}
+              startIcon={<Plus className="icon-sm" />}
               onClick={() => setDialog({ kind: "edit", createScope: "project" })}
             >
               {t("Create your first crew")}
@@ -361,7 +368,7 @@ export function CrewRailSection({
                 }}
                 className="flex min-w-0 flex-1 items-center gap-2 @max-[140px]/rail:justify-center"
               >
-                <span className="relative grid size-4 shrink-0 place-items-center">
+                <span className="relative grid icon-md shrink-0 place-items-center">
                   <CrewAvatar crew={crew} active={status === "working"} />
                   {status ? (
                     <span
@@ -370,9 +377,19 @@ export function CrewRailSection({
                     />
                   ) : null}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden">
+                <span className="min-w-0 flex-1 truncate text-ui-body font-medium @max-[140px]/rail:hidden">
                   {crew.name}
                 </span>
+                {status === "input" || status === "blocked" || status === "paused" ? (
+                  <Badge
+                    tone={
+                      status === "input" ? "warning" : status === "blocked" ? "danger" : "neutral"
+                    }
+                    className="shrink-0 group-hover:hidden group-has-[button:focus-visible]:hidden pointer-coarse:hidden @max-[140px]/rail:hidden"
+                  >
+                    {crewWorkStatusLabel(status)}
+                  </Badge>
+                ) : null}
               </Button>
               <span className="hidden shrink-0 items-center gap-px group-hover:flex group-has-[button:focus-visible]:flex pointer-coarse:flex @max-[140px]/rail:hidden!">
                 <Button
@@ -391,7 +408,7 @@ export function CrewRailSection({
                   }}
                   className="grid size-6 place-items-center"
                 >
-                  <Play className="size-3.5" strokeWidth={1.75} />
+                  <Play className="icon-sm" strokeWidth={1.75} />
                 </Button>
                 <Button
                   iconOnly
@@ -414,14 +431,14 @@ export function CrewRailSection({
                   }}
                   className="grid size-6 place-items-center"
                 >
-                  <MoreHorizontal className="size-4" strokeWidth={1.75} />
+                  <MoreHorizontal className="icon-md" strokeWidth={1.75} />
                 </Button>
               </span>
             </div>
           );
         })}
         {error ? (
-          <p role="alert" className="px-2 text-[11px] leading-tight text-danger">
+          <p role="alert" className="px-2 text-ui-micro leading-tight text-danger">
             {error}
           </p>
         ) : null}

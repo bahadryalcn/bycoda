@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextField } from "../../../shared/ui/TextField";
@@ -450,22 +451,24 @@ export function SshGroupSettings({
                 {t("Close editor")}
               </Button>
               {draft.expectedRevision !== null ? (
-                <Button
-                  disabled={busy}
-                  onClick={() =>
-                    void operation(async () => {
-                      await removeSshGroupDefaults(draft.value.id, draft.expectedRevision!);
-                      if (!mounted.current) return;
-                      setGroups((previous) =>
-                        previous.filter((group) => group.id !== draft.value.id),
-                      );
-                      setDraft(null);
-                      setPreview(undefined);
-                    })
-                  }
-                >
-                  {t("Delete group")}
-                </Button>
+                <span className="me-auto">
+                  <ConfirmMorph
+                    label={t("Delete group")}
+                    tone="danger"
+                    disabled={busy}
+                    onConfirm={() =>
+                      operation(async () => {
+                        await removeSshGroupDefaults(draft.value.id, draft.expectedRevision!);
+                        if (!mounted.current) return;
+                        setGroups((previous) =>
+                          previous.filter((group) => group.id !== draft.value.id),
+                        );
+                        setDraft(null);
+                        setPreview(undefined);
+                      })
+                    }
+                  />
+                </span>
               ) : null}
               <Button
                 disabled={busy || !profile}

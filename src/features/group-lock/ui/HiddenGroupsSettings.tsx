@@ -1,6 +1,6 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { EyeOff, Lock } from "../../../shared/ui/icons";
 import { useGroupLock } from "../hooks/useGroupLock";
 import {
@@ -28,7 +28,7 @@ export function HiddenGroupsSettings({
     : [];
   const restore = (id: string, temporary: boolean) => {
     setError(
-      restoreHiddenGroup(id, temporary) ? null : "Could not save visibility. Please try again.",
+      restoreHiddenGroup(id, temporary) ? null : t("Could not save visibility. Please try again."),
     );
   };
   return (
@@ -36,7 +36,7 @@ export function HiddenGroupsSettings({
       id="hidden-project-groups"
       title={
         <span className="privacy-heading">
-          <EyeOff aria-hidden className="size-4" />
+          <EyeOff aria-hidden className="icon-md" />
           {t("Hidden groups")}
         </span>
       }
@@ -45,14 +45,14 @@ export function HiddenGroupsSettings({
         <Row
           label={
             <span className="privacy-gate-label">
-              <Lock aria-hidden className="size-4" />
+              <Lock aria-hidden className="icon-md" />
               {t("Group names are concealed")}
             </span>
           }
         >
-          <SecondaryButton onClick={() => setPrompt(true)}>
+          <Button className="shrink-0" onClick={() => setPrompt(true)}>
             {t("Manage hidden groups…")}
-          </SecondaryButton>
+          </Button>
         </Row>
       ) : groups.length === 0 ? (
         <Row label={t("No hidden groups")} />
@@ -69,30 +69,35 @@ export function HiddenGroupsSettings({
           >
             <div className="flex flex-wrap items-center gap-2">
               {privacy.hiddenGroupIds.has(group.id) ? (
-                <SecondaryButton onClick={() => restore(group.id, true)}>
+                <Button className="shrink-0" onClick={() => restore(group.id, true)}>
                   {t("Show temporarily")}
-                </SecondaryButton>
+                </Button>
               ) : (
-                <SecondaryButton
+                <Button
+                  className="shrink-0"
                   onClick={() =>
                     setError(
-                      hideGroup(group.id) ? null : "Could not save visibility. Please try again.",
+                      hideGroup(group.id)
+                        ? null
+                        : t("Could not save visibility. Please try again."),
                     )
                   }
                 >
                   {t("Hide again")}
-                </SecondaryButton>
+                </Button>
               )}
-              <SecondaryButton onClick={() => restore(group.id, false)}>
+              <Button className="shrink-0" onClick={() => restore(group.id, false)}>
                 {t("Make visible")}
-              </SecondaryButton>
+              </Button>
             </div>
           </Row>
         ))
       )}
       {authorized && privacy.hasPassword ? (
         <div className="privacy-hidden-footer">
-          <SecondaryButton onClick={closeHiddenGroups}>{t("Conceal group names")}</SecondaryButton>
+          <Button className="shrink-0" onClick={closeHiddenGroups}>
+            {t("Conceal group names")}
+          </Button>
         </div>
       ) : null}
       {authorized && groups.length > 0 ? (
@@ -101,7 +106,7 @@ export function HiddenGroupsSettings({
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-ui-body text-danger">
           {error}
         </p>
       ) : null}
@@ -115,7 +120,7 @@ export function HiddenGroupsSettings({
         <PasswordPromptDialog
           title={t("Manage hidden groups")}
           description={t("Enter your lock password to view hidden group names.")}
-          submitLabel="Continue"
+          submitLabel={t("Continue")}
           verify={authorizeHiddenGroups}
           onDone={() => setPrompt(false)}
           onClose={() => setPrompt(false)}

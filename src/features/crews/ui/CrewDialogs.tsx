@@ -137,7 +137,7 @@ export function StartCrewDialog({
           disabled={pending}
           onChange={(e) => setPrompt(e.target.value)}
         />
-        <p className="text-xs text-(--ui-text-secondary)">
+        <p className="text-ui-caption text-(--ui-text-secondary)">
           {t("The first line becomes the work title. The coordinator plans and assigns the rest.")}
         </p>
       </div>
@@ -164,7 +164,7 @@ function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
     return [{ role, label, names }];
   });
   return (
-    <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+    <dl className="flex flex-wrap gap-x-4 gap-y-1 text-ui-caption">
       {groups.map((group) => (
         <div key={group.role} className="flex min-w-0 gap-1">
           <dt className="text-(--ui-text-secondary)">
@@ -242,7 +242,7 @@ export function CrewDeleteDialog({
         {activeWork > 0 ? (
           <Alert tone="warning">{t("Stop this crew's running work before deleting it.")}</Alert>
         ) : (
-          <p className="text-sm">
+          <p className="text-ui-body">
             {t("The crew definition is removed. Library members are kept.")}
           </p>
         )}

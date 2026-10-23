@@ -75,7 +75,7 @@ async function input(field: string, value: string) {
 }
 it("retains an unset agent when the owner saves an unrelated limit", async () => {
   await mount();
-  expect(select("AI ajanı").value).toBe("");
+  expect(select("AI agent").value).toBe("");
   expect(request).not.toHaveBeenCalled();
   const input = container.querySelector<HTMLInputElement>('[name="maxMessageCharacters"]')!;
   input.value = "250";
@@ -89,10 +89,10 @@ it("retains an unset agent when the owner saves an unrelated limit", async () =>
 });
 it("saves only platform overrides, retains global policy and shows inherited effective fields", async () => {
   await mount(policies);
-  await change(select("Ayar kapsamı"), "youtube");
-  expect(select("AI ajanı").value).toBe("");
+  await change(select("Settings scope"), "youtube");
+  expect(select("AI agent").value).toBe("");
   expect(container.textContent).toContain("Antigravity · owner-model");
-  expect(container.textContent).toContain("Kayıtlı sınır: 300 · ortak ayar");
+  expect(container.textContent).toContain("Saved limit: 300 · shared setting");
   container.querySelector<HTMLInputElement>('[name="maxCommentCharacters"]')!.value = "80";
   await save();
   expect(request).toHaveBeenCalledWith("policy.save", {
@@ -104,7 +104,7 @@ it("saves only platform overrides, retains global policy and shows inherited eff
 });
 it("clearing a platform override inherits global instead of persisting zero or copied defaults", async () => {
   await mount(policies);
-  await change(select("Ayar kapsamı"), "youtube");
+  await change(select("Settings scope"), "youtube");
   container.querySelector<HTMLInputElement>('[name="maxCommentCharacters"]')!.value = "";
   await save();
   expect(request).toHaveBeenCalledWith("policy.save", {
@@ -113,11 +113,16 @@ it("clearing a platform override inherits global instead of persisting zero or c
 });
 it("a platform agent and explicit model override global without altering global settings", async () => {
   await mount(policies);
-  await change(select("Ayar kapsamı"), "x");
-  await change(select("AI ajanı"), "codex");
-  const input = Array.from(container.querySelectorAll("label"))
-    .find((item) => item.textContent?.startsWith("AI modeli"))!
-    .querySelector("input")!;
+  await change(select("Settings scope"), "x");
+  await change(select("AI agent"), "codex");
+  const input = container.querySelector<HTMLInputElement>(
+    "#" +
+      CSS.escape(
+        Array.from(container.querySelectorAll("label")).find((item) =>
+          item.textContent?.startsWith("AI model"),
+        )!.htmlFor,
+      ),
+  )!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       input,
@@ -139,7 +144,7 @@ it("a platform agent and explicit model override global without altering global 
 it("preserves unsaved values per scope and during unrelated policy refreshes", async () => {
   await mount(policies);
   await input("maxMessageCharacters", "222");
-  await change(select("Ayar kapsamı"), "youtube");
+  await change(select("Settings scope"), "youtube");
   await input("maxCommentCharacters", "77");
   await mount({
     ...policies,
@@ -148,11 +153,11 @@ it("preserves unsaved values per scope and during unrelated policy refreshes", a
   expect(container.querySelector<HTMLInputElement>('[name="maxCommentCharacters"]')!.value).toBe(
     "77",
   );
-  await change(select("Ayar kapsamı"), "global");
+  await change(select("Settings scope"), "global");
   expect(container.querySelector<HTMLInputElement>('[name="maxMessageCharacters"]')!.value).toBe(
     "222",
   );
-  await change(select("Ayar kapsamı"), "youtube");
+  await change(select("Settings scope"), "youtube");
   expect(container.querySelector<HTMLInputElement>('[name="maxCommentCharacters"]')!.value).toBe(
     "77",
   );
@@ -160,20 +165,20 @@ it("preserves unsaved values per scope and during unrelated policy refreshes", a
 });
 it("prevents overwriting a concurrently updated scope and reloads only on explicit reset", async () => {
   await mount(policies);
-  await change(select("Ayar kapsamı"), "youtube");
+  await change(select("Settings scope"), "youtube");
   await input("maxCommentCharacters", "77");
   await mount({
     ...policies,
     platforms: { youtube: { maxCommentCharacters: 70 } },
   });
-  expect(container.textContent).toContain("başka bir oturumda güncellendi");
+  expect(container.textContent).toContain("updated in another session");
   expect(container.querySelector<HTMLInputElement>('[name="maxCommentCharacters"]')!.value).toBe(
     "77",
   );
   await save();
   expect(request).not.toHaveBeenCalled();
   const reset = Array.from(container.querySelectorAll("button")).find(
-    (button) => button.textContent === "Kayıtlı ayarları yükle",
+    (button) => button.textContent === "Load saved settings",
   )!;
   await act(async () => reset.click());
   expect(container.querySelector<HTMLInputElement>('[name="maxCommentCharacters"]')!.value).toBe(
@@ -183,7 +188,7 @@ it("prevents overwriting a concurrently updated scope and reloads only on explic
 });
 it("follows refreshed saved settings when the scope has no edits", async () => {
   await mount(policies);
-  await change(select("Ayar kapsamı"), "youtube");
+  await change(select("Settings scope"), "youtube");
   await mount({
     ...policies,
     platforms: { youtube: { maxCommentCharacters: 70 } },
@@ -197,9 +202,7 @@ it("rejects invalid character limits locally without making a request", async ()
   for (const value of ["0", "1.5", "20001"]) {
     await input("maxContentCharacters", value);
     await save();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "1 ile 20000 arasında tam sayı",
-    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("between 1 and 20000");
   }
   expect(request).not.toHaveBeenCalled();
 });
@@ -217,9 +220,9 @@ it("prevents duplicate saves and reports success after the request completes", a
   await save();
   expect(request).toHaveBeenCalledTimes(1);
   expect(container.querySelector("form")!.getAttribute("aria-busy")).toBe("true");
-  expect(container.textContent).not.toContain("ayarlar kaydedildi");
+  expect(container.textContent).not.toContain("settings saved");
   await act(async () => finish());
-  expect(container.textContent).toContain("Ortak ayarlar kaydedildi");
+  expect(container.textContent).toContain("Shared settings saved");
   expect(container.querySelector("form")!.getAttribute("aria-busy")).toBe("false");
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
@@ -228,20 +231,20 @@ it("retains edited values after a save failure and allows retry", async () => {
   await mount(policies);
   await input("maxMessageCharacters", "222");
   await save();
-  expect(container.textContent).toContain("Ayarlar kaydedilemedi: Host çevrimdışı");
+  expect(container.textContent).toContain("Settings could not be saved: Host çevrimdışı");
   expect(container.querySelector<HTMLInputElement>('[name="maxMessageCharacters"]')!.value).toBe(
     "222",
   );
   request.mockResolvedValueOnce({});
   await save();
   expect(request).toHaveBeenCalledTimes(2);
-  expect(container.textContent).toContain("Ortak ayarlar kaydedildi");
+  expect(container.textContent).toContain("Shared settings saved");
 });
 it("does not report a save when the parent runner skips a busy operation", async () => {
   await mount(policies, true);
   await input("maxMessageCharacters", "222");
   await save();
   expect(request).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("Başka bir işlem sürüyor");
-  expect(container.textContent).not.toContain("ayarlar kaydedildi");
+  expect(container.textContent).toContain("Another operation is in progress");
+  expect(container.textContent).not.toContain("settings saved");
 });

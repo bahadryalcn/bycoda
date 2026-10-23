@@ -2,7 +2,7 @@
 import { debounce } from "es-toolkit";
 import { SearchInput } from "../../SearchInput";
 
-import { t } from "../../../i18n";
+import { t, useT } from "../../../i18n";
 
 import { forwardRef, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
@@ -231,6 +231,7 @@ function CopyButton({
   className?: string;
   focusable?: boolean;
 }) {
+  const t = useT();
   const [state, setState] = useState<CopyState>("idle");
   const timer = useRef(0);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -329,6 +330,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
   },
   ref,
 ) {
+  const t = useT();
   const reduced = !!useReducedMotion();
   const uid = useId();
   const treeRef = useRef<HTMLDivElement>(null);

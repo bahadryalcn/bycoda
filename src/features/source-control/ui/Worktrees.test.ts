@@ -39,6 +39,7 @@ vi.mock("../../../platform/tauri/fs", async (original) => ({
 import {
   assertWorktreeFilesClosed,
   checkWorktreeRemoval,
+  createWorktree,
   listWorktrees,
   namedWorktreeBranch,
   temporaryWorktreeBranchName,
@@ -103,6 +104,85 @@ const button = (text: string) =>
   [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent === text,
   )!;
+
+it("keeps worktree deletion locked until completion and allows retry after failure", async () => {
+  let rejectRemoval!: (reason: Error) => void;
+  const onRemove = vi.fn(
+    () =>
+      new Promise<void>((_resolve, reject) => {
+        rejectRemoval = reject;
+      }),
+  );
+  const onDeleted = vi.fn();
+  const onClose = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(DeleteWorktreeDialog, {
+        cwd: "/repo",
+        tree,
+        onRemove,
+        onDeleted,
+        onClose,
+      }),
+    ),
+  );
+  await act(async () =>
+    document
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  expect(onRemove).toHaveBeenCalledExactlyOnceWith("/repo", tree.path, true, false);
+  expect(button("Delete worktree").disabled).toBe(true);
+  expect(button("Cancel").disabled).toBe(true);
+  await act(async () => rejectRemoval(new Error("Removal failed")));
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Removal failed");
+  expect(button("Delete worktree").disabled).toBe(false);
+  expect(onDeleted).not.toHaveBeenCalled();
+  onRemove.mockImplementationOnce(async () => {});
+  await act(async () =>
+    document
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  expect(onDeleted).toHaveBeenCalledOnce();
+});
+
+it("keeps worktree creation pending until its async completion callback settles", async () => {
+  let finish!: () => void;
+  const onCreated = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  vi.mocked(createWorktree).mockResolvedValueOnce(tree);
+  await act(async () =>
+    root.render(
+      createElement(CreateWorktreeDialog, {
+        cwd: "/repo",
+        baseCwd: "/repo",
+        onCreated,
+        onCancel: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () =>
+    type(
+      document.querySelector<HTMLInputElement>('input[aria-label="New branch name"]')!,
+      "feature",
+    ),
+  );
+  await act(async () =>
+    document
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  expect(createWorktree).toHaveBeenCalledWith("/repo", "feature", "HEAD", false);
+  expect(onCreated).toHaveBeenCalledWith(tree);
+  expect(button("Create worktree").disabled).toBe(true);
+  await act(async () => finish());
+  expect(button("Create worktree").disabled).toBe(false);
+});
 
 const type = (input: HTMLInputElement, value: string) => {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);

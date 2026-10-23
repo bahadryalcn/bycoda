@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import type { HarnessId } from "../model/session";
 import { HARNESS_TITLE } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
@@ -28,7 +28,7 @@ export function ProviderSignInPanel({
   idleTitle?: string;
   completeDescription?: string;
 }) {
-  useLocale();
+  const t = useT();
   const title = HARNESS_TITLE[harness];
   const complete = state === "complete";
 
@@ -40,14 +40,14 @@ export function ProviderSignInPanel({
       <span className="grid size-16 place-items-center rounded-2xl bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg) ring-1 ring-inset ring-(--color-stroke) shadow-sm">
         <HarnessIcon harness={harness} className="size-9" />
       </span>
-      <h2 className="mt-3.5 text-[15px] font-medium leading-5 text-(--ui-tone-neutral-fg)">
+      <h2 className="mt-3.5 text-ui-title font-medium leading-5 text-(--ui-tone-neutral-fg)">
         {complete ? t("Signed in to {p0}", { p0: title }) : idleTitle}
       </h2>
-      <p className="mt-1 max-w-56 text-[11px] leading-4 text-(--ui-text-secondary)">
+      <p className="mt-1 max-w-56 text-ui-micro leading-4 text-(--ui-text-secondary)">
         {complete ? completeDescription : t("Sign in to continue using {p0}.", { p0: title })}
       </p>
       <Button
-        variant="ghost"
+        variant="primary"
         type="button"
         autoFocus={autoFocus}
         className="mt-4"

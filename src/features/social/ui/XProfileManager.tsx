@@ -1,17 +1,23 @@
 import { useState } from "react";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { t, useLocale } from "../../../shared/i18n";
 import type { SocialClient } from "../model/socialClient";
 import type { XProfilePatch, XProfileState } from "../model/socialBrowser";
 
 export function XProfileManager({
   accountId,
+  accountName,
   client,
 }: {
   accountId: string;
+  /** Shown beside the actions that write to this X account. */
+  accountName?: string;
   client: SocialClient;
 }) {
+  useLocale();
   const [saved, setSaved] = useState<XProfileState>();
   const [values, setValues] = useState<XProfileState>();
   const [images, setImages] = useState<Pick<XProfilePatch, "avatarUploadId" | "bannerUploadId">>(
@@ -30,7 +36,9 @@ export function XProfileManager({
       await action();
     } catch {
       setError(
-        "İşlem doğrulanamadı. Bağlantıyı ve tarayıcıyı kontrol edin; yeniden kaydetmeden önce profili okuyun.",
+        t(
+          "The action could not be verified. Check the connection and browser, and read the profile before saving again.",
+        ),
       );
     } finally {
       setBusy(false);
@@ -40,22 +48,29 @@ export function XProfileManager({
   if (saved && values)
     for (const field of ["name", "bio", "location", "website"] as const)
       if (saved[field] !== values[field]) patch[field] = values[field];
+  const handleValid = /^[A-Za-z0-9_]{1,15}$/.test(handle);
+  const account = accountName ? (
+    <Badge variant="label" appearance="outline">
+      {t("Account: {p0}", { p0: accountName })}
+    </Badge>
+  ) : null;
   return (
     <details>
-      <summary>X profili ve takip</summary>
+      <summary>{t("X profile and following")}</summary>
       <Button
         type="button"
+        variant="secondary"
         disabled={busy}
         onClick={() =>
           void run(async () => {
             const profile = await client.xProfileRead(accountId);
             setSaved(profile);
             setValues(profile);
-            setStatus("Profil okundu.");
+            setStatus(t("Profile read."));
           })
         }
       >
-        Profili oku
+        {t("Read profile")}
       </Button>
       {values ? (
         <form
@@ -67,32 +82,32 @@ export function XProfileManager({
               setSaved(profile);
               setValues(profile);
               setImages({});
-              setStatus("Profil kaydı yeniden okunarak doğrulandı.");
+              setStatus(t("Profile save was verified by reading it back."));
             });
           }}
         >
           <fieldset disabled={busy}>
             <TextField
-              label="Profil adı"
+              label={t("Profile name")}
               maxLength={50}
               required
               value={values.name}
               onChange={(e) => setValues({ ...values, name: e.target.value })}
             />
             <TextareaField
-              label="Hakkında"
+              label={t("About")}
               maxLength={160}
               value={values.bio}
               onChange={(e) => setValues({ ...values, bio: e.target.value })}
             />
             <TextField
-              label="Konum"
+              label={t("Location")}
               maxLength={30}
               value={values.location}
               onChange={(e) => setValues({ ...values, location: e.target.value })}
             />
             <TextField
-              label="Web sitesi"
+              label={t("Website")}
               type="url"
               maxLength={100}
               value={values.website}
@@ -103,8 +118,8 @@ export function XProfileManager({
                 <TextField
                   label={
                     key === "avatarUploadId"
-                      ? "Profil resmi · JPEG/PNG, 5 MiB"
-                      : "Kapak resmi · JPEG/PNG, 5 MiB"
+                      ? t("Profile image · JPEG/PNG, 5 MiB")
+                      : t("Cover image · JPEG/PNG, 5 MiB")
                   }
                   type="file"
                   accept="image/jpeg,image/png"
@@ -115,13 +130,15 @@ export function XProfileManager({
                     void run(async () => {
                       const upload = await client.upload(file);
                       setImages((current) => ({ ...current, [key]: upload.uploadId }));
-                      setStatus("Görsel hazır; profil kaydında uygulanacak.");
+                      setStatus(t("Image is ready; it will be applied when the profile is saved."));
                     });
                   }}
                 />
                 {images[key] ? (
                   <Button
                     type="button"
+                    variant="secondary"
+                    tone="danger"
                     onClick={() =>
                       setImages((current) => {
                         const next = { ...current };
@@ -130,43 +147,55 @@ export function XProfileManager({
                       })
                     }
                   >
-                    Seçilen görseli kaldır
+                    {t("Remove selected image")}
                   </Button>
                 ) : null}
               </div>
             ))}
-            <Button type="submit" disabled={!Object.keys(patch).length}>
-              Değişiklikleri X profiline uygula
-            </Button>
+            {!Object.keys(patch).length ? (
+              <p className="social-muted">{t("No profile changes to apply.")}</p>
+            ) : null}
+            <div className="social-actions">
+              <Button type="submit" disabled={!Object.keys(patch).length}>
+                {t("Apply changes to X profile")}
+              </Button>
+              {account}
+            </div>
           </fieldset>
         </form>
       ) : null}
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (busy || !/^[A-Za-z0-9_]{1,15}$/.test(handle)) return;
+          if (busy || !handleValid) return;
           void run(async () => {
             const result = await client.xProfileFollow(accountId, handle);
             setStatus(
               result.changed
-                ? `@${result.handle} takip edildi.`
-                : `@${result.handle} zaten takip ediliyor.`,
+                ? t("Followed @{p0}.", { p0: result.handle })
+                : t("Already following @{p0}.", { p0: result.handle }),
             );
           });
         }}
       >
         <TextField
-          label="Takip edilecek X kullanıcı adı"
+          label={t("X username to follow")}
           value={handle}
           disabled={busy}
-          placeholder="kullanici_adi"
+          placeholder={t("username")}
           maxLength={15}
           pattern="[A-Za-z0-9_]{1,15}"
           onChange={(e) => setHandle(e.target.value.replace(/^@/, ""))}
         />
-        <Button type="submit" disabled={busy || !/^[A-Za-z0-9_]{1,15}$/.test(handle)}>
-          Bu hesabı takip et
-        </Button>
+        {handle && !handleValid ? (
+          <p className="social-muted">{t("Use up to 15 letters, digits or underscores.")}</p>
+        ) : null}
+        <div className="social-actions">
+          <Button type="submit" disabled={busy || !handleValid}>
+            {t("Follow this account")}
+          </Button>
+          {account}
+        </div>
       </form>
       {error ? <p role="alert">{error}</p> : null}
       {status ? <p role="status">{status}</p> : null}

@@ -72,7 +72,7 @@ export function OrchestrationSidebarAgents({
   // button rather than as another line of text.
   return (
     <div className="relative mt-1.5">
-      <div className="mb-0.5 px-0.5 flex items-center justify-between text-[11px] text-(--ui-text-secondary)">
+      <div className="mb-0.5 px-0.5 flex items-center justify-between text-ui-micro text-(--ui-text-secondary)">
         <span>
           {summary.tasks.length} {summary.tasks.length === 1 ? t("agent") : t("agents")}
         </span>
@@ -117,56 +117,46 @@ export function OrchestrationSidebarAgents({
                 title={`${task.title} · ${HARNESS_TITLE[task.harness]} · ${model} · ${label}`}
                 aria-label={t("Agent details: {p0}", { p0: task.title })}
                 fullWidth
-                className="group/agent min-w-0"
+                className="min-w-0"
                 selected={open}
                 aria-expanded={open}
                 onClick={() => toggle(task.sessionId, open)}
-                // Named, because the whole session card is already a `group`.
               >
-                {/* One slot: the chevron stands in for the harness mark
-                    whenever this row is open or under the pointer. */}
-                <span className="grid size-3.5 shrink-0 place-items-center text-(--ui-text-secondary)">
+                <span className="grid icon-sm shrink-0 place-items-center text-(--ui-text-secondary)">
                   {open ? (
-                    <ChevronDown className="size-3" strokeWidth={1.75} />
+                    <ChevronDown className="icon-xs" strokeWidth={1.75} />
                   ) : (
-                    <>
-                      <HarnessIcon
-                        harness={task.harness}
-                        className="size-3.5 opacity-75 group-focus-visible/agent:hidden group-hover/agent:hidden"
-                      />
-                      <ChevronRight
-                        className="hidden size-3 group-focus-visible/agent:block group-hover/agent:block"
-                        strokeWidth={1.75}
-                      />
-                    </>
+                    <ChevronRight className="icon-xs" strokeWidth={1.75} />
                   )}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[12px] leading-snug text-(--ui-text-secondary)">
+                <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-ui-caption leading-snug text-(--ui-text-secondary)">
                   {task.title}
                 </span>
                 <span
-                  className={`flex shrink-0 items-center gap-1 text-[11px] ${
-                    task.needsInput ||
-                    task.status === "failed" ||
-                    task.status === "blocked" ||
-                    task.status === "interrupted"
-                      ? "text-(--ui-tone-warning-fg)"
-                      : working
-                        ? "text-(--ui-tone-accent-fg)"
-                        : task.status === "completed"
-                          ? "text-(--ui-tone-success-fg)"
-                          : "text-(--ui-text-secondary)"
+                  className={`flex shrink-0 items-center gap-1 text-ui-micro ${
+                    task.status === "failed"
+                      ? "text-(--ui-tone-danger-fg)"
+                      : task.needsInput ||
+                          task.status === "blocked" ||
+                          task.status === "interrupted"
+                        ? "text-(--ui-tone-warning-fg)"
+                        : working
+                          ? "text-(--ui-tone-accent-fg)"
+                          : task.status === "completed"
+                            ? "text-(--ui-tone-success-fg)"
+                            : "text-(--ui-text-secondary)"
                   }`}
                 >
                   {task.needsInput ||
                   task.status === "failed" ||
                   task.status === "blocked" ||
                   task.status === "interrupted" ? (
-                    <CircleAlert className="size-3" strokeWidth={1.75} />
+                    <CircleAlert className="icon-xs" strokeWidth={1.75} />
                   ) : working ? (
-                    <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-(--ui-tone-accent-fg)" />
+                    <TerminalSpinner className="inline-block w-3 select-none text-center text-ui-micro leading-none text-(--ui-tone-accent-fg)" />
                   ) : task.status === "completed" ? (
-                    <Check className="size-3" strokeWidth={2.25} />
+                    <Check className="icon-xs" strokeWidth={2.25} />
                   ) : null}
                   <span>{label}</span>
                 </span>
@@ -175,14 +165,14 @@ export function OrchestrationSidebarAgents({
               {open && (
                 <div className="space-y-2 pb-3 pl-6.5 pr-2">
                   <p
-                    className="flex min-w-0 items-center gap-1.5 text-[11px] text-(--ui-text-secondary)"
+                    className="flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)"
                     title={`${model} · ${HARNESS_TITLE[task.harness]}`}
                   >
-                    <HarnessIcon harness={task.harness} className="size-3.5 shrink-0" />
+                    <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
                     <span className="min-w-0 truncate">{model}</span>
                   </p>
                   {live?.error && (
-                    <p className="text-[11px] text-(--ui-tone-danger-fg)">{live.error}</p>
+                    <p className="text-ui-micro text-(--ui-tone-danger-fg)">{live.error}</p>
                   )}
                   <div className="flex flex-wrap items-center gap-1">
                     {workers.openDetails && (
@@ -230,7 +220,7 @@ export function OrchestrationSidebarAgents({
           agents together. Resume has no other home, so it stays. */}
       {run?.status === "paused" && (
         <div className="mt-1.5 space-y-1.5 border-t border-(--ui-tone-neutral-border) pt-1.5">
-          <p className="px-0.5 text-[11px] leading-relaxed text-(--ui-text-secondary)">
+          <p className="px-0.5 text-ui-micro leading-relaxed text-(--ui-text-secondary)">
             {stopping
               ? t("Stopping interrupted work before this run can resume.")
               : leadBusy
@@ -240,7 +230,7 @@ export function OrchestrationSidebarAgents({
                   )}
           </p>
           {resumeBlocker && (
-            <p className="px-0.5 text-[11px] leading-relaxed text-(--ui-tone-warning-fg)">
+            <p className="px-0.5 text-ui-micro leading-relaxed text-(--ui-tone-warning-fg)">
               {resumeBlocker.title || t("Another conversation")}
               {t(" is still running in this project.")}
             </p>

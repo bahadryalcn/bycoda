@@ -18,7 +18,7 @@
   white-space: nowrap;
 }
 .dev-servers-title h3 {
-  font-size: 14px;
+  font-size: var(--ui-font-body);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -53,7 +53,7 @@
   padding: 4px;
   list-style: none;
   border: 1px solid var(--color-stroke);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--ui-surface);
 }
 .dev-server-row {
@@ -61,7 +61,7 @@
 }
 .dev-servers-panel .dev-server-row-button {
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) minmax(0, auto) auto;
+  grid-template-columns: 5.5rem minmax(0, 1fr) minmax(0, auto) auto;
   align-items: center;
   gap: 10px;
 }
@@ -78,49 +78,10 @@
 }
 .dev-server-ports {
   color: var(--host-tool-muted);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 .dev-server-meta {
-  font-size: 11px;
-}
-/* The row shows only the dot; its text stays available to assistive technology. */
-.dev-server-row .dev-server-state {
-  display: block;
-  justify-self: center;
-  overflow: hidden;
-  inline-size: 8px;
-  block-size: 8px;
-  border-radius: 50%;
-  background: var(--ui-text-muted);
-  color: transparent;
-  font-size: 0;
-}
-.dev-server-state[data-state="running"] {
-  --dev-server-state: var(--color-success);
-}
-.dev-server-state[data-state="starting"],
-.dev-server-state[data-state="stopping"] {
-  --dev-server-state: var(--color-warning);
-}
-.dev-server-state[data-state="error"] {
-  --dev-server-state: var(--color-danger);
-}
-.dev-server-row .dev-server-state[data-state] {
-  background: var(--dev-server-state, var(--ui-text-muted));
-}
-.dev-server-selection .dev-server-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--host-tool-muted);
-  font-size: 12px;
-}
-.dev-server-selection .dev-server-state::before {
-  content: "";
-  inline-size: 6px;
-  block-size: 6px;
-  border-radius: 50%;
-  background: var(--dev-server-state, var(--ui-text-muted));
+  font-size: var(--ui-font-micro);
 }
 .dev-server-selection,
 .dev-server-conflict,
@@ -131,7 +92,7 @@
   min-inline-size: 0;
   padding: 12px;
   border: 1px solid var(--color-stroke);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--ui-surface);
 }
 .dev-server-selection {
@@ -156,17 +117,17 @@
   font-weight: 600;
 }
 .dev-server-heading > h4 {
-  font-size: 14px;
+  font-size: var(--ui-font-body);
 }
 .dev-server-heading > h5 {
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .dev-server-url,
 .dev-server-command,
 .dev-server-metadata dd {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .dev-server-details,
 .dev-server-confirm {
@@ -189,7 +150,7 @@
 }
 .dev-server-metadata dt {
   color: var(--host-tool-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .dev-server-metadata dd {
   margin: 0;
@@ -197,13 +158,13 @@
 .dev-server-scan-error details > p {
   margin-block-start: 8px;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .dev-servers-panel summary {
   padding-block: 4px;
   cursor: pointer;
   color: var(--host-tool-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .dev-server-form {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
@@ -221,9 +182,9 @@
   max-block-size: 240px;
   overflow: auto;
   padding: 10px;
-  border-radius: 6px;
+  border-radius: var(--ui-control-radius);
   background: var(--color-selection-subtle);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -250,7 +211,7 @@
 }
 @container (max-width: 480px) {
   .dev-servers-panel .dev-server-row-button {
-    grid-template-columns: 12px minmax(0, 1fr) auto;
+    grid-template-columns: 5.5rem minmax(0, 1fr) auto;
   }
   .dev-server-meta {
     display: none;

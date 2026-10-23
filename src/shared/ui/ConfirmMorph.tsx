@@ -2,10 +2,10 @@ import {
   ConfirmMorph as ArcConfirmMorph,
   type ConfirmMorphProps,
 } from "./arc/confirm-morph/confirm-morph";
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 
 export function ConfirmMorph(props: ConfirmMorphProps) {
-  useLocale();
+  const t = useT();
   return (
     <ArcConfirmMorph
       confirmLabel={t("Confirm delete")}

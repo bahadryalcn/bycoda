@@ -46,7 +46,7 @@ export function CrewTaskPicker({
         <Alert tone="warning">{t("Connect an updated host and choose an available crew.")}</Alert>
       )}
       {value && valid && (
-        <p className="text-xs text-(--ui-text-secondary)">
+        <p className="text-ui-caption text-(--ui-text-secondary)">
           {t("This task starts its own crew run. The team can also work on other tasks.")}
         </p>
       )}

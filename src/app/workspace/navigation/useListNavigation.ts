@@ -1,10 +1,13 @@
-import { useCallback, useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useMemo,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import type { Session } from "../../../features/sessions/model/session";
 import type { LinkedSessionUpdate } from "../../../features/inbox/model/linkedSessionUpdates";
-import {
-  isFilesystemTab,
-  type WorkspaceTab,
-} from "../../../features/workspace/model/layout";
+import { isFilesystemTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { switchSessionInTab } from "../../../features/workspace/model/workspaceTabGroups";
 import { adjacentItemId } from "../../../features/workspace/model/tabKeys";
 import {
@@ -20,6 +23,8 @@ import {
   remoteSessionFor,
   rememberRemoteSession,
 } from "../../../features/connections/model/connections";
+import { remoteCreateShellFor } from "../../../features/connections/model/remoteCreateIntent";
+import { resolveRemoteSessionTarget } from "../../../features/connections/model/remoteSessionNavigation";
 
 export interface ListNavigationDeps {
   tabs: WorkspaceTab[];
@@ -98,7 +103,19 @@ export function useListNavigation({
       const next = adjacentItemId(sessionNavigationIdsRef.current, navigationId, delta);
       if (!next || next === navigationId) return;
       if (remoteProject) {
-        if (inCurrentTab) {
+        // Another tab (or the one creating it) already shows `next`: go there, since
+        // binding this shell too would take the session over and blank that tab.
+        const owner = inCurrentTab
+          ? resolveRemoteSessionTarget(
+              tabsRef.current,
+              sessionsRef.current,
+              current.cwd,
+              next,
+              remoteSessionFor,
+              remoteCreateShellFor,
+            )
+          : undefined;
+        if (inCurrentTab && !owner) {
           rememberRemoteSession(current.id, next);
           setComposerFocused(true);
         } else {
@@ -153,5 +170,10 @@ export function useListNavigation({
     [onSelectProject],
   );
 
-  return { openFilePaths, onSessionNavigationOrder, onNavigateSessionList, onNavigateProjectList };
+  return {
+    openFilePaths,
+    onSessionNavigationOrder,
+    onNavigateSessionList,
+    onNavigateProjectList,
+  };
 }

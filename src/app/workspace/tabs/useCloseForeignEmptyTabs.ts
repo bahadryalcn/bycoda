@@ -1,14 +1,12 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { remoteCreateIntent } from "../../../features/connections/model/remoteCreateIntent";
 import { remoteShellState } from "../../../features/connections/model/remoteShellState";
 import { composerDraftsLoaded } from "../../../features/sessions/data/composerDraftStore";
 import { listSessionsByProject } from "../../../features/sessions/data/sessionStore";
 import { hasUnsentComposerDraft } from "../../../features/sessions/model/draftCache";
 import type { Session } from "../../../features/sessions/model/session";
 import { isRemoteProjectPath } from "../../../features/projects/model/recents";
-import {
-  emptyForeignTabIds,
-  unlistedTabIds,
-} from "../../../features/workspace/model/idleTabs";
+import { emptyForeignTabIds, unlistedTabIds } from "../../../features/workspace/model/idleTabs";
 import { isUnsentRemoteChat } from "../../../features/workspace/model/remoteEmptyChats";
 import type { WorkspaceTab } from "../../../features/workspace/model/layout";
 import { workspaceTabCwd } from "../../../features/workspace/model/workspaceTabGroups";
@@ -24,15 +22,21 @@ export type ForeignEmptyTabsInput = {
   movingTabIds: ReadonlySet<string>;
   /** False for transfer windows: their state and drafts arrive with the payload, so no launch pass. */
   restoredWorkspace: boolean;
-  onCloseTabs: (ids: string[], fallbackId: string) => void;
+  onCloseTabs: (
+    ids: string[],
+    fallbackId: string,
+    opts?: { stillClosable?: (tabId: string) => boolean },
+  ) => void;
 };
 
 /**
  * A remote chat is unsent only when this app holds no host binding, no queued
  * command and no draft for it. Decided locally: the host keeps no record of a
- * chat that never got a turn, and a bound chat is never closed here.
+ * chat that never got a turn, and a bound chat is never closed here. A shell
+ * whose host session is being created is not yet bound but is no longer unsent.
  */
 function remoteSessionUnsent(session: Session): boolean {
+  if (remoteCreateIntent(session.id)) return false;
   return isUnsentRemoteChat(
     session,
     remoteShellState(session, { hasDraft: hasUnsentComposerDraft(session.id) }),
@@ -86,7 +90,11 @@ async function closeForeignEmptyTabs(read: () => ForeignEmptyTabsInput): Promise
   if (now.movingTabIds.size > 0) return;
   const still = new Set(candidatesOf(now));
   const ids = confirmed.filter((id) => still.has(id));
-  if (ids.length > 0) now.onCloseTabs(ids, now.activeTabId);
+  if (ids.length === 0) return;
+  // Closing waits on the close confirmation, so decide once more when it is executed.
+  now.onCloseTabs(ids, now.activeTabId, {
+    stillClosable: (id) => candidatesOf(read()).includes(id),
+  });
 }
 
 /**

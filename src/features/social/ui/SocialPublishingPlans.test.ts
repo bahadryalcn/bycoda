@@ -132,8 +132,8 @@ afterEach(async () => {
 
 it("preserves an open plan draft and its original revision when another owner saves newer settings", async () => {
   await render(snapshot());
-  await act(async () => button("Planı düzenle").click());
-  const form = container.querySelector<HTMLFormElement>("form")!;
+  await act(async () => button("Edit plan").click());
+  const form = document.body.querySelector<HTMLFormElement>("form")!;
   const name = form.querySelector<HTMLInputElement>("input")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -156,11 +156,11 @@ it("preserves an open plan draft and its original revision when another owner sa
 
 it("requires owner review of the exact plan revision before activation", async () => {
   await render(snapshot());
-  expect(button("Otomatik yayını etkinleştir").disabled).toBe(true);
+  expect(button("Enable automatic publishing").disabled).toBe(true);
   const review = container.querySelector<HTMLInputElement>(".social-check input")!;
   await act(async () => review.click());
-  expect(button("Otomatik yayını etkinleştir").disabled).toBe(false);
-  await act(async () => button("Otomatik yayını etkinleştir").click());
+  expect(button("Enable automatic publishing").disabled).toBe(false);
+  await act(async () => button("Enable automatic publishing").click());
   expect(request).toHaveBeenCalledWith("publishing-plans.activate", {
     id: "plan",
     revision: 1,
@@ -168,17 +168,17 @@ it("requires owner review of the exact plan revision before activation", async (
   });
   await render(snapshot({ publishingPlans: [{ ...plan, revision: 2 }] }));
   expect(container.querySelector<HTMLInputElement>(".social-check input")!.checked).toBe(false);
-  expect(button("Otomatik yayını etkinleştir").disabled).toBe(true);
+  expect(button("Enable automatic publishing").disabled).toBe(true);
 });
 
 it("explains missing campaign approval and preserves global sending restrictions", async () => {
   await render(snapshot({ approvedCampaignIds: [] }));
   await act(async () => container.querySelector<HTMLInputElement>(".social-check input")!.click());
-  expect(button("Otomatik yayını etkinleştir").disabled).toBe(true);
-  expect(container.textContent).toContain("havuzdaki tüm içeriklere yayın onayı");
+  expect(button("Enable automatic publishing").disabled).toBe(true);
+  expect(container.textContent).toContain("approve every pool item for publishing");
   await render(snapshot({ sendingEnabled: false }));
-  expect(button("Otomatik yayını etkinleştir").disabled).toBe(true);
-  expect(container.textContent).toContain("Gönderim kapalı");
+  expect(button("Enable automatic publishing").disabled).toBe(true);
+  expect(container.textContent).toContain("Sending is off");
   expect(request).not.toHaveBeenCalled();
 });
 
@@ -189,16 +189,16 @@ it("shows finite-pool completion and exposes a direct pause action for live plan
     }),
   );
   expect(container.textContent).toContain("09:00");
-  await act(async () => button("Planı durdur").click());
+  await act(async () => button("Pause plan").click());
   expect(request).toHaveBeenCalledWith("publishing-plans.pause", { id: "plan" });
   await render(snapshot({ publishingPlans: [{ ...plan, nextIndex: 1, completedAt: 2 }] }));
-  expect(container.textContent).toContain("İçerik havuzu tamamlandı");
-  expect(button("Otomatik yayını etkinleştir").disabled).toBe(true);
+  expect(container.textContent).toContain("Content pool completed");
+  expect(button("Enable automatic publishing").disabled).toBe(true);
 });
 
 it("makes unsupported host versions a clear non-actionable state", async () => {
   await render(snapshot({ publishingPlans: undefined }));
-  expect(container.textContent).toContain("Host güncellemesi gerekli");
+  expect(container.textContent).toContain("Host update required");
   expect(container.querySelector("form")).toBeNull();
 });
 
@@ -207,16 +207,16 @@ it("shows an owner pause as neutral and keeps unknown diagnostics behind an opti
   expect(container.querySelector(".social-row [data-status]")?.getAttribute("data-status")).toBe(
     "paused",
   );
-  expect(container.textContent).toContain("Plan sizin tarafınızdan durduruldu");
+  expect(container.textContent).toContain("Plan paused by you");
   expect(container.textContent).not.toContain("Paused by owner.");
   const diagnostic = "Provider returned an unexpected outcome: test-42.";
   await render(snapshot({ publishingPlans: [{ ...plan, pausedReason: diagnostic }] }));
   expect(container.querySelector(".social-row [data-status]")?.getAttribute("data-status")).toBe(
     "review",
   );
-  expect(container.textContent).toContain("Hesap bağlantısını, yayın izinlerini");
+  expect(container.textContent).toContain("Check the account connection, publishing permissions");
   const detail = Array.from(container.querySelectorAll("details")).find(
-    (item) => item.querySelector("summary")?.textContent === "Teknik ayrıntı",
+    (item) => item.querySelector("summary")?.textContent === "Technical detail",
   );
   expect(detail?.open).toBe(false);
   expect(detail?.querySelector("p")?.textContent).toBe(diagnostic);
@@ -240,15 +240,15 @@ it("keeps the published prefix fixed while an owner edits the remaining pool", a
     },
   ];
   await render(value);
-  await act(async () => button("Planı düzenle").click());
-  const form = container.querySelector("form")!;
+  await act(async () => button("Edit plan").click());
+  const form = document.body.querySelector("form")!;
   expect(Array.from(form.querySelectorAll("select")).every((control) => control.disabled)).toBe(
     true,
   );
   expect(
-    form.querySelector<HTMLButtonElement>('button[aria-label^="Paylaşım hesabı:"]')?.disabled,
+    form.querySelector<HTMLButtonElement>('button[aria-label^="Sharing account:"]')?.disabled,
   ).toBe(true);
-  expect(form.querySelector<HTMLButtonElement>('button[aria-label^="Proje:"]')?.disabled).toBe(
+  expect(form.querySelector<HTMLButtonElement>('button[aria-label^="Project:"]')?.disabled).toBe(
     true,
   );
   const moves = Array.from(form.querySelectorAll<HTMLButtonElement>(".social-pool-editor button"));
@@ -256,16 +256,16 @@ it("keeps the published prefix fixed while an owner edits the remaining pool", a
   expect(moves[1].disabled).toBe(true);
   expect(moves[2].disabled).toBe(true);
   expect(moves[3].disabled).toBe(false);
-  expect(form.textContent).toContain("Gönderilen içeriklerin sırası, hesap ve proje korunur");
+  expect(form.textContent).toContain("The order of sent content, the account and the project are kept");
 });
 
 it("clears the selected campaign pool when its searchable account changes", async () => {
   const value = snapshot();
   value.accounts.push({ ...value.accounts[0], id: "second", name: "Other account" });
   await render(value);
-  await act(async () => button("Planı düzenle").click());
-  const form = container.querySelector("form")!;
-  const account = form.querySelector<HTMLButtonElement>('button[aria-label^="Paylaşım hesabı:"]')!;
+  await act(async () => button("Edit plan").click());
+  const form = document.body.querySelector("form")!;
+  const account = form.querySelector<HTMLButtonElement>('button[aria-label^="Sharing account:"]')!;
   expect(form.querySelectorAll("select[required]")).toHaveLength(2);
   expect(form.textContent).toContain("Yeni özellik");
   await chooseSocialValue(account, "second");
@@ -276,11 +276,11 @@ it("clears the selected campaign pool when its searchable account changes", asyn
 
 it("clears the selected campaign pool when its searchable project changes", async () => {
   await render(snapshot(), true);
-  await act(async () => button("Planı düzenle").click());
-  const form = container.querySelector("form")!;
+  await act(async () => button("Edit plan").click());
+  const form = document.body.querySelector("form")!;
   expect(form.textContent).toContain("Yeni özellik");
   await chooseSocialValue(
-    form.querySelector<HTMLButtonElement>('button[aria-label^="Proje:"]')!,
+    form.querySelector<HTMLButtonElement>('button[aria-label^="Project:"]')!,
     "other",
   );
   expect(Array.from(form.querySelectorAll("select")).at(1)?.value).toBe("other");

@@ -7,7 +7,7 @@
   --surface-raised: var(--ui-surface-raised);
   --surface-muted: var(--ui-surface-muted);
   --text-secondary: var(--ui-text-secondary);
-  --text-muted: var(--ui-text-disabled);
+  --text-muted: var(--ui-text-muted);
   --border: var(--color-stroke);
   --border-subtle: color-mix(in oklch, var(--color-content) 5%, transparent);
   --border-strong: color-mix(in oklch, var(--color-content) 16%, transparent);
@@ -105,6 +105,8 @@
 }
 
 .bycoda-arc-segmented {
+  /* Unselected options remain readable choices, rather than muted metadata. */
+  --text-muted: var(--ui-text-secondary);
   --control-height-sm: var(--ui-segment-height, 1.5rem);
   --surface: var(--color-selection);
   --surface-muted: transparent;
@@ -307,6 +309,8 @@ html[data-control-density="touch"] .bycoda-arc-switch {
     --duration-instant: 0ms;
     --duration-fast: 0ms;
     --duration-standard: 0ms;
+    --duration-spring: 0ms;
+    --duration-considered: 0ms;
   }
 }
 
@@ -332,6 +336,25 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   --focus-outline-width: 1px;
   min-inline-size: 0;
   max-inline-size: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Scoped rules above re-declare these roles; keep reduced motion last. */
+  .bycoda-arc.bycoda-arc-morph,
+  .bycoda-arc:is(
+    .bycoda-arc-json,
+    .bycoda-arc-filters,
+    .bycoda-arc-table,
+    .bycoda-arc-date-range,
+    .bycoda-arc-inline-edit,
+    .bycoda-arc-usage,
+    .bycoda-arc-shortcut,
+    .bycoda-arc-confirm,
+    .bycoda-arc-image-compare
+  ) {
+    --duration-spring: 0ms;
+    --duration-considered: 0ms;
+  }
 }
 .bycoda-arc-filters {
   padding: var(--space-2);

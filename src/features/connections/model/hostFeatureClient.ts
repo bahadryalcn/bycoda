@@ -111,6 +111,14 @@ async function explicitToolHost(target: Exclude<HostToolTarget, { kind: "project
 }
 
 const HOST_SCOPED_TOOL_METHODS = new Set([
+  "voice.local.start",
+  "voice.local.inspect",
+  "voice.local.speak",
+  "voice.local.speechNext",
+  "voice.local.speechCancel",
+  "voice.local.transcribe",
+  "voice.local.keepAlive",
+  "voice.local.release",
   "runtimeLogs.read",
   "runtimeLogs.sources",
   "browser.status",

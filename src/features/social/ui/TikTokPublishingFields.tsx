@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextField } from "../../../shared/ui/TextField";
@@ -20,10 +21,18 @@ export const tiktokDefaults: TikTokVideoOptions = {
   consent: false,
 };
 const privacyLabels: Record<string, string> = {
-  PUBLIC_TO_EVERYONE: "Herkes",
-  MUTUAL_FOLLOW_FRIENDS: "Arkadaşlar",
-  FOLLOWER_OF_CREATOR: "Takipçiler",
-  SELF_ONLY: "Yalnız ben",
+  get PUBLIC_TO_EVERYONE() {
+    return t("Everyone");
+  },
+  get MUTUAL_FOLLOW_FRIENDS() {
+    return t("Friends");
+  },
+  get FOLLOWER_OF_CREATOR() {
+    return t("Followers");
+  },
+  get SELF_ONLY() {
+    return t("Only me");
+  },
 };
 export function TikTokPublishingFields({
   variant,
@@ -34,6 +43,7 @@ export function TikTokPublishingFields({
   client: SocialClient;
   onChange: (patch: Partial<CampaignVariant>) => void;
 }) {
+  useLocale();
   const options = variant.tiktok ?? tiktokDefaults;
   const creator = useQuery({
     queryKey: [...socialQueryScope(client), "tiktok-creator", variant.accountId],
@@ -56,16 +66,21 @@ export function TikTokPublishingFields({
     });
   return (
     <fieldset>
-      <legend>TikTok video yayını</legend>
+      <legend>{t("TikTok video publishing")}</legend>
       {info ? (
         <p>
-          Hesap: {info.nickname} · En fazla {info.maxDurationSeconds} saniye
+          {t("Account: {p0} · up to {p1} seconds", {
+            p0: info.nickname,
+            p1: info.maxDurationSeconds,
+          })}
         </p>
       ) : (
         <Notice kind={creator.isError ? "error" : "loading"}>
           {creator.isError
-            ? "TikTok yayın iznini kontrol edin; hesabı video.publish izniyle yeniden bağlayıp tekrar deneyin."
-            : "TikTok yayın ayarları okunuyor…"}
+            ? t(
+                "Check the TikTok publishing permission; reconnect the account with the video.publish permission and try again.",
+              )
+            : t("Reading TikTok publishing settings…")}
         </Notice>
       )}
       <Button
@@ -75,26 +90,23 @@ export function TikTokPublishingFields({
         disabled={creator.isFetching}
         onClick={() => void creator.refetch()}
       >
-        Yayın ayarlarını yenile
+        {t("Refresh publishing settings")}
       </Button>
-      <label>
-        Doğrulanmış alanda HTTPS video URL
-        <TextField
-          hideLabel
-          label=""
-          type="url"
-          value={variant.media[0]?.url ?? ""}
-          onChange={(event) =>
-            onChange({
-              media: event.target.value ? [{ kind: "video", url: event.target.value }] : [],
-              tiktok: { ...options, durationSeconds: 0, consent: false },
-            })
-          }
-        />
-      </label>
+      <TextField
+        label={t("HTTPS video URL on a verified domain")}
+        type="url"
+        value={variant.media[0]?.url ?? ""}
+        onChange={(event) =>
+          onChange({
+            media: event.target.value ? [{ kind: "video", url: event.target.value }] : [],
+            tiktok: { ...options, durationSeconds: 0, consent: false },
+          })
+        }
+      />
       <small>
-        URL alanı veya öneki TikTok geliştirici uygulamasında doğrulanmış olmalı. Video TikTok
-        tarafından bu adresten alınır.
+        {t(
+          "The URL domain or prefix must be verified in the TikTok developer app. TikTok fetches the video from this address.",
+        )}
       </small>
       {variant.media[0]?.url ? (
         <video
@@ -113,15 +125,15 @@ export function TikTokPublishingFields({
         />
       ) : null}
       <label>
-        Görünürlük
+        {t("Visibility")}
         <NativeSelect
-          aria-label="Görünürlük"
+          aria-label={t("Visibility")}
           required
           value={options.privacy}
           disabled={!info || creator.isFetching || creator.isError}
           onChange={(event) => change({ privacy: event.target.value })}
         >
-          <option value="">Görünürlük seçin</option>
+          <option value="">{t("Select visibility")}</option>
           {info?.privacyOptions.map((value) => (
             <option value={value} key={value}>
               {privacyLabels[value]}
@@ -131,9 +143,9 @@ export function TikTokPublishingFields({
       </label>
       {(
         [
-          ["allowComment", "Yorumlara izin ver", info?.commentDisabled],
-          ["allowDuet", "Düete izin ver", info?.duetDisabled],
-          ["allowStitch", "Stitch’e izin ver", info?.stitchDisabled],
+          ["allowComment", t("Allow comments"), info?.commentDisabled],
+          ["allowDuet", t("Allow Duet"), info?.duetDisabled],
+          ["allowStitch", t("Allow Stitch"), info?.stitchDisabled],
         ] as const
       ).map(([key, label, blocked]) => (
         <label key={key}>
@@ -150,25 +162,25 @@ export function TikTokPublishingFields({
           checked={options.brandOrganic}
           onChange={(event) => change({ brandOrganic: event.target.checked })}
         />
-        Kendi markamı tanıtıyor
+        {t("Promotes my own brand")}
       </label>
       <label>
         <Checkbox
           checked={options.brandContent}
           onChange={(event) => change({ brandContent: event.target.checked })}
         />
-        Ücretli marka işbirliği içeriyor
+        {t("Includes a paid brand partnership")}
       </label>
       <label>
         <Checkbox
           checked={options.isAigc}
           onChange={(event) => change({ isAigc: event.target.checked })}
         />
-        Yapay zekâ ile üretilmiş içerik
+        {t("AI-generated content")}
       </label>
       {options.brandContent && options.privacy === "SELF_ONLY" ? (
         <Notice kind="error">
-          Ücretli marka işbirliği için yalnız ben görünürlüğü kullanılamaz.
+          {t("The Only me visibility cannot be used for a paid brand partnership.")}
         </Notice>
       ) : null}
       <label>
@@ -184,7 +196,7 @@ export function TikTokPublishingFields({
           }
           onChange={(event) => change({ consent: event.target.checked })}
         />
-        Videoyu önizledim; TikTok’a göndermeyi ve{" "}
+        {t("I previewed the video; I approve sending it to TikTok and the")}{" "}
         <a
           href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en"
           target="_blank"
@@ -195,7 +207,7 @@ export function TikTokPublishingFields({
         {options.brandContent || options.brandOrganic ? (
           <>
             {" "}
-            ile{" "}
+            {t("together with the")}{" "}
             <a
               href="https://www.tiktok.com/legal/page/global/bc-policy/en"
               target="_blank"
@@ -205,14 +217,19 @@ export function TikTokPublishingFields({
             </a>
           </>
         ) : null}{" "}
-        koşullarını onaylıyorum.
+        {t("terms.")}
       </label>
       {options.brandContent || options.brandOrganic ? (
-        <p>İçerik etiketi: {options.brandContent ? "Paid partnership" : "Promotional content"}</p>
+        <p>
+          {t("Content label: {p0}", {
+            p0: options.brandContent ? "Paid partnership" : "Promotional content",
+          })}
+        </p>
       ) : null}
       <small>
-        Bu seçimler kaydedilir; gönderim ayrıca kampanya onayı ve açık gönderim izni gerektirir.
-        TikTok uygulama onayı yoksa herkese açık yayın kullanılamayabilir.
+        {t(
+          "These choices are saved; sending also requires campaign approval and explicit send permission. Public posting may be unavailable without TikTok app approval.",
+        )}
       </small>
     </fieldset>
   );

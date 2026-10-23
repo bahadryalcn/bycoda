@@ -18,6 +18,9 @@ const FRAME_INTERVAL = 1000 / 30;
 const MAX_PIXEL_RATIO = 1.5;
 /** A still frame for reduced motion still shows a populated scene. */
 const STILL_TIME = 12;
+/** Seconds an idle pane keeps animating after its turn ends: the face and lips fade out
+ * (presence falls at 0.7/s, voice and energy decay at e^-2.6t), then the loop stops. */
+const SETTLE_SECONDS = 2;
 /** Presence, open mouth and energy for a still thumbnail: the face and reaction both show. */
 const STILL_SIGNAL: LiveSignal = { presence: 1, open: 0.5, energy: 0.6 };
 
@@ -83,13 +86,16 @@ function demoSpeechLength(time: number): number {
  * still frame instead of running a loop.
  *
  * `speech` is the length of the reply being streamed (-1 when idle); each new
- * burst of text moves the lips drawn into the scene.
+ * burst of text moves the lips drawn into the scene. `activity` is everything the
+ * running turn has streamed, including reasoning and tools (-1 when idle); it keeps
+ * the scene awake between replies and defaults to `speech`.
  */
 export function LiveBackgroundCanvas({
   effect,
   intensity,
   active = true,
   speech = -1,
+  activity = speech,
   demoSpeech = false,
   still = false,
   className = "",
@@ -98,6 +104,7 @@ export function LiveBackgroundCanvas({
   intensity: number;
   active?: boolean;
   speech?: number;
+  activity?: number;
   demoSpeech?: boolean;
   /** Paints one frame and never starts the loop; used for picker thumbnails. */
   still?: boolean;
@@ -108,12 +115,16 @@ export function LiveBackgroundCanvas({
   // Streamed text changes every frame; the loop reads it without restarting.
   const speechRef = useRef(speech);
   speechRef.current = speech;
+  const activityRef = useRef(activity);
+  activityRef.current = activity;
   const activeRef = useRef(active);
   activeRef.current = active;
   const updateLoopRef = useRef<(() => void) | null>(null);
+  // Nothing streaming: the loop settles and stops; work starting wakes it again.
+  const idle = !demoSpeech && speech < 0 && activity < 0;
   useEffect(() => {
     updateLoopRef.current?.();
-  }, [active]);
+  }, [active, idle]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -188,6 +199,8 @@ export function LiveBackgroundCanvas({
     let last = 0;
     let time = STILL_TIME;
     let intersects = typeof IntersectionObserver === "undefined";
+    let idleFor = 0;
+    const busy = () => demoSpeech || speechRef.current >= 0 || activityRef.current >= 0;
     // Refresh on gate notifications, not every frame (the snapshot reads storage).
     let animate = decorativeMotionEnabled();
     const signal = createLiveSignalDriver();
@@ -197,7 +210,13 @@ export function LiveBackgroundCanvas({
       const ratio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       const length = demoSpeech ? demoSpeechLength(time) : speechRef.current;
-      scene.draw(ctx, time, delta, animate ? signal.update(time, delta, length) : CLOSED_SIGNAL);
+      const work = demoSpeech ? length : activityRef.current;
+      scene.draw(
+        ctx,
+        time,
+        delta,
+        animate ? signal.update(time, delta, length, work) : CLOSED_SIGNAL,
+      );
     };
 
     const resize = () => {
@@ -215,7 +234,9 @@ export function LiveBackgroundCanvas({
       paint(animate ? 0 : STILL_TIME);
     };
 
-    const running = () => animate && activeRef.current && intersects && width > 0 && height > 0;
+    const settled = () => !busy() && idleFor >= SETTLE_SECONDS;
+    const running = () =>
+      animate && activeRef.current && intersects && width > 0 && height > 0 && !settled();
 
     const tick = (now: number) => {
       frame = 0;
@@ -226,10 +247,18 @@ export function LiveBackgroundCanvas({
       const delta = last === 0 ? 0 : Math.min((now - last) / 1000, 0.1);
       last = now;
       time += delta;
+      idleFor = busy() ? 0 : idleFor + delta;
       paint(delta);
+      // The last frame stays on screen; no frame is requested until work resumes.
+      if (settled()) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+        last = 0;
+      }
     };
 
     const start = () => {
+      if (busy()) idleFor = 0;
       if (frame !== 0 || !running()) return;
       last = 0;
       frame = requestAnimationFrame(tick);
@@ -313,10 +342,12 @@ export function LiveBackgroundLayer({
   active,
   visible = true,
   speech,
+  activity,
 }: {
   active: boolean;
   visible?: boolean;
   speech: number;
+  activity: number;
 }) {
   const effect = useLiveBackground();
   const intensity = useLiveBackgroundIntensity();
@@ -328,6 +359,7 @@ export function LiveBackgroundLayer({
       intensity={intensity}
       active={active}
       speech={speech}
+      activity={activity}
       className="absolute inset-0 -z-1"
     />
   );

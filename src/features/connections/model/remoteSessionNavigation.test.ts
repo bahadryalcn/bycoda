@@ -2,7 +2,7 @@
 import { expect, it } from "vitest";
 import { newSession } from "../../sessions/model/session";
 import { newTab, splitPane } from "../../workspace/model/layout";
-import { findRemoteSessionTab } from "./remoteSessionNavigation";
+import { findRemoteSessionTab, resolveRemoteSessionTarget } from "./remoteSessionNavigation";
 
 it("does not reopen a same-ID session from another project or machine", () => {
   const target = "remote://pc/G:/web-portal";
@@ -41,4 +41,49 @@ it("finds the selected conversation in a split pane", () => {
       id === wanted.id ? "wanted" : "other",
     ),
   ).toEqual({ tab, shellId: wanted.id });
+});
+
+it("resolves a session still being created to the shell creating it", () => {
+  const project = "remote://pc/G:/web-portal";
+  const creating = newSession("codex", project);
+  const other = newSession("codex", project);
+  const tabs = [newTab(other.id), newTab(creating.id)];
+  const sessions = [other, creating];
+  const unbound = () => undefined;
+  const createShellFor = (id: string, sameProject: (path: string) => boolean) =>
+    id === "new-host" && sameProject(project) ? creating.id : undefined;
+  expect(
+    resolveRemoteSessionTarget(tabs, sessions, project, "new-host", unbound, createShellFor),
+  ).toEqual({ tab: tabs[1], shellId: creating.id });
+  expect(
+    resolveRemoteSessionTarget(tabs, sessions, project, "unrelated", unbound, createShellFor),
+  ).toBeUndefined();
+  // A creating shell that is no longer open here resolves to nothing.
+  expect(
+    resolveRemoteSessionTarget(
+      tabs.slice(0, 1),
+      sessions,
+      project,
+      "new-host",
+      unbound,
+      createShellFor,
+    ),
+  ).toBeUndefined();
+});
+
+it("prefers the tab bound to the session over a creating shell", () => {
+  const project = "remote://pc/G:/web-portal";
+  const bound = newSession("codex", project);
+  const creating = newSession("codex", project);
+  const tabs = [newTab(bound.id), newTab(creating.id)];
+  expect(
+    resolveRemoteSessionTarget(
+      tabs,
+      [bound, creating],
+      project,
+      "host",
+      (id) => (id === bound.id ? "host" : undefined),
+      () => creating.id,
+    ),
+  ).toEqual({ tab: tabs[0], shellId: bound.id });
 });

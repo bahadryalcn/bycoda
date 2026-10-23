@@ -41,6 +41,8 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   fullWidth?: boolean;
   /** Disable label/press motion for controls that require a stable, direct DOM layout. */
   motion?: "auto" | "none";
+  /** Content alignment inside a wide control. Default `center`; use `start`/`end` instead of `text-left` or `justify-*` overrides. */
+  align?: "center" | "start" | "end";
   /** Structural item/tab content may form a record row instead of an inline action. */
   layout?: "inline" | "stacked" | "text" | "media";
 };
@@ -94,6 +96,7 @@ export function Button({
   fullWidth = false,
   motion = "auto",
   layout,
+  align,
   className,
   children,
   disabled,
@@ -195,6 +198,9 @@ export function Button({
     "data-button-layout":
       structural || variant === "link" || layout === "media" ? layout : undefined,
     "data-button-size": size,
+    "data-button-align": align && align !== "center" ? align : undefined,
+    // Controls that do not scale on press (native renderer, popup anchors) step their tone instead.
+    "data-button-press": native ? "tone" : undefined,
     onClick: guard((event: MouseEvent<HTMLButtonElement>) => {
       setHintAnchor(null);
       onClick?.(event);

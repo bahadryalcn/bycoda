@@ -63,7 +63,7 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
   const [expanded, setExpanded] = useState(false);
 
   if (!body.trim()) {
-    return <p className="text-[13px] text-(--ui-text-secondary)">{t("No description")}</p>;
+    return <p className="text-ui-secondary text-(--ui-text-secondary)">{t("No description")}</p>;
   }
   if (!excerpt.truncated) {
     return (
@@ -75,7 +75,7 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
   return (
     <section
       data-inbox-description
-      className="flex flex-col gap-2 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) px-3.5 py-3"
+      className="flex flex-col gap-2 rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) px-3.5 py-3"
     >
       {expanded ? (
         <SurfaceSelection cwd={cwd} contentVersion={body}>
@@ -83,12 +83,14 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
         </SurfaceSelection>
       ) : excerpt.text ? (
         <SurfaceSelection cwd={cwd} contentVersion={body}>
-          <p className="line-clamp-4 whitespace-pre-line text-[13px] leading-relaxed text-(--ui-text-secondary)">
+          <p className="line-clamp-4 whitespace-pre-line text-ui-secondary leading-relaxed text-(--ui-text-secondary)">
             {excerpt.text}
           </p>
         </SurfaceSelection>
       ) : (
-        <p className="text-[13px] text-(--ui-text-secondary)">{t("Description is media only")}</p>
+        <p className="text-ui-secondary text-(--ui-text-secondary)">
+          {t("Description is media only")}
+        </p>
       )}
       <Button
         variant="ghost"
@@ -98,7 +100,7 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
         className="self-start"
       >
         <ChevronDown
-          className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
+          className={`icon-sm transition-transform ${expanded ? "rotate-180" : ""}`}
           strokeWidth={1.75}
         />
         {expanded ? t("Show less") : t("Show full description")}
@@ -130,14 +132,14 @@ export function InboxPrChangesGlance({
 
   return (
     <section data-inbox-pr-glance className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 text-[12px] text-(--ui-text-secondary)">
+      <div className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
         <h2 className="text-(--ui-text-secondary)">{t("Changed files")}</h2>
         {diff ? (
           <>
             <span className="tabular-nums">
               {files.length} {files.length === 1 ? t("file") : t("files")}
             </span>
-            <span className="flex items-center gap-1.5 text-[11px] font-semibold tabular-nums">
+            <span className="flex items-center gap-1.5 text-ui-micro font-medium tabular-nums">
               <span className="text-diff-add-fg">+{formatInteger(diff.additions)}</span>
               <span className="text-diff-del-fg">-{formatInteger(diff.deletions)}</span>
             </span>
@@ -145,7 +147,7 @@ export function InboxPrChangesGlance({
         ) : null}
         {loading ? (
           <LoaderCircle
-            className="size-3 animate-spin text-(--ui-text-secondary)"
+            className="icon-xs animate-spin text-(--ui-text-secondary)"
             strokeWidth={1.75}
           />
         ) : null}
@@ -154,7 +156,7 @@ export function InboxPrChangesGlance({
             {files.length > shown.length
               ? t("View all {p0}", { p0: files.length })
               : t("View diff")}
-            <ChevronRight className="size-3.5" strokeWidth={1.75} />
+            <ChevronRight className="icon-sm" strokeWidth={1.75} />
           </Button>
         ) : null}
       </div>
@@ -164,9 +166,9 @@ export function InboxPrChangesGlance({
         </Alert>
       ) : null}
       {diff && files.length === 0 ? (
-        <p className="text-[12px] text-(--ui-text-secondary)">{t("No file changes")}</p>
+        <p className="text-ui-caption text-(--ui-text-secondary)">{t("No file changes")}</p>
       ) : shown.length > 0 ? (
-        <ul className="flex flex-col overflow-hidden rounded-lg border border-(--ui-tone-neutral-border)">
+        <ul className="flex flex-col overflow-hidden rounded-(--radius-control) border border-(--ui-tone-neutral-border)">
           {shown.map((file) => {
             const slash = file.path.lastIndexOf("/");
             const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
@@ -187,7 +189,7 @@ export function InboxPrChangesGlance({
                   className="w-full min-w-0 text-left"
                 >
                   <FileTypeIcon name={name} isDir={false} size={16} />
-                  <span className="flex min-w-0 flex-1 font-mono text-[12px]">
+                  <span className="flex min-w-0 flex-1 font-mono text-ui-caption">
                     <span className="min-w-0 truncate text-(--ui-text-secondary)">{dir}</span>
                     <span className="shrink-0 text-(--ui-text-secondary)">{name}</span>
                   </span>
@@ -199,7 +201,7 @@ export function InboxPrChangesGlance({
                     <span className="shrink-0 bg-diff-add/80" style={{ width: added }} />
                     <span className="flex-1 bg-diff-del/80" />
                   </span>
-                  <span className="flex w-20 shrink-0 items-center justify-end gap-1.5 text-[11px] font-semibold tabular-nums">
+                  <span className="flex w-20 shrink-0 items-center justify-end gap-1.5 text-ui-micro font-medium tabular-nums">
                     {file.additions > 0 ? (
                       <span className="text-diff-add-fg">+{formatInteger(file.additions)}</span>
                     ) : null}

@@ -309,11 +309,11 @@ export function ServersTerminalWorkspace({
           >
             <div className="flex h-10 min-w-0 shrink-0 items-center border-b border-stroke">
               <Button variant="ghost" iconOnly label={t("Servers")} onClick={() => setActive(null)}>
-                <ArrowLeft className="size-3.5" />
+                <ArrowLeft className="icon-sm" />
               </Button>
               <ToolHeader>
                 <div className="flex min-w-0 items-center gap-2 px-3 text-sm">
-                  <Terminal aria-hidden className="size-4 shrink-0 text-accent" />
+                  <Terminal aria-hidden className="icon-md shrink-0 text-accent" />
                   <span className="truncate">
                     {terminals.find((terminal) => terminal.id === active)?.name ??
                       t("SSH terminal")}
@@ -371,7 +371,7 @@ export function ServersTerminalWorkspace({
                       serverTerminalRestoreState.activate(terminal.restoreId);
                     }}
                   >
-                    <Terminal aria-hidden className="size-3.5 shrink-0" />
+                    <Terminal aria-hidden className="icon-sm shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{terminal.name}</span>
                   </Button>
                   <Button
@@ -388,7 +388,7 @@ export function ServersTerminalWorkspace({
                       if (active === terminal.id) setActive(null);
                     }}
                   >
-                    <X className="size-3" />
+                    <X className="icon-xs" />
                   </Button>
                 </div>
               ))}

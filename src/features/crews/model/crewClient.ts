@@ -70,7 +70,10 @@ export function useProjectCrews(cwd: string, enabled = true) {
       };
     },
     staleTime: 3000,
-    refetchInterval: 5000,
+    // Active runs change quickly. Without one, this app's own calls invalidate the
+    // query, and a slower poll still picks up runs that agents start through the host.
+    refetchInterval: (query) =>
+      query.state.data?.runs.some((run) => run.status === "active") ? 5000 : 15_000,
     retry: false,
   });
   const call = async <T = unknown>(action: string, input: Record<string, unknown>): Promise<T> => {

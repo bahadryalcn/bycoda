@@ -43,7 +43,7 @@ export function TaskAttemptHistory({
       className="space-y-2 border-t border-(--ui-tone-neutral-border) pt-3"
     >
       {stop ? (
-        <div className="space-y-1 text-[12px] text-(--ui-tone-warning-fg)">
+        <div className="space-y-1 text-ui-caption text-(--ui-tone-warning-fg)">
           <p className="font-medium">{stop}</p>
           <p className="whitespace-pre-wrap break-words">
             {canTakeOverBlockedTask(task)
@@ -65,10 +65,10 @@ export function TaskAttemptHistory({
       ) : null}
       {task.attemptHistory?.length ? (
         <>
-          <h3 className="text-[12px] font-medium text-(--ui-text-secondary)">
+          <h3 className="text-ui-caption font-medium text-(--ui-text-secondary)">
             {t("Attempt outcomes")}
           </h3>
-          <p className="text-[11px] text-(--ui-text-secondary)">
+          <p className="text-ui-micro text-(--ui-text-secondary)">
             {t(
               "Worker summaries describe what the agent reported. The review below records verification.",
             )}
@@ -100,7 +100,7 @@ export function TaskAttemptHistory({
                 </>
               ),
               actions: (
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-(--ui-tone-info-fg)">
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-ui-micro text-(--ui-tone-info-fg)">
                   {entry.workerSessionId ? (
                     <Button
                       variant="ghost"
@@ -110,7 +110,7 @@ export function TaskAttemptHistory({
                       onClick={() => onOpenSession(entry.workerSessionId!)}
                     >
                       {isOpeningSession(entry.workerSessionId) ? (
-                        <LoaderCircle className="size-3 animate-spin" />
+                        <LoaderCircle className="icon-xs animate-spin" />
                       ) : null}
                       {t("Open worker session")}
                     </Button>
@@ -124,7 +124,7 @@ export function TaskAttemptHistory({
                       onClick={() => onOpenSession(entry.reviewerSessionId)}
                     >
                       {isOpeningSession(entry.reviewerSessionId) ? (
-                        <LoaderCircle className="size-3 animate-spin" />
+                        <LoaderCircle className="icon-xs animate-spin" />
                       ) : null}
                       {t("Open review session")}
                     </Button>

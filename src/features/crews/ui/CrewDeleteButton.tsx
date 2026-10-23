@@ -24,7 +24,7 @@ export function CrewDeleteButton({
     <div className="flex flex-col gap-2">
       <ConfirmMorph
         label={t("Delete crew")}
-        icon={<Trash2 aria-hidden className="size-3.5" />}
+        icon={<Trash2 aria-hidden className="icon-sm" />}
         tone="danger"
         confirmMode="press"
         onConfirm={async () => {

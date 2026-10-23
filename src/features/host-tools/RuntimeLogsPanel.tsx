@@ -1,6 +1,9 @@
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
 import { Popover } from "../../shared/ui/Popover";
+import { DropdownMenu } from "../../shared/ui/DropdownMenu";
+import { Badge } from "../../shared/ui/Badge";
+import { Switch } from "../../shared/ui/Switch";
 import { SegmentedControl } from "../../shared/ui/SegmentedControl";
 import { Select } from "../../shared/ui/Select";
 import { SlidersHorizontal } from "../../shared/ui/icons";
@@ -25,17 +28,15 @@ import { SurfaceSelection } from "../sessions/ui/SurfaceSelection";
 import { writeTextFile } from "../../platform/tauri/fs";
 import { t, useLocale, getLocale } from "../../shared/i18n/technical";
 import {
-  ArrowDownCircle,
+  ArrowDown,
   Bot,
   Globe,
+  MoreHorizontal,
   Pause,
   Play,
   RefreshCw,
   Search,
   Terminal,
-  Trash2,
-  File,
-  Copy,
   Square,
 } from "../../shared/ui/icons";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
@@ -141,6 +142,8 @@ function ScopedRuntimeLogsPanel({
   const [sourceIds, setSourceIds] = useRetainedState<string[]>(`${stateKey}:source-ids`, []);
   const filterTrigger = useRef<HTMLButtonElement>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const moreTrigger = useRef<HTMLButtonElement>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [level, setLevel] = useRetainedState(`${stateKey}:level`, "all");
   const [grouped, setGrouped] = useRetainedState(`${stateKey}:grouped`, true);
   const [follow, setFollow] = useRetainedState(`${stateKey}:follow`, true);
@@ -430,7 +433,7 @@ function ScopedRuntimeLogsPanel({
     >
       <header className="runtime-logs-heading">
         <div className="runtime-logs-title">
-          <Terminal size={17} />
+          <Terminal className="icon-md" />
           <h3>{t("Runtime logs")}</h3>
           {hostLabel ? (
             <span className="runtime-logs-host" title={hostLabel}>
@@ -438,21 +441,28 @@ function ScopedRuntimeLogsPanel({
             </span>
           ) : null}
         </div>
-        <span
-          className="runtime-logs-state"
-          data-state={error ? "offline" : paused ? "paused" : "live"}
-          role="status"
-        >
-          {error
-            ? t("Disconnected")
-            : !started
-              ? t("Stopped")
-              : paused
-                ? t("Paused")
-                : loaded
-                  ? t("Live")
-                  : t("Connecting…")}
-        </span>
+        <div className="runtime-logs-status">
+          <span className="runtime-logs-totals">
+            <span data-level="error">{t("{p0} errors", { p0: errorCount })}</span>
+            <span data-level="warn">{t("{p0} warnings", { p0: warningCount })}</span>
+          </span>
+          <Badge
+            variant="dot"
+            size="sm"
+            tone={error ? "danger" : paused || !started ? "neutral" : loaded ? "success" : "info"}
+            role="status"
+          >
+            {error
+              ? t("Disconnected")
+              : !started
+                ? t("Stopped")
+                : paused
+                  ? t("Paused")
+                  : loaded
+                    ? t("Live")
+                    : t("Connecting…")}
+          </Badge>
+        </div>
       </header>
 
       <div className="runtime-logs-controls">
@@ -467,7 +477,7 @@ function ScopedRuntimeLogsPanel({
           aria-expanded={filtersOpen}
           onClick={() => setFiltersOpen((value) => !value)}
         >
-          <SlidersHorizontal size={15} />
+          <SlidersHorizontal className="icon-md" />
         </Button>
         {filtersOpen ? (
           <Popover
@@ -527,6 +537,11 @@ function ScopedRuntimeLogsPanel({
                   label: value === "all" ? t("All levels") : LEVEL_LABELS[value],
                 }))}
               />
+              <Switch
+                label={t("Group repeated errors")}
+                checked={grouped}
+                onCheckedChange={setGrouped}
+              />
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -541,7 +556,7 @@ function ScopedRuntimeLogsPanel({
           </Popover>
         ) : null}
         <SearchInputGroup appearance="field" className="runtime-logs-search">
-          <Search size={15} />
+          <Search className="icon-md" />
           <SearchInput
             focusOwner="group"
             type="search"
@@ -562,84 +577,78 @@ function ScopedRuntimeLogsPanel({
             onClick={inspect}
             title={t("Selected logs or visible errors are added to your draft for review.")}
           >
-            <Bot size={15} />
+            <Bot className="icon-md" />
             {t("Add to conversation")}
           </Button>
           <Button motion="none" variant="ghost" size="sm" type="button" onClick={togglePause}>
-            {paused ? <Play size={14} /> : <Pause size={14} />}
+            {paused ? <Play className="icon-sm" /> : <Pause className="icon-sm" />}
             {!started ? t("Read logs") : paused ? t("Resume") : t("Pause")}
           </Button>
           <Button
             motion="none"
             variant="ghost"
-            size="sm"
+            iconOnly
             type="button"
             disabled={busy}
             onClick={() => void read()}
-            title={t("Refresh")}
-            aria-label={t("Refresh")}
+            tooltip={t("Refresh")}
+            label={t("Refresh")}
           >
-            <RefreshCw size={14} />
-            <span className="runtime-logs-sr">{t("Refresh")}</span>
+            <RefreshCw className="icon-sm" />
           </Button>
           <Button
             motion="none"
             variant="ghost"
-            size="sm"
-            type="button"
-            onClick={clear}
-            title={t("Clear view")}
-            aria-label={t("Clear view")}
-          >
-            <Trash2 size={14} />
-            <span className="runtime-logs-sr">{t("Clear view")}</span>
-          </Button>
-          <Button
-            motion="none"
-            variant="ghost"
-            size="sm"
+            iconOnly
             type="button"
             aria-pressed={follow}
+            selected={follow}
             onClick={() => setFollow(!follow)}
-            title={t("Follow latest")}
-            aria-label={t("Follow latest")}
+            tooltip={t("Follow latest")}
+            label={t("Follow latest")}
           >
-            <ArrowDownCircle size={14} />
+            <ArrowDown className="icon-sm" />
           </Button>
           <Button
+            ref={moreTrigger}
             motion="none"
             variant="ghost"
-            size="sm"
+            iconOnly
             type="button"
-            aria-pressed={grouped}
-            onClick={() => setGrouped(!grouped)}
-            title={t("Group repeated errors")}
-            aria-label={t("Group repeated errors")}
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            tooltip={t("More actions")}
+            label={t("More actions")}
+            onClick={() => setMoreOpen((open) => !open)}
           >
-            <Copy size={14} />
+            <MoreHorizontal className="icon-sm" />
           </Button>
-          <Button
-            motion="none"
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={exporting || (!chosen.length && !filtered.length)}
-            onClick={() => void exportLogs()}
-            title={t("Export logs")}
-            aria-label={t("Export logs")}
-          >
-            <File size={14} />
-            <span className="runtime-logs-sr">{t("Export logs")}</span>
-          </Button>
+          {moreOpen ? (
+            <DropdownMenu
+              anchor={moreTrigger}
+              label={t("More actions")}
+              items={[
+                {
+                  kind: "item",
+                  id: "export",
+                  label: t("Export logs"),
+                  disabled: exporting || (!chosen.length && !filtered.length),
+                },
+                { kind: "sep" },
+                { kind: "item", id: "clear", label: t("Clear view"), danger: true },
+              ]}
+              onClose={() => setMoreOpen(false)}
+              returnFocusRef={moreTrigger}
+              onPick={(id) => {
+                setMoreOpen(false);
+                if (id === "export") void exportLogs();
+                else clear();
+              }}
+            />
+          ) : null}
         </div>
       </div>
 
-      <div className="runtime-logs-filters">
-        <span className="runtime-logs-totals">
-          <span data-level="error">{t("{p0} errors", { p0: errorCount })}</span>
-          <span data-level="warn">{t("{p0} warnings", { p0: warningCount })}</span>
-        </span>
-      </div>
       {target.kind === "project" ? (
         <section className="runtime-logs-monitor-setup" aria-label={t("Capture website logs")}>
           <form
@@ -652,7 +661,7 @@ function ScopedRuntimeLogsPanel({
               if (monitorUrl.trim()) void monitorAction("start", { url: monitorUrl.trim() });
             }}
           >
-            <Globe size={14} />
+            <Globe className="icon-sm" />
             <TextField
               hideLabel
               label={t("Website port or URL")}
@@ -673,7 +682,7 @@ function ScopedRuntimeLogsPanel({
               title={t("Open website and capture logs")}
               aria-label={t("Open website and capture logs")}
             >
-              <Play size={14} />
+              <Play className="icon-sm" />
               <span className="runtime-logs-sr">{t("Capture website logs")}</span>
             </Button>
             <Button
@@ -686,7 +695,7 @@ function ScopedRuntimeLogsPanel({
               title={t("Load monitors")}
               aria-label={t("Load monitors")}
             >
-              <RefreshCw size={14} />
+              <RefreshCw className="icon-sm" />
             </Button>
           </form>
           {monitors.length ? (
@@ -725,7 +734,7 @@ function ScopedRuntimeLogsPanel({
                     aria-label={t("Stop monitor")}
                     onClick={() => void monitorAction("stop", { id: monitor.id })}
                   >
-                    <Square size={13} />
+                    <Square className="icon-sm" />
                     <span className="runtime-logs-sr">{t("Stop monitor")}</span>
                   </Button>
                 </li>
@@ -808,8 +817,8 @@ function ScopedRuntimeLogsPanel({
             <EmptyState
               icon={
                 <>
-                  <Globe size={24} />
-                  <Terminal size={24} />
+                  <Globe className="icon-lg" />
+                  <Terminal className="icon-lg" />
                 </>
               }
               title={loaded && !buffer.entries.length ? t("Waiting for logs") : t("Runtime logs")}

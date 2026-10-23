@@ -111,10 +111,12 @@ it("automatically refreshes a recording checkpoint without presenting it as an e
       ),
     );
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("Loading changes");
+    expect(
+      container.querySelector('[role="status"]:not([class*="srOnly"])')?.textContent,
+    ).toContain("Loading changes");
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(container.querySelector("[data-session-review]")).not.toBeNull();
-    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('[role="status"]:not([class*="srOnly"])')).toBeNull();
   } finally {
     vi.useRealTimers();
   }
@@ -139,7 +141,7 @@ it("cancels recording polling when another session is displayed", async () => {
     const calls = mocks.status.mock.calls.length;
     await act(async () => vi.advanceTimersByTimeAsync(3000));
     expect(mocks.status).toHaveBeenCalledTimes(calls);
-    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('[role="status"]:not([class*="srOnly"])')).toBeNull();
   } finally {
     vi.useRealTimers();
   }
@@ -288,10 +290,8 @@ it("reports native reveal errors", async () => {
   mocks.reveal.mockRejectedValueOnce(new Error("Folder unavailable"));
   const menu = openMenu();
   await act(async () => item(menu, revealLabel).click());
-  expect(mocks.message).toHaveBeenCalledWith("Error: Folder unavailable", {
-    title: "File action failed",
-    kind: "error",
-  });
+  expect(mocks.message).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Error: Folder unavailable");
 });
 
 it.each(["md", "html", "png", "svg", "pdf"])(

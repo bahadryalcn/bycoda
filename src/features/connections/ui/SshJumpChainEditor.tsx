@@ -43,7 +43,7 @@ export function SshJumpChainEditor({
                   disabled={disabled || index === 0}
                   onClick={() => move(index, -1)}
                 >
-                  <ArrowUp className="size-3" />
+                  <ArrowUp className="icon-xs" />
                 </Button>
                 <Button
                   variant="ghost"
@@ -52,7 +52,7 @@ export function SshJumpChainEditor({
                   disabled={disabled || index === value.length - 1}
                   onClick={() => move(index, 1)}
                 >
-                  <ArrowDown className="size-3" />
+                  <ArrowDown className="icon-xs" />
                 </Button>
               </>
             ) : null}
@@ -63,7 +63,7 @@ export function SshJumpChainEditor({
               disabled={disabled}
               onClick={() => onChange(value.filter((_, i) => i !== index))}
             >
-              <X className="size-3" />
+              <X className="icon-xs" />
             </Button>
           </div>
         </div>
@@ -73,7 +73,7 @@ export function SshJumpChainEditor({
         disabled={disabled || value.length >= MAX_SSH_JUMP_HOSTS}
         onClick={() => onChange([...value, ""])}
       >
-        <Plus className="size-3" />
+        <Plus className="icon-xs" />
         {t("Add jump host")}
       </Button>
       {value.length > 1 ? (

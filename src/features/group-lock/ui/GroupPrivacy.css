@@ -21,7 +21,7 @@
   min-inline-size: 0;
   padding: 0;
   border: 1px solid var(--color-stroke);
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
   background: var(--ui-surface);
 }
 .bycoda-settings-workbench
@@ -43,7 +43,7 @@
 }
 .bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-group-content {
   border: 0;
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 var(--radius-panel) var(--radius-panel);
   background: transparent;
 }
 .bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row,
@@ -78,22 +78,23 @@
   margin: 0;
   border-block-start: 1px solid var(--color-stroke);
 }
-.bycoda-settings-workbench .group-privacy .settings-advanced > h3,
-.privacy-recovery > h3 {
+.bycoda-settings-workbench .group-privacy .settings-advanced > h3 {
   padding: 12px 16px;
   cursor: pointer;
   font-size: 12px;
   color: var(--ui-text-secondary);
 }
+/* A static subheading: nothing opens from it, so it carries no hover or press state. */
+.privacy-recovery > h3 {
+  padding: 12px 16px 4px;
+  font-size: 12px;
+  color: var(--ui-text-secondary);
+}
 @media (hover: hover) and (pointer: fine) {
-  .bycoda-settings-workbench .group-privacy .settings-advanced > h3:hover,
-  .privacy-recovery > h3:hover {
+  .bycoda-settings-workbench .group-privacy .settings-advanced > h3:hover {
     color: var(--color-content);
     background: var(--ui-surface-hover);
   }
-}
-.privacy-recovery > h3:active {
-  background: var(--ui-surface-pressed);
 }
 .privacy-heading,
 .privacy-gate-label,

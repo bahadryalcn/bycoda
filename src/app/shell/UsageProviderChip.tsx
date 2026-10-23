@@ -1,12 +1,19 @@
 import { Progress } from "../../shared/ui/Progress";
 import { TextField } from "../../shared/ui/TextField";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
-import { t, useLocale, getLocale } from "../../shared/i18n";
+import { t, useLocale, getLocale, useT } from "../../shared/i18n";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import {
+  Fragment,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import {
   clampUsedPercent,
-  formatRateLimitWindowChipLabel,
   formatResetCountdown,
   formatResetDuration,
   formatUsagePercent,
@@ -101,7 +108,7 @@ export function UsageProviderChip({
   onConsumeReset?: (creditId?: string) => Promise<CodexRateLimitResetOutcome>;
   onReconnect?: () => Promise<void>;
 }) {
-  useLocale();
+  const t = useT();
   const showRemaining = useShowRemainingUsage();
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -255,16 +262,14 @@ export function UsageProviderChip({
         ) : (
           <span className="flex min-w-0 items-center gap-2 tabular-nums">
             {windows.map((entry, index) => (
-              <span key={entry.key} className="inline-flex items-center gap-1">
-                {index > 0 ? <span className="text-(--ui-text-secondary)">·</span> : null}
-                <MiniBar
-                  usedPct={entry.window.usedPercent}
-                  label={rateLimitWindowTooltip(entry.window, now, showRemaining)}
-                />
-                <span className="text-(--ui-text-secondary)">
-                  {formatRateLimitWindowChipLabel(entry.window, now)}
-                </span>
-              </span>
+              <Fragment key={entry.key}>
+                {index > 0 ? (
+                  <span aria-hidden="true" className="text-(--ui-text-secondary)">
+                    ·
+                  </span>
+                ) : null}
+                <UsageWindowStat window={entry.window} now={now} />
+              </Fragment>
             ))}
           </span>
         )}
@@ -484,7 +489,7 @@ function AccountSwitchRow({
   accountLabel: string;
   onClick: () => void;
 }) {
-  useLocale();
+  const t = useT();
   return (
     <div className="px-2.5 pt-2.5">
       <Button
@@ -533,7 +538,7 @@ function ProviderAccountPicker({
   onManage?: () => void;
   onSelect: (accountId: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const statusId = useId();
   return (
     <div>
@@ -674,7 +679,7 @@ function SwitchSuggestion({
   now: number;
   onSwitch: () => void;
 }) {
-  useLocale();
+  const t = useT();
   return (
     <section className="mt-2 flex items-center gap-2.5 rounded-lg bg-(--ui-surface-muted) px-3 py-2.5 ring-1 ring-inset ring-(--color-stroke)">
       <div className="min-w-0 flex-1">
@@ -709,7 +714,7 @@ function AddProviderAccount({
   onAdd?: (label: string) => Promise<ProviderAccount>;
   onComplete: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const [label, setLabel] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -808,7 +813,7 @@ function UsageWindowCard({
   window: RateLimitWindow;
   now: number;
 }) {
-  useLocale();
+  const t = useT();
   const showRemaining = useShowRemainingUsage();
   const pct = clampUsedPercent(window.usedPercent);
   const remaining = 100 - pct;
@@ -884,7 +889,7 @@ function BankedResets({
   onUse: (credit: RateLimitResetCredit | undefined, rowKey: string) => void;
   canUse: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const count = limits.resetCredits?.availableCount ?? 0;
   if (count <= 0) return null;
 
@@ -990,7 +995,7 @@ function BankedResetRow({
   onCancel: () => void;
   onUse: () => void;
 }) {
-  useLocale();
+  const t = useT();
   return (
     <article className="rounded-lg border border-(--color-stroke) bg-(--ui-surface) px-2.5 py-2">
       <h4 className="text-[length:var(--ui-font-caption)] font-medium leading-4 text-(--ui-text-secondary)">
@@ -1063,7 +1068,7 @@ function BankedResetRow({
 }
 
 function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; loading: boolean }) {
-  useLocale();
+  const t = useT();
   return (
     <div
       className="flex flex-col gap-2 rounded-lg border border-dashed border-(--color-stroke) bg-(--ui-surface) px-3 py-3"
@@ -1129,21 +1134,40 @@ function UnknownUsageBar({ label, loading = false }: { label: string; loading?: 
   );
 }
 
-function MiniBar({ usedPct, label }: { usedPct: number; label: string }) {
+function UsageWindowStat({ window, now }: { window: RateLimitWindow; now: number }) {
   const showRemaining = useShowRemainingUsage();
-  const pct = clampUsedPercent(usedPct);
+  const pct = clampUsedPercent(window.usedPercent);
+  const shown = showRemaining ? 100 - pct : pct;
+  const label = `${formatWindowLabel(window.windowMinutes)} · ${rateLimitWindowTooltip(window, now, showRemaining)}`;
+  const tone = pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral";
+  // The compact meter keeps the value inside; at rest its fill is a quiet selection tone
+  // instead of the solid content colour, so ambient usage never outshines the workspace.
+  const quiet =
+    tone === "neutral"
+      ? ({
+          "--progress-fill": "var(--ui-surface-selected)",
+          "--progress-ink": "var(--color-content)",
+        } as CSSProperties)
+      : undefined;
   return (
-    <Progress
-      compact
-      showValue
-      valuePlacement="inside"
-      valueLabel={formatUsagePercent(showRemaining ? 100 - pct : pct)}
-      aria-label={label}
-      aria-valuetext={label}
-      title={label}
-      className="w-12 shrink-0"
-      value={showRemaining ? 100 - pct : pct}
-      tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
-    />
+    <span className="inline-flex items-center gap-1.5" title={label}>
+      <Progress
+        compact
+        showValue
+        valuePlacement="inside"
+        valueLabel={formatUsagePercent(shown)}
+        aria-label={label}
+        aria-valuetext={label}
+        className="w-11 shrink-0"
+        style={quiet}
+        value={shown}
+        tone={tone}
+      />
+      {window.resetsAt != null ? (
+        <span className="text-(--ui-text-secondary)">
+          {formatResetDuration(window.resetsAt - now)}
+        </span>
+      ) : null}
+    </span>
   );
 }

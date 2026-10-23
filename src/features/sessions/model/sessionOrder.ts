@@ -77,12 +77,24 @@ function storageKey(cwd: string): string | null {
   return normalizeProjectPath(cwd);
 }
 
+/** The last parsed blob: reading every project's order parses the store once. */
+let parsedStore: { raw: string; store: Record<string, unknown> } | undefined;
+
+/** A shallow copy: callers replace or delete a project's entry, never edit one in place. */
 function parseStore(): Record<string, unknown> {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(KEY) ?? "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? { ...(parsed as Record<string, unknown>) }
-      : {};
+    const raw = localStorage.getItem(KEY) ?? "{}";
+    if (parsedStore?.raw !== raw) {
+      const parsed: unknown = JSON.parse(raw);
+      parsedStore = {
+        raw,
+        store:
+          parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>)
+            : {},
+      };
+    }
+    return { ...parsedStore.store };
   } catch {
     return {};
   }

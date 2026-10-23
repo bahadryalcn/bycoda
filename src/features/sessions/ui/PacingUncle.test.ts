@@ -11,16 +11,11 @@ vi.mock("../../settings/model/decorativeMotion", () => ({
 vi.mock("./pacingUncleArt", () => ({ drawPacingUncle: state.paint }));
 let root: Root;
 let container: HTMLDivElement;
-let raf: ReturnType<typeof vi.fn>;
-let cancel: ReturnType<typeof vi.fn>;
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.motion = true;
   state.paint.mockClear();
-  raf = vi.fn(() => 42);
-  cancel = vi.fn();
-  vi.stubGlobal("requestAnimationFrame", raf);
-  vi.stubGlobal("cancelAnimationFrame", cancel);
   vi.stubGlobal("IntersectionObserver", undefined);
   vi.stubGlobal("ResizeObserver", undefined);
   vi.spyOn(document, "hidden", "get").mockReturnValue(false);
@@ -35,6 +30,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -44,34 +40,33 @@ describe("pacing uncle animation gate", () => {
     state.motion = false;
     render();
     expect(state.paint).toHaveBeenCalled();
-    expect(raf).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
   it("cancels the loop when its session becomes hidden", () => {
     render();
-    expect(raf).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(1);
     render(false);
-    expect(cancel).toHaveBeenCalledWith(42);
-    expect(raf).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
     render(true);
-    expect(raf).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(1);
   });
   it("suspends and resumes through the central motion gate", () => {
     render();
     state.motion = false;
     render();
-    expect(cancel).toHaveBeenCalledWith(42);
-    expect(raf).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
     state.motion = true;
     render();
-    expect(raf).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(1);
   });
   it("keeps the walk position when the session is hidden and shown again", () => {
     render();
-    raf.mock.calls[0][0](100);
-    raf.mock.calls[1][0](150);
+    act(() => vi.advanceTimersByTime(150));
+    const walked = state.paint.mock.lastCall?.[3] as number;
+    expect(walked).toBeGreaterThan(0);
     render(false);
-    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, 0.05);
+    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, walked);
     render(true);
-    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, 0.05);
+    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, walked);
   });
 });

@@ -1,6 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Switch } from "../../../shared/ui/Switch";
 import {
   lazy,
   Suspense,
@@ -167,7 +167,7 @@ export function OnboardingAgents({
           loading={checking}
           onClick={refresh}
         >
-          <RefreshCw className="size-4" />
+          <RefreshCw className="icon-md" />
         </Button>
       </div>
       {checking && listed.length === 0 ? <p role="status">{t("Scanning this computer…")}</p> : null}
@@ -215,11 +215,14 @@ export function OnboardingAgents({
                 </div>
               </div>
               <div className="onboarding-agent-actions">
-                <Checkbox
-                  aria-label={t("Use {p0}", { p0: HARNESS_TITLE[provider] })}
-                  checked={visible}
-                  onChange={(event) => savePickerProviderVisible(provider, event.target.checked)}
-                />
+                <label className="flex items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
+                  <Switch
+                    aria-label={t("Use {p0}", { p0: HARNESS_TITLE[provider] })}
+                    checked={visible}
+                    onCheckedChange={(next) => savePickerProviderVisible(provider, next)}
+                  />
+                  {t("Show in picker")}
+                </label>
                 {provider !== "acp" ? (
                   <ProviderBinaryControl provider={provider} onPathSaved={refresh} />
                 ) : null}
@@ -280,7 +283,7 @@ export function OnboardingAgents({
             variant="secondary"
             type="button"
           >
-            <Plus className="size-4" />
+            <Plus className="icon-md" />
             {t("Add provider")}
           </Button>
         ) : null}

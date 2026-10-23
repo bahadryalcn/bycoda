@@ -131,9 +131,9 @@ const search = async (value: string) => {
   });
 };
 
-it("opens Termius migration from the server actions menu", async () => {
+it("opens Termius migration from the Add menu", async () => {
   await render();
-  await click("More actions");
+  await click("Add");
   const action = document.querySelector<HTMLButtonElement>(
     '[role="menuitem"][aria-label="Import from Termius"]',
   );
@@ -256,12 +256,18 @@ it("selects canonical machines and delegates add, edit and reconnect to existing
   const details = container.querySelector('[aria-label="Server details"]')!;
   expect(details.textContent).toContain("2222");
   expect(details.textContent).toContain("3774");
-  await click("Edit machine");
+  await click("Server actions");
+  await act(async () => menuItem("Edit machine")!.click());
   expect(requestMachineEdit).toHaveBeenCalledWith("mac");
   await click("Reconnect");
   expect(remoteRequest).toHaveBeenCalledWith("mac", "environment.describe", {}, true);
   expect(requestMachineReconnect).not.toHaveBeenCalled();
-  await click("Add machine");
+  await click("Add");
+  await act(async () =>
+    document
+      .querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Add machine"]')!
+      .click(),
+  );
   expect(requestMachineAdd).toHaveBeenCalledOnce();
 });
 
@@ -388,7 +394,8 @@ it("edits an SSH-only endpoint with stable canonical ID and no password field", 
   vi.mocked(saveSshConnection).mockResolvedValue(sshServer);
   await render();
   await click("Personal SSH");
-  await click("Edit SSH server");
+  await click("Server actions");
+  await act(async () => menuItem("Edit SSH server")!.click());
   const dialog = document.querySelector('[role="dialog"]')!;
   expect(dialog).toBeTruthy();
   expect(dialog.querySelectorAll('input[type="password"]')).toHaveLength(0);

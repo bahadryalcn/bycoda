@@ -75,7 +75,7 @@ export function ServerActivity({
                   }
                 }}
               >
-                <Star className="size-3.5" />
+                <Star className="icon-sm" />
               </Button>
             </li>
           ))}

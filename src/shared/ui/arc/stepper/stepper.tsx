@@ -6,7 +6,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
 import { Button } from "../../Button";
-import { t, useLocale } from "../../../i18n";
+import { t, useT } from "../../../i18n";
 import { isImeComposition } from "../../../lib/keyboard";
 import styles from "./stepper.module.css";
 
@@ -278,7 +278,7 @@ export function Stepper({
   completeLabel = t("Completed"),
   className,
 }: StepperProps) {
-  useLocale();
+  const t = useT();
   const statusId = useId();
   const reduced = useReducedMotion() ?? false;
   const count = steps.length;

@@ -4,17 +4,36 @@ import type { SubmitOptions } from "../helpers/types";
 import type { OrchestrationState } from "./useOrchestrationState";
 import { createOrchestratorWorkerBindings } from "./orchestratorWorkerBindings";
 import { type WorkspaceTab } from "../../../features/workspace/model/layout";
-import { type Session, type Attachment, HARNESSES, sessionWorkCwd } from "../../../features/sessions/model/session";
+import {
+  type Attachment,
+  HARNESSES,
+  sessionWorkCwd,
+} from "../../../features/sessions/model/session";
 import { type SessionSummary } from "../../../features/sessions/data/sessionStore";
 import { type SubmissionAcceptance } from "../../model/submissionAcceptance";
-import { setSessions, sessionsRef } from "../../../features/sessions/model/sessionsStore";
-import { attachOrchestrationWorkers, consolidateOrchestrationTabs } from "../../../features/orchestration/model/orchestrationWorkspace";
+import {
+  setSessions,
+  sessionsRef,
+  subscribeShell,
+} from "../../../features/sessions/model/sessionsStore";
+import {
+  attachOrchestrationWorkers,
+  consolidateOrchestrationTabs,
+} from "../../../features/orchestration/model/orchestrationWorkspace";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
 import { modelsFor } from "../../../features/sessions/model/models";
 import { submitWithSettlement } from "../../model/managedSubmission";
 import { flushSync } from "react-dom";
-import { isLiveHarness, canSteerHarness, appendSteerUser, steerHarnessTurn, respondHarnessApproval, respondHarnessQuestion, stopHarnessSession } from "../../../integrations/harness";
+import {
+  isLiveHarness,
+  canSteerHarness,
+  appendSteerUser,
+  steerHarnessTurn,
+  respondHarnessApproval,
+  respondHarnessQuestion,
+  stopHarnessSession,
+} from "../../../integrations/harness";
 import { sessionChildHarnesses } from "../../../features/sessions/model/handoff";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -23,7 +42,6 @@ export interface OrchestratorBindingDeps {
   activeTabId: string;
   setTabs: (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => void;
   setActiveTabId: (id: string) => void;
-  sessions: Session[];
   orchestrationRuns: OrchestrationState["orchestrationRuns"];
   setHistory: Dispatch<SetStateAction<SessionSummary[]>>;
   setStoredLinkedSessions: Dispatch<SetStateAction<SessionSummary[]>>;
@@ -43,7 +61,6 @@ export function useOrchestratorBinding({
   activeTabId,
   setTabs,
   setActiveTabId,
-  sessions,
   orchestrationRuns,
   setHistory,
   setStoredLinkedSessions,
@@ -70,7 +87,12 @@ export function useOrchestratorBinding({
           harness,
           models: modelsFor(harness).map(({ id, name }) => ({ id, name })),
         })),
-      ...createOrchestratorWorkerBindings({ checkOpenWorktreeFiles, onStop, setHistory, setStoredLinkedSessions }),
+      ...createOrchestratorWorkerBindings({
+        checkOpenWorktreeFiles,
+        onStop,
+        setHistory,
+        setStoredLinkedSessions,
+      }),
       submit: (id, text, done) => {
         void submitWithSettlement({
           submit: (onSettled) => {
@@ -141,6 +163,22 @@ export function useOrchestratorBinding({
     });
   }, [checkOpenWorktreeFiles, submitSession, onStop]);
   useEffect(() => {
+    let disposed = false;
+    let scheduled = false;
+    const unsubscribe = subscribeShell(() => {
+      if (scheduled) return;
+      scheduled = true;
+      // A sync can wake workers and update sessions. Run after the current store
+      // transaction, coalescing synchronous updates before inspecting idle state.
+      queueMicrotask(() => {
+        scheduled = false;
+        if (!disposed) orchestrator.sync();
+      });
+    });
     orchestrator.sync();
-  }, [sessions]);
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, []);
 }

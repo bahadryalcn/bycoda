@@ -1,5 +1,5 @@
 import { useFollowBottom } from "../hooks/useFollowBottom";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
 import { Check, Copy, CornerDownRight, Square, X } from "../../../shared/ui/icons";
@@ -145,7 +145,7 @@ export function SubagentSheet({
   onOpenDiff?: (path: string) => void;
   relay?: SubagentRelay;
 }) {
-  useLocale();
+  const t = useT();
   const sheetRef = useRef<HTMLElement>(null);
   const command = !isSubagentBlock(block);
   const name = command ? t("Command details") : subagentName(block);
@@ -343,7 +343,7 @@ export function SubagentSheet({
 
 /** Provider-reported command data; updates from the same live block as the dock. */
 function CommandDetails({ block, cwd }: { block: Block; cwd?: string }) {
-  useLocale();
+  const t = useT();
   const command =
     block.tool?.preview?.title || block.tool?.title || block.text || toolCallLabel(block);
   const output = block.tool?.preview?.output || block.tool?.output;
@@ -384,7 +384,7 @@ function CommandDetails({ block, cwd }: { block: Block; cwd?: string }) {
 
 /** Copies the run as Markdown; the icon confirms it for a moment. */
 function CopyTranscriptButton({ block, status }: { block: Block; status: string }) {
-  useLocale();
+  const t = useT();
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const timer = useRef<number | null>(null);
   useEffect(
@@ -434,15 +434,15 @@ function CopyTranscriptButton({ block, status }: { block: Block; status: string 
 
 /** What the subagent was asked, clamped until the reader opens it. */
 function PromptCard({ prompt }: { prompt: string }) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const long = prompt.length > 360 || prompt.split("\n").length > 6;
   return (
     <section
       aria-label={t("Prompt")}
-      className="rounded-lg bg-(--ui-surface-raised) px-3 py-2 text-[13px] leading-5"
+      className="rounded-lg bg-(--ui-surface-raised) px-3 py-2 text-ui-secondary leading-5"
     >
-      <h3 className="pb-0.5 text-[11px] font-medium tracking-wide text-(--ui-text-secondary) uppercase">
+      <h3 className="pb-0.5 text-ui-micro font-medium tracking-wide text-(--ui-text-secondary) uppercase">
         {t("Prompt")}
       </h3>
       <p
@@ -518,7 +518,7 @@ function SubagentTrail({
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const scroller = useRef<HTMLDivElement>(null);
   // Follow the newest step until the reader scrolls up; scrolling back to the
   // end picks the follow up again.
@@ -578,7 +578,7 @@ function SubagentTrail({
             className="mt-1 border-t border-(--ui-tone-neutral-border) pt-2"
           >
             {failed ? (
-              <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-(--ui-tone-danger-fg)">
+              <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
                 {report}
               </pre>
             ) : (

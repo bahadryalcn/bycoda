@@ -1,6 +1,6 @@
 import { dateTimeFormat } from "../lib/intl";
 import { useSyncExternalStore } from "react";
-import english from "./locales/en.json";
+import english from "./en-overrides.json";
 
 import { isLocale, resolveLocale, type Locale, type LanguagePreference } from "./languages";
 export { LANGUAGES, isLocale, resolveLocale } from "./languages";
@@ -51,6 +51,16 @@ const loaders: Record<Exclude<Locale, "en">, () => Promise<{ default: Catalog }>
 };
 const catalogs = new Map<Locale, Catalog>([["en", english]]);
 const loads = new Map<Locale, Promise<Catalog>>();
+let sourceCatalog: Promise<Catalog> | undefined;
+/** The full identity-key catalog is only needed for native menu synchronization. */
+function loadSourceCatalog(): Promise<Catalog> {
+  return (sourceCatalog ??= import("./locales/en.json?raw")
+    .then((module) => JSON.parse(module.default) as Catalog)
+    .catch((error) => {
+      sourceCatalog = undefined;
+      throw error;
+    }));
+}
 const listeners = new Set<() => void>();
 let revision = 0;
 let request = 0;
@@ -107,9 +117,15 @@ function notify() {
   ) {
     const sentLocale = locale;
     nativeLabelsLocale = sentLocale;
-    const labels = Object.fromEntries(Object.keys(english).map((key) => [key, t(key)]));
-    void import("@tauri-apps/api/core")
-      .then(({ invoke }) => invoke("native_language_set", { labels }))
+    void Promise.all([loadSourceCatalog(), import("@tauri-apps/api/core")])
+      .then(([source, { invoke }]) => {
+        // A slower previous catalog load must not overwrite the newest language.
+        if (nativeLabelsLocale !== sentLocale) return;
+        const labels = Object.fromEntries(
+          Object.keys(source).map((key) => [key, translateAt(sentLocale, key)]),
+        );
+        return invoke("native_language_set", { labels });
+      })
       .catch((error) => {
         if (nativeLabelsLocale === sentLocale) nativeLabelsLocale = undefined;
         console.warn("Could not update native menu language", error);
@@ -184,6 +200,27 @@ export function useLocale(domain?: LanguageDomain): Locale {
   return getLocale(domain);
 }
 
+let bound: { revision: number; translate: typeof t } | undefined;
+function boundTranslator(): typeof t {
+  if (bound?.revision !== revision) {
+    const selected = locale;
+    bound = {
+      revision,
+      translate: (message, values) => translateAt(selected, message, values),
+    };
+  }
+  return bound.translate;
+}
+
+/**
+ * `t` for components compiled by React Compiler. The module `t` reads a mutable
+ * locale, so compiled text built from it would keep the old language after a live
+ * switch; this one is a new function per language, which memoized text depends on.
+ */
+export function useT(): typeof t {
+  return useSyncExternalStore(subscribeLocale, boundTranslator, boundTranslator);
+}
+
 /** Only application-owned copy may be passed here; never provider/user content. */
 export function t(message: string, values?: Record<string, unknown>): string {
   return translateAt(locale, message, values);
@@ -214,7 +251,9 @@ let sourceLookup = new Map<string, string[]>();
 export function sourceMessages(translated: string): readonly string[] {
   if (searchLocale !== locale) {
     sourceLookup = new Map();
-    for (const message of Object.keys(english)) {
+    // Non-English catalogs already carry their English source keys. Identity
+    // English text is its own search alias; the full source catalog adds nothing.
+    for (const message of Object.keys(catalogs.get(locale) ?? english)) {
       const value = t(message);
       const matches = sourceLookup.get(value) ?? [];
       matches.push(message);
@@ -222,7 +261,7 @@ export function sourceMessages(translated: string): readonly string[] {
     }
     searchLocale = locale;
   }
-  return sourceLookup.get(translated) ?? [];
+  return sourceLookup.get(translated) ?? (locale === "en" ? [translated] : []);
 }
 
 export const languageReady = Promise.all([

@@ -43,3 +43,22 @@ it("forwards the actual error surface ref so recovery can focus it without repla
     vi.unstubAllGlobals();
   }
 });
+
+it("renders the inline form with its tone icon and message", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(createElement(Alert, { tone: "warning", inline: true }, "Disk almost full")),
+    );
+    const surface = container.querySelector('[role="status"]')!;
+    expect(surface.textContent).toContain("Disk almost full");
+    expect(surface.querySelector("svg")).not.toBeNull();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

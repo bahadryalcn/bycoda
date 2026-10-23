@@ -53,7 +53,7 @@ export function ServerTerminalSession({
           {sshPort ? <span className={styles.port}>:{sshPort}</span> : null}
           {key ? (
             <span className={styles.key} title={key}>
-              <File aria-hidden className="size-3 shrink-0" />
+              <File aria-hidden className="icon-xs shrink-0" />
               <span className={styles.keyName}>{key.split(/[\\/]/).pop()}</span>
             </span>
           ) : null}

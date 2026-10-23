@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "../../../i18n";
+import { useT } from "../../../i18n";
 
 import {
   useEffect,
@@ -419,6 +419,7 @@ export function UsageMeter({
   overLabel = "Over limit",
   warnAt = 0.9,
 }: UsageMeterProps) {
+  const t = useT();
   const { reduced, hydrated } = useReducedMotionSafe();
   const root = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);

@@ -9,13 +9,16 @@ import {
   queuedHead,
   queuedMessageForSubmit,
   queuedModelTarget,
+  queuedSteerRoute,
+  queuedTargetSummary,
   reorderQueuedMessages,
   reorderSessionQueue,
   resolveFollowUpRoute,
   holdUndeliveredFollowUp,
   sentQueuedMessage,
 } from "./messageQueue";
-import { newSession, type QueuedMessage, type Session } from "./session";
+import { catalogModelsFor, defaultModelSettings, modelEffortSetting } from "./models";
+import { HARNESSES, newSession, type QueuedMessage, type Session } from "./session";
 
 function queued(id: string, text = id): QueuedMessage {
   return { id, text, attachments: [] };
@@ -97,10 +100,18 @@ it("snapshots model settings and retains them through reordering", () => {
     modelSettings: { effort: "high" },
   });
   expect(queuedMessageForSubmit(changed, "b", "steer")?.modelTarget).toEqual(modelTarget);
-  expect(queuedMessageForSubmit({ ...changed, busy: true }, "b", "steer")).toBeUndefined();
+  // An explicit Steer sends the row whatever model or provider it was saved for.
+  expect(queuedMessageForSubmit({ ...changed, busy: true }, "b", "steer")?.id).toBe("b");
+  expect(
+    queuedMessageForSubmit(
+      { ...changed, busy: true, runningModelTarget: { ...modelTarget, harness: "codex" } },
+      "b",
+      "steer",
+    )?.id,
+  ).toBe("b");
 });
 
-it("checks Steer against the running selection even after the composer changes", () => {
+it("lets Steer send rows saved for another model or provider", () => {
   const modelTarget = queuedModelTarget(
     chat({ model: "running", modelSettings: { effort: "high" } }),
   );
@@ -118,7 +129,75 @@ it("checks Steer against the running selection even after the composer changes",
     ],
   });
   expect(queuedMessageForSubmit(session, "a", "steer")?.id).toBe("a");
-  expect(queuedMessageForSubmit(session, "b", "steer")).toBeUndefined();
+  expect(queuedMessageForSubmit(session, "b", "steer")?.id).toBe("b");
+  const otherProvider = {
+    ...queued("c"),
+    modelTarget: { harness: "codex" as const, model: "gpt", modelSettings: {} },
+  };
+  expect(
+    queuedMessageForSubmit(
+      { ...session, queuedMessages: [...session.queuedMessages!, otherProvider] },
+      "c",
+      "steer",
+    )?.id,
+  ).toBe("c");
+});
+
+it("treats a selection with its defaults filled in as the same Steer target", () => {
+  const model = catalogModelsFor("claude").find((entry) =>
+    entry.settings?.some((setting) => setting.options.length > 1),
+  );
+  if (!model) throw new Error("expected a Claude model with a choice setting");
+  const defaults = defaultModelSettings(model);
+  const running = { harness: "claude" as const, model: model.id, modelSettings: defaults };
+  const session = chat({
+    busy: true,
+    model: model.id,
+    modelSettings: defaults,
+    runningModelTarget: running,
+    queuedMessages: [{ ...queued("a"), modelTarget: { ...running, modelSettings: {} } }],
+  });
+  expect(queuedSteerRoute(session, session.queuedMessages![0], false)).toBe("join");
+  expect(queuedMessageForSubmit(session, "a", "steer")?.id).toBe("a");
+  const setting = model.settings!.find((entry) => entry.options.length > 1)!;
+  const changed = setting.options.find((option) => option.value !== defaults[setting.id])!.value;
+  const differing = {
+    ...queued("b"),
+    modelTarget: { ...running, modelSettings: { ...defaults, [setting.id]: changed } },
+  };
+  expect(queuedSteerRoute(session, differing, false)).toBe("restart");
+  expect(queuedSteerRoute(session, differing, true)).toBe("join");
+  expect(queuedSteerRoute({ ...session, busy: false }, differing, false)).toBe("join");
+});
+
+it("routes Steer by the provider and model a row was queued for", () => {
+  const running = { harness: "claude" as const, model: "claude:opus", modelSettings: {} };
+  const session = chat({ busy: true, runningModelTarget: running });
+  const row = (modelTarget: QueuedMessage["modelTarget"]) => ({ ...queued("x"), modelTarget });
+  expect(queuedSteerRoute(session, row(undefined), false)).toBe("join");
+  expect(queuedSteerRoute(session, row(running), false)).toBe("join");
+  expect(queuedSteerRoute(session, row({ ...running, model: "claude:sonnet" }), true)).toBe(
+    "restart",
+  );
+  expect(
+    queuedSteerRoute(session, row({ harness: "codex", model: "gpt", modelSettings: {} }), true),
+  ).toBe("switch");
+});
+
+it("summarizes the model and effort a row was queued for", () => {
+  const model = HARNESSES.flatMap((harness) => catalogModelsFor(harness)).find((entry) =>
+    modelEffortSetting(entry),
+  );
+  if (!model) throw new Error("expected a catalog model with an effort setting");
+  const effort = modelEffortSetting(model)!;
+  const choice = effort.options.at(-1)!;
+  expect(
+    queuedTargetSummary({
+      harness: model.harness,
+      model: model.id,
+      modelSettings: { [effort.id]: choice.value },
+    }),
+  ).toEqual({ model: model.name, effort: choice.label });
 });
 
 describe("queuedHead", () => {
@@ -404,10 +483,6 @@ it("waits while the host runs the conversation or its turn has not arrived here"
     queuedMessages: [queued("next")],
   });
   expect(canDispatchQueuedHead(session)).toBe(true);
-  expect(canDispatchQueuedHead({ ...session, continuingElsewhere: true })).toBe(
-    false,
-  );
-  expect(canDispatchQueuedHead({ ...session, adoptedSyncConflict: true })).toBe(
-    false,
-  );
+  expect(canDispatchQueuedHead({ ...session, continuingElsewhere: true })).toBe(false);
+  expect(canDispatchQueuedHead({ ...session, adoptedSyncConflict: true })).toBe(false);
 });

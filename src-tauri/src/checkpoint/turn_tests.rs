@@ -533,3 +533,70 @@ fn recovery_wait_gives_up_after_its_bound_and_proceeds() {
         .wait_for("session", &[], std::time::Duration::from_millis(100));
     assert!(started.elapsed() >= std::time::Duration::from_millis(100));
 }
+
+fn bycoda_refs(repo: &Path) -> Vec<String> {
+    git_output(
+        repo,
+        &["for-each-ref", "--format=%(refname)", "refs/bycoda"],
+    )
+    .map(|bytes| {
+        String::from_utf8_lossy(&bytes)
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+#[test]
+#[ignore = "perf P8: prune_orphans must also delete refs/bycoda/checkpoints/<session>/ of the pruned session"]
+fn prune_orphans_deletes_the_checkpoint_refs_of_a_deleted_session() {
+    let repo = tmp("prune-orphan-refs");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    for session in ["kept", "deleted"] {
+        store.begin_turn(session, &cwd, "one").unwrap();
+        std::fs::write(repo.0.join("a.txt"), format!("{session}\n")).unwrap();
+        store.finish_turn(session, &cwd, "one", false).unwrap();
+    }
+    let refs = bycoda_refs(&repo.0);
+    assert!(refs.iter().any(|r| r.contains("/deleted/")), "{refs:?}");
+    let known: HashSet<String> = ["kept".to_string()].into();
+    assert_eq!(store.prune_orphans(&known, std::time::Duration::ZERO), 1);
+    let refs = bycoda_refs(&repo.0);
+    assert!(
+        refs.iter().any(|r| r.contains("/kept/")),
+        "a live session keeps its refs: {refs:?}"
+    );
+    assert!(
+        !refs.iter().any(|r| r.contains("/deleted/")),
+        "refs of a pruned session must go with its snapshots: {refs:?}"
+    );
+}
+
+#[test]
+#[ignore = "perf P8: cap or prune checkpoint refs per session instead of a before/after pair per turn forever"]
+fn checkpoint_refs_do_not_grow_with_every_turn_of_a_session() {
+    let repo = tmp("refs-bounded");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    let turns = 6;
+    for turn in 1..=turns {
+        let id = format!("turn-{turn}");
+        store.begin_turn("session", &cwd, &id).unwrap();
+        std::fs::write(repo.0.join("a.txt"), format!("edit {turn}\n")).unwrap();
+        store.finish_turn("session", &cwd, &id, false).unwrap();
+    }
+    assert_eq!(
+        relatives(&store.status("session", &cwd).unwrap()),
+        vec!["a.txt"]
+    );
+    let refs = bycoda_refs(&repo.0);
+    assert!(
+        refs.len() < turns * 2,
+        "{} refs after {turns} turns",
+        refs.len()
+    );
+}

@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { shallowArrayEqual } from "../model/stableBlocks";
@@ -14,7 +15,7 @@ import type { TranscriptSelection } from "../model/transcriptSelection";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   ArrowUp,
@@ -27,6 +28,7 @@ import {
   MessageMultiple,
   Replace,
   Minus,
+  MoreHorizontal,
   Pencil,
   PenLine,
   Undo2,
@@ -80,6 +82,7 @@ import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { TerminalSpinner } from "./TerminalSpinner";
 import { Popover } from "../../../shared/ui/Popover";
 import { Button } from "../../../shared/ui/Button";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import {
   ExpandingButtonGroup,
   type ExpandingButtonGroupItem,
@@ -324,7 +327,7 @@ function AgentTranscriptComponent({
   onScrollerChange,
   managed = false,
 }: Props) {
-  useLocale();
+  const t = useT();
   const translationContext = useMemo(
     () => (cwd && harness ? { cwd, harness, model, modelSettings, providerAccountId } : undefined),
     [cwd, harness, model, modelSettings, providerAccountId],
@@ -498,6 +501,12 @@ function AgentTranscriptComponent({
         viewport: el.clientHeight,
       };
       if (!retention || restoringCheckpoint.current || !el.isConnected || !el.clientHeight) return;
+      // Following the end restores by pinning to the bottom; skip the per-turn
+      // layout reads on every streamed resize while that is all a restore needs.
+      if (stickToBottom.current) {
+        retention.update({ scrollTop: el.scrollTop, bottomFollow: true });
+        return;
+      }
       const top = el.getBoundingClientRect().top;
       const anchor = [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
         (node) => node.getBoundingClientRect().bottom > top,
@@ -1056,7 +1065,7 @@ function AgentTranscriptComponent({
             showTranslation(event.key === "ArrowDown");
           }
         }}
-        className="agent-transcript h-full overflow-y-auto overscroll-none [overflow-anchor:none] font-mono text-[13px] leading-5"
+        className="agent-transcript h-full overflow-y-auto overscroll-none [overflow-anchor:none] font-mono text-ui-secondary leading-5"
       >
         {activeVersionValid ? (
           <div className="sticky inset-bs-0 z-10 flex flex-wrap items-center justify-end gap-2 bg-(--ui-surface) px-4 py-2 font-sans text-xs text-(--ui-text-secondary)">
@@ -1359,7 +1368,7 @@ const Turn = memo(function Turn({
   canRewindMessage,
   onRewindMessage,
 }: TurnProps) {
-  useLocale();
+  const t = useT();
   const userBlock = turnUserBlock(turn, managed);
   const durationMs = userBlock?.durationMs;
   const proposals = turn.filter((block) => block.orchestration);
@@ -1647,7 +1656,7 @@ function sameTurn(a: TurnProps, b: TurnProps): boolean {
 
 /** Placeholder for private reasoning before the first assistant text arrives. */
 function InitialThinking({ live, embedded = false }: { live: boolean; embedded?: boolean }) {
-  useLocale();
+  const t = useT();
   return (
     <div
       className={`min-w-0 pt-3 pb-1 font-sans text-sm text-(--ui-text-secondary) ${embedded ? "" : "px-4"}`}
@@ -1678,7 +1687,7 @@ function LiveFoldTitle({
   backgroundAgents?: number;
   modelName?: string;
 }) {
-  useLocale();
+  const t = useT();
   const elapsedMs = useElapsedFrom(startedAt, paused);
   // Only commands are left (a dev server, a watcher): the agent is done, so
   // the line stops shimmering and counting rather than looking busy forever.
@@ -1756,12 +1765,12 @@ function TurnDuration({
   onSecondOpinion?: (target: ModelTarget) => void;
   onHandoff?: (target: ModelTarget) => void;
 }) {
-  useLocale();
+  const t = useT();
   const label = formatWorkingDuration(elapsedMs, modelName, true);
   const hasOutput = hasTurnCopyText(turn);
   const getText = useCallback(() => turnCopyText(turn), [turn]);
   const dot = (
-    <span aria-hidden className="size-[3px] shrink-0 rounded-full bg-(--ui-surface-raised)" />
+    <span aria-hidden className="size-[3px] shrink-0 rounded-full bg-(--ui-tone-neutral-border)" />
   );
   return (
     <div
@@ -1864,7 +1873,7 @@ function TurnMetricsBadge({
   elapsedMs: number | null;
   renderTrigger?: (props: ExpandingButtonGroupTriggerProps) => ReactNode;
 }) {
-  useLocale();
+  const t = useT();
   const root = useRef<HTMLDivElement>(null);
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
   const [hovered, setHovered] = useState(false);
@@ -1939,9 +1948,9 @@ function TurnMetricsBadge({
           }
           className="w-max px-2.5 py-1.5"
         >
-          <div className="text-[12px] leading-4 text-(--ui-tone-neutral-fg)">{headline}</div>
+          <div className="text-ui-caption leading-4 text-(--ui-tone-neutral-fg)">{headline}</div>
           {detail ? (
-            <div className="text-[11px] leading-4 text-(--ui-text-secondary)">{detail}</div>
+            <div className="text-ui-micro leading-4 text-(--ui-text-secondary)">{detail}</div>
           ) : null}
         </Popover>
       ) : null}
@@ -1976,7 +1985,7 @@ function TurnOutputActions({
   onSave?: (text: string) => void | Promise<void>;
   extraItems?: ExpandingButtonGroupItem[];
 }) {
-  useLocale();
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   useEffect(() => setError(null), [getText]);
 
@@ -2056,7 +2065,7 @@ function CopyTurnButton({
   label?: string;
   showLabel?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
@@ -2129,7 +2138,7 @@ function SaveNoteButton({
   onSave: (text: string) => void | Promise<void>;
   showLabel?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
@@ -2187,32 +2196,86 @@ function SaveNoteButton({
   );
 }
 
-function EditLastTurnButton({
+function MessageEditMenu({
   onEdit,
   editing = false,
+  onRewind,
+  dismiss,
 }: {
-  onEdit: () => void;
+  onEdit?: () => void;
   editing?: boolean;
+  onRewind?: (mode: "edit" | "return") => void;
+  dismiss?: () => void;
 }) {
-  useLocale();
-  const label = editing ? "Cancel edit" : "Edit and resend";
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const label = t("Message actions");
+  const items: DropdownMenuItem[] = [
+    ...(onEdit
+      ? [
+          {
+            kind: "item",
+            id: "resend",
+            label: editing ? t("Cancel edit") : t("Edit and resend"),
+            icon: <Pencil />,
+          } satisfies DropdownMenuItem,
+        ]
+      : []),
+    ...(onRewind
+      ? [
+          {
+            kind: "item",
+            id: "edit",
+            label: t("Edit this message"),
+            icon: <Pencil />,
+          } satisfies DropdownMenuItem,
+          {
+            kind: "item",
+            id: "return",
+            label: t("Return before this message"),
+            icon: <Undo2 />,
+          } satisfies DropdownMenuItem,
+        ]
+      : []),
+  ];
   return (
-    <Button
-      motion="none"
-      iconOnly
-      label={label}
-      variant="ghost"
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-pressed={editing}
-      onClick={(event) => {
-        event.stopPropagation();
-        onEdit();
-      }}
-    >
-      <Pencil className="size-3.5" strokeWidth={1.75} />
-    </Button>
+    <>
+      <Button
+        ref={trigger}
+        motion="none"
+        iconOnly
+        label={label}
+        tooltip={label}
+        variant="ghost"
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+      >
+        <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+      </Button>
+      {open ? (
+        <DropdownMenu
+          anchor={trigger}
+          label={label}
+          items={items}
+          returnFocusRef={trigger}
+          onClose={() => setOpen(false)}
+          onPick={(id) => {
+            setOpen(false);
+            if (id === "resend") {
+              dismiss?.();
+              onEdit?.();
+            } else if (id === "edit") onRewind?.("edit");
+            else if (id === "return") onRewind?.("return");
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -2269,7 +2332,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   onRewindMessage?: (block: Block, action: "edit" | "return") => void;
   editing?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   if (block.role === "user") {
     if (block.questionAnswers?.length) {
       return (
@@ -2453,7 +2516,7 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
     <div className={`${embedded ? "" : "px-4"} py-2`}>
       <div
         data-shell-run
-        className="overflow-hidden rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid)/[0.03] font-mono text-[12px] leading-5"
+        className="overflow-hidden rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid)/[0.03] font-mono text-ui-caption leading-5"
       >
         <div className="flex min-w-0 items-start gap-2 px-3 py-1.5">
           <Terminal
@@ -2465,10 +2528,10 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
             {run.command}
           </span>
           {run.running ? (
-            <TerminalSpinner className="inline-block w-3.5 shrink-0 select-none text-center text-[11px] text-(--ui-text-secondary)" />
+            <TerminalSpinner className="inline-block w-3.5 shrink-0 select-none text-center text-ui-micro text-(--ui-text-secondary)" />
           ) : status ? (
             <span
-              className={`shrink-0 text-[11px] ${run.timedOut ? "text-(--ui-tone-warning-fg)" : "text-(--ui-tone-danger-fg)"}`}
+              className={`shrink-0 text-ui-micro ${run.timedOut ? "text-(--ui-tone-warning-fg)" : "text-(--ui-tone-danger-fg)"}`}
             >
               {status}
             </span>
@@ -2513,11 +2576,10 @@ function UserMessageBlock({
   onRemoveDraft?: (block: Block) => boolean | void;
   busy?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const [expanded, setExpanded] = useRetainedDisclosure<boolean>(`prompt:${block.id}`, false);
   const [ciOpen, setCiOpen] = useRetainedDisclosure<boolean>(`ci:${block.id}`, false);
   const [overflows, setOverflows] = useState(false);
-  const [singleLine, setSingleLine] = useState(false);
   const textRef = useRef<HTMLElement>(null);
   const card = block.secondOpinion;
   const note = block.noteCard;
@@ -2563,54 +2625,24 @@ function UserMessageBlock({
     const used = new Set(findTokens(text, files).map((match) => match.index));
     return tokens.map((token, index) => (used.has(index) ? token : undefined));
   }, [block.attachments, text]);
-  const textOnly =
-    Boolean(text) &&
-    !block.draft &&
-    !block.attachments?.length &&
-    !card &&
-    !note &&
-    !block.ciContext;
-
-  const roundsSingleLine = textOnly;
-
   useLayoutEffect(() => {
     const el = textRef.current;
     if (!el || !text) {
       setOverflows(false);
-      setSingleLine(false);
       return;
     }
 
-    // Every user message carries one of these observers, so the callback runs
-    // once per message whenever the transcript reflows. `getComputedStyle`
-    // forces a style recalculation on each call and the line height only moves
-    // with the font or the UI scale — never with a resize — so it is resolved
-    // once here rather than on every delivery.
-    let lineHeight = 0;
     const measure = () => {
       if (!expanded) {
         setOverflows(el.scrollHeight > el.clientHeight + 1);
       }
-      if (!roundsSingleLine) {
-        setSingleLine(false);
-        return;
-      }
-      // Pooled or offscreen turns can measure as zero before they are laid out.
-      if (el.clientWidth === 0) {
-        setSingleLine(false);
-        return;
-      }
-      if (!lineHeight) {
-        lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight);
-      }
-      setSingleLine(Number.isFinite(lineHeight) && el.scrollHeight <= lineHeight + 1);
     };
 
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [text, roundsSingleLine, expanded, visible, compactText]);
+  }, [text, expanded, visible, compactText]);
 
   const toggle = () => {
     if (overflows) setExpanded((value) => !value);
@@ -2629,44 +2661,13 @@ function UserMessageBlock({
       {text && onSaveNote ? (
         <SaveNoteButton text={text} onSave={onSaveNote} showLabel={showLabels} />
       ) : null}
-      {onEdit ? (
-        <EditLastTurnButton
-          onEdit={() => {
-            dismiss?.();
-            onEdit();
-          }}
+      {onEdit || (onRewind && canRewind && !block.draft && !block.internal) ? (
+        <MessageEditMenu
+          onEdit={onEdit}
           editing={editing}
+          dismiss={dismiss}
+          onRewind={onRewind && canRewind && !block.draft && !block.internal ? onRewind : undefined}
         />
-      ) : null}
-      {onRewind && canRewind && !block.draft && !block.internal ? (
-        <>
-          <Button
-            motion="none"
-            variant="ghost"
-            size="sm"
-            startIcon={<Pencil className="size-3.5" />}
-            tooltip={t("Edit this message")}
-            onClick={(event) => {
-              event.stopPropagation();
-              onRewind("edit");
-            }}
-          >
-            {t("Edit")}
-          </Button>
-          <Button
-            motion="none"
-            variant="ghost"
-            size="sm"
-            startIcon={<Undo2 className="size-3.5" />}
-            tooltip={t("Return before this message")}
-            onClick={(event) => {
-              event.stopPropagation();
-              onRewind("return");
-            }}
-          >
-            {t("Return before")}
-          </Button>
-        </>
       ) : null}
       {block.startedAt != null ? (
         <Timestamp
@@ -2691,15 +2692,15 @@ function UserMessageBlock({
           data-bycoda={bycoda ? "true" : undefined}
           className={`user-message-bubble relative min-w-0 border border-(--color-stroke) px-3 py-2 font-sans text-(--ui-tone-neutral-fg) transition-[background-color] duration-200 ${
             block.draft
-              ? "border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
+              ? "border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
               : "bg-(--ui-surface)"
-          } ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} ${singleLine ? "rounded-full" : "rounded-xl"}`}
+          } ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-xl`}
           style={{ zIndex: stickyIndex }}
         >
           {block.turnOutcome === "stopped" ? (
-            <span className="mb-1 inline-flex items-center rounded-md bg-[var(--ui-surface)] px-2 py-0.5 text-xs text-[var(--ui-text-secondary)]">
+            <Badge tone="neutral" className="mb-1">
               {t("Stopped by you")}
-            </span>
+            </Badge>
           ) : null}
           {block.attachments?.length ? (
             <div
@@ -2783,13 +2784,13 @@ function UserMessageBlock({
               <p className="mt-2 text-xs text-(--ui-text-secondary)">
                 {t("CI instructions and failure details included with this request.")}
               </p>
-              <pre className="mt-2 max-h-72 min-w-0 overflow-auto overscroll-contain rounded-md bg-(--ui-surface-raised) p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words text-(--ui-text-secondary)">
+              <pre className="mt-2 max-h-72 min-w-0 overflow-auto overscroll-contain rounded-md bg-(--ui-surface-raised) p-2.5 font-mono text-ui-micro leading-relaxed whitespace-pre-wrap break-words text-(--ui-text-secondary)">
                 {block.ciContext}
               </pre>
             </details>
           ) : null}
           {block.draft ? (
-            <div className="mt-2 flex items-center justify-between gap-4 border-t border-dashed border-(--ui-tone-neutral-border) pt-2">
+            <div className="mt-2 flex items-center justify-between gap-4 border-t border-(--color-stroke) pt-2">
               <span
                 className="flex items-center gap-1.5 text-xs text-(--ui-text-secondary)"
                 role={delivery ? "status" : undefined}
@@ -2933,7 +2934,7 @@ function WorkFoldLine({
   open: boolean;
   onToggle: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const icon = (
     <span className="relative flex size-3.5 shrink-0 items-center justify-center">
       {open ? (
@@ -2946,19 +2947,10 @@ function WorkFoldLine({
       ) : (
         <>
           {harness ? (
-            <HarnessIcon
-              harness={harness}
-              className={`size-3.5 shrink-0 ${expandable ? "group-hover:opacity-0" : ""}`}
-            />
+            <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
           ) : (
-            <ActivityPhaseIcon kind={kind} className={expandable ? "group-hover:opacity-0" : ""} />
+            <ActivityPhaseIcon kind={kind} />
           )}
-          {expandable ? (
-            <ChevronRight
-              className="absolute size-3.5 text-(--ui-text-secondary) opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-              strokeWidth={1.75}
-            />
-          ) : null}
         </>
       )}
     </span>
@@ -3001,6 +2993,9 @@ function WorkFoldLine({
     >
       {icon}
       {label}
+      {open ? null : (
+        <ChevronRight className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+      )}
     </Button>
   );
 }
@@ -3166,7 +3161,7 @@ function ActivityPhaseGroup({
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const [override, setOverride] = useRetainedDisclosure<boolean | null>(`phase:${phase.id}`, null);
   const waiting = phase.steps.some(needsApproval);
   const needsAttention =
@@ -3518,7 +3513,7 @@ function SubagentPanel({
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const name = subagentName(block);
   const brief = subagentBrief(block);
   const model = subagentModelName(block);
@@ -3553,7 +3548,7 @@ function SubagentPanel({
         </span>
       )}
       {model || status || block.agentRun?.startedAt !== undefined ? (
-        <span className="flex min-w-0 max-w-[55%] shrink-0 items-baseline gap-2 font-sans text-[12px] text-(--ui-text-secondary)">
+        <span className="flex min-w-0 max-w-[55%] shrink-0 items-baseline gap-2 font-sans text-ui-caption text-(--ui-text-secondary)">
           {model ? (
             <span className="truncate" title={t("Model: {p0}", { p0: model })}>
               {model}
@@ -3651,7 +3646,7 @@ function SubagentPanel({
             {report ? (
               <div className="zen-phase-step py-1">
                 {failed ? (
-                  <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-(--ui-tone-danger-fg)">
+                  <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
                     {report}
                   </pre>
                 ) : (
@@ -3834,7 +3829,7 @@ function ActivityStatusRow({ block }: { block: Block }) {
  * you a note you wanted to read.
  */
 function ActivityInterjectionRow({ block }: { block: Block }) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useRetainedDisclosure<boolean>(
     `ActivityInterjectionRow:${block.id}`,
     false,
@@ -3847,7 +3842,7 @@ function ActivityInterjectionRow({ block }: { block: Block }) {
     <span className="min-w-0 flex-1 truncate font-sans text-sm">
       <span className="text-(--ui-text-secondary)">{chrome.label}</span>
       {chrome.severityText ? (
-        <span className={`text-[11px] ${chrome.severityClass}`}> {chrome.severityText}</span>
+        <span className={`text-ui-micro ${chrome.severityClass}`}> {chrome.severityText}</span>
       ) : null}
       {summary ? (
         <span className="text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
@@ -3912,7 +3907,7 @@ export function ActivityThinkingRow({
   bare?: boolean;
   onOpenFile?: (path: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useRetainedDisclosure<boolean>(`ActivityThinkingRow:${block.id}`, false);
   const text = open ? t("Thinking…") : proseSummary(block.text) || t("Thinking…");
   // In a group the rail is the bullet, so there is nothing to breathe while
@@ -3993,7 +3988,7 @@ function ActivityNoteRow({
   expandable?: boolean;
   onOpenFile?: (path: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useRetainedDisclosure<boolean>(`ActivityNoteRow:${block.id}`, false);
   const text = proseSummary(block.text);
   const icon = bare ? null : (
@@ -4057,7 +4052,7 @@ function ActivityToolRow({
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const [errorOpen, setErrorOpen] = useRetainedDisclosure<boolean>(
     `ActivityToolRow:${block.id}`,
     false,
@@ -4121,7 +4116,7 @@ function ActivityToolRow({
             className="-m-1 shrink-0"
           >
             {block.tool?.preview?.kind === "write" && !errorDetail ? (
-              <span className="text-[11px] text-(--ui-text-secondary)">{t("Changes")}</span>
+              <span className="text-ui-micro text-(--ui-text-secondary)">{t("Changes")}</span>
             ) : null}
             <ChevronRight
               className={`size-3.5 transition-transform ${
@@ -4166,7 +4161,7 @@ function BycodaCallRow({
   call: BycodaToolCall;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
 }) {
-  useLocale();
+  const t = useT();
   const state = toolCallState(block);
   const [errorOpen, setErrorOpen] = useRetainedDisclosure<boolean>(
     `BycodaCallRow:${block.id}`,
@@ -4185,7 +4180,7 @@ function BycodaCallRow({
         {verb}
       </span>
       <span
-        className={`flex min-w-0 max-w-full items-center gap-1 rounded bg-(--ui-surface-raised) px-1 font-mono text-[13px] ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+        className={`flex min-w-0 max-w-full items-center gap-1 rounded bg-(--ui-surface-raised) px-1 font-mono text-ui-secondary ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
         title={command}
       >
         <BycodaMark className="size-3.5" />
@@ -4229,7 +4224,7 @@ function BycodaCallRow({
       )}
       {errorOpen && hasResult ? <ToolInspectionPanel block={block} /> : null}
       {pendingApproval ? (
-        <pre className="max-h-32 min-w-0 overflow-auto whitespace-pre-wrap break-all py-1 pl-5 font-mono text-[12px] leading-5 text-(--ui-text-secondary)">
+        <pre className="max-h-32 min-w-0 overflow-auto whitespace-pre-wrap break-all py-1 pl-5 font-mono text-ui-caption leading-5 text-(--ui-text-secondary)">
           {call.command}
         </pre>
       ) : null}
@@ -4287,7 +4282,7 @@ function ToolCall({
   onOpenDiff?: (path: string) => void;
   embedded?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useRetainedDisclosure<boolean>(`ToolCall:${block.id}`, false);
   const preview = block.tool?.preview;
   const label = toolCallLabel(block, cwd);
@@ -4398,7 +4393,7 @@ function ToolCall({
         </div>
       )}
       {open && expandable ? (
-        <pre className="mt-1.5 min-w-0 whitespace-pre-wrap break-words px-2.5 font-mono text-[12px] leading-5 text-(--ui-text-secondary)">
+        <pre className="mt-1.5 min-w-0 whitespace-pre-wrap break-words px-2.5 font-mono text-ui-caption leading-5 text-(--ui-text-secondary)">
           {expanded}
         </pre>
       ) : null}
@@ -4440,7 +4435,7 @@ function ToolCallSummary({
   if (!action || !target) {
     return (
       <span
-        className={`min-w-0 flex-1 ${wrap ? "tool-command-label" : "truncate"} font-mono text-[13px] ${
+        className={`min-w-0 flex-1 ${wrap ? "tool-command-label" : "truncate"} font-mono text-ui-secondary ${
           failed
             ? "text-(--ui-tone-danger-fg)"
             : chip
@@ -4469,7 +4464,7 @@ function ToolCallSummary({
       : "text-(--ui-text-secondary)";
 
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[13px]">
+    <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-ui-secondary">
       <span className={`shrink-0 font-sans text-sm ${actionTone}`}>{action}</span>
       {isFile ? (
         canPreview ? (
@@ -4549,14 +4544,14 @@ function ApprovalControls({
   block: Block;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
 }) {
-  useLocale();
+  const t = useT();
   const approval = block.approval;
   if (!approval || approval.decided || !onApproval) return null;
   return (
     <div className="mt-1.5 flex gap-2">
       <Button
         motion="none"
-        variant="ghost"
+        variant="primary"
         type="button"
 
         onClick={() => onApproval(approval.requestId, "allow")}
@@ -4566,6 +4561,7 @@ function ApprovalControls({
       <Button
         motion="none"
         variant="ghost"
+        tone="danger"
         type="button"
 
         onClick={() => onApproval(approval.requestId, "deny")}
@@ -4577,7 +4573,7 @@ function ApprovalControls({
 }
 
 function HandoffDivider({ block }: { block: Block }) {
-  useLocale();
+  const t = useT();
   const meta = block.handoff;
   if (!meta) return null;
 
@@ -4587,7 +4583,7 @@ function HandoffDivider({ block }: { block: Block }) {
   return (
     <div className="px-4 py-5">
       <div className="flex items-center gap-3">
-        <div className="h-px min-w-4 flex-1 bg-(--ui-surface-raised)" />
+        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
         <div
           role="separator"
           aria-label={
@@ -4595,11 +4591,11 @@ function HandoffDivider({ block }: { block: Block }) {
               ? t("Preparing a handoff to {p0}", { p0: HARNESS_TITLE[meta.to] })
               : t("Continued with {p0}", { p0: label })
           }
-          className="flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-[12px] text-(--ui-text-secondary)"
+          className="flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-ui-caption text-(--ui-text-secondary)"
         >
           {preparing ? (
             <>
-              <TerminalSpinner className="inline-block w-3.5 shrink-0 select-none text-center text-[11px] leading-none text-(--ui-text-secondary)" />
+              <TerminalSpinner className="inline-block w-3.5 shrink-0 select-none text-center text-ui-micro leading-none text-(--ui-text-secondary)" />
               <Shimmer duration={1.4}>{label}</Shimmer>
             </>
           ) : (
@@ -4608,7 +4604,7 @@ function HandoffDivider({ block }: { block: Block }) {
             </>
           )}
         </div>
-        <div className="h-px min-w-4 flex-1 bg-(--ui-surface-raised)" />
+        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
       </div>
     </div>
   );
@@ -4645,12 +4641,12 @@ function interjectionChrome(meta: InterjectionMeta): {
 
 /** The advisory body under an interjection, wherever the note is surfaced. */
 const INTERJECTION_BODY =
-  "min-w-0 whitespace-pre-wrap break-words font-sans text-[12.5px] leading-5 text-(--ui-text-secondary)";
+  "min-w-0 whitespace-pre-wrap break-words font-sans text-ui-secondary leading-5 text-(--ui-text-secondary)";
 
 /** A mid-turn interjection, e.g. OMP advisor notes: a labeled boundary with
  * a collapsible advisory body below it. */
 function InterjectionDivider({ block }: { block: Block }) {
-  useLocale();
+  const t = useT();
   const [expanded, setExpanded] = useRetainedDisclosure<boolean>(`interjection:${block.id}`, false);
   const [overflows, setOverflows] = useState(false);
   const textRef = useRef<HTMLPreElement>(null);
@@ -4678,18 +4674,18 @@ function InterjectionDivider({ block }: { block: Block }) {
   return (
     <div className="px-4 py-4">
       <div className="flex items-center gap-3">
-        <div className="h-px min-w-4 flex-1 bg-(--ui-surface-raised)" />
+        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
         <div
           role="separator"
           aria-label={t("Interjection: {p0}", { p0: label })}
-          className="flex items-center gap-2 px-1.5 font-sans text-[12px] text-(--ui-text-secondary)"
+          className="flex items-center gap-2 px-1.5 font-sans text-ui-caption text-(--ui-text-secondary)"
         >
           <span>{label}</span>
           {severityText ? (
-            <span className={`text-[11px] ${severityClass}`}>{severityText}</span>
+            <span className={`text-ui-micro ${severityClass}`}>{severityText}</span>
           ) : null}
         </div>
-        <div className="h-px min-w-4 flex-1 bg-(--ui-surface-raised)" />
+        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
       </div>
       {block.text ? (
         <div className="mt-2 px-2">

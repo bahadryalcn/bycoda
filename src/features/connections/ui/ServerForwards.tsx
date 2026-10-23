@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
+import { NumberField } from "../../../shared/ui/NumberField";
 import { TextField } from "../../../shared/ui/TextField";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -176,19 +178,20 @@ export function ServerForwards({
                   >
                     {running ? t("Stop") : t("Start")}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    disabled={Boolean(busy) || running}
-                    onClick={() =>
-                      void run(rule.id, () =>
-                        updateServerMetadata(server.id, {
-                          forwards: rules.filter((item) => item.id !== rule.id),
-                        }),
-                      )
-                    }
-                  >
-                    {t("Remove")}
-                  </Button>
+                  <span className="ms-auto">
+                    <ConfirmMorph
+                      label={t("Remove")}
+                      tone="danger"
+                      disabled={Boolean(busy) || running}
+                      onConfirm={() =>
+                        run(rule.id, () =>
+                          updateServerMetadata(server.id, {
+                            forwards: rules.filter((item) => item.id !== rule.id),
+                          }),
+                        )
+                      }
+                    />
+                  </span>
                 </div>
               </div>
             );
@@ -246,9 +249,8 @@ export function ServerForwards({
                   setDraft((previous) => ({ ...previous, name: event.target.value }))
                 }
               />
-              <TextField
+              <NumberField
                 label={t("Local port")}
-                type="number"
                 min={1}
                 max={65535}
                 required
@@ -269,9 +271,8 @@ export function ServerForwards({
                       setDraft((previous) => ({ ...previous, targetHost: event.target.value }))
                     }
                   />
-                  <TextField
+                  <NumberField
                     label={t("Destination port")}
-                    type="number"
                     min={1}
                     max={65535}
                     required

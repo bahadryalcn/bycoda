@@ -12,6 +12,10 @@ vi.mock("../../../../features/orchestration/model/orchestration", () => ({
     run: () => undefined,
   },
 }));
+vi.mock("../../../../integrations/harness", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../integrations/harness")>()),
+  steerAppliesModelSettings: () => true,
+}));
 vi.mock("../../../../features/providers/model/providerAccounts", () => ({
   supportsProviderAccounts: () => false,
   providerAccountExists: () => true,
@@ -73,4 +77,89 @@ it("rejects repeated Build requests for an already built plan", () => {
       options: { intent: "build", planBlockId: plan.id },
     }),
   ).toEqual({ settled: true, value: false });
+});
+it("steers a row saved for another effort into the running turn with its own settings", () => {
+  const running = { harness: "codex" as const, model: "running", modelSettings: { effort: "low" } };
+  resetSessionsStore([
+    {
+      ...session,
+      busy: true,
+      model: "later",
+      runningModelTarget: running,
+      queuedMessages: [
+        {
+          id: "row",
+          text: "follow up",
+          attachments: [],
+          modelTarget: { ...running, modelSettings: { effort: "high" } },
+        },
+      ],
+    },
+  ]);
+  const result = prepareSubmitPreflight(ctx, {
+    sessionId: session.id,
+    text: "follow up",
+    attachments: [],
+    options: { queuedMessageId: "row", followUpBehavior: "steer" },
+  });
+  if (result.settled) throw new Error("submission rejected");
+  expect(result.pre.current).toMatchObject({
+    harness: "codex",
+    model: "running",
+    modelSettings: { effort: "high" },
+  });
+});
+it("does not let a row saved for another model join the running turn", () => {
+  const running = { harness: "codex" as const, model: "running", modelSettings: {} };
+  resetSessionsStore([
+    {
+      ...session,
+      busy: true,
+      runningModelTarget: running,
+      queuedMessages: [
+        {
+          id: "row",
+          text: "follow up",
+          attachments: [],
+          modelTarget: { ...running, model: "saved" },
+        },
+      ],
+    },
+  ]);
+  expect(
+    prepareSubmitPreflight(ctx, {
+      sessionId: session.id,
+      text: "follow up",
+      attachments: [],
+      options: { queuedMessageId: "row", followUpBehavior: "steer" },
+    }),
+  ).toEqual({ settled: true, value: false });
+});
+it("switches provider for a steered row saved for another provider", () => {
+  const running = { harness: "codex" as const, model: "running", modelSettings: {} };
+  resetSessionsStore([
+    {
+      ...session,
+      busy: true,
+      blocks: [{ id: "user", role: "user", text: "start" }],
+      runningModelTarget: running,
+      queuedMessages: [
+        {
+          id: "row",
+          text: "follow up",
+          attachments: [],
+          modelTarget: { harness: "claude", model: "claude:opus", modelSettings: {} },
+        },
+      ],
+    },
+  ]);
+  const result = prepareSubmitPreflight(ctx, {
+    sessionId: session.id,
+    text: "follow up",
+    attachments: [],
+    options: { queuedMessageId: "row", followUpBehavior: "steer" },
+  });
+  if (result.settled) throw new Error("submission rejected");
+  expect(result.pre.current.harness).toBe("claude");
+  expect(result.pre.pendingSwitch?.from).toBe("codex");
 });

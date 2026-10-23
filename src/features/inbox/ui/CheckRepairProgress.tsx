@@ -258,7 +258,7 @@ function StatusIcon({ state }: { state: RepairState }) {
     <Icon
       aria-hidden="true"
       strokeWidth={1.75}
-      className={`size-3.5 shrink-0 ${color} ${["repairing", "refreshing", "pending"].includes(state) ? "animate-spin motion-reduce:animate-none" : ""}`}
+      className={`icon-sm shrink-0 ${color} ${["repairing", "refreshing", "pending"].includes(state) ? "animate-spin motion-reduce:animate-none" : ""}`}
     />
   );
 }
@@ -271,7 +271,7 @@ export function CheckRepairStatus({ item }: { item: RepairItem }) {
       data-repair-status
       role="status"
       title={t(status.summary)}
-      className={`inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium ${status.color}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 text-ui-micro font-medium ${status.color}`}
     >
       <StatusIcon state={item.state} />
       {status.label}
@@ -320,7 +320,7 @@ function RepairCard({
       (check) => check.name === single.check.name && check.workflow === single.check.workflow,
     ).length === 1;
   return (
-    <div className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover)">
+    <div className="overflow-hidden rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover)">
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
         <Button
           variant="ghost"
@@ -335,7 +335,7 @@ function RepairCard({
           <span className="min-w-0 flex-1">
             <span
               role="status"
-              className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] font-medium"
+              className="flex flex-wrap gap-x-3 gap-y-0.5 text-ui-caption font-medium"
             >
               {[...counts].map(([state, count]) => (
                 <span key={state} className={states[state].color}>
@@ -351,14 +351,14 @@ function RepairCard({
             </span>
             <span
               title={single ? `${single.check.workflow}: ${single.check.name}` : undefined}
-              className="mt-0.5 block truncate text-[11px] text-(--ui-text-secondary)"
+              className="mt-0.5 block truncate text-ui-micro text-(--ui-text-secondary)"
             >
               {single ? single.check.name : t("CI repair for {p0}", { p0: label })}
             </span>
           </span>
           <ChevronRight
             aria-hidden="true"
-            className={`size-3 shrink-0 text-(--ui-text-secondary) transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
+            className={`icon-xs shrink-0 text-(--ui-text-secondary) transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
           />
         </Button>
         {canShowCheck ? (
@@ -378,7 +378,7 @@ function RepairCard({
             onClick={() => void repair.onOpenSession?.(group.sessionId)}
             className="shrink-0"
           >
-            <MessageSquare aria-hidden="true" className="size-3.5" />
+            <MessageSquare aria-hidden="true" className="icon-sm" />
             {t("Open conversation")}
           </Button>
         ) : null}
@@ -386,7 +386,7 @@ function RepairCard({
       {expanded ? (
         <div
           id={detailsId}
-          className="space-y-2 border-t border-(--ui-tone-neutral-border) px-3 py-2.5 text-[11px] text-(--ui-text-secondary)"
+          className="space-y-2 border-t border-(--ui-tone-neutral-border) px-3 py-2.5 text-ui-micro text-(--ui-text-secondary)"
         >
           <p>{t("Included checks")}</p>
           <ul className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">

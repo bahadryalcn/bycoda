@@ -1,10 +1,11 @@
 import { SettingsFeedback } from "./settingsControls";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { invoke } from "@tauri-apps/api/core";
-import { ask } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Modal } from "../../../shared/ui/Modal";
@@ -31,6 +32,11 @@ type Grant = {
 };
 
 // Examples contain only an environment variable reference, never a minted secret.
+function grantStatus(grant: { revokedAt?: number; expiresAt: number }) {
+  if (grant.revokedAt !== undefined) return "revoked";
+  return grant.expiresAt <= Date.now() ? "expired" : "active";
+}
+
 export function externalMcpExamples(endpoint: string) {
   return {
     claude: JSON.stringify(
@@ -313,15 +319,6 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
     setRevoking(grant.id);
     setError("");
     try {
-      if (
-        !(await ask(
-          t('Revoke token "{p0}"? Connected clients will lose access immediately.', {
-            p0: grant.name,
-          }),
-          { title: t("Revoke token"), kind: "warning" },
-        ))
-      )
-        return;
       const result = await remoteRequest<{ revoked: boolean }>(
         data.machine.id,
         "mcp.tokens.revoke",
@@ -367,7 +364,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             aria-haspopup="dialog"
             onClick={() => setHelp(!help)}
           >
-            <CircleHelp className="size-3.5" />
+            <CircleHelp className="icon-sm" strokeWidth={1.75} />
           </Button>
           <Button
             variant="ghost"
@@ -377,9 +374,10 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             disabled={revoking !== null}
             onClick={() => void refresh()}
           >
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className="icon-sm" strokeWidth={1.75} />
           </Button>
           <Button
+            variant="primary"
             disabled={!data?.projects.length || loading || !!error || revoking !== null}
             onClick={() => setCreating(true)}
           >
@@ -405,12 +403,20 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             <div className={styles.identity}>
               <span>{grant.name}</span>
               <span className={styles.metadata}>
-                {data.projects.find((p) => p.id === grant.projectId)?.name ?? grant.projectId} ·{" "}
-                {grant.revokedAt !== undefined
-                  ? t("Revoked")
-                  : grant.expiresAt <= Date.now()
-                    ? t("Expired")
-                    : t("Active")}
+                {data.projects.find((p) => p.id === grant.projectId)?.name ?? grant.projectId}{" "}
+                <Badge
+                  tone={
+                    { revoked: "danger", expired: "warning", active: "success" }[
+                      grantStatus(grant)
+                    ] as "danger" | "warning" | "success"
+                  }
+                >
+                  {
+                    { revoked: t("Revoked"), expired: t("Expired"), active: t("Active") }[
+                      grantStatus(grant)
+                    ]
+                  }
+                </Badge>
               </span>
               <span className={styles.metadata}>
                 {t("Expires")}: {new Date(grant.expiresAt).toLocaleString()}
@@ -428,14 +434,19 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
               </section>
             </div>
             {grant.revokedAt === undefined && (
-              <Button
-                variant="danger"
-                loading={revoking === grant.id}
+              <ConfirmMorph
+                label={t("Revoke token")}
+                prompt={t('Revoke token "{p0}"? Connected clients will lose access immediately.', {
+                  p0: grant.name,
+                })}
+                tone="danger"
+                confirmMode="press"
+                confirmLabel={t("Revoke token")}
+                pendingLabel={t("Revoking…")}
+                doneLabel={t("Revoked")}
                 disabled={loading || (revoking !== null && revoking !== grant.id)}
-                onClick={() => void revoke(grant)}
-              >
-                {t("Revoke token")}
-              </Button>
+                onConfirm={() => revoke(grant)}
+              />
             )}
           </div>
         ))}

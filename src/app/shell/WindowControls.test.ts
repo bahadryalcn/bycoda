@@ -177,7 +177,7 @@ it("tracks native fullscreen changes and keeps its state when a native action fa
     native.window.setFullscreen.mockRejectedValueOnce(new Error("Fullscreen unavailable"));
     await act(async () => button.click());
     expect(button.getAttribute("aria-pressed")).toBe("true");
-    expect(document.body.querySelector('[role="status"]')?.textContent).toContain(
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
       "Fullscreen unavailable",
     );
     await act(async () => native.resize(false, false));

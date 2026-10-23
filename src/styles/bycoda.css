@@ -32,7 +32,7 @@
 }
 .bycoda-workspace-heading h1 {
   font-size: 18px;
-  font-weight: 560;
+  font-weight: 500;
   letter-spacing: -0.025em;
   line-height: 1.25;
 }
@@ -50,7 +50,7 @@
 }
 .bycoda-heading-count strong {
   font-size: 20px;
-  font-weight: 550;
+  font-weight: 500;
   color: var(--color-accent);
   font-variant-numeric: tabular-nums;
 }
@@ -61,7 +61,7 @@
 }
 .bycoda-settings-content > header h1 {
   font-size: 24px;
-  font-weight: 550;
+  font-weight: 500;
   letter-spacing: -0.035em;
 }
 .bycoda-page-eyebrow {
@@ -79,7 +79,7 @@
 }
 .bycoda-settings-content .settings-group > .settings-group-heading h2 {
   font-size: 16px;
-  font-weight: 550;
+  font-weight: 500;
 }
 .bycoda-settings-content .settings-group > .settings-group-content {
   border-radius: 6px;
@@ -142,7 +142,7 @@
   padding: 12px 7px 10px 12px;
   color: var(--color-content);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.025em;
 }
 /* The rail shows the mark alone, large enough to read without the wordmark. */
@@ -201,7 +201,7 @@
   margin-bottom: 32px;
   color: var(--color-accent);
   font-size: 17px;
-  font-weight: 650;
+  font-weight: 500;
   letter-spacing: 0.025em;
 }
 .bycoda-wordmark img {
@@ -225,7 +225,7 @@ html:not(.theme-light) img[src="/brand/bycoda/mark-black.svg"] {
 }
 .bycoda-task-brief h1 {
   font-size: clamp(26px, 3.2vw, 42px);
-  font-weight: 560;
+  font-weight: 500;
   line-height: 1.14;
   letter-spacing: -0.035em;
   overflow-wrap: anywhere;

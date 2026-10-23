@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "../../../i18n";
+import { useT } from "../../../i18n";
 
 import {
   useCallback,
@@ -557,6 +557,7 @@ export function DateRangePicker({
   boundary,
   className,
 }: DateRangePickerProps) {
+  const t = useT();
   const reduced = useReducedFlag();
   const today = useToday();
   const uid = useId();

@@ -261,6 +261,8 @@ fn rpc_agent() -> &'static ureq::Agent {
 }
 
 const DEFAULT_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const CONNECTION_REFUSED: &str =
+    "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 
 /// Git mutations may wait up to 120 s for the repository lease, then run a
 /// 120 s command (or pull + push for sync), plus bounded safety reads. The
@@ -272,6 +274,10 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         "browser.setup" | "devices.setup" => std::time::Duration::from_secs(1230),
         // Pi/OMP discovery can use 45 seconds, plus binary resolution and teardown.
         "models.list" => std::time::Duration::from_secs(60),
+        // Offline discovery and first model load can exceed ordinary RPC reads.
+        "voice.local.inspect" => std::time::Duration::from_secs(60),
+        "voice.local.start" => std::time::Duration::from_secs(180),
+        "voice.local.transcribe" => std::time::Duration::from_secs(40),
         "devices.start" => std::time::Duration::from_secs(60),
         "devices.boot" => std::time::Duration::from_secs(240),
         "devices.action" => std::time::Duration::from_secs(180),
@@ -336,9 +342,7 @@ fn rpc(
         Ok(response) => response,
         Err(ureq::Error::Status(_, response)) => response,
         Err(ureq::Error::Transport(error)) if connection_refused(&error) => {
-            return Err(
-                "Machine is unreachable. Check the host and SSH tunnel, then reconnect.".into(),
-            )
+            return Err(CONNECTION_REFUSED.into())
         }
         Err(ureq::Error::Transport(error)) => {
             return Err(rpc_transport_failure(
@@ -537,6 +541,19 @@ fn rpc_transport_failure(error: &ureq::Transport, method: &str) -> String {
     format!("The host request did not complete [{code}] ({method}). {remedy}")
 }
 
+/// A refused TCP connection never delivered the request body. Once its lease
+/// has been invalidated, the same operation can safely try a new tunnel once.
+/// Resets, EOFs and timeouts may have delivered a command and must not retry.
+fn with_refused_tunnel_retry<T>(
+    allow_reconnect: bool,
+    mut send: impl FnMut() -> Result<T, String>,
+) -> Result<T, String> {
+    match send() {
+        Err(error) if allow_reconnect && error == CONNECTION_REFUSED => send(),
+        result => result,
+    }
+}
+
 fn machine_rpc(
     state: &RemoteConnections,
     machine: &StoredMachine,
@@ -544,48 +561,50 @@ fn machine_rpc(
     params: Value,
     allow_connect: bool,
 ) -> Result<Value, String> {
-    let lease = machine
-        .ssh
-        .as_ref()
-        .map(|target| {
-            state
-                .tunnels
-                .endpoint(&machine.id, &machine.environment_id, target, allow_connect)
-        })
-        .transpose()?;
-    let endpoint = lease
-        .as_ref()
-        .map(|lease| lease.endpoint.as_str())
-        .unwrap_or(&machine.endpoint);
-    let response = rpc(
-        endpoint,
-        &machine.token,
-        Some(&machine.environment_id),
-        method,
-        params,
-    );
-    let response = match response {
-        Err(error)
-            if error.starts_with("The host request did not complete")
-                && state.tunnels.take_host_refusal(&machine.id) =>
+    with_refused_tunnel_retry(allow_connect && machine.ssh.is_some(), || {
+        let lease = machine
+            .ssh
+            .as_ref()
+            .map(|target| {
+                state
+                    .tunnels
+                    .endpoint(&machine.id, &machine.environment_id, target, allow_connect)
+            })
+            .transpose()?;
+        let endpoint = lease
+            .as_ref()
+            .map(|lease| lease.endpoint.as_str())
+            .unwrap_or(&machine.endpoint);
+        let response = rpc(
+            endpoint,
+            &machine.token,
+            Some(&machine.environment_id),
+            method,
+            params.clone(),
+        );
+        let response = match response {
+            Err(error)
+                if error.starts_with("The host request did not complete")
+                    && state.tunnels.take_host_refusal(&machine.id) =>
+            {
+                Err(
+                    "Host is not running on the machine. Start bycoda Host there, then reconnect."
+                        .to_owned(),
+                )
+            }
+            other => other,
+        };
+        if response
+            .as_ref()
+            .err()
+            .is_some_and(|error| error.starts_with("Machine is unreachable"))
         {
-            Err(
-                "Host is not running on the machine. Start bycoda Host there, then reconnect."
-                    .to_owned(),
-            )
+            if let Some(lease) = &lease {
+                state.tunnels.invalidate(&machine.id, lease);
+            }
         }
-        other => other,
-    };
-    if response
-        .as_ref()
-        .err()
-        .is_some_and(|error| error.starts_with("Machine is unreachable"))
-    {
-        if let Some(lease) = &lease {
-            state.tunnels.invalidate(&machine.id, lease);
-        }
-    }
-    response
+        response
+    })
 }
 
 pub(crate) fn store_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -1321,6 +1340,14 @@ fn supported_remote_method(method: &str) -> bool {
     matches!(
         method,
         "social.request"
+            | "voice.local.inspect"
+            | "voice.local.start"
+            | "voice.local.transcribe"
+            | "voice.local.keepAlive"
+            | "voice.local.release"
+            | "voice.local.speak"
+            | "voice.local.speechNext"
+            | "voice.local.speechCancel"
             | "social.oauth.availability"
             | "social.oauth.begin"
             | "social.oauth.status"
@@ -1876,6 +1903,121 @@ pub fn remote_ssh_cancel(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn refused_tunnel_recovery_preserves_the_original_command() {
+        let command = serde_json::json!({
+            "type": "send", "commandId": "original", "sessionId": "remote", "text": "hello"
+        });
+        let mut attempts = Vec::new();
+        let mut deliveries = Vec::new();
+        let receipt = super::with_refused_tunnel_retry(true, || {
+            attempts.push(command.clone());
+            if attempts.len() == 1 {
+                return Err(super::CONNECTION_REFUSED.to_owned());
+            }
+            deliveries.push(command.clone());
+            Ok(serde_json::json!({"commandId": command["commandId"]}))
+        })
+        .unwrap();
+        assert_eq!(receipt["commandId"], "original");
+        assert_eq!(attempts, vec![command.clone(), command.clone()]);
+        assert_eq!(deliveries, vec![command]);
+    }
+
+    #[test]
+    fn refused_tunnel_recovery_is_bounded_and_respects_reconnect_policy() {
+        for (allow, expected) in [(true, 2), (false, 1)] {
+            let mut attempts = 0;
+            let result: Result<(), String> = super::with_refused_tunnel_retry(allow, || {
+                attempts += 1;
+                Err(super::CONNECTION_REFUSED.to_owned())
+            });
+            assert_eq!(result.unwrap_err(), super::CONNECTION_REFUSED);
+            assert_eq!(attempts, expected);
+        }
+    }
+
+    #[test]
+    fn ambiguous_or_authorization_failures_never_replay_a_command() {
+        for error in [
+            "The host request did not complete [RPC_HOST_UNAVAILABLE] (commands.dispatch).",
+            "The host request did not complete [RPC_TIMEOUT] (commands.dispatch).",
+            "Host rejected request [RPC_AUTHORIZATION] (commands.dispatch).",
+            "Machine is unreachable. Automatic reconnect is off; reconnect it yourself.",
+            "Host is not running on the machine. Start bycoda Host there, then reconnect.",
+        ] {
+            let mut deliveries = 0;
+            let result: Result<(), String> = super::with_refused_tunnel_retry(true, || {
+                deliveries += 1;
+                Err(error.to_owned())
+            });
+            assert_eq!(result.unwrap_err(), error);
+            assert_eq!(deliveries, 1, "{error}");
+        }
+    }
+
+    #[test]
+    fn a_host_that_accepts_a_command_then_disconnects_is_not_sent_it_again() {
+        use std::io::{BufRead, BufReader};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::{net::TcpListener, thread, time::Duration};
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let done = Arc::new(AtomicBool::new(false));
+        let server_done = done.clone();
+        let server = thread::spawn(move || {
+            let mut delivered = Vec::new();
+            while !server_done.load(Ordering::SeqCst) {
+                let (stream, _) = match listener.accept() {
+                    Ok(pair) => pair,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
+                        continue;
+                    }
+                    Err(error) => panic!("{error}"),
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream);
+                let mut size = 0;
+                loop {
+                    let mut line = String::new();
+                    assert!(reader.read_line(&mut line).unwrap() > 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = value.trim().parse::<usize>().unwrap();
+                    }
+                }
+                let mut body = vec![0; size];
+                reader.read_exact(&mut body).unwrap();
+                delivered.push(serde_json::from_slice::<Value>(&body).unwrap());
+                // The host accepted the body, but its acknowledgement is lost.
+                // Closing this stream must leave the command for receipt recovery.
+            }
+            delivered
+        });
+        let command = json!({"type": "send", "commandId": "lost-receipt", "sessionId": "remote"});
+        let result = super::with_refused_tunnel_retry(true, || {
+            super::rpc(
+                &endpoint,
+                "fixture",
+                Some("env"),
+                "commands.dispatch",
+                command.clone(),
+            )
+        });
+        done.store(true, Ordering::SeqCst);
+        let delivered = server.join().unwrap();
+        assert!(result.unwrap_err().contains("RPC_HOST_UNAVAILABLE"));
+        assert_eq!(delivered.len(), 1);
+        assert_eq!(delivered[0]["params"], command);
+    }
+
+    #[test]
     fn request_results_belong_to_the_original_saved_route() {
         let started = saved("route", "me@original");
         let mut current = started.clone();
@@ -2086,6 +2228,32 @@ mod tests {
         assert!(supported_remote_method("tasks.notes.resolve"));
         assert!(supported_remote_method("tasks.review.recheck"));
         assert!(!supported_remote_method("tasks.notes.delete"));
+    }
+
+    #[test]
+    fn voice_rpc_methods_are_bounded_and_model_loading_has_time_to_finish() {
+        use std::time::Duration;
+        for method in [
+            "voice.local.inspect",
+            "voice.local.start",
+            "voice.local.transcribe",
+            "voice.local.keepAlive",
+            "voice.local.release",
+            "voice.local.speak",
+            "voice.local.speechNext",
+            "voice.local.speechCancel",
+        ] {
+            assert!(supported_remote_method(method), "{method}");
+        }
+        assert!(!supported_remote_method("voice.local.install"));
+        assert!(!supported_remote_method("voice.local.exec"));
+        assert!(rpc_timeout("voice.local.start", &json!({})) >= Duration::from_secs(180));
+        assert!(rpc_timeout("voice.local.inspect", &json!({})) >= Duration::from_secs(60));
+        assert!(rpc_timeout("voice.local.transcribe", &json!({})) >= Duration::from_secs(40));
+        assert_eq!(
+            rpc_timeout("voice.local.speechNext", &json!({})),
+            DEFAULT_RPC_TIMEOUT
+        );
     }
 
     #[test]

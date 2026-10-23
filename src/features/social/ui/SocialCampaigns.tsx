@@ -4,9 +4,11 @@ import { NativeSelect } from "../../../shared/ui/Select";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
+import { Badge } from "../../../shared/ui/Badge";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SocialFilters } from "./SocialFilters";
-import { t } from "../../../shared/i18n";
+import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { useContext, useState } from "react";
 import { SocialPanelActiveContext } from "./socialContext";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
@@ -78,6 +80,7 @@ export function Campaigns({
   run,
   onFilterChange,
 }: Props) {
+  useLocale();
   const queryClient = useQueryClient();
   const [view, setView] = useState<"manual" | "ai">("manual");
   const active = useContext(SocialPanelActiveContext);
@@ -106,7 +109,9 @@ export function Campaigns({
   const visibleCampaigns = snapshot.campaigns.filter(
     (campaign) =>
       hostFiltered ||
-      (campaign.name.toLocaleLowerCase("tr").includes(search.toLocaleLowerCase("tr")) &&
+      (campaign.name
+        .toLocaleLowerCase(getLocale())
+        .includes(search.toLocaleLowerCase(getLocale())) &&
         (!statusFilter ||
           campaignState(campaign, snapshot.jobs, snapshot.campaignStates) === statusFilter)),
   );
@@ -178,32 +183,49 @@ export function Campaigns({
     snapshot.sendingEnabled &&
     !snapshot.stopped;
   const scheduleReason = !currentPreview
-    ? "Önce hesap ve içerik kontrolünü çalıştırın."
+    ? t("Run the account and content check first.")
     : !canApprove
-      ? "İşaretlenen hesap veya içerik sorununu giderip yeniden kontrol edin."
+      ? t("Fix the flagged account or content issue and check again.")
       : !approved
-        ? "İçeriği okuyup yayın onayı verin."
+        ? t("Read the content and give publishing approval.")
         : selected?.paused
-          ? "Kampanyayı devam ettirip yeniden kontrol edin."
+          ? t("Resume the campaign and check again.")
           : !snapshot.hostOnline
-            ? "Yayınları planlamak için host bağlantısını kurun."
+            ? t("Connect to the host to schedule posts.")
             : !snapshot.sendingEnabled || snapshot.stopped
-              ? "Gönderim kapalı. Otomasyonlar → Gönderim kontrolleri bölümünden gönderimi açın."
+              ? t("Sending is off. Turn it on under Automations → Sending controls.")
               : "";
+  const targetAccounts = selected
+    ? selected.variants.map((variant) => {
+        const account = snapshot.accounts.find((item) => item.id === variant.accountId);
+        return {
+          id: variant.accountId,
+          label: account ? `${account.name} · ${names[account.platform]}` : t("Removed account"),
+        };
+      })
+    : [];
   const update = (id: string, change: Partial<CampaignVariant>) =>
     setVariants((current) =>
       current.map((item) => (item.accountId === id ? { ...item, ...change } : item)),
     );
+  const stateLabel = (campaign: SocialCampaign) =>
+    campaignState(campaign, snapshot.jobs, snapshot.campaignStates) === "partial"
+      ? t("Partially sent")
+      : undefined;
   return (
     <div className="social-page social-campaign-page">
       {snapshot.programsSupported ? (
-        <nav className="social-campaign-modes" aria-label={t("Kampanyalar")}>
-          <Button variant="tab" aria-pressed={view === "ai"} onClick={() => setView("ai")}>
-            {t("AI kampanyaları")}
-          </Button>
-          <Button variant="tab" aria-pressed={view === "manual"} onClick={() => setView("manual")}>
-            {t("Kampanyalar")}
-          </Button>
+        <nav className="social-campaign-modes" aria-label={t("Campaigns")}>
+          <SegmentedControl
+            label={t("Campaigns")}
+            selectionRole="pressed"
+            value={view}
+            onValueChange={(next) => setView(next === "ai" ? "ai" : "manual")}
+            options={[
+              { value: "ai", label: t("AI campaigns") },
+              { value: "manual", label: t("Campaigns") },
+            ]}
+          />
         </nav>
       ) : null}
       <div hidden={view !== "ai"}>
@@ -212,24 +234,24 @@ export function Campaigns({
         </SocialPanelActiveContext.Provider>
       </div>
       <div className="social-campaign-manual" hidden={view !== "manual"}>
-        <div className="social-stats" aria-label="Kampanya özeti">
+        <div className="social-stats" aria-label={t("Campaign summary")}>
           <span>
             <strong>{snapshot.pages?.campaigns?.total ?? snapshot.campaigns.length}</strong>{" "}
-            kampanya
+            {t("campaigns")}
           </span>
           <span>
             <strong>
               {snapshot.campaignJobCounts?.queued ??
                 snapshot.jobs.filter((job) => job.campaignId && job.status === "queued").length}
             </strong>{" "}
-            planlanan yayın
+            {t("scheduled posts")}
           </span>
           <span>
             <strong>
               {snapshot.campaignJobCounts?.succeeded ??
                 snapshot.jobs.filter((job) => job.campaignId && job.status === "succeeded").length}
             </strong>{" "}
-            gönderilen yayın
+            {t("sent posts")}
           </span>
           <span>
             <strong>
@@ -240,18 +262,20 @@ export function Campaigns({
                     (job) => job.campaignId && ["review", "failed"].includes(job.status),
                   ).length}
             </strong>{" "}
-            ilgilenmeniz gereken
+            {t("need your attention")}
           </span>
         </div>
         <Composer
-          title={editingId ? "Kampanya taslağını düzenle" : "Yeni kampanya"}
+          title={editingId ? t("Edit campaign draft") : t("New campaign")}
           onOpen={() => {
             void queryClient.invalidateQueries({
               queryKey: [...socialQueryScope(client), "tiktok-creator"],
             });
           }}
           editing={editVersion}
-          description="İçeriği kaydedin, kontrol edin ve yayın onayı verin. Kaydetmek gönderim başlatmaz."
+          description={t(
+            "Save the content, check it and approve it for publishing. Saving does not start sending.",
+          )}
         >
           <form
             className="social-form"
@@ -270,7 +294,7 @@ export function Campaigns({
                       Object.keys(videoProgress).length > 0
                     )
                       throw new Error(
-                        "Proje, hesap erişimi, içerik sınırları ve yayın zamanlarını kontrol edin.",
+                        t("Check the project, account access, content limits and publish times."),
                       );
                     await Promise.all(
                       variants.map(async (variant) => {
@@ -280,7 +304,9 @@ export function Campaigns({
                         const limit = socialLimit(effective, "content");
                         if (limit !== undefined && variantCount(variant) > limit)
                           throw new Error(
-                            `Bu hesap için içerik en fazla ${limit} karakter olabilir.`,
+                            t("Content for this account can be at most {p0} characters.", {
+                              p0: limit,
+                            }),
                           );
                       }),
                     );
@@ -290,7 +316,7 @@ export function Campaigns({
                       projectIds: selectedProjects,
                       variants,
                     });
-                  }, "Kampanya taslağı kaydedildi. Önizlemeyi kontrol edip yayın onayı verebilirsiniz.")) ||
+                  }, t("Campaign draft saved. Review the preview and approve it for publishing."))) ||
                   !saved
                 )
                   return;
@@ -304,31 +330,29 @@ export function Campaigns({
               })();
             }}
           >
-            <label>
-              Kampanya adı
-              <TextField
-                hideLabel
-                label=""
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                required
-                maxLength={200}
-              />
-            </label>
+            <TextField
+              label={t("Campaign name")}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              maxLength={200}
+            />
             <Projects
               projects={projects}
               selected={selectedProjects}
               onChange={setSelectedProjects}
             />
-            {!validProjects ? <Notice kind="info">En az bir proje seçin.</Notice> : null}
+            {!validProjects ? (
+              <Notice kind="info">{t("Select at least one project.")}</Notice>
+            ) : null}
             <SocialMultiSelect
-              label="Sosyal hesaplar"
-              placeholder="Hesap seçin"
-              searchPlaceholder="Hesap veya platform ara"
+              label={t("Social accounts")}
+              placeholder={t("Select an account")}
+              searchPlaceholder={t("Search by account or platform")}
               options={snapshot.accounts.map((account) => ({
                 value: account.id,
                 label: account.name,
-                description: `${names[account.platform]}${hasDraftAccess(account.id) ? "" : " · Seçili projeler için taslak erişimi gerekli"}`,
+                description: `${names[account.platform]}${hasDraftAccess(account.id) ? "" : ` · ${t("Draft access to the selected projects is required")}`}`,
                 disabled: !hasDraftAccess(account.id),
               }))}
               selected={variants.map((variant) => variant.accountId)}
@@ -353,7 +377,7 @@ export function Campaigns({
             />
             {!snapshot.accounts.length ? (
               <Notice kind="info">
-                İçerik hazırlamak için Hesaplar bölümünden bir hesap bağlayın.
+                {t("Connect an account in the Accounts section to prepare content.")}
               </Notice>
             ) : null}
             {variants.map((variant) => (
@@ -364,27 +388,23 @@ export function Campaigns({
                 {snapshot.accounts.find((account) => account.id === variant.accountId)?.platform ===
                 "youtube" ? (
                   <>
+                    <TextField
+                      label={t("Video title")}
+                      required
+                      maxLength={100}
+                      value={variant.youtube?.title ?? ""}
+                      onChange={(event) =>
+                        update(variant.accountId, {
+                          youtube: {
+                            ...youtubeDefaults,
+                            ...variant.youtube,
+                            title: event.target.value,
+                          },
+                        })
+                      }
+                    />
                     <label>
-                      Video başlığı
-                      <TextField
-                        hideLabel
-                        label=""
-                        required
-                        maxLength={100}
-                        value={variant.youtube?.title ?? ""}
-                        onChange={(event) =>
-                          update(variant.accountId, {
-                            youtube: {
-                              ...youtubeDefaults,
-                              ...variant.youtube,
-                              title: event.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Video görünürlüğü
+                      {t("Video visibility")}
                       <NativeSelect
                         value={variant.youtube?.privacy ?? "private"}
                         onChange={(event) =>
@@ -397,13 +417,13 @@ export function Campaigns({
                           })
                         }
                       >
-                        <option value="private">Özel</option>
-                        <option value="unlisted">Liste dışı</option>
-                        <option value="public">Herkese açık</option>
+                        <option value="private">{t("Private")}</option>
+                        <option value="unlisted">{t("Unlisted")}</option>
+                        <option value="public">{t("Public")}</option>
                       </NativeSelect>
                     </label>
                     <fieldset className="social-checks">
-                      <legend>İçerik beyanı</legend>
+                      <legend>{t("Content declaration")}</legend>
                       <label>
                         <Checkbox
                           checked={variant.youtube?.madeForKids ?? false}
@@ -417,7 +437,7 @@ export function Campaigns({
                             })
                           }
                         />
-                        Çocuklara yönelik içerik
+                        {t("Content made for kids")}
                       </label>
                       <label>
                         <Checkbox
@@ -432,14 +452,12 @@ export function Campaigns({
                             })
                           }
                         />
-                        Gerçekçi değiştirilmiş veya sentetik içerik içeriyor
+                        {t("Contains realistic altered or synthetic content")}
                       </label>
                     </fieldset>
-                    <label>
-                      Videoyu host'a yükle · MP4/WebM, en fazla 64 MiB
+                    <div>
                       <TextField
-                        hideLabel
-                        label=""
+                        label={t("Upload the video to the host · MP4/WebM, up to 64 MiB")}
                         type="file"
                         accept="video/mp4,video/webm"
                         onChange={(event) => {
@@ -475,40 +493,45 @@ export function Campaigns({
                             });
                         }}
                       />
-                      {variant.media[0]?.uploadId ? "Video hosta yüklendi" : null}
+                      {variant.media[0]?.uploadId ? (
+                        <small>{t("Video uploaded to the host")}</small>
+                      ) : null}
                       {videoProgress[variant.accountId] !== undefined ? (
                         <span role="status">
-                          Host'a yükleniyor: %{videoProgress[variant.accountId]}
+                          {t("Uploading to host: {p0}%", { p0: videoProgress[variant.accountId] })}
                         </span>
                       ) : null}
-                    </label>
+                    </div>
                     <p className="social-muted">
-                      Bu alanlar video açıklaması ve kanal yayını içindir. Topluluk gönderisi ve
-                      özel mesaj desteklenmez. Yükleme kabulü, videonun işlenip izlenebilir olduğu
-                      anlamına gelmez; sonuçtaki görünürlüğü kontrol edin.
+                      {t(
+                        "These fields are for the video description and channel post. Community posts and direct messages are not supported. An accepted upload does not mean the video has been processed and is watchable; check the resulting visibility.",
+                      )}
                     </p>
                   </>
                 ) : null}
-                <label>
-                  Bu hesaba özel içerik
+                <div>
                   <TextareaField
-                    hideLabel
-                    label=""
+                    label={t("Content for this account")}
                     value={variant.text}
                     required
                     rows={4}
                     onChange={(event) => update(variant.accountId, { text: event.target.value })}
                   />
                   <small role="status">
-                    {variantCount(variant)}
-                    {variantLimit(variant) !== undefined ? ` / ${variantLimit(variant)}` : ""}{" "}
-                    karakter · bağlantı dahildir
+                    {variantLimit(variant) !== undefined
+                      ? t("{p0} / {p1} characters · link included", {
+                          p0: variantCount(variant),
+                          p1: variantLimit(variant),
+                        })
+                      : t("{p0} characters · link included", { p0: variantCount(variant) })}
                   </small>
                   {variantLimit(variant) !== undefined &&
                   variantCount(variant) > variantLimit(variant)! ? (
-                    <Notice kind="error">İçerik sınırını aşıyor. Kaydetmeden önce kısaltın.</Notice>
+                    <Notice kind="error">
+                      {t("The content exceeds the limit. Shorten it before saving.")}
+                    </Notice>
                   ) : null}
-                </label>
+                </div>
                 {snapshot.accounts.find((account) => account.id === variant.accountId)?.platform ===
                 "tiktok" ? (
                   <TikTokPublishingFields
@@ -518,59 +541,47 @@ export function Campaigns({
                   />
                 ) : null}
                 <details className="social-settings">
-                  <summary>Tek seferlik yayın zamanı, medya ve bağlantı</summary>
-                  <label>
-                    Bağlantı
-                    <TextField
-                      hideLabel
-                      label=""
-                      type="url"
-                      placeholder="https://"
-                      value={variant.link ?? ""}
-                      onChange={(event) =>
-                        update(variant.accountId, {
-                          link: event.target.value || undefined,
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Tek seferlik planlama zamanı · bu bilgisayarın saat dilimi
-                    <TextField
-                      hideLabel
-                      label=""
-                      type="datetime-local"
-                      required
-                      value={dateInput(variant.scheduledAt)}
-                      onChange={(event) =>
-                        update(variant.accountId, {
-                          scheduledAt: new Date(event.target.value).getTime(),
-                        })
-                      }
-                    />
-                  </label>
+                  <summary>{t("One-time publish time, media and link")}</summary>
+                  <TextField
+                    label={t("Link")}
+                    type="url"
+                    placeholder="https://"
+                    value={variant.link ?? ""}
+                    onChange={(event) =>
+                      update(variant.accountId, {
+                        link: event.target.value || undefined,
+                      })
+                    }
+                  />
+                  <TextField
+                    label={t("One-time schedule time · this computer's time zone")}
+                    type="datetime-local"
+                    required
+                    value={dateInput(variant.scheduledAt)}
+                    onChange={(event) =>
+                      update(variant.accountId, {
+                        scheduledAt: new Date(event.target.value).getTime(),
+                      })
+                    }
+                  />
                   {!snapshot.accounts.some(
                     (account) =>
                       account.id === variant.accountId &&
                       ["youtube", "tiktok"].includes(account.platform),
                   ) ? (
-                    <label>
-                      HTTPS görsel URL
-                      <TextField
-                        hideLabel
-                        label=""
-                        type="url"
-                        placeholder="https://"
-                        value={variant.media[0]?.url ?? ""}
-                        onChange={(event) =>
-                          update(variant.accountId, {
-                            media: event.target.value
-                              ? [{ kind: "image", url: event.target.value }]
-                              : [],
-                          })
-                        }
-                      />
-                    </label>
+                    <TextField
+                      label={t("HTTPS image URL")}
+                      type="url"
+                      placeholder="https://"
+                      value={variant.media[0]?.url ?? ""}
+                      onChange={(event) =>
+                        update(variant.accountId, {
+                          media: event.target.value
+                            ? [{ kind: "image", url: event.target.value }]
+                            : [],
+                        })
+                      }
+                    />
                   ) : null}
                   {snapshot.accounts.find((account) => account.id === variant.accountId)
                     ?.platform === "x" ? (
@@ -594,11 +605,9 @@ export function Campaigns({
                       account.platform === "linkedin" &&
                       account.accountType === "organization",
                   ) ? (
-                    <label>
-                      Görseli host'a yükle
+                    <div>
                       <TextField
-                        hideLabel
-                        label=""
+                        label={t("Upload the image to the host")}
                         type="file"
                         accept="image/jpeg,image/png"
                         onChange={(event) => {
@@ -612,16 +621,18 @@ export function Campaigns({
                             });
                         }}
                       />
-                      {variant.media[0]?.uploadId ? "Görsel hosta yüklendi" : null}
-                    </label>
+                      {variant.media[0]?.uploadId ? (
+                        <small>{t("Image uploaded to the host")}</small>
+                      ) : null}
+                    </div>
                   ) : null}
                   <label>
-                    Doğrulanmış bilgi
+                    {t("Verified fact")}
                     <SearchableSelect
                       value=""
-                      label={"Doğrulanmış bilgi"}
+                      label={t("Verified fact")}
                       options={[
-                        { value: "", label: "İçeriğe bilgi ekle" },
+                        { value: "", label: t("Add a fact to the content") },
                         ...publicFacts.map((fact) => ({
                           value: fact.id,
                           label: [fact.topic, ":", fact.text].join(" "),
@@ -635,120 +646,130 @@ export function Campaigns({
                             factIds: [...new Set([...variant.factIds, fact.id])],
                           });
                       }}
-                      searchLocale="tr"
+                      searchLocale={getLocale()}
                     />
                   </label>
                   {variant.media.length ? (
                     <Button
                       variant="secondary"
+                      tone="danger"
                       type="button"
                       onClick={() => update(variant.accountId, { media: [] })}
                     >
-                      Eklenen medyayı kaldır
+                      {t("Remove attached media")}
                     </Button>
                   ) : null}
                 </details>
                 {!hasDraftAccess(variant.accountId) ? (
                   <Notice kind="error">
-                    Bu hesaba seçili tüm projeler için taslak erişimi verin veya hesabı kaldırın.
+                    {t(
+                      "Grant this account draft access for all selected projects or remove the account.",
+                    )}
                   </Notice>
                 ) : null}
                 {variant.factIds.some((id) => !publicFacts.some((fact) => fact.id === id)) ? (
                   <Notice kind="warning">
-                    İçerikteki doğrulanmış bilgi seçili projelerin dışında. İlgili projeyi yeniden
-                    seçin veya kampanyayı yeniden hazırlayın.
+                    {t(
+                      "A verified fact in the content is outside the selected projects. Select the related project again or prepare the campaign again.",
+                    )}
                   </Notice>
                 ) : null}
-                <Button
-                  variant="secondary"
-                  type="button"
-                  onClick={() =>
-                    setVariants((current) =>
-                      current.filter((item) => item.accountId !== variant.accountId),
-                    )
-                  }
-                >
-                  Bu hesabı kampanyadan çıkar
-                </Button>
+                <div className="mt-2 border-t border-(--ui-tone-neutral-border) pt-2">
+                  <Button
+                    variant="secondary"
+                    tone="danger"
+                    type="button"
+                    onClick={() =>
+                      setVariants((current) =>
+                        current.filter((item) => item.accountId !== variant.accountId),
+                      )
+                    }
+                  >
+                    {t("Remove this account from the campaign")}
+                  </Button>
+                </div>
               </fieldset>
             ))}
             <p className="social-muted">
-              Düzenli paylaşım için bu taslağı Otomasyonlar bölümünde bir yayın planına
-              ekleyebilirsiniz.
+              {t(
+                "You can add this draft to a publishing plan in the Automations section for regular posting.",
+              )}
             </p>
-            <Button
-              type="submit"
-              variant="secondary"
-              disabled={
-                !name.trim() ||
-                !variants.length ||
-                !validProjects ||
-                invalidVariants ||
-                Object.keys(videoProgress).length > 0
-              }
-            >
-              Kampanya taslağını kaydet
-            </Button>
             {!name.trim() || !variants.length || !validProjects ? (
               <small className="social-muted">
-                Kaydetmek için kampanya adını, projeyi, hesabı ve içeriği tamamlayın.
+                {t("Complete the campaign name, project, account and content to save.")}
               </small>
             ) : invalidVariants ? (
               <Notice kind="warning">
-                İçerik, karakter sınırı, hesap erişimi veya planlama zamanını kontrol edin.
+                {t("Check the content, character limit, account access or schedule time.")}
               </Notice>
             ) : Object.keys(videoProgress).length ? (
-              <Notice kind="loading">Video yüklemesi bitince kaydedebilirsiniz.</Notice>
+              <Notice kind="loading">{t("You can save once the video upload finishes.")}</Notice>
             ) : null}
-            {editingId ? (
+            <div className="social-actions">
               <Button
+                type="submit"
                 variant="secondary"
-                type="button"
-                onClick={(event) => {
-                  setEditingId(undefined);
-                  setName("");
-                  setVariants([]);
-                  closeComposer(event.currentTarget.closest("form")!);
-                }}
+                disabled={
+                  !name.trim() ||
+                  !variants.length ||
+                  !validProjects ||
+                  invalidVariants ||
+                  Object.keys(videoProgress).length > 0
+                }
               >
-                Düzenlemeyi bırak
+                {t("Save campaign draft")}
               </Button>
-            ) : null}
+              {editingId ? (
+                <Button
+                  variant="secondary"
+                  type="button"
+                  onClick={(event) => {
+                    setEditingId(undefined);
+                    setName("");
+                    setVariants([]);
+                    closeComposer(event.currentTarget.closest("form")!);
+                  }}
+                >
+                  {t("Stop editing")}
+                </Button>
+              ) : null}
+            </div>
           </form>
         </Composer>
         <div className="social-columns">
           <section>
             <h2 className="sr-only">
-              Kampanyalar <small>{snapshot.campaigns.length}</small>
+              {t("Campaigns")} <small>{snapshot.campaigns.length}</small>
             </h2>
             <div className="social-list-tools">
               <label>
-                Kampanya ara
+                {t("Search campaigns")}
                 <SearchInput
                   appearance="field"
                   type="search"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Kampanya adı"
+                  placeholder={t("Campaign name")}
                 />
               </label>
               <SocialFilters activeCount={statusFilter ? 1 : 0} onReset={() => setStatusFilter("")}>
                 <label>
-                  Durum
+                  {t("Status")}
                   <NativeSelect
                     value={statusFilter}
                     onChange={(event) => setStatusFilter(event.target.value)}
                   >
-                    <option value="">Tüm kampanyalar</option>
-                    <option value="draft">Taslak</option>
-                    <option value="queued">Planlandı</option>
-                    <option value="running">Gönderiliyor</option>
-                    <option value="succeeded">Gönderildi</option>
-                    <option value="partial">Kısmen gönderildi</option>
-                    <option value="failed">Başarısız</option>
-                    <option value="review">İnceleme gerekli</option>
-                    <option value="paused">Durduruldu</option>
-                    <option value="cancelled">İptal edildi</option>
+                    <option value="">{t("All campaigns")}</option>
+                    <option value="draft">{t("Draft")}</option>
+                    <option value="queued">{t("Scheduled")}</option>
+                    <option value="running">{t("Sending")}</option>
+                    <option value="succeeded">{t("Sent")}</option>
+                    <option value="partial">{t("Partially sent")}</option>
+                    <option value="failed">{t("Failed")}</option>
+                    <option value="review">{t("Needs review")}</option>
+                    <option value="paused">{t("Paused")}</option>
+                    <option value="cancelled">{t("Cancelled")}</option>
                   </NativeSelect>
                 </label>
               </SocialFilters>
@@ -756,7 +777,7 @@ export function Campaigns({
             {snapshot.campaigns.length ? (
               visibleCampaigns.map((campaign) => (
                 <Button
-                  type="submit"
+                  type="button"
                   variant="tab"
                   className="social-row"
                   aria-pressed={selectedId === campaign.id}
@@ -770,24 +791,25 @@ export function Campaigns({
                   <strong>{campaign.name}</strong>
                   <StatusBadge
                     status={campaignState(campaign, snapshot.jobs, snapshot.campaignStates)}
-                    label={
-                      campaignState(campaign, snapshot.jobs, snapshot.campaignStates) === "partial"
-                        ? "Kısmen gönderildi"
-                        : undefined
-                    }
+                    label={stateLabel(campaign)}
                   />
                   <span>
-                    {campaign.projectIds.length} proje · {campaign.variants.length} hesap
+                    {t("{p0} projects · {p1} accounts", {
+                      p0: campaign.projectIds.length,
+                      p1: campaign.variants.length,
+                    })}
                   </span>
                 </Button>
               ))
             ) : (
-              <Empty title="İlk kampanyanızı hazırlayın">
-                Yeni kampanya ile proje ve hesapları seçip içeriğinizi hazırlayın.
+              <Empty title={t("Prepare your first campaign")}>
+                {t("Use New campaign to pick projects and accounts and prepare your content.")}
               </Empty>
             )}
             {snapshot.campaigns.length && !visibleCampaigns.length ? (
-              <Empty title="Eşleşen kampanya yok">Aramayı veya durum filtresini değiştirin.</Empty>
+              <Empty title={t("No matching campaign")}>
+                {t("Change the search or the status filter.")}
+              </Empty>
             ) : null}
           </section>
           <section>
@@ -798,17 +820,16 @@ export function Campaigns({
                     <h2>{selected.name}</h2>
                     <span className="social-muted">
                       {selected.projectIds
-                        .map((id) => projects.find((project) => project.id === id)?.name || "Proje")
+                        .map(
+                          (id) =>
+                            projects.find((project) => project.id === id)?.name || t("Project"),
+                        )
                         .join(", ")}
                     </span>
                   </div>
                   <StatusBadge
                     status={campaignState(selected, snapshot.jobs, snapshot.campaignStates)}
-                    label={
-                      campaignState(selected, snapshot.jobs, snapshot.campaignStates) === "partial"
-                        ? "Kısmen gönderildi"
-                        : undefined
-                    }
+                    label={stateLabel(selected)}
                   />
                 </header>
                 <div className="social-campaign-content">
@@ -817,41 +838,44 @@ export function Campaigns({
                       <article className="social-preview" key={variant.accountId}>
                         <h3>
                           {snapshot.accounts.find((account) => account.id === variant.accountId)
-                            ?.name ?? "Hesap kaldırıldı"}
+                            ?.name ?? t("Removed account")}
                         </h3>
                         {variant.youtube ? (
                           <p>
-                            {variant.youtube.title} · Görünürlük:{" "}
+                            {variant.youtube.title} · {t("Visibility")}:{" "}
                             {variant.youtube.privacy === "private"
-                              ? "Özel"
+                              ? t("Private")
                               : variant.youtube.privacy === "unlisted"
-                                ? "Liste dışı"
-                                : "Herkese açık"}{" "}
-                            · Çocuklara yönelik: {variant.youtube.madeForKids ? "Evet" : "Hayır"} ·
-                            Sentetik içerik:{" "}
-                            {variant.youtube.containsSyntheticMedia ? "Evet" : "Hayır"}
+                                ? t("Unlisted")
+                                : t("Public")}{" "}
+                            · {t("Made for kids")}:{" "}
+                            {variant.youtube.madeForKids ? t("Yes") : t("No")} ·{" "}
+                            {t("Synthetic content")}:{" "}
+                            {variant.youtube.containsSyntheticMedia ? t("Yes") : t("No")}
                           </p>
                         ) : null}
                         <p className="social-message">{variant.text}</p>
                         {variant.media.map((media, index) => (
                           <p key={index}>
-                            {media.kind === "video" ? "Video" : "Görsel"}:{" "}
-                            {media.url ?? "Hosta yüklenen dosya"}
+                            {media.kind === "video" ? t("Video") : t("Image")}:{" "}
+                            {media.url ?? t("File uploaded to the host")}
                           </p>
                         ))}
                         {variant.link ? <p className="social-message">{variant.link}</p> : null}
-                        <small>Tek seferlik yayın: {time(variant.scheduledAt)}</small>
+                        <small>{t("One-time post: {p0}", { p0: time(variant.scheduledAt) })}</small>
                         {currentPreview?.targets
                           .filter((target) => target.accountId === variant.accountId)
                           .map((target) => (
                             <div key={target.accountId} className="social-inline-meta">
                               <StatusBadge
                                 status={target.contentError ? "failed" : target.capability.status}
-                                label={target.contentError ? "İçerik sorunu" : undefined}
+                                label={target.contentError ? t("Content issue") : undefined}
                               />
                               <StatusBadge
                                 status={target.approved ? "approved" : "draft"}
-                                label={target.approved ? "İçerik onaylı" : "Onay bekliyor"}
+                                label={
+                                  target.approved ? t("Content approved") : t("Awaiting approval")
+                                }
                               />
                               {target.contentError || target.capability.status !== "available" ? (
                                 <Notice kind="warning">
@@ -864,21 +888,38 @@ export function Campaigns({
                     ))}
                   </div>
                   <aside className="social-campaign-controls">
-                    <section className="social-workflow-steps" aria-label="Yayın onayı ve planlama">
-                      <h3>Kontrol et ve yayınla</h3>
+                    <section
+                      className="social-workflow-steps"
+                      aria-label={t("Publish approval and scheduling")}
+                    >
+                      <h3>{t("Review and publish")}</h3>
                       {currentPreview && canApprove ? (
                         <label className="social-check">
                           <Checkbox
                             checked={approvalConfirmed}
                             onChange={(event) => setApprovalConfirmed(event.target.checked)}
                           />
-                          Bu kampanyanın tüm hesap içeriklerini okudum ve yayınlanmasını
-                          onaylıyorum.
+                          {t(
+                            "I have read the content for all accounts of this campaign and approve it for publishing.",
+                          )}
                         </label>
+                      ) : null}
+                      <div className="social-inline-meta">
+                        <small>{t("Publishes to")}</small>
+                        {targetAccounts.map((target) => (
+                          <Badge key={target.id} appearance="subtle">
+                            {target.label}
+                          </Badge>
+                        ))}
+                      </div>
+                      {scheduleReason ? (
+                        <Notice kind={currentPreview && !canApprove ? "warning" : "info"}>
+                          {scheduleReason}
+                        </Notice>
                       ) : null}
                       <div className="social-actions">
                         <Button
-                          type="submit"
+                          type="button"
                           variant={currentPreview ? "secondary" : "primary"}
                           onClick={() =>
                             void run(async () => {
@@ -888,14 +929,14 @@ export function Campaigns({
                                 }),
                               );
                               setApprovalConfirmed(false);
-                            }, "Hesap ve içerik kontrolü tamamlandı.")
+                            }, t("Account and content check finished."))
                           }
                         >
-                          Hesap ve içeriği kontrol et
+                          {t("Check account and content")}
                         </Button>
 
                         <Button
-                          type="submit"
+                          type="button"
                           variant={canApprove && !approved ? "primary" : "secondary"}
                           disabled={!canApprove || !approvalConfirmed || approved}
                           onClick={() =>
@@ -904,13 +945,13 @@ export function Campaigns({
                               setPreview(
                                 await client.request("campaigns.preview", { id: selected.id }),
                               );
-                            }, "İçerik onaylandı. Tek seferlik planlayabilir veya otomatik yayın planına ekleyebilirsiniz.")
+                            }, t("Content approved. You can schedule it once or add it to an automatic publishing plan."))
                           }
                         >
-                          {approved ? "İçerik onaylandı" : "Yayın onayı ver"}
+                          {approved ? t("Content approved") : t("Give publishing approval")}
                         </Button>
                         <Button
-                          type="submit"
+                          type="button"
                           variant={approved ? "primary" : "secondary"}
                           disabled={!canSchedule}
                           onClick={() =>
@@ -918,21 +959,16 @@ export function Campaigns({
                               await client.request("campaigns.schedule", {
                                 id: selected.id,
                               });
-                            }, "Tek seferlik yayınlar planlandı. Sonuçları aşağıdan veya İşlem geçmişinden takip edin.")
+                            }, t("One-time posts scheduled. Follow the results below or in the Operation history."))
                           }
                         >
-                          Yayını planla
+                          {t("Schedule posts")}
                         </Button>
                       </div>
-                      {scheduleReason ? (
-                        <Notice kind={currentPreview && !canApprove ? "warning" : "info"}>
-                          {scheduleReason}
-                        </Notice>
-                      ) : null}
                     </section>
                     <div className="social-actions">
                       <Button
-                        type="submit"
+                        type="button"
                         variant="secondary"
                         onClick={() =>
                           void run(
@@ -943,14 +979,14 @@ export function Campaigns({
                                   (campaign) => campaign.id === selected.id,
                                 )?.paused,
                               }),
-                            selected.paused ? "Kampanya devam ettirildi." : "Kampanya durduruldu.",
+                            selected.paused ? t("Campaign resumed.") : t("Campaign paused."),
                           )
                         }
                       >
-                        {selected.paused ? "Kampanyayı devam ettir" : "Kampanyayı durdur"}
+                        {selected.paused ? t("Resume campaign") : t("Pause campaign")}
                       </Button>
                       <Button
-                        type="submit"
+                        type="button"
                         variant="secondary"
                         disabled={editBlocked}
                         onClick={() => {
@@ -968,27 +1004,30 @@ export function Campaigns({
                           );
                         }}
                       >
-                        Taslağı düzenle
+                        {t("Edit draft")}
                       </Button>
                     </div>
                     {editBlocked ? (
                       <small className="social-muted">
-                        Planlanan, gönderilen veya incelemedeki yayınlar bu taslağın düzenlenmesini
-                        engelliyor. Yeni içerik için yeni kampanya oluşturun.
+                        {t(
+                          "Scheduled, sent or in-review posts prevent editing this draft. Create a new campaign for new content.",
+                        )}
                       </small>
                     ) : null}
                   </aside>
                 </div>
                 <details className="social-campaign-results">
                   <summary>
-                    Yayın sonuçları <small>{selectedJobs.length}</small>
+                    {t("Post results")} <small>{selectedJobs.length}</small>
                   </summary>
                   <JobList snapshot={snapshot} campaignId={selected.id} client={client} run={run} />
                 </details>
               </>
             ) : (
-              <Empty title="Kampanya önizlemesi">
-                İçeriği, yayın zamanını ve her hesabın sonucunu görmek için bir kampanya seçin.
+              <Empty title={t("Campaign preview")}>
+                {t(
+                  "Select a campaign to see its content, publish time and the result for each account.",
+                )}
               </Empty>
             )}
           </section>
@@ -1019,6 +1058,7 @@ function ProjectProfile({
   initialProject?: string;
   run: Run;
 }) {
+  useLocale();
   const [projectId, setProjectId] = useState(initialProject ?? projects[0]?.id ?? "");
   const activeProject = projects.some((project) => project.id === projectId)
     ? projectId
@@ -1050,60 +1090,54 @@ function ProjectProfile({
     });
   return (
     <details className="social-form">
-      <summary>Ürün bilgisi ve doğrulanmış duyurular</summary>
+      <summary>{t("Product information and verified announcements")}</summary>
       <p className="social-muted">
-        Kampanyalara ekleyeceğiniz ve otomatik yanıtlarda kullanılacak doğrulanmış ürün bilgileri.
+        {t(
+          "Verified product information you can add to campaigns and that automatic replies will use.",
+        )}
       </p>
       <label>
-        Proje
+        {t("Project")}
         <SearchableSelect
           value={activeProject}
           disabled={!projects.length}
-          label={"Proje"}
+          label={t("Project")}
           options={[
-            ...(!projects.length ? [{ value: "", label: "Proje bulunamadı" }] : []),
+            ...(!projects.length ? [{ value: "", label: t("No project found") }] : []),
             ...projects.map((project) => ({
               value: project.id,
               label: project.name || project.cwd,
             })),
           ]}
           onChange={(nextValue) => setProjectId(nextValue)}
-          searchLocale="tr"
+          searchLocale={getLocale()}
         />
       </label>
       <form
         className="social-form"
         onSubmit={(event) => {
           field(event);
-          void run(() => save(profile?.facts ?? []), "Ürün profili kaydedildi.");
+          void run(() => save(profile?.facts ?? []), t("Product profile saved."));
         }}
       >
-        <h3>Ürün profili</h3>
-        <label>
-          Ürün adı
-          <TextField
-            hideLabel
-            label=""
-            required
-            maxLength={200}
-            value={productName}
-            onChange={(event) => updateDraft({ productName: event.target.value })}
-          />
-        </label>
-        <label>
-          Marka dili
-          <TextField
-            hideLabel
-            label=""
-            required
-            maxLength={1000}
-            value={voice}
-            placeholder="Örn. kısa, açık ve samimi"
-            onChange={(event) => updateDraft({ voice: event.target.value })}
-          />
-        </label>
+        <h3>{t("Product profile")}</h3>
+        <TextField
+          label={t("Product name")}
+          required
+          maxLength={200}
+          value={productName}
+          onChange={(event) => updateDraft({ productName: event.target.value })}
+        />
+        <TextField
+          label={t("Brand voice")}
+          required
+          maxLength={1000}
+          value={voice}
+          placeholder={t("E.g. short, clear and friendly")}
+          onChange={(event) => updateDraft({ voice: event.target.value })}
+        />
         <Button type="submit" variant="secondary" disabled={!activeProject}>
-          Ürün profilini kaydet
+          {t("Save product profile")}
         </Button>
       </form>
       <form
@@ -1121,7 +1155,7 @@ function ProjectProfile({
             ? (profile?.facts ?? []).map((item) => (item.id === draft.factId ? fact : item))
             : [...(profile?.facts ?? []), fact];
           void (async () => {
-            if (await run(() => save(facts), "Doğrulanmış ürün bilgisi kaydedildi."))
+            if (await run(() => save(facts), t("Verified product fact saved.")))
               updateDraft({
                 topic: "",
                 text: "",
@@ -1131,72 +1165,62 @@ function ProjectProfile({
           })();
         }}
       >
-        <h3>{draft.factId ? "Doğrulanmış bilgiyi düzenle" : "Doğrulanmış bilgi ekle"}</h3>
-        <label>
-          Bilgi konusu
-          <TextField
-            hideLabel
-            label=""
-            required
-            maxLength={200}
-            value={draft.topic ?? ""}
-            onChange={(event) => updateDraft({ topic: event.target.value })}
-          />
-        </label>
-        <label>
-          Doğrulanmış, duyurulabilir bilgi
-          <TextareaField
-            hideLabel
-            label=""
-            required
-            maxLength={4000}
-            value={draft.text ?? ""}
-            onChange={(event) => updateDraft({ text: event.target.value })}
-          />
-        </label>
-        <label>
-          Doğrulama kaynağı
-          <TextField
-            hideLabel
-            label=""
-            required
-            maxLength={1000}
-            value={draft.source ?? ""}
-            onChange={(event) => updateDraft({ source: event.target.value })}
-          />
-        </label>
-        <Button
-          type="submit"
-          variant="secondary"
-          disabled={
-            !activeProject ||
-            !productName.trim() ||
-            !voice.trim() ||
-            (!draft.factId && (profile?.facts.length ?? 0) >= 100)
-          }
-        >
-          Herkese açık bilgiyi kaydet
-        </Button>
-        {draft.factId ? (
+        <h3>{draft.factId ? t("Edit verified fact") : t("Add verified fact")}</h3>
+        <TextField
+          label={t("Fact topic")}
+          required
+          maxLength={200}
+          value={draft.topic ?? ""}
+          onChange={(event) => updateDraft({ topic: event.target.value })}
+        />
+        <TextareaField
+          label={t("Verified, announceable fact")}
+          required
+          maxLength={4000}
+          value={draft.text ?? ""}
+          onChange={(event) => updateDraft({ text: event.target.value })}
+        />
+        <TextField
+          label={t("Verification source")}
+          required
+          maxLength={1000}
+          value={draft.source ?? ""}
+          onChange={(event) => updateDraft({ source: event.target.value })}
+        />
+        <div className="social-actions">
           <Button
+            type="submit"
             variant="secondary"
-            type="button"
-            onClick={() =>
-              updateDraft({
-                topic: "",
-                text: "",
-                source: "",
-                factId: undefined,
-              })
+            disabled={
+              !activeProject ||
+              !productName.trim() ||
+              !voice.trim() ||
+              (!draft.factId && (profile?.facts.length ?? 0) >= 100)
             }
           >
-            Düzenlemeyi bırak
+            {t("Save public fact")}
           </Button>
-        ) : null}
+          {draft.factId ? (
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() =>
+                updateDraft({
+                  topic: "",
+                  text: "",
+                  source: "",
+                  factId: undefined,
+                })
+              }
+            >
+              {t("Stop editing")}
+            </Button>
+          ) : null}
+        </div>
       </form>
       {!profile?.facts.length ? (
         <Empty>
-          Kayıtlı ürün bilgisi yok. Otomatik yanıt hazırlamak için doğrulanmış bir bilgi ekleyin.
+          {t("No saved product facts. Add a verified fact to prepare automatic replies.")}
         </Empty>
       ) : null}
       {profile?.facts.map((fact) => (
@@ -1218,7 +1242,7 @@ function ProjectProfile({
               })
             }
           >
-            Bilgiyi düzenle
+            {t("Edit fact")}
           </Button>
         </p>
       ))}

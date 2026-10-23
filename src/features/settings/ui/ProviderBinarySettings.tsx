@@ -7,8 +7,8 @@ import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ExternalLink, FolderOpen, Pencil, RefreshCw } from "../../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
-import { Popover } from "../../../shared/ui/Popover";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { Badge } from "../../../shared/ui/Badge";
+import { Modal } from "../../../shared/ui/Modal";
 
 import {
   inspectHarnessBinary,
@@ -168,7 +168,8 @@ export function ProviderBinaryControl({
   const title = HARNESS_TITLE[provider];
   const restartRequired = providerBinaryPathChangePending(provider);
   const chooseExecutable = (
-    <SecondaryButton
+    <Button
+      className="shrink-0"
       disabled={working}
       onClick={() => {
         if (inspectionBusy.current) return;
@@ -192,9 +193,9 @@ export function ProviderBinaryControl({
           });
       }}
     >
-      <FolderOpen className="size-3.5" />
+      <FolderOpen className="icon-sm" />
       {t("Choose executable")}
-    </SecondaryButton>
+    </Button>
   );
   const pathForm = (
     <form className="mt-2" onSubmit={submit}>
@@ -227,7 +228,8 @@ export function ProviderBinaryControl({
       {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       <div className="mt-3 flex flex-wrap justify-end gap-2">
         {!inline ? chooseExecutable : null}
-        <SecondaryButton
+        <Button
+          className="shrink-0"
           disabled={working}
           onClick={() => {
             if (inline) {
@@ -240,11 +242,11 @@ export function ProviderBinaryControl({
           }}
         >
           {t("Cancel")}
-        </SecondaryButton>
+        </Button>
         {overridden ? (
-          <SecondaryButton disabled={working} onClick={() => void useAuto()}>
+          <Button className="shrink-0" disabled={working} onClick={() => void useAuto()}>
             {t("Use auto-detected path")}
-          </SecondaryButton>
+          </Button>
         ) : null}
         <Button
           variant={inline ? "primary" : "secondary"}
@@ -290,52 +292,22 @@ export function ProviderBinaryControl({
           setEditing(false);
         }}
       >
-        <FolderOpen className="size-3.5" strokeWidth={1.75} />
+        <FolderOpen className="icon-sm" strokeWidth={1.75} />
         {showLabel ? t("CLI setup") : null}
       </Button>
       {open ? (
-        <Popover
-          id={`${provider}-binary-popover`}
-          role="dialog"
-          aria-label={t("{p0} CLI details", { p0: title })}
-          aria-busy={working}
-          tabIndex={-1}
-          anchor={root}
-          side="bottom"
-          align="start"
-          width={440}
-          className="p-3"
-          autoFocus
-          onKeyDown={(event) => {
-            if (event.key !== "Tab") return;
-            const focusable = Array.from(
-              event.currentTarget.querySelectorAll<HTMLElement>(
-                'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-              ),
-            );
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (!first || !last) return;
-            if (event.shiftKey && document.activeElement === first) {
-              event.preventDefault();
-              last.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-              event.preventDefault();
-              first.focus();
-            }
-          }}
-          onDismiss={(reason) => dismiss(reason === "escape")}
+        <Modal
+          size="sm"
+          title={t("{p0} CLI details", { p0: title })}
+          description={t(
+            "The CLI path selects an executable on this machine. Account sign-in and model defaults are managed separately.",
+          )}
+          onClose={() => dismiss(true)}
         >
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[12px] font-medium text-content">
-              {title}
-              {t(" CLI")}
-            </span>
-            <div className="flex items-center gap-1.5">
-              <span className="rounded-full bg-(--ui-surface-muted) px-1.5 py-0.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
-                {t("This machine · all projects")}
-              </span>
-              <span className="rounded-full bg-(--ui-surface-muted) px-1.5 py-0.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+          <div aria-busy={working} id={`${provider}-binary-popover`} className="p-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge size="sm">{t("This machine · all projects")}</Badge>
+              <Badge size="sm" tone={error ? "warning" : restartRequired ? "warning" : "neutral"}>
                 {working
                   ? t("Checking…")
                   : error
@@ -347,75 +319,73 @@ export function ProviderBinaryControl({
                         : inspection
                           ? t("Auto-detected")
                           : t("Not checked yet")}
-              </span>
+              </Badge>
             </div>
-          </div>
-          <p className="mt-2 text-[11px] leading-relaxed text-(--ui-text-secondary)">
-            {t(
-              "The CLI path selects an executable on this machine. Account sign-in and model defaults are managed separately.",
-            )}
-          </p>
-          {editing ? (
-            pathForm
-          ) : (
-            <>
-              <div className="mt-2 rounded-md border border-(--color-stroke) bg-(--ui-surface-muted) px-2.5 py-2">
-                <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
-                  {inspection?.path ??
-                    (error ? t("CLI could not be resolved") : t("Checking the selected CLI…"))}
-                </span>
-                <span className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
-                  {inspection?.version ??
-                    (error ? t("Retry to check this CLI") : t("Checking version…"))}
-                </span>
-              </div>
-              {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
-              {revealError ? (
-                <SettingsFeedback state="error">
-                  {t("Could not open the CLI location: ")}
-                  {revealError}
-                </SettingsFeedback>
-              ) : null}
-              <div className="mt-3 flex justify-end gap-2">
-                {error ? (
-                  <SecondaryButton
-                    disabled={working}
-                    aria-label={t(
-                      overridden ? "Retry {p0} configured path" : "Retry {p0} auto-detect",
-                      { p0: title },
-                    )}
-                    onClick={() => void inspect(overridden ? draft.trim() || null : null)}
-                  >
-                    <RefreshCw className="size-3.5" strokeWidth={1.75} />
-                    {overridden ? t("Retry configured path") : t("Retry auto-detect")}
-                  </SecondaryButton>
+            {editing ? (
+              pathForm
+            ) : (
+              <>
+                <div className="mt-2 rounded-md border border-(--color-stroke) bg-(--ui-surface-muted) px-2.5 py-2">
+                  <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+                    {inspection?.path ??
+                      (error ? t("CLI could not be resolved") : t("Checking the selected CLI…"))}
+                  </span>
+                  <span className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+                    {inspection?.version ??
+                      (error ? t("Retry to check this CLI") : t("Checking version…"))}
+                  </span>
+                </div>
+                {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+                {revealError ? (
+                  <SettingsFeedback state="error">
+                    {t("Could not open the CLI location: ")}
+                    {revealError}
+                  </SettingsFeedback>
                 ) : null}
-                <SecondaryButton
-                  aria-label={t("Open {p0} CLI location", { p0: title })}
-                  disabled={!inspection}
-                  onClick={() => {
-                    if (inspection) {
-                      void revealPath(inspection.path).catch((cause) => {
-                        setRevealError(cause instanceof Error ? cause.message : String(cause));
-                      });
-                    }
-                  }}
-                >
-                  <ExternalLink className="size-3.5" strokeWidth={1.75} />
-                  {t("Open location")}
-                </SecondaryButton>
-                <SecondaryButton
-                  aria-label={t("Edit {p0} CLI path", { p0: title })}
-                  disabled={working}
-                  onClick={() => setEditing(true)}
-                >
-                  <Pencil className="size-3.5" strokeWidth={1.75} />
-                  {t("Edit path")}
-                </SecondaryButton>
-              </div>
-            </>
-          )}
-        </Popover>
+                <div className="mt-3 flex justify-end gap-2">
+                  {error ? (
+                    <Button
+                      className="shrink-0"
+                      disabled={working}
+                      aria-label={t(
+                        overridden ? "Retry {p0} configured path" : "Retry {p0} auto-detect",
+                        { p0: title },
+                      )}
+                      onClick={() => void inspect(overridden ? draft.trim() || null : null)}
+                    >
+                      <RefreshCw className="icon-sm" strokeWidth={1.75} />
+                      {overridden ? t("Retry configured path") : t("Retry auto-detect")}
+                    </Button>
+                  ) : null}
+                  <Button
+                    className="shrink-0"
+                    aria-label={t("Open {p0} CLI location", { p0: title })}
+                    disabled={!inspection}
+                    onClick={() => {
+                      if (inspection) {
+                        void revealPath(inspection.path).catch((cause) => {
+                          setRevealError(cause instanceof Error ? cause.message : String(cause));
+                        });
+                      }
+                    }}
+                  >
+                    <ExternalLink className="icon-sm" strokeWidth={1.75} />
+                    {t("Open location")}
+                  </Button>
+                  <Button
+                    className="shrink-0"
+                    aria-label={t("Edit {p0} CLI path", { p0: title })}
+                    disabled={working}
+                    onClick={() => setEditing(true)}
+                  >
+                    <Pencil className="icon-sm" strokeWidth={1.75} />
+                    {t("Edit path")}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </Modal>
       ) : null}
     </span>
   );

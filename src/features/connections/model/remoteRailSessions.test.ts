@@ -44,7 +44,13 @@ it("shows only running host sessions and ones waiting for input as working", () 
     listed({ id: "asking", status: "running", needsInput: true }),
   ]);
   expect(agents).toMatchObject([
-    { id: "running", cwd: project, title: "Roadmap", activity: "Working", needsApproval: false },
+    {
+      id: "running",
+      cwd: project,
+      title: "Roadmap",
+      activity: "Working",
+      needsApproval: false,
+    },
     { id: "asking", activity: "Needs input", needsApproval: true },
   ]);
 });
@@ -148,4 +154,24 @@ it("keeps unopened host retry and failure states distinct from working and done"
     ["retrying", "Retrying", false],
     ["failed", "Failed", true],
   ]);
+});
+
+it("hides the host session a tab is creating until it is bound", () => {
+  const sessions = [
+    listed({ id: "known" }),
+    listed({ id: "creating", status: "running" }),
+    {
+      ...listed({ id: "elsewhere", status: "running" }),
+      project: "remote://env/home/me/other",
+    },
+  ];
+  const intent = { project, knownSessionIds: new Set(["known"]) };
+  const ids = (creating: (typeof intent)[]) =>
+    unopenedRemoteSessions(sessions, new Set(), creating).map(({ session }) => session.id);
+  expect(ids([])).toEqual(["known", "creating", "elsewhere"]);
+  expect(ids([intent])).toEqual(["known", "elsewhere"]);
+  // The same list feeds the Working cards, so the own chat is not announced there.
+  expect(
+    remoteLiveAgents(unopenedRemoteSessions(sessions, new Set(), [intent])).map(({ id }) => id),
+  ).toEqual(["elsewhere"]);
 });

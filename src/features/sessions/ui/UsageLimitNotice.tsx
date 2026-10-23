@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { Clock, Gauge, Play, Replace, X } from "../../../shared/ui/icons";
 import type { ProviderAccountProvider } from "../../providers/model/providerAccounts";
@@ -28,7 +28,7 @@ export function UsageLimitNotice({
   onSwitchModel?: () => void;
   onDismiss?: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const [now, setNow] = useState(Date.now);
   const waiting = limit.resetsAt != null && limit.resetsAt > now;
   // Tick the countdown, and flip to "Resume" once the window resets.
@@ -40,7 +40,7 @@ export function UsageLimitNotice({
 
   return (
     <div className="px-2 text-(--ui-text-secondary)" data-usage-limit>
-      <div className="relative z-0 flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 rounded-t-[10px] border border-b-0 border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle) px-2 py-1 text-[12px]">
+      <div className="relative z-0 flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 rounded-t-xl border border-b-0 border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle) px-2 py-1 text-ui-caption">
         <div className="flex min-w-0 flex-[1_1_12rem] items-center gap-2">
           <Gauge className="size-3.5 shrink-0 text-(--ui-tone-warning-fg)" />
           <span className="shrink-0 text-(--ui-text-secondary)">{t("Usage limit reached")}</span>
@@ -75,7 +75,7 @@ export function UsageLimitNotice({
           {!waiting && !onResume ? (
             <span>{t("Send a message to continue.")}</span>
           ) : !waiting ? (
-            <Button variant="ghost" type="button" onClick={onResume}>
+            <Button variant="secondary" type="button" onClick={onResume}>
               <Play className="size-3.5" />
               {t("Resume")}
             </Button>

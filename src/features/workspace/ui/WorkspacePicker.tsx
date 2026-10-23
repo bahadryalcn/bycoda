@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
@@ -312,11 +313,7 @@ function WorkspaceModePicker({
         >
           <div className="flex items-center justify-between gap-3 px-2 py-1 text-[11px] font-medium text-(--ui-text-secondary)">
             <span>{t("Workspace")}</span>
-            {shortcut ? (
-              <kbd className="font-sans text-(length:--ui-font-caption) font-normal text-(--ui-text-secondary)">
-                {shortcut}
-              </kbd>
-            ) : null}
+            {shortcut ? <ShortcutKbd size="xs">{shortcut}</ShortcutKbd> : null}
           </div>
           {(
             [

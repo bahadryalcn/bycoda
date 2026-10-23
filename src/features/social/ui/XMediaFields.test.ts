@@ -70,7 +70,7 @@ it("uploads selected images together, rejects mixed video and preserves existing
     await select([image, new File(["video"], "video.mp4", { type: "video/mp4" })]);
     expect(upload).not.toHaveBeenCalled();
     expect(video).not.toHaveBeenCalled();
-    expect(element.textContent).toContain("tek MP4");
+    expect(element.textContent).toContain("single MP4");
     await select([image, image]);
     expect(change).toHaveBeenLastCalledWith([
       { kind: "image", uploadId: "image" },
@@ -81,7 +81,7 @@ it("uploads selected images together, rejects mixed video and preserves existing
     upload.mockRejectedValueOnce(new Error("synthetic"));
     await select([image]);
     expect(change).not.toHaveBeenCalled();
-    expect(element.textContent).toContain("Yükleme tamamlanamadı");
+    expect(element.textContent).toContain("Upload failed");
   } finally {
     await act(async () => root.unmount());
     element.remove();

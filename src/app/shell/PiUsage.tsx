@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "../../shared/ui/icons";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
@@ -17,7 +17,7 @@ import {
 import { UsageProviderChip } from "./UsageProviderChip";
 
 export function PiUsage({ model, now }: { model?: string; now: number }) {
-  useLocale();
+  const t = useT();
   const provider = piUsageProvider(model);
   if (!provider) {
     return (
@@ -38,7 +38,7 @@ export function PiUsage({ model, now }: { model?: string; now: number }) {
 }
 
 function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: number }) {
-  useLocale();
+  const t = useT();
   const [limits, setLimits] = useState(() => idleRateLimits(piBillingProvider(provider)));
   const refreshRef = useRef<(force?: boolean) => void>(() => undefined);
   useEffect(() => {

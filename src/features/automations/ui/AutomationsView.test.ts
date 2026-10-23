@@ -436,10 +436,7 @@ it("searches trigger events by provider while retaining readiness gates and save
 
 it("uses the shared action menu while preserving the native delete confirmation gate", async () => {
   await renderControlEditor();
-  const previousConfirmation = window.confirm;
-  const confirmation = vi.fn(() => false);
-  window.confirm = confirmation;
-  try {
+  {
     const actions = container.querySelector<HTMLButtonElement>(
       '[aria-label="Automation actions"]',
     )!;
@@ -447,12 +444,16 @@ it("uses the shared action menu while preserving the native delete confirmation 
     const item = document.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
     expect(item.textContent).toContain("Delete automation");
     await act(async () => item.click());
-    expect(confirmation).toHaveBeenCalledOnce();
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("and its run history?");
+    await act(async () =>
+      Array.from(dialog.querySelectorAll("button"))
+        .find((entry) => entry.textContent?.trim() === "Cancel")!
+        .click(),
+    );
     expect(invoke.mock.calls.some(([command]) => command === "automations_delete")).toBe(false);
     expect(document.querySelector('[role="menu"]')).toBeNull();
-    expect(document.activeElement).toBe(actions);
-  } finally {
-    window.confirm = previousConfirmation;
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   }
 });
 
@@ -633,8 +634,6 @@ it("keeps same-ID local and host automations independent and preserves the host 
   const remove = vi
     .spyOn(hostAutomationClient, "deleteHostAutomation")
     .mockResolvedValue(undefined);
-  const previousConfirm = window.confirm;
-  window.confirm = vi.fn(() => true);
   try {
     await renderControlEditor();
     const open = async (name: string) =>
@@ -674,6 +673,11 @@ it("keeps same-ID local and host automations independent and preserves the host 
       container.querySelector<HTMLButtonElement>('[aria-label="Automation actions"]')!.click(),
     );
     await act(async () => document.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click());
+    await act(async () =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+        .find((entry) => entry.textContent?.trim() === "Delete")!
+        .click(),
+    );
     expect(remove).toHaveBeenCalledWith(expect.objectContaining({ host: other.host }));
     expect(container.querySelector('[aria-label="Open Host B review"]')).toBeNull();
     expect(container.querySelector('[aria-label="Open Edited host A"]')).not.toBeNull();
@@ -684,6 +688,5 @@ it("keeps same-ID local and host automations independent and preserves the host 
     save.mockRestore();
     run.mockRestore();
     remove.mockRestore();
-    window.confirm = previousConfirm;
   }
 });

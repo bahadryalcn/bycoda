@@ -1,11 +1,11 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect } from "react";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
 
 /** Shared, provider-independent acknowledgment of a model change. */
 export function BycodaWelcome({ onDone }: { onDone: () => void }) {
-  useLocale();
+  const t = useT();
   const motion = useDecorativeMotionEnabled();
   useEffect(() => {
     if (!motion) {

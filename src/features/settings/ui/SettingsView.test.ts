@@ -3,7 +3,6 @@ import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { ask } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { SettingsView } from "./SettingsView";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -631,6 +630,7 @@ describe("settings pages", () => {
     expect(container.querySelector('[aria-label="Show remaining usage"]')).toBeNull();
     expect(container.querySelector('[data-setting-id="provider-usage"]')).toBeNull();
     await render("usage");
+    await vi.waitFor(() => expect(container.querySelector('[role="meter"]')).not.toBeNull());
     expect(
       container
         .querySelector('[role="meter"][aria-label="Default account session remaining"]')
@@ -790,7 +790,11 @@ describe("settings pages", () => {
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Remove Work"]')!.click(),
     );
-    expect(ask).toHaveBeenCalled();
+    await act(async () =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "Remove account")!
+        .click(),
+    );
     expect(invoke).toHaveBeenCalledWith("provider_account_remove", {
       provider: "codex",
       accountId: "account-work",
@@ -813,6 +817,11 @@ describe("settings pages", () => {
       '[aria-label="Remove Default account"]',
     );
     await act(async () => remove[1]!.click());
+    await act(async () =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "Remove account")!
+        .click(),
+    );
     expect(invoke).toHaveBeenCalledWith("provider_account_remove", {
       provider: "codex",
       accountId: "default",
@@ -866,24 +875,28 @@ describe("settings pages", () => {
     );
   });
 
-  it("locks account actions during confirmation and recovers from dialog errors", async () => {
-    vi.mocked(ask).mockClear();
+  it("locks account actions during removal and recovers from removal errors", async () => {
     let reject!: (error: Error) => void;
-    vi.mocked(ask).mockImplementationOnce(
-      () =>
-        new Promise<boolean>((_, fail) => {
+    const baseline = vi.mocked(invoke).getMockImplementation();
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "provider_account_remove") {
+        return new Promise((_, fail) => {
           reject = fail;
-        }),
-    );
+        });
+      }
+      return baseline ? baseline(command, args) : undefined;
+    });
     await render("providers");
     const remove = container.querySelector<HTMLButtonElement>(
       '[aria-label="Remove Default account"]',
     )!;
+    await act(async () => remove.click());
+    const confirm = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent === "Remove account",
+    )!;
     await act(async () => {
-      remove.click();
-      remove.click();
+      confirm.click();
     });
-    expect(ask).toHaveBeenCalledTimes(1);
     expect(remove.disabled).toBe(true);
     await act(async () => reject(new Error("Dialog unavailable")));
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("Dialog unavailable");
@@ -1321,6 +1334,7 @@ describe("settings pages", () => {
       '[aria-label="Show Codex CLI details"]',
     )!;
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    trigger.focus();
     await act(async () => trigger.click());
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     await act(async () => {
@@ -1602,7 +1616,7 @@ describe("settings search", () => {
     await choose();
     expect(onSelectSection).not.toHaveBeenCalled();
     const row = container.querySelector('[data-setting-id="sounds"]')!;
-    expect(row.className).toContain("bg-accent/10");
+    expect(row.className).toContain("bg-(--ui-surface-selected)");
   });
 });
 
@@ -1620,7 +1634,7 @@ describe("providers scope inheritance", () => {
     const providerButton = (name: string) =>
       Array.from(
         container.querySelectorAll<HTMLButtonElement>(".provider-cli-selector button"),
-      ).find((button) => button.textContent?.trim() === name)!;
+      ).find((button) => button.textContent?.trim().startsWith(name))!;
     await act(async () => providerButton("Claude Code").click());
     expect(panel.hidden).toBe(true);
     await act(async () => providerButton("ACP Agent").click());

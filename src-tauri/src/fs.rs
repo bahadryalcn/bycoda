@@ -12896,6 +12896,45 @@ mod tests {
         let blob = git_stdout(&dir.0, &["rev-parse", "HEAD:new.txt"]).unwrap();
         assert!(git_commit_message_for(&dir.0, &blob).is_err());
     }
+
+    #[test]
+    #[ignore = "perf P11: line counts for the changes panel must not rewrite .git/index (use git diff-index --numstat -z HEAD)"]
+    fn change_counts_do_not_rewrite_the_git_index() {
+        let repo = tmp("numstat-index");
+        assert!(init_git_commit(
+            &repo.0,
+            &[("a.txt", "one\n"), ("b.txt", "one\n")]
+        ));
+        // Stale stat caches: a read that refreshed the index would rewrite it.
+        // `a.txt` stays really modified so the counts are computed.
+        thread::sleep(Duration::from_millis(1100));
+        std::fs::write(repo.0.join("b.txt"), "two\n").unwrap();
+        std::fs::write(repo.0.join("b.txt"), "one\n").unwrap();
+        std::fs::write(repo.0.join("a.txt"), "one\nadded\n").unwrap();
+        let index = repo.0.join(".git").join("index");
+        let before = std::fs::read(&index).unwrap();
+        let modified = std::fs::metadata(&index).unwrap().modified().unwrap();
+
+        let changes = git_changes_for(&repo.0).unwrap();
+        let a = changes
+            .files
+            .iter()
+            .find(|f| f.relative == "a.txt")
+            .unwrap();
+        assert_eq!((a.additions, a.deletions), (1, 0));
+        assert_eq!(changes.files.len(), 1, "only a.txt differs from HEAD");
+
+        assert_eq!(
+            std::fs::read(&index).unwrap(),
+            before,
+            "index bytes changed"
+        );
+        assert_eq!(
+            std::fs::metadata(&index).unwrap().modified().unwrap(),
+            modified,
+            "index was rewritten"
+        );
+    }
 }
 
 #[cfg(test)]

@@ -5,6 +5,10 @@ type SecondaryProps<P> = P extends unknown
   : never;
 export type SecondaryButtonProps = SecondaryProps<ButtonProps>;
 
+/**
+ * @deprecated Thin alias of `Button`. Use `<Button>` (variant="secondary" is the default;
+ * `danger` becomes `tone="danger"`). The only extra output is `className="shrink-0"`.
+ */
 export function SecondaryButton({
   danger = false,
   type = "button",

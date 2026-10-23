@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "../../../i18n";
+import { useT } from "../../../i18n";
 
 import {
   useCallback,
@@ -317,6 +317,7 @@ export function ConfirmMorph({
   className,
   ref,
 }: ConfirmMorphProps) {
+  const t = useT();
   const reduced = useReducedFlag();
   const uid = useId();
   const promptId = `${uid}-prompt`;
@@ -630,7 +631,6 @@ export function ConfirmMorph({
         data-ui-focus="group"
         motion="none"
         size="sm"
-        shape="pill"
         variant={tone === "neutral" ? "primary" : "secondary"}
         tone={tone === "neutral" ? "accent" : "danger"}
         selected={tone === "danger"}
@@ -657,7 +657,6 @@ export function ConfirmMorph({
         data-ui-focus="group"
         motion="none"
         size="sm"
-        shape="pill"
         variant={tone === "neutral" ? "primary" : "secondary"}
         tone={tone === "neutral" ? "accent" : "danger"}
         selected={tone === "danger"}
@@ -686,7 +685,6 @@ export function ConfirmMorph({
                 data-ui-focus="group"
                 motion="none"
                 size="sm"
-                shape="pill"
                 variant="ghost"
                 type="button"
                 className={styles.secondary}
@@ -717,7 +715,6 @@ export function ConfirmMorph({
                 data-ui-focus="group"
                 motion="none"
                 size="sm"
-                shape="pill"
                 variant="ghost"
                 type="button"
                 className={styles.secondary}
@@ -760,7 +757,6 @@ export function ConfirmMorph({
                   data-ui-focus="group"
                   motion="none"
                   size="sm"
-                  shape="pill"
                   variant="ghost"
                   type="button"
                   className={styles.secondary}
@@ -790,7 +786,6 @@ export function ConfirmMorph({
                 data-ui-focus="group"
                 motion="none"
                 size="sm"
-                shape="pill"
                 variant="ghost"
                 type="button"
                 className={styles.secondary}
@@ -809,7 +804,6 @@ export function ConfirmMorph({
               data-ui-focus="group"
               motion="none"
               size="sm"
-              shape="pill"
               variant="ghost"
               type="button"
               className={styles.trigger}

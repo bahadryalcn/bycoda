@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/technical";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   GlobalWorkerOptions,
   TextLayer,
@@ -49,7 +49,13 @@ type Anchor = {
   y: number;
 };
 
-export default function PdfViewer({ bytes }: { bytes: Uint8Array }) {
+export default function PdfViewer({
+  bytes,
+  trailing,
+}: {
+  bytes: Uint8Array;
+  trailing?: ReactNode;
+}) {
   useLocale();
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,15 +88,15 @@ export default function PdfViewer({ bytes }: { bytes: Uint8Array }) {
     );
   if (!doc) {
     return (
-      <div className="grid h-full place-items-center text-[12px] text-[var(--ui-text-muted)]">
+      <div className="grid h-full place-items-center text-ui-caption text-[var(--ui-text-muted)]">
         {t("Loading PDF…")}
       </div>
     );
   }
-  return <PdfPages doc={doc} />;
+  return <PdfPages doc={doc} trailing={trailing} />;
 }
 
-function PdfPages({ doc }: { doc: PDFDocumentProxy }) {
+function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNode }) {
   useLocale();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -213,7 +219,7 @@ function PdfPages({ doc }: { doc: PDFDocumentProxy }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-stroke px-3 text-[11px] text-[var(--ui-text-secondary)]">
+      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-stroke px-3 text-ui-micro text-[var(--ui-text-secondary)]">
         <TextField
           hideLabel
           label=""
@@ -253,10 +259,11 @@ function PdfPages({ doc }: { doc: PDFDocumentProxy }) {
         >
           {t("Fit width")}
         </Button>
+        {trailing}
       </div>
       <div
         ref={scrollRef}
-        className="flex min-h-0 flex-1 flex-col overflow-auto overscroll-contain bg-content/[0.04] py-3"
+        className="flex min-h-0 flex-1 flex-col overflow-auto overscroll-contain bg-(--ui-surface-muted) py-3"
         style={{ gap: PAGE_GAP }}
       >
         {Array.from({ length: doc.numPages }, (_, index) => {

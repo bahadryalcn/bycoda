@@ -1,11 +1,12 @@
 import { Button } from "../../../shared/ui/Button";
 import { createPortal } from "react-dom";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { t, useLocale } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import {
   memo,
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -47,7 +48,7 @@ export const TranscriptFind = memo(function TranscriptFind({
   onSearchingChange,
   onTriggerChange,
 }: Props) {
-  useLocale();
+  const t = useT();
   const findShortcut = useKeybindingShortcut("Editor: Find");
   const findLabel = t("Find in conversation");
   const input = useRef<HTMLInputElement>(null);
@@ -129,39 +130,38 @@ export const TranscriptFind = memo(function TranscriptFind({
     return () => cancelAnimationFrame(frame);
   }, [open, visible, selected, query, onNavigate]);
 
+  const onFindKey = useEffectEvent((event: KeyboardEvent) => {
+    if (event.isComposing) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest(".cm-editor, .bycoda-terminal, [role='dialog'], [data-app-search]")) return;
+    const mod = event.metaKey || event.ctrlKey;
+    const defaultFind = mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "f";
+    if (keybindingPressed("Editor: Find", event, defaultFind)) {
+      event.preventDefault();
+      event.stopPropagation();
+      openFind();
+    } else if (defaultFind) {
+      event.preventDefault();
+      event.stopPropagation();
+    } else if (
+      open &&
+      (event.key === "F3" || (mod && !event.altKey && event.key.toLowerCase() === "g"))
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      step(event.shiftKey ? -1 : 1);
+    } else if (open && event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeFind();
+    }
+  });
   useEffect(() => {
     if (!visible || !focused) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.isComposing) return;
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest(".cm-editor, .bycoda-terminal, [role='dialog'], [data-app-search]"))
-        return;
-      const mod = event.metaKey || event.ctrlKey;
-      const defaultFind =
-        mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "f";
-      if (keybindingPressed("Editor: Find", event, defaultFind)) {
-        event.preventDefault();
-        event.stopPropagation();
-        openFind();
-      } else if (defaultFind) {
-        event.preventDefault();
-        event.stopPropagation();
-      } else if (
-        open &&
-        (event.key === "F3" || (mod && !event.altKey && event.key.toLowerCase() === "g"))
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        step(event.shiftKey ? -1 : 1);
-      } else if (open && event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        closeFind();
-      }
-    };
+    const onKey = (event: KeyboardEvent) => onFindKey(event);
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  });
+  }, [visible, focused]);
 
   if (!visible) return null;
 
@@ -205,7 +205,7 @@ export const TranscriptFind = memo(function TranscriptFind({
         <div
           role="search"
           aria-label={t("Find in conversation")}
-          className="pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-1 shadow-lg backdrop-blur-xl"
+          className="pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-1 shadow-(--ui-elevation-floating)"
         >
           <Search
             className="ml-1 size-3.5 shrink-0 text-(--ui-text-secondary)"
@@ -231,11 +231,11 @@ export const TranscriptFind = memo(function TranscriptFind({
                 step(event.shiftKey ? -1 : 1);
               }
             }}
-            className="w-44 min-w-0 flex-1 bg-transparent text-[12px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
+            className="w-44 min-w-0 flex-1 bg-transparent text-ui-caption text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
           />
           <span
             aria-live="polite"
-            className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono text-[11px] tabular-nums text-(--ui-text-secondary)"
+            className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono text-ui-micro tabular-nums text-(--ui-text-secondary)"
           >
             {query.trim()
               ? matches.length

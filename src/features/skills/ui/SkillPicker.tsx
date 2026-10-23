@@ -93,7 +93,7 @@ export function SkillPicker({
               onClick={onStartCreate}
               className="flex w-full items-center gap-2"
             >
-              <Plus className="size-3.5 shrink-0" strokeWidth={1.75} />
+              <Plus className="icon-sm shrink-0" strokeWidth={1.75} />
               {t("New skill")}
             </Button>
           ) : null}
@@ -154,7 +154,7 @@ function SkillList({
 
   if (skills.length === 0) {
     return (
-      <p className="px-3 py-2.5 text-[12px] text-(--ui-text-secondary)">
+      <p className="px-3 py-2.5 text-ui-caption text-(--ui-text-secondary)">
         {query.trim() ? t("No matching commands or skills") : t("No commands yet")}
       </p>
     );
@@ -191,7 +191,7 @@ function SkillList({
               onClick={() => onPick(skill)}
             >
               <span className="flex min-w-0 w-full items-baseline gap-2">
-                <span className="truncate text-[13px]">
+                <span className="truncate text-ui-secondary">
                   {prefix}
                   {skill.invocation}
                 </span>
@@ -268,7 +268,7 @@ export function CreateSkillForm({
       }}
       className="px-2.5 py-2"
     >
-      <p className="mb-2 text-[11px] text-(--ui-text-secondary)">
+      <p className="mb-2 text-ui-micro text-(--ui-text-secondary)">
         {t("Writes a starter SKILL.md you can edit.")}
       </p>
       <TextField
@@ -300,7 +300,7 @@ export function CreateSkillForm({
         ]}
       />
       {showScopeHelp ? (
-        <p className="[margin-block-end:0.5rem] break-all text-[12px] text-(--ui-text-secondary)">
+        <p className="[margin-block-end:0.5rem] break-all text-ui-caption text-(--ui-text-secondary)">
           {project && scope === "project"
             ? t("Creates a starter in {p0}.agents/skills. Edit SKILL.md after creation.", {
                 p0: `${cwd.replace(/[\\/]+$/, "")}/`,
@@ -314,7 +314,7 @@ export function CreateSkillForm({
           {error}
         </Alert>
       ) : !name.trim() || valid ? null : (
-        <p className="mb-2 text-[12px] text-(--ui-text-secondary)">
+        <p className="mb-2 text-ui-caption text-(--ui-text-secondary)">
           {t("Use lowercase letters, numbers, and hyphens.")}
         </p>
       )}

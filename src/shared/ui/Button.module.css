@@ -18,6 +18,21 @@
   .control.fullWidth {
     inline-size: 100%;
   }
+  /* Explicit alignment; consumer `justify-*` utilities still win in this layer. */
+  .control[data-button-align="start"] {
+    justify-content: flex-start;
+    text-align: start;
+  }
+  .control[data-button-align="end"] {
+    justify-content: flex-end;
+    text-align: end;
+  }
+  .control[data-button-align="start"] > .nativeContent {
+    justify-content: flex-start;
+  }
+  .control[data-button-align="end"] > .nativeContent {
+    justify-content: flex-end;
+  }
   .control.iconOnly {
     flex-shrink: 0;
     inline-size: var(--control-height-sm);
@@ -295,13 +310,24 @@
     color: var(--foreground);
   }
 }
-.control[data-button-hierarchy]:active:not([aria-disabled="true"]) {
+/* Press is one layer. Scaling controls (Arc renderer) answer with the scale alone;
+   native-rendered controls and popup anchors never scale, so they step their tone. */
+.control[data-button-hierarchy]:is(
+    [data-button-press],
+    [aria-haspopup]:not([aria-haspopup="false"]),
+    [data-state],
+    [role="combobox"]
+  ):active:not([aria-disabled="true"]) {
   background: var(--button-pressed);
   color: var(--button-fg);
   border-color: var(--button-border);
-  opacity: 1;
 }
-.control[data-button-hierarchy="primary"]:active:not([aria-disabled="true"]) {
+.control[data-button-hierarchy="primary"]:is(
+    [data-button-press],
+    [aria-haspopup]:not([aria-haspopup="false"]),
+    [data-state],
+    [role="combobox"]
+  ):active:not([aria-disabled="true"]) {
   background: var(--button-solid-pressed);
   color: var(--button-on-solid);
   border-color: var(--button-solid-pressed);

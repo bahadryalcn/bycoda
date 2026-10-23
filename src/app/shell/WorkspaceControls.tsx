@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
+import { useLocale, useT } from "../../shared/i18n";
 import { EyeOff, GitPullRequest, RefreshCw } from "../../shared/ui/icons";
 import { FullscreenButton } from "./FullscreenButton";
 
@@ -35,7 +35,7 @@ export function WorkspaceControls({
   onUsage: () => void;
   active?: "hiddenGroups" | "pullRequests" | "usage";
 }) {
-  useLocale();
+  const t = useT();
   const actions = [
     {
       id: "pullRequests",
@@ -81,7 +81,7 @@ export function WorkspaceControls({
           onClick={onClick}
           className="size-7"
         >
-          <Icon className="size-3.5" />
+          <Icon className="icon-sm" />
         </Button>
       ))}
       <span className="mx-1 h-3 border-l border-stroke" aria-hidden="true" />
@@ -97,7 +97,7 @@ export function WorkspaceControls({
         onClick={() => window.dispatchEvent(new Event(WORKSPACE_REFRESH_EVENT))}
         className="size-7"
       >
-        <RefreshCw className="size-3.5" />
+        <RefreshCw className="icon-sm" />
       </Button>
       <FullscreenButton />
     </nav>

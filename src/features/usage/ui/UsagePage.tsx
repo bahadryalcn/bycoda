@@ -1,8 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { t, useLocale } from "../../../shared/i18n";
-import { useContext, useEffect, useState } from "react";
-import { RevealedSetting } from "../../settings/ui/settingsControls";
+import { useEffect, useState } from "react";
 import "./UsagePage.css";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { WORKSPACE_REFRESH_EVENT } from "../../../app/shell/WorkspaceControls";
@@ -29,12 +28,11 @@ import {
   type ProviderAccountIdentity,
 } from "../../providers/model/providerAccountIdentity";
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { Button } from "../../../shared/ui/Button";
 import { UsageBudgets } from "./UsageBudgets";
 
 export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
   useLocale();
-  const revealed = useContext(RevealedSetting);
   const [version, setVersion] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const accounts = (["codex", "claude"] as const).flatMap(providerAccounts);
@@ -59,14 +57,15 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
           <div className="usage-limits-content">
             <div className="usage-toolbar">
               <h2>{t("Provider account limit")}</h2>
-              <SecondaryButton
+              <Button
+                className="shrink-0"
                 aria-label={t("Refresh usage")}
                 title={t("Refresh usage")}
                 onClick={() => setRefresh((v) => v + 1)}
               >
-                <RefreshCw className="size-3.5" />
+                <RefreshCw className="icon-sm" />
                 {t("Refresh usage")}
-              </SecondaryButton>
+              </Button>
             </div>
             <div className="usage-accounts">
               {accounts
@@ -86,19 +85,15 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                   />
                 ))}
               {!accounts.length ? (
-                <p className="text-xs text-content/60">
+                <p className="text-ui-caption text-(--ui-text-secondary)">
                   {t("No accounts on this machine. Add an account in Providers settings.")}
                 </p>
               ) : null}
             </div>
             <UsageBudgets refresh={refresh} />
-            <details
-              className="usage-display-preferences"
-              open={revealed === "show-remaining-usage" || undefined}
-            >
-              <summary>{t("Display preferences")}</summary>
+            <div className="usage-display-preferences overflow-hidden rounded-xl border border-stroke bg-(--ui-surface)">
               <UsageDisplaySettings />
-            </details>
+            </div>
           </div>
         )}
       />
@@ -142,7 +137,7 @@ function AccountLimits({
       <div className="usage-account-heading">
         <div className="min-w-0">
           <div className="usage-account-provider">
-            <HarnessIcon harness={provider} className="size-3.5" />
+            <HarnessIcon harness={provider} className="icon-sm" />
             {provider === "codex" ? t("Codex") : t("Claude")}
           </div>
           <h3>
@@ -158,7 +153,7 @@ function AccountLimits({
                 ? t("Loading account identity…")
                 : t("Account identity unavailable")
             }
-            className="text-xs text-content/60"
+            className="text-ui-caption text-(--ui-text-secondary)"
           />
         </div>
         <AccountColorPicker account={account} />
@@ -171,7 +166,7 @@ function AccountLimits({
           return (
             <div key={kind} className="usage-quota">
               <div className="usage-quota-heading">
-                <h4 className="text-xs font-medium">
+                <h4 className="text-ui-caption font-medium">
                   {t(
                     kind === "session" && window.windowMinutes === 300
                       ? "5 hours"
@@ -222,7 +217,7 @@ function AccountLimits({
         </Alert>
       ) : null}
       {!windows.length && !limits.error ? (
-        <p className="rounded-xl border border-stroke p-4 text-xs text-content/50">
+        <p className="rounded-xl border border-stroke p-4 text-ui-caption text-(--ui-text-muted)">
           {label}:{" "}
           {limits.status === "fetching" || limits.status === "idle"
             ? t("Loading account limits…")

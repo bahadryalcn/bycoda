@@ -34,6 +34,7 @@ import {
   applyThemePreference,
   applyThemeTint,
   BODY_GLASS_DEFAULT,
+  WINDOW_GLASS_DEFAULT,
   ACCENT_COLOR_DEFAULT,
   CHAT_BACKGROUND_BLUR_DEFAULT,
   CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT,
@@ -41,6 +42,7 @@ import {
   CHAT_BACKGROUND_SCOPE_DEFAULT,
   THEME_PREFERENCE_DEFAULT,
   loadBodyGlass,
+  loadWindowGlass,
   loadAccentColor,
   loadChatBackgroundBlur,
   loadChatBackgroundEmptyOpacity,
@@ -56,6 +58,7 @@ import {
   loadThemeHue,
   loadThemeSaturation,
   saveBodyGlass,
+  saveWindowGlass,
   saveAccentColor,
   saveChatBackgroundBlur,
   saveChatBackgroundEmptyOpacity,
@@ -142,6 +145,7 @@ export function useAppearanceSettings(
       setMainOpacity(loadMainOpacity());
       setBlur(loadSidebarBlur());
       setBodyGlass(loadBodyGlass());
+      setWindowGlass(loadWindowGlass());
       setChatBackgroundPath(loadChatBackgroundPath());
       setChatBackgroundEmptyOpacity(loadChatBackgroundEmptyOpacity());
       setChatBackgroundSessionOpacity(loadChatBackgroundSessionOpacity());
@@ -155,6 +159,7 @@ export function useAppearanceSettings(
     return unsubscribe;
   }, []);
   const [bodyGlass, setBodyGlass] = useState(loadBodyGlass);
+  const [windowGlass, setWindowGlass] = useState(loadWindowGlass);
   const [showExcludedFiles, setShowExcludedFiles] = useState(loadShowExcludedFiles);
   const [chatBackgroundPath, setChatBackgroundPath] = useState(loadChatBackgroundPath);
   const [chatBackgroundEmptyOpacity, setChatBackgroundEmptyOpacity] = useState(
@@ -229,6 +234,12 @@ export function useAppearanceSettings(
     saveBodyGlass(next);
     setBodyGlass(next);
     if (IS_LINUX) syncNativeGlass(isLightScheme() ? "light" : "dark");
+  }, []);
+
+  const onWindowGlass = useCallback((next: boolean) => {
+    saveWindowGlass(next);
+    setWindowGlass(next);
+    if (!IS_LINUX) syncNativeGlass(isLightScheme() ? "light" : "dark");
   }, []);
 
   const onShowExcludedFiles = useCallback((next: boolean) => {
@@ -331,6 +342,7 @@ export function useAppearanceSettings(
     onTint(THEME_HUE_DEFAULT, THEME_SATURATION_DEFAULT);
     onDarkLightness(THEME_DARK_LIGHTNESS_DEFAULT);
     onBodyGlass(BODY_GLASS_DEFAULT);
+    onWindowGlass(WINDOW_GLASS_DEFAULT);
     onChatBackgroundEmptyOpacity(Math.round(CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT * 100));
     onChatBackgroundSessionOpacity(Math.round(CHAT_BACKGROUND_SESSION_OPACITY_DEFAULT * 100));
     onChatBackgroundScope(CHAT_BACKGROUND_SCOPE_DEFAULT);
@@ -349,6 +361,7 @@ export function useAppearanceSettings(
     chatBackgroundPath,
     onBlur,
     onBodyGlass,
+    onWindowGlass,
     onChatBackgroundEmptyOpacity,
     onChatBackgroundSessionOpacity,
     onChatBackgroundScope,
@@ -378,6 +391,7 @@ export function useAppearanceSettings(
     themeSaturation,
     themeDarkLightness,
     bodyGlass,
+    windowGlass,
     showExcludedFiles,
     chatBackgroundPath,
     chatBackgroundEmptyOpacity,
@@ -398,6 +412,7 @@ export function useAppearanceSettings(
     onTint,
     onDarkLightness,
     onBodyGlass,
+    onWindowGlass,
     onShowExcludedFiles,
     onChooseChatBackground,
     onClearChatBackground,

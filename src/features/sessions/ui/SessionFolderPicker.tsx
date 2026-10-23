@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type SessionFolderTarget, type SessionFolder } from "../model/sessionFolders";
 import { Folder, Plus, X } from "../../../shared/ui/icons";
@@ -13,7 +13,7 @@ type Props = {
 };
 
 export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
-  useLocale();
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const [query, setQuery] = useState("");
@@ -50,7 +50,7 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
       data-session-folder-picker
       role="dialog"
       aria-label={t("Choose a session folder")}
-      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) backdrop-blur-xl"
+      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
     >
       <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-2">
         <Folder className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
@@ -81,7 +81,7 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
               pick(rows[active]);
             }
           }}
-          className="min-w-0 flex-1 bg-transparent text-[13px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
+          className="min-w-0 flex-1 bg-transparent text-ui-secondary text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
         />
         <Button
           iconOnly
@@ -103,7 +103,7 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
         className="max-h-[min(240px,40vh)] overflow-y-auto overscroll-none p-1"
       >
         {rows.length === 0 ? (
-          <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
+          <p className="px-2 py-2 text-ui-caption text-(--ui-text-secondary)">
             {t("Type a name to create the first folder")}
           </p>
         ) : (
@@ -136,7 +136,7 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
                   {folder ? label : t("Create “{p0}”", { p0: label })}
                 </span>
                 {folder ? (
-                  <span className="shrink-0 text-[11px] tabular-nums text-(--ui-text-secondary)">
+                  <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
                     {folder.sessionIds.length}
                   </span>
                 ) : null}

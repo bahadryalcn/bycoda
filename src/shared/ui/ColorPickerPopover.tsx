@@ -1,4 +1,4 @@
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 import {
   useCallback,
   useEffect,
@@ -34,7 +34,7 @@ export function ColorSwatchRow({
   onPickIndex: (index: number) => void;
   onToggleCustom?: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const pipetteActive = customHighlighted ?? (customColor != null || customPickerOpen);
   return (
     <div className="flex flex-wrap items-center justify-between gap-1 px-0.5">
@@ -94,7 +94,7 @@ export function ColorSwatchRow({
 }
 
 export function ColorPickerPopover({ value, onChange }: Props) {
-  useLocale();
+  const t = useT();
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv(value));
   const [hexDraft, setHexDraft] = useState(() => normalizeHex(value));
   const currentHsv = useRef(hsv);

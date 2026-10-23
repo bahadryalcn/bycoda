@@ -1,6 +1,9 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { NativeSelect } from "../../../shared/ui/Select";
+import { Badge } from "../../../shared/ui/Badge";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -13,6 +16,7 @@ import { INBOX_VISIBLE_POLL_MS } from "../model/inboxPolling";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
+  ChevronsUpDown,
   CheckCheck,
   CircleX,
   ExternalLink,
@@ -20,10 +24,10 @@ import {
   ListFilter,
   LoaderCircle,
   MessageMultiple,
-  PanelLeft,
   Plus,
   RefreshCw,
   Search,
+  X,
 } from "../../../shared/ui/icons";
 import {
   useCallback,
@@ -196,7 +200,7 @@ function InboxSourceTab({
       onClick={() => onSelect(source)}
     >
       <span className="flex items-center gap-1.5">
-        <InboxProviderMark provider={source} className="block size-3.5 shrink-0" />
+        <InboxProviderMark provider={source} className="block icon-sm shrink-0" />
         <span className="leading-none">{label}</span>
       </span>
     </Button>
@@ -304,6 +308,8 @@ export function InboxView({
       ? { ...saved, hiddenKinds: saved.hiddenKinds.filter((kind) => kind !== "pr") }
       : saved;
   });
+  const sortButtonRef = useRef<HTMLButtonElement>(null);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [prSort, setPrSort] = useRetainedState(`${viewStateKey}:pr-sort`, "updated");
   const codeScopes = useCodeHostScopes(source, refresh);
   const [connectMenuOpen, setConnectMenuOpen] = useState(false);
@@ -820,14 +826,14 @@ export function InboxView({
             title={t("Connect an inbox source")}
             onClick={() => setConnectMenuOpen((open) => !open)}
           >
-            <Plus className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+            <Plus className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
           </Button>
         ) : null}
       </div>
       {noSourcesConnected ? null : (
         <div className="flex h-9 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">
-            <Search className="pointer-events-none size-3 shrink-0 text-(--ui-text-secondary)" />
+            <Search className="pointer-events-none icon-xs shrink-0 text-(--ui-text-secondary)" />
             <SearchInput
               focusOwner="group"
               value={searchInput}
@@ -838,18 +844,71 @@ export function InboxView({
               autoComplete="off"
             />
           </SearchInputGroup>
+          <span
+            className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)"
+            title={t("{p0} items", { p0: visibleItems.length })}
+          >
+            {visibleItems.length}
+          </span>
+          {pullRequestsOnly ? (
+            <>
+              <Button
+                iconOnly
+                ref={sortButtonRef}
+                label={t("Sort pull requests")}
+                variant="ghost"
+                type="button"
+                title={t("Sort pull requests")}
+                aria-haspopup="menu"
+                aria-expanded={sortMenuOpen}
+                onClick={() => setSortMenuOpen((open) => !open)}
+              >
+                <ChevronsUpDown className="icon-xs" strokeWidth={1.75} />
+              </Button>
+              {sortMenuOpen ? (
+                <DropdownMenu
+                  anchor={sortButtonRef}
+                  label={t("Sort pull requests")}
+                  returnFocusRef={sortButtonRef}
+                  onClose={() => setSortMenuOpen(false)}
+                  items={[
+                    {
+                      kind: "item",
+                      id: "updated",
+                      label: t("Recently updated"),
+                      checked: prSort !== "title",
+                      selectionRole: "radio",
+                    },
+                    {
+                      kind: "item",
+                      id: "title",
+                      label: t("Title"),
+                      checked: prSort === "title",
+                      selectionRole: "radio",
+                    },
+                  ]}
+                  onPick={(id) => {
+                    setPrSort(id);
+                    setSortMenuOpen(false);
+                  }}
+                />
+              ) : null}
+            </>
+          ) : null}
           <Button
             iconOnly
             label={t("Filter inbox")}
             variant="ghost"
             type="button"
-            title={t("Filter inbox")}
-            aria-label={t("Filter inbox")}
+            title={filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox")}
+            aria-label={filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox")}
             aria-expanded={!!filterMenu}
             aria-haspopup="menu"
+            data-filters-active={filtersActive ? "" : undefined}
             onClick={onFilterButtonClick}
           >
-            <ListFilter className="size-3" strokeWidth={1.75} />
+            <ListFilter className="icon-xs" strokeWidth={1.75} />
+            {filtersActive ? <Badge variant="dot" tone="info" label={t("Filters active")} /> : null}
           </Button>
           <Button
             iconOnly
@@ -869,7 +928,7 @@ export function InboxView({
             }}
             className="shrink-0"
           >
-            <CheckCheck className="size-3.5" strokeWidth={1.75} />
+            <CheckCheck className="icon-sm" strokeWidth={1.75} />
           </Button>
           <Button
             variant="ghost"
@@ -879,9 +938,9 @@ export function InboxView({
             className="shrink-0"
           >
             {loading || revalidating ? (
-              <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
+              <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} />
             ) : (
-              <RefreshCw className="size-3.5" strokeWidth={1.75} />
+              <RefreshCw className="icon-sm" strokeWidth={1.75} />
             )}
           </Button>
         </div>
@@ -907,53 +966,81 @@ export function InboxView({
       ) : null}
       <div ref={setListScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         {noSourcesConnected ? (
-          <p className="px-3 py-3 text-[12px] text-(--ui-text-secondary)">
-            {pullRequestsOnly
-              ? t("Connect GitHub, GitLab or Azure DevOps to view pull requests.")
-              : t("Add a connection to start using the Inbox.")}
-          </p>
+          <EmptyState
+            icon={<Inbox aria-hidden="true" />}
+            description={
+              pullRequestsOnly
+                ? t("Connect GitHub, GitLab or Azure DevOps to view pull requests.")
+                : t("Add a connection to start using the Inbox.")
+            }
+            action={
+              connectableSources.length > 0 ? (
+                <Button variant="secondary" type="button" onClick={() => setConnectMenuOpen(true)}>
+                  {t("Connect an inbox source")}
+                </Button>
+              ) : undefined
+            }
+          />
         ) : sourceError && visibleItems.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">{sourceError}</p>
+          <EmptyState
+            icon={<CircleX aria-hidden="true" />}
+            description={sourceError}
+            action={
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => setRefresh((value) => value + 1)}
+              >
+                {t("Refresh")}
+              </Button>
+            }
+          />
         ) : loading && items.length === 0 ? (
           <div className="flex justify-center py-10 text-(--ui-text-secondary)">
-            <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
+            <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
           </div>
         ) : pullRequestsOnly && visibleItems.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
-            {projects.length === 0
-              ? t("Add a project to see its repository's pull requests.")
-              : narrowedByUser
-                ? t("No pull requests match these filters.")
-                : t("No pull requests in this workspace.")}
-          </p>
+          <EmptyState
+            icon={<Inbox aria-hidden="true" />}
+            description={
+              projects.length === 0
+                ? t("Add a project to see its repository's pull requests.")
+                : narrowedByUser
+                  ? t("No pull requests match these filters.")
+                  : t("No pull requests in this workspace.")
+            }
+          />
         ) : visibleItems.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
-            {narrowedByUser
-              ? searchNarrowed
-                ? isTrackerSource(source)
-                  ? t("No matching {p0} issues", { p0: INBOX_SOURCE_LABELS[source] })
-                  : source === "gitlab"
-                    ? t("No matching issues or merge requests")
-                    : t("No matching issues or pull requests")
+          <EmptyState
+            icon={<Inbox aria-hidden="true" />}
+            description={
+              narrowedByUser
+                ? searchNarrowed
+                  ? isTrackerSource(source)
+                    ? t("No matching {p0} issues", { p0: INBOX_SOURCE_LABELS[source] })
+                    : source === "gitlab"
+                      ? t("No matching issues or merge requests")
+                      : t("No matching issues or pull requests")
+                  : isTrackerSource(source)
+                    ? t("No {p0} issues match these filters", { p0: INBOX_SOURCE_LABELS[source] })
+                    : source === "gitlab" || source === "azuredevops"
+                      ? activeFilters.assignedToMe
+                        ? t("Nothing needs your attention")
+                        : source === "gitlab"
+                          ? t("No GitLab items match these filters")
+                          : t("No ADO items match these filters")
+                      : t("No issues or pull requests match these filters")
                 : isTrackerSource(source)
-                  ? t("No {p0} issues match these filters", { p0: INBOX_SOURCE_LABELS[source] })
-                  : source === "gitlab" || source === "azuredevops"
-                    ? activeFilters.assignedToMe
-                      ? t("Nothing needs your attention")
-                      : source === "gitlab"
-                        ? t("No GitLab items match these filters")
-                        : t("No ADO items match these filters")
-                    : t("No issues or pull requests match these filters")
-              : isTrackerSource(source)
-                ? t("No {p0} issues", { p0: INBOX_SOURCE_LABELS[source] })
-                : source === "gitlab"
-                  ? projects.length === 0
-                    ? t("Open a project to fill the inbox")
-                    : t("No matching issues or merge requests")
-                  : projects.length === 0
-                    ? t("Open a project to fill the inbox")
-                    : t("No matching issues or pull requests")}
-          </p>
+                  ? t("No {p0} issues", { p0: INBOX_SOURCE_LABELS[source] })
+                  : source === "gitlab"
+                    ? projects.length === 0
+                      ? t("Open a project to fill the inbox")
+                      : t("No matching issues or merge requests")
+                    : projects.length === 0
+                      ? t("Open a project to fill the inbox")
+                      : t("No matching issues or pull requests")
+            }
+          />
         ) : (
           <ul className="flex flex-col gap-0.5 p-1.5">
             {shownItems.map((item) => {
@@ -1043,8 +1130,8 @@ export function InboxView({
         {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
         {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-            <Inbox className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
+            <Inbox className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
             <h1 className="min-w-0 truncate text-(--ui-tone-neutral-fg)">
               {pullRequestsOnly ? t("Pull Requests") : t("Inbox")}
             </h1>
@@ -1053,49 +1140,27 @@ export function InboxView({
         {IS_MAC ? null : <WindowControls />}
       </div>
 
-      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
-        {source === "jira" ? (
-          <div role="group" aria-label={t("Jira view")} className="jira-board-tabs">
-            <Button
-              variant="ghost"
-              type="button"
-              aria-pressed={jiraView === "list"}
-              onClick={() => setJiraView("list")}
-            >
-              {t("List")}
+      {source === "jira" || (pullRequestsOnly && projects.length === 0 && onOpenProject) ? (
+        <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
+          {source === "jira" ? (
+            <SegmentedControl
+              label={t("Jira view")}
+              selectionRole="pressed"
+              value={jiraView}
+              onValueChange={(next) => setJiraView(next === "board" ? "board" : "list")}
+              options={[
+                { value: "list", label: t("List") },
+                { value: "board", label: t("Board") },
+              ]}
+            />
+          ) : null}
+          {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
+            <Button variant="ghost" type="button" onClick={() => void onOpenProject()}>
+              {t("Add project")}
             </Button>
-            <Button
-              variant="ghost"
-              type="button"
-              aria-pressed={jiraView === "board"}
-              onClick={() => setJiraView("board")}
-            >
-              {t("Board")}
-            </Button>
-          </div>
-        ) : null}
-        {source !== "jira" || jiraView === "list" ? (
-          <div className="flex items-center gap-1.5 text-[12px] text-(--ui-text-secondary)">
-            <span className="tabular-nums">{visibleItems.length}</span>
-            <span>{t("items")}</span>
-          </div>
-        ) : null}
-        {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
-          <Button variant="ghost" type="button" onClick={() => void onOpenProject()}>
-            {t("Add project")}
-          </Button>
-        ) : null}
-        {pullRequestsOnly ? (
-          <NativeSelect
-            aria-label={t("Sort pull requests")}
-            value={prSort}
-            onChange={(event) => setPrSort(event.target.value)}
-          >
-            <option value="updated">{t("Recently updated")}</option>
-            <option value="title">{t("Title")}</option>
-          </NativeSelect>
-        ) : null}
-      </header>
+          ) : null}
+        </header>
+      ) : null}
 
       {source === "jira" && jiraView === "board" ? (
         <>
@@ -1282,7 +1347,7 @@ export function LinkedWorkItemPanel({
       aria-hidden={!visible}
       inert={!visible || undefined}
       data-linked-work-item-panel
-      className={`@container/linked relative min-h-0 max-w-full shrink-0 flex-col border-l border-(--ui-tone-neutral-border) text-(--ui-tone-neutral-fg) max-[950px]:absolute max-[950px]:inset-y-0 max-[950px]:right-0 max-[950px]:z-30 max-[950px]:shadow-2xl ${
+      className={`@container/linked relative min-h-0 max-w-full shrink-0 flex-col border-l border-(--ui-tone-neutral-border) text-(--ui-tone-neutral-fg) max-[950px]:absolute max-[950px]:inset-y-0 max-[950px]:right-0 max-[950px]:z-30 max-[950px]:shadow-(--ui-elevation-floating) ${
         visible ? "flex linked-work-item-enter" : "hidden"
       }`}
     >
@@ -1302,7 +1367,7 @@ export function LinkedWorkItemPanel({
           label={t("Close {p0} panel", { p0: kindLabel.toLowerCase() })}
           onClick={onClose}
         >
-          <PanelLeft className="size-3.5" strokeWidth={1.75} />
+          <X className="icon-sm" strokeWidth={1.75} />
         </Button>
       </div>
       <div className="min-h-0 min-w-0 flex-1">
@@ -1323,18 +1388,18 @@ export function LinkedWorkItemPanel({
           />
         ) : error ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-            <CircleX className="size-5 text-(--ui-tone-danger-fg)" strokeWidth={1.75} />
+            <CircleX className="icon-lg text-(--ui-tone-danger-fg)" strokeWidth={1.75} />
             <Alert tone="info" role="alert" className="max-w-sm">
               {error}
             </Alert>
             <Button variant="secondary" type="button" onClick={() => void openUrl(target.url)}>
-              <ExternalLink className="size-3.5" strokeWidth={1.75} />
+              <ExternalLink className="icon-sm" strokeWidth={1.75} />
               {t("Open on GitHub")}
             </Button>
           </div>
         ) : (
           <div className="flex h-full items-center justify-center text-(--ui-text-secondary)">
-            <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
+            <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
           </div>
         )}
       </div>
@@ -1370,9 +1435,8 @@ function InboxDetailBody({
   useLocale();
   if (!item) {
     return (
-      <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-        <Inbox className="mb-3 size-6 text-(--ui-text-secondary)" strokeWidth={1.75} />
-        <p className="text-[13px] text-(--ui-text-secondary)">{t("Select an inbox item")}</p>
+      <div className="grid h-full place-items-center">
+        <EmptyState icon={<Inbox aria-hidden="true" />} description={t("Select an inbox item")} />
       </div>
     );
   }
@@ -1446,9 +1510,8 @@ const InboxCard = memo(function InboxCard({
     >
       <span className="flex min-w-0 items-center gap-2">
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <InboxProviderMark provider={item.provider} className="size-3.5 shrink-0" />
-          <status.Icon className={`size-3 shrink-0 ${status.className}`} strokeWidth={1.75} />
-          <span className="min-w-0 truncate text-[11px] text-(--ui-text-secondary)">
+          <status.Icon className={`icon-xs shrink-0 ${status.className}`} strokeWidth={1.75} />
+          <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
             {inboxItemRef(item)}
             {attentionLabel ? ` · ${attentionLabel}` : ""}
           </span>
@@ -1461,14 +1524,14 @@ const InboxCard = memo(function InboxCard({
                   relatedSessionCount === 1 ? "{p0} related thread" : "{p0} related threads",
                   { p0: relatedSessionCount },
                 )}
-                className="inline-flex items-center gap-0.5 text-[11px] tabular-nums text-(--ui-tone-accent-fg)"
+                className="inline-flex items-center gap-0.5 text-ui-micro tabular-nums text-(--ui-tone-accent-fg)"
               >
-                <MessageMultiple className="size-3" strokeWidth={1.75} />
+                <MessageMultiple className="icon-xs" strokeWidth={1.75} />
                 {relatedSessionCount}
               </span>
             ) : null}
             {time ? (
-              <span className="text-[11px] tabular-nums text-(--ui-text-secondary)">{time}</span>
+              <span className="text-ui-micro tabular-nums text-(--ui-text-secondary)">{time}</span>
             ) : null}
             {unseen ? (
               <span
@@ -1480,23 +1543,29 @@ const InboxCard = memo(function InboxCard({
           </span>
         ) : null}
       </span>
-      <span className="mbs-1 min-w-0 line-clamp-2 wrap-anywhere text-(length:--ui-font-secondary) font-medium leading-snug text-(--ui-tone-neutral-fg)">
+      <span
+        className={`mbs-1 min-w-0 line-clamp-2 wrap-anywhere text-ui-secondary leading-snug ${
+          unseen
+            ? "font-medium text-(--ui-tone-neutral-fg)"
+            : "font-normal text-(--ui-text-secondary)"
+        }`}
+      >
         {item.title}
       </span>
       <span className="mt-1 flex min-w-0 items-center gap-2">
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-(--ui-text-secondary)">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)">
           {tracker || !item.projectPath ? null : logoPath ? (
             <ProjectLogoIcon
               path={logoPath}
-              className="size-3.5 shrink-0 rounded-sm"
-              imageClassName="size-3.5"
+              className="icon-sm shrink-0 rounded-sm"
+              imageClassName="icon-sm"
             />
           ) : (
             <ProjectMascot
               project={name}
               color={mascotColor}
               name={mascotName}
-              className="size-3 shrink-0"
+              className="icon-xs shrink-0"
             />
           )}
           <span className="min-w-0 truncate">{source}</span>

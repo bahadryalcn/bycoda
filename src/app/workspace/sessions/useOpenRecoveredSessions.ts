@@ -13,6 +13,8 @@ import type { useLockSnapshot } from "../../../features/group-lock/hooks/useGrou
 import type { WorkspaceTab } from "../../../features/workspace/model/layout";
 import { leafIds, newTab } from "../../../features/workspace/model/layout";
 import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
+import { remoteSessionFor } from "../../../features/connections/model/connections";
+import { findRemoteSessionTab } from "../../../features/connections/model/remoteSessionNavigation";
 import type { useWorkspaceNavigation } from "../../hooks/useWorkspaceNavigation";
 
 export interface OpenRecoveredSessionsDeps {
@@ -62,6 +64,9 @@ export function useOpenRecoveredSessions({
     );
     const failed: string[] = [];
     const opened = new Set<string>();
+    // Stubs whose host session is already shown by a tab: resolved without a second shell.
+    const covered = new Map<string, WorkspaceTab | undefined>();
+    const openedHostSessions = new Set<string>();
     for (const stub of sessionRecovery.workspace.sessions.filter(
       (entry) => wanted.has(entry.id) && !isProjectLockedIn(lockSnapshot, entry.cwd),
     )) {
@@ -72,6 +77,23 @@ export function useOpenRecoveredSessions({
       ) {
         failed.push(stub.id);
         continue;
+      }
+      const hostKey =
+        isRemoteProjectPath(stub.cwd) && stub.remoteSessionId
+          ? `${stub.cwd}|${stub.remoteSessionId}`
+          : undefined;
+      if (hostKey && stub.remoteSessionId) {
+        const shown = findRemoteSessionTab(
+          tabsRef.current,
+          sessionsRef.current,
+          stub.cwd,
+          stub.remoteSessionId,
+          remoteSessionFor,
+        );
+        if (openedHostSessions.has(hostKey) || (shown && shown.shellId !== stub.id)) {
+          covered.set(stub.id, shown?.tab);
+          continue;
+        }
       }
       try {
         let session = await ensureOpenSession(stub.id);
@@ -90,6 +112,7 @@ export function useOpenRecoveredSessions({
         }
         if (isProjectLockedIn(getGroupLockView().lock, stub.cwd)) continue;
         opened.add(stub.id);
+        if (hostKey) openedHostSessions.add(hostKey);
       } catch {
         failed.push(stub.id);
       }
@@ -116,8 +139,18 @@ export function useOpenRecoveredSessions({
         const session = sessionsRef.current.find((entry) => entry.id === target.focusedId);
         if (session) followProject(session.cwd);
       }
-      await removeRecoveredSessions([...opened]);
+    } else {
+      const shown = [...covered.values()].find((tab): tab is WorkspaceTab => !!tab);
+      const tab = shown && tabsRef.current.find((entry) => entry.id === shown.id);
+      if (tab) {
+        activeTabIdRef.current = tab.id;
+        setActiveTabId(tab.id);
+        const session = sessionsRef.current.find((entry) => entry.id === tab.focusedId);
+        if (session) followProject(session.cwd);
+      }
     }
+    const resolved = [...opened, ...covered.keys()];
+    if (resolved.length) await removeRecoveredSessions(resolved);
     if (failed.length) throw new Error("Recovery sessions unavailable");
   };
   return { openRecoveredSessions };

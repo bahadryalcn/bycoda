@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { t, useLocale, getLocale } from "../../../shared/i18n";
+import { getLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -80,7 +80,7 @@ function isHistoryOnly(candidate: ImportCandidate): boolean {
  * pressed, and the provider files are only ever read.
  */
 export function SessionImportDialog({ onClose, onImported, initialContext }: Props) {
-  useLocale();
+  const t = useT();
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [providers, setProviders] = useState<ReadonlySet<ImportProvider>>(
     () => new Set(initialContext ? [initialContext.provider] : ["claude", "codex"]),
@@ -251,12 +251,12 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
     >
       <div className="flex min-h-0 flex-col gap-3 p-4 pt-3">
         {load.status === "loading" ? (
-          <p className="py-10 text-center text-[13px] text-(--ui-text-secondary)">
+          <p className="py-10 text-center text-ui-secondary text-(--ui-text-secondary)">
             {t("Scanning Claude Code and Codex history…")}
           </p>
         ) : null}
         {load.status === "error" ? (
-          <p className="py-10 text-center text-[13px] text-(--ui-tone-danger-fg)">
+          <p className="py-10 text-center text-ui-secondary text-(--ui-tone-danger-fg)">
             {t("Could not read the history: ")}
             {load.message}
           </p>
@@ -298,7 +298,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                   {root.replace("/", "\\")}
                 </Button>
               ) : null}
-              <label className="flex items-center gap-1.5 px-1.5 text-[11px] text-(--ui-text-secondary)">
+              <label className="flex items-center gap-1.5 px-1.5 text-ui-micro text-(--ui-text-secondary)">
                 <Checkbox
                   checked={showAutomation}
                   onChange={(event) => setShowAutomation(event.target.checked)}
@@ -316,7 +316,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 text-[11px] text-(--ui-text-secondary)">
+            <div className="flex flex-wrap items-center gap-3 text-ui-micro text-(--ui-text-secondary)">
               <Button
                 variant="ghost"
                 type="button"
@@ -344,7 +344,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
 
             <div className="max-h-[46vh] min-h-32 overflow-y-auto rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
               {folders.length === 0 ? (
-                <p className="px-4 py-8 text-center text-[12px] text-(--ui-text-secondary)">
+                <p className="px-4 py-8 text-center text-ui-caption text-(--ui-text-secondary)">
                   {report.candidates.length === 0
                     ? t("No Claude Code or Codex conversations were found on this computer.")
                     : t("Nothing matches these filters.")}
@@ -373,7 +373,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
             </div>
 
             <div className="flex flex-col gap-2 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2.5">
-              <label className="flex items-center gap-2 text-[12px] text-(--ui-text-secondary)">
+              <label className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
                 <Checkbox
                   checked={groupProjects}
                   onChange={(event) => setGroupProjects(event.target.checked)}
@@ -381,7 +381,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                 {t("Group new projects in the sidebar by their parent folder")}
               </label>
               {groupProjects ? (
-                <p className="pl-5 text-[11px] leading-relaxed text-(--ui-text-secondary)">
+                <p className="pl-5 text-ui-micro leading-relaxed text-(--ui-text-secondary)">
                   {groupPreview.length === 0
                     ? t("No groups: no folder has two or more projects to group.")
                     : groupPreview.map((group) => `${group.name} (${group.count})`).join(" · ")}
@@ -390,7 +390,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <p className="min-w-0 flex-1 text-[12px] leading-snug text-(--ui-text-secondary)">
+              <p className="min-w-0 flex-1 text-ui-caption leading-snug text-(--ui-text-secondary)">
                 {counts.toImport === 0
                   ? t("Nothing selected to import.")
                   : t("{p0} in {p1} will be imported ({p2} on disk).", {
@@ -403,7 +403,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                       p0: plural(counts.alreadyImported, "conversation"),
                     })
                   : ""}
-                <span className="block text-[11px] text-(--ui-text-secondary)">
+                <span className="block text-ui-micro text-(--ui-text-secondary)">
                   {t("Scanned ")}
                   {report.filesScanned.toLocaleString(getLocale())}
                   {t(" files in")} {report.elapsedMs.toLocaleString(getLocale())}
@@ -459,7 +459,7 @@ function FolderSection({
   onToggleKeys: (keys: string[], on: boolean) => void;
   selectable: (items: ImportCandidate[]) => string[];
 }) {
-  useLocale();
+  const t = useT();
   const keys = selectable(folder.items);
   const chosen = keys.filter((key) => selected.has(key)).length;
   const header = useRef<HTMLInputElement>(null);
@@ -493,7 +493,7 @@ function FolderSection({
             <ChevronRight className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
           )}
           <Folder className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+          <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium">
             {prettyCwd(folder.path)}
           </span>
           {!folder.exists ? (
@@ -501,7 +501,7 @@ function FolderSection({
               {t("missing folder")}
             </span>
           ) : null}
-          <span className="shrink-0 text-[11px] text-(--ui-text-secondary)">
+          <span className="shrink-0 text-ui-micro text-(--ui-text-secondary)">
             {chosen > 0 ? t("{p0} of ", { p0: chosen }) : ""}
             {plural(folder.items.length, "conversation")}
           </span>
@@ -530,7 +530,9 @@ function FolderSection({
                   >
                     <HarnessIcon harness={item.provider} className="size-3.5" />
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-[12px]">{item.firstPrompt}</span>
+                  <span className="min-w-0 flex-1 truncate text-ui-caption">
+                    {item.firstPrompt}
+                  </span>
                   {imported ? (
                     <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-(length:--ui-font-caption)">
                       {t("imported")}
@@ -548,10 +550,10 @@ function FolderSection({
                       {item.kind === "exec" ? t("automation") : t("subagent")}
                     </span>
                   ) : null}
-                  <span className="w-24 shrink-0 text-right text-[11px] text-(--ui-text-secondary)">
+                  <span className="w-24 shrink-0 text-right text-ui-micro text-(--ui-text-secondary)">
                     {formatDate(item.lastAt)}
                   </span>
-                  <span className="w-14 shrink-0 text-right text-[11px] text-(--ui-text-secondary)">
+                  <span className="w-14 shrink-0 text-right text-ui-micro text-(--ui-text-secondary)">
                     {formatBytes(item.sizeBytes)}
                   </span>
                 </label>
@@ -565,11 +567,11 @@ function FolderSection({
 }
 
 function RunningView({ progress, onCancel }: { progress: ImportProgress; onCancel: () => void }) {
-  useLocale();
+  const t = useT();
   const percent = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   return (
     <div className="flex flex-col gap-3 py-6" role="status" aria-live="polite">
-      <p className="text-[13px] font-medium">
+      <p className="text-ui-secondary font-medium">
         {t("Importing ")}
         {progress.done.toLocaleString(getLocale())}
         {t(" of")} {progress.total.toLocaleString(getLocale())}…
@@ -586,8 +588,10 @@ function RunningView({ progress, onCancel }: { progress: ImportProgress; onCance
           style={{ width: `${percent}%` }}
         />
       </div>
-      <p className="truncate text-[12px] text-(--ui-text-secondary)">{progress.current ?? " "}</p>
-      <p className="text-[11px] text-(--ui-text-secondary)">
+      <p className="truncate text-ui-caption text-(--ui-text-secondary)">
+        {progress.current ?? " "}
+      </p>
+      <p className="text-ui-micro text-(--ui-text-secondary)">
         {progress.imported.toLocaleString(getLocale())}
         {t(" imported")}
         {progress.skipped > 0 ? t(" · {p0} skipped", { p0: progress.skipped }) : ""}
@@ -603,13 +607,13 @@ function RunningView({ progress, onCancel }: { progress: ImportProgress; onCance
 }
 
 function DoneView({ summary, onClose }: { summary: ImportSummary; onClose: () => void }) {
-  useLocale();
+  const t = useT();
   return (
     <div className="flex flex-col gap-3 py-4">
-      <p className="text-[14px] font-medium">
+      <p className="text-ui-body font-medium">
         {summary.cancelled ? t("Import cancelled") : t("Import finished")}
       </p>
-      <ul className="flex flex-col gap-1 text-[12px] text-(--ui-text-secondary)">
+      <ul className="flex flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
         <li>
           {plural(summary.imported, "conversation")}
           {t(" imported.")}
@@ -648,7 +652,7 @@ function DoneView({ summary, onClose }: { summary: ImportSummary; onClose: () =>
         ) : null}
       </ul>
       {summary.failed.length > 0 ? (
-        <details className="rounded-lg border border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle) px-3 py-2 text-[12px]">
+        <details className="rounded-lg border border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle) px-3 py-2 text-ui-caption">
           <summary className="cursor-pointer text-(--ui-tone-danger-fg)">
             {plural(summary.failed.length, "conversation")}
             {t(" could not be imported")}
@@ -665,7 +669,7 @@ function DoneView({ summary, onClose }: { summary: ImportSummary; onClose: () =>
         </details>
       ) : null}
       <div className="flex justify-end">
-        <Button variant="ghost" type="button" onClick={onClose}>
+        <Button variant="primary" type="button" onClick={onClose}>
           {t("Done")}
         </Button>
       </div>

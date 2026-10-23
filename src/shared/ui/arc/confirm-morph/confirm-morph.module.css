@@ -24,7 +24,7 @@
   max-inline-size: 100%;
   justify-content: flex-start;
   overflow: clip;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-control);
   background: var(--surface-raised);
 }
 .surface::after {

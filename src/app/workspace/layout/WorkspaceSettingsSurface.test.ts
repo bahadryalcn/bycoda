@@ -24,7 +24,10 @@ vi.mock("../../../shared/ui/Modal", () => ({
   Modal: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock("../../../shared/i18n/git", () => ({ t: (key: string) => key, useLocale: () => "en" }));
-vi.mock("../surfaces/lazySurfaces", () => ({ SettingsView: () => null }));
+vi.mock("../surfaces/lazySurfaces", () => ({
+  SettingsView: () => null,
+  preloadToolSurface: vi.fn(),
+}));
 
 beforeEach(() => vi.clearAllMocks());
 

@@ -7,14 +7,14 @@ import {
   keybindingShortcutLabel,
   subscribeKeybindings,
 } from "../../features/settings/model/settings";
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { Maximize2, Minimize2 } from "../../shared/ui/icons";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
 
 const shortcutLabel = () => keybindingShortcutLabel("App: Toggle Full Screen", FULLSCREEN_SHORTCUT);
 
 export function FullscreenButton() {
-  useLocale();
+  const t = useT();
   const shortcut = useSyncExternalStore(subscribeKeybindings, shortcutLabel, shortcutLabel);
   const [fullscreen, setFullscreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +71,14 @@ export function FullscreenButton() {
 
   return (
     <>
-      {error ? <TransientNotice message={error} onDismiss={() => setError(null)} /> : null}
+      {error ? (
+        <TransientNotice
+          tone="danger"
+          durationMs={null}
+          message={error}
+          onDismiss={() => setError(null)}
+        />
+      ) : null}
       <Button
         iconOnly
         label={label}

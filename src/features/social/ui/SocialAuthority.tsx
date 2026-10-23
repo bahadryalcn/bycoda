@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
@@ -22,7 +22,7 @@ function peerEndpoint(value: string): string {
   try {
     url = new URL(value.trim());
   } catch {
-    throw new Error("Bu bilgisayarın ulaşılabilir HTTPS adresini girin.");
+    throw new Error(t("Enter this computer's reachable HTTPS address."));
   }
   if (
     url.username ||
@@ -33,7 +33,7 @@ function peerEndpoint(value: string): string {
     (url.protocol !== "https:" &&
       !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)))
   )
-    throw new Error("HTTPS adresi kullanın; adrese kullanıcı bilgisi, yol veya sorgu eklemeyin.");
+    throw new Error(t("Use an HTTPS address without user info, a path or a query."));
   return url.origin;
 }
 
@@ -77,12 +77,12 @@ export function SocialAuthority({
     try {
       const value = await invoke<Status | null>("social_authority_status");
       if (!mounted.current || version !== epoch.current) return;
-      if (!value) throw new Error("Yerel host bağlantısı kurulamadı.");
+      if (!value) throw new Error(t("Could not connect to the local host."));
       setStatus(value);
     } catch (error) {
       if (mounted.current && version === epoch.current) {
         setStatus(undefined);
-        setError(`Merkezi host ayarı okunamadı: ${errorText(error)}`);
+        setError(t("The central host setting could not be read: {p0}", { p0: errorText(error) }));
       }
     } finally {
       if (mounted.current && version === epoch.current) setLoading(false);
@@ -146,23 +146,26 @@ export function SocialAuthority({
         setConfig(undefined);
         setNotice(
           machineId
-            ? "Merkezi host kaydedildi. Yeni ayarı kullanmak için ajan oturumlarını yeniden başlatın."
-            : "Yerel host'a dönüldü. Gönderimler durdurulmuş durumda.",
+            ? t("Central host saved. Restart agent sessions to use the new setting.")
+            : t("Returned to the local host. Sending is stopped."),
         );
         await loadStatus();
         if (mounted.current && selected.current === requestedHost)
           onSelect(machineId ?? sourceMachineId);
       } catch (error) {
-        if (mounted.current) setError(`Host ayarı değiştirilemedi: ${errorText(error)}`);
+        if (mounted.current)
+          setError(t("The host setting could not be changed: {p0}", { p0: errorText(error) }));
         throw error;
       }
     })
       .then((success) => {
         if (!success && !started && mounted.current)
-          setError("Başka bir işlem sürüyor. Host ayarını tekrar kaydedin.");
+          setError(t("Another operation is in progress. Save the host setting again."));
       })
       .catch(
-        (error) => mounted.current && setError(`Host ayarı değiştirilemedi: ${errorText(error)}`),
+        (error) =>
+          mounted.current &&
+          setError(t("The host setting could not be changed: {p0}", { p0: errorText(error) })),
       )
       .finally(() => {
         pending.current = false;
@@ -172,11 +175,13 @@ export function SocialAuthority({
 
   return (
     <details className="social-form social-authority-settings" aria-busy={loading || busy}>
-      <summary>{t("Birden fazla bilgisayarda kullanım")}</summary>
+      <summary>{t("Use on multiple computers")}</summary>
       <p className="social-muted">
-        {t("Hesapları yönetecek ana bilgisayarı seçin. Tek bilgisayarda bu ayara gerek yok.")}
+        {t(
+          "Choose the main computer that manages the accounts. This setting is not needed on a single computer.",
+        )}
       </p>
-      {loading ? <p role="status">Host ayarı yükleniyor…</p> : null}
+      {loading ? <p role="status">{t("Loading host setting…")}</p> : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {!status && !loading ? (
         <Button
@@ -186,15 +191,19 @@ export function SocialAuthority({
           disabled={busy}
           onClick={() => void loadStatus()}
         >
-          Tekrar dene
+          {t("Try again")}
         </Button>
       ) : null}
       {status ? (
         <>
           <p>
             {status.authority
-              ? `Ana bilgisayar: ${machines.find((item) => item.id === status.authorityMachineId)?.name ?? "Kayıtlı host (bağlantı listesinde yok)"}`
-              : t("Sosyal medya işlemleri bu bilgisayarda çalışıyor.")}
+              ? t("Main computer: {p0}", {
+                  p0:
+                    machines.find((item) => item.id === status.authorityMachineId)?.name ??
+                    t("Saved host (not in the connection list)"),
+                })
+              : t("Social media actions run on this computer.")}
           </p>
           {remote ? (
             <form
@@ -202,11 +211,11 @@ export function SocialAuthority({
                 event.preventDefault();
                 if (busy || loading) return;
                 if (staleMappings) {
-                  setError("Proje listesi değişti. Proje eşleştirmelerini yeniden seçin.");
+                  setError(t("The project list changed. Choose the project mappings again."));
                   return;
                 }
                 if (!Object.keys(validMapping).length) {
-                  setError("En az bir projeyi seçili host'taki projeyle eşleştirin.");
+                  setError(t("Match at least one project to a project on the selected host."));
                   return;
                 }
                 try {
@@ -218,40 +227,38 @@ export function SocialAuthority({
             >
               <fieldset className="social-workspace" disabled={busy || loading}>
                 <p>
-                  <strong>Yeni ana bilgisayar: {target.name}</strong>
+                  <strong>{t("New main computer: {p0}", { p0: target.name })}</strong>
                 </p>
-                <label>
-                  Bu bilgisayarın HTTPS adresi
-                  <TextField
-                    hideLabel
-                    label=""
-                    required
-                    type="url"
-                    value={current.sourceEndpoint}
-                    placeholder="https://windows-host.example"
-                    onChange={(event) => update({ sourceEndpoint: event.target.value })}
-                  />
-                </label>
-                <p className="social-muted">
-                  Seçili host bu adrese ulaşabilmelidir. İki host'un da birbirine bağlı olması
-                  gerekir.
-                </p>
-                <h3>Proje eşleştirmeleri</h3>
-                <p className="social-muted">
-                  Bu bilgisayardaki her proje için merkezi host'taki karşılığını seçin.
-                </p>
-                {!status.projects.length ? <p>Bu bilgisayarda eşleştirilecek proje yok.</p> : null}
+                <TextField
+                  label={t("This computer's HTTPS address")}
+                  description={t(
+                    "The selected host must be able to reach this address. Both hosts must be connected to each other.",
+                  )}
+                  required
+                  type="url"
+                  value={current.sourceEndpoint}
+                  placeholder="https://windows-host.example"
+                  onChange={(event) => update({ sourceEndpoint: event.target.value })}
+                />
+                <h3>{t("Project mappings")}</h3>
+                {!status.projects.length ? (
+                  <p>{t("There are no projects on this computer to map.")}</p>
+                ) : null}
                 {!projects.length ? (
-                  <p>Seçili host'ta proje bulunamadı. Önce bu host'ta bir proje açın.</p>
+                  <p>
+                    {t(
+                      "No projects found on the selected host. Open a project on that host first.",
+                    )}
+                  </p>
                 ) : null}
                 {status.projects.map((project) => (
                   <label key={project.id}>
                     {project.name}
                     <SearchableSelect
                       value={validMapping[project.id] ?? ""}
-                      label={"Seçim"}
+                      label={t("Project on {p0}", { p0: target.name })}
                       options={[
-                        { value: "", label: "Bu projeyi paylaşma" },
+                        { value: "", label: t("Do not share this project") },
                         ...projects.map((target) => ({
                           value: target.id,
                           label: target.name,
@@ -265,42 +272,47 @@ export function SocialAuthority({
                           },
                         })
                       }
-                      searchLocale="tr"
+                      searchLocale={getLocale()}
                     />
                   </label>
                 ))}
                 {staleMappings ? (
                   <Alert tone="danger">
-                    Bazı kayıtlı projeler artık bulunamıyor. Eşleştirmeleri yeniden seçin.
+                    {t("Some saved projects no longer exist. Choose the mappings again.")}
                   </Alert>
+                ) : null}
+                {!Object.keys(validMapping).length && !staleMappings ? (
+                  <p className="social-muted">
+                    {t("Match at least one project to a project on the selected host.")}
+                  </p>
                 ) : null}
                 <Button
                   type="submit"
                   variant="primary"
-
                   disabled={!Object.keys(validMapping).length || staleMappings}
                 >
-                  {busy ? "Kaydediliyor…" : `${target.name} bilgisayarını kullan`}
+                  {busy ? t("Saving…") : t("Use {p0}", { p0: target.name })}
                 </Button>
               </fieldset>
             </form>
           ) : null}
           {status.authority ? (
-            <div className="social-actions">
+            <div className="social-actions mt-2 border-t border-(--ui-tone-neutral-border) pt-2">
               <Button
                 variant="secondary"
+                tone="danger"
                 loading={busy}
                 type="button"
                 disabled={busy || loading}
                 onClick={() => changeAuthority(null, {}, null)}
               >
-                Bu bilgisayara dön ve gönderimleri durdur
+                {t("Return to this computer and stop sending")}
               </Button>
             </div>
           ) : null}
           <p className="social-muted">
             {t(
-              "Proje ve hesap izinleri ana bilgisayarda da geçerlidir. Bilgisayar değiştirmek gönderim izni vermez.",
+              "Project and account permissions also apply on the main computer. Switching computers does not grant send permission.",
             )}
           </p>
         </>

@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
+import { useLocale, useT } from "../../shared/i18n";
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import {
   Archive,
@@ -57,7 +57,7 @@ type Props = {
 
 /** Body of the project rail while settings are open. */
 export function SettingsNav({ section, onSelect, onClose }: Props) {
-  useLocale();
+  const t = useT();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const rows = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
   const groups = settingsSectionsByGroup();
@@ -76,7 +76,7 @@ export function SettingsNav({ section, onSelect, onClose }: Props) {
       >
         {groups.map((group) => (
           <div key={group.id} className="flex flex-col gap-px">
-            <div className="px-2 pb-1 text-xs font-semibold text-content/35 @max-[140px]/rail:hidden">
+            <div className="px-2 pb-1 text-ui-caption font-semibold text-(--ui-text-secondary) @max-[140px]/rail:hidden">
               {group.label}
             </div>
             {group.sections.map((item) => (
@@ -152,8 +152,12 @@ function NavRow({
       aria-current={active ? "true" : undefined}
       className={`flex w-full items-center gap-2 @max-[140px]/rail:justify-center `}
     >
-      <Icon aria-hidden="true" className="size-4 shrink-0 opacity-70" strokeWidth={1.75} />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden">
+      <Icon
+        aria-hidden="true"
+        className={`icon-md shrink-0 ${active ? "" : "text-(--ui-text-secondary)"}`}
+        strokeWidth={1.75}
+      />
+      <span className="min-w-0 flex-1 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden">
         {label}
       </span>
     </Button>

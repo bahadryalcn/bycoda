@@ -1,4 +1,7 @@
 import { ModelCatalogCache } from "./model-catalog-cache";
+import { createVoiceClientSecret } from "./voice";
+import { LocalVoiceService } from "./voice-local";
+import { inspectVoiceRuntime } from "./voice-runtime";
 import { readSessionUsage } from "./usage-report";
 import { desktopActorId, desktopOperationId, desktopReviewSecret, openDesktopReview, sealDesktopReview, openDesktopResource, sealDesktopResource, type DesktopReviewScope } from "./reviewed-desktop-scope";
 import { readHostAccess } from "./access-center";
@@ -245,6 +248,7 @@ export function createHostServer(
   const logMonitors = new RuntimeLogMonitors(browserRuntime.load, runtimeLogs);
   const sharedBrowser = new SharedBrowser(browserRuntime.load, Date.now, { runtimeLogs });
   const devServers = new DevServersService({ runtimeLogs });
+  const localVoice = new LocalVoiceService();
   const devServerAccess = new DevServerAccess(
     async (params) => {
       engine.store.project(String(params.projectId ?? ""));
@@ -1606,11 +1610,41 @@ export function createHostServer(
                 "browser.annotation",
                 "dev.servers",
                 "dev.servers.private-access",
+                "voice.realtime.v1",
+                "voice.local.v1",
                 "social.v1",
                 "social.policy.reviewed.v1",
                 "social.programs.v2",
               ],
             };
+            break;
+          case "voice.clientSecret":
+            engine.store.project(String(params.projectId ?? ""));
+            result = await createVoiceClientSecret();
+            break;
+          case "voice.local.inspect":
+            result = await inspectVoiceRuntime(params.config);
+            break;
+          case "voice.local.speak":
+            result = localVoice.speak(params.lease, params.text);
+            break;
+          case "voice.local.speechNext":
+            result = await localVoice.nextSpeech(params.lease, params.id);
+            break;
+          case "voice.local.speechCancel":
+            result = localVoice.cancelSpeech(params.lease, params.id);
+            break;
+          case "voice.local.start":
+            result = await localVoice.start(params.config);
+            break;
+          case "voice.local.transcribe":
+            result = await localVoice.transcribe(params.lease, params.audio, params.language);
+            break;
+          case "voice.local.keepAlive":
+            result = localVoice.keepAlive(params.lease);
+            break;
+          case "voice.local.release":
+            result = localVoice.release(params.lease);
             break;
           case "providers.center.read": {
             const entries = await Promise.all([...new Set(providers)].filter((id) => id !== "acp").map(async (id) => {
@@ -3000,6 +3034,7 @@ export function createHostServer(
     social.start();
   });
   server.on("close", () => {
+    localVoice.close();
     crews.stop();
     attachmentOwnership.close();
     void terminals.close();

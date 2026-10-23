@@ -1,8 +1,10 @@
 import { TextField } from "../../../shared/ui/TextField";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { useState } from "react";
+import { t, useLocale } from "../../../shared/i18n";
 import { socialRows } from "../model/socialWorkspace";
 import type { SocialPublishingPlan } from "../model/social";
 import {
@@ -35,6 +37,7 @@ const defaultSchedule = (): PublishingScheduleFields => ({
 });
 
 export function PublishingPlans({ client, snapshot, projects, initialProject, run }: Props) {
+  useLocale();
   const campaigns = socialRows(snapshot.campaigns, snapshot.related?.campaigns);
   const jobs = socialRows(snapshot.jobs, snapshot.related?.jobs);
   const plans = snapshot.publishingPlans ?? [];
@@ -94,19 +97,19 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
   const reviewConfirmed =
     reviewed?.id === selected?.id && reviewed?.revision === selected?.revision;
   const activationReason = !selected
-    ? "Bir yayın planı seçin."
+    ? t("Select a publishing plan.")
     : !remaining
-      ? "İçerik havuzu tamamlandı. Yeni onaylı kampanyalar ekleyin."
+      ? t("The content pool is complete. Add new approved campaigns.")
       : !snapshot.hostOnline
-        ? "Host bağlantısını kurun."
+        ? t("Connect the host.")
         : snapshot.stopped || !snapshot.sendingEnabled
-          ? "Gönderim kapalı. Gönderim kontrollerinden açın."
+          ? t("Sending is off. Turn it on in the sending controls.")
           : !selectedAccount?.connected
-            ? "Hesabı yeniden bağlayın."
+            ? t("Reconnect the account.")
             : selectedAccount.paused
-              ? "Hesap durduruldu. Hesaplar bölümünden devam ettirin."
+              ? t("The account is paused. Resume it in Accounts.")
               : !selectedAccount.grants[selected.projectId]?.includes("publish")
-                ? "Hesaplar bölümünde bu projeye yayın izni verin."
+                ? t("Grant publishing permission for this project in Accounts.")
                 : selectedCapability && selectedCapability.status !== "available"
                   ? publishingPauseFeedback(selectedCapability.reason).message
                   : plans.some(
@@ -115,11 +118,13 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                           plan.accountId === selected.accountId &&
                           plan.enabled,
                       )
-                    ? "Bu hesapta başka bir yayın planı etkin. Önce o planı durdurun."
+                    ? t("Another publishing plan is active on this account. Pause that plan first.")
                     : !selectedApproved
-                      ? "Kampanyalar bölümünde havuzdaki tüm içeriklere yayın onayı verin. Değişen içeriği planı düzenleyerek yeniden seçin."
+                      ? t(
+                          "In Campaigns, approve every pool item for publishing. Reselect changed content by editing the plan.",
+                        )
                       : !reviewConfirmed
-                        ? "Aşağıdaki plan ve içerik onayını işaretleyin."
+                        ? t("Tick the plan and content confirmation below.")
                         : "";
   const updateSchedule = (change: Partial<PublishingScheduleFields>) =>
     setScheduleDraft((current) => ({ ...current, ...change }));
@@ -127,13 +132,13 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
   return (
     <section
       className="social-publishing-plans"
-      aria-label="Otomatik yayın planları"
+      aria-label={t("Automatic publishing plans")}
       data-empty={!plans.length}
     >
       <header className="social-section-heading">
         <div>
-          <h2>Otomatik yayın planları</h2>
-          <p className="social-muted">Onaylı kampanyaları belirlediğiniz saatlerde paylaşın.</p>
+          <h2>{t("Automatic publishing plans")}</h2>
+          <p className="social-muted">{t("Share approved campaigns at the times you choose.")}</p>
         </div>
         <StatusBadge
           status={plans.some((plan) => plan.enabled) ? "active" : "paused"}
@@ -141,16 +146,20 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
         />
       </header>
       {!supported ? (
-        <Notice kind="info" title="Host güncellemesi gerekli">
-          Bu host sürümü düzenli yayın planlarını desteklemiyor. Güncel host ile tekrar açın.
+        <Notice kind="info" title={t("Host update required")}>
+          {t(
+            "This host version does not support scheduled publishing plans. Reopen with an up-to-date host.",
+          )}
         </Notice>
       ) : (
         <>
           <SocialSetupEditor
             inline={!plans.length}
-            title={editingId ? "Yayın planını düzenle" : "Otomatik yayın planı oluştur"}
+            title={editingId ? t("Edit publishing plan") : t("Create automatic publishing plan")}
             editing={editVersion}
-            description="Hesap, içerik havuzu ve saatleri belirleyin. Plan durdurulmuş kaydedilir; yayın için ayrıca etkinleştirin."
+            description={t(
+              "Choose the account, content pool and schedule. The plan is saved paused; enable it separately to publish.",
+            )}
           >
             <form
               className="social-form social-plan-setup"
@@ -175,7 +184,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                           schedule: validation.schedule,
                         },
                       );
-                    }, "Yayın planı durdurulmuş kaydedildi. Planı inceleyip etkinleştirin.")) ||
+                    }, t("Publishing plan saved as paused. Review and enable it."))) ||
                     !saved
                   )
                     return;
@@ -189,30 +198,26 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
               }}
             >
               <div className="social-plan-content">
-                <label>
-                  Plan adı
-                  <TextField
-                    hideLabel
-                    label=""
-                    required
-                    maxLength={200}
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder="Örn. X günlük ürün paylaşımları"
-                  />
-                </label>
+                <TextField
+                  label={t("Plan name")}
+                  required
+                  maxLength={200}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder={t("E.g. Daily X product posts")}
+                />
                 <div className="social-form-grid">
                   <label>
-                    Paylaşım hesabı
+                    {t("Sharing account")}
                     <NativeSearchableSelect
-                      label="Paylaşım hesabı"
+                      label={t("Sharing account")}
                       options={
                         snapshot.accounts.length
                           ? snapshot.accounts.map((item) => ({
                               value: item.id,
                               label: `${item.name} · ${names[item.platform]}`,
                             }))
-                          : [{ value: "", label: "Önce bir hesap bağlayın" }]
+                          : [{ value: "", label: t("Connect an account first") }]
                       }
                       value={accountId}
                       disabled={completedCampaignIds.length > 0}
@@ -224,16 +229,16 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     />
                   </label>
                   <label>
-                    Proje
+                    {t("Project")}
                     <NativeSearchableSelect
-                      label="Proje"
+                      label={t("Project")}
                       options={
                         projects.length
                           ? projects.map((project) => ({
                               value: project.id,
                               label: project.name || project.cwd,
                             }))
-                          : [{ value: "", label: "Proje bulunamadı" }]
+                          : [{ value: "", label: t("No project found") }]
                       }
                       value={projectId}
                       disabled={completedCampaignIds.length > 0}
@@ -247,42 +252,43 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                 </div>
 
                 <SocialMultiSelect
-                  label="Paylaşılacak kampanyalar · seçtiğiniz sırayla"
-                  placeholder="İçerik havuzunu seçin"
-                  searchPlaceholder="Kampanya ara"
+                  label={t("Campaigns to share · in the order you pick")}
+                  placeholder={t("Select the content pool")}
+                  searchPlaceholder={t("Search campaigns")}
                   options={availableCampaigns
                     .filter((campaign) => !completedCampaignIds.includes(campaign.id))
                     .map((campaign) => ({
                       value: campaign.id,
                       label: campaign.name,
                       description: snapshot.approvedCampaignIds?.includes(campaign.id)
-                        ? "Yayın onaylı"
-                        : "Kampanyalar bölümünden yayın onayı gerekli",
+                        ? t("Approved for publishing")
+                        : t("Publishing approval needed in Campaigns"),
                     }))}
                   selected={campaignIds.filter((id) => !completedCampaignIds.includes(id))}
                   onChange={(ids) => setCampaignIds([...completedCampaignIds, ...ids])}
                 />
                 {completedCampaignIds.length ? (
                   <Notice kind="info">
-                    Bu planda {completedCampaignIds.length} kampanya tamamlandı. Gönderilen
-                    içeriklerin sırası, hesap ve proje korunur; kalan içerikleri değiştirebilir veya
-                    havuza yeni kampanyalar ekleyebilirsiniz.
+                    {t(
+                      "{p0} campaigns in this plan are completed. The order of sent content, the account and the project are kept; you can change the remaining content or add new campaigns to the pool.",
+                      { p0: completedCampaignIds.length },
+                    )}
                   </Notice>
                 ) : null}
                 {campaignIds.length > 1 ? (
-                  <ol className="social-pool-editor" aria-label="Paylaşım sırası">
+                  <ol className="social-pool-editor" aria-label={t("Sharing order")}>
                     {campaignIds.map((id, index) => (
                       <li key={id}>
                         <span>
                           {campaigns.find((campaign) => campaign.id === id)?.name ??
-                            "Kampanya bulunamadı"}
+                            t("Campaign not found")}
                         </span>
                         <div className="social-actions">
                           <Button
                             variant="secondary"
                             type="button"
                             disabled={index <= completedCampaignIds.length}
-                            aria-label={`${index + 1}. kampanyayı yukarı taşı`}
+                            aria-label={t("Move campaign {p0} up", { p0: index + 1 })}
                             onClick={() =>
                               setCampaignIds((current) => {
                                 const next = [...current];
@@ -291,7 +297,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                               })
                             }
                           >
-                            Yukarı
+                            {t("Up")}
                           </Button>
                           <Button
                             variant="secondary"
@@ -300,7 +306,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                               index < completedCampaignIds.length ||
                               index === campaignIds.length - 1
                             }
-                            aria-label={`${index + 1}. kampanyayı aşağı taşı`}
+                            aria-label={t("Move campaign {p0} down", { p0: index + 1 })}
                             onClick={() =>
                               setCampaignIds((current) => {
                                 const next = [...current];
@@ -309,7 +315,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                               })
                             }
                           >
-                            Aşağı
+                            {t("Down")}
                           </Button>
                         </div>
                       </li>
@@ -318,26 +324,28 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                 ) : null}
                 {!availableCampaigns.length ? (
                   <Notice kind="info">
-                    Bu hesap ve proje için kampanya yok. Kampanyalar bölümünde içerik hazırlayıp
-                    yayın onayı verin.
+                    {t(
+                      "There are no campaigns for this account and project. Prepare content in Campaigns and approve it for publishing.",
+                    )}
                   </Notice>
                 ) : null}
                 <p className="social-muted">
-                  Her kampanya bir kez paylaşılır. İçerik havuzu bitince plan durur; devam etmek
-                  için yeni onaylı kampanyalar ekleyin.
+                  {t(
+                    "Each campaign is shared once. The plan stops when the content pool ends; add new approved campaigns to continue.",
+                  )}
                 </p>
                 <Button type="submit" variant="secondary" disabled={!canSave}>
-                  {editingId ? "Değişiklikleri durdurulmuş kaydet" : "Planı durdurulmuş kaydet"}
+                  {editingId ? t("Save changes as paused") : t("Save plan as paused")}
                 </Button>
                 {!name.trim() || !account || !projectId || invalidPool ? (
                   <small className="social-muted">
-                    Kaydetmek için plan adı, hesap, proje ve en az bir kampanya seçin.
+                    {t("To save, choose a plan name, account, project and at least one campaign.")}
                   </small>
                 ) : null}
               </div>
               <fieldset>
-                <legend>Ne zaman paylaşsın?</legend>
-                <div className="social-actions" aria-label="Hazır yayın saatleri">
+                <legend>{t("When should it share?")}</legend>
+                <div className="social-actions" aria-label={t("Schedule presets")}>
                   <Button
                     variant="secondary"
                     type="button"
@@ -350,7 +358,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                       })
                     }
                   >
-                    09:00–18:00 · 2–5 saat arayla
+                    {t("09:00–18:00 · every 2–5 hours")}
                   </Button>
                   <Button
                     variant="secondary"
@@ -364,73 +372,55 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                       })
                     }
                   >
-                    09:00–22:00 · 3 saatte bir
+                    {t("09:00–22:00 · every 3 hours")}
                   </Button>
                   <Button
                     variant="secondary"
                     type="button"
                     onClick={() => updateSchedule({ startTime: "00:00", endTime: "00:00" })}
                   >
-                    Günün tamamı
+                    {t("All day")}
                   </Button>
                 </div>
                 <div className="social-form-grid">
-                  <label>
-                    Başlangıç saati
-                    <TextField
-                      hideLabel
-                      label=""
-                      type="time"
-                      value={scheduleDraft.startTime}
-                      onChange={(event) => updateSchedule({ startTime: event.target.value })}
-                      required
-                    />
-                  </label>
-                  <label>
-                    Bitiş saati
-                    <TextField
-                      hideLabel
-                      label=""
-                      type="time"
-                      value={scheduleDraft.endTime}
-                      onChange={(event) => updateSchedule({ endTime: event.target.value })}
-                      required
-                    />
-                  </label>
-                  <label>
-                    En kısa aralık · saat
-                    <TextField
-                      hideLabel
-                      label=""
-                      type="number"
-                      step="any"
-                      min="0"
-                      max="168"
-                      value={scheduleDraft.minHours}
-                      onChange={(event) => updateSchedule({ minHours: event.target.value })}
-                      required
-                    />
-                  </label>
-                  <label>
-                    En uzun aralık · saat
-                    <TextField
-                      hideLabel
-                      label=""
-                      type="number"
-                      step="any"
-                      min="0"
-                      max="168"
-                      value={scheduleDraft.maxHours}
-                      onChange={(event) => updateSchedule({ maxHours: event.target.value })}
-                      required
-                    />
-                  </label>
-                </div>
-                <label>
-                  Saat dilimi
                   <TextField
-                    hideLabel
-                    label=""
+                    label={t("Start time")}
+                    type="time"
+                    value={scheduleDraft.startTime}
+                    onChange={(event) => updateSchedule({ startTime: event.target.value })}
+                    required
+                  />
+                  <TextField
+                    label={t("End time")}
+                    type="time"
+                    value={scheduleDraft.endTime}
+                    onChange={(event) => updateSchedule({ endTime: event.target.value })}
+                    required
+                  />
+                  <TextField
+                    label={t("Shortest interval · hours")}
+                    type="number"
+                    step="any"
+                    min="0"
+                    max="168"
+                    value={scheduleDraft.minHours}
+                    onChange={(event) => updateSchedule({ minHours: event.target.value })}
+                    required
+                  />
+                  <TextField
+                    label={t("Longest interval · hours")}
+                    type="number"
+                    step="any"
+                    min="0"
+                    max="168"
+                    value={scheduleDraft.maxHours}
+                    onChange={(event) => updateSchedule({ maxHours: event.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <TextField
+                    label={t("Time zone")}
                     value={scheduleDraft.timeZone}
                     onChange={(event) => updateSchedule({ timeZone: event.target.value })}
                     placeholder="Europe/Istanbul"
@@ -444,13 +434,15 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     <option value="America/New_York" />
                     <option value="UTC" />
                   </datalist>
-                </label>
+                </div>
                 {validation.error ? (
                   <Notice kind="warning">{validation.error}</Notice>
                 ) : (
-                  <Notice kind="info" title="Paylaşım takvimi">
-                    {publishingScheduleSummary(validation.schedule!)} İlk yayın bir sonraki uygun
-                    zaman diliminde hazırlanır; sonraki yayınlar bu aralığa göre sıraya alınır.
+                  <Notice kind="info" title={t("Sharing schedule")}>
+                    {publishingScheduleSummary(validation.schedule!)}{" "}
+                    {t(
+                      "The first publication is prepared in the next suitable time slot; later ones are queued according to this interval.",
+                    )}
                   </Notice>
                 )}
               </fieldset>
@@ -459,12 +451,12 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
           <div className="social-columns">
             <section>
               <h3>
-                Yayın planları <small>{plans.length}</small>
+                {t("Publishing plans")} <small>{plans.length}</small>
               </h3>
               {plans.length ? (
                 plans.map((plan) => (
                   <Button
-                    type="submit"
+                    type="button"
                     variant="tab"
                     key={plan.id}
                     className="social-row"
@@ -478,10 +470,12 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     <StatusBadge status={state(plan)} />
                     <span>
                       {snapshot.accounts.find((item) => item.id === plan.accountId)?.name ??
-                        "Hesap kaldırıldı"}
+                        t("Account removed")}
                     </span>
                     <small>
-                      {Math.max(0, plan.campaigns.length - plan.nextIndex)} içerik kaldı
+                      {t("{p0} items left", {
+                        p0: Math.max(0, plan.campaigns.length - plan.nextIndex),
+                      })}
                       {plan.nextRunAt
                         ? ` · ${publishingPlanTime(plan.nextRunAt, plan.schedule.timeZone)}`
                         : ""}
@@ -489,15 +483,17 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                   </Button>
                 ))
               ) : (
-                <Empty title="Henüz yayın planı yok">
-                  Hesabınızı, onaylı kampanyaları ve paylaşım saatlerini seçerek bir plan oluşturun.
+                <Empty title={t("No publishing plans yet")}>
+                  {t(
+                    "Create a plan by choosing your account, approved campaigns and sharing times.",
+                  )}
                 </Empty>
               )}
             </section>
             <section>
               {!selected ? (
-                <Empty title="Yayın planı ayrıntıları">
-                  Saatleri, sıradaki içeriği ve son sonucu görmek için bir plan seçin.
+                <Empty title={t("Publishing plan details")}>
+                  {t("Select a plan to see its schedule, next content and latest result.")}
                 </Empty>
               ) : (
                 <>
@@ -510,32 +506,35 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                   </p>
                   <dl className="social-definition-grid">
                     <div>
-                      <dt>Hesap</dt>
-                      <dd>{selectedAccount?.name ?? "Hesap kaldırıldı"}</dd>
+                      <dt>{t("Account")}</dt>
+                      <dd>{selectedAccount?.name ?? t("Account removed")}</dd>
                     </div>
                     <div>
-                      <dt>Sıradaki yayın</dt>
+                      <dt>{t("Next publication")}</dt>
                       <dd>
                         {selected.enabled
                           ? publishingPlanTime(selected.nextRunAt, selected.schedule.timeZone)
-                          : "Etkinleştirilince planlanır"}
+                          : t("Scheduled once enabled")}
                       </dd>
                     </div>
                     <div>
-                      <dt>İçerik havuzu</dt>
+                      <dt>{t("Content pool")}</dt>
                       <dd>
-                        {selected.nextIndex} / {selected.campaigns.length} tamamlandı · {remaining}{" "}
-                        kaldı
+                        {t("{p0} / {p1} completed · {p2} left", {
+                          p0: selected.nextIndex,
+                          p1: selected.campaigns.length,
+                          p2: remaining,
+                        })}
                       </dd>
                     </div>
                     <div>
-                      <dt>Son çalışma</dt>
+                      <dt>{t("Last run")}</dt>
                       <dd>{publishingPlanTime(selected.lastRunAt, selected.schedule.timeZone)}</dd>
                     </div>
                   </dl>
                   {selectedJob ? (
                     <div className="social-inline-meta">
-                      <span>{selected.pendingJobId ? "Sıradaki iş:" : "Son sonuç:"}</span>
+                      <span>{selected.pendingJobId ? t("Queued job:") : t("Latest result:")}</span>
                       <StatusBadge status={selectedJob.status} />
                       {selectedJob.error ? (
                         <Notice
@@ -550,7 +549,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                           {resultFeedback.message}
                           {resultFeedback.technicalDetail ? (
                             <details className="social-settings">
-                              <summary>Teknik ayrıntı</summary>
+                              <summary>{t("Technical detail")}</summary>
                               <p className="social-message">{resultFeedback.technicalDetail}</p>
                             </details>
                           ) : null}
@@ -558,27 +557,32 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                       ) : null}
                     </div>
                   ) : (
-                    <span className="social-muted">Bu planda henüz yayın işi çalışmadı.</span>
+                    <span className="social-muted">
+                      {t("No publishing job has run in this plan yet.")}
+                    </span>
                   )}
                   {selected.pausedReason && !selected.completedAt ? (
                     <Notice kind={pauseFeedback.kind} title={pauseFeedback.title}>
                       {pauseFeedback.message}
                       {pauseFeedback.technicalDetail ? (
                         <details className="social-settings">
-                          <summary>Teknik ayrıntı</summary>
+                          <summary>{t("Technical detail")}</summary>
                           <p className="social-message">{pauseFeedback.technicalDetail}</p>
                         </details>
                       ) : null}
                     </Notice>
                   ) : null}
                   {selected.completedAt ? (
-                    <Notice kind="success" title="İçerik havuzu tamamlandı">
-                      Tüm içerikler işlendi. Yeni paylaşımlar için planı düzenleyip yeni onaylı
-                      kampanyalar ekleyin.
+                    <Notice kind="success" title={t("Content pool completed")}>
+                      {t(
+                        "All content has been processed. Edit the plan and add new approved campaigns to keep sharing.",
+                      )}
                     </Notice>
                   ) : null}
                   <details className="social-content-pool">
-                    <summary>İçerik havuzunu incele · {selected.campaigns.length} kampanya</summary>
+                    <summary>
+                      {t("Review content pool · {p0} campaigns", { p0: selected.campaigns.length })}
+                    </summary>
                     {selected.campaigns.map((reference, index) => {
                       const campaign = campaigns.find((item) => item.id === reference.campaignId);
                       const variant = campaign?.variants.find(
@@ -596,11 +600,11 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                         <article key={reference.campaignId} className="social-preview">
                           <div className="social-record-heading">
                             <strong>
-                              {index + 1}. {campaign?.name ?? "Kampanya bulunamadı"}
+                              {index + 1}. {campaign?.name ?? t("Campaign not found")}
                             </strong>
                             <StatusBadge
                               status={poolStatus}
-                              label={index < selected.nextIndex ? "Tamamlandı" : undefined}
+                              label={index < selected.nextIndex ? t("Completed") : undefined}
                             />
                           </div>
                           {variant ? (
@@ -610,8 +614,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                             </p>
                           ) : (
                             <Notice kind="warning">
-                              Kampanya veya hesap içeriği değişti. Planı düzenleyip içerik havuzunu
-                              yeniden seçin.
+                              {t(
+                                "The campaign or account content changed. Edit the plan and reselect the content pool.",
+                              )}
                             </Notice>
                           )}
                         </article>
@@ -619,8 +624,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     })}
                   </details>
                   <Notice kind="info">
-                    Plan yalnızca onaylı içerikleri kullanır ve havuz bittiğinde durur. Host açıkken
-                    uygulamadan ayrı çalışır.
+                    {t(
+                      "The plan uses approved content only and stops when the pool ends. It runs independently of the app while the host is online.",
+                    )}
                   </Notice>
                   {!selected.enabled && remaining > 0 ? (
                     <label className="social-check">
@@ -634,27 +640,39 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                           )
                         }
                       />
-                      Bu hesap, saatler ve onaylı içerik havuzuyla otomatik yayın yapılmasını
-                      onaylıyorum.
+                      {t(
+                        "I approve automatic publishing with this account, these times and the approved content pool.",
+                      )}
                     </label>
                   ) : null}
+                  {!selected.enabled && activationReason ? (
+                    <small className="social-muted">{activationReason}</small>
+                  ) : null}
                   <div className="social-actions">
+                    <Badge variant="label" appearance="outline">
+                      {t("Publishes as {p0} · {p1}", {
+                        p0: selectedAccount?.name ?? t("Account removed"),
+                        p1:
+                          projects.find((project) => project.id === selected.projectId)?.name ||
+                          selected.projectId,
+                      })}
+                    </Badge>
                     {selected.enabled ? (
                       <Button
-                        type="submit"
+                        type="button"
                         variant="secondary"
                         onClick={() =>
                           void run(
                             () => client.request("publishing-plans.pause", { id: selected.id }),
-                            "Otomatik yayın planı durduruldu.",
+                            t("Automatic publishing plan paused."),
                           )
                         }
                       >
-                        Planı durdur
+                        {t("Pause plan")}
                       </Button>
                     ) : (
                       <Button
-                        type="submit"
+                        type="button"
                         variant="secondary"
                         disabled={!!activationReason}
                         onClick={() =>
@@ -665,15 +683,17 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                                 revision: selected.revision,
                                 confirm: "ACTIVATE_PUBLISHING_PLAN",
                               }),
-                            "Otomatik yayın planı etkinleştirildi. Sıradaki yayın zamanı yukarıda görünür.",
+                            t(
+                              "Automatic publishing plan enabled. The next publication time is shown above.",
+                            ),
                           )
                         }
                       >
-                        Otomatik yayını etkinleştir
+                        {t("Enable automatic publishing")}
                       </Button>
                     )}
                     <Button
-                      type="submit"
+                      type="button"
                       variant="secondary"
                       onClick={() => {
                         setEditingId(selected.id);
@@ -687,12 +707,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                         setReviewed(undefined);
                       }}
                     >
-                      Planı düzenle
+                      {t("Edit plan")}
                     </Button>
                   </div>
-                  {!selected.enabled && activationReason ? (
-                    <small className="social-muted">{activationReason}</small>
-                  ) : null}
                 </>
               )}
             </section>

@@ -11,7 +11,9 @@ export function DiscussionEmpty({ message }: { message: string }) {
           className="size-10 text-(--ui-tone-accent-fg)"
         />
       </div>
-      <p className="max-w-sm text-[13px] leading-relaxed text-(--ui-text-secondary)">{message}</p>
+      <p className="max-w-sm text-ui-secondary leading-relaxed text-(--ui-text-secondary)">
+        {message}
+      </p>
     </div>
   );
 }

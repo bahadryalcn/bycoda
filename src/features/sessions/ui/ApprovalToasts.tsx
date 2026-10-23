@@ -1,8 +1,9 @@
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Switch } from "../../../shared/ui/Switch";
 import { Popover } from "../../../shared/ui/Popover";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import {
   BellOff,
   CircleAlert,
@@ -70,7 +71,7 @@ export function ApprovalToasts({
   onApproval,
   topOffset = 48,
 }: Props) {
-  useLocale();
+  const t = useT();
   const localHostNotice = useLocalHostDownNotice();
   useProjectNotificationPreferences();
   const lock = useLockSnapshot();
@@ -245,7 +246,7 @@ export function ApprovalToasts({
               style={{
                 zIndex: LAYER.toast,
               }}
-              className="notification-sheet fixed end-0 flex flex-col border-s border-(--ui-tone-neutral-border) bg-(--ui-surface) shadow-xl"
+              className="notification-sheet fixed end-0 flex flex-col border-s border-(--ui-tone-neutral-border) bg-(--ui-surface) shadow-(--ui-elevation-floating)"
             >
               <div className="notification-sheet-header">
                 <h2 className="flex min-w-0 items-center gap-2 text-sm font-medium text-(--ui-tone-neutral-fg)">
@@ -353,26 +354,24 @@ export function ApprovalToasts({
                   <Button variant="item" fullWidth type="button" onClick={dismissAll}>
                     {t("Hide all popups")}
                   </Button>
-                  <Button
-                    variant="item"
-                    fullWidth
-                    tone="danger"
-                    type="button"
-                    disabled={history.length === 0}
-                    onClick={() => {
-                      historyMutation.current += 1;
-                      localHistory.current = [];
-                      setHistory([]);
-                      void clearNotificationHistory();
-                    }}
-                  >
-                    {t("Clear notification history")}
-                  </Button>
                   <p className="text-xs leading-relaxed text-(--ui-text-secondary)">
                     {view === "pending"
                       ? t("Pending requests stay here until answered.")
                       : t("Recent requests are kept on this device.")}
                   </p>
+                  <div className="border-t border-(--color-stroke) pt-2">
+                    <ConfirmMorph
+                      label={t("Clear notification history")}
+                      prompt={t("Clear history?")}
+                      disabled={history.length === 0}
+                      onConfirm={async () => {
+                        historyMutation.current += 1;
+                        localHistory.current = [];
+                        setHistory([]);
+                        await clearNotificationHistory();
+                      }}
+                    />
+                  </div>
                 </Popover>
               ) : null}
               <div
@@ -490,6 +489,7 @@ export function ApprovalToasts({
 }
 
 function LockedNotice({ onDismiss }: { onDismiss?: () => void }) {
+  const t = useT();
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
   const timed = Boolean(onDismiss);
@@ -500,11 +500,11 @@ function LockedNotice({ onDismiss }: { onDismiss?: () => void }) {
   }, [timed]);
   return (
     <article
-      className="approval-toast pointer-events-auto flex items-center gap-2 rounded-xl border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3.5 py-3 shadow-xl backdrop-blur-xl"
+      className="approval-toast pointer-events-auto flex items-center gap-2 rounded-xl border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3.5 py-3 shadow-(--ui-elevation-floating)"
       role="status"
     >
       <CircleAlert className="size-3.5 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
-      <span className="flex-1 text-[13px] text-(--ui-tone-neutral-fg)">
+      <span className="flex-1 text-ui-secondary text-(--ui-tone-neutral-fg)">
         {LOCKED_NOTIFICATION_TEXT}
       </span>
       {onDismiss ? (
@@ -578,11 +578,12 @@ function ApprovalToastCard({
   onApproval: Props["onApproval"];
   onDismiss?: () => void;
 }) {
+  const t = useT();
   const { session, label, requestId } = notice;
   const title = sessionDisplayTitle(session.title, session.harness);
   return (
     <article
-      className="approval-toast notification-request pointer-events-auto relative overflow-clip rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface) shadow-lg"
+      className="approval-toast notification-request pointer-events-auto relative overflow-clip rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface) shadow-(--ui-elevation-floating)"
       role="status"
     >
       <Button
@@ -637,7 +638,7 @@ function ApprovalToastCard({
       {notice.kind === "approval" ? (
         <div className="notification-request-actions flex justify-end gap-2 border-t border-(--ui-tone-neutral-border) px-3 py-2">
           <Button
-            variant="secondary"
+            variant="primary"
             type="button"
             onClick={() => onApproval(session.id, requestId, "allow")}
           >
@@ -645,6 +646,7 @@ function ApprovalToastCard({
           </Button>
           <Button
             variant="ghost"
+            tone="danger"
             type="button"
             onClick={() => onApproval(session.id, requestId, "deny")}
           >

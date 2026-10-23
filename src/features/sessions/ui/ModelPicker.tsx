@@ -1,7 +1,7 @@
 import { MorphSelect } from "../../../shared/ui/MorphSelect";
 import { Button } from "../../../shared/ui/Button";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { t, useLocale } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { Check, ChevronDown, ChevronRight, Gauge, Zap } from "../../../shared/ui/icons";
 import {
   useEffect,
@@ -49,7 +49,7 @@ import { keybindingPressed } from "../../settings/model/settings";
 import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
 import "./ModelPicker.css";
 
-import { ModelFlyout } from "./ModelFlyout";
+import { lazySurface } from "../../../shared/ui/lazySurface";
 import {
   accountChoicesSnapshot,
   accountModelChoices,
@@ -72,6 +72,13 @@ import {
   settingValue,
   settingValueLabel,
 } from "../model/modelPickerData";
+const ModelFlyout = lazySurface(async () => ({
+  default: (await import("./ModelFlyout")).ModelFlyout,
+}));
+
+/** Warm the optional flyout when the user shows intent to choose a model. */
+export const preloadModelPicker = () => ModelFlyout.preload();
+
 type Props = {
   harness: HarnessId;
   model: string;
@@ -127,7 +134,7 @@ export function ModelPicker({
   onSettingsChange,
   onClose,
 }: Props) {
-  useLocale();
+  const t = useT();
   const source = useModelSource();
   const switchShortcut = useKeybindingShortcut("App: Switch Model");
   const refreshSource = useStableCallback(source.refresh);
@@ -594,6 +601,8 @@ export function ModelPicker({
         } ${currentLabel}${triggerEffortLabel ? `, effort ${triggerEffortLabel}` : ""}`}
         aria-expanded={open || recentMenu != null}
         aria-haspopup={hideSettings ? "dialog" : "menu"}
+        onPointerEnter={() => void preloadModelPicker().catch(() => {})}
+        onFocus={() => void preloadModelPicker().catch(() => {})}
         onMouseDown={(event) => event.preventDefault()}
         onContextMenu={(event) => {
           event.preventDefault();
@@ -864,8 +873,8 @@ export function ModelPicker({
               >
                 <HarnessIcon harness={item.harness} className="size-4 shrink-0" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] leading-4">{item.name}</span>
-                  <span className="block truncate text-[11px] leading-4 text-(--ui-text-secondary)">
+                  <span className="block truncate text-ui-secondary leading-4">{item.name}</span>
+                  <span className="block truncate text-ui-micro leading-4 text-(--ui-text-secondary)">
                     {HARNESS_TITLE[item.harness]}
                     {item.provider ? ` · ${item.provider.name}` : ""}
                   </span>
@@ -955,7 +964,7 @@ function TogglePill({
       onClick={() => onSettingsChange({ ...values, [setting.id]: on ? "false" : "true" })}
       className="max-w-28"
     >
-      <span className={`min-w-0 truncate text-[11px] ${on ? "" : "text-(--ui-text-secondary)"}`}>
+      <span className={`min-w-0 truncate text-ui-micro ${on ? "" : "text-(--ui-text-secondary)"}`}>
         {setting.label}
       </span>
     </Button>
@@ -976,7 +985,7 @@ function SelectPill({
   harness: HarnessId;
   additionalSettings?: ModelSetting[];
 }) {
-  useLocale();
+  const t = useT();
   return (
     <>
       {[setting, ...(additionalSettings ?? [])].map((item) => (

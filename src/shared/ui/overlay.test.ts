@@ -13,6 +13,46 @@ import { useDragResize } from "../hooks/useDragResize";
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
+it("keeps existing inert boundaries stable while streaming and isolates new siblings", async () => {
+  const background = document.createElement("div");
+  let value = false;
+  const writes = vi.fn((next: boolean) => {
+    value = next;
+  });
+  Object.defineProperty(background, "inert", {
+    configurable: true,
+    get: () => value,
+    set: writes,
+  });
+  document.body.append(background);
+  await act(async () =>
+    root.render(
+      createElement(Modal, {
+        title: "Stable boundary",
+        onClose: vi.fn(),
+        children: "Contents",
+      }),
+    ),
+  );
+  expect(background.inert).toBe(true);
+  writes.mockClear();
+  await act(async () => {
+    background.append(document.createElement("span"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(writes).not.toHaveBeenCalled();
+  const sibling = document.createElement("button");
+  await act(async () => {
+    document.body.append(sibling);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(sibling.inert).toBe(true);
+  expect(writes).not.toHaveBeenCalled();
+  await act(async () => root.render(null));
+  expect(background.inert).toBe(false);
+  expect(sibling.inert).toBe(false);
+});
+
 it("keeps image preview focus inside, closes with Escape and restores its trigger", async () => {
   const trigger = document.createElement("button");
   document.body.append(trigger);

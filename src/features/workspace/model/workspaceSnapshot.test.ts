@@ -66,6 +66,51 @@ describe("remote conversation identity across a restart", () => {
     expect(remoteSessionFor(shell.id)).toBe("new-thread");
   });
 
+  it("drops a stub whose host session is already bound to another shell", () => {
+    const open = newSession("codex", "remote://env/repo");
+    const duplicate = newSession("codex", "remote://env/repo");
+    const other = newSession("codex", "remote://env/repo");
+    rememberRemoteSession(open.id, "host-thread");
+    const duplicateTab = newTab(duplicate.id);
+    const otherTab = newTab(other.id);
+    rememberRemoteSession(duplicate.id, "host-thread");
+    rememberRemoteSession(other.id, "other-thread");
+    const snapshot = collectWorkspaceSnapshot(
+      [duplicateTab, otherTab],
+      [duplicate, other],
+      otherTab.id,
+      duplicate.cwd,
+      new Map(),
+    );
+    localStorage.clear();
+    rememberRemoteSession(open.id, "host-thread");
+    const restored = hydrateWorkspaceSnapshot(snapshot, new Map());
+    expect(restored?.sessions.map((session) => session.id)).toEqual([other.id]);
+    expect(restored?.tabs.map((tab) => tab.id)).toEqual([otherTab.id]);
+    expect(remoteSessionFor(open.id)).toBe("host-thread");
+    expect(remoteSessionFor(duplicate.id)).toBeUndefined();
+    expect(remoteSessionFor(other.id)).toBe("other-thread");
+  });
+
+  it("restores only the first of two stubs that share a host session", () => {
+    const first = newSession("codex", "remote://env/repo");
+    const second = newSession("codex", "remote://env/repo");
+    rememberRemoteSession(first.id, "host-thread");
+    const base = newTab(first.id);
+    const tab = {
+      ...base,
+      layout: splitPane(base.layout, first.id, "right", second.id),
+    };
+    const snapshot = collectWorkspaceSnapshot([tab], [first, second], tab.id, first.cwd, new Map());
+    snapshot.sessions[1].remoteSessionId = "host-thread";
+    localStorage.clear();
+    const restored = hydrateWorkspaceSnapshot(snapshot, new Map());
+    expect(restored?.sessions.map((session) => session.id)).toEqual([first.id]);
+    expect(leafIds(restored!.tabs[0].layout)).toEqual([first.id]);
+    expect(remoteSessionFor(first.id)).toBe("host-thread");
+    expect(remoteSessionFor(second.id)).toBeUndefined();
+  });
+
   it("does not restore host bindings onto local conversations", () => {
     const local = chat("local", "/repo");
     const tab = newTab(local.id);
@@ -210,13 +255,16 @@ describe("project return snapshots", () => {
 describe("collectWorkspaceSnapshot", () => {
   it("preserves standalone documents without assigning their folder to a project", () => {
     const document = newEditorWorkspaceTab({
-      ...newFileTab("/Downloads/report.pdf", "/Downloads"), external: true,
+      ...newFileTab("/Downloads/report.pdf", "/Downloads"),
+      external: true,
     });
     const snapshot = collectWorkspaceSnapshot([document], [], document.id, "/repo", new Map());
     const restored = hydrateWorkspaceSnapshot(snapshot, new Map());
     expect(restored?.projectCwd).toBe("/repo");
     expect(restored?.tabs[0]?.editorPanes[0]?.files[0]).toMatchObject({
-      path: "/Downloads/report.pdf", cwd: "/Downloads", external: true,
+      path: "/Downloads/report.pdf",
+      cwd: "/Downloads",
+      external: true,
     });
   });
   it("stores tabs, stubs, and the focused tab — not transcripts", () => {

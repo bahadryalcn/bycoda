@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { t } from "../../../shared/i18n";
+import { t, useLocale } from "../../../shared/i18n";
 import type { SocialMedia } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 
@@ -19,14 +19,15 @@ export function XMediaFields({
   onBusyChange?: (busy: boolean) => void;
   message?: boolean;
 }) {
+  useLocale();
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   return (
     <fieldset disabled={busy}>
-      <legend>X ekleri</legend>
+      <legend>{t("X attachments")}</legend>
       <TextField
-        label="Resim veya video dosyası"
+        label={t("Image or video file")}
         type="file"
         multiple
         accept="image/jpeg,image/png,video/mp4"
@@ -40,7 +41,7 @@ export function XMediaFields({
             (video && files.length !== 1) ||
             files.some((file) => !["image/jpeg", "image/png", "video/mp4"].includes(file.type))
           ) {
-            setError("En fazla dört JPEG/PNG veya tek MP4 seçin.");
+            setError(t("Select up to four JPEG/PNG images or a single MP4."));
             return;
           }
           setBusy(true);
@@ -60,9 +61,7 @@ export function XMediaFields({
               }
               onChange(next);
             } catch {
-              setError(
-                "Yükleme tamamlanamadı. JPEG/PNG en fazla 5 MiB, MP4 en fazla 64 MiB olmalı.",
-              );
+              setError(t("Upload failed. JPEG/PNG must be at most 5 MiB and MP4 at most 64 MiB."));
             } finally {
               setBusy(false);
               onBusyChange?.(false);
@@ -70,13 +69,16 @@ export function XMediaFields({
           })();
         }}
       />
-      {busy ? <p role="status">Host'a yükleniyor · %{progress}</p> : null}
+      {busy ? <p role="status">{t("Uploading to host · {p0}%", { p0: progress })}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       {value.length ? (
         <>
           <p role="status">
-            {value.some((item) => item.kind === "video") ? "1 video" : `${value.length} görsel`}{" "}
-            host'a yüklendi.
+            {value.some((item) => item.kind === "video")
+              ? t("1 video uploaded to the host.")
+              : value.length === 1
+                ? t("1 image uploaded to the host.")
+                : t("{p0} images uploaded to the host.", { p0: value.length })}
           </p>
           <div className="grid gap-2">
             {value.map((item, index) =>
@@ -97,14 +99,15 @@ export function XMediaFields({
               ) : null,
             )}
           </div>
-          <Button type="button" onClick={() => onChange([])}>
-            Ekleri kaldır
+          <Button type="button" variant="secondary" tone="danger" onClick={() => onChange([])}>
+            {t("Remove attachments")}
           </Button>
         </>
       ) : null}
       <small>
-        JPEG/PNG: 5 MiB · MP4: 64 MiB. Yeni seçim mevcut eklerin yerini alır. PDF ve diğer belgeler
-        tweet eki olarak yüklenemez; bağlantı paylaşın.
+        {t(
+          "JPEG/PNG: 5 MiB · MP4: 64 MiB. A new selection replaces the current attachments. PDFs and other documents can't be attached to a tweet; share a link instead.",
+        )}
       </small>
     </fieldset>
   );

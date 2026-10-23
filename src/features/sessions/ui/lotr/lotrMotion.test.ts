@@ -21,9 +21,19 @@ describe("Lord of the Rings crew", () => {
     expect(lotrCharacter(3, "advisor").id).toBe("sauron");
     expect(lotrCharacter(9, "lead").id).toBe("gandalf");
     expect(new Set(LOTR_CREW.map((c) => c.id)).size).toBe(6);
+    expect(LOTR_CREW.map((c) => c.id)).not.toContain("orc");
     for (let id = 6; id < 30; id++) {
       expect(["gandalf", "sauron"]).not.toContain(lotrCharacter(id, "subagent").id);
     }
+  });
+
+  it("sends orcs only for the seventh subagent onwards", () => {
+    // Subagents #1-#4 sit at seats 0, 1, 4 and 5; #5 and #6 at seats 6 and 7.
+    for (const seat of [0, 1, 4, 5, 6, 7]) {
+      expect(lotrCharacter(seat, "subagent").id).not.toBe("orc");
+    }
+    expect(lotrCharacter(1, "subagent").id).toBe("elf");
+    for (let seat = 8; seat < 20; seat++) expect(lotrCharacter(seat, "subagent").id).toBe("orc");
   });
 });
 
@@ -53,6 +63,40 @@ describe.each(LOTR_IDS)("%s motion", (id) => {
     expect(poses.filter(({ action }) => action === 0).length).toBeGreaterThan(60);
     const span = (values: number[]) => Math.max(...values) - Math.min(...values);
     expect(span(poses.map(({ armAngle }) => armAngle))).toBeGreaterThanOrEqual(20);
+  });
+
+  it("only breathes, blinks and glances while idle", () => {
+    const idle = { ...talking, working: false, stand: 0 };
+    for (let time = 1; time < 24_000; time += 97) {
+      const pose = lotrMotionAt(id, 1, time, idle);
+      expect(pose.action).toBe(0);
+      expect(pose.glow).toBe(0);
+      expect(pose.mouth).toBe(0);
+      for (const angle of [
+        pose.armAngle,
+        pose.forearmAngle,
+        pose.weaponAngle,
+        pose.offArmAngle,
+        pose.offForearmAngle,
+        pose.propAngle,
+        pose.capeAngle,
+      ]) {
+        expect(angle).toBe(0);
+      }
+      expect(pose.squash).toBe(0);
+      expect(pose.bodyX).toBe(0);
+      expect(Math.abs(pose.bodyAngle)).toBeLessThanOrEqual(0.65);
+      expect(Math.abs(pose.bodyY)).toBeLessThanOrEqual(0.45);
+    }
+  });
+
+  it("eases into its performance as the seat stands", () => {
+    const peak = Array.from({ length: 220 }, (_, index) => 1 + index * 50).find(
+      (time) => lotrMotionAt(id, 0, time, talking).action > 0.9,
+    )!;
+    const full = lotrMotionAt(id, 0, peak, talking).action;
+    const half = lotrMotionAt(id, 0, peak, { ...talking, stand: 0.5 }).action;
+    expect(half).toBeCloseTo(full / 2, 5);
   });
 
   it("closes its mouth when listening or idle", () => {

@@ -38,6 +38,8 @@ export interface AlertProps extends HTMLAttributes<HTMLDivElement> {
   open?: boolean;
   /** Shows a dismiss button. An uncontrolled alert collapses first, then calls this. */
   onDismiss?: () => void;
+  /** Compact one-line form without card chrome, for in-row errors and warnings. The icon keeps the tone readable without colour. */
+  inline?: boolean;
 }
 type AlertBoxProps = Omit<AlertProps, "open"> & { reduce: boolean | null; animateIcon?: boolean };
 
@@ -147,6 +149,7 @@ function AlertBox({
   reduce,
   onDismiss,
   animateIcon = false,
+  inline = false,
   icon,
   role,
   ...props
@@ -168,7 +171,9 @@ function AlertBox({
   return (
     <div
       {...props}
-      className={[styles.alert, styles[tone], className].filter(Boolean).join(" ")}
+      className={[styles.alert, styles[tone], inline && styles.inline, className]
+        .filter(Boolean)
+        .join(" ")}
       role={role ?? (tone === "danger" ? "alert" : "status")}
     >
       {/* A new tone morphs its icon in place; a newly shown alert gives the icon a small settle. */}
@@ -187,7 +192,7 @@ function AlertBox({
             exit={reduce ? fadeOut : { ...iconIn, transition: exitFast }}
             transition={reduce ? enter : motionTokens.spring.snappy}
           >
-            {icon ?? <Icon width={18} height={18} aria-hidden="true" />}
+            {icon ?? <Icon width={inline ? 14 : 18} height={inline ? 14 : 18} aria-hidden="true" />}
           </Swap>
         </AnimatePresence>
       </motion.span>

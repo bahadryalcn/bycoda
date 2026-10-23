@@ -134,9 +134,6 @@ export function NoteEditablePreview({
 
   return (
     <div data-note-preview className="min-w-0 select-text">
-      <p className="mbs-2 text-[11px] text-content/60">
-        {t("Select a block to edit it. Formatting uses Markdown.")}
-      </p>
       {currentActive ? (
         <>
           {renderBlocks(0, currentActive.from)}

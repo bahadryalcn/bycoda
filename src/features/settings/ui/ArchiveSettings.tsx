@@ -1,9 +1,8 @@
 import { Button } from "../../../shared/ui/Button";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
@@ -86,14 +85,12 @@ export function ArchivePage({
         description={t(
           "Archive a project from the rail to keep its chats without listing it in the sidebar.",
         )}
+        dependency={t(
+          "Restore returns a project to the sidebar. Delete removes its conversations and app entry after confirmation; its folder stays on disk.",
+        )}
       >
-        <p className="px-4 py-3 text-[12px] text-content/65">
-          {t(
-            "Restore returns a project to the sidebar. Delete removes its conversations and app entry after confirmation; its folder stays on disk.",
-          )}
-        </p>
         {!onRestoreProject || !onDeleteProject ? (
-          <p className="px-4 py-3 text-[12px] text-content/65">
+          <p className="px-4 py-3 text-ui-caption text-(--ui-text-secondary)">
             {t("Some project actions are unavailable in this view. Open the project to manage it.")}
           </p>
         ) : null}
@@ -103,23 +100,31 @@ export function ArchivePage({
           archivedProjects.map((project) => (
             <div
               key={project.path}
-              className="flex flex-wrap items-center gap-3 border-b border-content/5 px-4 py-2.5 last:border-b-0"
+              className="flex flex-wrap items-center gap-3 border-b border-stroke px-4 py-2.5 last:border-b-0"
             >
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px]">{archivedProjectLabel(project.path)}</div>
-                <div className="break-all text-[11px] text-content/40">
+                <div className="truncate text-ui-secondary">
+                  {archivedProjectLabel(project.path)}
+                </div>
+                <div className="break-all text-ui-micro text-(--ui-text-muted)">
                   {prettyCwd(project.path)}
                 </div>
               </div>
               {onRestoreProject ? (
-                <SecondaryButton onClick={() => onRestoreProject(project.path)}>
+                <Button className="shrink-0" onClick={() => onRestoreProject(project.path)}>
                   {t("Restore")}
-                </SecondaryButton>
+                </Button>
               ) : null}
               {onDeleteProject ? (
-                <SecondaryButton danger onClick={() => setDeleting(project)}>
-                  {t("Delete")}
-                </SecondaryButton>
+                <div className="ms-2 shrink-0 border-s border-stroke ps-3">
+                  <Button
+                    className="shrink-0"
+                    variant="danger"
+                    onClick={() => setDeleting(project)}
+                  >
+                    {t("Delete")}
+                  </Button>
+                </div>
               ) : null}
             </div>
           ))
@@ -140,6 +145,7 @@ export function ArchivePage({
         }
       >
         <AdvancedSettings
+          defaultOpen={false}
           title={t("Advanced: sidebar archive visibility")}
           settingIds={["show-archived"]}
         >
@@ -167,9 +173,9 @@ export function ArchivePage({
           archived.map((session) => (
             <div
               key={session.id}
-              className="flex flex-wrap items-center gap-3 border-b border-content/5 px-4 py-2.5 last:border-b-0"
+              className="flex flex-wrap items-center gap-3 border-b border-stroke px-4 py-2.5 last:border-b-0"
             >
-              <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
+              <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
               <Button
                 variant="ghost"
                 size="sm"
@@ -178,15 +184,20 @@ export function ArchivePage({
               >
                 {sessionDisplayTitle(session.title, session.harness)}
               </Button>
-              <span className="shrink-0 text-[11px] text-content/35 tabular-nums">
+              <span className="shrink-0 text-ui-micro text-(--ui-text-muted) tabular-nums">
                 {formatDate(session.updatedAt)}
               </span>
-              <SecondaryButton onClick={() => onArchiveSession(session.id, false)}>
+              <Button className="shrink-0" onClick={() => onArchiveSession(session.id, false)}>
                 {t("Unarchive")}
-              </SecondaryButton>
-              <SecondaryButton danger onClick={() => onDeleteSession(session.id)}>
-                {t("Delete")}
-              </SecondaryButton>
+              </Button>
+              <div className="ms-2 shrink-0 border-s border-stroke ps-3">
+                <ConfirmMorph
+                  label={t("Delete")}
+                  tone="danger"
+                  confirmMode="press"
+                  onConfirm={() => onDeleteSession(session.id)}
+                />
+              </div>
             </div>
           ))
         )}

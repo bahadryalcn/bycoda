@@ -14,6 +14,14 @@ import {
 type Preview = { value?: string; pending: boolean; retryAt: number };
 const previews = new Map<string, Preview>();
 let pending = 0;
+/** The last result, returned again while the directory and every chosen logo are unchanged. */
+let last:
+  | {
+      directory: DesktopProjectDirectory;
+      chosen: (string | undefined)[];
+      result: DesktopProjectDirectory;
+    }
+  | undefined;
 
 /** Rasterizes local logos (including SVG) without exposing filesystem URLs to phones. */
 export function renderMobileProjectLogo(path: string): Promise<string | undefined> {
@@ -99,5 +107,14 @@ export function withMobileProjectLogos(
     return { ...project, appearance: { ...project.appearance, logo: preview.value } };
   });
   for (const key of previews.keys()) if (!visibleKeys.has(key)) previews.delete(key);
-  return { ...directory, projects };
+  const chosen = projects.map((project) => project.appearance?.logo);
+  if (
+    last?.directory === directory &&
+    last.chosen.length === chosen.length &&
+    last.chosen.every((logo, index) => logo === chosen[index])
+  )
+    return last.result;
+  const result = { ...directory, projects };
+  last = { directory, chosen, result };
+  return result;
 }

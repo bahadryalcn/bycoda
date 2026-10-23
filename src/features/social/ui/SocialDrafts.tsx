@@ -19,6 +19,7 @@ import {
   socialLimit,
 } from "../model/socialPolicy";
 import { HARNESS_TITLE } from "../../sessions/model/session";
+import { t, useLocale } from "../../../shared/i18n";
 import { Notice, StatusBadge, statuses, time, type Run } from "./socialShared";
 
 export function DraftList({
@@ -52,6 +53,7 @@ function Draft({
   run: Run;
   snapshot?: SocialSnapshot;
 }) {
+  useLocale();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(draft.text);
   const [factIds, setFactIds] = useState(draft.factIds);
@@ -77,7 +79,7 @@ function Draft({
         if (!cancelled) setEditPolicy(result.effective);
       })
       .catch(() => {
-        if (!cancelled) setPolicyError("Hesap sınırları alınamadı.");
+        if (!cancelled) setPolicyError(t("Could not load account limits."));
       });
     return () => {
       cancelled = true;
@@ -113,30 +115,33 @@ function Draft({
     : undefined;
   const count = socialCharacterCount(text);
   const disabledReason = job
-    ? `Gönderim durumu: ${statuses[job.status]}.`
+    ? t("Send status: {p0}.", { p0: statuses[job.status] })
     : limit && socialCharacterCount(draft.text) > limit
-      ? "Taslak geçerli karakter sınırını aşıyor. Metni düzenleyin."
+      ? t("The draft exceeds the current character limit. Edit the text.")
       : generating
-        ? "AI taslağı hazırlıyor."
+        ? t("AI is preparing the draft.")
         : draft.reviewReason
           ? draft.reviewReason
           : contact?.optedOut
-            ? "Bu kişi iletişim istemiyor."
+            ? t("This contact does not want to be contacted.")
             : thread?.replyAllowed === false
-              ? "Platform bu konuşmaya yanıt verilmesine izin vermiyor."
+              ? t("The platform does not allow replies to this conversation.")
               : thread?.replyUntil && thread.replyUntil <= Date.now()
-                ? "Bu konuşmanın yanıt süresi doldu."
+                ? t("The reply window for this conversation has expired.")
                 : snapshot && (!snapshot.hostOnline || snapshot.stopped || !snapshot.sendingEnabled)
-                  ? "Gönderim kapalı. Otomasyonlar bölümündeki gönderim kontrollerini kullanın."
+                  ? t("Sending is off. Use the sending controls in the Automations section.")
                   : snapshot && (!account?.connected || account.paused)
-                    ? "Hesap bağlı değil veya durdurulmuş. Hesaplar bölümünü kontrol edin."
+                    ? t("The account is not connected or is paused. Check the Accounts section.")
                     : "";
   return (
     <article className="social-preview">
       <div className="social-record-heading">
         <strong>
-          {draft.kind === "message" ? "Mesaj" : draft.kind === "comment" ? "Yorum" : "Yanıt"}{" "}
-          taslağı
+          {draft.kind === "message"
+            ? t("Message draft")
+            : draft.kind === "comment"
+              ? t("Comment draft")
+              : t("Reply draft")}
         </strong>
         <StatusBadge
           status={job?.status ?? (generating ? "running" : draft.reviewReason ? "review" : "draft")}
@@ -144,37 +149,38 @@ function Draft({
             job
               ? statuses[job.status]
               : generating
-                ? "Hazırlanıyor"
+                ? t("Preparing")
                 : draft.reviewReason
-                  ? "İnceleme gerekli"
-                  : "Taslak hazır"
+                  ? t("Needs review")
+                  : t("Draft ready")
           }
         />
       </div>
       <p className="social-muted">
-        {account?.name ?? draft.accountId} · {contact?.name ?? "Konuşmadaki kişi"}
+        {account?.name ?? draft.accountId} · {contact?.name ?? t("Contact in the conversation")}
         {` · ${time(draft.createdAt)}`}
       </p>
       {draft.generation ? (
         <p className="social-muted">
-          Ajan: {HARNESS_TITLE[draft.generation.agent.provider]} ·{" "}
-          {draft.generation.agent.model || "varsayılan model"} ·{" "}
-          {
-            {
-              queued: "Üretim bekliyor",
-              running: "Üretiliyor",
-              completed: "Üretildi",
-              review: "İnceleme gerekiyor",
-            }[draft.generation.status]
-          }
+          {t("Agent: {p0} · {p1} · {p2}", {
+            p0: HARNESS_TITLE[draft.generation.agent.provider],
+            p1: draft.generation.agent.model || t("default model"),
+            p2: {
+              queued: t("Waiting to generate"),
+              running: t("Generating"),
+              completed: t("Generated"),
+              review: t("Review required"),
+            }[draft.generation.status],
+          })}
         </p>
       ) : null}
       {draft.media?.length ? (
         <p role="status">
-          Ekler:{" "}
-          {draft.media.some((item) => item.kind === "video")
-            ? "1 video"
-            : `${draft.media.length} görsel`}
+          {t("Attachments: {p0}", {
+            p0: draft.media.some((item) => item.kind === "video")
+              ? t("1 video")
+              : t("{p0} images", { p0: draft.media.length }),
+          })}
         </p>
       ) : null}
       {editing ? (
@@ -194,34 +200,31 @@ function Draft({
                     draft.kind === "message" || thread?.kind === "message" ? "message" : "comment",
                   );
                   if (latestLimit !== undefined && socialCharacterCount(text) > latestLimit)
-                    throw new Error(`Metin ${latestLimit} karakter sınırını aşıyor.`);
+                    throw new Error(
+                      t("The text exceeds the {p0} character limit.", { p0: latestLimit }),
+                    );
                   return client.request("drafts.update", {
                     id: draft.id,
                     text,
                     factIds,
                     ...(account?.platform === "x" ? { media } : {}),
                   });
-                }, "Taslak güncellendi. Yeni içerik gönderim için yeniden onaylanmalı.")
+                }, t("Draft updated. The new content must be approved again before sending."))
               )
                 setEditing(false);
             })();
           }}
         >
-          <label>
-            Taslak metni
-            <TextareaField
-              hideLabel
-              label="Taslak metni"
-              aria-label="Taslak metni"
-              required
-              rows={4}
-              value={text}
-              disabled={!!account && !editPolicy}
-              onChange={(event) => setText(event.target.value)}
-            />
-          </label>
+          <TextareaField
+            label={t("Draft text")}
+            required
+            rows={4}
+            value={text}
+            disabled={!!account && !editPolicy}
+            onChange={(event) => setText(event.target.value)}
+          />
           <details className="social-settings">
-            <summary>Bilgi kaynakları (isteğe bağlı)</summary>
+            <summary>{t("Information sources (optional)")}</summary>
             {facts.map((fact) => (
               <label className="social-inline-check" key={fact.id}>
                 <Checkbox
@@ -239,38 +242,42 @@ function Draft({
             ))}
             {missingFacts.length ? (
               <p role="status">
-                Bu taslağın bazı kaynak bilgileri silinmiş. Güncel bir bilgi seçin veya silinen
-                bağlantıları kaldırın.
+                {t(
+                  "Some source facts for this draft were deleted. Choose a current fact or remove the deleted links.",
+                )}
               </p>
             ) : null}
             {factIds.length ? (
               <Button variant="secondary" type="button" onClick={() => setFactIds([])}>
-                Bilgi bağlantılarını kaldır
+                {t("Remove fact links")}
               </Button>
             ) : (
-              <p className="social-muted">Bu taslak belirli bir kaynak bilgiye bağlı değil.</p>
+              <p className="social-muted">
+                {t("This draft is not linked to a specific source fact.")}
+              </p>
             )}
           </details>
           {account && !editPolicy ? (
             <Notice kind={policyError ? "error" : "loading"}>
-              {policyError || "Hesap sınırları yükleniyor…"}
+              {policyError || t("Loading account limits…")}
               {policyError ? (
                 <Button
                   variant="secondary"
                   type="button"
                   onClick={() => setPolicyAttempt((attempt) => attempt + 1)}
                 >
-                  Yeniden dene
+                  {t("Retry")}
                 </Button>
               ) : null}
             </Notice>
           ) : null}
           <p className="social-muted" role="status">
-            {count}
-            {limit ? ` / ${limit}` : ""} karakter
+            {t("{p0} characters", { p0: `${count}${limit ? ` / ${limit}` : ""}` })}
           </p>
           {limit && count > limit ? (
-            <Alert tone="danger">Karakter sınırını {count - limit} karakter aştınız.</Alert>
+            <Alert tone="danger">
+              {t("You are over the character limit by {p0} characters.", { p0: count - limit })}
+            </Alert>
           ) : null}
           {account?.platform === "x" &&
           !(
@@ -298,15 +305,15 @@ function Draft({
                 (!!account && !editPolicy)
               }
             >
-              Değişiklikleri kaydet
+              {t("Save changes")}
             </Button>
             <Button variant="secondary" type="button" onClick={() => setEditing(false)}>
-              Vazgeç
+              {t("Cancel editing")}
             </Button>
           </div>
         </form>
       ) : (
-        <p className="social-message">{draft.text || "Taslak hazırlanıyor…"}</p>
+        <p className="social-message">{draft.text || t("Preparing draft…")}</p>
       )}
       {disabledReason && !job ? (
         <Notice kind={draft.reviewReason || contact?.optedOut ? "warning" : "info"}>
@@ -322,57 +329,67 @@ function Draft({
       ) : null}
       {job?.url ? (
         <a href={job.url} target="_blank" rel="noreferrer">
-          Platformda görüntüle
+          {t("View on platform")}
         </a>
       ) : null}
       {!editing ? (
-        <div className="social-actions">
-          <Button
-            type="submit"
-            variant="secondary"
-            disabled={!!job || draft.generation?.status === "running"}
-            onClick={() => {
-              setText(draft.text);
-              setFactIds(draft.factIds);
-              setMedia(draft.media ?? []);
-              setEditing(true);
-            }}
-          >
-            Düzenle
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-
-            disabled={!!disabledReason || !draft.text.trim()}
-            onClick={() =>
-              void run(async () => {
-                const reviewedDraft = structuredClone(draft);
-                const { effective } = await client.request<{ effective: SocialPolicy }>(
-                  "policy.get",
-                  { accountId: draft.accountId },
-                );
-                const latestLimit = socialLimit(
-                  effective,
-                  draft.kind === "message" || thread?.kind === "message" ? "message" : "comment",
-                );
-                if (latestLimit !== undefined && socialCharacterCount(draft.text) > latestLimit)
-                  throw new Error(
-                    `Metin ${latestLimit} karakter sınırını aşıyor. Taslağı düzenleyin.`,
+        <div className="social-approval">
+          <p className="social-muted">
+            {t("Approving sends from {p0} to {p1} · {p2} characters", {
+              p0: account?.name ?? draft.accountId,
+              p1: contact?.name ?? t("Contact in the conversation"),
+              p2: `${socialCharacterCount(draft.text)}${limit ? ` / ${limit}` : ""}`,
+            })}
+          </p>
+          <div className="social-actions">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!!job || draft.generation?.status === "running"}
+              onClick={() => {
+                setText(draft.text);
+                setFactIds(draft.factIds);
+                setMedia(draft.media ?? []);
+                setEditing(true);
+              }}
+            >
+              {t("Edit")}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={!!disabledReason || !draft.text.trim()}
+              onClick={() =>
+                void run(async () => {
+                  const reviewedDraft = structuredClone(draft);
+                  const { effective } = await client.request<{ effective: SocialPolicy }>(
+                    "policy.get",
+                    { accountId: draft.accountId },
                   );
-                await client.request("drafts.approve", {
-                  id: reviewedDraft.id,
-                  reviewedDraft,
-                } satisfies SocialDraftApprovalInput);
-                await client.request(
-                  `${draft.kind === "reply" ? "replies" : draft.kind === "message" ? "messages" : "comments"}.send`,
-                  { id: draft.id },
-                );
-              }, "Taslak onaylandı ve gönderim kuyruğuna eklendi.")
-            }
-          >
-            Onayla ve gönderim kuyruğuna ekle
-          </Button>
+                  const latestLimit = socialLimit(
+                    effective,
+                    draft.kind === "message" || thread?.kind === "message" ? "message" : "comment",
+                  );
+                  if (latestLimit !== undefined && socialCharacterCount(draft.text) > latestLimit)
+                    throw new Error(
+                      t("The text exceeds the {p0} character limit. Edit the draft.", {
+                        p0: latestLimit,
+                      }),
+                    );
+                  await client.request("drafts.approve", {
+                    id: reviewedDraft.id,
+                    reviewedDraft,
+                  } satisfies SocialDraftApprovalInput);
+                  await client.request(
+                    `${draft.kind === "reply" ? "replies" : draft.kind === "message" ? "messages" : "comments"}.send`,
+                    { id: draft.id },
+                  );
+                }, t("Draft approved and added to the send queue."))
+              }
+            >
+              {t("Approve and add to send queue")}
+            </Button>
+          </div>
         </div>
       ) : null}
     </article>

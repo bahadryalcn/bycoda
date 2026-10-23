@@ -84,12 +84,12 @@
 }
 
 .device-panel-toggle {
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 
 .device-panel-note {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   line-height: 1.5;
 }
 
@@ -106,13 +106,13 @@
   justify-items: start;
   margin: 0;
   padding: 24px 0;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   color: var(--ui-text-muted);
 }
 
 .device-panel-state-title {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--ui-font-body);
   font-weight: 600;
   color: var(--color-content);
 }
@@ -145,7 +145,7 @@
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 
 /* The screen is the page: a flat tone step, no frame, as much height as the panel gives. */
@@ -173,7 +173,7 @@
 
 .device-panel-waiting {
   color: var(--ui-text-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   text-align: center;
   padding-inline: 24px;
 }
@@ -206,7 +206,7 @@
 }
 
 .device-panel-setup-summary {
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   overflow: clip;
   text-overflow: ellipsis;
   white-space: nowrap;

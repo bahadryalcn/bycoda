@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { lastTurnRecall, lastUserTurnStartIndex } from "../model/editLastTurn";
 import { isSessionErrorBlock } from "../model/sessionIssue";
@@ -61,7 +61,7 @@ export function RetryFailedTurn({
     options?: ComposerTurnOptions,
   ) => boolean | void;
 }) {
-  useLocale();
+  const t = useT();
   const [submitted, setSubmitted] = useState<string | null>(null);
   const submitting = useRef<string | null>(null);
   const retry = failedTurnRetry(session);

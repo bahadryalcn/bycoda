@@ -475,7 +475,7 @@ export function UsageOverview({
             aria-expanded={openFilters}
             onClick={() => setOpenFilters(!openFilters)}
           >
-            <ListFilter className="size-3.5" />
+            <ListFilter className="icon-sm" />
           </Button>
           {!limitsOnly && (
             <Button
@@ -485,7 +485,7 @@ export function UsageOverview({
               loading={refreshing}
               onClick={refreshData}
             >
-              <RefreshCw className="size-3.5" />
+              <RefreshCw className="icon-sm" />
             </Button>
           )}
         </div>
@@ -816,7 +816,7 @@ export function UsageOverview({
                   onChange={(e) => setSearch(e.target.value)}
                 />
                 <Button variant="secondary" onClick={exportCsv}>
-                  <ArrowDownCircle className="size-3.5" />
+                  <ArrowDownCircle className="icon-sm" />
                   {t("Export CSV")}
                 </Button>
               </div>

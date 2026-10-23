@@ -69,7 +69,7 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {grid.truncated ? (
-        <div className="shrink-0 border-b border-stroke bg-content/[0.04] px-3 py-1 text-[11px] text-[var(--ui-text-secondary)]">
+        <div className="shrink-0 border-b border-stroke bg-(--ui-surface-muted) px-3 py-1 text-ui-micro text-[var(--ui-text-secondary)]">
           {t("Showing the first ")}
           {formatInteger(grid.rowCount)}
           {t(" of")} {formatInteger(grid.totalRows)}

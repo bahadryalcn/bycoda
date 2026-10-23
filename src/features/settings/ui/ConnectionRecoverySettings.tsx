@@ -33,7 +33,7 @@ export function RemoteReconnectGroup() {
             onChange={saveRemoteAutoReconnect}
           />
         </Row>
-        <details className="p-3 text-[12px] text-(--ui-text-secondary)">
+        <details className="p-3 text-ui-caption text-(--ui-text-secondary)">
           <summary className="cursor-pointer">{t("How reconnection works")}</summary>
           <p className="mbs-2 leading-relaxed">
             {t(

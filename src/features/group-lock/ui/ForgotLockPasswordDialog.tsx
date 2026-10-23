@@ -39,7 +39,7 @@ export function ForgotLockPasswordDialog({ onClose }: Props) {
       onClose={onClose}
     >
       <form onSubmit={submit} className="flex flex-col gap-3 p-4">
-        <p className="text-[12px] leading-snug text-content/70">
+        <p className="text-ui-caption leading-snug text-(--ui-text-secondary)">
           {t(
             "The password cannot be recovered. Resetting removes it and unlocks all groups. Their projects stay in the groups and nothing is deleted. You can set a new password afterwards and lock groups again.",
           )}

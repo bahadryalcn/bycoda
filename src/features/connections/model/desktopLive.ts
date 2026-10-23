@@ -215,6 +215,8 @@ export type DesktopLiveBeat = {
   idleAt?: number;
   notesRevision?: number;
   directoryFingerprint?: string;
+  /** The last directory serialized, so an unchanged object is not stringified again. */
+  serialized?: { directory: DesktopProjectDirectory; json: string };
 };
 
 /** One exchange with the host: report live sessions plus what was handled
@@ -241,7 +243,18 @@ export async function runDesktopLiveTick(deps: {
   const now = deps.now ?? Date.now;
   const live = buildDesktopLiveSessions(deps.sessions());
   const projectDirectory = deps.projectDirectory?.();
-  const directoryFingerprint = projectDirectory ? JSON.stringify(projectDirectory) : undefined;
+  let directoryFingerprint: string | undefined;
+  if (projectDirectory) {
+    // Directory builders return the same object while their inputs are unchanged;
+    // logo previews make the JSON large, so only a new object is serialized.
+    const serialized = deps.beat?.serialized;
+    directoryFingerprint =
+      serialized?.directory === projectDirectory
+        ? serialized.json
+        : JSON.stringify(projectDirectory);
+    if (deps.beat)
+      deps.beat.serialized = { directory: projectDirectory, json: directoryFingerprint };
+  }
   const directoryChanged = directoryFingerprint !== deps.beat?.directoryFingerprint;
   const inboxReplies = [...(deps.inbox?.results.values() ?? [])].slice(0, 2);
   const idle =

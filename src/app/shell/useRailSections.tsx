@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import {
   useEffect,
   useMemo,
@@ -9,7 +9,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import { MoreHorizontal } from "../../shared/ui/icons";
+import { ChevronDown, ChevronRight, MoreHorizontal } from "../../shared/ui/icons";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
 import {
   applyShownSectionOrder,
@@ -21,6 +21,7 @@ import {
   resetRailSectionOrder,
   saveRailSectionOrder,
   subscribeRailSectionOrder,
+  type CollapsibleRailSection,
   type RailSectionId,
 } from "../../features/projects/model/railSections";
 import type { MoveStep } from "../../shared/lib/reorder";
@@ -35,6 +36,57 @@ export const RAIL_DRAG_HANDLE = "cursor-grab touch-none";
  */
 export const RAIL_SECTION_HEADER = "group flex min-h-[30px] items-center gap-1 px-3 pb-1.5 pt-1";
 
+/** One header for every rail section: drag handle, collapse toggle, section actions and menu. */
+export function RailSectionHeader({
+  label,
+  drag,
+  collapsed = false,
+  onToggleCollapsed,
+  actions,
+}: {
+  label: string;
+  drag: RailSectionDrag;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+  actions?: ReactNode;
+}) {
+  const t = useT();
+  return (
+    <div
+      {...drag.headerProps}
+      tabIndex={0}
+      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+      title={t("Drag to reorder")}
+      className={`${RAIL_SECTION_HEADER} ${RAIL_DRAG_HANDLE} rounded-md outline-none focus-visible:bg-(--ui-surface-hover) @max-[140px]/rail:justify-center @max-[140px]/rail:px-0`}
+    >
+      {onToggleCollapsed ? (
+        <Button
+          variant="item"
+          motion="none"
+          aria-expanded={!collapsed}
+          onClick={onToggleCollapsed}
+          className="min-w-0 flex-1 @max-[140px]/rail:hidden"
+        >
+          {collapsed ? (
+            <ChevronRight className="icon-xs shrink-0" />
+          ) : (
+            <ChevronDown className="icon-xs shrink-0" />
+          )}
+          <span className="truncate">{label}</span>
+        </Button>
+      ) : (
+        <span className="min-w-0 flex-1 truncate px-1 text-ui-caption font-medium text-(--ui-text-secondary) @max-[140px]/rail:hidden">
+          {label}
+        </span>
+      )}
+      {actions}
+      <span className="contents @max-[140px]/rail:hidden">
+        <SectionMenuButton label={label} onOpen={drag.openMenu} />
+      </span>
+    </div>
+  );
+}
+
 /** The "..." on a section header; it shows on hover or keyboard focus. */
 export function SectionMenuButton({
   label,
@@ -43,7 +95,7 @@ export function SectionMenuButton({
   label: string;
   onOpen: (x: number, y: number) => void;
 }) {
-  useLocale();
+  const t = useT();
   return (
     <Button
       iconOnly
@@ -108,6 +160,7 @@ export type RailSectionDrag = {
  * `shown` lists the sections currently on screen; the others keep their slot.
  */
 export function useRailSections(shown: ReadonlySet<RailSectionId>) {
+  const t = useT();
   const [collapsed, setCollapsed] = useState(loadRailSectionCollapse);
   useEffect(() => subscribeRailSectionOrder(() => setCollapsed(loadRailSectionCollapse())), []);
   const [order, setOrder] = useState(loadRailSectionOrder);
@@ -219,7 +272,7 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
     />
   ) : null;
 
-  const toggleCollapsed = (id: "groups" | "projects") => {
+  const toggleCollapsed = (id: CollapsibleRailSection) => {
     setCollapsed(toggleRailSectionCollapse(id, !collapsed[id]));
   };
   return { order, drag, folded, element, collapsed, toggleCollapsed };

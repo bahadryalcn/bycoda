@@ -70,7 +70,8 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   ref?: Ref<HTMLDivElement>;
 };
 
-const FRAME = "isolate overflow-hidden rounded-xl border border-content/10 shadow-xl";
+const FRAME =
+  "isolate overflow-hidden rounded-(--ui-radius-popup) border border-stroke shadow-(--ui-elevation-floating)";
 
 /** Which corner the open animation grows from, so it reads as anchored. */
 function origin(side: PopoverSide, align: PopoverAlign): string {

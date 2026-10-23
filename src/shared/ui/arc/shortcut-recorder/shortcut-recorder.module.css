@@ -24,6 +24,14 @@
     color var(--duration-fast) var(--ease-standard),
     border-bottom-width var(--duration-fast) var(--ease-standard);
 }
+.kbd[data-size="xs"] {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-bottom-width: 1px;
+  border-radius: var(--radius-control);
+  font-size: var(--ui-font-micro);
+}
 .kbd[data-size="sm"] {
   min-width: 22px;
   height: 22px;
@@ -98,7 +106,7 @@
   border-color: var(--warning);
 }
 .field[data-disabled] .control {
-  opacity: 0.5;
+  opacity: var(--ui-disabled-opacity, 0.5);
   background: var(--surface-muted);
 }
 
@@ -151,8 +159,14 @@
   background: var(--accent);
   animation: breathe 1.4s var(--ease-in-out) infinite;
 }
-.dot[data-reduced] {
+.dot[data-reduced],
+:global(html[data-decorative-motion="off"]) .dot {
   animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+  }
 }
 @keyframes breathe {
   50% {

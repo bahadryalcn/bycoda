@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useRef } from "react";
 import { MessageSquarePlus } from "../../../shared/ui/icons";
@@ -63,12 +64,9 @@ export function EditorSelectionMenu({
       >
         <MessageSquarePlus aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
         {t("Add to chat")}
-        <kbd
-          aria-hidden="true"
-          className="rounded border border-(--ui-tone-neutral-border) px-1 py-0.5 font-sans text-(length:--ui-font-caption) text-(--ui-text-secondary)"
-        >
+        <ShortcutKbd aria-hidden="true" size="xs">
           {shortcut}
-        </kbd>
+        </ShortcutKbd>
       </Button>
     </Popover>
   );

@@ -1,4 +1,5 @@
 import { useContext } from "react";
+import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect, type SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
 import { SocialBusyContext } from "./socialContext";
 
@@ -10,8 +11,8 @@ export function SocialMultiSelect({
   options,
   selected,
   onChange,
-  placeholder = "Seçim yapın",
-  searchPlaceholder = "Ara…",
+  placeholder = t("Make a selection"),
+  searchPlaceholder = t("Search…"),
   disabled = false,
 }: {
   label: string;
@@ -22,6 +23,7 @@ export function SocialMultiSelect({
   searchPlaceholder?: string;
   disabled?: boolean;
 }) {
+  useLocale();
   const busy = useContext(SocialBusyContext);
   return (
     <div className="social-multiselect">
@@ -35,19 +37,19 @@ export function SocialMultiSelect({
         disabled={disabled || busy}
         placeholder={placeholder}
         searchPlaceholder={searchPlaceholder}
-        emptyLabel={options.length ? "Aramanıza uygun seçenek yok." : "Henüz seçenek yok."}
-        searchLocale="tr"
+        emptyLabel={options.length ? t("No options match your search.") : t("No options yet.")}
+        searchLocale={getLocale()}
         loopNavigation
         showSelectedValues
         triggerProps={{ "aria-label": label }}
         selectionLabels={{
-          menu: `${label} seçimi`,
-          summary: (count) => `${count} seçili`,
-          missing: "Erişilemeyen seçim",
-          remove: (name) => `${name} seçimini kaldır`,
-          selected: `${label}: seçilenler`,
-          clear: "Temizle",
-          done: "Bitti",
+          menu: t("{p0} selection", { p0: label }),
+          summary: (count) => t("{p0} selected", { p0: count }),
+          missing: t("Unavailable selection"),
+          remove: (name) => t("Remove {p0}", { p0: name }),
+          selected: t("{p0}: selected items", { p0: label }),
+          clear: t("Clear"),
+          done: t("Done"),
         }}
       />
     </div>

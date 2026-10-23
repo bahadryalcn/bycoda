@@ -23,7 +23,7 @@ import {
   Globe,
   Maximize2,
 } from "../../shared/ui/icons";
-import { Toggle } from "../settings/ui/settingsControls";
+import { Switch } from "../../shared/ui/Switch";
 
 type BrowserState = {
   open: boolean;
@@ -497,99 +497,96 @@ function ProjectBrowserPanel({
         >
           {t("Open website")}
         </Button>
-        <div className="host-tool-actions host-browser-view-actions">
-          <Button
-            motion="none"
-            type="button"
-            variant="ghost"
-            iconOnly
-            label={t("Refresh frame")}
-            disabled={busy || !state?.open}
-            onClick={() => void action(() => request("browser.frame"))}
-          >
-            <RefreshCw size={16} aria-hidden />
-          </Button>
-          <span className="host-tool-check">
-            <Toggle
-              label={t("Live view")}
-              disabled={busy || !state?.open || selecting}
-              on={live}
-              onChange={setLive}
-            />
-            {t("Live view")}
-          </span>
-          <Button
-            variant="ghost"
-            iconOnly
-            label={actualSize ? t("Fit preview") : t("Actual size")}
-            aria-pressed={actualSize}
-            selected={actualSize}
-            disabled={!frame}
-            onClick={() => setActualSize((value) => !value)}
-          >
-            <Maximize2 size={16} aria-hidden />
-          </Button>
-          <Button
-            ref={controlsTrigger}
-            variant="ghost"
-            iconOnly
-            label={t("Browser controls and setup")}
-            aria-haspopup="dialog"
-            aria-expanded={controlsOpen}
-            selected={controlsOpen}
-            onClick={() => setControlsOpen((open) => !open)}
-          >
-            <SlidersHorizontal size={16} aria-hidden />
-          </Button>
-          <span className="host-browser-toolbar-status" role="status">
-            {browserStatus}
-          </span>
-          <span className="host-browser-action-spacer" />
-          <Button
-            motion="none"
-            type="button"
-            variant={selecting ? "primary" : "secondary"}
-            aria-label={t("Select element and add to composer")}
-            tooltip={t("Select element and add to composer")}
-            aria-pressed={selecting}
-            selected={selecting}
-            disabled={
-              !canInput || !sessionId || !frame?.navigationId || selecting || !annotationsAllowed
-            }
-            onClick={() =>
-              void action(async () => {
-                const result = await request("browser.annotation.start", {
-                  navigationId: frame?.navigationId,
-                });
-                if (!result?.annotationId || !result.navigationId) return;
-                mode.current = { id: result.annotationId, navigationId: result.navigationId };
-                setSelecting(true);
-                setNotice("");
-                setSelection(undefined);
-                setComment("");
-              })
-            }
-          >
-            <CursorMagicSelection size={16} aria-hidden />
-            {t("Select element")}
-          </Button>
-          {selecting ? (
-            <Button type="button" onClick={cancelSelection}>
-              {t("Cancel selection")}
-            </Button>
-          ) : null}
-          {state?.open && !state.controlling ? (
-            <Button
-              motion="none"
-              type="button"
-              disabled={busy}
-              onClick={() => void action(() => request("browser.claim", { takeover: true }))}
-            >
-              {t("Claim control")}
-            </Button>
-          ) : null}
-        </div>
       </form>
+      <div className="host-tool-actions host-browser-view-actions">
+        <Button
+          motion="none"
+          type="button"
+          variant="ghost"
+          iconOnly
+          label={t("Refresh frame")}
+          disabled={busy || !state?.open}
+          onClick={() => void action(() => request("browser.frame"))}
+        >
+          <RefreshCw className="icon-md" aria-hidden />
+        </Button>
+        <Switch
+          label={t("Live view")}
+          disabled={busy || !state?.open || selecting}
+          checked={live}
+          onCheckedChange={setLive}
+        />
+        <Button
+          variant="ghost"
+          iconOnly
+          label={actualSize ? t("Fit preview") : t("Actual size")}
+          aria-pressed={actualSize}
+          selected={actualSize}
+          disabled={!frame}
+          onClick={() => setActualSize((value) => !value)}
+        >
+          <Maximize2 className="icon-md" aria-hidden />
+        </Button>
+        <Button
+          ref={controlsTrigger}
+          variant="ghost"
+          iconOnly
+          label={t("Browser controls and setup")}
+          aria-haspopup="dialog"
+          aria-expanded={controlsOpen}
+          selected={controlsOpen}
+          onClick={() => setControlsOpen((open) => !open)}
+        >
+          <SlidersHorizontal className="icon-md" aria-hidden />
+        </Button>
+        <span className="host-browser-toolbar-status" role="status">
+          {browserStatus}
+        </span>
+        <span className="host-browser-action-spacer" />
+        <Button
+          motion="none"
+          type="button"
+          variant="secondary"
+          aria-label={t("Select element and add to composer")}
+          tooltip={t("Select element and add to composer")}
+          aria-pressed={selecting}
+          selected={selecting}
+          disabled={
+            !canInput || !sessionId || !frame?.navigationId || selecting || !annotationsAllowed
+          }
+          onClick={() =>
+            void action(async () => {
+              const result = await request("browser.annotation.start", {
+                navigationId: frame?.navigationId,
+              });
+              if (!result?.annotationId || !result.navigationId) return;
+              mode.current = { id: result.annotationId, navigationId: result.navigationId };
+              setSelecting(true);
+              setNotice("");
+              setSelection(undefined);
+              setComment("");
+            })
+          }
+        >
+          <CursorMagicSelection className="icon-md" aria-hidden />
+          {t("Select element")}
+        </Button>
+        {selecting ? (
+          <Button type="button" variant="ghost" onClick={cancelSelection}>
+            {t("Cancel selection")}
+          </Button>
+        ) : null}
+        {state?.open && !state.controlling ? (
+          <Button
+            motion="none"
+            type="button"
+            disabled={busy}
+            onClick={() => void action(() => request("browser.claim", { takeover: true }))}
+          >
+            {t("Claim control")}
+          </Button>
+        ) : null}
+      </div>
       {state?.url && state.url !== url.trim() ? (
         <p className="host-tool-location" title={state.url}>
           {state.url}
@@ -766,7 +763,7 @@ function ProjectBrowserPanel({
             </div>
           ) : (
             <div className="host-browser-empty">
-              <Globe size={32} aria-hidden />
+              <Globe className="icon-lg" aria-hidden />
               <h4>{t("Open a website")}</h4>
               <p>
                 {state?.open
@@ -898,7 +895,7 @@ function ProjectBrowserPanel({
                 disabled={!canPageInput}
                 onClick={() => void action(() => input({ kind: "key", key: "Enter" }))}
               >
-                <CornerDownRight size={16} aria-hidden />
+                <CornerDownRight className="icon-md" aria-hidden />
               </Button>
               <Button
                 motion="none"
@@ -909,7 +906,7 @@ function ProjectBrowserPanel({
                 disabled={!canPageInput}
                 onClick={() => void action(() => input({ kind: "scroll", y: -500 }))}
               >
-                <ChevronUp size={16} aria-hidden />
+                <ChevronUp className="icon-md" aria-hidden />
               </Button>
               <Button
                 motion="none"
@@ -920,7 +917,7 @@ function ProjectBrowserPanel({
                 disabled={!canPageInput}
                 onClick={() => void action(() => input({ kind: "scroll", y: 500 }))}
               >
-                <ChevronDown size={16} aria-hidden />
+                <ChevronDown className="icon-md" aria-hidden />
               </Button>
             </div>
             {canPageInput ? null : (

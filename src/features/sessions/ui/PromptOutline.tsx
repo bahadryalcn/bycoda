@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import {
   memo,
   useCallback,
@@ -66,7 +66,7 @@ export const PromptOutline = memo(function PromptOutline({
   revealBlock,
   onOpenChange,
 }: Props) {
-  useLocale();
+  const t = useT();
   const prompts = useMemo(() => promptBlocks(blocks), [blocks]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [stackBudget, setStackBudget] = useState(BAR_STACK_MAX_PX);

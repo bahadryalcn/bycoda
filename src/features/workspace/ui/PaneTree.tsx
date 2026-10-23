@@ -610,7 +610,7 @@ function PaneTreeComponent({
             }}
             onInputCapture={() => session && onSessionInteraction?.(session.id)}
             data-pane-can-maximize={(inSplit || maximum) && !hidden ? "true" : undefined}
-            className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden ${focusedId === leaf.id ? "ring-1 ring-inset ring-accent/30" : ""} ${dragging ? "opacity-40" : ""}`}
+            className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden ${focusedId === leaf.id ? "ring-1 ring-inset ring-(--ui-tone-accent-border)" : ""} ${dragging ? "opacity-40" : ""}`}
             // The new pane focuses its composer or editor while it is still
             // offscreen, and focus scrolls this clip box to reveal it, which
             // fights the slide. Scroll events land before paint, so undoing
@@ -837,9 +837,9 @@ function PaneTreeComponent({
       {drop?.invalid && !drop.overId ? (
         <div
           data-pane-drop-invalid
-          className="pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded border-2 border-danger bg-danger/10"
+          className="pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded border-2 border-danger bg-(--ui-tone-danger-subtle)"
         >
-          <span className="rounded bg-surface px-3 py-2 text-xs text-content">
+          <span className="rounded bg-surface px-3 py-2 text-ui-caption text-content">
             {t("Cannot drop here")}
           </span>
         </div>
@@ -887,9 +887,9 @@ function PaneDropHint({ edge, invalid }: { edge: PaneEdge; invalid?: boolean }) 
   if (edge === "center")
     return (
       <div
-        className={`pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded border-2 ${invalid ? "border-danger bg-danger/10" : "border-accent bg-accent/15"}`}
+        className={`pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded border-2 ${invalid ? "border-danger bg-(--ui-tone-danger-subtle)" : "border-accent bg-(--ui-tone-accent-subtle)"}`}
       >
-        <span className="rounded bg-surface px-3 py-2 text-xs text-content">
+        <span className="rounded bg-surface px-3 py-2 text-ui-caption text-content">
           {t(invalid ? "Cannot drop here" : "Add as pane tab")}
         </span>
       </div>
@@ -912,7 +912,9 @@ function PaneDropHint({ edge, invalid }: { edge: PaneEdge; invalid?: boolean }) 
           : "absolute inset-x-0 bottom-0 h-0.5";
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
-      <div className={`${wash} ${invalid ? "bg-danger/10" : "bg-accent/15"}`} />
+      <div
+        className={`${wash} ${invalid ? "bg-(--ui-tone-danger-subtle)" : "bg-(--ui-tone-accent-subtle)"}`}
+      />
       <div className={`${line} ${invalid ? "bg-danger" : "bg-accent"}`} />
     </div>
   );

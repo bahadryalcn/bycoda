@@ -138,7 +138,12 @@ it("uzun metin penceresinde not kaydetme ve dÃ¼zenleme mesaj eylemlerini kullanÄ
   );
   act(() =>
     document
-      .querySelector<HTMLButtonElement>('[role="dialog"] [aria-label="Edit and resend"]')!
+      .querySelector<HTMLButtonElement>('[role="dialog"] [aria-label="Message actions"]')!
+      .click(),
+  );
+  act(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((item) => item.textContent?.includes("Edit and resend"))!
       .click(),
   );
   expect(onEditLastTurn).toHaveBeenCalledOnce();

@@ -89,14 +89,14 @@ const KIND_OPTIONS: {
     get label() {
       return t("Issues");
     },
-    icon: <CircleDot className="size-3.5 shrink-0" strokeWidth={1.75} />,
+    icon: <CircleDot className="icon-sm shrink-0" strokeWidth={1.75} />,
   },
   {
     id: "pr",
     get label() {
       return t("Pull requests");
     },
-    icon: <GitPullRequest className="size-3.5 shrink-0" strokeWidth={1.75} />,
+    icon: <GitPullRequest className="icon-sm shrink-0" strokeWidth={1.75} />,
   },
 ];
 
@@ -377,7 +377,7 @@ export function InboxFiltersMenu({
 function SectionLabel({ children }: { children: string }) {
   useLocale();
   return (
-    <div className="px-2 pb-0.5 pt-2 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
+    <div className="px-2 pb-0.5 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)">
       {children}
     </div>
   );
@@ -396,7 +396,7 @@ function FilterItem({
 }) {
   useLocale();
   return (
-    <label className="flex min-w-0 items-center gap-2 px-2 py-1 text-[12px] text-(--ui-tone-neutral-fg)">
+    <label className="flex min-w-0 items-center gap-2 px-2 py-1 text-ui-caption text-(--ui-tone-neutral-fg)">
       <Checkbox checked={checked} onChange={onClick} />
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>

@@ -82,7 +82,7 @@ export function CrewMemberPicker({
         onValueChange={(value) => onModeChange(value === "new" ? "new" : "library")}
       />
       {role ? (
-        <p className="text-xs text-(--ui-text-secondary)">
+        <p className="text-ui-caption text-(--ui-text-secondary)">
           {t("Added members join as {p0}.", { p0: roleLabel(role) })}
         </p>
       ) : null}
@@ -119,7 +119,9 @@ export function CrewMemberPicker({
               ) : null}
             </div>
             {matches.length === 0 ? (
-              <p className="py-2 text-xs text-(--ui-text-secondary)">{t("No matching members.")}</p>
+              <p className="py-2 text-ui-caption text-(--ui-text-secondary)">
+                {t("No matching members.")}
+              </p>
             ) : (
               <ul
                 aria-label={t("Member library")}
@@ -135,8 +137,10 @@ export function CrewMemberPicker({
                           onChange={(event) => toggle(agent, event.target.checked)}
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">{agent.name}</span>
-                          <span className="block truncate text-xs text-(--ui-text-secondary)">
+                          <span className="block truncate text-ui-body font-medium">
+                            {agent.name}
+                          </span>
+                          <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
                             {[
                               roleLabel(agent.role),
                               candidateLabel(data.catalog, agent.candidates[0]),
@@ -176,7 +180,7 @@ export function CrewMemberPicker({
             autoFocus
           />
           <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg border border-(--ui-tone-neutral-border) p-2">
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-ui-body">
               <Checkbox
                 checked={saveToLibrary}
                 onChange={(event) => onSaveToLibraryChange(event.target.checked)}

@@ -64,6 +64,8 @@ export type HarnessAdapter = {
   live: boolean;
   /** False when the harness cannot accept a follow-up while a turn is running. Default: same as live. */
   canSteer?: boolean;
+  /** True when a steered follow-up carries its own model settings (effort) into the running turn. */
+  steerAppliesSettings?: boolean;
   commands?: NativeCommandProvider;
   sendTurn(input: SendTurnInput): Promise<void>;
   /** Trigger provider-owned compaction outside Bycoda's normal user-turn path. */
@@ -428,6 +430,11 @@ export function canSteerHarness(id: HarnessId): boolean {
   const adapter = adapters.get(id);
   if (!adapter?.live) return false;
   return adapter.canSteer !== false;
+}
+
+/** True when steering applies the follow-up's model settings, so an effort change need not restart the turn. */
+export function steerAppliesModelSettings(id: HarnessId): boolean {
+  return canSteerHarness(id) && adapters.get(id)?.steerAppliesSettings === true;
 }
 
 export function canRewindHarnessLastTurn(id: HarnessId): boolean {

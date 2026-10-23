@@ -20,7 +20,7 @@
 }
 .resource-empty {
   color: var(--host-tool-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .resource-cards {
   display: grid;
@@ -33,13 +33,13 @@
   min-inline-size: 0;
   padding: 16px;
   border: 1px solid var(--color-stroke);
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
   background: var(--bycoda-panel, var(--color-background-base));
 }
 .resource-card h4 {
   margin: 0;
   color: var(--host-tool-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   font-weight: 500;
 }
 .resource-value {
@@ -108,12 +108,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px 16px;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .resource-memory-bar {
   block-size: 8px;
-  border-radius: 4px;
+  border-radius: var(--ui-control-radius);
   overflow: clip;
   background: var(--color-selection);
 }
@@ -126,7 +126,7 @@
 .resource-memory-legend,
 .resource-history-caption {
   color: var(--host-tool-muted);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 .resource-memory-legend strong {
   margin-inline-start: 6px;

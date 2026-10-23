@@ -1,5 +1,8 @@
 import type { Attachment } from "./session";
-import { markdownLanguage } from "@codemirror/lang-markdown";
+import { parser, GFM, Subscript, Superscript, Emoji } from "@lezer/markdown";
+
+// Match the editor's Markdown dialect without loading the editor and its DOM runtime.
+const markdownParser = parser.configure([GFM, Subscript, Superscript, Emoji]);
 
 /**
  * Inline references to a message's attachments: `[image1]`, `[file2]`.
@@ -57,7 +60,7 @@ export function findTokens(text: string, files: Pick<Attachment, "kind">[]): Tok
   if (!files.length || !text.includes("[")) return [];
   const indexByToken = new Map(attachmentTokens(files).map((token, index) => [token, index]));
   const code: [number, number][] = [];
-  markdownLanguage.parser.parse(text).iterate({
+  markdownParser.parse(text).iterate({
     enter(node) {
       if (["InlineCode", "FencedCode", "CodeBlock"].includes(node.name)) {
         code.push([node.from, node.to]);

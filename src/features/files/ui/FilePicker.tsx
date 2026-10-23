@@ -1,8 +1,9 @@
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
+import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
+import { Modal } from "../../../shared/ui/Modal";
 import { t, useLocale } from "../../../shared/i18n/technical";
-import { RefreshCw, Search } from "../../../shared/ui/icons";
+import { Search } from "../../../shared/ui/icons";
 import { appName } from "../../../shared/lib/appName";
 import {
   useEffect,
@@ -13,7 +14,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { createPortal } from "react-dom";
 import {
   loadProjectFiles,
   peekProjectFiles,
@@ -22,7 +22,6 @@ import {
   rememberOpenedFile,
   type RankedFile,
 } from "../model/fileIndex";
-import { LAYER } from "../../../shared/lib/layers";
 import { fuzzyMatch, type FuzzyHit } from "../../../shared/lib/fuzzy";
 import { isRemoteProjectPath, looksLikeProject } from "../../projects/model/recents";
 import type { OpenFileFn } from "../../search/model/search";
@@ -133,8 +132,6 @@ export function FilePicker({
   useLocale();
   const peekFiles = () => peekProjectFiles(cwd);
   const search = useRef<HTMLInputElement>(null);
-  const dialogRoot = useRef<HTMLDivElement>(null);
-  const overlayId = useOverlay(dialogRoot, true, onClose, open);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const [query, setQuery] = useState(initialQuery);
@@ -278,65 +275,53 @@ export function FilePicker({
     actionCount: actionResults.length,
   });
 
-  return createPortal(
-    <OverlayParent.Provider value={overlayId}>
-      <div className="fixed inset-0" style={{ zIndex: LAYER.dialog }}>
-        <div className="absolute inset-0" onMouseDown={onClose} />
-        <div
-          ref={dialogRoot}
-          tabIndex={-1}
-          role="dialog"
-          aria-modal="true"
-          aria-label={paletteMode ? t("Command Palette") : t("Go to File")}
-          data-file-picker
-          onMouseDown={(e) => e.stopPropagation()}
-          className="absolute left-1/2 top-[12%] flex w-[min(560px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-[var(--color-stroke)] bg-[var(--ui-surface)] backdrop-blur-xl"
-        >
-          <div className="pb-1.5">
-            <label className="flex items-center gap-2 border-b border-stroke px-2 py-2.5 text-[var(--ui-text-secondary)]">
-              <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
-              <SearchInput
-                ref={search}
-                type="text"
-                value={query}
-                placeholder={t("Go to File (type > for commands)")}
-                aria-label={paletteMode ? t("Command Palette") : t("Go to File")}
-                spellCheck={false}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                className="min-w-0 flex-1"
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setActive(0);
-                }}
-                onKeyDown={onSearchKey}
-              />
-            </label>
-          </div>
-          {empty ? (
-            <p className="px-3 pb-3 pt-1 text-[12px] text-[var(--ui-text-secondary)]">{empty}</p>
-          ) : paletteMode ? (
-            <ActionList
-              actions={actionResults}
-              active={active}
-              query={actionQuery}
-              onActive={setActive}
-              onRun={runAction}
+  const pickerLabel = paletteMode ? t("Command Palette") : t("Go to File");
+  return (
+    <Modal title={pickerLabel} size="md" minimalHeader fitViewport={false} onClose={onClose}>
+      <div data-file-picker aria-label={pickerLabel} className="flex flex-col">
+        <div className="pb-1.5">
+          <label className="flex items-center gap-2 border-b border-stroke py-2.5 ps-2 pe-12 text-[var(--ui-text-secondary)]">
+            <Search className="icon-sm shrink-0" strokeWidth={1.75} />
+            <SearchInput
+              ref={search}
+              type="text"
+              value={query}
+              placeholder={t("Go to File (type > for commands)")}
+              aria-label={pickerLabel}
+              spellCheck={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              className="min-w-0 flex-1"
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setActive(0);
+              }}
+              onKeyDown={onSearchKey}
             />
-          ) : (
-            <FileList
-              files={results}
-              active={active}
-              query={query}
-              onActive={setActive}
-              onPick={pick}
-            />
-          )}
+          </label>
         </div>
+        {empty ? (
+          <p className="px-3 pb-3 pt-1 text-ui-caption text-[var(--ui-text-secondary)]">{empty}</p>
+        ) : paletteMode ? (
+          <ActionList
+            actions={actionResults}
+            active={active}
+            query={actionQuery}
+            onActive={setActive}
+            onRun={runAction}
+          />
+        ) : (
+          <FileList
+            files={results}
+            active={active}
+            query={query}
+            onActive={setActive}
+            onPick={pick}
+          />
+        )}
       </div>
-    </OverlayParent.Provider>,
-    document.body,
+    </Modal>
   );
 }
 
@@ -416,17 +401,13 @@ function ActionList({
               highlighted ? "" : ""
             }   `}
           >
-            <RefreshCw
-              className="size-4 shrink-0 text-[var(--ui-text-secondary)]"
-              strokeWidth={1.75}
-            />
             <span className="min-w-0 flex-1 truncate">
               <MatchText text={action.label} positions={action.positions} active={Boolean(query)} />
             </span>
             {action.hint ? (
-              <kbd className="ml-auto shrink-0 rounded border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-1.5 py-0.5 font-mono text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+              <ShortcutKbd size="xs" className="ml-auto shrink-0">
                 {action.hint}
-              </kbd>
+              </ShortcutKbd>
             ) : null}
           </Button>
         );

@@ -13,22 +13,22 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     let last = 0;
-    let frame: number | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     let intersects = typeof IntersectionObserver === "undefined";
     let width = 0;
     const height = 32;
     const paint = () => drawPacingUncle(ctx, width, height, elapsed.current);
-    const tick = (now: number) => {
-      if (now - last >= 50) {
-        if (last) elapsed.current += Math.min(now - last, 100) / 1000;
-        last = now;
-        paint();
-      }
-      frame = requestAnimationFrame(tick);
+    // A 20 Hz timer, not a per-vsync frame chain: the walk only changes every 50 ms.
+    const tick = () => {
+      const now = performance.now();
+      if (last) elapsed.current += Math.min(now - last, 100) / 1000;
+      last = now;
+      paint();
+      timer = setTimeout(tick, 50);
     };
     const update = () => {
-      if (frame !== null) cancelAnimationFrame(frame);
-      frame = null;
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
       last = 0;
       const nextWidth = canvas.clientWidth;
       if (nextWidth !== width || canvas.width === 300) {
@@ -39,7 +39,10 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
       paint();
-      if (motion && visible && intersects && width > 0) frame = requestAnimationFrame(tick);
+      if (motion && visible && intersects && width > 0) {
+        last = performance.now();
+        timer = setTimeout(tick, 50);
+      }
     };
     const intersection =
       typeof IntersectionObserver === "undefined"
@@ -54,7 +57,7 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
     window.addEventListener("resize", update);
     update();
     return () => {
-      if (frame !== null) cancelAnimationFrame(frame);
+      if (timer !== null) clearTimeout(timer);
       intersection?.disconnect();
       resize?.disconnect();
       window.removeEventListener("resize", update);

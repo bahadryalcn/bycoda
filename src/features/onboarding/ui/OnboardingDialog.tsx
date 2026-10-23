@@ -3,7 +3,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Stepper } from "../../../shared/ui/Stepper";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
-import { NativeSelect } from "../../../shared/ui/Select";
+import { Select } from "../../../shared/ui/Select";
 import {
   t,
   useLocale,
@@ -114,25 +114,17 @@ export default function OnboardingDialog({
               <span>{PRODUCT_IDENTITY.displayName}</span>
               <small>{t("Quick setup")}</small>
             </div>
-            <label className="onboarding-language">
-              <span className="sr-only">{t("Language")}</span>
-              <NativeSelect
-                aria-label={t("Language")}
+            <div className="onboarding-language">
+              <Select
+                label={t("Language")}
                 value={getLanguagePreference()}
-                onChange={(event) => {
-                  const value = event.target.value;
+                options={[{ value: "system", label: t("System language") }, ...LANGUAGES]}
+                onValueChange={(value) => {
                   if (value === "system" || isLocale(value))
                     void setLanguagePreference(value).catch((reason) => setError(String(reason)));
                 }}
-              >
-                <option value="system">{t("System language")}</option>
-                {LANGUAGES.map(({ value, label }) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </NativeSelect>
-            </label>
+              />
+            </div>
           </div>
           <Stepper
             label={t("Getting started")}
@@ -210,7 +202,7 @@ export default function OnboardingDialog({
                       <strong>{t("Manage connections")}</strong>
                       <small>{t("Computers, phone pairing and sharing")}</small>
                     </div>
-                    <ChevronRight className="size-4" />
+                    <ChevronRight className="icon-md" />
                   </Button>
                   <p className="onboarding-hint">
                     {t(
@@ -223,22 +215,24 @@ export default function OnboardingDialog({
             <footer className="onboarding-footer">
               <Button
                 onClick={step === 0 ? onFinish : () => goTo(step - 1)}
-                variant="secondary"
+                variant={step === 0 ? "ghost" : "secondary"}
                 type="button"
               >
                 {step === 0 ? (
                   t("Set up later")
                 ) : (
                   <>
-                    <ArrowLeft className="size-3.5" />
+                    <ArrowLeft className="icon-sm" />
                     {t("Back")}
                   </>
                 )}
               </Button>
-              <span className="onboarding-save-note">{t("Changes save automatically")}</span>
+              {step === 1 ? (
+                <span className="onboarding-save-note">{t("Changes save automatically")}</span>
+              ) : null}
               <Button onClick={() => goTo(step + 1)} variant="primary" type="button">
                 {t("Continue")}
-                <ChevronRight className="size-3.5" />
+                <ChevronRight className="icon-sm" />
               </Button>
             </footer>
           </div>
@@ -463,7 +457,7 @@ function Projects({
                   </div>
                   <span className="onboarding-provider-icons">
                     {[...new Set(folder.items.map((item) => item.provider))].map((provider) => (
-                      <HarnessIcon key={provider} harness={provider} className="size-3.5" />
+                      <HarnessIcon key={provider} harness={provider} className="icon-sm" />
                     ))}
                   </span>
                   <span title={t("Conversations")}>{folder.items.length}</span>
@@ -557,23 +551,24 @@ function Projects({
       </div>
       <footer className="onboarding-footer">
         <Button disabled={busy} onClick={onBack} variant="secondary" type="button">
-          {t("← Back")}
+          <ArrowLeft className="icon-sm" />
+          {t("Back")}
         </Button>
         <div className="onboarding-footer-actions">
           {onStartGuide && !busy ? (
-            <Button onClick={onStartGuide} variant="secondary" type="button">
+            <Button onClick={onStartGuide} variant="ghost" type="button">
               {t("Usage guide")}
             </Button>
           ) : null}
           {!summary ? (
-            <Button disabled={busy} onClick={onFinish} variant="secondary" type="button">
+            <Button disabled={busy} onClick={onFinish} variant="ghost" type="button">
               {t("Skip import")}
             </Button>
           ) : null}
           <Button
             disabled={busy}
             onClick={summary || !selected.size ? onFinish : () => void start()}
-            variant="secondary"
+            variant="primary"
             type="button"
           >
             {summary || !selected.size

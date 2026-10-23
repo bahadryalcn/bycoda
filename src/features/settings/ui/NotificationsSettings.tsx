@@ -27,7 +27,7 @@ import {
   saveNotificationsEnabled,
   type NotificationPermission,
 } from "../../notifications/model/notifications";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { Button } from "../../../shared/ui/Button";
 import { loadSoundsEnabled, saveSoundsEnabled, subscribeSoundsEnabled } from "../model/sounds";
 import { Group, Row, Select, Toggle, SettingsFeedback } from "./settingsControls";
 import "./NotificationsSettings.css";
@@ -111,6 +111,9 @@ export function NotificationAlerts() {
           />
         </Row>
         <div className="notification-permission-status">
+          {!permissionError && !permissionPending && notificationPermission === "granted" ? (
+            <p>{t("System permission granted")}</p>
+          ) : (
           <SettingsFeedback
             state={
               permissionError
@@ -132,7 +135,6 @@ export function NotificationAlerts() {
                 {notificationPermission === "unsupported"
                   ? t("Not available on this platform")
                   : null}
-                {notificationPermission === "granted" ? t("System permission granted") : null}
                 {notificationPermission === "prompt"
                   ? t(
                       "System permission has not been granted yet. Enabling notifications requests permission.",
@@ -141,6 +143,7 @@ export function NotificationAlerts() {
               </>
             )}
           </SettingsFeedback>
+          )}
         </div>
       </Group>
       <Group
@@ -256,9 +259,9 @@ function NotificationsBlocked() {
     <div className="notification-permission-message">
       {t("Notifications are blocked by system permission.")}
       {IS_MAC || IS_WIN ? (
-        <SecondaryButton onClick={() => void openSettings()} disabled={opening}>
+        <Button className="shrink-0" onClick={() => void openSettings()} disabled={opening}>
           {opening ? t("Opening…") : t("Open System Settings")}
-        </SecondaryButton>
+        </Button>
       ) : (
         <span>{t("Allow notifications in your system settings to receive desktop alerts.")}</span>
       )}

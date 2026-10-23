@@ -3,7 +3,7 @@
 import { collator as cachedCollator } from "../../../lib/intl";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-import { t } from "../../../i18n";
+import { useT } from "../../../i18n";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
@@ -264,6 +264,7 @@ export function SortableDataTable<T extends Record<string, unknown>>({
   onSelectionChange,
   itemName = { one: "row", other: "rows" },
 }: SortableDataTableProps<T>) {
+  const t = useT();
   const reduced = useReducedMotion() ?? false;
   const collator = useMemo(
     () => cachedCollator(locale, { numeric: true, sensitivity: "base" }),

@@ -608,7 +608,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             disabled={saving}
             onClick={() => onPreview(skill, "icon", machine)}
           >
-            <Eye className="size-3.5" aria-hidden="true" />
+            <Eye className="icon-sm" aria-hidden="true" />
           </Button>
           {canTransferSkill(skill) && (machine || machines.length > 0) ? (
             <Button
@@ -638,7 +638,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                 else setCopyMenu({ skill, anchor: event.currentTarget });
               }}
             >
-              <CloudUpload className="size-3.5" aria-hidden="true" />
+              <CloudUpload className="icon-sm" aria-hidden="true" />
             </Button>
           ) : null}
           <Button
@@ -653,7 +653,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               setActionsMenu({ skill, machine, anchor: event.currentTarget });
             }}
           >
-            <MoreHorizontal className="size-3.5" aria-hidden="true" />
+            <MoreHorizontal className="icon-sm" aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -724,7 +724,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                 setReload((value) => value + 1);
               }}
             >
-              <RefreshCw className="size-3.5" aria-hidden="true" />
+              <RefreshCw className="icon-sm" aria-hidden="true" />
             </Button>
             <Button
               ref={addSkillButton}
@@ -819,7 +819,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           </details>
         </div>
         <footer className={styles.libraryFooter} title={cwd}>
-          <FolderOpen className="size-3.5" aria-hidden="true" />
+          <FolderOpen className="icon-sm" aria-hidden="true" />
           <span className={styles.truncate}>{cwd}</span>
         </footer>
       </section>
@@ -839,7 +839,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                   disabled={saving}
                   onClick={() => setPreviewSkill(null)}
                 >
-                  <X className="size-3.5" aria-hidden="true" />
+                  <X className="icon-sm" aria-hidden="true" />
                 </Button>
               </div>
               <p className={styles.meta}>
@@ -961,7 +961,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               kind: "item",
               id: "copy",
               label: t("Copy path of {p0}", { p0: actionsMenu.skill.name }),
-              icon: <Copy className="size-3.5" />,
+              icon: <Copy className="icon-sm" />,
             },
             ...(!actionsMenu.machine
               ? [
@@ -969,7 +969,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                     kind: "item" as const,
                     id: "reveal",
                     label: t("Reveal {p0} in file explorer", { p0: actionsMenu.skill.name }),
-                    icon: <FolderOpen className="size-3.5" />,
+                    icon: <FolderOpen className="icon-sm" />,
                   },
                 ]
               : []),
@@ -982,7 +982,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                     title: t("Delete skill permanently"),
                     danger: true,
                     disabled: deleting !== null || transferring !== null || saving,
-                    icon: <Trash2 className="size-3.5" />,
+                    icon: <Trash2 className="icon-sm" />,
                   },
                 ]
               : []),

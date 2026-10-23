@@ -1,6 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Plus, RefreshCw, X } from "../../../shared/ui/icons";
 
@@ -459,7 +459,7 @@ export function BtwSheet({
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const sheetRef = useRef<HTMLElement | null>(null);
   const glassRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -785,12 +785,12 @@ export function BtwSheet({
           </div>
           {persisted?.status === "error" ? (
             <div className="btw-sheet-body shrink-0 px-5 pb-3">
-              <Alert tone="info" role="alert">
+              <Alert tone="danger" role="alert">
                 <div className="min-w-0">
                   <div className="text-(length:--ui-font-caption) font-medium text-(--ui-tone-danger-fg)">
                     {t("Couldn’t finish")}
                   </div>
-                  <div className="mt-1 text-[12px] leading-4.5 text-(--ui-tone-danger-fg)">
+                  <div className="mt-1 text-ui-caption leading-4.5 text-(--ui-tone-danger-fg)">
                     {persisted.error ||
                       t("{p0} could not answer this side question.", {
                         p0: HARNESS_TITLE[harness],

@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Pause, Play } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
@@ -26,7 +26,7 @@ export const InterruptedNotice = memo(function InterruptedNotice({
   onContinue: () => void;
   message?: string;
 }) {
-  useLocale();
+  const t = useT();
   // A pending automatic continuation is only intent. Recovery holds or window
   // transfers can prevent its dispatch, so keep manual recovery available until
   // a new turn actually starts.
@@ -39,7 +39,7 @@ export const InterruptedNotice = memo(function InterruptedNotice({
     return null;
   return (
     <div className="px-2 text-(--ui-text-secondary)" data-interrupted-turn>
-      <div className="relative z-0 flex h-8 items-center gap-2 rounded-t-[10px] border border-b-0 border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle) px-2 text-[12px]">
+      <div className="relative z-0 flex h-8 items-center gap-2 rounded-t-xl border border-b-0 border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle) px-2 text-ui-caption">
         <Pause className="size-3.5 shrink-0 text-(--ui-tone-warning-fg)" />
         <span className="shrink-0 text-(--ui-text-secondary)">{t("Interrupted")}</span>
         <span
@@ -55,7 +55,7 @@ export const InterruptedNotice = memo(function InterruptedNotice({
             : t("This turn was cut off when {p0} quit.", { p0: PRODUCT_IDENTITY.displayName })}
         </span>
         <Button
-          variant="ghost"
+          variant="secondary"
           disabled={!!blockedReason}
           tooltip={blockedReason}
           startIcon={<Play className="size-3.5" />}

@@ -93,13 +93,13 @@ export function TemplatesSettings() {
             setRows((current) => [...current, { id: crypto.randomUUID(), name: "", body: "" }]);
           }}
         >
-          <Plus className="size-3.5" strokeWidth={1.75} />
+          <Plus className="icon-sm" strokeWidth={1.75} />
           {t("Add template")}
         </Button>
       }
     >
       <div className="settings-templates">
-        <AdvancedSettings title={t("How to use templates")}>
+        <AdvancedSettings defaultOpen={false} title={t("How to use templates")}>
           <p className="chat-detail">
             {t(
               "Pick a template from the / menu, or type {p0} followed by a space. Use {p1} to set the caret position.",
@@ -121,15 +121,17 @@ export function TemplatesSettings() {
         </AdvancedSettings>
         <div>
           {rows.length === 0 ? (
-            <p className="px-4 py-3 text-[12px] text-content/45">{t("No templates yet")}</p>
+            <p className="px-4 py-3 text-ui-caption text-(--ui-text-muted)">
+              {t("No templates yet")}
+            </p>
           ) : (
             rows.map((row) => (
               <div
                 key={row.id}
-                className="flex flex-col gap-2 border-b border-content/5 px-4 py-3 last:border-b-0"
+                className="flex flex-col gap-2 border-b border-stroke px-4 py-3 last:border-b-0"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <label className="flex min-w-0 flex-1 basis-40 flex-col gap-1 text-[12px] text-content/65">
+                  <label className="flex min-w-0 flex-1 basis-40 flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
                     {t("Template name")}
                     <TextField
                       hideLabel
@@ -137,22 +139,22 @@ export function TemplatesSettings() {
                       value={row.name}
                       onChange={(event) => update(row.id, { name: event.target.value })}
                       placeholder={t("Name")}
-                      aria-label={t("Template name")}
                       spellCheck={false}
                       autoComplete="off"
                     />
                   </label>
-                  <label className="flex w-36 max-w-full flex-col gap-1 text-[12px] text-content/65">
+                  <label className="flex w-36 max-w-full flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
                     {t("Template trigger")}
-                    <span className="flex h-7 items-center gap-1 rounded-md border border-content/10 px-2">
-                      {TRIGGER_PREFIX}
+                    <span className="flex items-center gap-1">
+                      <span aria-hidden className="text-(--ui-text-muted)">
+                        {TRIGGER_PREFIX}
+                      </span>
                       <TextField
                         hideLabel
                         label={t("Template trigger")}
                         value={row.trigger ?? ""}
                         onChange={(event) => update(row.id, { trigger: event.target.value })}
                         placeholder={t("trigger (optional)")}
-                        aria-label={t("Template trigger")}
                         spellCheck={false}
                         autoComplete="off"
                       />
@@ -165,18 +167,16 @@ export function TemplatesSettings() {
                     iconOnly
                     label={t("Delete template")}
                     type="button"
-                    title={t("Delete template")}
-                    aria-label={t("Delete template")}
                     onClick={() => {
                       setSavedMessage(false);
                       setError(null);
                       setRows((current) => current.filter((item) => item.id !== row.id));
                     }}
                   >
-                    <Trash2 className="size-3.5" strokeWidth={1.75} />
+                    <Trash2 className="icon-sm" strokeWidth={1.75} />
                   </Button>
                 </div>
-                <label className="flex flex-col gap-1 text-[12px] text-content/65">
+                <label className="flex flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
                   {t("Template text")}
                   <TextareaField
                     hideLabel
@@ -186,7 +186,6 @@ export function TemplatesSettings() {
                     placeholder={t('Text to insert, e.g. "Review {p0} for bugs"', {
                       p0: CURSOR_PLACEHOLDER,
                     })}
-                    aria-label={t("Template text")}
                     rows={3}
                     maxLength={MAX_TEMPLATE_BODY}
                     spellCheck={false}
@@ -208,7 +207,7 @@ export function TemplatesSettings() {
               {t("Save templates")}
             </Button>
             {dirty && !error && !changedElsewhere ? (
-              <span className="text-[12px] text-content/45">{t("Unsaved changes")}</span>
+              <span className="text-ui-caption text-(--ui-text-muted)">{t("Unsaved changes")}</span>
             ) : null}
             {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
           </div>

@@ -19,6 +19,7 @@ import {
   inboxPersonAvatarUrl,
   type InboxProvider,
 } from "../model/githubTasks";
+import { InboxAvatar } from "./InboxPresentation";
 import { MOD } from "../../../platform/tauri/platform";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
@@ -154,7 +155,7 @@ export function InboxComments({
 
   return (
     <section className="flex flex-col gap-3 border-t border-(--ui-tone-neutral-border) pt-5">
-      <div className="flex items-center gap-2 text-[12px] text-(--ui-text-secondary)">
+      <div className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
         {thread.commits ? (
           <>
             <h2 className="text-(--ui-text-secondary)">{t("Activity")}</h2>
@@ -174,7 +175,7 @@ export function InboxComments({
         ) : null}
         {loading ? (
           <LoaderCircle
-            className="size-3 animate-spin text-(--ui-text-secondary)"
+            className="icon-xs animate-spin text-(--ui-text-secondary)"
             strokeWidth={1.75}
           />
         ) : null}
@@ -235,7 +236,10 @@ export function InboxCommentForm({
   error,
   onCancelReply,
   onSubmit,
+  target,
 }: {
+  /** Human-readable destination service, shown beside the submit action. */
+  target?: string;
   replyTo: InboxReplyTarget | null;
   posting: boolean;
   error: string | null;
@@ -287,7 +291,7 @@ export function InboxCommentForm({
       className="flex flex-col gap-2 border-t border-(--ui-tone-neutral-border) pt-5"
     >
       {replyTo ? (
-        <div className="flex items-center gap-2 text-[12px] text-(--ui-text-secondary)">
+        <div className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
           <span className="min-w-0 truncate">
             {t("Replying to ")}
             {replyTo.author || t("comment")}
@@ -302,7 +306,7 @@ export function InboxCommentForm({
             onClick={onCancelReply}
             className="shrink-0"
           >
-            <X className="size-3" strokeWidth={1.75} />
+            <X className="icon-xs" strokeWidth={1.75} />
           </Button>
         </div>
       ) : null}
@@ -324,13 +328,25 @@ export function InboxCommentForm({
           fieldClassName="w-full"
           className="resize-none"
         />
-        <div className="flex items-center justify-end px-2 pb-2">
-          <Button variant="primary" size="sm" type="submit" disabled={!canPost} loading={posting}>
+        <div className="flex items-center justify-end gap-2">
+          {target ? (
+            <span className="min-w-0 truncate text-ui-caption text-(--ui-text-secondary)">
+              {t("Posts publicly to {p0}", { p0: target })}
+            </span>
+          ) : null}
+          <Button
+            variant="primary"
+            size="sm"
+            type="submit"
+            disabled={!canPost}
+            loading={posting}
+            className="shrink-0"
+          >
             {posting ? t("Posting...") : replyTo ? t("Reply") : t("Comment")}
           </Button>
         </div>
       </div>
-      {error ? <p className="text-[12px] text-(--ui-tone-danger-fg)">{error}</p> : null}
+      {error ? <p className="text-ui-caption text-(--ui-tone-danger-fg)">{error}</p> : null}
     </form>
   );
 }
@@ -338,8 +354,8 @@ export function InboxCommentForm({
 function CommentsPending() {
   useLocale();
   return (
-    <div className="flex items-center gap-2 border-t border-(--ui-tone-neutral-border) pt-5 text-[12px] text-(--ui-text-secondary)">
-      <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
+    <div className="flex items-center gap-2 border-t border-(--ui-tone-neutral-border) pt-5 text-ui-caption text-(--ui-text-secondary)">
+      <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} />
       {t("Loading comments")}
     </div>
   );
@@ -380,7 +396,7 @@ function InboxComment({
   const inner = (
     <>
       <header
-        className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-(--ui-text-secondary) ${
+        className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-caption text-(--ui-text-secondary) ${
           nested ? "" : timeline ? "min-h-9 px-3 py-1.5" : "px-3 py-2"
         } ${!nested && (hasBody || hasReplies) ? "border-b border-(--ui-tone-neutral-border)" : ""}`}
       >
@@ -496,7 +512,7 @@ function InboxComment({
 
   if (nested) return <article>{inner}</article>;
   return (
-    <article className="overflow-hidden rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
+    <article className="overflow-hidden rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
       {inner}
     </article>
   );
@@ -606,7 +622,7 @@ function TimelineRail({
   return (
     <div aria-hidden className="flex w-5 shrink-0 flex-col items-center">
       <span className={`w-px shrink-0 ${lead} ${first ? "" : "bg-(--ui-surface-raised)"}`} />
-      <div className="flex size-5 shrink-0 items-center justify-center">{children}</div>
+      <div className="flex icon-lg shrink-0 items-center justify-center">{children}</div>
       {last ? null : <span className="w-px flex-1 bg-(--ui-surface-raised)" />}
     </div>
   );
@@ -650,7 +666,7 @@ function InboxTimelineComment({
         last={last}
         node={
           <Icon
-            className={`size-4 ${
+            className={`icon-md ${
               state === "APPROVED"
                 ? "text-(--ui-tone-success-fg)"
                 : state === "CHANGES_REQUESTED"
@@ -734,7 +750,7 @@ function InboxCommitRun({
 function TimelineEventLine({ name, action, time }: { name: string; action: string; time: string }) {
   useLocale();
   return (
-    <p className="flex h-5 min-w-0 items-center gap-1.5 text-[12px] text-(--ui-text-secondary)">
+    <p className="flex h-5 min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
       <span className="min-w-0 truncate font-medium text-(--ui-tone-neutral-fg)">{name}</span>
       <span className="shrink-0">{action}</span>
       {time ? (
@@ -769,7 +785,7 @@ function InboxCommitStop({ commit, last }: { commit: InboxCommit; last: boolean 
           <span className="min-w-0 flex-1 truncate text-(--ui-text-secondary) group-hover:text-(--ui-tone-neutral-fg) group-disabled:text-(--ui-text-secondary)">
             {commit.messageHeadline}
           </span>
-          <span className="shrink-0 font-mono text-[11px] text-(--ui-text-secondary) group-hover:text-(--ui-text-secondary)">
+          <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-secondary) group-hover:text-(--ui-text-secondary)">
             {commit.oid.slice(0, 7)}
           </span>
         </Button>
@@ -802,36 +818,6 @@ function InboxCommentPerson({
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <InboxAvatar name={name} avatarUrl={avatarUrl} />
       <span className="min-w-0 truncate font-medium text-(--ui-tone-neutral-fg)">{name}</span>
-    </span>
-  );
-}
-
-function InboxAvatar({ name, avatarUrl }: { name: string; avatarUrl: string }) {
-  useLocale();
-  const [failed, setFailed] = useState(!avatarUrl);
-  const initial = name.trim().charAt(0).toUpperCase() || "?";
-
-  useEffect(() => {
-    setFailed(!avatarUrl);
-  }, [avatarUrl]);
-
-  return avatarUrl && !failed ? (
-    <img
-      src={avatarUrl}
-      alt=""
-      width={20}
-      height={20}
-      referrerPolicy="no-referrer"
-      draggable={false}
-      onError={() => setFailed(true)}
-      className="size-5 shrink-0 rounded-full bg-(--ui-surface-raised) object-cover"
-    />
-  ) : (
-    <span
-      aria-hidden
-      className="grid size-5 shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) text-[10px] font-medium text-(--ui-text-secondary)"
-    >
-      {initial}
     </span>
   );
 }

@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import type { SocialPlatform } from "./social";
 export type XProfilePatch = {
   name?: string;
@@ -44,11 +45,21 @@ export type SocialBrowserState = {
   workflows: SocialBrowserWorkflow[];
 };
 export const SOCIAL_BROWSER_LABELS: Record<SocialBrowserIntent, string> = {
-  login: "Giriş yap",
-  signup: "Kayıt ol",
-  inbox: "Gelen kutusunu aç",
-  publish: "Paylaşım ekranını aç",
-  comments: "Yorumları aç",
+  get login() {
+    return t("Log in");
+  },
+  get signup() {
+    return t("Sign up");
+  },
+  get inbox() {
+    return t("Open inbox");
+  },
+  get publish() {
+    return t("Open publishing screen");
+  },
+  get comments() {
+    return t("Open comments");
+  },
 };
 
 type Site = {

@@ -55,6 +55,18 @@ fn update_args(provider: &str) -> Option<&'static [&'static str]> {
     }
 }
 
+fn update_args_for_command(provider: &str, command: &str) -> Option<&'static [&'static str]> {
+    // Bun's Windows shim is resolved as the CLI. Pass its known install method
+    // instead of probing every installed package manager in a GUI child.
+    let path = command.replace('\\', "/").to_ascii_lowercase();
+    if provider == "opencode"
+        && (path.contains("/.bun/bin/") || path.contains("/.bun/install/global/"))
+    {
+        return Some(&["upgrade", "--method", "bun"]);
+    }
+    update_args(provider)
+}
+
 /// A download plus, for npm installs, a full dependency install.
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -114,7 +126,7 @@ pub async fn harness_update(
     binary_provider: String,
     binary_path: Option<String>,
 ) -> Result<(), String> {
-    let args: Vec<String> = update_args(&binary_provider)
+    let args: Vec<String> = update_args_for_command(&binary_provider, &command)
         .ok_or_else(|| format!("No updater for harness: {binary_provider}"))?
         .iter()
         .map(|arg| arg.to_string())
@@ -127,26 +139,37 @@ pub async fn harness_update(
         if output.status.success() {
             return Ok(());
         }
-        Err(update_failure(&output.stdout, &output.stderr))
+        Err(format!(
+            "{binary_provider} update failed ({}):\n{}",
+            output.status,
+            update_failure(&output.stdout, &output.stderr)
+        ))
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
-/// Updaters print their reason to either stream; the last line is the one
-/// that says what went wrong.
+/// Keep both streams: OpenCode ends with a generic "Failed" after printing the
+/// actual package-manager error. Bound the tail sent to the UI.
 fn update_failure(stdout: &[u8], stderr: &[u8]) -> String {
-    [stderr, stdout]
+    let detail = [stdout, stderr]
         .iter()
-        .filter_map(|bytes| {
+        .map(|bytes| {
             String::from_utf8_lossy(bytes)
                 .lines()
                 .map(str::trim)
-                .rfind(|line| !line.is_empty())
-                .map(str::to_string)
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n")
         })
-        .next()
-        .unwrap_or_else(|| "Update failed".to_string())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if detail.is_empty() {
+        return "Update failed".to_string();
+    }
+    let skip = detail.chars().count().saturating_sub(4000);
+    detail.chars().skip(skip).collect()
 }
 
 fn latest_version(body: &Value) -> Option<String> {
@@ -231,16 +254,46 @@ mod tests {
     }
 
     #[test]
-    fn reports_the_last_line_an_updater_printed() {
+    fn opencode_bun_installs_skip_package_manager_autodetection() {
+        for command in [
+            r"C:\Users\owner\.bun\bin\opencode.exe",
+            "/home/owner/.bun/install/global/node_modules/@opencode/cli/bin/opencode",
+        ] {
+            assert_eq!(
+                update_args_for_command("opencode", command),
+                Some(&["upgrade", "--method", "bun"][..])
+            );
+        }
+        assert_eq!(
+            update_args_for_command("opencode", "/usr/local/bin/opencode"),
+            Some(&["upgrade"][..])
+        );
+        assert_eq!(
+            update_args_for_command("claude", "/home/owner/.bun/bin/claude"),
+            Some(&["update"][..])
+        );
+    }
+
+    #[test]
+    fn preserves_updater_diagnostics_before_the_generic_footer() {
         assert_eq!(
             update_failure(
                 b"checking\n",
                 b"npm ERR! code EACCES\nnpm ERR! permission denied\n\n"
             ),
-            "npm ERR! permission denied"
+            "checking\nnpm ERR! code EACCES\nnpm ERR! permission denied"
         );
         assert_eq!(update_failure(b"no write access\n", b""), "no write access");
         assert_eq!(update_failure(b"", b""), "Update failed");
+        assert_eq!(
+            update_failure(
+                b"Upgrade failed for bun\nAccess denied: opencode.exe\nFailed\n",
+                b""
+            ),
+            "Upgrade failed for bun\nAccess denied: opencode.exe\nFailed"
+        );
+        let long = "é".repeat(5000);
+        assert_eq!(update_failure(long.as_bytes(), b"").chars().count(), 4000);
     }
 
     #[test]

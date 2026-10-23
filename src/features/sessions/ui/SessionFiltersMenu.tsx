@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import { Check } from "../../../shared/ui/icons";
 import { type ReactNode } from "react";
 import { Popover } from "../../../shared/ui/Popover";
@@ -77,7 +77,7 @@ const TIME_OPTIONS: { id: SessionTimeFilter; label: string }[] = [
 ];
 
 export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose }: Props) {
-  useLocale();
+  const t = useT();
   const hiddenHarnesses = new Set(filters.hiddenHarnesses);
   // View options are not filters: they never mark the trigger active or clear.
   const display = useSessionListDisplay();
@@ -184,7 +184,7 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
 
       {hasActiveSessionFilters(filters) ? (
         <>
-          <div role="separator" className="my-1 h-px bg-(--ui-surface-raised)" />
+          <div role="separator" className="my-1 h-px bg-(--color-stroke)" />
           <Button
             fullWidth
             variant="item"

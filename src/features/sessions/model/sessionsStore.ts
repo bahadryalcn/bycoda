@@ -179,7 +179,7 @@ store.subscribe((state) => {
   if (!isTextOnlyChange(shell, state.sessions)) setShell(state.sessions);
 });
 
-function subscribeShell(listener: () => void): () => void {
+export function subscribeShell(listener: () => void): () => void {
   shellListeners.add(listener);
   return () => {
     shellListeners.delete(listener);
@@ -195,6 +195,24 @@ const getShell = getShellSessions;
 /** What `Workspace` renders from: unchanged across text-only frames. */
 export function useShellSessions(): Session[] {
   return useStoreValue(subscribeShell, getShell);
+}
+
+/** `useSession` for a session pane. A hidden pane follows the shell instead of the
+ * store: it skips streamed-text frames (its transcript is frozen while hidden) but
+ * still receives status, approvals, tools and the accumulated text. */
+export function usePaneSession(id: string, live: boolean): Session | undefined {
+  return useStoreValue(live ? store.subscribe : subscribeShell, () =>
+    selectSessionById(live ? store.getState().sessions : shell, id),
+  );
+}
+
+/** `useSessionsSelector` over the shell: skips streamed-text frames, so only use it
+ * for selections that never read a block's text. */
+export function useShellSessionsSelector<T>(
+  select: (sessions: Session[]) => T,
+  equal: (a: T, b: T) => boolean = Object.is,
+): T {
+  return useStoreValue(subscribeShell, getShell, select, equal);
 }
 
 /**

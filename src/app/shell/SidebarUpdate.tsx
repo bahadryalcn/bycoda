@@ -1,7 +1,7 @@
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { Modal } from "../../shared/ui/Modal";
-import { ArrowDownCircle, Loader } from "../../shared/ui/icons";
+import { ArrowDownCircle, Loader, RefreshCw } from "../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { claimStartupUpdatePrompt, installAppUpdate, useAppUpdater } from "../model/useAppUpdater";
 import { type UpdaterSnapshot } from "../model/updater";
@@ -31,7 +31,7 @@ export function SidebarUpdateFooter({
   onDismissUpdate?: () => void;
   noticesOnly?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const [promptOpen, setPromptOpen] = useState(false);
   const { snapshot, notes, setSnapshot } = useAppUpdater();
   const dismissPrompt = () => {
@@ -55,6 +55,10 @@ export function SidebarUpdateFooter({
       <UpdateRailCard update={update} onOpen={onOpenWhatsNew} onDismiss={onDismissUpdate} />
     ) : null;
   const actionable = isSidebarUpdateActionable(snapshot);
+  const actionLabel =
+    snapshot.phase === "downloading"
+      ? `${t("Downloading")}${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
+      : t("Update to {p0}", { p0: snapshot.availableVersion });
 
   if (noticesOnly) return card;
   if (!card && !actionable) return null;
@@ -94,49 +98,28 @@ export function SidebarUpdateFooter({
       {card}
       {actionable ? (
         <Button
-          iconOnly
-          shape="pill"
           variant="secondary"
           tone={snapshot.phase === "error" ? "warning" : "neutral"}
-          label={
-            snapshot.phase === "downloading"
-              ? `${t("Downloading")}${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
-              : t("Update to {p0}", { p0: snapshot.availableVersion })
-          }
-          tooltip={
-            snapshot.phase === "downloading"
-              ? `${t("Downloading")}${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
-              : t("Update to {p0}", { p0: snapshot.availableVersion })
-          }
+          motion="none"
+          label={actionLabel}
+          tooltip={actionLabel}
           aria-haspopup="dialog"
           aria-expanded={promptOpen}
           onClick={() => setPromptOpen(true)}
+          className="min-w-0"
         >
-          {snapshot.phase === "downloading" && snapshot.progress != null ? (
-            <svg
-              className="size-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="10" stroke="var(--color-stroke)" />
-              <circle
-                cx="12"
-                cy="12"
-                r="10"
-                pathLength="100"
-                strokeDasharray={`${snapshot.progress} 100`}
-                transform="rotate(-90 12 12)"
-              />
-              <path d="M12 6v10m-4-4 4 4 4-4" />
-            </svg>
-          ) : snapshot.phase === "downloading" ? (
-            <Loader className="size-4 motion-safe:animate-spin" aria-hidden />
+          {snapshot.phase === "downloading" ? (
+            <Loader className="size-4 shrink-0 motion-safe:animate-spin" aria-hidden />
           ) : (
-            <ArrowDownCircle className="size-4" aria-hidden />
+            <RefreshCw className="size-4 shrink-0" aria-hidden />
           )}
+          <span className="truncate text-[12px] font-medium leading-tight @max-[140px]/rail:hidden">
+            {snapshot.phase === "downloading"
+              ? snapshot.progress != null
+                ? `${snapshot.progress}%`
+                : t("Downloading")
+              : t("Update")}
+          </span>
         </Button>
       ) : null}
     </div>
@@ -152,7 +135,7 @@ export function SidebarUpdate({
   onSnapshot: (next: UpdaterSnapshot) => void;
   compact?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const busy = snapshot.phase === "downloading";
   // `busy` only flips after installPendingUpdate awaits readAppVersion, so a
   // second click can still land. The ref closes that window immediately.

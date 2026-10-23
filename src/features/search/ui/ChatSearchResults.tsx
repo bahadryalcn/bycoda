@@ -1,4 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
+import { Badge } from "../../../shared/ui/Badge";
+import { MatchText } from "../../../shared/ui/MatchText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { t, useLocale } from "../../../shared/i18n";
@@ -10,7 +12,6 @@ import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import {
   formatChatDate,
-  highlightRuns,
   type ChatDateRange,
   type ChatEntry,
   type ChatFilters,
@@ -129,19 +130,10 @@ export function ChatFilterBar({
 
 function Marked({ text, ranges }: { text: string; ranges: [number, number][] }) {
   useLocale();
-  return (
-    <>
-      {highlightRuns(text, ranges).map((run, index) =>
-        run.match ? (
-          <mark key={index} className="bg-transparent font-medium text-accent">
-            {run.text}
-          </mark>
-        ) : (
-          <span key={index}>{run.text}</span>
-        ),
-      )}
-    </>
+  const positions = ranges.flatMap(([from, to]) =>
+    Array.from({ length: Math.max(0, to - from) }, (_, index) => from + index),
   );
+  return <MatchText text={text} positions={positions} active={positions.length > 0} />;
 }
 
 export function ChatSearchResults({
@@ -212,13 +204,13 @@ export function ChatSearchResults({
     >
       {groups.map((group) => (
         <section key={group.key} aria-label={group.name} className="mb-1.5">
-          <h3 className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[11px] font-medium text-(--ui-text-secondary)">
-            <Folder className="size-3 shrink-0" strokeWidth={1.75} />
+          <h3 className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-ui-micro font-medium text-(--ui-text-secondary)">
+            <Folder className="icon-xs shrink-0" strokeWidth={1.75} />
             <span className="min-w-0 truncate">{group.name}</span>
             {group.groupName ? (
-              <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1 py-px text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+              <Badge size="sm" appearance="subtle" className="shrink-0">
                 {group.groupName}
-              </span>
+              </Badge>
             ) : null}
           </h3>
           {group.sessions.map((session) => {
@@ -241,9 +233,9 @@ export function ChatSearchResults({
                     <Marked text={session.title} ranges={session.titleRanges} />
                   </span>
                   {session.archived ? (
-                    <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1 py-px text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                    <Badge size="sm" appearance="subtle" className="shrink-0">
                       {t("Archived")}
-                    </span>
+                    </Badge>
                   ) : null}
                   {session.hitCount > 0 ? (
                     <span className="shrink-0 text-[11px] tabular-nums text-(--ui-text-secondary)">

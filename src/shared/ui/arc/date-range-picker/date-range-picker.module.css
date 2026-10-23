@@ -335,7 +335,7 @@
 .day:disabled {
   color: var(--text-muted);
   cursor: default;
-  opacity: 0.5;
+  opacity: var(--ui-disabled-opacity, 0.5);
 }
 .day:focus-visible:not([data-edge]) > span {
   background: color-mix(in oklab, var(--foreground) 7%, transparent);
@@ -409,7 +409,7 @@
   transform: scale(0.97);
 }
 .primary:disabled {
-  opacity: 0.45;
+  opacity: var(--ui-disabled-opacity, 0.5);
   cursor: default;
 }
 .ghost:focus-visible {

@@ -18,33 +18,31 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
     }
   };
   return (
-    <section className="social-sending-controls" aria-label={t("Gönderim kontrolleri")}>
+    <section className="social-sending-controls" aria-label={t("Sending controls")}>
       <header className="social-section-heading">
-        <h2>{t("Gönderim kontrolleri")}</h2>
+        <h2>{t("Sending controls")}</h2>
         <StatusBadge
           status={snapshot.stopped ? "paused" : snapshot.sendingEnabled ? "active" : "draft"}
           label={
             snapshot.stopped
-              ? t("Durduruldu")
+              ? t("Paused")
               : snapshot.sendingEnabled
-                ? t("Onaylı gönderimler açık")
-                : t("Gönderim kapalı")
+                ? t("Approved sends on")
+                : t("Sending off")
           }
         />
       </header>
       <Notice
         kind={snapshot.stopped || !snapshot.sendingEnabled ? "warning" : "success"}
-        title={snapshot.stopped ? t("Bekleyen işler korunuyor") : t("Gönderim için onay gerekir")}
+        title={snapshot.stopped ? t("Pending jobs are kept") : t("Approval is required to send")}
       >
         {snapshot.stopped
-          ? t("Hazır olduğunuzda gönderimleri devam ettirin.")
-          : t(
-              "Taslaklar gönderilmez. Yalnız onayladığınız içerikler ve etkin kurallar gönderim yapabilir.",
-            )}
+          ? t("Resume sending when you are ready.")
+          : t("Drafts are never sent. Only content you approve and active rules can send.")}
       </Notice>
       {!snapshot.hostOnline ? (
-        <Notice kind="warning" title={t("Gönderim hizmetine bağlanılamıyor")}>
-          {t("İşlemleri yönetmek için seçili bilgisayarın bağlantısını kontrol edin.")}
+        <Notice kind="warning" title={t("Cannot reach the sending service")}>
+          {t("Check the selected computer's connection to manage operations.")}
         </Notice>
       ) : null}
       {!snapshot.sendingEnabled ? (
@@ -55,7 +53,7 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
               disabled={!!pending}
               onChange={(event) => setConfirmed(event.target.checked)}
             />
-            {t("Onayladığım içerikler ve etkin kurallar gerçek hesaplarımdan gönderilebilir.")}
+            {t("Content I approve and active rules may send from my real accounts.")}
           </label>
           <Button
             variant="primary"
@@ -66,20 +64,18 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
               void execute(
                 "enable",
                 () => client.request("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" }),
-                t("Onaylı gönderimler açıldı. Taslaklar ayrıca onay gerektirir."),
+                t("Approved sends enabled. Drafts still need separate approval."),
               )
             }
           >
-            {t("Onaylı gönderimleri aç")}
+            {t("Enable approved sends")}
           </Button>
         </div>
       ) : null}
       <div className="social-setting-row">
         <div>
-          <h3>{t("Tüm gönderimler")}</h3>
-          <p className="social-muted">
-            {t("Planları ve içerikleri silmeden gönderimi duraklatın.")}
-          </p>
+          <h3>{t("All sending")}</h3>
+          <p className="social-muted">{t("Pause sending without deleting plans or content.")}</p>
         </div>
         <Button
           variant="secondary"
@@ -91,24 +87,22 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
             void execute(
               "stop",
               () => client.request("execution.stop", { stopped: !snapshot.stopped }),
-              snapshot.stopped ? t("Gönderimler devam ediyor.") : t("Tüm gönderimler durduruldu."),
+              snapshot.stopped ? t("Sending resumed.") : t("All sending stopped."),
             )
           }
         >
-          {snapshot.stopped ? t("Gönderimleri devam ettir") : t("Tüm gönderimleri durdur")}
+          {snapshot.stopped ? t("Resume sending") : t("Stop all sending")}
         </Button>
       </div>
       <div className="social-setting-row">
         <div>
-          <h3>{t("Gelen kutusunu otomatik yenile")}</h3>
+          <h3>{t("Auto-refresh inbox")}</h3>
           <p className="social-muted">
-            {t("Yalnız mesaj ve yorum okuma erişimi olan hesaplar yenilenir.")}
+            {t("Only accounts with message and comment read access are refreshed.")}
           </p>
           <StatusBadge
             status={snapshot.pollingEnabled ? "active" : "paused"}
-            label={
-              snapshot.pollingEnabled ? t("Otomatik yenileme açık") : t("Otomatik yenileme kapalı")
-            }
+            label={snapshot.pollingEnabled ? t("Auto-refresh on") : t("Auto-refresh off")}
           />
         </div>
         <Button
@@ -121,12 +115,12 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
               "polling",
               () => client.request("inbox.polling", { enabled: !snapshot.pollingEnabled }),
               snapshot.pollingEnabled
-                ? t("Gelen kutusu otomatik yenilemesi kapatıldı.")
-                : t("İzinli hesaplarda otomatik yenileme açıldı."),
+                ? t("Inbox auto-refresh turned off.")
+                : t("Auto-refresh turned on for permitted accounts."),
             )
           }
         >
-          {snapshot.pollingEnabled ? t("Otomatik yenilemeyi kapat") : t("Otomatik yenilemeyi aç")}
+          {snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")}
         </Button>
       </div>
     </section>

@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { fetchCheckDetails, hasCheckDetails } from "../model/prChecks";
 import { t, useLocale } from "../../../shared/i18n";
 import { CheckRepairForm, type CheckRepair } from "./CheckRepairForm";
@@ -117,7 +118,7 @@ export function PrChecksTab({
       onClick={onSelect}
     >
       <span className="leading-none">{t("Checks")}</span>
-      <mark.Icon className={`size-3.5 shrink-0 ${mark.className}`} strokeWidth={1.75} />
+      <mark.Icon className={`icon-sm shrink-0 ${mark.className}`} strokeWidth={1.75} />
       {overall.kind === "fail" ? (
         <span className={`tabular-nums leading-none ${failClass}`}>{overall.failed}</span>
       ) : null}
@@ -264,19 +265,19 @@ function PrCheckRow({
   const body = (
     <>
       <span className="grid h-7 w-5 shrink-0 place-items-center">
-        <mark.Icon className={`size-4 ${mark.className}`} strokeWidth={1.75} />
+        <mark.Icon className={`icon-md ${mark.className}`} strokeWidth={1.75} />
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-w-0 items-baseline gap-2.5">
           <span
             data-check-name
             title={check.name}
-            className={`min-w-0 ${expanded ? "break-words" : "truncate"} text-[14px] font-medium leading-snug tracking-[-0.15px] text-(--ui-tone-neutral-fg) @max-[420px]/checks:text-[12px]`}
+            className={`min-w-0 ${expanded ? "break-words" : "truncate"} text-ui-body font-medium leading-snug text-(--ui-tone-neutral-fg)`}
           >
             {check.name}
           </span>
           {workflow ? (
-            <span className="min-w-0 shrink-[2] truncate text-[11px] text-(--ui-text-secondary) @max-[560px]/checks:hidden">
+            <span className="min-w-0 shrink-[2] truncate text-ui-micro text-(--ui-text-secondary) @max-[560px]/checks:hidden">
               {workflow}
             </span>
           ) : null}
@@ -284,7 +285,7 @@ function PrCheckRow({
         {(!repairItem || expanded) && (failureMessage || failedStep) ? (
           <span
             title={subtitle}
-            className="mt-0.5 min-w-0 truncate text-[12px] leading-relaxed text-(--ui-text-secondary) @max-[420px]/checks:text-[11px]"
+            className="mt-0.5 min-w-0 truncate text-ui-caption leading-relaxed text-(--ui-text-secondary) @max-[420px]/checks:text-ui-micro"
           >
             {subtitle}
           </span>
@@ -296,14 +297,15 @@ function PrCheckRow({
       </span>
     </>
   );
-  const className = "flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-md text-left";
+  const className =
+    "flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-(--radius-control) text-left";
   return (
     <li
       ref={rowRef}
       tabIndex={-1}
-      className={`min-w-0 rounded-xl outline-none ${expanded ? "bg-(--ui-surface-hover)" : ""}`}
+      className={`min-w-0 rounded-(--radius-control) outline-none ${expanded ? "bg-(--ui-surface-hover)" : ""}`}
     >
-      <div className="group/check flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-(--ui-surface-hover) @max-[420px]/checks:gap-1">
+      <div className="group/check flex min-w-0 items-center gap-2 rounded-(--radius-control) px-2 py-2 hover:bg-(--ui-surface-hover) @max-[420px]/checks:gap-1">
         {expandable ? (
           <Button
             variant="item"
@@ -342,12 +344,12 @@ function PrCheckRow({
           {repairItem ? (
             <CheckRepairStatus item={repairItem} />
           ) : (
-            <span className={`text-[11px] ${mark.className.replace("animate-spin", "")}`}>
+            <span className={`text-ui-micro ${mark.className.replace("animate-spin", "")}`}>
               {status}
             </span>
           )}
         </span>
-        <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
+        <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-ui-caption tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
           {duration}
         </span>
         {onFix ? (
@@ -365,7 +367,7 @@ function PrCheckRow({
             title={t("Fix with AI")}
             className="shrink-0"
           >
-            <Sparkles className="size-3.5" strokeWidth={1.75} />
+            <Sparkles className="icon-sm" strokeWidth={1.75} />
           </Button>
         ) : (
           <span className="size-7 shrink-0" aria-hidden="true" />
@@ -387,7 +389,7 @@ function PrCheckRow({
             className="shrink-0"
           >
             <ChevronRight
-              className={`size-3 transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
+              className={`icon-xs transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
               strokeWidth={1.75}
             />
           </Button>
@@ -401,11 +403,10 @@ function PrCheckRow({
             variant="ghost"
             type="button"
             title={t("View full log")}
-            className="opacity-60 group-hover/check:opacity-100 focus-visible:opacity-100"
             aria-label={t("Open {p0} check", { p0: check.name })}
             onClick={() => void openUrl(url)}
           >
-            <ExternalLink className="size-3" strokeWidth={1.75} />
+            <ExternalLink className="icon-xs" strokeWidth={1.75} />
           </Button>
         ) : (
           <span className="size-6 shrink-0" aria-hidden="true" />
@@ -414,21 +415,21 @@ function PrCheckRow({
       {expanded ? (
         <div
           id={detailsId}
-          className="min-w-0 space-y-3 py-3 pl-10 pr-3 text-[12px] @max-[420px]/checks:pl-3"
+          className="min-w-0 space-y-3 py-3 pl-10 pr-3 text-ui-caption @max-[420px]/checks:pl-3"
         >
           {loading && !details ? (
             <p
               role="status"
               className="flex items-center gap-2 px-2 py-1 text-(--ui-text-secondary)"
             >
-              <LoaderCircle className="size-4 shrink-0 animate-spin" strokeWidth={1.75} />
+              <LoaderCircle className="icon-md shrink-0 animate-spin" strokeWidth={1.75} />
               {t("Loading steps…")}
             </p>
           ) : null}
           {error ? (
             <Alert tone="info" role="alert">
               <p>{t("Could not load job details.")}</p>
-              <p className="break-words text-[11px]">{error}</p>
+              <p className="break-words text-ui-micro">{error}</p>
               <Button variant="ghost" type="button" onClick={() => setRetry((value) => value + 1)}>
                 {t("Retry details")}
               </Button>
@@ -446,10 +447,10 @@ function PrCheckRow({
               ) : null}
               {details.steps.length ? (
                 <details className="group/steps">
-                  <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg) [&::-webkit-details-marker]:hidden">
-                    <ChevronRight className="size-3 transition-transform group-open/steps:rotate-90 motion-reduce:transition-none" />
+                  <summary className="flex cursor-pointer list-none items-center gap-1 text-ui-micro text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg) [&::-webkit-details-marker]:hidden">
+                    <ChevronRight className="icon-xs transition-transform group-open/steps:rotate-90 motion-reduce:transition-none" />
                     {t("View run steps")}
-                    <span className="ml-auto pl-2 text-right text-(length:--ui-font-caption) text-(--ui-text-secondary) @max-[420px]/checks:hidden">
+                    <span className="ml-auto pl-2 text-right text-ui-caption text-(--ui-text-secondary) @max-[420px]/checks:hidden">
                       {describeCheckCounts(countChecks(details.steps))}
                     </span>
                   </summary>
@@ -462,7 +463,7 @@ function PrCheckRow({
                           className={`flex items-center gap-2 rounded px-2 py-1 ${step.state === "fail" ? "bg-(--ui-tone-danger-subtle)" : ""}`}
                         >
                           <stepMark.Icon
-                            className={`size-4 shrink-0 ${stepMark.className}`}
+                            className={`icon-md shrink-0 ${stepMark.className}`}
                             strokeWidth={1.75}
                           />
                           <span className="min-w-0 flex-1 break-words text-(--ui-text-secondary)">
@@ -488,7 +489,7 @@ function PrCheckRow({
               {details.log ? (
                 <details className="mt-3">
                   <summary>{t("View logs")}</summary>
-                  <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap text-[11px]">
+                  <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap text-ui-micro">
                     {details.log}
                   </pre>
                 </details>
@@ -554,7 +555,7 @@ export function InboxPrChecks({
   if (loading) {
     return (
       <div className="flex justify-center py-10 text-(--ui-text-secondary)">
-        <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
+        <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
       </div>
     );
   }
@@ -571,7 +572,7 @@ export function InboxPrChecks({
           aria-label={t("Retry loading checks")}
           onClick={onRefresh}
         >
-          <RefreshCw className="size-3.5" strokeWidth={1.75} />
+          <RefreshCw className="icon-sm" strokeWidth={1.75} />
           {t("Retry")}
         </Button>
       </div>
@@ -607,7 +608,7 @@ export function InboxPrChecks({
       className="@container/checks flex min-w-0 flex-col gap-2"
     >
       {checks?.pipelineOid && checks.pipelineOid !== checks.headOid ? (
-        <p className="px-2 text-xs text-(--ui-text-secondary)">
+        <p className="px-2 text-ui-caption text-(--ui-text-secondary)">
           {t("Pipeline commit")}: {checks.pipelineOid.slice(0, 12)} · {t("Source commit")}:{" "}
           {checks.headOid.slice(0, 12)}
         </p>
@@ -616,11 +617,9 @@ export function InboxPrChecks({
         <div className="min-w-0">
           {rows.length ? (
             <>
-              <h2 className="text-[18px] font-medium leading-snug tracking-[-0.35px] @max-[420px]/checks:text-[16px]">
-                {headline}
-              </h2>
+              <h2 className="text-ui-heading font-medium leading-snug">{headline}</h2>
               {summary ? (
-                <p className="mt-1 text-[12px] text-(--ui-text-secondary)">
+                <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
                   {summary.charAt(0).toUpperCase() + summary.slice(1)}.
                 </p>
               ) : null}
@@ -647,11 +646,11 @@ export function InboxPrChecks({
               aria-expanded={Boolean(selection && selection.anchor === allFixRef.current)}
               className="shrink-0"
             >
-              <Sparkles className="size-3.5" strokeWidth={1.75} />
+              <Sparkles className="icon-sm" strokeWidth={1.75} />
               {t("Fix all failed")}
               <span
                 aria-hidden="true"
-                className="ml-1 border-l border-current/20 pl-2 text-(length:--ui-font-caption) opacity-55"
+                className="ml-1 border-l border-(--ui-tone-neutral-border) pl-2 text-ui-caption text-(--ui-text-secondary)"
               >
                 {counts.fail}
               </span>
@@ -666,9 +665,9 @@ export function InboxPrChecks({
             onClick={onRefresh}
           >
             {refreshing ? (
-              <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
+              <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} />
             ) : (
-              <RefreshCw className="size-3.5" strokeWidth={1.75} />
+              <RefreshCw className="icon-sm" strokeWidth={1.75} />
             )}
           </Button>
         </div>
@@ -692,7 +691,7 @@ export function InboxPrChecks({
         />
       ) : null}
       {stale && error ? (
-        <p role="status" className="px-2 text-[12px] text-(--ui-text-secondary)">
+        <p role="status" className="px-2 text-ui-caption text-(--ui-text-secondary)">
           {t("Saved results may be out of date.")}
         </p>
       ) : null}
@@ -711,49 +710,45 @@ export function InboxPrChecks({
       ) : null}
       {rows.length > 0 ? (
         <div className="flex items-center justify-between gap-3 py-2">
-          <div
-            className="inline-flex gap-0.5 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) p-0.5"
-            aria-label={t("Filter checks")}
-          >
-            {(
-              [
-                ["attention", "Needs attention", attention],
-                ["all", "All checks", rows.length],
-              ] as const
-            ).map(([value, label, count]) => (
-              <Button
-                variant="ghost"
-                key={value}
-                type="button"
-                aria-label={`${label}: ${count}`}
-                aria-pressed={activeFilter === value}
-                disabled={value === "attention" && !attention}
-                onClick={() => {
-                  setFilter(value);
-                  setShowOthers(false);
-                  setSelection(null);
-                }}
-              >
-                {label}
-                <span className="tabular-nums text-(--ui-text-secondary)">{count}</span>
-              </Button>
-            ))}
-          </div>
-          <span className="text-(length:--ui-font-caption) text-(--ui-text-secondary) @max-[420px]/checks:hidden">
+          <SegmentedControl
+            label={t("Filter checks")}
+            selectionRole="pressed"
+            value={activeFilter}
+            onValueChange={(value) => {
+              if (value !== "attention" && value !== "all") return;
+              if (value === "attention" && !attention) return;
+              setFilter(value);
+              setShowOthers(false);
+              setSelection(null);
+            }}
+            options={[
+              {
+                value: "attention",
+                label: t("Needs attention"),
+                accessory: <span className="tabular-nums">{attention}</span>,
+              },
+              {
+                value: "all",
+                label: t("All checks"),
+                accessory: <span className="tabular-nums">{rows.length}</span>,
+              },
+            ]}
+          />
+          <span className="text-ui-caption text-(--ui-text-secondary) @max-[420px]/checks:hidden">
             {counts.fail ? t("Failures first") : ""}
           </span>
         </div>
       ) : null}
       {rows.length === 0 ? (
-        <p className="text-[13px] text-(--ui-text-secondary)">{t("No checks reported")}</p>
+        <p className="text-ui-secondary text-(--ui-text-secondary)">{t("No checks reported")}</p>
       ) : (
         <>
           {groups.map((group) =>
             group.rows.length ? (
               <div key={group.state} hidden={group.hidden} className={group.hidden ? "hidden" : ""}>
-                <h3 className="mb-1.5 mt-3 flex items-center gap-2 px-2 text-[12px] font-normal text-(--ui-text-secondary)">
+                <h3 className="mb-1.5 mt-3 flex items-center gap-2 px-2 text-ui-caption font-normal text-(--ui-text-secondary)">
                   {checkStateLabel(group.state)}
-                  <span className="text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                  <span className="text-ui-caption text-(--ui-text-secondary)">
                     {group.rows.length}
                   </span>
                 </h3>
@@ -821,7 +816,7 @@ export function InboxPrChecks({
               onClick={() => setShowOthers(!showOthers)}
               className="mt-3 text-left"
             >
-              <ChevronRight className={`size-3 ${showOthers ? "rotate-90" : ""}`} />
+              <ChevronRight className={`icon-xs ${showOthers ? "rotate-90" : ""}`} />
               {describeCheckCounts({
                 ...countChecks([]),
                 pass: counts.pass,
