@@ -98,9 +98,12 @@ try {
       if (-not (Test-Path -LiteralPath $inventoryPath)) { throw 'The cached host package is incomplete. Reinstall the host with the local update coordinator.' }
       $inventory = Get-Content -LiteralPath $inventoryPath -Raw | ConvertFrom-Json
       if ($inventory.Count -eq 0) { throw 'The cached host package inventory is empty.' }
+      # Normalize both sides: Windows PowerShell's GetFullPath expands 8.3 short
+      # names (RUNNER~1) that $runtime may still contain.
+      $runtimeFull = [IO.Path]::GetFullPath($runtime).TrimEnd([IO.Path]::DirectorySeparatorChar)
       foreach ($item in $inventory) {
         $file = [IO.Path]::GetFullPath((Join-Path $runtime $item.path))
-        if (-not $file.StartsWith($runtime + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid cached host package path.' }
+        if (-not $file.StartsWith($runtimeFull + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid cached host package path.' }
         if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $item.hash) { throw 'The cached host package changed. Reinstall the host with the local update coordinator.' }
       }
     } else {
@@ -109,8 +112,11 @@ try {
       $actual = & (Join-Path $unpacked 'node.exe') (Join-Path $unpacked 'host.mjs') --version
       if ($LASTEXITCODE -ne 0 -or $actual -ne $version) { throw 'bycoda Host version mismatch.' }
       if ($reusePackage) {
+        # Relative paths come from equally normalized full paths; child FullName
+        # values may spell an 8.3 prefix (RUNNER~1) differently from $unpacked.
+        $unpackedFull = [IO.Path]::GetFullPath($unpacked).TrimEnd([IO.Path]::DirectorySeparatorChar)
         $inventory = @(Get-ChildItem -LiteralPath $unpacked -File -Recurse | ForEach-Object {
-          @{ path = $_.FullName.Substring($unpacked.Length + 1); hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+          @{ path = [IO.Path]::GetFullPath($_.FullName).Substring($unpackedFull.Length + 1); hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
         })
         [IO.File]::WriteAllText((Join-Path $unpacked '.package-files.json'), (ConvertTo-Json -InputObject $inventory), (New-Object Text.UTF8Encoding($false)))
       }
@@ -150,13 +156,18 @@ try {
       # previous runtime, which sessions started from it (and a rollback) may
       # still launch. An old node.exe still exiting stays locked; the next
       # install removes it.
+      # Runtimes are compared by folder name: every runtime lives directly in
+      # $runtimeRoot, and full paths differ in form (8.3 short names such as
+      # RUNNER~1 in $base versus the long names Get-ChildItem returns).
       $previousPointer = Join-Path $base 'previous-runtime-path'
-      if ($previousRuntime -and $previousRuntime -ne $runtime) {
+      $current = Split-Path -Leaf $runtime
+      if ($previousRuntime -and (Split-Path -Leaf $previousRuntime) -ne $current) {
         [IO.File]::WriteAllText($previousPointer, $previousRuntime, (New-Object Text.UTF8Encoding($false)))
       }
-      $keep = if (Test-Path -LiteralPath $previousPointer) { [IO.File]::ReadAllText($previousPointer).Trim() } else { $null }
-      foreach ($old in Get-ChildItem -LiteralPath $runtimeRoot -Directory) {
-        if ($old.Name.StartsWith('.') -or $old.FullName -eq $runtime -or $old.FullName -eq $keep) { continue }
+      $keep = if (Test-Path -LiteralPath $previousPointer) { Split-Path -Leaf ([IO.File]::ReadAllText($previousPointer).Trim()) } else { $null }
+      $runtimes = if (Test-Path -LiteralPath (Join-Path $runtimeRoot $current)) { Get-ChildItem -LiteralPath $runtimeRoot -Directory } else { @() }
+      foreach ($old in $runtimes) {
+        if ($old.Name.StartsWith('.') -or $old.Name -eq $current -or $old.Name -eq $keep) { continue }
         Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
       }
     }

@@ -4,7 +4,8 @@ const BUCKETS = 768;
 const RATIO = 1.05;
 const MIN_MS = 0.001;
 const LOG_RATIO = Math.log(RATIO);
-export const MAX_METRICS = 256;
+// Static RPC and MCP labels (about 260) plus headroom; 768 buckets x 8 bytes each.
+export const MAX_METRICS = 320;
 type Distribution = { buckets: Float64Array; count: number; max: number };
 
 /** Fixed-size, cumulative histograms. Percentiles use upper bucket bounds
@@ -395,6 +396,15 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "tunnels.start",
   "tunnels.status",
   "tunnels.stop",
+  "voice.clientSecret",
+  "voice.local.inspect",
+  "voice.local.keepAlive",
+  "voice.local.release",
+  "voice.local.speak",
+  "voice.local.speechCancel",
+  "voice.local.speechNext",
+  "voice.local.start",
+  "voice.local.transcribe",
   "workspace.run",
 ];
 export const perfMetrics = new PerfMetrics([

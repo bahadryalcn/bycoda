@@ -106,14 +106,21 @@ fi
 # ones. Now that the new host answers, drop the others, except the previous
 # runtime, a runtime that a registered service definition still launches and
 # installs still in progress.
+# Runtimes are compared by folder name: they all live directly in runtime/,
+# while recorded paths may spell $BASE differently (symlinks, earlier installs).
 RUNTIME=$(cat "$BASE/runtime-path")
+CURRENT=$(basename "$RUNTIME")
 PREVIOUS=$(cat "$BASE/previous-runtime-path" 2>/dev/null || true)
+KEEP=${PREVIOUS:+$(basename "$PREVIOUS")}
 REGISTERED=$(cat "$HOME/Library/LaunchAgents/com.bycoda.host.plist" "$HOME/.config/systemd/user/bycoda-host.service" 2>/dev/null || true)
-for OLD in "$BASE"/runtime/*/; do
-  OLD=${OLD%/}
-  [ -d "$OLD" ] || continue
-  [ "$OLD" != "$RUNTIME" ] || continue
-  [ "$OLD" != "$PREVIOUS" ] || continue
-  case "$REGISTERED" in *"$(basename "$OLD")"*) continue ;; esac
-  rm -rf "$OLD" || true
-done
+if [ -n "$CURRENT" ] && [ -d "$BASE/runtime/$CURRENT" ]; then
+  for OLD in "$BASE"/runtime/*/; do
+    OLD=${OLD%/}
+    [ -d "$OLD" ] || continue
+    NAME=$(basename "$OLD")
+    [ "$NAME" != "$CURRENT" ] || continue
+    [ "$NAME" != "$KEEP" ] || continue
+    case "$REGISTERED" in *"$NAME"*) continue ;; esac
+    rm -rf "$OLD" || true
+  done
+fi

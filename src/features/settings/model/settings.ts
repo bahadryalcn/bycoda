@@ -5,6 +5,7 @@ import { HARNESSES, HARNESS_TITLE } from "../../sessions/model/session";
 import {
   ALT,
   FULLSCREEN_SHORTCUT,
+  IS_LINUX,
   IS_MAC,
   IS_WIN,
   MOD,
@@ -790,14 +791,19 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     },
     keywords: "glass translucent vibrancy backdrop",
   },
-  {
-    id: "window-glass",
-    section: "appearance",
-    get label() {
-      return t("Window glass");
-    },
-    keywords: "acrylic mica vibrancy transparent opaque performance gpu",
-  },
+  // Linux has no window glass row; its main pane glass covers translucency.
+  ...(IS_LINUX
+    ? []
+    : [
+        {
+          id: "window-glass",
+          section: "appearance" as const,
+          get label() {
+            return t("Window glass");
+          },
+          keywords: "acrylic mica vibrancy transparent opaque performance gpu",
+        },
+      ]),
   {
     id: "main-pane-glass",
     section: "appearance",
