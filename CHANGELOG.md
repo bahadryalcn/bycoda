@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.70]
+
+### Idle performance
+
+- Stop the live chat background from repainting while no turn is running or the window is unfocused (thanks @gorkemduman, #272); new installs start with no live background.
+- Stop decorative scenes, working indicators, tickers and per-row pulses when nothing is working or the window is hidden or unfocused.
+- Hold terminal output for off-screen terminals, batch terminal runtime logs and skip status polls for unfocused windows.
+- Cut idle host work: event-driven project session lists, cached desktop metadata, skipped crew, social and inbox scans, and fewer git spawns.
+- Prune checkpoint refs, ignore them in the git watcher, and stop rewriting the git index while counting changes.
+- Lazy-load transcript images, contain settled transcript turns, and let stale or long-unseen tabs hibernate.
+- Rebuild the tray menu, dock badge and window glass only when they change.
+
+### Host install
+
+- Fix the macOS host service install that failed on long launchd listings and left a new runtime folder on every retry (thanks @gorkemduman, #271).
+- Keep only the current and previous host runtimes after an install.
+- Reuse a verified host package across failed desktop install retries and back off between retries.
+
+### Voice and interface
+
+- Add a local voice companion with on-device transcription and speech.
+- Move shell, connections and automations controls to the shared button, type and icon scales.
+
 ## [0.6.68]
 
 ### Providers and onboarding

@@ -461,9 +461,7 @@ fn record(status: BundledHostStatus) {
 /// One attempt; returns the delay before another useful probe.
 fn ensure_once(app: &AppHandle) -> Option<Duration> {
     let bundled = app.package_info().version.to_string();
-    let Some(name) = archive_name() else {
-        return None;
-    };
+    let name = archive_name()?;
     let archive = match app.path().resource_dir() {
         Ok(dir) => dir.join("host").join(name),
         Err(_) => return None,

@@ -273,6 +273,9 @@ importers:
       '@lezer/highlight':
         specifier: ^1.2.5
         version: 1.2.5
+      '@lezer/markdown':
+        specifier: ^1.7.2
+        version: 1.8.0
       '@radix-ui/react-select':
         specifier: ^2.4.0
         version: 2.4.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
