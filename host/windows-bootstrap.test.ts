@@ -150,7 +150,11 @@ it.skipIf(!shell)(
     await fixture.run();
     const oldRuntime = readFileSync(join(fixture.base, "runtime-path"), "utf8");
     await fixture.run(true);
-    expect(readFileSync(join(fixture.base, "runtime-path"), "utf8")).not.toBe(oldRuntime);
+    const newRuntime = readFileSync(join(fixture.base, "runtime-path"), "utf8");
+    expect(newRuntime).not.toBe(oldRuntime);
+    // The replaced runtime is removed once the new service answers.
+    expect(existsSync(oldRuntime.trim())).toBe(false);
+    expect(existsSync(newRuntime.trim())).toBe(true);
     expect(readFileSync(fixture.events, "utf8").trim().split(/\r?\n/)).toEqual([
       "service install",
       "service uninstall",
