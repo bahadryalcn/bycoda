@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { PresentationVisibility } from "./presentationVisibility";
 import type { Block } from "../model/session";
 import { hasPendingApproval } from "../model/session";
+import { streamingTextUpdate } from "../model/stableBlocks";
 
 export const TRANSCRIPT_IDLE_TTL_MS = 3 * 60 * 1000;
 export const TRANSCRIPT_WARM_COUNT = 2;
@@ -52,19 +53,61 @@ export const TranscriptRetentionContext = createContext<TranscriptCheckpoint | u
 export const TRANSCRIPT_POOL_LIMIT = 12;
 export const TRANSCRIPT_POOL_MAX_BYTES = 24 * 1024 * 1024;
 const blockWeights = new WeakMap<Block, number>();
-export function transcriptPoolWeight(blocks: readonly Block[] = []): number {
-  let bytes = 1024;
-  for (const block of blocks) {
-    let weight = blockWeights.get(block);
-    if (weight === undefined) {
-      weight = 512 + block.text.length * 2;
-      for (const attachment of block.attachments ?? [])
-        weight += 256 + (attachment.data?.length ?? 0) * 2;
-      blockWeights.set(block, weight);
-    }
-    bytes += weight;
+const arrayWeights = new WeakMap<readonly Block[], number>();
+function blockWeight(block: Block): number {
+  let weight = blockWeights.get(block);
+  if (weight === undefined) {
+    weight = 512 + block.text.length * 2;
+    for (const attachment of block.attachments ?? [])
+      weight += 256 + (attachment.data?.length ?? 0) * 2;
+    // Generated images keep their blob (known size) and any inline preview data.
+    if (block.image) weight += 256 + (block.image.size || 0) + (block.image.data?.length ?? 0) * 2;
+    blockWeights.set(block, weight);
   }
+  return weight;
+}
+
+/** The single block a streamed-text frame changed between two arrays, if that is all. */
+function streamedIndex(previous: readonly Block[] | undefined, next: readonly Block[]) {
+  if (!previous || previous === next || previous.length !== next.length) return undefined;
+  return streamingTextUpdate(previous as Block[], next as Block[]);
+}
+
+/**
+ * Estimated retained size. A streamed frame only changes one block's text, so
+ * with the previous array it costs one block instead of the whole transcript.
+ */
+export function transcriptPoolWeight(
+  blocks: readonly Block[] = [],
+  previous?: readonly Block[],
+): number {
+  let bytes = arrayWeights.get(blocks);
+  if (bytes !== undefined) return bytes;
+  const index = streamedIndex(previous, blocks);
+  const base = previous && arrayWeights.get(previous);
+  if (index !== undefined && base !== undefined && previous)
+    bytes = base - blockWeight(previous[index]) + blockWeight(blocks[index]);
+  else {
+    bytes = 1024;
+    for (const block of blocks) bytes += blockWeight(block);
+  }
+  arrayWeights.set(blocks, bytes);
   return bytes;
+}
+
+/** Streaming, running or awaiting approval; text-only frames keep the answer. */
+const activeBlocks = new WeakMap<readonly Block[], boolean>();
+function blocksActive(blocks: readonly Block[], previous?: readonly Block[]): boolean {
+  let active = activeBlocks.get(blocks);
+  if (active !== undefined) return active;
+  const known = previous && activeBlocks.get(previous);
+  active =
+    known !== undefined && streamedIndex(previous, blocks) !== undefined
+      ? known
+      : blocks.some((block) => block.streaming || block.tool?.status === "in_progress") ||
+        hasPendingApproval(blocks as Block[]);
+  activeBlocks.set(blocks, active);
+  return active;
 }
 
 type PooledProps = {
@@ -175,8 +218,7 @@ export class TranscriptPool {
       p.pendingQuestion ||
       !!p.backgroundTasks?.length ||
       !!p.backgroundAgents ||
-      !!p.blocks?.some((block) => block.streaming || block.tool?.status === "in_progress") ||
-      hasPendingApproval(p.blocks ?? [])
+      (!!p.blocks && blocksActive(p.blocks))
     );
   }
 
@@ -257,8 +299,10 @@ export class TranscriptPool {
       weight:
         previous && previous.element.props.blocks === element.props.blocks
           ? previous.weight
-          : transcriptPoolWeight(element.props.blocks),
+          : transcriptPoolWeight(element.props.blocks, previous?.element.props.blocks),
     };
+    // Seed the activity answer from the previous frame before retention reads it.
+    if (element.props.blocks) blocksActive(element.props.blocks, previous?.element.props.blocks);
     if (!next.mounted && this.protectedEntry(next)) next.mounted = true;
     if (
       previous &&

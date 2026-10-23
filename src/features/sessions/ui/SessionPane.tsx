@@ -1,6 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
-import { useLocale, getLocale, useT } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { ChevronDown, GripVertical, Loader, StickyNote, X } from "../../../shared/ui/icons";
 import { sessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
@@ -282,6 +282,7 @@ function RewoundHistoryDisclosure({
   truncated?: boolean;
 }) {
   const t = useT();
+  const locale = useLocale();
   return (
     <details
       data-rewind-history
@@ -302,7 +303,7 @@ function RewoundHistoryDisclosure({
               dateTime={new Date(entry.createdAt).toISOString()}
               className="text-[var(--ui-text-disabled)]"
             >
-              {new Date(entry.createdAt).toLocaleString(getLocale())}
+              {new Date(entry.createdAt).toLocaleString(locale)}
             </time>
             {entry.blocks
               .filter(

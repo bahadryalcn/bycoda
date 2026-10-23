@@ -41,6 +41,7 @@ import {
 } from "../../features/providers/model/usageDisplayAccount";
 import { WORKSPACE_REFRESH_EVENT } from "./WorkspaceControls";
 import { PiUsage } from "./PiUsage";
+import { useMinuteNow } from "./RelativeSessionTime";
 import {
   ProviderSignInPanel,
   type ProviderSignInState,
@@ -55,8 +56,6 @@ import {
   subscribeProviderAccounts,
   type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
-
-const CLOCK_MS = 30_000;
 
 export type UsageFooterSession = {
   id?: string;
@@ -104,7 +103,8 @@ export function UsageFooter({
   const wantClaude = providers.includes("claude");
   const wantCodex = providers.includes("codex");
   const wantOpencode = providers.includes("opencode");
-  const [now, setNow] = useState(() => Date.now());
+  // One shared minute clock (paused while hidden); countdowns show whole minutes.
+  const now = useMinuteNow();
   const [refreshing, setRefreshing] = useState(false);
   const [, setAccountsVersion] = useState(0);
   const inflight = useRef<Promise<void> | null>(null);
@@ -171,11 +171,6 @@ export function UsageFooter({
     wantCodex,
     wantOpencode,
   ]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), CLOCK_MS);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const queryClient = useQueryClient();
   useEffect(

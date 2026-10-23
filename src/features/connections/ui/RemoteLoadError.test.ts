@@ -11,7 +11,11 @@ vi.mock("../model/connections", () => ({
   OPEN_CONNECTIONS_EVENT: "test-open-connections",
   requestMachineEdit: vi.fn(),
 }));
-vi.mock("../../../shared/i18n", () => ({ t: (value: string) => value, useLocale: () => "en" }));
+vi.mock("../../../shared/i18n", () => ({
+  t: (value: string) => value,
+  useT: () => (value: string) => value,
+  useLocale: () => "en",
+}));
 
 it("offers connection settings with the refused identity's re-pair instructions", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

@@ -1,5 +1,13 @@
 import { afterEach, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  readdirSync,
+} from "node:fs";
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -21,7 +29,7 @@ function fixture(badChecksum = false) {
   mkdirSync(bin);
   writeFileSync(
     join(source, "bycoda-host"),
-    `#!/bin/sh\ncase "$1" in\n--version) printf '%s\\n' ${quote(version)} ;;\nservice) printf 'service %s\\n' "$2" >> "$BYCODA_TEST_EVENTS" ;;\nconnection-info) printf '{"port":3774,"pid":123}\\n' ;;\n*) exit 1 ;;\nesac\n`,
+    `#!/bin/sh\nif [ "$1" = service ] && [ "$2" = install ] && [ "\${BYCODA_TEST_FAIL_INSTALL:-0}" = 1 ]; then exit 9; fi\ncase "$1" in\n--version) printf '%s\\n' ${quote(version)} ;;\nservice) printf 'service %s\\n' "$2" >> "$BYCODA_TEST_EVENTS" ;;\nconnection-info) printf '{"port":3774,"pid":123}\\n' ;;\n*) exit 1 ;;\nesac\n`,
     { mode: 0o755 },
   );
   const archive = join(dir, "host.tar.gz");
@@ -46,7 +54,7 @@ function fixture(badChecksum = false) {
     .replace('BASE="$HOME/.bycoda-host"', `BASE=${quote(base)}`)
     .replace("@@VERSION@@", quote(version))
     .replace("@@RELEASE@@", "'https://example.invalid/releases'");
-  const run = (forceUpgrade = false, bundled = false) =>
+  const run = (forceUpgrade = false, bundled = false, extraEnv: NodeJS.ProcessEnv = {}) =>
     new Promise<{ code: number | null; out: string; error: string }>((resolve, reject) => {
       const child = spawn("sh", ["-s"], {
         env: {
@@ -58,6 +66,7 @@ function fixture(badChecksum = false) {
           BYCODA_TEST_DOWNLOADS: join(dir, "downloads"),
           BYCODA_HOST_FORCE_UPGRADE: forceUpgrade ? "1" : "0",
           ...(bundled ? { BYCODA_HOST_ARCHIVE: archive } : {}),
+          ...extraEnv,
         },
         signal: AbortSignal.timeout(10_000),
       });
@@ -104,6 +113,31 @@ it.skipIf(process.platform === "win32")(
     expect(readFileSync(join(dir, "downloads"), "utf8").trim().split("\n")).toHaveLength(4);
   },
 );
+it.skipIf(process.platform === "win32")(
+  "reuses a verified package across failed desktop retries without replacing rollback files",
+  async () => {
+    const { base, run } = fixture();
+    expect((await run(false, true)).code).toBe(0);
+    const previous = readFileSync(join(base, "runtime-path"), "utf8").trim();
+    const env = { BYCODA_HOST_REUSE_PACKAGE: "1", BYCODA_TEST_FAIL_INSTALL: "1" };
+    expect((await run(true, true, env)).code).not.toBe(0);
+    const folders = readdirSync(join(base, "runtime")).sort();
+    expect(folders).toHaveLength(2);
+    const candidate = readFileSync(join(base, "runtime-path"), "utf8").trim();
+    expect(candidate).not.toBe(previous);
+    expect(existsSync(previous)).toBe(true);
+    expect((await run(true, true, env)).code).not.toBe(0);
+    expect(readdirSync(join(base, "runtime")).sort()).toEqual(folders);
+    expect((await run(true, true, { BYCODA_HOST_REUSE_PACKAGE: "1" })).code).toBe(0);
+    expect(readdirSync(join(base, "runtime")).sort()).toEqual(folders);
+    writeFileSync(join(candidate, "bycoda-host"), "#!/bin/sh\nexit 99\n");
+    const corrupt = await run(true, true, { BYCODA_HOST_REUSE_PACKAGE: "1" });
+    expect(corrupt.code).not.toBe(0);
+    expect(corrupt.error).toContain("cached host package changed");
+    expect(readdirSync(join(base, "runtime")).sort()).toEqual(folders);
+  },
+);
+
 it.skipIf(process.platform === "win32")(
   "rejects a corrupted package before executing or publishing it",
   async () => {

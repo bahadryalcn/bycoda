@@ -24,8 +24,22 @@ function trimSlash(path: string): string {
   return slash(path).replace(/\/+$/, "") || "/";
 }
 
+/** Project comparisons run per session on every workspace update; the same few
+ * paths come back each time. Bounded: cleared once it holds this many. */
+const PATH_KEY_CACHE_LIMIT = 2048;
+const pathKeys = new Map<string, string>();
+
 /** Stable comparison key for Windows paths without changing their display case. */
 export function pathKey(path: string): string {
+  let key = pathKeys.get(path);
+  if (key === undefined) {
+    if (pathKeys.size >= PATH_KEY_CACHE_LIMIT) pathKeys.clear();
+    pathKeys.set(path, (key = computePathKey(path)));
+  }
+  return key;
+}
+
+function computePathKey(path: string): string {
   const normalized = trimSlash(path);
   const remote = /^(remote:\/\/[^/]+\/)(.*)$/.exec(normalized);
   if (remote) {
@@ -169,11 +183,33 @@ export function resolveDocumentImage(
 let cachedHomeDir: string | undefined;
 let pathEnvironment: Record<string, string> = {};
 
+let pathEnvironmentRevision = 0;
+const pathEnvironmentListeners = new Set<() => void>();
+
+function pathEnvironmentChanged() {
+  pathEnvironmentRevision += 1;
+  for (const listener of pathEnvironmentListeners) listener();
+}
+
+/** Home directory and directory variables change at boot; components that resolve
+ * file references while rendering re-render through this subscription. */
+export function subscribePathEnvironment(listener: () => void): () => void {
+  pathEnvironmentListeners.add(listener);
+  return () => {
+    pathEnvironmentListeners.delete(listener);
+  };
+}
+
+export function getPathEnvironmentRevision(): number {
+  return pathEnvironmentRevision;
+}
+
 /** Only directory variables explicitly supplied by the owning machine. */
 export function setPathEnvironment(values: Record<string, string>): void {
   pathEnvironment = Object.fromEntries(
     Object.entries(values).map(([key, value]) => [key.toUpperCase(), slash(value)]),
   );
+  pathEnvironmentChanged();
 }
 
 /**
@@ -186,6 +222,7 @@ export function setPathEnvironment(values: Record<string, string>): void {
  */
 export function setHomeDir(path: string | undefined): void {
   cachedHomeDir = path ? trimSlash(slash(path)) : undefined;
+  pathEnvironmentChanged();
 }
 
 /**

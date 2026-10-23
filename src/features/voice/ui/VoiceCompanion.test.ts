@@ -26,7 +26,11 @@ vi.mock("../../sessions/model/sessionsStore", () => ({
   sessionsRef: { current: [] },
   useSession: () => undefined,
 }));
-vi.mock("../../../shared/i18n", () => ({ t: (key: string) => key, useLocale: () => "tr" }));
+vi.mock("../../../shared/i18n", () => ({
+  t: (key: string) => key,
+  useT: () => (key: string) => key,
+  useLocale: () => "tr",
+}));
 import { VoiceCompanion } from "./VoiceCompanion";
 let root: Root, container: HTMLDivElement;
 afterEach(async () => {

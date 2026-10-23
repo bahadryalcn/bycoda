@@ -8,10 +8,11 @@ import { mergeWindowLiveAgents, type WindowLiveAgents } from "./windowLiveAgents
 const SNAPSHOT = "workspace_live_agents";
 const REQUEST = "workspace_live_agents_request";
 const FOCUS = "workspace_focus_live_agent";
+const GONE = "workspace_live_agents_gone";
 
-const HIDDEN_SWEEP_EVERY = 6;
+/** Rebroadcast and dead-window sweep. A closing window announces itself via
+ * `GONE`, so this is only the fallback for crashes and missed events. */
 const HEARTBEAT_MS = 30_000;
-const SWEEP_MS = 5_000;
 
 function shallowEqualRecord(a: object | undefined, b: object | undefined): boolean {
   if (a === b) return true;
@@ -96,6 +97,16 @@ export function useWindowLiveAgents(
               return new Map(previous).set(payload.ownerWindowLabel, payload);
             });
           }),
+          listen<{ ownerWindowLabel?: string }>(GONE, ({ payload }) => {
+            const owner = payload?.ownerWindowLabel;
+            if (disposed || !owner || owner === label) return;
+            setSnapshots((previous) => {
+              if (!previous.has(owner)) return previous;
+              const next = new Map(previous);
+              next.delete(owner);
+              return next;
+            });
+          }),
           listen(REQUEST, () => {
             if (!disposed) void publish().catch(() => {});
           }),
@@ -111,14 +122,7 @@ export function useWindowLiveAgents(
       }
     };
     void register().catch(() => {});
-    let tick = 0;
-    const timer = window.setInterval(() => {
-      tick += 1;
-      // A hidden window skips the periodic rebroadcast and sweeps dead
-      // windows less often; returning to view republishes immediately.
-      if (document.hidden && tick % HIDDEN_SWEEP_EVERY !== 0) return;
-      if (!document.hidden && (tick * SWEEP_MS) % HEARTBEAT_MS === 0)
-        void publish().catch(() => {});
+    const sweep = () =>
       void getAllWindows()
         .then((windows) => {
           if (disposed) return;
@@ -129,15 +133,28 @@ export function useWindowLiveAgents(
           });
         })
         .catch(() => {});
-    }, SWEEP_MS);
+    const timer = window.setInterval(() => {
+      // A hidden window shows no rail: skip the rebroadcast and the window
+      // list IPC; returning to view republishes and sweeps immediately.
+      if (document.hidden) return;
+      void publish().catch(() => {});
+      sweep();
+    }, HEARTBEAT_MS);
     const onVisible = () => {
-      if (!document.hidden) void publish().catch(() => {});
+      if (document.hidden) return;
+      void publish().catch(() => {});
+      sweep();
+    };
+    const onPageHide = () => {
+      void emit(GONE, { ownerWindowLabel: label }).catch(() => {});
     };
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pagehide", onPageHide);
     return () => {
       disposed = true;
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pagehide", onPageHide);
       unlisteners.forEach((unlisten) => unlisten());
     };
   }, [label, sourceId]);

@@ -1,3 +1,5 @@
+import { memo } from "react";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { ComponentProps } from "react";
 import { SessionPane } from "../../../features/sessions/ui/SessionPane";
 import { SessionSurface } from "../../../features/sessions/ui/SessionSurface";
@@ -39,7 +41,7 @@ export interface WorkspaceAuxSurfacesProps {
   sessionPaneProps: WorkspaceSessionPaneProps;
 }
 
-export function WorkspaceAuxSurfaces({
+function WorkspaceAuxSurfacesComponent({
   searchViewOpen,
   searchDialogOpen = false,
   onExpandSearch,
@@ -111,4 +113,11 @@ export function WorkspaceAuxSurfaces({
       </div>
     </>
   );
+}
+
+const MemoWorkspaceAuxSurfaces = memo(WorkspaceAuxSurfacesComponent);
+
+/** Workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function WorkspaceAuxSurfaces(props: WorkspaceAuxSurfacesProps) {
+  return <MemoWorkspaceAuxSurfaces {...useStableHandlers(props)} />;
 }

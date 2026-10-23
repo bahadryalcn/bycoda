@@ -3155,9 +3155,13 @@ export class SocialService {
 
   /** OAuth completion is host-only; a UI/tool cannot submit a token or forge scopes. */
   private async generateQueuedDraft(): Promise<void> {
-    const draft = this.list<SocialDraft>("draft").find(
-      (item) => item.generation?.status === "queued",
-    );
+    // Only the first queued draft is wanted; SQLite finds it without parsing the rest.
+    const row = this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='draft' AND json_extract(value,'$.generation.status')='queued' ORDER BY rowid LIMIT 1",
+      )
+      .get();
+    const draft = row ? (JSON.parse(String(row.value)) as SocialDraft) : undefined;
     if (!draft?.generation) return;
     const generation = draft.generation;
     const controller = new AbortController();
@@ -3492,12 +3496,28 @@ export class SocialService {
     this.timer = undefined;
     this.grants.clear();
   }
+  /** No social records, jobs or programs at all. */
+  private unused(): boolean {
+    try {
+      return !this.store.db
+        .prepare(
+          "SELECT 1 FROM social_records UNION ALL SELECT 1 FROM social_jobs UNION ALL SELECT 1 FROM social_programs LIMIT 1",
+        )
+        .get();
+    } catch {
+      return false;
+    }
+  }
+
   async tick(): Promise<void> {
     if (this.isDelegated?.()) return;
     if (this.busy) return;
     this.busy = true;
     try {
       if (this.setting("stopped") === "true") return;
+      // A host that never used social media has nothing to refresh, generate,
+      // poll or send: skip the scans this 5 s tick would otherwise repeat.
+      if (this.unused()) return;
       if (this.refreshCredential)
         await Promise.allSettled(
           this.list<SocialAccount>("account")

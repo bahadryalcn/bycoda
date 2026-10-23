@@ -1,7 +1,10 @@
 import { useSyncExternalStore } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { retainAsyncSubscription } from "../../../shared/lib/asyncSubscription";
+import {
+  getWindowState,
+  refreshWindowState,
+  subscribeWindowState,
+} from "../../../platform/tauri/windowState";
 import { readFlag, writeFlag } from "./storageFlags";
 
 export const DECORATIVE_MOTION_KEY = "bycoda.decorativeMotion.v1";
@@ -13,6 +16,10 @@ let unsaved: boolean | null = null;
 let media: MediaQueryList | null = null;
 const listeners = new Set<() => void>();
 let nativeVisible = true;
+/** DOM focus: the only focus signal outside Tauri, and before the first native read. */
+let domFocused = typeof document === "undefined" || document.hasFocus();
+/** What subscribers were last told; unchanged states are not re-announced. */
+let published = "";
 let releaseLifecycle: (() => void) | undefined;
 
 /** The stored choice stays independent of the system's accessibility setting. */
@@ -50,12 +57,39 @@ export function decorativeMotionEnabled(): boolean {
   );
 }
 
-function syncDecorativeMotionAttribute(): void {
-  if (typeof document !== "undefined")
-    document.documentElement.dataset.decorativeMotion = decorativeMotionEnabled() ? "on" : "off";
+/**
+ * Whether this window has input focus. Native focus is authoritative while the
+ * shared window state is live: WKWebView keeps document.hasFocus() true after the
+ * window drops behind another application. DOM focus and blur are the fallback.
+ * Decorative CSS motion does not stop on blur; per-frame canvas loops and the
+ * `data-window-focus` rules for status dots do.
+ */
+export function windowHasFocus(): boolean {
+  return getWindowState()?.focused ?? domFocused;
 }
 
+function syncDecorativeMotionAttribute(): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement.dataset;
+  root.decorativeMotion = decorativeMotionEnabled() ? "on" : "off";
+  root.windowFocus = windowHasFocus() ? "on" : "off";
+}
+
+/** Everything the hooks and the root attributes expose, as one comparable value. */
+function exposedState(): string {
+  return [
+    loadDecorativeMotionEnabled(),
+    prefersReducedMotion(),
+    decorativeMotionEnabled(),
+    windowHasFocus(),
+  ].join();
+}
+
+/** Resize and focus bursts re-read the window often; only a real change wakes subscribers. */
 function notify(): void {
+  const next = exposedState();
+  if (next === published) return;
+  published = next;
   syncDecorativeMotionAttribute();
   for (const listener of listeners) listener();
 }
@@ -68,56 +102,43 @@ function onStorage(event: StorageEvent): void {
 
 /** Losing input focus does not mean the window is hidden.
  * Tauri has no public occlusion/visibility event: resize covers minimize/restore,
- * and visibilitychange covers WebViews that do expose hide/show to the DOM. */
+ * and visibilitychange covers WebViews that do expose hide/show to the DOM. The
+ * native reads come from the shared window state, which owns the native listeners. */
 function installWindowLifecycle(): () => void {
   let disposed = false;
-  let revision = 0;
-  const releases: Array<() => void> = [];
-  const native = isTauri() ? getCurrentWindow() : null;
+  const native = isTauri();
   nativeVisible = true;
   const report = (error: unknown) =>
     console.warn("Decorative motion window lifecycle unavailable", error);
-  const refreshNative = async () => {
-    if (!native) return;
-    const current = ++revision;
-    const [shown, minimized] = await Promise.all([native.isVisible(), native.isMinimized()]);
-    if (disposed || current !== revision) return;
-    nativeVisible = shown && !minimized;
+  const fromNative = () => {
+    const state = getWindowState();
+    if (disposed || !state) return;
+    nativeVisible = state.visible && !state.minimized;
     notify();
   };
   const visibility = () => {
-    ++revision;
     notify();
-    void refreshNative().catch(report);
+    if (native) void refreshWindowState().catch(report);
   };
-  window.addEventListener("focus", visibility);
+  const onFocus = () => {
+    domFocused = true;
+    visibility();
+  };
+  const onBlur = () => {
+    domFocused = false;
+    notify();
+  };
+  domFocused = typeof document === "undefined" || document.hasFocus();
+  window.addEventListener("focus", onFocus);
+  window.addEventListener("blur", onBlur);
   document.addEventListener("visibilitychange", visibility);
-  if (native) {
-    releases.push(
-      retainAsyncSubscription(
-        native.onFocusChanged(() => {
-          if (disposed) return;
-          visibility();
-        }),
-        report,
-      ),
-    );
-    releases.push(
-      retainAsyncSubscription(
-        native.onResized(() => {
-          void refreshNative().catch(report);
-        }),
-        report,
-      ),
-    );
-    void refreshNative().catch(report);
-  }
+  const release = native ? subscribeWindowState(fromNative) : undefined;
   return () => {
     disposed = true;
-    ++revision;
-    window.removeEventListener("focus", visibility);
+    window.removeEventListener("focus", onFocus);
+    window.removeEventListener("blur", onBlur);
     document.removeEventListener("visibilitychange", visibility);
-    releases.forEach((release) => release());
+    release?.();
     nativeVisible = true;
   };
 }
@@ -131,6 +152,7 @@ export function subscribeDecorativeMotion(listener: () => void): () => void {
   if (listeners.size === 1) {
     media = reducedMotionMedia();
     releaseLifecycle = installWindowLifecycle();
+    published = exposedState();
     syncDecorativeMotionAttribute();
     media?.addEventListener("change", notify);
     window.addEventListener(DECORATIVE_MOTION_CHANGE_EVENT, notify);

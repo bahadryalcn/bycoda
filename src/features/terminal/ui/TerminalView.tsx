@@ -14,6 +14,7 @@ import {
   killPty,
   resizePty,
   readyPtyBridge,
+  setPtyVisible,
   spawnPty,
   subscribePty,
   writePty,
@@ -351,6 +352,8 @@ export function TerminalView({
   const onMetaChangeRef = useRef(onMetaChange);
   onMetaChangeRef.current = onMetaChange;
   const runningProcessRef = useRef<string | null>(null);
+  /** Refreshes the foreground-process title now (set by the status poll). */
+  const metaPokeRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const outer = outerRef.current;
@@ -427,6 +430,17 @@ export function TerminalView({
     };
     const output = terminalOutputBuffer((data) => term.write(data));
     let visible = typeof IntersectionObserver === "undefined";
+    // The native side holds a hidden terminal's output instead of streaming it.
+    let reportedVisible: boolean | undefined;
+    const reportPtyVisibility = () => {
+      if (closed || !spawned.current) return;
+      const next = visible && !document.hidden;
+      if (next === reportedVisible) return;
+      reportedVisible = next;
+      void setPtyVisible(id, next).catch(() => {
+        if (reportedVisible === next) reportedVisible = undefined;
+      });
+    };
 
     host.addEventListener("copy", onCopy);
     host.addEventListener("paste", onPaste);
@@ -543,6 +557,7 @@ export function TerminalView({
       .then(() => {
         if (!closed && !exited) {
           spawned.current = true;
+          reportPtyVisibility();
           setShellReady(true);
           const command = privateTerminal ? undefined : takeTerminalCommand(id);
           if (command) return writePty(id, `${command}\r`);
@@ -595,6 +610,8 @@ export function TerminalView({
     };
 
     const dataSub = term.onData((data) => {
+      // A submitted command may start a foreground process: refresh the title soon.
+      if (data.includes("\r")) setTimeout(() => metaPokeRef.current(), 400);
       const revision = ++editRevisionRef.current;
       const composingInput = composingRef.current;
       // Do not inject a snapshot chord between native history/completion/search
@@ -663,12 +680,34 @@ export function TerminalView({
       isOscColorQuery(data) ? replyOsc(12, oscColors(outer).cursor) : false,
     );
 
-    const onSchemeChange = () => {
-      term.options.theme = terminalTheme(
+    // Root class/style mutations (drag, resize, sliders) arrive in bursts and
+    // mostly leave the palette alone: probe once per frame, assign only a change
+    // (it repaints and rebuilds the WebGL atlas), and defer hidden terminals.
+    let appliedTheme = "";
+    let themeStale = false;
+    let themeFrame = 0;
+    const applyTheme = () => {
+      themeStale = false;
+      const theme = terminalTheme(
         isLightScheme(),
         outer,
         Boolean(typographyRef.current.lineHeight),
       );
+      const key = JSON.stringify(theme);
+      if (key === appliedTheme) return;
+      appliedTheme = key;
+      term.options.theme = theme;
+    };
+    const onSchemeChange = () => {
+      if (!visible || document.hidden) {
+        themeStale = true;
+        return;
+      }
+      if (themeFrame) return;
+      themeFrame = requestAnimationFrame(() => {
+        themeFrame = 0;
+        if (!closed) applyTheme();
+      });
     };
     window.addEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
     const themeObserver = new MutationObserver(onSchemeChange);
@@ -767,6 +806,7 @@ export function TerminalView({
       const revision = ++visibilityRevision;
       if (!visible || document.hidden) {
         output.setVisible(false);
+        reportPtyVisibility();
         dropWebgl();
         return;
       }
@@ -774,6 +814,8 @@ export function TerminalView({
       // ResizeObserver and IntersectionObserver delivery order is not guaranteed.
       applySize();
       output.setVisible(true);
+      reportPtyVisibility();
+      if (themeStale) applyTheme();
       // xterm parses writes asynchronously. Redraw only after the queued output,
       // including alternate-screen switches, has reached its buffer.
       term.write("", () => {
@@ -822,6 +864,7 @@ export function TerminalView({
       host.removeEventListener("compositionend", onCompositionEnd);
       window.removeEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
       themeObserver.disconnect();
+      if (themeFrame) cancelAnimationFrame(themeFrame);
       window.removeEventListener(APPEARANCE_PREFERENCES_EVENT, onTypographyChange);
       host.removeEventListener("wheel", onZoomWheel, true);
       dataSub.dispose();
@@ -886,14 +929,18 @@ export function TerminalView({
     let lastForeground: string | null | undefined;
     let inFlight = false;
     let disposed = false;
+    // Polls of an unchanged title back off; focus, typing Enter or a change reset it.
+    let unchanged = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
       if (!spawned.current) return;
-      // Process lookup can fall back to `ps`; an off-screen terminal or window
-      // has no title to paint.
+      // Process lookup can fall back to `ps`; an off-screen terminal or a
+      // window in the background has no title anyone is reading.
       if (
         !shouldPollTerminalMeta({
           onScreen,
           documentHidden: document.hidden,
+          documentFocused: document.hasFocus(),
           supported: metaSupported,
         })
       )
@@ -905,12 +952,16 @@ export function TerminalView({
           if (disposed || !spawned.current) return;
           if (supported === false) {
             metaSupported = false;
-            clearInterval(interval);
+            clearTimeout(timer);
             return;
           }
           const fg = foreground?.trim() || null;
           runningProcessRef.current = fg;
-          if (fg === lastForeground) return;
+          if (fg === lastForeground) {
+            unchanged += 1;
+            return;
+          }
+          unchanged = 0;
           lastForeground = fg;
           onMetaChangeRef.current?.(
             fg
@@ -923,13 +974,32 @@ export function TerminalView({
           inFlight = false;
         });
     };
-    const interval = setInterval(refresh, 2500);
-    refresh();
-    document.addEventListener("visibilitychange", refresh);
+    const schedule = () => {
+      clearTimeout(timer);
+      if (disposed || !metaSupported) return;
+      timer = setTimeout(
+        () => {
+          refresh();
+          schedule();
+        },
+        unchanged >= 3 ? 7500 : 2500,
+      );
+    };
+    const poke = () => {
+      unchanged = 0;
+      refresh();
+      schedule();
+    };
+    metaPokeRef.current = poke;
+    poke();
+    document.addEventListener("visibilitychange", poke);
+    window.addEventListener("focus", poke);
     return () => {
       disposed = true;
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", refresh);
+      clearTimeout(timer);
+      metaPokeRef.current = () => {};
+      document.removeEventListener("visibilitychange", poke);
+      window.removeEventListener("focus", poke);
     };
   }, [id, cwd, wantsMeta, onScreen, privateTerminal]);
 

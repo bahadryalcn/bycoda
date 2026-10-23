@@ -790,6 +790,7 @@ pub fn run() {
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
+            pty::pty_set_visible,
             pty::pty_status,
             pty::pty_suggestions,
             pty::pty_kill,

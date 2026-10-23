@@ -139,12 +139,17 @@ struct CachedMachines {
     path: PathBuf,
     modified: std::time::SystemTime,
     length: u64,
-    machines: Vec<StoredMachine>,
+    machines: Arc<Vec<StoredMachine>>,
 }
 
 static MACHINE_CACHE: Mutex<Option<CachedMachines>> = Mutex::new(None);
 
 fn read(path: &Path) -> Result<Vec<StoredMachine>, String> {
+    Ok(read_shared(path)?.as_ref().clone())
+}
+
+/// The cached store without copying it: per-request paths look up one machine.
+fn read_shared(path: &Path) -> Result<Arc<Vec<StoredMachine>>, String> {
     let mut cache = MACHINE_CACHE
         .lock()
         .map_err(|_| "Connection cache is locked")?;
@@ -152,22 +157,22 @@ fn read(path: &Path) -> Result<Vec<StoredMachine>, String> {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             *cache = None;
-            return Ok(Vec::new());
+            return Ok(Arc::new(Vec::new()));
         }
         Err(error) => return Err(error.to_string()),
     };
     let modified = metadata.modified().ok();
     if let Some(hit) = cache.as_ref() {
         if hit.path == path && Some(hit.modified) == modified && hit.length == metadata.len() {
-            return Ok(hit.machines.clone());
+            return Ok(Arc::clone(&hit.machines));
         }
     }
-    let machines = read_uncached(path)?;
+    let machines = Arc::new(read_uncached(path)?);
     *cache = modified.map(|modified| CachedMachines {
         path: path.to_path_buf(),
         modified,
         length: metadata.len(),
-        machines: machines.clone(),
+        machines: Arc::clone(&machines),
     });
     Ok(machines)
 }
@@ -946,9 +951,10 @@ pub fn remote_request(
             .store
             .lock()
             .map_err(|_| "Connection store is locked")?;
-        read(&store_path(&app)?)?
-            .into_iter()
+        read_shared(&store_path(&app)?)?
+            .iter()
             .find(|m| m.id == machine_id)
+            .cloned()
             .ok_or("Machine is no longer connected")?
     };
     if fresh == Some(true) && machine.ssh.is_some() {
@@ -985,7 +991,7 @@ pub fn remote_request(
             .store
             .lock()
             .map_err(|_| "Connection store is locked")?;
-        let current = read(&store_path(&app)?)?;
+        let current = read_shared(&store_path(&app)?)?;
         if !current
             .iter()
             .any(|saved| same_request_route(&machine, saved))
@@ -1241,11 +1247,15 @@ pub fn social_authority_status(
     app: AppHandle,
     state: State<'_, RemoteConnections>,
 ) -> Result<Value, String> {
-    let _guard = state
-        .store
-        .lock()
-        .map_err(|_| "Connection store is locked")?;
-    let machines = read(&store_path(&app)?)?;
+    // Read under the store lock, but never hold it across the HTTP call (up to
+    // its timeout), which would stall every other connection command.
+    let machines = {
+        let _guard = state
+            .store
+            .lock()
+            .map_err(|_| "Connection store is locked")?;
+        read(&store_path(&app)?)?
+    };
     let source = machines
         .iter()
         .find(|machine| is_local_sync(machine, "This computer (local sync)"))

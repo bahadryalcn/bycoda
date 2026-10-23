@@ -15,9 +15,10 @@ pub mod screenshots;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Mutex, OnceLock,
 };
+use std::time::Duration;
 
 use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
 use objc2::{msg_send, sel, ClassType, MainThreadMarker};
@@ -113,6 +114,51 @@ pub struct QuickComposerState {
     pending: Mutex<delivery::LaunchQueue>,
     capturing: AtomicBool,
     shortcut: Mutex<Option<Shortcut>>,
+    /// Bumped on every show and hide; a release only runs if nothing happened since.
+    visibility: AtomicU64,
+}
+
+/// A hidden composer and picker keep two web content processes alive. After a
+/// submission (the draft is consumed) or with the shortcut turned off, they are
+/// closed once unused this long; the next shortcut builds them again. A
+/// dismissed draft exists only in the webview, so a plain dismiss keeps them.
+const IDLE_RELEASE: Duration = Duration::from_secs(10 * 60);
+
+/// Cancels a pending release: the composer was shown or now holds a draft.
+fn invalidate_release(app: &AppHandle) {
+    app.state::<QuickComposerState>()
+        .visibility
+        .fetch_add(1, Ordering::SeqCst);
+}
+
+/// Call after hiding a composer that holds no draft.
+fn release_when_idle(app: &AppHandle) {
+    let state = app.state::<QuickComposerState>();
+    let generation = state.visibility.fetch_add(1, Ordering::SeqCst) + 1;
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(IDLE_RELEASE);
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let state = handle.state::<QuickComposerState>();
+            if state.visibility.load(Ordering::SeqCst) != generation
+                || state.capturing.load(Ordering::SeqCst)
+            {
+                return;
+            }
+            let Some(panel) = handle.get_webview_window(QUICK_COMPOSER_LABEL) else {
+                return;
+            };
+            if panel.is_visible().unwrap_or(true) {
+                return;
+            }
+            if let Some(popup) = handle.get_webview_window(crate::window::QUICK_COMPOSER_GIT_LABEL)
+            {
+                let _ = popup.destroy();
+            }
+            let _ = panel.destroy();
+        });
+    });
 }
 
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
@@ -237,6 +283,7 @@ pub fn quick_composer_set_enabled(
         if let Some(panel) = app.get_webview_window(QUICK_COMPOSER_LABEL) {
             git_popup::dismiss(&app, false);
             let _ = panel.hide();
+            release_when_idle(&app);
         }
     }
     Ok(())
@@ -319,6 +366,7 @@ pub async fn quick_composer_submit(
                 .push(request, target.label().to_string());
             git_popup::dismiss(&handle, false);
             let _ = window.hide();
+            release_when_idle(&handle);
             if reveal {
                 let _ = target.unminimize();
                 let _ = target.show();
@@ -512,6 +560,8 @@ fn toggle(app: &AppHandle) {
             if panel.is_visible().unwrap_or(false) {
                 git_popup::dismiss(&handle, false);
                 let _ = panel.hide();
+                // A dismissed draft lives only in this webview; keep it.
+                invalidate_release(&handle);
                 return;
             }
             show(&handle, &panel);
@@ -564,6 +614,7 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 }
 
 fn show(app: &AppHandle, panel: &WebviewWindow) {
+    invalidate_release(app);
     place(app, panel);
     present(panel);
     let _ = panel.emit(SHOWN, ());

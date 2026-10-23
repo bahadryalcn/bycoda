@@ -9,7 +9,6 @@ import type { AgentStep, Block } from "../model/session";
 import {
   isStoppedBlock,
   isSubagentBlock,
-  subagentModelName,
   subagentName,
   subagentReport,
   subagentStatusLine,
@@ -24,6 +23,7 @@ import { useStopRequests } from "./useStopRequests";
 import { Button } from "../../../shared/ui/Button";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import styles from "./SubagentSheet.module.css";
+import { useSubagentModelName } from "../model/reactiveReads";
 
 export type SubagentRelay = {
   draft: string;
@@ -149,7 +149,8 @@ export function SubagentSheet({
   const sheetRef = useRef<HTMLElement>(null);
   const command = !isSubagentBlock(block);
   const name = command ? t("Command details") : subagentName(block);
-  const model = command ? undefined : subagentModelName(block);
+  const subagentModel = useSubagentModelName(block);
+  const model = command ? undefined : subagentModel;
   const run = block.agentRun;
   const state = toolCallState(block);
   const running = busy && state === "pending";

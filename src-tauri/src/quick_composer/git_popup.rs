@@ -272,6 +272,9 @@ pub fn quick_composer_dismiss(app: AppHandle, window: WebviewWindow) -> Result<(
     app.run_on_main_thread(move || {
         dismiss(&handle, false);
         let _ = window.hide();
+        // A dismissed draft lives only in this webview; keep it, but cancel a
+        // pending release scheduled before the composer was shown again.
+        super::invalidate_release(&handle);
     })
     .map_err(|err| err.to_string())
 }

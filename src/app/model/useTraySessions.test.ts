@@ -125,3 +125,28 @@ it("publishes native snapshots on Windows and skips IPC in browsers", async () =
   expect(api.invoke).not.toHaveBeenCalled();
   expect(api.callbacks.size).toBe(0);
 });
+
+it("publishes at most one native menu update per second, ending with the latest", async () => {
+  vi.useFakeTimers();
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    expect(api.invoke).toHaveBeenCalledTimes(1);
+    projectKeys = new Set();
+    await act(async () => root.render(createElement(Probe)));
+    projectKeys = new Set(["/project"]);
+    await act(async () => root.render(createElement(Probe)));
+    projectKeys = new Set();
+    await act(async () => root.render(createElement(Probe)));
+    expect(api.invoke).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(api.invoke).toHaveBeenCalledTimes(2);
+    expect(api.invoke).toHaveBeenLastCalledWith(
+      "tray_sessions_update",
+      expect.objectContaining({ rows: [] }),
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});

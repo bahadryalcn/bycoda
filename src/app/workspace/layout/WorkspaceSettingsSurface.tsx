@@ -1,3 +1,5 @@
+import { memo } from "react";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import { QuickDeleteWorktreeDialog } from "../../../features/source-control/ui/QuickDeleteWorktreeDialog";
 import { WorktreesPage } from "../../../features/source-control/ui/WorktreesPage";
@@ -40,7 +42,7 @@ export interface WorkspaceSettingsSurfaceProps {
   setCollapsedProjectRailMode: SettingsProps["onCollapsedProjectRailModeChange"];
 }
 
-export function WorkspaceSettingsSurface({
+function WorkspaceSettingsSurfaceComponent({
   worktreeManagementRequest,
   worktreeManagementRevision,
   setWorktreeManagementRequest,
@@ -125,4 +127,11 @@ export function WorkspaceSettingsSurface({
       ) : null}
     </>
   );
+}
+
+const MemoWorkspaceSettingsSurface = memo(WorkspaceSettingsSurfaceComponent);
+
+/** Workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function WorkspaceSettingsSurface(props: WorkspaceSettingsSurfaceProps) {
+  return <MemoWorkspaceSettingsSurface {...useStableHandlers(props)} />;
 }

@@ -9,7 +9,11 @@ vi.mock("../../../platform/tauri/fileAccess", () => ({
   getFileAccessMode: vi.fn().mockResolvedValue("all-files"),
   configureFileAccess: vi.fn().mockResolvedValue("selected-folders"),
 }));
-vi.mock("../../../shared/i18n", () => ({ t: (text: string) => text, useLocale: () => "en" }));
+vi.mock("../../../shared/i18n", () => ({
+  t: (text: string) => text,
+  useT: () => (text: string) => text,
+  useLocale: () => "en",
+}));
 const container = document.createElement("div");
 let root = createRoot(container);
 afterEach(async () => {

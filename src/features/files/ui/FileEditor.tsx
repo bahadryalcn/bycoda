@@ -58,6 +58,9 @@ type Props = {
   documentId?: string;
   cwd: string;
   active: boolean;
+  /** False while another tab of the pane, or the hidden pane itself, covers this
+   * editor: git and disk reloads wait and run once when it is shown again. */
+  shown?: boolean;
   showDiff?: boolean;
   /** The side the Changes panel opened; saves looking it up before the first diff. */
   changeKind?: GitFileDiffKind;
@@ -79,6 +82,7 @@ export function FileEditor({
   documentId = path,
   cwd,
   active,
+  shown = true,
   showDiff = false,
   changeKind,
   navigation,
@@ -87,6 +91,10 @@ export function FileEditor({
   onOpenFile,
 }: Props) {
   useLocale();
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
+  /** Work skipped while hidden, replayed once on show. */
+  const deferred = useRef({ git: false, disk: false });
   // The path whose "before" side has been looked up, found or not. Until then
   // the editor is not drawn: showing it plain first means tearing it down and
   // building the side-by-side pair a moment later.
@@ -385,13 +393,17 @@ export function FileEditor({
     load();
     reloadGitRef.current = load;
     const onFocus = () => {
-      if (!document.hidden) load();
+      if (!shownRef.current) deferred.current.git = true;
+      else if (!document.hidden) load();
     };
-    const onGit = () => {
-      if (!document.hidden) load();
-    };
+    const onGit = onFocus;
     let timer = 0;
     const onDisk = () => {
+      if (!shownRef.current) {
+        deferred.current.git = true;
+        deferred.current.disk = true;
+        return;
+      }
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         load();
@@ -432,7 +444,12 @@ export function FileEditor({
         // Block saving at once, then clear it if the text on disk is unchanged.
         pendingDiskRef.current = true;
         diskChangeVersion.current += 1;
+        // Even while hidden: autosave stays blocked until this read clears it.
         void reloadFromDisk();
+        return;
+      }
+      if (!shownRef.current) {
+        deferred.current.disk = true;
         return;
       }
       window.clearTimeout(timer);
@@ -445,6 +462,16 @@ export function FileEditor({
       stop();
     };
   }, [loadState.status, path, reloadFromDisk]);
+
+  // Catch up once on what changed while another tab was in front.
+  useEffect(() => {
+    if (!shown) return;
+    const pending = deferred.current;
+    if (pending.git) reloadGitRef.current?.();
+    if (pending.disk) void reloadFromDisk();
+    pending.git = false;
+    pending.disk = false;
+  }, [shown, reloadFromDisk]);
 
   const save = useCallback(
     async (content: string) => {
@@ -718,6 +745,7 @@ export function FileEditor({
                 onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
                 onDocChange={docChange}
                 onEdit={edited}
+                shown={shown && mode === "source"}
                 onOpenFile={onOpenFile}
               />
             </div>
@@ -739,6 +767,7 @@ export function FileEditor({
           onErrorCountChange={errorCountChange}
           onSave={save}
           onEdit={edited}
+          shown={shown}
           canAutosave={() => !pendingDiskRef.current}
           onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
           onOpenFile={onOpenFile}

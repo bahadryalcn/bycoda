@@ -119,6 +119,10 @@ import {
   useState,
 } from "react";
 import { useWorktreeFocus } from "../features/source-control/model/worktreeFocus";
+import { useStableCallback } from "../shared/hooks/useStableCallback";
+import { useStableValue } from "../shared/hooks/useStableValue";
+import { shallowArrayEqual } from "../features/sessions/model/stableBlocks";
+import { useHeldValue } from "./workspace/helpers/stableProps";
 import { useProjectBranches } from "../features/source-control/hooks/useProjectBranches";
 import { useInboxActivity } from "../features/inbox/hooks/useInboxUnseen";
 import { HAS_NATIVE_GLASS, IS_MAC } from "../platform/tauri/platform";
@@ -2662,6 +2666,29 @@ function Workspace({
     maximizedPane,
     onToggleMaximizePane,
   });
+  // The layout children below are memoized; these keep their inputs from being
+  // rebuilt by the many workspace renders a session status change causes.
+  const railBack = useStableCallback(onRailBack);
+  const railForward = useStableCallback(onRailForward);
+  const toolNavigation = useMemo(
+    () => ({
+      canBack: tabVisitNav.canBack,
+      canForward: tabVisitNav.canForward,
+      onBack: railBack,
+      onForward: railForward,
+    }),
+    [tabVisitNav.canBack, tabVisitNav.canForward, railBack, railForward],
+  );
+  const inboxAskSessions = useStableValue(
+    useMemo(() => sessions.filter((session) => session.inboxAsk), [sessions]),
+    shallowArrayEqual,
+  );
+  // Closed surfaces keep the lists they last showed; they catch up when opened.
+  const searchHistory = useHeldValue(projectHistory, searchViewOpen || searchDialogOpen);
+  const settingsSurfaceOpen = settingsOpen || !!worktreeManagementRequest;
+  const settingsSessions = useHeldValue(sessions, settingsSurfaceOpen);
+  const settingsHistory = useHeldValue(sidebarHistory, settingsSurfaceOpen);
+
   const workspaceTitleBar = useWorkspaceTitleBar({
     onKeepSession,
     windowTransfer,
@@ -2810,6 +2837,19 @@ function Workspace({
     onOpenWhatsNew: onOpenWhatsNew,
     onDismissUpdate: onDismissUpdate,
   });
+  const onboardingProjects = recents.length;
+  const onboardingSessions = bootHistory.length;
+  const onboardingRestored = !!resumed;
+  const onboardingTransferred = !!windowTransfer || !!toolWindow;
+  const onboardingContext = useMemo(
+    () => ({
+      projects: onboardingProjects,
+      sessions: onboardingSessions,
+      restored: onboardingRestored,
+      transferred: onboardingTransferred,
+    }),
+    [onboardingProjects, onboardingSessions, onboardingRestored, onboardingTransferred],
+  );
   return (
     <OrchestrationActions.Provider value={orchestrationActions}>
       <OrchestrationWorkers.Provider value={orchestrationWorkers}>
@@ -3022,8 +3062,7 @@ function Workspace({
                     inboxViewOpen={inboxViewOpen}
                     dirtyFiles={dirtyFiles}
                     fileErrorCounts={fileErrorCounts}
-                    sessions={sessions}
-                    active={active}
+                    activeSessionId={active?.id}
                     composerFocused={composerFocused}
                     composerFocusToken={composerFocusToken}
                     onSelectFileSurface={onSelectFileSurface}
@@ -3066,7 +3105,7 @@ function Workspace({
                   onCompactSearch={onOpenSearch}
                   gitCwd={gitCwd}
                   visibleRecents={visibleRecents}
-                  projectHistory={projectHistory}
+                  projectHistory={searchHistory}
                   lockSnapshot={lockSnapshot}
                   searchViewFocusToken={searchViewFocusToken}
                   projectRailOpen={projectRailOpen}
@@ -3077,7 +3116,7 @@ function Workspace({
                   onOpenFile={onOpenFile}
                   onSelectHistorySession={onSelectHistorySession}
                   onSelectProject={onSelectProject}
-                  sessions={sessions}
+                  sessions={inboxAskSessions}
                   inboxViewOpen={inboxViewOpen}
                   inboxAskPortal={inboxAskPortal}
                   composerFocused={composerFocused}
@@ -3088,7 +3127,7 @@ function Workspace({
                   auxiliaryTool={auxiliaryTool}
                   setAuxiliaryTool={setAuxiliaryTool}
                   conversationTools={conversationTools}
-                  navigation={{ ...tabVisitNav, onBack: onRailBack, onForward: onRailForward }}
+                  navigation={toolNavigation}
                   onLeaveServers={onLeaveServers}
                   setServersViewOpen={setServersViewOpen}
                   onLaunchAutomationAssistant={launchQuickSession}
@@ -3148,8 +3187,8 @@ function Workspace({
                   notificationSettingsRequest={notificationSettingsRequest}
                   visibleRecents={visibleRecents}
                   sidebarCwd={sidebarCwd}
-                  sidebarHistory={sidebarHistory}
-                  sessions={sessions}
+                  sidebarHistory={settingsHistory}
+                  sessions={settingsSessions}
                   onCheckWorktreeRemoval={onCheckWorktreeRemoval}
                   onDeleteWorktreeSessions={onDeleteWorktreeSessions}
                   onCloseSettings={onCloseSettings}
@@ -3239,12 +3278,7 @@ function Workspace({
               setWhatsNewVersion={setWhatsNewVersion}
               onOpenCommit={onOpenCommit}
               onSessionsImported={onSessionsImported}
-              onboardingContext={{
-                projects: recents.length,
-                sessions: bootHistory.length,
-                restored: !!resumed,
-                transferred: !!windowTransfer || !!toolWindow,
-              }}
+              onboardingContext={onboardingContext}
               onSelectProject={onSelectProject}
               projectCwd={projectCwd}
               remoteProjectDialogOpen={remoteProjectDialogOpen}

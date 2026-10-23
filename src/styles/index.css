@@ -957,6 +957,14 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
   content-visibility: visible;
 }
 
+/* Settled turns cannot affect each other's layout or style invalidation, but
+   keep their real height (no size containment) so the scroll range is exact.
+   Everything floating inside a turn is portaled (Popover/Modal) or hangs inside
+   the row's own padding, and the live turn is excluded because it still grows. */
+.transcript-turn:not(.transcript-turn-live) {
+  contain: layout style;
+}
+
 ::highlight(bycoda-transcript-search-match) {
   background-color: color-mix(in srgb, var(--color-search) 46%, transparent);
 }
@@ -4054,6 +4062,10 @@ html.theme-light .btw-burst {
   }
 }
 
+/* Row status dots: no animation clock while motion is off or the window is not in front. */
+html:is([data-decorative-motion="off"], [data-window-focus="off"]) .working-dot {
+  animation-play-state: paused !important;
+}
 html[data-decorative-motion="off"]
   :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active, .context-speed-bolt) {
   animation-play-state: paused !important;

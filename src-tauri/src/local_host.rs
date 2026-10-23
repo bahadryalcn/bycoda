@@ -107,6 +107,71 @@ fn run_launcher(
     parse_launcher_output(&run_with_timeout(command, timeout)?)
 }
 
+/// Identity of the host's `running.json`: a restart or port change rewrites it.
+type RunningStamp = Option<(std::time::SystemTime, u64)>;
+
+fn running_stamp(data_dir: &Path) -> RunningStamp {
+    let metadata = std::fs::metadata(data_dir.join("running.json")).ok()?;
+    Some((metadata.modified().ok()?, metadata.len()))
+}
+
+/// The last `connection-info` answer for one `running.json`.
+struct ConnectionInfoCache {
+    stamp: RunningStamp,
+    port: Option<u64>,
+    /// After a failed lookup, no new launcher run before this instant.
+    retry_at: Option<Instant>,
+    backoff: Duration,
+}
+
+static CONNECTION_INFO: std::sync::Mutex<Option<ConnectionInfoCache>> = std::sync::Mutex::new(None);
+const CONNECTION_RETRY_MIN: Duration = Duration::from_secs(15);
+const CONNECTION_RETRY_MAX: Duration = Duration::from_secs(300);
+
+/// The running host's port. The app asks on every focus and every 30 s, and
+/// `connection-info` starts a Node process each time; a verified answer is
+/// kept for as long as `running.json` is unchanged and the host still answers
+/// its lifecycle probe (a direct loopback request). Failures back off.
+fn connection_port(data_dir: &Path, program: &str, base_args: &[String]) -> Option<u64> {
+    let stamp = running_stamp(data_dir);
+    {
+        let cache = CONNECTION_INFO.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(cached) = cache.as_ref().filter(|cached| cached.stamp == stamp) {
+            if let Some(port) = cached.port {
+                match probe_lifecycle_status(data_dir) {
+                    Ok(_) => return Some(port),
+                    Err(LifecycleProbeError::Stopped) => return None,
+                    // Busy or mid-restart: ask the launcher below.
+                    Err(LifecycleProbeError::Unconfirmed) => {}
+                }
+            } else if cached.retry_at.is_some_and(|at| Instant::now() < at) {
+                return None;
+            }
+        }
+    }
+    let port = run_launcher(
+        program,
+        base_args,
+        &["connection-info"],
+        Duration::from_secs(10),
+    )
+    .and_then(|info| info.get("port").and_then(Value::as_u64));
+    let mut cache = CONNECTION_INFO.lock().unwrap_or_else(|e| e.into_inner());
+    let backoff = match cache.as_ref() {
+        Some(previous) if previous.stamp == stamp && previous.port.is_none() => {
+            (previous.backoff * 2).min(CONNECTION_RETRY_MAX)
+        }
+        _ => CONNECTION_RETRY_MIN,
+    };
+    *cache = Some(ConnectionInfoCache {
+        stamp,
+        port,
+        retry_at: port.is_none().then(|| Instant::now() + backoff),
+        backoff,
+    });
+    port
+}
+
 /// How this desktop appears in its own host's device list, distinct from
 /// an SSH-paired desktop's name (`remote_ssh::device_name`).
 fn local_device_name() -> String {
@@ -133,15 +198,7 @@ pub fn local_host_connect(app: AppHandle) -> Result<Option<Machine>, String> {
     let Some((program, base_args)) = launcher_command(&data_dir) else {
         return Ok(None);
     };
-    let Some(info) = run_launcher(
-        &program,
-        &base_args,
-        &["connection-info"],
-        Duration::from_secs(10),
-    ) else {
-        return Ok(None);
-    };
-    let Some(port) = info.get("port").and_then(Value::as_u64) else {
+    let Some(port) = connection_port(&data_dir, &program, &base_args) else {
         return Ok(None);
     };
     let url = format!("http://127.0.0.1:{port}");

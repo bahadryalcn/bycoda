@@ -60,6 +60,9 @@ export function classifyGitPath(path: string, gitDir: string, commonDir: string)
     }
   }
   const rest = relative(path, commonDir);
+  // Checkpoint snapshots write and delete these on every agent turn; no
+  // branch, tag or view depends on them.
+  if (rest === "refs/bycoda" || rest?.startsWith("refs/bycoda/")) return { index, refs };
   if (rest !== undefined) {
     const worktreeEntry =
       rest.startsWith("worktrees/") && !rest.slice("worktrees/".length).includes("/");

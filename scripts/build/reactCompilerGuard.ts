@@ -58,6 +58,29 @@ type Module = {
 };
 
 const modules = new Map<string, Module | null>();
+/** What made the last `readsHiddenState` call true, for the opt-out report. */
+let lastReason = "";
+/** Why each tainted top-level name is tainted, keyed `file#name`. */
+const reasons = new Map<string, string>();
+
+/** Debugging aid: the chain of reads that makes an export of `file` unsafe. */
+export function explainExport(file: string, name: string, depth = 6): string[] {
+  const module = analyze(file);
+  const local = module?.exports.get(name) ?? name;
+  const reason = reasons.get(`${file}#${local}`);
+  if (!reason || depth === 0) return reason ? [reason] : [];
+  const imported = /^(\S+) \(from ([^)]+)\)/.exec(reason);
+  const target = imported && resolveImport(file, imported[2]);
+  const sameFile = /^(\S+) \(this file\)/.exec(reason);
+  return [
+    `${file.replace(SOURCE_ROOT, "src")}#${name}: ${reason}`,
+    ...(target
+      ? explainExport(target, imported[1], depth - 1)
+      : sameFile
+        ? explainExport(file, sameFile[1], depth - 1)
+        : []),
+  ];
+}
 const analyzing = new Set<string>();
 
 function resolveImport(from: string, specifier: string): string | undefined {
@@ -175,21 +198,32 @@ function readsHiddenState(
         return;
       const binding = ref.scope.getBinding(name);
       if (!binding) {
-        if (STORAGE.has(name)) found = true;
+        if (STORAGE.has(name)) {
+          found = true;
+          lastReason = name;
+        }
         return;
       }
       if (binding.scope !== program.scope) return;
       if (binding.kind === "module") {
         const declaration = binding.path.parentPath;
-        if (declaration?.isImportDeclaration() && importTainted(file, declaration, name))
+        if (declaration?.isImportDeclaration() && importTainted(file, declaration, name)) {
           found = true;
+          lastReason = `${name} (from ${declaration.node.source.value})`;
+        }
       } else if ((binding.kind === "let" || binding.kind === "var") && !binding.constant) {
         found = true;
-      } else if (tainted.has(name) && !isHookName(name)) {
-        // A hook's result is reactive; the hook itself is guarded where it is defined.
+        lastReason = `module let ${name}`;
+      } else if (tainted.has(name) && !isHookName(name) && !/^[A-Z]/.test(name)) {
+        // A hook's result is reactive and a component renders itself; each is
+        // guarded where it is defined, as imported ones are.
         found = true;
+        lastReason = `${name} (this file)`;
       }
-      if (found) ref.stop();
+      if (found) {
+        lastReason += `:${ref.node.loc?.start.line ?? 0}`;
+        ref.stop();
+      }
     },
     MemberExpression(member) {
       if (found) return;
@@ -201,6 +235,7 @@ function readsHiddenState(
         CLOCKS[object.name]?.includes(property.name)
       ) {
         found = true;
+        lastReason = `${object.name}.${property.name}:${member.node.loc?.start.line ?? 0}`;
         member.stop();
       }
     },
@@ -213,6 +248,7 @@ function readsHiddenState(
         !expression.scope.getBinding("Date")
       ) {
         found = true;
+        lastReason = `new Date():${expression.node.loc?.start.line ?? 0}`;
         expression.stop();
       }
     },
@@ -252,6 +288,7 @@ function taint(file: string, program: NodePath<t.Program>): Set<string> {
       if (tainted.has(item.name)) continue;
       if (readsHiddenState(file, item.path, program, tainted, false)) {
         tainted.add(item.name);
+        reasons.set(`${file}#${item.name}`, lastReason);
         changed = true;
       }
     }
@@ -373,7 +410,7 @@ export function reactCompilerGuard({ annotation = false }: { annotation?: boolea
               optOut(path);
               if (report)
                 console.warn(
-                  `[compiler-guard] ${file}:${path.node.loc?.start.line ?? 0} use no memo`,
+                  `[compiler-guard] ${file}:${path.node.loc?.start.line ?? 0} use no memo: ${lastReason}`,
                 );
             }
             path.skip();

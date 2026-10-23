@@ -228,6 +228,17 @@ describe("AttachmentChip image preview", () => {
     vi.mocked(fs.readBinaryFile).mockResolvedValue(
       new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     );
+    // Generated images load once near the viewport; report this one as visible.
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(private callback: (entries: { isIntersecting: boolean }[]) => void) {}
+        observe() {
+          this.callback([{ isIntersecting: true }]);
+        }
+        disconnect() {}
+      },
+    );
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:generated-image");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
 

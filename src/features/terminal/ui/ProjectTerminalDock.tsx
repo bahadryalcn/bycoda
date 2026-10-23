@@ -15,7 +15,8 @@ import {
   Terminal,
   X,
 } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
 import "./terminal.css";
 import { IconButton } from "../../../app/shell/TitleBar";
@@ -104,7 +105,7 @@ function hideIcon(side: DockSide) {
   return ChevronDown;
 }
 
-export function ProjectTerminalDock({
+function ProjectTerminalDockComponent({
   dock,
   focused,
   onFocus,
@@ -626,4 +627,12 @@ export function ProjectTerminalDock({
       ) : null}
     </section>
   );
+}
+
+const MemoProjectTerminalDock = memo(ProjectTerminalDockComponent);
+
+/** One dock per project stays mounted; stable handler proxies let a dock skip the
+ * main area's renders unless its own dock state or focus changed. */
+export function ProjectTerminalDock(props: Props) {
+  return <MemoProjectTerminalDock {...useStableHandlers(props)} />;
 }

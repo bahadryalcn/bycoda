@@ -997,9 +997,10 @@ pub(crate) fn list_project_files_sync_cancellable(
 /// per folder and keyed on the exact entry names, so an added, removed or
 /// renamed entry always misses. Ignore rules can change without the folder
 /// changing (`.gitignore` higher up, `info/exclude`, global excludes, a file
-/// becoming tracked), so the TTL bounds staleness to a late dimming label; it
-/// matches `GIT_INFO_TTL`.
-const IGNORED_NAMES_TTL: Duration = Duration::from_secs(3);
+/// becoming tracked), so the TTL bounds staleness to a late dimming label. It
+/// outlasts the tree's 3 s poll, so an unchanged folder is not re-checked on
+/// every poll; a rename or new entry still misses at once.
+const IGNORED_NAMES_TTL: Duration = Duration::from_secs(10);
 const IGNORED_NAMES_CACHE_MAX: usize = 256;
 
 type IgnoredNamesEntry = (Instant, Vec<String>, Option<HashSet<String>>);
@@ -2927,28 +2928,28 @@ fn git_changes_with(root: &Path, retry: bool) -> Option<GitChanges> {
 }
 
 /// Added and removed lines per path under `root`, working tree against HEAD.
+///
+/// Plumbing only: porcelain `git diff` refreshes the index and writes it back
+/// (whatever `GIT_OPTIONAL_LOCKS` says), which rewrote `.git/index` on every
+/// poll and woke every index watcher. A file whose stat data alone is stale
+/// is listed with `0 0`, which adds nothing.
 fn git_numstat_for(root: &Path) -> HashMap<String, FileAcc> {
-    const BASE: [&str; 6] = [
-        "diff",
-        "--relative",
-        "--no-ext-diff",
-        "--no-renames",
-        "--numstat",
-        "-z",
-    ];
-    let run = |extra: &[&str]| {
-        let mut args = BASE.to_vec();
+    const OPTIONS: [&str; 4] = ["--relative", "--no-renames", "--numstat", "-z"];
+    let run = |command: &str, extra: &[&str]| {
+        let mut args = vec![command];
+        args.extend_from_slice(&OPTIONS);
         args.extend_from_slice(extra);
         args.extend(["--", "."]);
         git_run(root, &args)
     };
     let mut files = HashMap::new();
-    if let Some(text) = run(&["HEAD"]) {
+    if let Some(text) = run("diff-index", &["HEAD"]) {
         add_numstat_z(&text, &mut files);
     } else {
         // No commit yet: everything is in the index or the working tree.
-        for extra in [&[][..], &["--cached"][..]] {
-            if let Some(text) = run(extra) {
+        // `diff --cached` compares only the index and never refreshes it.
+        for (command, extra) in [("diff-files", &[][..]), ("diff", &["--cached"][..])] {
+            if let Some(text) = run(command, extra) {
                 add_numstat_z(&text, &mut files);
             }
         }
@@ -12898,7 +12899,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "perf P11: line counts for the changes panel must not rewrite .git/index (use git diff-index --numstat -z HEAD)"]
     fn change_counts_do_not_rewrite_the_git_index() {
         let repo = tmp("numstat-index");
         assert!(init_git_commit(

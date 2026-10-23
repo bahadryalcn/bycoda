@@ -40,7 +40,11 @@ const native = vi.hoisted(() => {
   };
 });
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => native.window }));
-vi.mock("../../shared/i18n", () => ({ t: (text: string) => text, useLocale: () => {} }));
+vi.mock("../../shared/i18n", () => ({
+  t: (text: string) => text,
+  useT: () => (text: string) => text,
+  useLocale: () => {},
+}));
 import { WindowControls, WindowControlsVisible } from "./WindowControls";
 import { FullscreenButton } from "./FullscreenButton";
 

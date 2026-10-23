@@ -15,7 +15,7 @@ import type { TranscriptSelection } from "../model/transcriptSelection";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
-import { t, useLocale, useT } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   ArrowUp,
@@ -106,7 +106,11 @@ import type { ShellRun } from "../model/shellRun";
 import { visibleUserPrompt } from "../../orchestration/model/orchestration";
 import { playCue } from "../../settings/model/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
-import { resolveModel } from "../model/models";
+import {
+  useResolvedModelName,
+  useSubagentModelName,
+  useToolCallDisplay,
+} from "../model/reactiveReads";
 import { harnessesForTurns } from "../model/secondOpinion";
 import { streamingTextUpdate } from "../model/stableBlocks";
 import { TranscriptTurnCache } from "../model/transcriptTurnCache";
@@ -153,9 +157,7 @@ import {
   isProseBlock,
   needsApproval,
   proseSummary,
-  resolveToolCallDisplay,
   subagentBrief,
-  subagentModelName,
   subagentName,
   subagentReport,
   subagentStatusLine,
@@ -477,7 +479,7 @@ function AgentTranscriptComponent({
     seenUserId.current = lastUserId;
     if (lastUserId && !anchorTurn) setAnchorTurn(true);
   }
-  const currentModelName = harness ? resolveModel(harness, model).name : undefined;
+  const currentModelName = useResolvedModelName(harness, model);
   const waitingForApproval = hasPendingApproval(blocks) || pendingQuestion;
   const preparingHandoff = blocks.some(
     (block) => block.role === "handoff" && block.handoff?.status === "preparing",
@@ -1637,13 +1639,16 @@ const Turn = memo(function Turn({
 }, sameTurn);
 
 function sameTurn(a: TurnProps, b: TurnProps): boolean {
+  if (a === b) return true;
   const keys = Object.keys(a) as (keyof TurnProps)[];
   if (keys.length !== Object.keys(b).length) return false;
   for (const key of keys) {
     if (key === "turn") {
+      // Unchanged turns keep their array (groupTurnsStable): skip the block walk.
       if (
-        a.turn.length !== b.turn.length ||
-        !a.turn.every((block, index) => block === b.turn[index])
+        a.turn !== b.turn &&
+        (a.turn.length !== b.turn.length ||
+          !a.turn.every((block, index) => block === b.turn[index]))
       ) {
         return false;
       }
@@ -1989,7 +1994,7 @@ function TurnOutputActions({
   const [error, setError] = useState<string | null>(null);
   useEffect(() => setError(null), [getText]);
 
-  const run = async (action: "copy" | "save") => {
+  const handleAction = async (action: "copy" | "save") => {
     if (!getText) return false;
     setError(null);
     try {
@@ -2024,7 +2029,7 @@ function TurnOutputActions({
                   label: t("Copy response"),
                   icon: <Copy />,
                   doneLabel: t("Copied"),
-                  onSelect: () => run("copy"),
+                  onSelect: () => handleAction("copy"),
                 },
               ]
             : []),
@@ -2035,7 +2040,7 @@ function TurnOutputActions({
                   label: t("Save as note"),
                   icon: <FilePlusCorner />,
                   doneLabel: t("Saved to Notes"),
-                  onSelect: () => run("save"),
+                  onSelect: () => handleAction("save"),
                 },
               ]
             : []),
@@ -2055,7 +2060,7 @@ function CopyTurnButton({
   text,
   getText,
   attachments,
-  label = t("Copy response"),
+  label: labelProp,
   showLabel = false,
 }: {
   text?: string;
@@ -2066,6 +2071,7 @@ function CopyTurnButton({
   showLabel?: boolean;
 }) {
   const t = useT();
+  const label = labelProp ?? t("Copy response");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
@@ -3516,7 +3522,7 @@ function SubagentPanel({
   const t = useT();
   const name = subagentName(block);
   const brief = subagentBrief(block);
-  const model = subagentModelName(block);
+  const model = useSubagentModelName(block);
   const state = toolCallState(block);
   const active = live && state === "pending";
   const steps = block.agentRun?.steps ?? [];
@@ -4427,7 +4433,7 @@ function ToolCallSummary({
   status?: ToolCallState;
 }) {
   useLocale();
-  const { action, target, fileName, filePath, isFile, previewMatchesFile } = resolveToolCallDisplay(
+  const { action, target, fileName, filePath, isFile, previewMatchesFile } = useToolCallDisplay(
     label,
     preview,
     cwd,

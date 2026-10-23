@@ -12,15 +12,13 @@ import {
   Square,
   X,
 } from "../../../shared/ui/icons";
+import { useActivityDock, useDockCountLabel, useStopAllControl } from "../model/reactiveReads";
 import {
-  deriveActivityDock,
-  dockCountLabel,
-  dockStateLabel,
   nextUnseenDone,
   type ActivityDock as ActivityDockModel,
   type DockAgent,
 } from "../model/activityDock";
-import { canStopAgent, stopAllControl } from "../model/backgroundStop";
+import { canStopAgent } from "../model/backgroundStop";
 import type { Block } from "../model/session";
 import { AgentClock } from "./AgentClock";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
@@ -100,7 +98,7 @@ export const ActivityDock = memo(function ActivityDock({
     return () => composer.removeEventListener("focusin", acknowledge);
   }, []);
 
-  const dock = deriveActivityDock({
+  const { dock, label } = useActivityDock({
     blocks,
     busy,
     pendingQuestion,
@@ -108,7 +106,6 @@ export const ActivityDock = memo(function ActivityDock({
     backgroundAgents,
     unseenDone,
   });
-  const label = dockStateLabel(dock);
 
   return (
     <div ref={root}>
@@ -168,9 +165,10 @@ function DockBody({
   const hasAgents = dock.agents.length > 0;
   const open = expanded && hasAgents;
   const listId = `activity-dock-agents-${sessionId}`;
-  const counts = dockCountLabel(dock);
+  const counts = useDockCountLabel(dock);
   const clock = dock.state === "working" || dock.state === "waiting";
-  const stopAll = stop.onAll ? stopAllControl(dock, stop.perItem) : null;
+  const stopAllWhenWired = useStopAllControl(dock, stop.perItem);
+  const stopAll = stop.onAll ? stopAllWhenWired : null;
 
   return (
     <section

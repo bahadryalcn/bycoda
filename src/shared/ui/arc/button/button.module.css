@@ -9,7 +9,9 @@
   .md { min-height: var(--control-height-md); }
   .lg { min-height: var(--control-height-lg); padding-inline: var(--space-5); font-size: var(--text-sm); }
 }
-.button { border: 1px solid transparent; border-radius: var(--radius-control); -webkit-tap-highlight-color: transparent; transition: color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard); }
+.button { border: 1px solid transparent; border-radius: var(--radius-control); -webkit-tap-highlight-color: transparent; transition: color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard); }
+/* The press: a 2% push while held, back on release. Only enabled, non-anchor Arc buttons outside reduced motion get `.pressable`. */
+.pressable:active:not(:disabled, [aria-disabled="true"], [aria-busy="true"]) { transform: scale(.98); }
 .button:disabled { opacity: .52; }
 @layer components { .button:disabled { cursor: not-allowed; } }
 .button[aria-busy="true"] { cursor: progress; }
@@ -36,7 +38,7 @@
   .ghost:hover:not(:disabled) { color: var(--foreground); background: var(--surface-muted); }
   .danger:hover:not(:disabled) { border-color: var(--danger); background: var(--surface-muted); }
 }
-/* Press feedback is one layer: buttons scale (see button.tsx). Triggers that anchor a layer never scale, so only they step their tone. */
+/* Press feedback is one layer: buttons scale (`.pressable`). Triggers that anchor a layer never scale, so only they step their tone. */
 .button:is([aria-haspopup]:not([aria-haspopup="false"]), [data-state], [role="combobox"]):active:not(:disabled) { background: var(--surface-muted); }
 .primary:is([aria-haspopup]:not([aria-haspopup="false"]), [data-state], [role="combobox"]):active:not(:disabled) { background: var(--foreground); }
 .loader { position: absolute; left: 50%; top: 50%; display: grid; width: var(--space-4); height: var(--space-4); margin: calc(var(--space-4) / -2); }

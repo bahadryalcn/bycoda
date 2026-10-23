@@ -29,8 +29,8 @@ function setup() {
 }
 
 describe("host crews idle tick (perf)", () => {
-  // perf P15: skip the crew-state SELECT + JSON.parse when there are no runs (cache or revision check); remove .fails when fixed.
-  it.fails("does not query the database for crew state when there are no runs", async () => {
+  // perf P15: skip the crew-state SELECT + JSON.parse when there are no runs.
+  it("does not query the database for crew state when there are no runs", async () => {
     const { store, crews, engine } = setup();
     // Whatever the first tick needs to learn that nothing is running.
     await crews.tick();

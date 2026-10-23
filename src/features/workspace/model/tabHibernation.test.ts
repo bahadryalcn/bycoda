@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  expiredUnseenSessionIds,
   HIBERNATE_AFTER_MS,
   recordTabVisits,
   sameIdSet,
   selectHibernatedTabIds,
+  trackUnseenSince,
+  UNSEEN_FINISHED_TTL_MS,
 } from "./tabHibernation";
 
 const MIN = 60_000;
@@ -70,5 +73,20 @@ describe("sameIdSet", () => {
     expect(sameIdSet(new Set(["a", "b"]), new Set(["b", "a"]))).toBe(true);
     expect(sameIdSet(new Set(["a"]), new Set(["a", "b"]))).toBe(false);
     expect(sameIdSet(new Set(["a", "b"]), new Set(["a", "c"]))).toBe(false);
+  });
+});
+
+describe("unseen finished TTL", () => {
+  it("expires a badge only after the TTL and restarts it when the session finishes again", () => {
+    let since = trackUnseenSince(new Map(), new Set(["a"]), 1_000);
+    since = trackUnseenSince(since, new Set(["a", "b"]), 5_000);
+    expect(since).toEqual(new Map([["a", 1_000], ["b", 5_000]]));
+    expect([...expiredUnseenSessionIds(since, 1_000 + UNSEEN_FINISHED_TTL_MS - 1)]).toEqual([]);
+    expect([...expiredUnseenSessionIds(since, 1_000 + UNSEEN_FINISHED_TTL_MS)]).toEqual(["a"]);
+
+    since = trackUnseenSince(since, new Set(["b"]), 9_000);
+    since = trackUnseenSince(since, new Set(["a", "b"]), 10_000);
+    expect(since.get("a")).toBe(10_000);
+    expect(since.get("b")).toBe(5_000);
   });
 });

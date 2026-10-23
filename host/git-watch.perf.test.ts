@@ -37,8 +37,8 @@ describe("git watch classification (perf)", () => {
       expect(any(path, tree), path).toBe(false);
   });
 
-  // perf P8: classify must ignore refs/bycoda/** (checkpoint refs written twice per turn); remove .fails when fixed.
-  it.fails("does not treat checkpoint refs as a branch or ref change", () => {
+  // perf P8: classify must ignore refs/bycoda/** (checkpoint refs written twice per turn).
+  it("does not treat checkpoint refs as a branch or ref change", () => {
     // Precondition: ordinary refs still count.
     expect(any("/r/.git/refs/heads/main")).toBe(true);
     expect(any("/r/.git/refs/tags/v1")).toBe(true);
@@ -152,8 +152,8 @@ describe("GitWatches checkpoint refs on a real repository (perf)", () => {
   });
   afterEach(() => rmSync(base, { recursive: true, force: true }));
 
-  // perf P8: writing refs/bycoda/checkpoints/** must not bump the refs revision; remove .fails when fixed.
-  it.fails("does not report a refs change when a checkpoint ref is written", async () => {
+  // perf P8: writing refs/bycoda/checkpoints/** must not bump the refs revision.
+  it("does not report a refs change when a checkpoint ref is written", async () => {
     const watches = new GitWatches();
     try {
       expect((await watches.read(repo)).watching).toBe(true);

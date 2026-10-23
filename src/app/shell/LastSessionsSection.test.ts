@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { LastSessionsRows, LastSessionsSection } from "./LastSessionsSection";
 import { pathKey } from "../../shared/lib/paths";
@@ -169,4 +170,38 @@ it("applies the selected total count to pinned rows and persists the new three-r
   } finally {
     data.stored = original;
   }
+});
+
+it("marks only the working status dot so the root motion and focus state can pause it", async () => {
+  const row = (status: "working" | "done") => ({
+    ...data.stored[0],
+    id: status,
+    title: status,
+    harness: "codex" as const,
+    status,
+    pinnable: true,
+    remote: false,
+  });
+  await act(async () =>
+    root.render(
+      createElement(LastSessionsRows, {
+        ...appearance,
+        rows: [row("working"), row("done")],
+        searchActive: false,
+        onOpenProject: vi.fn(),
+        onTogglePin: vi.fn(),
+      }),
+    ),
+  );
+  expect(container.querySelector('[role="img"][aria-label="Working"]')?.className).toContain(
+    "working-dot",
+  );
+  expect(container.querySelector('[role="img"][aria-label="Done"]')?.className).not.toContain(
+    "working-dot",
+  );
+  // The shared stylesheet pauses that class from the root attributes, with no per-row listeners.
+  const css = readFileSync("src/styles/index.css", "utf8");
+  expect(css).toMatch(
+    /html:is\(\[data-decorative-motion="off"\], \[data-window-focus="off"\]\) \.working-dot \{\s*animation-play-state: paused/,
+  );
 });

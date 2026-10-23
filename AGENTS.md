@@ -17,6 +17,20 @@ For explicitly isolated tasks, stay in the host-assigned branch/worktree. The ho
 owns task commits and approved delivery for that mode. Explicit task instructions
 and the owner's selected execution mode take precedence over these defaults.
 
+# TypeScript checks
+
+Use `tsc-rs` for TypeScript compilation and type checking. Normal mode is the
+default. When speed is requested or appropriate for a quick local iteration,
+use the explicitly named `:fast` command, which enables `tsc-rs --fast`.
+
+- Desktop: `pnpm build`, `pnpm host:build`, `pnpm check:web`, and
+  `pnpm check:types:rust`; each has a matching `:fast` variant.
+- Mobile (from `mobile/`): `pnpm typecheck` or `pnpm typecheck:fast`.
+
+Keep fast mode explicit in command names and verification reports. Preserve the
+other checks in each command; selecting fast mode only changes the compiler mode.
+TypeScript compiler API consumers may retain their existing TypeScript packages.
+
 # Repository file placement
 
 Read `.artifact` before creating, moving, or generating files. Follow its maintained

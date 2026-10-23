@@ -18,8 +18,10 @@ const reportDiagnostics: Logger["logEvent"] = (filename, event) => {
 
 const WORKERS = /(?:[\\/]workers?[\\/]|\.worker\.[jt]sx?$)/;
 const NODE_MODULES = /[\\/]node_modules[\\/]/;
-/** Compiled in full ("infer"): their render paths are pure and they are reused everywhere. */
-const INFERRED = /[\\/]src[\\/]shared[\\/]ui[\\/].*\.[jt]sx?$/;
+/** Compiled in full ("infer"): shared UI, the session surface and the shell. The guard pass
+ * opts out each function that reads state the compiler cannot see. */
+const INFERRED =
+  /[\\/]src[\\/](?:shared[\\/]ui|features[\\/]sessions[\\/]ui|app[\\/]shell)[\\/].*\.[jt]sx?$/;
 
 function compilerPass(include: RegExp, exclude: RegExp[], compilationMode: "infer" | "annotation") {
   return babel({
@@ -36,8 +38,7 @@ function compilerPass(include: RegExp, exclude: RegExp[], compilationMode: "infe
   });
 }
 
-/** Shared UI is compiled in full; elsewhere only functions marked "use memo" are,
- * until each area is checked for render-time reads of external state. */
+/** Inferred areas compile in full; elsewhere only functions marked "use memo" do. */
 export function reactCompiler() {
   return [
     compilerPass(INFERRED, [NODE_MODULES, WORKERS], "infer"),

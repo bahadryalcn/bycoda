@@ -1,4 +1,6 @@
-import type { ComponentProps, Dispatch, SetStateAction } from "react";
+import { memo, type ComponentProps, type Dispatch, type SetStateAction } from "react";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
+import { useHeldValue } from "../helpers/stableProps";
 import { SessionRecoveryPanel } from "../../shell/SessionRecoveryPanel";
 import { WhatsNewDialog } from "../../shell/WhatsNewDialog";
 import {
@@ -54,7 +56,7 @@ export interface WorkspaceRecoveryDialogsProps {
   setSessionDeleteDialog: Dispatch<SetStateAction<SessionDeleteDialogState | undefined>>;
 }
 
-export function WorkspaceRecoveryDialogs({
+function WorkspaceRecoveryDialogsComponent({
   recoveryOpen,
   sessionRecovery,
   sessions,
@@ -132,7 +134,7 @@ export interface WorkspacePickerDialogsProps {
   >;
 }
 
-export function WorkspacePickerDialogs({
+function WorkspacePickerDialogsComponent({
   resumePickerFor,
   setResumePickerFor,
   importClaudeConversation,
@@ -235,4 +237,22 @@ export function WorkspacePickerDialogs({
       ) : null}
     </>
   );
+}
+
+const MemoRecoveryDialogs = memo(WorkspaceRecoveryDialogsComponent);
+
+/** The session lists only matter while recovery is open; holding them while it is
+ * closed lets the memo skip the workspace's session updates. */
+export function WorkspaceRecoveryDialogs(props: WorkspaceRecoveryDialogsProps) {
+  const open = props.recoveryOpen && !!props.sessionRecovery;
+  const sessions = useHeldValue(props.sessions, open);
+  const remoteSessions = useHeldValue(props.remoteSessions, open);
+  return <MemoRecoveryDialogs {...useStableHandlers({ ...props, sessions, remoteSessions })} />;
+}
+
+const MemoPickerDialogs = memo(WorkspacePickerDialogsComponent);
+
+/** Workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function WorkspacePickerDialogs(props: WorkspacePickerDialogsProps) {
+  return <MemoPickerDialogs {...useStableHandlers(props)} />;
 }

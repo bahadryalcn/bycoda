@@ -196,8 +196,9 @@ export function useSessionReminders(
     };
     // The backend owns firing. This refresh catches renamed/deleted sessions,
     // missed events, and a machine waking after its scheduled time.
+    // A hidden window skips it: becoming visible refreshes immediately.
     const timer = window.setInterval(() => {
-      void refresh();
+      if (!document.hidden) void refresh();
     }, 30_000);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);

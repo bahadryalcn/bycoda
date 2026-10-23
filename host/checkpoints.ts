@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   chmod,
+  copyFile,
   lstat,
   mkdir,
   readFile,
@@ -92,6 +93,44 @@ const head = (cwd: string) =>
     (v) => v.toString().trim(),
     () => null,
   );
+/**
+ * Starts the private snapshot index from a copy of the real one, so `add -A`
+ * trusts its stat cache and hashes only changed files instead of the whole
+ * worktree. `read-tree -m HEAD` then resets the contents to HEAD exactly as a
+ * fresh `read-tree HEAD` would. Not used when an entry is assume-unchanged or
+ * skip-worktree (`add -A` would trust it blindly), with a split index, or when
+ * the real index cannot be merged (conflicts); the caller then starts fresh.
+ */
+async function seedIndex(cwd: string, index: string): Promise<boolean> {
+  try {
+    const split = (await git(cwd, ["config", "--bool", "core.splitIndex"]).catch(() => null))
+      ?.toString()
+      .trim();
+    if (split === "true") return false;
+    const real = (await git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]))
+      .toString()
+      .trim();
+    // `ls-files -v` tags assume-unchanged entries in lower case, skip-worktree as S.
+    const listing = (await git(cwd, ["ls-files", "-v", "-z"])).toString().split("\0");
+    if (listing.some((entry) => /^[a-zS]/.test(entry))) return false;
+    await copyFile(real, index);
+    await git(cwd, ["read-tree", "-m", "HEAD"], index);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Deletes `session`'s checkpoint refs except those under `keep`. */
+async function dropCheckpointRefs(cwd: string, session: string, keep?: string) {
+  const prefix = `refs/bycoda/checkpoints/${session}/`;
+  const names = (await git(cwd, ["for-each-ref", "--format=%(refname)", prefix]))
+    .toString()
+    .split("\n")
+    .filter((name) => name && !(keep && name.startsWith(`${prefix}${keep}/`)));
+  for (const name of names) await git(cwd, ["update-ref", "-d", name]).catch(() => undefined);
+}
+
 async function hasGit(cwd: string) {
   if (process.env.GIT_DIR) return true;
   for (let path = cwd; ; path = dirname(path)) {
@@ -168,7 +207,11 @@ export class HostCheckpoints {
     await mkdir(this.dir(session), { recursive: true });
     const index = join(this.dir(session), `index-${randomUUID()}`);
     try {
-      await git(cwd, ["read-tree", (await head(cwd)) ? "HEAD" : "--empty"], index);
+      const hasHead = !!(await head(cwd));
+      if (!(hasHead && (await seedIndex(cwd, index)))) {
+        await rm(index, { force: true });
+        await git(cwd, ["read-tree", hasHead ? "HEAD" : "--empty"], index);
+      }
       await git(cwd, ["add", "-A", "--", "."], index);
       const tree = (await git(cwd, ["write-tree"], index)).toString().trim();
       await git(cwd, ["update-ref", `refs/bycoda/checkpoints/${session}/${turn}/${phase}`, tree]);
@@ -361,6 +404,16 @@ export class HostCheckpoints {
     delete record.active;
     await this.save(session, record);
     await this.leases.release(session, turn);
+    // Each turn's refs keep its trees from GC. Captured contents make earlier
+    // turns' trees unnecessary, unless an entry (a symlink or submodule) still
+    // points at a blob without raw contents; then they are all kept.
+    const blobOnly = Object.values(record.files).some(
+      (pair) =>
+        (pair.before && pair.rawBefore === undefined) ||
+        (pair.after && pair.rawAfter === undefined),
+    );
+    if (!record.error && !blobOnly)
+      await dropCheckpointRefs(record.cwd, session, turn).catch(() => undefined);
     if (record.error) throw new Error(record.error);
   }
   private async matching(session: string, cwd: string) {

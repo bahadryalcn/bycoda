@@ -1,13 +1,19 @@
-import { useLayoutEffect, type ComponentProps, type RefObject } from "react";
+import { memo, useLayoutEffect, type ComponentProps, type RefObject } from "react";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ToolsWorkspace } from "../../../features/host-tools/ToolsWorkspace";
 import { PaneTree } from "../../../features/workspace/ui/PaneTree";
-import type { WorkspaceTab } from "../../../features/workspace/model/layout";
+import type { EditorPane, WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ProjectTerminalDock as ProjectTerminal } from "../../../features/projects/model/projectTerminal";
 import { sameProjectPath } from "../../../features/projects/model/recents";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
-import type { Session } from "../../../features/sessions/model/session";
-import { hasPendingApproval, type Block } from "../../../features/sessions/model/session";
+import {
+  hasPendingApproval,
+  type Block,
+  type Session,
+} from "../../../features/sessions/model/session";
+import { useShellSessionsSelector } from "../../../features/sessions/model/sessionsStore";
 import { LinkedWorkItemPanel } from "../surfaces/lazySurfaces";
 import type { LinkedWorkItemPanelState } from "../helpers/types";
 import { useTabHibernation } from "../tabs/useTabHibernation";
@@ -79,11 +85,11 @@ export interface WorkspaceMainAreaProps {
   inboxViewOpen: boolean;
   dirtyFiles: PaneTreeProps["dirtyFileIds"];
   fileErrorCounts: PaneTreeProps["fileErrorCounts"];
-  sessions: Session[];
   /** Hibernation eligibility: a hidden tab with busy or unseen-finished sessions stays mounted. */
   busySessionIds: ReadonlySet<string>;
   unseenFinishedIds: ReadonlySet<string>;
-  active: Session | undefined;
+  /** The active session, for the add-to-chat target. */
+  activeSessionId: string | undefined;
   composerFocused: boolean;
   composerFocusToken: PaneTreeProps["composerFocusToken"];
   onSelectFileSurface: PaneTreeProps["onSelectFile"];
@@ -133,7 +139,7 @@ function hasLiveBlock(blocks: Block[]): boolean {
   return live;
 }
 
-export function WorkspaceMainArea({
+function WorkspaceMainAreaComponent({
   dockGridRef,
   projectCwd,
   projectTerminals,
@@ -159,10 +165,9 @@ export function WorkspaceMainArea({
   inboxViewOpen,
   dirtyFiles,
   fileErrorCounts,
-  sessions,
   busySessionIds,
   unseenFinishedIds,
-  active,
+  activeSessionId,
   composerFocused,
   composerFocusToken,
   onSelectFileSurface,
@@ -197,26 +202,21 @@ export function WorkspaceMainArea({
   automationsViewOpen,
   activeLinkedWorkItemPanel,
 }: WorkspaceMainAreaProps) {
+  // Read from the shell store, not a prop: the main area re-renders only when the
+  // protected or known sessions change, not on every status change elsewhere.
+  const protection = useShellSessionsSelector(
+    transcriptProtection,
+    (a, b) => sameIds(a.protectedIds, b.protectedIds) && sameIds(a.knownIds, b.knownIds),
+  );
   useLayoutEffect(() => {
-    transcriptPool?.setProtectedIds(
-      sessions
-        .filter(
-          (session) =>
-            session.busy ||
-            session.continuingElsewhere ||
-            session.pendingQuestion ||
-            hasPendingApproval(session.blocks) ||
-            hasLiveBlock(session.blocks),
-        )
-        .map((session) => session.id),
-      sessions.map((session) => session.id),
-    );
-  }, [transcriptPool, sessions]);
+    transcriptPool?.setProtectedIds(protection.protectedIds, protection.knownIds);
+  }, [transcriptPool, protection]);
+  // One identity for every dock, so a memoized dock is not re-rendered for it.
+  const selectDefaultTerminalProfile = useStableCallback(() => openSettings("terminal"));
   // Hidden, idle tabs release their pane tree; the tab entry itself is untouched.
   const isHibernated = useTabHibernation({
     tabs,
     activeTabId,
-    sessions,
     busySessionIds,
     unseenFinishedIds,
     dirtyFileIds: dirtyFiles,
@@ -246,7 +246,7 @@ export function WorkspaceMainArea({
                   onAddTerminal={onNewTerminal}
                   onAddTerminalWithProfile={onNewTerminalWithProfile}
                   onSplitTerminal={onSplitProjectTerminal}
-                  onSelectDefaultProfile={() => openSettings("terminal")}
+                  onSelectDefaultProfile={selectDefaultTerminalProfile}
                   onSelectTerminal={onSelectProjectTerminal}
                   onCloseTerminal={onCloseProjectTerminal}
                   onCloseOtherTerminals={onCloseOtherProjectTerminals}
@@ -282,8 +282,7 @@ export function WorkspaceMainArea({
                         maximizedPane?.tabId === tab.id ? maximizedPane.paneId : null
                       }
                       onToggleMaximizePane={onToggleMaximizePane}
-                      sessions={sessions}
-                      editorPanes={[...tab.editorPanes, ...(tab.terminalPanes ?? [])]}
+                      editorPanes={tabPanes(tab)}
                       dirtyFileIds={dirtyFiles}
                       fileErrorCounts={fileErrorCounts}
                       focusedId={
@@ -294,7 +293,7 @@ export function WorkspaceMainArea({
                           ? tab.focusedId
                           : ""
                       }
-                      addToChatSessionId={tab.id === activeTabId ? active?.id : undefined}
+                      addToChatSessionId={tab.id === activeTabId ? activeSessionId : undefined}
                       composerFocused={composerFocused && !projectTerminalFocused}
                       composerFocusToken={composerFocusToken}
                       onSelectFile={onSelectFileSurface}
@@ -349,4 +348,46 @@ export function WorkspaceMainArea({
       </ToolsWorkspace>
     </main>
   );
+}
+
+const MemoWorkspaceMainArea = memo(WorkspaceMainAreaComponent);
+
+/** Workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function WorkspaceMainArea(props: WorkspaceMainAreaProps) {
+  return <MemoWorkspaceMainArea {...useStableHandlers(props)} />;
+}
+
+const panesByTab = new WeakMap<WorkspaceTab, EditorPane[]>();
+
+/** Editor and terminal panes of a tab, one array per tab object so a memoized
+ * pane tree sees the same value until the tab itself changes. */
+function tabPanes(tab: WorkspaceTab): EditorPane[] {
+  let panes = panesByTab.get(tab);
+  if (!panes) {
+    panes = [...tab.editorPanes, ...(tab.terminalPanes ?? [])];
+    panesByTab.set(tab, panes);
+  }
+  return panes;
+}
+
+type TranscriptProtection = { protectedIds: string[]; knownIds: string[] };
+
+function transcriptProtection(sessions: readonly Session[]): TranscriptProtection {
+  return {
+    protectedIds: sessions
+      .filter(
+        (session) =>
+          session.busy ||
+          session.continuingElsewhere ||
+          session.pendingQuestion ||
+          hasPendingApproval(session.blocks) ||
+          hasLiveBlock(session.blocks),
+      )
+      .map((session) => session.id),
+    knownIds: sessions.map((session) => session.id),
+  };
+}
+
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
 }

@@ -62,6 +62,8 @@ import {
 import { FilePane } from "../../files/ui/FilePane";
 import { MediaVisibilityContext } from "../../files/model/mediaVisibility";
 import { SessionPane, type SessionPaneProps } from "../../sessions/ui/SessionPane";
+import { useShellSessionsSelector } from "../../sessions/model/sessionsStore";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { TranscriptPool } from "../../sessions/ui/TranscriptPool";
 import type { SessionFolderTarget } from "../../sessions/model/sessionFolders";
 import type { Worktree } from "../../source-control/model/worktrees";
@@ -69,7 +71,9 @@ import type { Worktree } from "../../source-control/model/worktrees";
 type Shared = {
   workspaceSwitchingSessionId?: string;
   visible: boolean;
-  sessions: Session[];
+  /** Sessions to show. Omitted in the workspace: each pane then follows its own
+   * session in the shell store, so a change elsewhere does not re-render the tree. */
+  sessions?: Session[];
   editorPanes: EditorPane[];
   dirtyFileIds: Set<string>;
   fileErrorCounts: Map<string, number>;
@@ -309,8 +313,10 @@ function PaneTreeComponent({
   onDetachPaneRef.current = onDetachPane;
   const onPopOutPaneRef = useRef(onPopOutPane);
   onPopOutPaneRef.current = onPopOutPane;
-  const dragContents = useRef({ editorPanes, sessions });
-  dragContents.current = { editorPanes, sessions };
+  const dragContents = useRef({
+    editorPanes,
+    sessionById: new Map<string, Session>() as ReadonlyMap<string, Session>,
+  });
   const onFocusRef = useRef(onFocus);
   onFocusRef.current = onFocus;
   const cancelPaneDrag = useRef<(() => void) | null>(null);
@@ -361,6 +367,21 @@ function PaneTreeComponent({
   );
   const sashes = maximum ? [] : layoutSashes(tree);
   const inSplit = leaves.length > 1;
+  // Only this tree's sessions (its panes, tab groups and agent file tabs), so a
+  // status change in an unrelated session leaves the tree alone.
+  // A hidden tree keeps what it last showed, as the memo below keeps its props.
+  const shownIds = paneSessionIds(renderLeaves, editorPanes);
+  const heldSessions = useRef<PaneSessions | null>(null);
+  const paneSessions = useShellSessionsSelector(
+    (shell) =>
+      !visible && heldSessions.current
+        ? heldSessions.current
+        : selectPaneSessions(sessions ?? shell, shownIds),
+    samePaneSessions,
+  );
+  heldSessions.current = paneSessions;
+  const sessionById = paneSessions.byId;
+  dragContents.current = { editorPanes, sessionById };
 
   // A pane split into an existing layout slides in from the edge it was added
   // on, like the linked work item panel. The neighbours reflow once up front;
@@ -465,7 +486,7 @@ function PaneTreeComponent({
         setDropFeedback(
           "window",
           ev,
-          dragContents.current.sessions.find((session) => session.id === fromId)?.busy
+          dragContents.current.sessionById.get(fromId)?.busy
             ? "Move after response finishes"
             : undefined,
         );
@@ -575,7 +596,7 @@ function PaneTreeComponent({
     >
       {renderLeaves.map((leaf) => {
         const editorPane = editorPanes.find((pane) => pane.id === leaf.id);
-        const session = sessions.find((entry) => entry.id === leaf.id);
+        const session = sessionById.get(leaf.id);
         const dragging = drop?.fromId === leaf.id;
         const groupSelected = leaves.find(
           (pane) => pane.id === leaf.id || pane.tabIds?.includes(leaf.id),
@@ -673,9 +694,9 @@ function PaneTreeComponent({
                       buttons?.[nextIndex]?.focus();
                     }}
                     onPointerDown={paneDragStartFor(id)}
-                    title={sessions.find((entry) => entry.id === id)?.title || t("Session")}
+                    title={sessionById.get(id)?.title || t("Session")}
                   >
-                    {sessions.find((entry) => entry.id === id)?.title ||
+                    {sessionById.get(id)?.title ||
                       editorPanes
                         .find((pane) => pane.id === id)
                         ?.files[0]?.path.split(/[\\/]/)
@@ -734,7 +755,7 @@ function PaneTreeComponent({
                     showTabs={inSplit || editorPane.files.length > 1 || Boolean(onPaneDragStart)}
                     dirtyFileIds={dirtyFileIds}
                     fileErrorCounts={fileErrorCounts}
-                    sessions={sessions}
+                    sessions={paneSessions.list}
                     onFocus={onFocus}
                     onSelectFile={onSelectFile}
                     onCloseFile={onCloseFile}
@@ -756,12 +777,7 @@ function PaneTreeComponent({
                   <SessionPane
                     session={session}
                     workspaceSwitchingSessionId={workspaceSwitchingSessionId}
-                    reviewUndoLocked={sessions.some(
-                      (other) =>
-                        other.id !== session.id &&
-                        other.busy &&
-                        sameProjectPath(sessionWorkCwd(other), sessionWorkCwd(session)),
-                    )}
+                    reviewUndoLocked={paneSessions.undoLocked.has(session.id)}
                     visible={visible && !hidden}
                     focused={focusedId === session.id}
                     addToChatTarget={addToChatSessionId === session.id}
@@ -863,10 +879,62 @@ function PaneTreeComponent({
   );
 }
 
-export const PaneTree = memo(
+const MemoPaneTree = memo(
   PaneTreeComponent,
-  (previous, next) => !previous.visible && !next.visible,
+  (previous, next) => (!previous.visible && !next.visible) || sameProps(previous, next),
 );
+
+/** Hidden trees never re-render; a visible one only when a value it shows
+ * changed. Handlers are stable proxies, so recreated callbacks do not count. */
+export function PaneTree(props: Props) {
+  return <MemoPaneTree {...useStableHandlers(props)} />;
+}
+
+function sameProps(a: Props, b: Props): boolean {
+  const keys = Object.keys(a) as (keyof Props)[];
+  return keys.length === Object.keys(b).length && keys.every((key) => Object.is(a[key], b[key]));
+}
+
+type PaneSessions = {
+  byId: ReadonlyMap<string, Session>;
+  list: Session[];
+  /** Sessions whose review undo waits for another busy session in the same checkout. */
+  undoLocked: ReadonlySet<string>;
+};
+
+function paneSessionIds(
+  leaves: readonly { id: string }[],
+  editorPanes: readonly EditorPane[],
+): string[] {
+  const ids = new Set(leaves.map((leaf) => leaf.id));
+  for (const pane of editorPanes)
+    for (const file of pane.files) if (file.agent?.sessionId) ids.add(file.agent.sessionId);
+  return [...ids];
+}
+
+function selectPaneSessions(sessions: readonly Session[], ids: readonly string[]): PaneSessions {
+  const wanted = new Set(ids);
+  const byId = new Map<string, Session>();
+  for (const session of sessions) if (wanted.has(session.id)) byId.set(session.id, session);
+  const busy = sessions.filter((session) => session.busy);
+  const undoLocked = new Set<string>();
+  if (busy.length > 0)
+    for (const session of byId.values()) {
+      const cwd = sessionWorkCwd(session);
+      if (
+        busy.some((other) => other.id !== session.id && sameProjectPath(sessionWorkCwd(other), cwd))
+      )
+        undoLocked.add(session.id);
+    }
+  return { byId, list: [...byId.values()], undoLocked };
+}
+
+function samePaneSessions(a: PaneSessions, b: PaneSessions): boolean {
+  if (a.byId.size !== b.byId.size || a.undoLocked.size !== b.undoLocked.size) return false;
+  for (const [id, session] of a.byId) if (b.byId.get(id) !== session) return false;
+  for (const id of a.undoLocked) if (!b.undoLocked.has(id)) return false;
+  return true;
+}
 
 type PaneEnterFrom = "left" | "right" | "top" | "bottom" | "fade";
 

@@ -45,7 +45,9 @@ export class ProviderInboxBridge {
       state TEXT NOT NULL, client_key TEXT, result_json TEXT, error TEXT,
       deadline INTEGER NOT NULL, expires INTEGER NOT NULL,
       UNIQUE(owner_hash, request_id)
-    );`);
+    );
+    CREATE INDEX IF NOT EXISTS remote_inbox_jobs_state_deadline ON remote_inbox_jobs(state, deadline);
+    CREATE INDEX IF NOT EXISTS remote_inbox_jobs_expires ON remote_inbox_jobs(expires);`);
     db.prepare(
       "UPDATE remote_inbox_jobs SET state=CASE WHEN writes=1 THEN 'uncertain' ELSE 'failed' END, error=? WHERE state='running'",
     ).run(
@@ -268,6 +270,13 @@ export class ProviderInboxBridge {
   }
   private prune(): void {
     const now = this.now();
+    // Every desktop heartbeat prunes; with no jobs (the usual idle case) only the
+    // client clock needs it, not four table scans.
+    if (!this.db.prepare("SELECT 1 FROM remote_inbox_jobs LIMIT 1").get()) {
+      for (const [key, time] of this.clients)
+        if (now - time > CLIENT_STALE_MS) this.clients.delete(key);
+      return;
+    }
     this.db
       .prepare(
         "UPDATE remote_inbox_jobs SET state='failed',error=? WHERE state='queued' AND deadline<?",

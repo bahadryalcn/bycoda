@@ -1,17 +1,27 @@
 import { themePalette } from "../../../shared/theme/palette";
+import type { CrewTheme } from "../../settings/model/settings";
+import { drawPacingDroid } from "./pacingDroidArt";
+import { drawPacingEnt } from "./pacingEntArt";
+import {
+  blinking,
+  facing,
+  fillRects,
+  placeSprite,
+  rimRects,
+  type PacingPose,
+  type Rect,
+} from "./pacingSprite";
 /** Code-art pacing uncle. A pixel silhouette with a dark rim stays legible at 32 px on both themes. */
-export type PacingPose = {
-  x: number;
-  dir: number;
-  walk: boolean;
-  phase: number;
-};
+export type { PacingPose } from "./pacingSprite";
 export const PACING_STEPS = [
   20, -10, 5, -20, 40, -15, 30, -10, 50, -20, 15, -35, 60, -10, 25, -80,
 ] as const;
 export const PACING_STEP_SECONDS = 0.34;
 const PAUSE_SECONDS = 0.28;
 const TURN_SECONDS = 0.3;
+/** Every fourth leg ends with the walker facing the reader for a short gesture. */
+export const GESTURE_SECONDS = 3.2;
+const gestures = (leg: number) => leg % 4 === 3;
 type PacingLeg = {
   from: number;
   to: number;
@@ -52,6 +62,7 @@ export function pacingPose(t: number, span = 844): PacingPose {
     (sum, leg, i) =>
       sum +
       leg.duration +
+      (gestures(i) ? GESTURE_SECONDS : 0) +
       PAUSE_SECONDS +
       (leg.dir !== legs[(i + 1) % legs.length].dir ? TURN_SECONDS : 0),
     0,
@@ -68,6 +79,17 @@ export function pacingPose(t: number, span = 844): PacingPose {
         phase: (moment / PACING_STEP_SECONDS) * Math.PI,
       };
     moment -= leg.duration;
+    if (gestures(i)) {
+      if (moment < GESTURE_SECONDS)
+        return {
+          x: leg.to / span,
+          dir: leg.dir,
+          walk: false,
+          phase: 0,
+          act: moment / GESTURE_SECONDS,
+        };
+      moment -= GESTURE_SECONDS;
+    }
     if (moment < PAUSE_SECONDS) return { x: leg.to / span, dir: leg.dir, walk: false, phase: 0 };
     moment -= PAUSE_SECONDS;
     if (next.dir !== leg.dir) {
@@ -83,7 +105,6 @@ export function pacingPose(t: number, span = 844): PacingPose {
   }
   return { x: 0, dir: 1, walk: false, phase: 0 };
 }
-type Rect = [x: number, y: number, w: number, h: number, color: string];
 const C = {
   rim: themePalette.rgba_18_14_10_0_88,
   cap: themePalette.hex6b5744,
@@ -162,44 +183,91 @@ function sprite(step: number, walk: boolean) {
   ]);
   return { legs, body, arm, bob };
 }
-const textured = new Set<string>([C.cardigan, C.cardiganShade, C.sleeve, C.trousers, C.trousersFar]);
-function character(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  baseline: number,
-  scale: number,
-  p: PacingPose,
-  elapsed: number,
-) {
-  const step = p.walk ? Math.sin(p.phase) : 0;
-  const { legs, body, arm, bob } = sprite(step, p.walk);
-  const all = [...legs, ...body, ...arm];
-  ctx.save();
-  ctx.translate(x, baseline);
-  // Soft ground shadow keeps him anchored to the bar.
-  ctx.fillStyle = themePalette.rgba_0_0_0_0_22;
-  ctx.beginPath();
-  ctx.ellipse(0, -1.2, 7 * scale, 1.2 * scale, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.scale(scale * p.dir, scale);
-  ctx.translate(-12, -33);
-  // A one-unit dark rim around the whole silhouette, then the arm gets its own inner rim.
-  ctx.fillStyle = C.rim;
-  for (const [rx, ry, w, h] of all) ctx.fillRect(rx - 1, ry - 1, w + 2, h + 2);
-  const fill = (rects: Rect[]) => {
-    for (const [rx, ry, w, h, c] of rects) {
-      ctx.fillStyle = c;
-      ctx.fillRect(rx, ry, w, h);
+/** Facing the reader: arms apart, the right hand raised to flip the tespih. */
+function front(elapsed: number) {
+  const eyes = blinking(elapsed) ? C.skinShade : C.eye;
+  const body: Rect[] = [
+    [9, 24, 2.5, 6, C.trousersFar],
+    [12.5, 24, 2.5, 6, C.trousers],
+    [8.5, 30, 3.5, 2, C.shoe],
+    [12, 30, 3.5, 2, C.shoe],
+    [7, 16, 10, 9, C.cardigan],
+    [6.5, 18, 11, 6, C.cardigan],
+    [6.5, 18, 1, 6, C.cardiganShade],
+    [16.5, 18, 1, 6, C.cardiganShade],
+    [11, 16, 2, 3, C.shirt],
+    [11.5, 20, 1, 1, C.button],
+    [11.5, 22.5, 1, 1, C.button],
+    [10, 15, 4, 1.5, C.skinShade],
+    [8, 8, 8, 7.5, C.skin],
+    [7, 10, 1, 2.5, C.skinShade],
+    [16, 10, 1, 2.5, C.skinShade],
+    [8, 8.5, 1, 4, C.hair],
+    [15, 8.5, 1, 4, C.hair],
+    [9.8, 10, 1, 1, eyes],
+    [13.2, 10, 1, 1, eyes],
+    [11.3, 10.5, 1.4, 2.2, C.skinShade],
+    [9.3, 12.8, 5.4, 1.6, C.moustache],
+    [9, 14, 1, 1, C.moustacheTip],
+    [14, 14, 1, 1, C.moustacheTip],
+    [8, 4.5, 8, 1.5, C.capTop],
+    [7, 6, 10, 2, C.cap],
+    [7.5, 8, 9, 1, C.brim],
+  ];
+  const arms: Rect[] = [
+    [5, 17, 2, 6, C.sleeve],
+    [5, 23, 2, 2, C.skin],
+    [16.5, 17, 2.5, 3.5, C.sleeve],
+    [18, 19.5, 3, 2, C.sleeve],
+    [20.5, 19, 2.5, 2.5, C.skin],
+  ];
+  return { body, arms, hand: [21.7, 21.3] as const };
+}
+/** Three brisk flips around the fingers that start and settle with the beads hanging down. */
+function flipTespih(ctx: CanvasRenderingContext2D, hx: number, hy: number, beat: number) {
+  const turns = 3 * (beat - Math.sin(beat * Math.PI * 2) / (Math.PI * 2));
+  const speed = 1 - Math.cos(beat * Math.PI * 2);
+  const loop = (angle: number) => {
+    const ax = Math.cos(angle);
+    const ay = Math.sin(angle);
+    const at = (along: number, across: number) =>
+      [hx + ax * along - ay * across, hy + ay * along + ax * across] as const;
+    const beads: (readonly [number, number])[] = [];
+    for (let i = 0; i < 14; i++) {
+      const u = (i / 14) * Math.PI * 2;
+      beads.push(at(((1 - Math.cos(u)) / 2) * 6.5, Math.sin(u) * 1.4));
     }
+    return { beads, tassel: [at(7.8, 0), at(8.9, 0)] };
   };
-  fill(legs);
-  fill(body);
+  const angle = Math.PI / 2 + turns * Math.PI * 2;
+  // A faint trailing loop makes the fast middle of the flip readable at 32 px.
+  if (speed > 0.4) {
+    ctx.globalAlpha = 0.3 * (speed / 2);
+    ctx.fillStyle = C.bead;
+    for (const [x, y] of loop(angle - 0.55).beads) ctx.fillRect(x - 0.5, y - 0.5, 1, 1);
+    ctx.globalAlpha = 1;
+  }
+  const { beads, tassel } = loop(angle);
   ctx.fillStyle = C.rim;
-  for (const [rx, ry, w, h] of arm) ctx.fillRect(rx - 0.5, ry - 0.5, w + 1, h + 1);
-  fill(arm);
-  // Clothing is woven from real code glyphs; they read as texture small and as code up close.
+  for (const [x, y] of [...beads, ...tassel]) ctx.fillRect(x - 1.1, y - 1.1, 2.2, 2.2);
+  beads.forEach(([x, y], i) => {
+    ctx.fillStyle = i % 5 === 0 ? C.beadLit : C.bead;
+    ctx.fillRect(x - 0.6, y - 0.6, 1.2, 1.2);
+  });
+  ctx.fillStyle = C.bead;
+  for (const [x, y] of tassel) ctx.fillRect(x - 0.5, y - 0.6, 1, 1.4);
+}
+const textured = new Set<string>([
+  C.cardigan,
+  C.cardiganShade,
+  C.sleeve,
+  C.trousers,
+  C.trousersFar,
+]);
+/** Clothing is woven from real code glyphs; they read as texture small and as code up close. */
+function weave(ctx: CanvasRenderingContext2D, rects: Rect[]) {
   const cloth = new Path2D();
-  for (const [rx, ry, w, h, c] of all) if (textured.has(c)) cloth.rect(rx, ry, w, h);
+  for (const [rx, ry, w, h, c] of rects) if (textured.has(c)) cloth.rect(rx, ry, w, h);
   ctx.save();
   ctx.clip(cloth);
   ctx.font = "2.2px monospace";
@@ -215,6 +283,39 @@ function character(
       15 + row * 2.2,
     );
   ctx.restore();
+}
+function character(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  baseline: number,
+  scale: number,
+  p: PacingPose,
+  elapsed: number,
+) {
+  const face = facing(p);
+  ctx.save();
+  placeSprite(ctx, x, baseline, scale, face.sx);
+  if (face.front) {
+    const { body, arms, hand } = front(elapsed);
+    rimRects(ctx, [...body, ...arms]);
+    fillRects(ctx, body);
+    rimRects(ctx, arms, 0.5);
+    fillRects(ctx, arms);
+    weave(ctx, [...body, ...arms]);
+    flipTespih(ctx, hand[0], hand[1], face.beat);
+    ctx.restore();
+    return;
+  }
+  const step = p.walk ? Math.sin(p.phase) : 0;
+  const { legs, body, arm, bob } = sprite(step, p.walk);
+  const all = [...legs, ...body, ...arm];
+  // A one-unit dark rim around the whole silhouette, then the arm gets its own inner rim.
+  rimRects(ctx, all);
+  fillRects(ctx, legs);
+  fillRects(ctx, body);
+  rimRects(ctx, arm, 0.5);
+  fillRects(ctx, arm);
+  weave(ctx, all);
   // Amber tespih hangs from the clasped hands; idle hands keep counting beads.
   ctx.save();
   ctx.translate(6, 25 - bob);
@@ -236,11 +337,25 @@ function character(
   ctx.restore();
 }
 
+const WALKERS: Record<
+  CrewTheme,
+  (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    baseline: number,
+    scale: number,
+    p: PacingPose,
+    elapsed: number,
+  ) => void
+> = { classic: character, lotr: drawPacingEnt, "star-wars": drawPacingDroid };
+
+/** Draws the crew theme's walker: the tespih uncle, an Ent, or a protocol droid. */
 export function drawPacingUncle(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
   elapsed: number,
+  theme: CrewTheme = "classic",
 ): void {
   ctx.clearRect(0, 0, width, height);
   const scale = height / 32;
@@ -248,5 +363,5 @@ export function drawPacingUncle(
   const p = pacingPose(elapsed, span);
   // Snap to half pixels so the sprite stays crisp while it walks.
   const x = Math.round(((width - span) / 2 + p.x * span) * 2) / 2;
-  character(ctx, x, height, scale, p, elapsed);
+  (WALKERS[theme] ?? character)(ctx, x, height, scale, p, elapsed);
 }

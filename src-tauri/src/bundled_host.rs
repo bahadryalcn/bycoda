@@ -8,7 +8,8 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 use crate::remote_ssh::{bootstrap_script, HostPlatform};
@@ -17,6 +18,58 @@ use crate::remote_ssh::{bootstrap_script, HostPlatform};
 const RELEASE_IDENTIFIER: &str = "com.bycoda.desktop";
 /// A deferred upgrade is retried while the app stays open.
 const RETRY_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const MAX_RETRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
+
+#[derive(Default, Deserialize, Serialize)]
+struct RetryState {
+    package: String,
+    failures: u32,
+    next_attempt: u64,
+}
+
+fn retry_delay(failures: u32) -> Duration {
+    RETRY_INTERVAL
+        .saturating_mul(1u32 << failures.saturating_sub(1).min(4))
+        .min(MAX_RETRY_INTERVAL)
+}
+
+fn package_identity(archive: &Path) -> std::io::Result<String> {
+    let mut file = std::fs::File::open(archive)?;
+    let mut digest = Sha256::new();
+    std::io::copy(&mut file, &mut digest)?;
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+impl RetryState {
+    fn load(path: &Path, package: &str) -> Self {
+        std::fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok())
+            .filter(|state| state.package == package)
+            .unwrap_or_else(|| Self {
+                package: package.into(),
+                ..Self::default()
+            })
+    }
+
+    fn failed(&mut self, now: u64) -> Duration {
+        self.failures = self.failures.saturating_add(1);
+        let delay = retry_delay(self.failures);
+        self.next_attempt = now.saturating_add(delay.as_secs());
+        delay
+    }
+
+    fn remaining(&self, now: u64) -> Option<Duration> {
+        (self.next_attempt > now).then(|| Duration::from_secs(self.next_attempt - now))
+    }
+}
 /// Another window's or a crashed run's lock is ignored after this long.
 const STALE_LOCK: Duration = Duration::from_secs(10 * 60);
 /// A coordinator job that has not changed for this long is not running.
@@ -344,6 +397,9 @@ fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool) -> Re
         .env("BYCODA_HOST_ARCHIVE", archive)
         .env("BYCODA_HOST_FORCE_UPGRADE", if upgrade { "1" } else { "0" })
         .env("BYCODA_HOST_REPAIR", if repair { "1" } else { "0" })
+        // Keep verified package bytes across failed retries and app restarts.
+        // Explicit SSH upgrades retain their fresh-extraction semantics.
+        .env("BYCODA_HOST_REUSE_PACKAGE", "1")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped());
@@ -402,15 +458,15 @@ fn record(status: BundledHostStatus) {
     }
 }
 
-/// One attempt; returns true when a later retry could still change the result.
-fn ensure_once(app: &AppHandle) -> bool {
+/// One attempt; returns the delay before another useful probe.
+fn ensure_once(app: &AppHandle) -> Option<Duration> {
     let bundled = app.package_info().version.to_string();
     let Some(name) = archive_name() else {
-        return false;
+        return None;
     };
     let archive = match app.path().resource_dir() {
         Ok(dir) => dir.join("host").join(name),
-        Err(_) => return false,
+        Err(_) => return None,
     };
     let (Some(base), true) = (data_dir(), archive.exists()) else {
         record(BundledHostStatus {
@@ -418,10 +474,10 @@ fn ensure_once(app: &AppHandle) -> bool {
             bundled: Some(bundled),
             ..Default::default()
         });
-        return false;
+        return None;
     };
     let Some(_lock) = InstallLock::acquire(&base) else {
-        return true;
+        return Some(RETRY_INTERVAL);
     };
     let installed = installed_version(&base);
     let decision = plan(
@@ -439,22 +495,47 @@ fn ensure_once(app: &AppHandle) -> bool {
     };
     match decision {
         Plan::Current => {
+            let _ = std::fs::remove_file(base.join("bundled-host-retry.json"));
             record(status("current", None));
-            false
+            None
         }
         Plan::Deferred(reason) => {
             record(status("deferred", Some(reason.into())));
-            true
+            Some(RETRY_INTERVAL)
         }
         Plan::Install | Plan::Upgrade | Plan::Repair => {
+            let retry_path = base.join("bundled-host-retry.json");
+            let package = match package_identity(&archive) {
+                Ok(package) => package,
+                Err(error) => {
+                    record(status(
+                        "failed",
+                        Some(format!("Could not read the bundled host package: {error}")),
+                    ));
+                    return Some(MAX_RETRY_INTERVAL);
+                }
+            };
+            let mut retry = RetryState::load(&retry_path, &package);
+            if let Some(delay) = retry.remaining(unix_now()) {
+                record(status(
+                    "deferred",
+                    Some(format!(
+                        "The failed host installation will retry in {} seconds.",
+                        delay.as_secs()
+                    )),
+                ));
+                return Some(delay);
+            }
             let upgrade = decision == Plan::Upgrade;
             let repair = decision == Plan::Repair;
             // An interrupted same-version install may contain the old CLI.
-            // Re-extract the bundled package for repair, without downgrading a
-            // newer installed release.
+            // Select the verified bundled package for repair, without
+            // downgrading a newer installed release. Bootstrap reuses intact
+            // extracted bytes on later attempts.
             let replace = upgrade || (repair && installed.as_deref() == Some(bundled.as_str()));
             match run_installer(&base, &archive, replace, repair) {
                 Ok(()) => {
+                    let _ = std::fs::remove_file(&retry_path);
                     record(BundledHostStatus {
                         state: if upgrade { "upgraded" } else { "installed" }.into(),
                         message: None,
@@ -462,11 +543,15 @@ fn ensure_once(app: &AppHandle) -> bool {
                         installed: installed_version(&base),
                     });
                     let _ = crate::local_host::local_host_connect(app.clone());
-                    false
+                    None
                 }
                 Err(error) => {
+                    let delay = retry.failed(unix_now());
+                    if let Ok(bytes) = serde_json::to_vec(&retry) {
+                        let _ = std::fs::write(&retry_path, bytes);
+                    }
                     record(status("failed", Some(error)));
-                    true
+                    Some(delay)
                 }
             }
         }
@@ -480,8 +565,8 @@ pub fn start(app: &AppHandle) {
     }
     let app = app.clone();
     std::thread::spawn(move || {
-        while ensure_once(&app) {
-            std::thread::sleep(RETRY_INTERVAL);
+        while let Some(delay) = ensure_once(&app) {
+            std::thread::sleep(delay);
         }
     });
 }
@@ -495,6 +580,46 @@ pub fn local_host_bundle_status() -> Option<BundledHostStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_installs_back_off_and_cap_at_one_hour() {
+        let mut retry = RetryState::default();
+        let delays: Vec<u64> = (0..8).map(|_| retry.failed(1_000).as_secs()).collect();
+        assert_eq!(delays, vec![300, 600, 1200, 2400, 3600, 3600, 3600, 3600]);
+        assert_eq!(retry_delay(u32::MAX), MAX_RETRY_INTERVAL);
+    }
+
+    #[test]
+    fn retry_deadline_survives_restarts_but_a_new_package_resets_it() {
+        let base = scratch("retry-state");
+        let path = base.join("retry.json");
+        let mut retry = RetryState::load(&path, "package-a");
+        retry.failed(1_000);
+        retry.failed(1_300);
+        std::fs::write(&path, serde_json::to_vec(&retry).unwrap()).unwrap();
+        let resumed = RetryState::load(&path, "package-a");
+        assert_eq!(resumed.remaining(1_400), Some(Duration::from_secs(500)));
+        assert_eq!(resumed.remaining(1_900), None);
+        assert_eq!(resumed.failures, 2);
+        let changed = RetryState::load(&path, "package-b");
+        assert_eq!(changed.remaining(1_400), None);
+        assert_eq!(changed.failures, 0);
+        std::fs::write(&path, "interrupted write").unwrap();
+        assert_eq!(RetryState::load(&path, "package-a").failures, 0);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn package_identity_changes_even_for_a_same_version_rebuild() {
+        let base = scratch("retry-package");
+        let archive = base.join("host.zip");
+        std::fs::write(&archive, "first build").unwrap();
+        let first = package_identity(&archive).unwrap();
+        assert_eq!(first, package_identity(&archive).unwrap());
+        std::fs::write(&archive, "second build").unwrap();
+        assert_ne!(first, package_identity(&archive).unwrap());
+        let _ = std::fs::remove_dir_all(base);
+    }
 
     #[test]
     fn lifecycle_probe_distinguishes_missing_and_unreadable_records() {

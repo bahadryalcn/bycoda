@@ -42,12 +42,18 @@ export type RemoteChangesValue = {
   git?: GitRef[];
 };
 
+/** A repeated question about the same missing session waits this long for its answer. */
+const DELETED_REPEAT_MS = 2_000;
+
 /** One bounded metadata poll for a set of session and project cursors. */
 export class RemoteChanges {
   constructor(private readonly signal = new ChangeSignal()) {}
   readonly instanceId = randomUUID();
   private active = 0;
   private sessionCache = new Map<string, { at: number; revision: number | undefined }>();
+  /** When a missing session was last reported deleted at a given cursor. A client
+   * still subscribed to it would otherwise get an instant answer on every poll. */
+  private deletedReported = new Map<string, number>();
   private projectBaselines = new Map<string, Map<string, HostSessionSummary[]>>();
   private projectReads = new Map<
     string,
@@ -119,10 +125,18 @@ export class RemoteChanges {
     const changed = async (): Promise<RemoteChangesValue> => {
       const sessionValues = sessions.flatMap(({ sessionId, revision }) => {
         const current = readCachedSession(sessionId);
-        if (current === undefined)
-          return reset
-            ? [{ sessionId, revision: 0, deleted: true }]
-            : [{ sessionId, revision, deleted: true }];
+        if (current === undefined) {
+          if (reset) return [{ sessionId, revision: 0, deleted: true }];
+          const key = `${sessionId}\0${revision}`;
+          const now = Date.now();
+          const reported = this.deletedReported.get(key);
+          if (reported !== undefined && now - reported < DELETED_REPEAT_MS) return [];
+          this.deletedReported.delete(key);
+          this.deletedReported.set(key, now);
+          while (this.deletedReported.size > 4096)
+            this.deletedReported.delete(this.deletedReported.keys().next().value!);
+          return [{ sessionId, revision, deleted: true }];
+        }
         return reset || current !== revision ? [{ sessionId, revision: current }] : [];
       });
       const projectValues: ProjectRef[] = [];

@@ -13,8 +13,8 @@ import {
   type ProviderAccountProvider,
 } from "./providerAccounts";
 import { identityKey } from "./providerAccountIdentity";
+import { useMinuteNow } from "../../../app/shell/RelativeSessionTime";
 
-const CLOCK_MS = 30_000;
 /** At or below this much headroom an account reads as "Running low". */
 export const LOW_HEADROOM_PERCENT = 20;
 
@@ -161,12 +161,9 @@ export function useProviderAccountUsage(
 ): AccountUsage {
   const usage = useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
   const [inflight, setInflight] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), CLOCK_MS);
-    return () => window.clearInterval(timer);
-  }, []);
+  // Shared minute clock, only subscribed while the usage is being displayed.
+  const tick = useMinuteNow(enabled);
+  const now = tick || Date.now();
 
   const load = useCallback(async (targets: ProviderAccount[], force = false) => {
     if (targets.length === 0) return;
@@ -177,7 +174,6 @@ export function useProviderAccountUsage(
       );
     } finally {
       setInflight((count) => count - 1);
-      setNow(Date.now());
     }
   }, []);
 

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
+import { useStableProps } from "../helpers/stableProps";
 import { leafIds, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ActiveWorkspaceContext } from "../derived/useActiveWorkspaceContext";
 import type { useWorkspaceNavigation } from "../../hooks/useWorkspaceNavigation";
@@ -210,7 +211,8 @@ export function useSessionPaneProps({
     onRunProjectAction: onRunSessionProjectAction,
   };
 
-  return { sessionPaneProps };
+  // One object while its values hold: the main area and inbox-ask panes are memoized on it.
+  return { sessionPaneProps: useStableProps(sessionPaneProps) };
 }
 
 /** Preserve callback identity and optionality while committing intentional session actions. */

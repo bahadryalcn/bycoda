@@ -395,6 +395,8 @@ export function createHostServer(
     ),
   );
   /** Pulls turns the desktop app ran in an adopted session since. */
+  /** Desktop copies that could not be read, by the stamp they had then. */
+  const unreadableDesktopCopies = new Map<string, number>();
   const refresh = (id: string, known?: { updatedAt: number; running: boolean }) => {
     let current;
     try {
@@ -408,8 +410,19 @@ export function createHostServer(
     if (stamp.running)
       throw new Error("This session is running in bycoda on that computer. Wait for it to finish.");
     if (stamp.updatedAt <= current.desktop.updatedAt) return;
+    // Cheap guards first: a session the host is running or rewinding is left
+    // alone anyway, and an unreadable copy stays unreadable until it changes.
+    if (current.status === "running" || engine.desktopRefreshBlocked(id)) return;
+    if (unreadableDesktopCopies.get(id) === stamp.updatedAt) return;
     const snapshot = desktop.snapshot(id, current.projectId);
-    if (snapshot) engine.refreshFromDesktop(snapshot);
+    if (snapshot) {
+      unreadableDesktopCopies.delete(id);
+      engine.refreshFromDesktop(snapshot);
+    } else {
+      unreadableDesktopCopies.set(id, stamp.updatedAt);
+      while (unreadableDesktopCopies.size > 256)
+        unreadableDesktopCopies.delete(unreadableDesktopCopies.keys().next().value!);
+    }
   };
   /** Where watchers of `id` should look: the desktop app's copy for a
    * desktop-only session, or for an adopted one the app is running a turn in. */
@@ -580,12 +593,24 @@ export function createHostServer(
       : 1000;
   };
   const signal = engine.store.changes;
-  desktop.live.onChange = () => signal.notify();
+  // Generations of inputs the project list reads besides the store: the desktop
+  // heartbeat and watched checkouts. They key the cached list below.
+  let liveGeneration = 0;
+  let gitGeneration = 0;
+  desktop.live.onChange = () => {
+    liveGeneration++;
+    signal.notify();
+  };
   tasks.onChange = () => signal.notify();
   const revisionWaits = new RevisionWaits(64, signal);
   const transcriptPages = new TranscriptPages();
   const remoteChanges = new RemoteChanges(signal);
-  const gitWatches = new GitWatches({ onChange: () => signal.notify() });
+  const gitWatches = new GitWatches({
+    onChange: () => {
+      gitGeneration++;
+      signal.notify();
+    },
+  });
   const workspace = new WorkspaceCommands(
     engine.store,
     (projectId, action) => engine.withIdleProject(projectId, action),
@@ -672,28 +697,38 @@ export function createHostServer(
   const projectChangeCache = new Map<
     string,
     {
-      version: number;
+      key: string;
       refreshed: number;
       value: { etag: string; sessions: HostSessionSummary[] };
     }
   >();
+  /** A rebuild is only needed when an input moved; the safety TTL bounds what no
+   * signal reports (an unwatched checkout switching branch). */
+  const PROJECT_LIST_SAFETY_MS = 30_000;
   const taskChangeEtag = async () => tasks.changeEtag();
   const projectChangeSnapshot = async (projectId: string) => {
     const now = Date.now();
     // Per project: another project's streaming must not rebuild this list.
-    // Desktop-side changes bypass the store, so the 1s cap below bounds them.
-    const version = engine.store.projectVersion(projectId);
+    // Desktop-side changes bypass the store; the desktop databases' fingerprint
+    // (two stats each) shows them without re-reading every row.
+    const key = [
+      engine.store.projectVersion(projectId),
+      desktop.fingerprint(),
+      liveGeneration,
+      gitGeneration,
+      branchCache.version,
+    ].join("\0");
     const cached = projectChangeCache.get(projectId);
     if (
       cached &&
-      now - cached.refreshed < 1_000 &&
-      (cached.version === version || now - cached.refreshed < 250)
+      ((cached.key === key && now - cached.refreshed < PROJECT_LIST_SAFETY_MS) ||
+        now - cached.refreshed < 250)
     )
       return cached.value;
     const { list, etag } = await projectSessionList(projectId);
     const value = { etag, sessions: list };
     projectChangeCache.set(projectId, {
-      version,
+      key,
       refreshed: now,
       value,
     });

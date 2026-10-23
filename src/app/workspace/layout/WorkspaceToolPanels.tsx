@@ -1,7 +1,8 @@
 import { OverlayNav } from "../../shell/TitleBar";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { WindowControls } from "../../shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import type { ConversationTools } from "../../../features/host-tools/SessionHostTools";
 import { lazySurface } from "../../../shared/ui/lazySurface";
@@ -96,7 +97,7 @@ export interface WorkspaceToolPanelsProps {
   ) => Promise<void>;
 }
 
-export function WorkspaceToolPanels({
+function WorkspaceToolPanelsComponent({
   auxiliaryTool,
   setAuxiliaryTool,
   conversationTools,
@@ -355,4 +356,11 @@ export function WorkspaceToolPanels({
       </ToolPanel>
     </ToolNavigationContext.Provider>
   );
+}
+
+const MemoWorkspaceToolPanels = memo(WorkspaceToolPanelsComponent);
+
+/** Workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function WorkspaceToolPanels(props: WorkspaceToolPanelsProps) {
+  return <MemoWorkspaceToolPanels {...useStableHandlers(props)} />;
 }

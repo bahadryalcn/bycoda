@@ -572,8 +572,9 @@ pub fn pairing_script(platform: HostPlatform, name: &str) -> String {
 /// Seconds between ssh's keepalive probes on a tunnel; three unanswered probes
 /// end the link, so a silent network is noticed in about 15 seconds.
 const TUNNEL_KEEPALIVE_SECS: u32 = 5;
-/// How often a tunnel's ssh process is checked for having exited.
-const WATCH_INTERVAL: Duration = Duration::from_millis(250);
+/// How often a tunnel's ssh process is checked for having exited. Keepalives
+/// take ~15 s to notice a dead link anyway; 1 s keeps idle tunnels cheap.
+const WATCH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// A tunnel whose ssh process ended without the app closing it.
 #[derive(Clone, Debug, Serialize)]

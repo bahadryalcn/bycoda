@@ -215,6 +215,12 @@ export function resizePty(id: string, cols: number, rows: number): Promise<void>
   return next.running;
 }
 
+/** Whether the terminal is on screen. Hidden output is held natively and
+ * released in order when it is shown, instead of streaming events nobody sees. */
+export async function setPtyVisible(id: string, visible: boolean): Promise<void> {
+  await invoke("pty_set_visible", { id, visible });
+}
+
 export async function getPtyStatus(
   id: string,
 ): Promise<{ foreground: string | null; supported?: boolean }> {

@@ -328,3 +328,23 @@ it("carries inline opt-in and delivers the same delta to independent subscribers
   stopA();
   stopB();
 });
+
+it("backs off while the host keeps answering nothing at once", async () => {
+  vi.useFakeTimers();
+  vi.mocked(remoteRequest).mockReset();
+  vi.mocked(remoteRequest).mockResolvedValue({
+    instanceId: "boot",
+    reset: false,
+    sessions: [],
+    projects: [],
+  });
+  const stop = subscribeRemoteMachineChannel(
+    "spin",
+    { sessions: [{ sessionId: "s", revision: 1 }] },
+    vi.fn(),
+  );
+  await vi.advanceTimersByTimeAsync(3_000);
+  // 100 ms re-arms would poll ~30 times; the back-off caps it near one a second.
+  expect(vi.mocked(remoteRequest).mock.calls.length).toBeLessThan(10);
+  stop();
+});

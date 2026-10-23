@@ -422,8 +422,12 @@ export class BranchCache {
     return entry.promise;
   }
 
+  /** Bumped by `clear()`, so cached lists built from older branches rebuild. */
+  version = 0;
+
   /** A branch change this host just made must show on the next list. */
   clear(): void {
+    this.version++;
     this.entries.clear();
   }
 

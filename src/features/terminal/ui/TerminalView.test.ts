@@ -11,6 +11,7 @@ const pty = vi.hoisted(() => ({
   writePty: vi.fn(async () => {}),
   subscribePty: vi.fn(() => () => {}),
   getPtyStatus: vi.fn(async () => ({ foreground: null })),
+  setPtyVisible: vi.fn(async () => {}),
 }));
 const native = vi.hoisted(() => ({ invoke: vi.fn(async () => {}) }));
 const assistance = vi.hoisted(() => ({
@@ -543,6 +544,8 @@ it("signals startup review only once after the native ready prompt for this inte
 });
 
 it("resolves scoped theme colors for xterm and six-digit OSC replies", async () => {
+  // No visibility signal: the terminal counts as on screen, so theme changes apply.
+  vi.stubGlobal("IntersectionObserver", undefined);
   const { host, root } = setup();
   host.style.setProperty("--terminal-text", "#aabbcc");
   host.style.setProperty("--terminal-canvas", "#112233");
@@ -553,7 +556,7 @@ it("resolves scoped theme colors for xterm and six-digit OSC replies", async () 
         createElement(TerminalView, {
           id: "theme-terminal",
           cwd: "/tmp",
-          active: true,
+          active: false,
         }),
       ),
     );
@@ -567,9 +570,13 @@ it("resolves scoped theme colors for xterm and six-digit OSC replies", async () 
     expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]10;rgb:aaaa/bbbb/cccc\x1b\\");
     expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]11;rgb:1111/2222/3333\x1b\\");
     host.style.setProperty("--terminal-text", "#ddeeff");
-    await act(async () =>
-      document.documentElement.style.setProperty("--terminal-test-theme", "updated"),
-    );
+    await act(async () => {
+      document.documentElement.style.setProperty("--terminal-test-theme", "updated");
+      // Root mutations are coalesced to one palette probe per frame.
+      await Promise.resolve();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
     expect(terminal.options.theme?.foreground).toBe("#ddeeff");
   } finally {
     await act(async () => root.unmount());
@@ -631,8 +638,11 @@ it("fits before replaying hidden output and redraws on return even at the same s
     await act(async () => intersect([{ isIntersecting: true }]));
     expect(xterm.webgl).toHaveLength(1);
     const firstRenderer = xterm.webgl[0];
+    expect(pty.setPtyVisible).toHaveBeenLastCalledWith("visibility-replay", true);
     await act(async () => intersect([{ isIntersecting: false }]));
     expect(firstRenderer.dispose).toHaveBeenCalledOnce();
+    // The native side holds output while the terminal is off screen.
+    expect(pty.setPtyVisible).toHaveBeenLastCalledWith("visibility-replay", false);
     term.write.mockClear();
     receive("background output");
     expect(term.write).not.toHaveBeenCalled();
@@ -641,6 +651,7 @@ it("fits before replaying hidden output and redraws on return even at the same s
     pty.resizePty.mockClear();
     await act(async () => intersect([{ isIntersecting: true }]));
     expect(events.slice(0, 4)).toEqual(["fit", "write:background output", "drain", "fit"]);
+    expect(pty.setPtyVisible).toHaveBeenLastCalledWith("visibility-replay", true);
     expect(term.refresh).toHaveBeenCalledWith(0, 23);
     expect(xterm.webgl).toHaveLength(2);
     expect(pty.resizePty).not.toHaveBeenCalled();

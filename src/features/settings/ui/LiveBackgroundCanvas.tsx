@@ -1,5 +1,9 @@
 import { useEffect, useRef } from "react";
-import { decorativeMotionEnabled, subscribeDecorativeMotion } from "../model/decorativeMotion";
+import {
+  decorativeMotionEnabled,
+  subscribeDecorativeMotion,
+  windowHasFocus,
+} from "../model/decorativeMotion";
 import {
   useLiveBackground,
   useLiveBackgroundIntensity,
@@ -203,6 +207,9 @@ export function LiveBackgroundCanvas({
     const busy = () => demoSpeech || speechRef.current >= 0 || activityRef.current >= 0;
     // Refresh on gate notifications, not every frame (the snapshot reads storage).
     let animate = decorativeMotionEnabled();
+    // Repainting every cell each frame is the largest idle cost of a window behind another
+    // app: keep the last painted frame until the window has focus again.
+    let focused = windowHasFocus();
     const signal = createLiveSignalDriver();
 
     const paint = (delta: number) => {
@@ -236,7 +243,13 @@ export function LiveBackgroundCanvas({
 
     const settled = () => !busy() && idleFor >= SETTLE_SECONDS;
     const running = () =>
-      animate && activeRef.current && intersects && width > 0 && height > 0 && !settled();
+      animate &&
+      focused &&
+      activeRef.current &&
+      intersects &&
+      width > 0 &&
+      height > 0 &&
+      !settled();
 
     const tick = (now: number) => {
       frame = 0;
@@ -274,6 +287,7 @@ export function LiveBackgroundCanvas({
     updateLoopRef.current = updateLoop;
     const syncMotion = () => {
       animate = decorativeMotionEnabled();
+      focused = windowHasFocus();
       updateLoop();
     };
     const unsubscribe = subscribeDecorativeMotion(syncMotion);

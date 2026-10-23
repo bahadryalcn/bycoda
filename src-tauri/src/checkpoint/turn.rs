@@ -65,20 +65,98 @@ fn output(root: &Path, args: &[&str], index: Option<&Path>) -> Result<Vec<u8>, S
     }
     Ok(out.stdout)
 }
-fn tree(root: &Path, dir: &Path, id: &str, phase: &str) -> Result<String, String> {
-    if git_output(root, &["config", "--bool", "core.sparseCheckout"])
-        .is_some_and(|v| v.starts_with(b"true"))
-    {
+/// Starts the private snapshot index from a copy of the real one, so `add -A`
+/// trusts its stat cache and hashes only changed files instead of the whole
+/// worktree. `read-tree -m HEAD` then resets the contents to HEAD exactly as a
+/// fresh `read-tree HEAD` would. Not used when an entry is assume-unchanged or
+/// skip-worktree (`add -A` would trust it blindly), with a split index, or when
+/// the real index cannot be merged (conflicts); the caller starts fresh.
+fn seed_index(root: &Path, index: &Path, real: &Path) -> bool {
+    let Some(listing) = git_output(root, &["ls-files", "-v", "-z"]) else {
+        return false;
+    };
+    // `ls-files -v` tags assume-unchanged entries in lower case, skip-worktree as S.
+    if listing.split(|b| *b == 0).any(|entry| {
+        entry
+            .first()
+            .is_some_and(|tag| tag.is_ascii_lowercase() || *tag == b'S')
+    }) {
+        return false;
+    }
+    std::fs::copy(real, index).is_ok()
+        && output(root, &["read-tree", "-m", "HEAD"], Some(index)).is_ok()
+}
+
+fn checkpoint_ref_prefix(dir: &Path) -> Result<String, String> {
+    let session = dir
+        .file_name()
+        .ok_or("Invalid checkpoint directory")?
+        .to_string_lossy();
+    Ok(format!("refs/bycoda/checkpoints/{session}/"))
+}
+
+/// Deletes this session's checkpoint refs in `root`, except those under `keep`.
+/// A ref only protects a turn's baseline tree from GC until `finish_turn` has
+/// copied what it needs, so the latest turn's is the only one worth keeping.
+fn drop_checkpoint_refs(root: &Path, prefix: &str, keep: Option<&str>) {
+    let Some(listing) = git_output(root, &["for-each-ref", "--format=%(refname)", prefix]) else {
+        return;
+    };
+    for name in String::from_utf8_lossy(&listing).lines() {
+        if name.is_empty() || keep.is_some_and(|keep| name.starts_with(keep)) {
+            continue;
+        }
+        let _ = output(root, &["update-ref", "-d", name], None);
+    }
+}
+
+/// `protect` keeps the tree reachable by a ref: the turn's baseline must survive
+/// GC until `finish_turn` reads it; the finishing tree is only read right away.
+fn tree(root: &Path, dir: &Path, id: &str, phase: &str, protect: bool) -> Result<String, String> {
+    // One read for both settings; `--get-regexp` lower-cases the keys.
+    let config = git_output(
+        root,
+        &[
+            "config",
+            "--bool",
+            "--get-regexp",
+            r"^core\.(sparsecheckout|splitindex)$",
+        ],
+    )
+    .map(|v| String::from_utf8_lossy(&v).into_owned())
+    .unwrap_or_default();
+    let enabled = |key: &str| config.lines().any(|line| line == format!("{key} true"));
+    if enabled("core.sparsecheckout") {
         return Err("Workspace checkpoints are unavailable for sparse checkouts".into());
     }
     let index = dir.join(format!("index-{}", uuid::Uuid::new_v4()));
     let result = (|| {
-        let initial = if head(root).is_some() {
-            "HEAD"
-        } else {
-            "--empty"
-        };
-        output(root, &["read-tree", initial], Some(&index))?;
+        // The real index's path and HEAD in one call; it fails without a commit.
+        let located = git_output(
+            root,
+            &[
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-path",
+                "index",
+                "--verify",
+                "HEAD",
+            ],
+        )
+        .and_then(|v| {
+            let text = String::from_utf8_lossy(&v).into_owned();
+            text.lines().next().map(|line| PathBuf::from(line.trim()))
+        });
+        let has_head = located.is_some() || head(root).is_some();
+        let seeded = !enabled("core.splitindex")
+            && located
+                .as_deref()
+                .is_some_and(|real| seed_index(root, &index, real));
+        if !seeded {
+            let _ = std::fs::remove_file(&index);
+            let initial = if has_head { "HEAD" } else { "--empty" };
+            output(root, &["read-tree", initial], Some(&index))?;
+        }
         output(root, &["add", "-A", "--", "."], Some(&index))?;
         let tree = String::from_utf8(output(root, &["write-tree"], Some(&index))?)
             .map_err(|e| e.to_string())?
@@ -86,12 +164,10 @@ fn tree(root: &Path, dir: &Path, id: &str, phase: &str) -> Result<String, String
             .to_owned();
         // A namespaced tree reference protects snapshot blobs from Git GC. It
         // creates no commit and never touches the real staging index or HEAD.
-        let session = dir
-            .file_name()
-            .ok_or("Invalid checkpoint directory")?
-            .to_string_lossy();
-        let reference = format!("refs/bycoda/checkpoints/{session}/{id}/{phase}");
-        output(root, &["update-ref", &reference, &tree], None)?;
+        if protect {
+            let reference = format!("{}{id}/{phase}", checkpoint_ref_prefix(dir)?);
+            output(root, &["update-ref", &reference, &tree], None)?;
+        }
         Ok(tree)
     })();
     let _ = std::fs::remove_file(&index);
@@ -514,7 +590,7 @@ impl CheckpointStore {
                 other.shared = true;
                 save_turn(&other_dir, &other)?;
             }
-            tree(&root, &dir, id, "before")
+            tree(&root, &dir, id, "before", true)
         })();
         match capture {
             Ok(before) => turn.before = Some(before),
@@ -551,7 +627,7 @@ impl CheckpointStore {
                     .unwrap_or_else(|| "Missing turn baseline".into())
             })?;
             let root = project_root(cwd)?;
-            let after = tree(&root, &dir, id, "after")?;
+            let after = tree(&root, &dir, id, "after", false)?;
             let changed = output(
                 &root,
                 &[
@@ -699,6 +775,12 @@ impl CheckpointStore {
             write_manifest(&dir, &manifest)
         })();
         turn.active = false;
+        if turn.before.is_some() {
+            // Earlier turns' baselines are settled; only this turn's ref stays.
+            if let (Ok(root), Ok(prefix)) = (project_root(cwd), checkpoint_ref_prefix(&dir)) {
+                drop_checkpoint_refs(&root, &prefix, Some(&format!("{prefix}{id}/")));
+            }
+        }
         turn.shared |= leases::shared(&self.leases, session_id, id)?;
         if let Err(error) = &result {
             turn.error = Some(error.clone());
@@ -776,10 +858,17 @@ impl CheckpointStore {
             }
             let result = self.exclusive(&session, &[], |_| {
                 // Re-check under the session gate: a turn may have begun since.
-                if !old_enough(&dir)
-                    || read_turn(&dir).map_or(true, |t| t.is_some_and(|t| t.active))
-                {
-                    return Ok(false);
+                let turn = match read_turn(&dir) {
+                    Ok(turn) if old_enough(&dir) && !turn.as_ref().is_some_and(|t| t.active) => {
+                        turn
+                    }
+                    _ => return Ok(false),
+                };
+                // The snapshots go, so do the refs that kept their trees alive.
+                if let (Some(turn), Ok(prefix)) = (turn, checkpoint_ref_prefix(&dir)) {
+                    if let Ok(root) = project_root(&turn.cwd) {
+                        drop_checkpoint_refs(&root, &prefix, None);
+                    }
                 }
                 std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
                 Ok(true)

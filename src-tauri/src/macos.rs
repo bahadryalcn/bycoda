@@ -124,6 +124,10 @@ fn paint_window_badge(label: &str, count: u32) {
     }
     let total: u32 = map.values().copied().sum();
     drop(map);
+    // Windows report their counts often; repainting an unchanged tile is not free.
+    if total == previous {
+        return;
+    }
 
     let ns_app = NSApplication::sharedApplication(mtm);
     let tile = ns_app.dockTile();
@@ -268,7 +272,9 @@ fn set_glass_backing(window: &NSWindow, enabled: bool) {
     backing.setIdentifier(Some(&identifier));
     backing.setMaterial(NSVisualEffectMaterial::UnderWindowBackground);
     backing.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
-    backing.setState(NSVisualEffectState::Active);
+    // Follow the window: an always-active effect keeps WindowServer sampling the
+    // desktop behind an unfocused window. At 1% alpha the inactive look is identical.
+    backing.setState(NSVisualEffectState::FollowsWindowActiveState);
     backing.setAlphaValue(0.01);
     backing.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,

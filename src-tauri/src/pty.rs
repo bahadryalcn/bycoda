@@ -25,6 +25,8 @@ const PTY_QUEUE_CHUNKS: usize = 64;
 const WRITE_QUEUE_LEN: usize = 256;
 #[cfg(unix)]
 const KILL_ESCALATE: Duration = Duration::from_secs(1);
+/// Output a hidden terminal may hold before it goes out as one batch anyway.
+const HIDDEN_FLUSH_BYTES: usize = 1024 * 1024;
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +40,45 @@ struct PtyData {
 struct PtyExit {
     id: String,
     code: Option<i32>,
+}
+
+/// Output of a terminal no view shows is held here instead of emitted every
+/// coalesce window, so a TUI repainting in a background tab costs one IPC per
+/// `HIDDEN_FLUSH_BYTES` instead of ~125 a second. Nothing is dropped: a full
+/// hold goes out as one batch, and showing the view releases the rest in order.
+#[derive(Default)]
+struct OutputGate {
+    hold: Mutex<OutputHold>,
+}
+
+#[derive(Default)]
+struct OutputHold {
+    hidden: bool,
+    held: Vec<u8>,
+}
+
+impl OutputHold {
+    /// What to emit now for `bytes`; hidden output stays until the hold fills.
+    fn pass(&mut self, bytes: &[u8]) -> Option<Vec<u8>> {
+        if !self.hidden && self.held.is_empty() {
+            return Some(bytes.to_vec());
+        }
+        self.held.extend_from_slice(bytes);
+        (!self.hidden || self.held.len() >= HIDDEN_FLUSH_BYTES)
+            .then(|| std::mem::take(&mut self.held))
+    }
+
+    /// Records visibility; showing returns the held output to emit first.
+    fn set_visible(&mut self, visible: bool) -> Option<Vec<u8>> {
+        self.hidden = !visible;
+        (visible && !self.held.is_empty()).then(|| std::mem::take(&mut self.held))
+    }
+}
+
+impl OutputGate {
+    fn lock(&self) -> std::sync::MutexGuard<'_, OutputHold> {
+        self.hold.lock().unwrap_or_else(|e| e.into_inner())
+    }
 }
 
 struct LivePty {
@@ -57,6 +98,7 @@ struct LivePty {
     /// Label of the window showing this terminal. A reload keeps the window,
     /// so the PTY outlives the page; destroying the window reaps it.
     owner: Arc<Mutex<String>>,
+    output: Arc<OutputGate>,
 }
 
 pub struct PtyHost {
@@ -236,6 +278,21 @@ impl PtyHost {
 }
 
 impl LivePty {
+    /// Holds output while no view shows the terminal; showing it releases what
+    /// was held before any newer output.
+    fn set_output_visible(&self, app: &AppHandle, id: &str, visible: bool) {
+        let mut hold = self.output.lock();
+        if let Some(batch) = hold.set_visible(visible) {
+            send_pty_data(
+                app,
+                id,
+                self.owner_label(),
+                &batch,
+                self.ssh_identity.is_some(),
+            );
+        }
+    }
+
     fn owned_by(&self, label: &str) -> bool {
         *self.owner.lock().unwrap_or_else(|e| e.into_inner()) == label
     }
@@ -784,6 +841,28 @@ pub fn pty_status(
     }
 }
 
+/// A hidden terminal that exits still delivers what it held before the exit notice.
+fn release_held_output(host: &PtyHost, app: &AppHandle, id: &str, pid: u32) {
+    if let Some(live) = host.get(id).filter(|live| live.pid == pid) {
+        live.set_output_visible(app, id, true);
+    }
+}
+
+/// The view reports whether the terminal is on screen. Hidden output is held
+/// (see `OutputGate`) and released in order once it is shown again.
+#[tauri::command]
+pub fn pty_set_visible(
+    app: AppHandle,
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    visible: bool,
+) -> Result<(), String> {
+    let live = host.get_for_window(&id, window.label())?;
+    live.set_output_visible(&app, &id, visible);
+    Ok(())
+}
+
 /// The terminal leaves the map on the calling thread, so a respawn of the same
 /// id right after cannot see it. Only the Windows `taskkill` wait moves to the
 /// blocking pool; the signals on Unix return at once.
@@ -914,8 +993,10 @@ fn spawn_unix(
         master_fd: master,
         pid,
         owner: Arc::new(Mutex::new(owner.to_string())),
+        output: Arc::default(),
     });
     let data_owner = live.owner.clone();
+    let data_output = live.output.clone();
     host.insert(id.clone(), live);
 
     let terminal_logs = ssh_identity
@@ -949,6 +1030,7 @@ fn spawn_unix(
                     &data_app,
                     &data_id,
                     &data_owner,
+                    &data_output,
                     &acc,
                     private,
                     &integration,
@@ -970,6 +1052,7 @@ fn spawn_unix(
             &data_app,
             &data_id,
             &data_owner,
+            &data_output,
             &acc,
             private,
             &integration,
@@ -987,6 +1070,7 @@ fn spawn_unix(
         // previous wait thread must not paint "[process exited]" on the new PTY
         // or yank the replacement out of the host map.
         let owner = if let Some(host) = wait_app.try_state::<PtyHost>() {
+            release_held_output(&host, &wait_app, &wait_id, pid);
             host.remove_if_pid(&wait_id, pid).map(|live| {
                 close_fd(live.master_fd);
                 live.owner_label()
@@ -1089,8 +1173,10 @@ fn spawn_windows(
         master: Mutex::new(pair.master),
         pid,
         owner: Arc::new(Mutex::new(owner.to_string())),
+        output: Arc::default(),
     });
     let data_owner = live.owner.clone();
+    let data_output = live.output.clone();
     host.insert(id.clone(), live);
 
     let terminal_logs = ssh_identity
@@ -1125,6 +1211,7 @@ fn spawn_windows(
                 &data_app,
                 &data_id,
                 &data_owner,
+                &data_output,
                 bytes,
                 private,
                 &integration,
@@ -1140,6 +1227,7 @@ fn spawn_windows(
     thread::spawn(move || {
         let code = child.wait().ok().map(|status| status.exit_code() as i32);
         let owner = if let Some(host) = wait_app.try_state::<PtyHost>() {
+            release_held_output(&host, &wait_app, &wait_id, pid);
             host.remove_if_pid(&wait_id, pid)
                 .map(|live| live.owner_label())
         } else {
@@ -1393,6 +1481,7 @@ fn emit_pty_data(
     app: &AppHandle,
     id: &str,
     source: &Arc<Mutex<String>>,
+    output: &OutputGate,
     bytes: &[u8],
     private: bool,
     integration: &Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>,
@@ -1425,10 +1514,18 @@ fn emit_pty_data(
     if bytes.is_empty() {
         return;
     }
-    let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
     if !private {
         crate::mobile_pty::output(app, id, &owner, bytes);
     }
+    // Emitting under the gate keeps a release on show ahead of newer output.
+    let mut hold = output.lock();
+    if let Some(batch) = hold.pass(bytes) {
+        send_pty_data(app, id, owner, &batch, private);
+    }
+}
+
+fn send_pty_data(app: &AppHandle, id: &str, owner: String, bytes: &[u8], private: bool) {
+    let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
     emit_to_owner(
         app,
         Some(owner),
@@ -1745,7 +1842,72 @@ fn process_label(pid: i32) -> Option<String> {
     if let Some(label) = proc_cmdline_label(pid) {
         return Some(label);
     }
+    #[cfg(target_os = "macos")]
+    if let Some(label) = sysctl_args_label(pid) {
+        return Some(label);
+    }
     ps_label(pid)
+}
+
+/// macOS argv without forking `ps` for every visible terminal's status poll.
+/// Read fresh on every lookup, like `/proc` on Linux.
+#[cfg(target_os = "macos")]
+fn sysctl_args_label(pid: i32) -> Option<String> {
+    let mut argmax: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    let mut mib = [libc::CTL_KERN, libc::KERN_ARGMAX];
+    let sized = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as libc::c_uint,
+            (&mut argmax as *mut libc::c_int).cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if sized != 0 || argmax <= 0 {
+        return None;
+    }
+    let mut buffer = vec![0_u8; argmax as usize];
+    let mut size = buffer.len();
+    let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+    let read = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as libc::c_uint,
+            buffer.as_mut_ptr().cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if read != 0 {
+        return None;
+    }
+    buffer.truncate(size);
+    let args = procargs2_argv(&buffer)?;
+    command_label(args.join(" ").trim())
+}
+
+/// `KERN_PROCARGS2` layout: argc, the executable path, NUL padding, then argv.
+#[cfg(any(target_os = "macos", test))]
+fn procargs2_argv(buffer: &[u8]) -> Option<Vec<String>> {
+    let argc = i32::from_ne_bytes(buffer.get(..4)?.try_into().ok()?);
+    if argc <= 0 {
+        return None;
+    }
+    let rest = &buffer[4..];
+    let mut cursor = &rest[rest.iter().position(|byte| *byte == 0)?..];
+    while let [0, tail @ ..] = cursor {
+        cursor = tail;
+    }
+    let args: Vec<String> = cursor
+        .split(|byte| *byte == 0)
+        .take(argc as usize)
+        .map(|arg| String::from_utf8_lossy(arg).into_owned())
+        .collect();
+    (!args.is_empty()).then_some(args)
 }
 
 /// Read fresh argv on every lookup: exec can change it without changing the PID,
@@ -1868,6 +2030,7 @@ mod tests {
             master_fd: -1,
             pid,
             owner: Arc::new(Mutex::new(owner.to_string())),
+            output: Arc::default(),
         })
     }
 
@@ -1948,6 +2111,42 @@ mod coalesce_tests {
         let mut emits = Vec::new();
         coalesce_chunks(&rx, PTY_COALESCE, cap, |bytes| emits.push(bytes.to_vec()));
         emits
+    }
+
+    #[test]
+    fn procargs2_reads_argv_after_the_exec_path() {
+        let mut buffer = 2_i32.to_ne_bytes().to_vec();
+        buffer.extend_from_slice(b"/usr/local/bin/node    node /opt/cli.js PATH=/bin ");
+        assert_eq!(
+            procargs2_argv(&buffer),
+            Some(vec!["node".to_string(), "/opt/cli.js".to_string()])
+        );
+        assert_eq!(procargs2_argv(&[0, 0, 0, 0]), None);
+        assert_eq!(procargs2_argv(&[1]), None);
+    }
+
+    #[test]
+    fn hidden_output_is_held_then_released_in_order() {
+        let mut hold = OutputHold::default();
+        assert_eq!(hold.pass(b"a"), Some(b"a".to_vec()));
+        assert_eq!(hold.set_visible(false), None);
+        assert_eq!(hold.pass(b"b"), None);
+        assert_eq!(hold.pass(b"c"), None);
+        assert_eq!(hold.set_visible(true), Some(b"bc".to_vec()));
+        assert_eq!(hold.pass(b"d"), Some(b"d".to_vec()));
+        assert_eq!(hold.set_visible(true), None);
+    }
+
+    #[test]
+    fn a_full_hold_goes_out_as_one_batch_while_hidden() {
+        let mut hold = OutputHold::default();
+        hold.set_visible(false);
+        let chunk = vec![b'x'; HIDDEN_FLUSH_BYTES / 2];
+        assert_eq!(hold.pass(&chunk), None);
+        let batch = hold.pass(&chunk).expect("a full hold is emitted");
+        assert_eq!(batch.len(), HIDDEN_FLUSH_BYTES);
+        assert_eq!(hold.pass(b"y"), None);
+        assert_eq!(hold.set_visible(true), Some(b"y".to_vec()));
     }
 
     #[test]
@@ -2091,6 +2290,7 @@ mod queued_writer_tests {
             master: Mutex::new(pair.master),
             pid: 0,
             owner: Arc::new(Mutex::new("main".into())),
+            output: Arc::default(),
         });
         assert!(ensure_identity(Some(&live), None).is_err());
         assert!(ensure_identity(Some(&live), Some("another-server:user:endpoint")).is_err());
@@ -2168,6 +2368,7 @@ mod queued_writer_tests {
             master: Mutex::new(pair.master),
             pid: 0,
             owner: Arc::new(Mutex::new("main".into())),
+            output: Arc::default(),
         });
         let input = live.clone();
         let writing = thread::spawn(move || write_shell_input(&input, "fixture", "x", |_| {}));
@@ -2237,6 +2438,7 @@ mod queued_writer_tests {
                 master: Mutex::new(pair.master),
                 pid: 0,
                 owner: Arc::new(Mutex::new("main".into())),
+                output: Arc::default(),
             }),
         );
         assert_eq!(

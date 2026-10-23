@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
-import { t, useLocale, useT } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openWorkspaceUrl } from "../../connections/model/workspaceUrls";
@@ -50,12 +50,8 @@ import { FileActionError } from "../../files/ui/FileActionError";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { useCodeHighlightPlugin } from "../../files/editor/useCodeHighlightPlugin";
 import { createLazyMermaidPlugin } from "../../files/editor/mermaidPlugin";
-import {
-  displayPath,
-  isEmailAddress,
-  isExtensionlessFileName,
-  resolveWorkspaceFileReference,
-} from "../../../shared/lib/paths";
+import { displayPath, isEmailAddress, isExtensionlessFileName } from "../../../shared/lib/paths";
+import { useWorkspaceFileResolver } from "../model/reactiveReads";
 import type { EditorNavigation, OpenFileFn } from "../../search/model/search";
 import { remarkWorkspaceFileLinks } from "../../files/model/markdownFileLinks";
 import { isAtxHeadingLine } from "../../files/model/markdownSource";
@@ -188,7 +184,9 @@ const REVEAL_LABEL = IS_MAC
     ? "Reveal in File Explorer"
     : "Open Containing Folder";
 
+/** `t` from `useT()`, so the menu follows a language switch. */
 function fileLinkMenuItems(
+  t: (message: string, values?: Record<string, unknown>) => string,
   canOpenInBycoda: boolean,
   canCopyRelativePath: boolean,
   remote = false,
@@ -197,17 +195,13 @@ function fileLinkMenuItems(
     {
       kind: "item",
       id: "open-bycoda",
-      get label() {
-        return t("Open in {p0}", { p0: PRODUCT_IDENTITY.displayName });
-      },
+      label: t("Open in {p0}", { p0: PRODUCT_IDENTITY.displayName }),
       disabled: !canOpenInBycoda,
     },
     {
       kind: "item",
       id: "open-default",
-      get label() {
-        return t("Open in Default App");
-      },
+      label: t("Open in Default App"),
       disabled: remote,
     },
     {
@@ -220,18 +214,14 @@ function fileLinkMenuItems(
     {
       kind: "item",
       id: "copy-path",
-      get label() {
-        return t("Copy Path");
-      },
+      label: t("Copy Path"),
     },
     ...(canCopyRelativePath
       ? [
           {
             kind: "item" as const,
             id: "copy-relative-path",
-            get label() {
-              return t("Copy Relative Path");
-            },
+            label: t("Copy Relative Path"),
           },
         ]
       : []),
@@ -322,8 +312,9 @@ function MarkdownLink({
   const allowRemoteMedia = useContext(RemoteMediaContext);
   const localMedia = useContext(LocalMediaContext);
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const resolveFile = useWorkspaceFileResolver();
   const [linkError, setLinkError] = useState<string>();
-  const file = href ? resolveWorkspaceFileReference(href, cwd) : undefined;
+  const file = href ? resolveFile(href, cwd) : undefined;
   const label = textContent(children);
   if (allowRemoteMedia && href && isInboxMediaUrl(href)) {
     return <InboxMedia src={href} alt={label} />;
@@ -470,6 +461,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const incomplete = useIsCodeFenceIncomplete();
   const block = Object.prototype.hasOwnProperty.call(props, "data-block");
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const resolveFile = useWorkspaceFileResolver();
   const text = block ? "" : textContent(children);
   const slashCommand = /^\/[\p{L}\p{N}_-]+$/u.test(text.trim());
   const fileName = inlineFileName(text);
@@ -480,7 +472,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
     text.length <= 4096 &&
     /[\\/]/.test(reference) &&
     !/[\r\n]/.test(text)
-      ? resolveWorkspaceFileReference(reference, cwd)
+      ? resolveFile(reference, cwd)
       : undefined;
   const [verifiedPath, setVerifiedPath] = useState<string>();
   const ambiguousPath = candidate?.path;
@@ -497,7 +489,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   if (!block) {
     const file =
       fileName && !text.trim().startsWith("/")
-        ? resolveWorkspaceFileReference(text, cwd)
+        ? resolveFile(text, cwd)
         : candidate?.path === verifiedPath
           ? candidate
           : undefined;
@@ -681,8 +673,8 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
 function CodeCopyButton({
   code,
   getText,
-  label = t("Copy code"),
-  copiedMessage = t("Code copied."),
+  label: labelProp,
+  copiedMessage: copiedMessageProp,
   className = "",
 }: {
   code: string;
@@ -693,6 +685,8 @@ function CodeCopyButton({
   className?: string;
 }) {
   const t = useT();
+  const label = labelProp ?? t("Copy code");
+  const copiedMessage = copiedMessageProp ?? t("Code copied.");
   const [copied, setCopied] = useTransientFlag(1500);
   const [failed, setFailed] = useState(false);
 
@@ -789,6 +783,7 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
   const allowRemoteMedia = useContext(RemoteMediaContext);
   const localMedia = useContext(LocalMediaContext);
   const { cwd, documentPath, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const resolveFile = useWorkspaceFileResolver();
   const url = typeof src === "string" ? src.trim() : "";
   if (documentPath) {
     const image = cwd ? resolveDocumentImage(url, documentPath, cwd) : undefined;
@@ -814,7 +809,7 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
   if (isNoteImagePath(url)) {
     return <NoteAssetImage {...props} asset={url} alt={alt} />;
   }
-  const file = localMedia && url ? resolveWorkspaceFileReference(url, cwd) : undefined;
+  const file = localMedia && url ? resolveFile(url, cwd) : undefined;
   if (file && isLocalMediaPath(file.path)) {
     return (
       <LocalMedia
@@ -972,7 +967,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   /** Show a newline inside a block as a line break, as a document does. */
   hardBreaks?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const codePlugin = useCodeHighlightPlugin();
   const markdownPlugins = useMemo(() => ({ code: codePlugin, mermaid }), [codePlugin]);
   const [fileMenu, setFileMenu] = useState<FileLinkMenu | null>(null);
@@ -1141,12 +1136,14 @@ export const AgentMarkdown = memo(function AgentMarkdown({
       : MARKDOWN_REHYPE_PLUGINS;
   // Publish the tail index with the context value. A mutable ref would let a
   // memoized former tail retain its fading plugin after a new block arrives.
+  // Each message keeps its own parse, so a growing reply only lexes its open tail.
+  const markdownStream = useId();
   const markdownBlocks = useMemo(() => {
     const end = startPerformanceSpan("markdown-render", { items: paced.text.length });
-    const blocks = parseStreamingMarkdown(paced.text);
+    const blocks = parseStreamingMarkdown(paced.text, markdownStream);
     end({ blocks: blocks.length });
     return blocks;
-  }, [paced.text]);
+  }, [paced.text, markdownStream]);
   const lastBlock = markdownBlocks.length - 1;
   const parseBlocks = useCallback(() => markdownBlocks, [markdownBlocks]);
   const pacedFadeOptions = useWordFadeWindow(paced.text);
@@ -1233,6 +1230,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
                 x={fileMenu.x}
                 y={fileMenu.y}
                 items={fileLinkMenuItems(
+                  t,
                   !!onOpenFile,
                   !!cwd,
                   fileMenu.path.startsWith("remote://"),
@@ -1480,7 +1478,8 @@ function parseCodeFence(
 function MarkdownCodePath({ path, startLine }: { path: string; startLine?: number }) {
   useLocale();
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
-  const file = resolveWorkspaceFileReference(path, cwd);
+  const resolveFile = useWorkspaceFileResolver();
+  const file = resolveFile(path, cwd);
   if (!file || !onOpenFile) {
     return <span className="markdown-code-path">{path}</span>;
   }

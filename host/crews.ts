@@ -141,7 +141,10 @@ export class HostCrews {
     const row = this.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key);
     return row ? (JSON.parse(String(row.value)) as CrewState) : { definitions: [], runs: [] };
   }
+  /** Set when a tick found no active run; any write clears it. */
+  private knownIdle = false;
   private write(state: CrewState) {
+    this.knownIdle = false;
     this.store.db
       .prepare(
         "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -1005,11 +1008,16 @@ export class HostCrews {
   }
   async tick() {
     if (this.busy) return;
+    // Only this class writes the crew state; with no active run since the last
+    // write there is nothing to do, and an idle host skips the read and parse.
+    if (this.knownIdle) return;
     this.busy = true;
     try {
-      for (const run of this.read().runs.filter(
+      const active = this.read().runs.filter(
         (r) => r.status === "active" && r.coordinatorSessionId,
-      )) {
+      );
+      if (active.length === 0) this.knownIdle = true;
+      for (const run of active) {
         let lead;
         try {
           lead = this.store.session(run.coordinatorSessionId!);

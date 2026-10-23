@@ -22,6 +22,8 @@ type Subscriber = {
 };
 type Channel = {
   subscribers: Set<Subscriber>;
+  /** Consecutive polls that answered "nothing changed" at once. */
+  unchangedStreak?: number;
   timer?: ReturnType<typeof setTimeout>;
   stopped: boolean;
   failures: number;
@@ -156,6 +158,9 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
   };
 }
 
+/** Longest back-off between polls that keep answering "nothing changed" at once. */
+const UNCHANGED_REPLY_MAX_MS = 1_000;
+
 function schedule(machineId: string, channel: Channel, delay = 0) {
   if (channel.stopped || channel.polling || channel.timer || !channel.subscribers.size) return;
   channel.timer = setTimeout(() => {
@@ -170,6 +175,7 @@ async function poll(machineId: string, channel: Channel) {
   const epoch = channel.epoch;
   const refreshing = channel.refreshPending;
   const done = startPerformanceSpan("remote-control");
+  const startedAt = Date.now();
   let delay = 0;
   try {
     const changes = await remoteRequest<MachineChanges>(
@@ -191,6 +197,20 @@ async function poll(machineId: string, channel: Channel) {
       (!!channel.instanceId && channel.instanceId !== changes.instanceId);
     channel.instanceId = changes.instanceId;
     channel.failures = 0;
+    // Replies with nothing in them that keep coming back at once mean the host
+    // cannot hold the poll open; re-arming every 100 ms would spin. Back off
+    // across such a streak, up to a second; any change or a held poll resets it.
+    if (
+      !reset &&
+      !changes.sessions.length &&
+      !changes.projects.length &&
+      !changes.tasks &&
+      !changes.git?.length &&
+      Date.now() - startedAt < UNCHANGED_REPLY_MAX_MS
+    ) {
+      channel.unchangedStreak = (channel.unchangedStreak ?? 0) + 1;
+      delay = Math.min(UNCHANGED_REPLY_MAX_MS, 100 * 2 ** (channel.unchangedStreak - 1));
+    } else channel.unchangedStreak = 0;
     channel.refreshPending = false;
     const delivered = reset && !changes.reset ? { ...changes, reset: true } : changes;
     const checkedSessions = changes.checkedSessions && new Set(changes.checkedSessions);

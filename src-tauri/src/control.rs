@@ -582,7 +582,8 @@ pub(crate) fn validate_history_source_owner(
 }
 
 /// Only advertises local open sources for the history-import relay. It grants no agent/operator access.
-#[tauri::command]
+/// Off the main thread: it waits on the connection store lock every heartbeat.
+#[tauri::command(async)]
 pub fn control_history_sources(
     app: AppHandle,
     window: WebviewWindow,

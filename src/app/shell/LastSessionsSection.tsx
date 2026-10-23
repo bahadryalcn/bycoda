@@ -102,7 +102,7 @@ const STATUS_LABEL: Record<RecentSessionStatus, string> = {
 const STATUS_DOT: Record<RecentSessionStatus, string> = {
   retrying: "bg-warning",
   failed: "bg-danger",
-  working: "bg-accent animate-pulse motion-reduce:animate-none",
+  working: "working-dot bg-accent animate-pulse motion-reduce:animate-none",
   input: "bg-warning",
   done: "bg-success",
 };

@@ -142,6 +142,45 @@ describe("bounded code highlight plugin", () => {
     expect(text(await highlight(plugin, source))).toBe(source);
   }, 20_000);
 
+  it("keeps finished blocks cached while another fence streams in", async () => {
+    const plugin = createBoundedCodePlugin({ maxEntries: 4 });
+    const finished = ["const a = 1;", "const b = 2;"];
+    for (const code of finished) await highlight(plugin, code);
+    const source = Array.from({ length: 30 }, (_, i) => `const value${i} = ${i};`).join("\n");
+    for (let end = 20; end <= source.length; end += 20) {
+      await highlight(plugin, source.slice(0, end));
+    }
+    // Each new version of the stream replaces its previous partial result.
+    for (const code of finished)
+      expect(plugin.highlight({ code, language: "ts", themes: plugin.getThemes() })).not.toBeNull();
+  }, 20_000);
+
+  it("resumes two interleaved streams from their own checkpoints", async () => {
+    const plugin = createBoundedCodePlugin();
+    const reference = await shiki.createHighlighter({
+      themes: plugin.getThemes(),
+      langs: ["typescript", "python"],
+      engine: createJavaScriptRegexEngine({ forgiving: true }),
+    });
+    const ts = Array.from({ length: 12 }, (_, i) => `const n${i} = \`${i}`).join("\n");
+    const py = Array.from({ length: 12 }, (_, i) => `x${i} = """${i}`).join("\n");
+    try {
+      for (let end = 10; end <= ts.length; end += 10) {
+        const a = await highlight(plugin, ts.slice(0, end));
+        const b = await highlight(plugin, py.slice(0, end), "python");
+        const settings = { themes: { light: "github-light", dark: "github-dark" } };
+        expect(a.tokens).toEqual(
+          reference.codeToTokens(ts.slice(0, end), { ...settings, lang: "typescript" }).tokens,
+        );
+        expect(b.tokens).toEqual(
+          reference.codeToTokens(py.slice(0, end), { ...settings, lang: "python" }).tokens,
+        );
+      }
+    } finally {
+      reference.dispose();
+    }
+  }, 30_000);
+
   it("caps the cached source size", async () => {
     const plugin = createBoundedCodePlugin({ maxChars: 2_000 });
     for (let i = 0; i < 5; i += 1) {

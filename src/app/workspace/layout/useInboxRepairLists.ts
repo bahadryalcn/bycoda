@@ -1,4 +1,6 @@
 import { useMemo } from "react";
+import { useStableValue } from "../../../shared/hooks/useStableValue";
+import { sameShallowItems } from "../helpers/stableProps";
 import { type SessionSummary } from "../../../features/sessions/data/sessionStore";
 import { type Session } from "../../../features/sessions/model/session";
 import { summaryFromSession } from "../../../features/sessions/data/sessionHistory";
@@ -11,7 +13,9 @@ export interface InboxRepairListsDeps {
 }
 
 export function useInboxRepairLists({ storedLinkedSessions, history, sessions }: InboxRepairListsDeps) {
-  const inboxRelatedSessions = useMemo(() => {
+  // Both lists are rebuilt on every shell change; keeping equal results lets the
+  // memoized tool panels skip those renders.
+  const relatedSessions = useMemo(() => {
     const byId = new Map<string, SessionSummary>();
     for (const session of storedLinkedSessions) byId.set(session.id, session);
     for (const session of history) {
@@ -38,7 +42,11 @@ export function useInboxRepairLists({ storedLinkedSessions, history, sessions }:
     }
     return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
   }, [history, sessions, storedLinkedSessions]);
-  const repairSessions = useMemo(() => ciRepairSessions(history, sessions), [history, sessions]);
+  const inboxRelatedSessions = useStableValue(relatedSessions, sameShallowItems);
+  const repairSessions = useStableValue(
+    useMemo(() => ciRepairSessions(history, sessions), [history, sessions]),
+    sameShallowItems,
+  );
 
   return { inboxRelatedSessions, repairSessions };
 }

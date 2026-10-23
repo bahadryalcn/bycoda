@@ -13,6 +13,7 @@ import { MediaVisibilityContext } from "../../files/model/mediaVisibility";
 import { prepareLocalFile, readBinaryFile } from "../../../platform/tauri/fs";
 import { isImagePath, sniffImageMime } from "../../files/model/filePreview";
 import { mediaKind } from "../../files/model/mediaPreview";
+import { useNearViewport } from "./useNearViewport";
 
 export function isLocalMediaPath(path: string): boolean {
   return (
@@ -36,8 +37,7 @@ export function LocalMedia({
   onContextMenu?: (event: MouseEvent) => void;
   fallback: ReactNode;
 }) {
-  const box = useRef<HTMLSpanElement>(null);
-  const [near, setNear] = useState(false);
+  const [box, near] = useNearViewport<HTMLSpanElement>();
   const [url, setUrl] = useState<string>();
   const [failed, setFailed] = useState(false);
   const video = mediaKind(path) === "video";
@@ -55,22 +55,6 @@ export function LocalMedia({
       document.removeEventListener("visibilitychange", pauseWhenHidden);
     };
   }, [visible, url]);
-
-  useEffect(() => {
-    if (near || !box.current) return;
-    if (typeof IntersectionObserver === "undefined") {
-      setNear(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) setNear(true);
-      },
-      { rootMargin: "400px" },
-    );
-    observer.observe(box.current);
-    return () => observer.disconnect();
-  }, [near]);
 
   useEffect(() => {
     if (!near || !isLocalMediaPath(path)) return;
@@ -98,7 +82,12 @@ export function LocalMedia({
     })();
     return () => {
       controller.abort();
-      if (ownedUrl) URL.revokeObjectURL(ownedUrl);
+      if (ownedUrl) {
+        // A hidden (Activity) or unmounted pane releases the decoded blob; the
+        // fixed-size box keeps the layout while it reloads on reveal.
+        URL.revokeObjectURL(ownedUrl);
+        setUrl(undefined);
+      }
     };
   }, [near, path, video]);
 

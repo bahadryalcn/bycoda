@@ -185,6 +185,7 @@ function StandardCodeMirrorEditor({
   onStageGit,
   onDocChange,
   onEdit,
+  shown = true,
   saveRequestRef,
   onOpenFile,
   formatOnSave = true,
@@ -206,6 +207,8 @@ function StandardCodeMirrorEditor({
   onDocChange?: (content: string) => void;
   /** Cheap per-change notice that copies no text. */
   onEdit?: () => void;
+  /** False while covered by another tab: git refreshes wait until it is shown. */
+  shown?: boolean;
   /** Runs the same save flow as Ctrl/Cmd+S before an external preview. */
   saveRequestRef?: { current: (() => Promise<boolean>) | null };
   /** Lets the conflict bar step to the next conflicted file. */
@@ -227,6 +230,9 @@ function StandardCodeMirrorEditor({
   const canStage = onStageGit !== undefined;
   const onDocChangeRef = useRef(onDocChange);
   const onEditRef = useRef(onEdit);
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
+  const blameStale = useRef(false);
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
   const valueRef = useRef(value);
@@ -483,7 +489,9 @@ function StandardCodeMirrorEditor({
     scheduleBlameRef.current = scheduleBlame;
     const unsubscribeGit = subscribeGitChanged(
       () => {
-        if (blameOnRef.current && !document.hidden) scheduleBlame();
+        if (!blameOnRef.current) return;
+        if (!shownRef.current) blameStale.current = true;
+        else if (!document.hidden) scheduleBlame();
       },
       { cwd: gitTargetRef.current.cwd },
     );
@@ -750,6 +758,12 @@ function StandardCodeMirrorEditor({
   }, [blameOn]);
 
   useEffect(() => {
+    if (!shown || !blameStale.current) return;
+    blameStale.current = false;
+    if (blameOnRef.current) scheduleBlameRef.current?.();
+  }, [shown]);
+
+  useEffect(() => {
     if (conflictCount > 0) setHadConflicts(true);
   }, [conflictCount]);
 
@@ -759,6 +773,8 @@ function StandardCodeMirrorEditor({
       setStillUnmerged(false);
       return;
     }
+    // Hidden: no git polling; showing the editor checks again.
+    if (!shown) return;
     let cancelled = false;
     const check = () => {
       gitConflicts(cwd).then(
@@ -776,7 +792,7 @@ function StandardCodeMirrorEditor({
       cancelled = true;
       unsubscribe();
     };
-  }, [conflictCount, cwd, gitRelative, hadConflicts]);
+  }, [conflictCount, cwd, gitRelative, hadConflicts, shown]);
 
   const [fileNote, setFileNote] = useState<string | null>(null);
   useEffect(() => setFileNote(null), [path]);

@@ -87,7 +87,8 @@ function resolveProjectPath(path: string, platform: NodeJS.Platform): string {
 }
 
 type Row = Record<string, unknown>;
-type Found = { row: Row; inFlight: boolean };
+/** `stored`: the database's in-flight mark; `inFlight` also weighs the heartbeat. */
+type Found = { row: Row; inFlight: boolean; stored: boolean };
 type Handle = {
   db: DatabaseSync;
   /** File identity; a replaced database is a different file. */
@@ -212,6 +213,25 @@ export class DesktopSessions {
     }
   }
 
+  /**
+   * Changes whenever the desktop app commits: it writes through SQLite's WAL, so
+   * the WAL (or, after a checkpoint, the database) file's size and time move.
+   * Two stats per database instead of re-reading every session row.
+   */
+  fingerprint(): string {
+    const parts: string[] = [];
+    for (const path of this.paths())
+      for (const file of [path, `${path}-wal`]) {
+        try {
+          const stat = statSync(file);
+          parts.push(`${stat.mtimeMs}:${stat.size}`);
+        } catch {
+          parts.push("-");
+        }
+      }
+    return parts.join("|");
+  }
+
   /** Releases every cached connection (host shutdown). */
   close(): void {
     for (const path of [...this.handles.keys()]) this.drop(path);
@@ -268,7 +288,8 @@ export class DesktopSessions {
               .map((block) => [String(block.block_id), Number(block.revision)]),
           );
         }
-        return { row, inFlight: this.isRunning(String(row.id), running.has(String(row.id))) };
+        const stored = running.has(String(row.id));
+        return { row, stored, inFlight: this.isRunning(String(row.id), stored) };
       });
   }
 
@@ -314,8 +335,17 @@ export class DesktopSessions {
         const old = best.get(id);
         if (!old) best.set(id, found);
         else if (ownsBefore(Number(found.row.created_at), Number(old.row.created_at)))
-          best.set(id, { ...found, inFlight: found.inFlight || old.inFlight });
-        else if (found.inFlight && !old.inFlight) best.set(id, { ...old, inFlight: true });
+          best.set(id, {
+            ...found,
+            inFlight: found.inFlight || old.inFlight,
+            stored: found.stored || old.stored,
+          });
+        else if ((found.inFlight && !old.inFlight) || (found.stored && !old.stored))
+          best.set(id, {
+            ...old,
+            inFlight: old.inFlight || found.inFlight,
+            stored: old.stored || found.stored,
+          });
       }
     }
     return [...best.values()];
@@ -406,9 +436,39 @@ export class DesktopSessions {
   }
 
   /** Queue access checks must not materialize a potentially large transcript. */
+  /** Queue RPCs ask this per call; rows only change with a desktop commit. */
+  private metadataCache = new Map<
+    string,
+    { fingerprint: string; value?: { cwd: string; harness: string; stored: boolean } }
+  >();
+
   metadata(id: string): { cwd: string; harness: string; running: boolean } | undefined {
-    const found = this.collect("id=?", [id], false)[0];
-    return found && { cwd: String(found.row.cwd), harness: String(found.row.harness), running: found.inFlight };
+    const fingerprint = this.fingerprint();
+    let cached = this.metadataCache.get(id);
+    if (cached?.fingerprint !== fingerprint) {
+      const found = this.collect("id=?", [id], false)[0];
+      cached = {
+        fingerprint,
+        value: found && {
+          cwd: String(found.row.cwd),
+          harness: String(found.row.harness),
+          stored: found.stored,
+        },
+      };
+      this.metadataCache.delete(id);
+      this.metadataCache.set(id, cached);
+      while (this.metadataCache.size > 512)
+        this.metadataCache.delete(this.metadataCache.keys().next().value!);
+    }
+    const value = cached.value;
+    // Running follows the live heartbeat, which moves without a commit.
+    return (
+      value && {
+        cwd: value.cwd,
+        harness: value.harness,
+        running: this.isRunning(id, value.stored),
+      }
+    );
   }
 
   samePath(a: string, b: string): boolean {

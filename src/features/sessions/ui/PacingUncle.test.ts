@@ -65,8 +65,8 @@ describe("pacing uncle animation gate", () => {
     const walked = state.paint.mock.lastCall?.[3] as number;
     expect(walked).toBeGreaterThan(0);
     render(false);
-    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, walked);
+    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, walked, "classic");
     render(true);
-    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, walked);
+    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, walked, "classic");
   });
 });

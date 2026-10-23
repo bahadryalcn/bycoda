@@ -15,7 +15,11 @@ vi.mock("../model/windowNavigation", () => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("../../shared/i18n", () => ({ t: (text: string) => text, useLocale: () => {} }));
+vi.mock("../../shared/i18n", () => ({
+  t: (text: string) => text,
+  useT: () => (text: string) => text,
+  useLocale: () => {},
+}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const roots: ReturnType<typeof createRoot>[] = [];
 afterEach(async () => {

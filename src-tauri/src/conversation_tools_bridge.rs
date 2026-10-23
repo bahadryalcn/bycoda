@@ -11,11 +11,35 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 #[path = "conversation_servers.rs"]
 mod servers;
 
+/// Poll cadence: answers stay quick while agents are using desktop tools, idle
+/// polling slows down, and an unreachable or unpaired host backs off to 30 s.
+fn next_poll_delay(failures: u32, since_request: std::time::Duration) -> std::time::Duration {
+    use std::time::Duration;
+    if failures > 0 {
+        return Duration::from_secs(1u64 << failures.min(5)).min(Duration::from_secs(30));
+    }
+    if since_request < Duration::from_secs(60) {
+        Duration::from_secs(1)
+    } else {
+        Duration::from_secs(2)
+    }
+}
+
 pub fn start_desktop_relay(app: AppHandle) {
+    let mut failures = 0u32;
+    let mut last_request = std::time::Instant::now();
     std::thread::spawn(move || loop {
-        if let Ok(requests) =
-            crate::remote::local_conversation_rpc(&app, "conversation.desktop.take", json!({}))
-        {
+        let taken =
+            crate::remote::local_conversation_rpc(&app, "conversation.desktop.take", json!({}));
+        failures = if taken.is_ok() {
+            0
+        } else {
+            failures.saturating_add(1)
+        };
+        if let Ok(requests) = taken {
+            if requests.as_array().is_some_and(|list| !list.is_empty()) {
+                last_request = std::time::Instant::now();
+            }
             for request in requests.as_array().into_iter().flatten() {
                 let request = request.clone();
                 let app = app.clone();
@@ -33,7 +57,7 @@ pub fn start_desktop_relay(app: AppHandle) {
                 });
             }
         }
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        std::thread::sleep(next_poll_delay(failures, last_request.elapsed()));
     });
 }
 
@@ -478,6 +502,22 @@ pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command)
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn desktop_relay_polls_quickly_when_active_and_backs_off_when_unreachable() {
+        use std::time::Duration;
+        assert_eq!(
+            next_poll_delay(0, Duration::from_secs(5)),
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            next_poll_delay(0, Duration::from_secs(120)),
+            Duration::from_secs(2)
+        );
+        assert_eq!(next_poll_delay(1, Duration::ZERO), Duration::from_secs(2));
+        assert_eq!(next_poll_delay(3, Duration::ZERO), Duration::from_secs(8));
+        assert_eq!(next_poll_delay(40, Duration::ZERO), Duration::from_secs(30));
+    }
+
     #[test]
     fn merge_approval_displays_reviewed_head_for_every_mode() {
         for action in ["merge", "squash", "rebase"] {

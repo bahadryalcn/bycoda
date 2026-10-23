@@ -549,7 +549,6 @@ fn bycoda_refs(repo: &Path) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "perf P8: prune_orphans must also delete refs/bycoda/checkpoints/<session>/ of the pruned session"]
 fn prune_orphans_deletes_the_checkpoint_refs_of_a_deleted_session() {
     let repo = tmp("prune-orphan-refs");
     assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
@@ -576,7 +575,6 @@ fn prune_orphans_deletes_the_checkpoint_refs_of_a_deleted_session() {
 }
 
 #[test]
-#[ignore = "perf P8: cap or prune checkpoint refs per session instead of a before/after pair per turn forever"]
 fn checkpoint_refs_do_not_grow_with_every_turn_of_a_session() {
     let repo = tmp("refs-bounded");
     assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));

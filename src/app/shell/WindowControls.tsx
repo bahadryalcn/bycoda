@@ -1,9 +1,10 @@
 import { useT } from "../../shared/i18n";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "../../shared/ui/icons";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
 import { setNativeFullscreen } from "../../platform/tauri/fullscreen";
+import { refreshWindowState, useNativeWindowState } from "../../platform/tauri/windowState";
 
 export async function toggleWindowMaximize(): Promise<void> {
   const win = getCurrentWindow();
@@ -21,62 +22,17 @@ export function WindowControls() {
 
 function NativeWindowControls() {
   const t = useT();
-  const [isMaximized, setIsMaximized] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  // Shared with every other window-state reader: one native listener per window.
+  const native = useNativeWindowState();
+  const isMaximized = native?.maximized ?? false;
+  const isFullscreen = native?.fullscreen ?? false;
   const [error, setError] = useState<string | null>(null);
-  const refreshRef = useRef<() => Promise<void>>(async () => {});
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let unlistenFocus: (() => void) | undefined;
-    let mounted = true;
-    let revision = 0;
-
-    const win = getCurrentWindow();
-    const refresh = async () => {
-      const current = ++revision;
-      try {
-        const [maximized, fullscreen] = await Promise.all([win.isMaximized(), win.isFullscreen()]);
-        if (mounted && current === revision) {
-          setIsMaximized(maximized);
-          setIsFullscreen(fullscreen);
-        }
-      } catch {}
-    };
-    refreshRef.current = refresh;
-    void refresh();
-
-    void win
-      .onResized(() => void refresh())
-      .then((unlistenFn) => {
-        if (mounted) {
-          unlisten = unlistenFn;
-        } else {
-          unlistenFn();
-        }
-      })
-      .catch(() => {});
-    void win
-      .onFocusChanged(() => void refresh())
-      .then((unlistenFn) => {
-        if (mounted) unlistenFocus = unlistenFn;
-        else unlistenFn();
-      })
-      .catch(() => {});
-
-    return () => {
-      mounted = false;
-      refreshRef.current = async () => {};
-      unlisten?.();
-      unlistenFocus?.();
-    };
-  }, []);
 
   const runAction = async (action: () => Promise<void>) => {
     setError(null);
     try {
       await action();
-      await refreshRef.current();
+      await refreshWindowState().catch(() => null);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     }

@@ -91,9 +91,44 @@ describe("window working registry lifecycle", () => {
     );
     expect(output.map((entry) => entry.id)).toEqual(["local", "other"]);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(30_000);
     });
     expect(output.map((entry) => entry.id)).toEqual(["local"]);
+  });
+
+  it("drops a window immediately when it announces it is closing", async () => {
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () =>
+      api.callbacks.get("workspace_live_agents")!({
+        payload: { ownerWindowLabel: "window-2", agents: [agent("other")] },
+      }),
+    );
+    expect(output.map((entry) => entry.id)).toEqual(["local", "other"]);
+    api.getAllWindows.mockClear();
+    await act(async () =>
+      api.callbacks.get("workspace_live_agents_gone")!({
+        payload: { ownerWindowLabel: "window-2" },
+      }),
+    );
+    expect(output.map((entry) => entry.id)).toEqual(["local"]);
+    expect(api.getAllWindows).not.toHaveBeenCalled();
+  });
+
+  it("skips the window-list poll while hidden and sweeps when shown again", async () => {
+    await act(async () => root.render(createElement(Probe)));
+    api.getAllWindows.mockClear();
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    try {
+      await act(async () => vi.advanceTimersByTimeAsync(120_000));
+      expect(api.getAllWindows).not.toHaveBeenCalled();
+      hidden.mockReturnValue(false);
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(api.getAllWindows).toHaveBeenCalledOnce();
+    } finally {
+      hidden.mockRestore();
+    }
   });
 
   it("releases late listener registrations when unmounted before Tauri resolves", async () => {
@@ -103,7 +138,7 @@ describe("window working registry lifecycle", () => {
     await act(async () => {
       api.deferred.forEach((resolve) => resolve());
     });
-    expect(api.releases).toHaveLength(2);
+    expect(api.releases).toHaveLength(3);
     api.releases.forEach((release) => expect(release).toHaveBeenCalledOnce());
     expect(api.emit).not.toHaveBeenCalledWith("workspace_live_agents_request");
     // Recreate the root so the common cleanup remains valid.

@@ -7,6 +7,7 @@ import { useRecentSessions } from "../../features/sessions/hooks/useRecentSessio
 import { traySessions } from "./traySessions";
 
 export const TRAY_OPEN_EVENT = "bycoda:tray-open-session";
+const TRAY_UPDATE_MS = 1000;
 
 export function useTraySessions(
   options: Omit<Parameters<typeof traySessions>[0], "stored"> & {
@@ -40,6 +41,8 @@ export function useTraySessions(
   );
   const currentRows = useRef(rows);
   const published = useRef<string | null>(null);
+  const lastSent = useRef(0);
+  const sendTimer = useRef<number | undefined>(undefined);
   currentRows.current = rows;
 
   useEffect(() => {
@@ -82,12 +85,28 @@ export function useTraySessions(
       },
     };
     const signature = JSON.stringify(payload);
+    if (sendTimer.current !== undefined) window.clearTimeout(sendTimer.current);
+    sendTimer.current = undefined;
     if (published.current === signature) return;
-    published.current = signature;
-    void invoke("tray_sessions_update", payload).catch((error) => {
-      if (published.current === signature) published.current = null;
-      console.warn("Session menu update failed", error);
-    });
+    const send = () => {
+      sendTimer.current = undefined;
+      lastSent.current = Date.now();
+      published.current = signature;
+      void invoke("tray_sessions_update", payload).catch((error) => {
+        if (published.current === signature) published.current = null;
+        console.warn("Session menu update failed", error);
+      });
+    };
+    // At most one native menu update per second; the latest snapshot always lands.
+    const wait = lastSent.current + TRAY_UPDATE_MS - Date.now();
+    if (wait <= 0) send();
+    else sendTimer.current = window.setTimeout(send, wait);
   }, [enabled, rows, locale]);
+  useEffect(
+    () => () => {
+      if (sendTimer.current !== undefined) window.clearTimeout(sendTimer.current);
+    },
+    [],
+  );
   return rows;
 }

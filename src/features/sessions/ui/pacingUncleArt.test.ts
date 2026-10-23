@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { pacingPose, createPacingRoute } from "./pacingUncleArt";
+import { describe, expect, it, vi } from "vitest";
+import { GESTURE_SECONDS, createPacingRoute, drawPacingUncle, pacingPose } from "./pacingUncleArt";
+import { facing } from "./pacingSprite";
 
 describe("pacing uncle", () => {
   it("takes 20 steps right, 10 left, then 5 right and turns without sliding", () => {
@@ -44,5 +45,40 @@ describe("pacing uncle", () => {
     const route = createPacingRoute(844);
     expect(route.at(-1)?.to).toBe(0);
     expect(pacingPose(50, 0)).toMatchObject({ x: 0, walk: false });
+  });
+  it("stops every fourth leg to face the reader, then turns back", () => {
+    const span = 44;
+    const gestures: number[] = [];
+    let previous = false;
+    for (let t = 0; t < 200; t += 0.05) {
+      const pose = pacingPose(t, span);
+      const acting = pose.act !== undefined;
+      if (acting && !previous) gestures.push(t);
+      if (acting) expect(pose.walk).toBe(false);
+      previous = acting;
+    }
+    expect(gestures.length).toBeGreaterThanOrEqual(3);
+    const start = gestures[0] + 0.05;
+    expect(facing(pacingPose(start, span)).front).toBe(false);
+    expect(facing(pacingPose(start + GESTURE_SECONDS / 2, span))).toMatchObject({
+      front: true,
+      sx: 1,
+    });
+  });
+  it("draws each crew theme's walker through a whole gesture", () => {
+    const ctx = new Proxy(
+      {},
+      { get: (target: Record<string, unknown>, key: string) => (target[key] ??= vi.fn()) },
+    ) as unknown as CanvasRenderingContext2D;
+    vi.stubGlobal(
+      "Path2D",
+      class {
+        rect() {}
+      },
+    );
+    for (const theme of ["classic", "lotr", "star-wars"] as const)
+      for (let t = 0; t < 40; t += 0.2) drawPacingUncle(ctx, 80, 32, t, theme);
+    expect(ctx.fillRect).toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

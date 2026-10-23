@@ -41,7 +41,7 @@ export type CrewWorkStatus = "input" | "blocked" | "working" | "paused" | "activ
 const STATUS_DOT: Record<CrewWorkStatus, string> = {
   input: "bg-warning",
   blocked: "bg-danger",
-  working: "bg-accent animate-pulse motion-reduce:animate-none",
+  working: "working-dot bg-accent animate-pulse motion-reduce:animate-none",
   paused: "bg-(--ui-text-secondary)",
   active: "bg-success",
 };

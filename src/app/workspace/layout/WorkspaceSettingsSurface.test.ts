@@ -55,12 +55,17 @@ it("opens management for a general request and forwards repository and deletion 
       cwd: "remote://mac/repo",
       recents: input.visibleRecents,
       liveSessions: input.sessions,
-      onRemove: input.onRemoveWorktree,
-      onCheckRemove: input.onCheckWorktreeRemoval,
-      onDeleteSessions: input.onDeleteWorktreeSessions,
     }),
   );
   expect(input.onRemoveWorktree).not.toHaveBeenCalled();
+  // Handlers reach the page as stable proxies that call the workspace's own.
+  const forwarded = manage.mock.calls[0][0] as Record<string, (...args: unknown[]) => unknown>;
+  forwarded.onRemove("a");
+  forwarded.onCheckRemove("b");
+  forwarded.onDeleteSessions("c");
+  expect(input.onRemoveWorktree).toHaveBeenCalledWith("a");
+  expect(input.onCheckWorktreeRemoval).toHaveBeenCalledWith("b");
+  expect(input.onDeleteWorktreeSessions).toHaveBeenCalledWith("c");
 });
 
 it("keeps targeted deletion in the quick confirmation", () => {
@@ -69,10 +74,10 @@ it("keeps targeted deletion in the quick confirmation", () => {
   expect(html).toContain("Delete worktree?");
   expect(manage).not.toHaveBeenCalled();
   expect(remove).toHaveBeenCalledWith(
-    expect.objectContaining({
-      request: input.worktreeManagementRequest,
-      onRemove: input.onRemoveWorktree,
-    }),
+    expect.objectContaining({ request: input.worktreeManagementRequest }),
   );
   expect(input.onRemoveWorktree).not.toHaveBeenCalled();
+  const forwarded = remove.mock.calls[0][0] as { onRemove: (...args: unknown[]) => unknown };
+  forwarded.onRemove("feature");
+  expect(input.onRemoveWorktree).toHaveBeenCalledWith("feature");
 });

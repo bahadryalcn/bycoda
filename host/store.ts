@@ -178,8 +178,11 @@ export class HostStore {
   constructor(path: string) {
     this.attachmentDir = join(dirname(path), "attachments");
     this.db = new DatabaseSync(path);
+    // WAL with synchronous=NORMAL: a commit survives a host crash; a power loss or
+    // OS crash can roll back the last few commits, never corrupt the database.
+    // FULL fsynced every streamed checkpoint and kept the disk (and fseventsd) busy.
     this.db
-      .exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
+      .exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, cwd TEXT NOT NULL UNIQUE, name TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), snapshot TEXT NOT NULL);
@@ -449,8 +452,10 @@ export class HostStore {
         const cached = row.summary
           ? (JSON.parse(String(row.summary)) as HostSessionSummary)
           : undefined;
+        // `model` is "" for the provider default; only its absence marks a summary
+        // written before the field existed.
         if (
-          cached?.model &&
+          typeof cached?.model === "string" &&
           cached.needsInput !== undefined &&
           cached.providerSessionId !== undefined
         )
@@ -841,6 +846,8 @@ export class HostStore {
   }
 
   private write(value: HostSession, rows: { revision: number; event: unknown }[]): void {
+    // Both tables store the same summary: build and serialize it once per save.
+    const summaryJson = JSON.stringify(summary(value));
     const run = () => {
       this.db
         .prepare(
@@ -851,7 +858,7 @@ export class HostStore {
           value.session.id,
           value.projectId,
           JSON.stringify(value),
-          JSON.stringify(summary(value)),
+          summaryJson,
           value.desktop == null ? 0 : 1,
           value.revision,
           value.updatedAt,
@@ -869,7 +876,7 @@ export class HostStore {
         .run(
           value.session.id,
           value.projectId,
-          JSON.stringify(summary(value)),
+          summaryJson,
           value.revision,
           value.updatedAt,
           value.status,

@@ -586,6 +586,12 @@ export class HostEngine {
    * and the desktop reports the divergence. Leaves a session alone while
    * either side is running a turn.
    */
+  /** Whether `refreshFromDesktop` would leave `id` alone right now, checked
+   * before the desktop transcript is read. */
+  desktopRefreshBlocked(id: string): boolean {
+    return this.rewinding.has(id) || this.live.has(id);
+  }
+
   refreshFromDesktop(snapshot: HostSession): HostSession | undefined {
     const id = snapshot.session.id;
     if (this.rewinding.has(id)) return undefined;

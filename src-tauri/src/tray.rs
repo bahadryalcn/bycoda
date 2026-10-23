@@ -79,6 +79,9 @@ struct TrayState {
     targets: BTreeMap<String, (String, String)>,
     generation: u64,
     labels: Labels,
+    /// What the installed menu shows; an update that changes none of it (only
+    /// timestamps, say) skips rebuilding the native menu.
+    rendered: Option<String>,
 }
 
 fn merged_rows(windows: &BTreeMap<String, Vec<SessionRow>>) -> Vec<(String, SessionRow)> {
@@ -136,6 +139,32 @@ fn visible_rows(rows: Vec<(String, SessionRow)>) -> Vec<(String, SessionRow)> {
         .collect()
 }
 
+/// Everything the menu and tooltip display, in display order.
+fn menu_signature(rows: &[(String, SessionRow)], labels: &Labels, summary: &str) -> String {
+    let shown: Vec<_> = rows
+        .iter()
+        .map(|(window, row)| (window, &row.id, row.status, &row.label))
+        .collect();
+    format!(
+        "{:?}",
+        (
+            summary,
+            [
+                &labels.recent,
+                &labels.empty,
+                &labels.working,
+                &labels.input,
+                &labels.done,
+                &labels.active,
+                &labels.failed,
+                &labels.retrying,
+                &labels.notifications,
+            ],
+            shown,
+        )
+    )
+}
+
 fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
     let Some(tray) = app.tray_by_id("main") else {
         return Ok(());
@@ -156,6 +185,11 @@ fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
         state.labels.active
     );
     let name = &app.package_info().name;
+    let rows = visible_rows(rows);
+    let rendered = menu_signature(&rows, &state.labels, &summary);
+    if state.rendered.as_deref() == Some(rendered.as_str()) {
+        return Ok(());
+    }
     let mut menu = MenuBuilder::new(app)
         .item(&MenuItemBuilder::with_id(SHOW, format!("Show {name}")).build(app)?);
     state.generation = state.generation.wrapping_add(1);
@@ -168,7 +202,6 @@ fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
         );
     }
     // Live work stays one click away. Idle history is tucked into a submenu.
-    let rows = visible_rows(rows);
     for (status, heading) in [
         (SessionStatus::Input, &state.labels.input),
         (SessionStatus::Failed, &state.labels.failed),
@@ -214,14 +247,16 @@ fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
         .build()?;
     tray.set_menu(Some(menu))?;
     state.targets = targets;
+    state.rendered = Some(rendered);
     tray.set_tooltip(Some(format!("{name} · {summary}")))?;
     #[cfg(target_os = "macos")]
     tray.set_title(Some(""))?;
     Ok(())
 }
 
+/// Async: runs off the main thread; the menu is only rebuilt when what it shows changed.
 #[tauri::command]
-pub fn tray_sessions_update(
+pub async fn tray_sessions_update(
     app: AppHandle,
     window: tauri::WebviewWindow,
     rows: Vec<SessionRow>,
@@ -352,6 +387,26 @@ mod tests {
             owned,
             updated_at,
         }
+    }
+
+    #[test]
+    fn menu_signature_ignores_timestamps_but_not_what_is_shown() {
+        let labels = Labels::default();
+        let shown = |status, updated_at| {
+            menu_signature(
+                &[("main".into(), row("a", "a", status, true, updated_at))],
+                &labels,
+                "1 working",
+            )
+        };
+        assert_eq!(
+            shown(SessionStatus::Working, 1),
+            shown(SessionStatus::Working, 99)
+        );
+        assert_ne!(
+            shown(SessionStatus::Working, 1),
+            shown(SessionStatus::Input, 1)
+        );
     }
 
     #[test]

@@ -51,11 +51,6 @@ describe("sessionIsIdle", () => {
     ["background tasks", { backgroundTasks: ["task"] }],
     ["background agents", { backgroundAgents: 1 }],
     ["queued messages", { queuedMessages: [{ id: "m" }] as unknown as Session["queuedMessages"] }],
-    ["streaming block", { blocks: [{ id: "b", role: "assistant", streaming: true }] as unknown as Session["blocks"] }],
-    [
-      "running tool",
-      { blocks: [{ id: "b", role: "assistant", tool: { status: "in_progress" } }] as unknown as Session["blocks"] },
-    ],
     [
       "pending approval",
       {
@@ -68,6 +63,37 @@ describe("sessionIsIdle", () => {
     ],
   ])("rejects a session with %s", (_label, patch) => {
     expect(sessionIsIdle(session("a", patch), input())).toBe(false);
+  });
+
+  it("ignores streaming blocks and running tools left behind on a session that is not busy", () => {
+    const stale = session("a", {
+      blocks: [
+        { id: "b1", role: "assistant", streaming: true },
+        { id: "b2", role: "assistant", tool: { status: "in_progress" } },
+      ] as unknown as Session["blocks"],
+    });
+    expect(sessionIsIdle(stale, input())).toBe(true);
+    expect(sessionIsIdle(stale, input({ busySessionIds: new Set(["a"]) }))).toBe(false);
+    expect(sessionIsIdle({ ...stale, busy: true }, input())).toBe(false);
+  });
+
+  it("lets an expired unseen badge stop pinning the session without hiding the badge", () => {
+    const unseenFinishedIds = new Set(["a"]);
+    expect(sessionIsIdle(session("a"), input({ unseenFinishedIds }))).toBe(false);
+    expect(
+      sessionIsIdle(session("a"), input({ unseenFinishedIds, expiredUnseenIds: new Set(["a"]) })),
+    ).toBe(true);
+    // Expiry never overrides other work or an unsent draft.
+    const expiredUnseenIds = new Set(["a"]);
+    expect(
+      sessionIsIdle(session("a", { busy: true }), input({ unseenFinishedIds, expiredUnseenIds })),
+    ).toBe(false);
+    expect(
+      sessionIsIdle(
+        session("a"),
+        input({ unseenFinishedIds, expiredUnseenIds, hasComposerDraft: () => true }),
+      ),
+    ).toBe(false);
   });
 
   it("rejects busy, unseen-finished and composer-draft sessions from the caller's sets", () => {

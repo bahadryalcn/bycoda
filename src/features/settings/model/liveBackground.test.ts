@@ -18,7 +18,7 @@ afterEach(() => localStorage.clear());
 
 describe("live background preference", () => {
   it("defaults to the gradient ASCII scene and rejects unknown stored values", () => {
-    expect(LIVE_BACKGROUND_DEFAULT).toBe("gradient-ascii");
+    expect(LIVE_BACKGROUND_DEFAULT).toBe("none");
     expect(loadLiveBackground()).toBe(LIVE_BACKGROUND_DEFAULT);
     localStorage.setItem(LIVE_BACKGROUND_KEY, "fireworks");
     expect(loadLiveBackground()).toBe(LIVE_BACKGROUND_DEFAULT);

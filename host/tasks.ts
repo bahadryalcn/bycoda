@@ -160,6 +160,20 @@ async function git(cwd: string, args: string[], timeout = 30_000): Promise<strin
   return stdout.trim();
 }
 
+/** A read-only query: optional locks off, so `status` never rewrites the index. */
+function gitRead(cwd: string, args: string[]): Promise<string> {
+  return runGitText(args, {
+    cwd,
+    timeout: 30_000,
+    maxBuffer: 4 * 1024 * 1024,
+    windowsHide: true,
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+  }).then((stdout) => stdout.trim());
+}
+
+/** Within a merge retry's cooldown, how often its fingerprint is re-read. */
+const MERGE_PROBE_MS = 2 * 60_000;
+
 /** What git said when a command failed, on one line. */
 function gitError(error: unknown): string {
   const stderr = (error as { stderr?: unknown } | null)?.stderr;
@@ -414,6 +428,8 @@ export class HostTasks {
   /** Tasks being merged. */
   private readonly delivering = new Set<string>();
   private readonly mergingProjects = new Set<string>();
+  /** When each cooling-down merge retry last re-read its fingerprint. */
+  private readonly mergeProbes = new Map<string, number>();
   /** Runs on every tick once running tasks are settled, before queued ones
    * start, so work it queues can start in the same tick. */
   private beforeStart?: () => Promise<void> | void;
@@ -2406,6 +2422,12 @@ export class HostTasks {
       const owner = this.store.db.prepare("SELECT value FROM goals WHERE id=?").get(task.goalId);
       if (owner && JSON.parse(String(owner.value)).status === "cancelled") return;
     }
+    // Cooling down: the fingerprint below costs four git processes per tick, so
+    // it is re-read only now and then to notice a fix that should retry early.
+    if (auto && task.mergeRetry && now < task.mergeRetry.after) {
+      if (now - (this.mergeProbes.get(task.id) ?? -Infinity) < MERGE_PROBE_MS) return;
+      this.mergeProbes.set(task.id, now);
+    } else this.mergeProbes.delete(task.id);
     const project = this.store.project(task.projectId);
     const cwd = await resolveHostWorktreeAsync(project.cwd, task.deliveryCwd);
     let baseHead = await git(cwd, ["rev-parse", "--verify", `${task.baseBranch}^{commit}`]);
@@ -2415,7 +2437,7 @@ export class HostTasks {
           baseHead,
           await git(cwd, ["rev-parse", "--verify", `${task.branch}^{commit}`]),
           await git(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => ""),
-          await git(cwd, ["status", "--porcelain"]),
+          await gitRead(cwd, ["status", "--porcelain"]),
         ].join("\n"),
       )
       .digest("hex");

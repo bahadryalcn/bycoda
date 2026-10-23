@@ -124,6 +124,11 @@ fn classify(path: &str, git_dir: &str, common_dir: &str) -> Change {
         }
     }
     if let Some(rest) = relative(path, common_dir) {
+        // Checkpoint snapshots write and delete these on every agent turn; no
+        // branch, tag or view depends on them.
+        if rest == "refs/bycoda" || rest.starts_with("refs/bycoda/") {
+            return change;
+        }
         let worktree_entry = rest
             .strip_prefix("worktrees/")
             .is_some_and(|name| !name.contains('/'));
@@ -139,19 +144,39 @@ fn classify(path: &str, git_dir: &str, common_dir: &str) -> Change {
     change
 }
 
+/// Git's own bookkeeping, which `classify` never reports: object writes,
+/// lock files, fetch and gc records. Recognised by name alone, so a burst of
+/// object writes is dropped before any of it is stat'ed.
+fn housekeeping(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    if name.ends_with(".lock") || matches!(name, "FETCH_HEAD" | "gc.log" | "gc.pid") {
+        return true;
+    }
+    // Inside the object store: `objects/<2 hex>/…`, `objects/pack/…` and the
+    // like. A checkout that merely lives under a folder named `objects` is not.
+    let parts: Vec<_> = path.components().map(|part| part.as_os_str()).collect();
+    parts.windows(2).any(|pair| {
+        let next = pair[1].to_string_lossy();
+        pair[0] == "objects"
+            && (matches!(next.as_ref(), "pack" | "info")
+                || next.starts_with("incoming-")
+                || next.starts_with("tmp_objdir")
+                || (next.len() == 2 && next.chars().all(|c| c.is_ascii_hexdigit())))
+    })
+}
+
 /// Paths an event changed in a way git views care about. Reading a folder can
 /// update its access time, which Windows reports as a change to the folder
 /// itself; a real ref change also reports the file inside it.
 fn meaningful_paths(event: notify::Event) -> Vec<PathBuf> {
+    let paths = event.paths.into_iter().filter(|path| !housekeeping(path));
     match event.kind {
         EventKind::Access(_) => Vec::new(),
-        EventKind::Modify(ModifyKind::Name(_)) => event.paths,
-        EventKind::Modify(_) => event
-            .paths
-            .into_iter()
-            .filter(|path| !path.is_dir())
-            .collect(),
-        _ => event.paths,
+        EventKind::Modify(ModifyKind::Name(_)) => paths.collect(),
+        EventKind::Modify(_) => paths.filter(|path| !path.is_dir()).collect(),
+        _ => paths.collect(),
     }
 }
 
@@ -768,7 +793,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "perf P8: classify must ignore refs/bycoda/** (checkpoint refs, two written per turn)"]
     fn checkpoint_refs_are_not_a_ref_change() {
         // Precondition: ordinary refs still count.
         assert!(classify("/r/.git/refs/heads/main", GIT, GIT).refs);
@@ -791,7 +815,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "perf P10: drop objects/, *.lock, FETCH_HEAD and gc.log events before the per-path is_dir() stat"]
     fn event_filter_discards_housekeeping_paths_before_statting() {
         let created = EventKind::Create(notify::event::CreateKind::File);
         let modified = EventKind::Modify(ModifyKind::Any);
@@ -808,6 +831,10 @@ mod tests {
         // A real ref update still passes.
         let event = notify::Event::new(EventKind::Create(notify::event::CreateKind::File))
             .add_path(PathBuf::from("/r/.git/refs/heads/main"));
+        assert_eq!(meaningful_paths(event).len(), 1);
+        // So does one in a checkout that lives under a folder named `objects`.
+        let event = notify::Event::new(EventKind::Create(notify::event::CreateKind::File))
+            .add_path(PathBuf::from("/objects/r/.git/refs/heads/main"));
         assert_eq!(meaningful_paths(event).len(), 1);
     }
 }

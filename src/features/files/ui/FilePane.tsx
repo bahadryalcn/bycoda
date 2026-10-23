@@ -245,6 +245,7 @@ function FilePaneComponent({
                   showDiff={!!file.review}
                   changeKind={file.changeKind}
                   active={visible && focused && file.id === pane.activeFileId}
+                  shown={visible && file.id === pane.activeFileId}
                   navigation={
                     editorNavigation && editorPathsEqual(file.path, editorNavigation.path)
                       ? editorNavigation

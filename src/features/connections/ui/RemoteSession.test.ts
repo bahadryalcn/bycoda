@@ -49,6 +49,7 @@ import type {
   SessionSync,
   RemoteMachine,
 } from "../model/protocol";
+import { preloadModelPicker } from "../../sessions/ui/ModelPicker";
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
@@ -790,6 +791,10 @@ async function send(text: string) {
 }
 // The combined picker opens a settings menu; its "Model" row shows the model list.
 async function openModels(triggerLabel: string) {
+  // The flyout loads on demand; have it ready before the menu opens.
+  await act(async () => {
+    await preloadModelPicker();
+  });
   await act(async () => byLabel(triggerLabel)!.click());
   const modelRow = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
     (button) => button.textContent?.startsWith("Model"),

@@ -1,3 +1,5 @@
+import { memo } from "react";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import type { Session } from "../../../features/sessions/model/session";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
@@ -50,7 +52,7 @@ export interface WorkspaceFooterProps {
   onApproval: ApprovalProps["onApproval"];
 }
 
-export function WorkspaceFooter({
+function WorkspaceFooterComponent({
   searchViewOpen,
   inboxViewOpen,
   notesViewOpen,
@@ -155,4 +157,11 @@ export function WorkspaceFooter({
       </div>
     </div>
   );
+}
+
+const MemoWorkspaceFooter = memo(WorkspaceFooterComponent);
+
+/** Workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function WorkspaceFooter(props: WorkspaceFooterProps) {
+  return <MemoWorkspaceFooter {...useStableHandlers(props)} />;
 }

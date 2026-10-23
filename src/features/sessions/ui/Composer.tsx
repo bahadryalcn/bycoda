@@ -21,7 +21,7 @@ import { TranslationResultDialog } from "./TranslationResultDialog";
 import { registerBrowserComposer } from "../../host-tools/browserComposer";
 import { registerLogsComposer } from "../../host-tools/logsComposer";
 import { releaseAttachments } from "../model/releaseAttachments";
-import { t, useLocale, useT } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import type { QueueAction } from "../model/queueAction";
 import { useComposerSpelling } from "../../settings/model/composerSpelling";
 import { ComposerTips } from "./ComposerTips";
@@ -140,13 +140,8 @@ import {
   unavailableRuntimeModes,
 } from "../model/session";
 import { hasMissingAttachment } from "../model/queuePersistence";
-import {
-  moveQueuedMessage,
-  queuedSteerRoute,
-  queuedTargetSummary,
-  resolveFollowUpRoute,
-  runningTargetOf,
-} from "../model/messageQueue";
+import { useQueuedSteerRoute, useQueuedTargetSummary } from "../model/reactiveReads";
+import { moveQueuedMessage, resolveFollowUpRoute, runningTargetOf } from "../model/messageQueue";
 import { HarnessIcon } from "./HarnessIcon";
 import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import type { UserQuestionPrompt, UserQuestionReply } from "../model/userQuestion";
@@ -586,17 +581,15 @@ function MessageQueue({
       onEditingChangeRef.current?.();
     }
   }, [editingId, editingMessage]);
+  // Routes and target names resolve queued model targets against the live catalog.
+  const targetSummary = useQueuedTargetSummary();
+  const steerRoute = useQueuedSteerRoute(
+    runningTarget ? { ...runningTarget, busy } : undefined,
+    runningTarget ? steerAppliesModelSettings(runningTargetOf(runningTarget).harness) : false,
+  );
   if (messages.length === 0 && !pendingAction && !activeFeedback) return null;
   const paused = (status === "paused" || status === "resuming") && messages.length > 0;
   const restored = status === "restored" && messages.length > 0;
-  const steerRoute = (message: QueuedMessage) =>
-    runningTarget
-      ? queuedSteerRoute(
-          { ...runningTarget, busy },
-          message,
-          steerAppliesModelSettings(runningTargetOf(runningTarget).harness),
-        )
-      : "join";
   const canSend = (message: QueuedMessage) =>
     !pendingAction &&
     !pendingDelivery &&
@@ -690,7 +683,7 @@ function MessageQueue({
             const attachmentGone = hasMissingAttachment(message);
             const route = attachmentGone ? "join" : steerRoute(message);
             const target = message.modelTarget;
-            const summary = target ? queuedTargetSummary(target) : undefined;
+            const summary = target ? targetSummary(target) : undefined;
             const targetLabel =
               target && summary
                 ? [
@@ -3811,7 +3804,7 @@ export function ComposerAction({
   disabled = false,
   hasValue,
   allowBusySubmit = true,
-  label = t("Send"),
+  label: labelProp,
   busyLabel,
   blockedReason,
   onSend,
@@ -3837,6 +3830,7 @@ export function ComposerAction({
   onStop: () => void;
 }) {
   const t = useT();
+  const label = labelProp ?? t("Send");
   if (disabled && !busy) {
     return (
       <Button variant="primary" motion="none" iconOnly label={label} shortcut="Enter" disabled>

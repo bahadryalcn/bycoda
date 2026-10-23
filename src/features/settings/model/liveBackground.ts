@@ -43,7 +43,10 @@ export const LIVE_BACKGROUNDS: readonly LiveBackground[] = [
   "world-tree",
 ];
 
-export const LIVE_BACKGROUND_DEFAULT: LiveBackground = "gradient-ascii";
+/** A fresh install starts still; an animated scene is the owner's choice. */
+export const LIVE_BACKGROUND_DEFAULT: LiveBackground = "none";
+/** What installs saw before the still default; kept for them below. */
+const LEGACY_LIVE_BACKGROUND_DEFAULT: LiveBackground = "gradient-ascii";
 
 export const LIVE_BACKGROUND_INTENSITY_MIN = 0.05;
 export const LIVE_BACKGROUND_INTENSITY_MAX = 0.8;
@@ -130,6 +133,21 @@ export function liveBackgroundDescription(value: LiveBackground): string {
 function isLiveBackground(value: unknown): value is LiveBackground {
   return typeof value === "string" && (LIVE_BACKGROUNDS as readonly string[]).includes(value);
 }
+
+/** Installs from before the still default keep the scene they have been seeing:
+ * an earlier onboarding or project history marks one, and the old default is saved once. */
+function keepLegacyDefault() {
+  try {
+    if (localStorage.getItem(LIVE_BACKGROUND_KEY) !== null) return;
+    const earlier =
+      localStorage.getItem("bycoda.onboarding.v1") !== null ||
+      localStorage.getItem("bycoda.recentProjects") !== null;
+    if (earlier) localStorage.setItem(LIVE_BACKGROUND_KEY, LEGACY_LIVE_BACKGROUND_DEFAULT);
+  } catch {
+    // Storage unavailable: the still default applies for this run.
+  }
+}
+keepLegacyDefault();
 
 export function loadLiveBackground(): LiveBackground {
   try {

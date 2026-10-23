@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import {
   copyFileSync,
+  readdirSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -39,6 +40,7 @@ beforeAll(async () => {
     join(source, "host.mjs"),
     `import { appendFileSync } from 'node:fs';
 const action = process.argv[2];
+if (action === 'service' && process.argv[3] === 'install' && process.env.BYCODA_TEST_FAIL_INSTALL === '1') process.exit(9);
 if (action === '--version') console.log(${JSON.stringify(version)});
 else if (action === 'service') appendFileSync(process.env.BYCODA_TEST_EVENTS, 'service ' + process.argv[3] + '\\n');
 else if (action === 'connection-info') console.log(JSON.stringify({ port: 3774, pid: 123 }));
@@ -107,13 +109,14 @@ function Expand-Archive([string] $LiteralPath, [string] $DestinationPath) {
     base,
     downloads,
     events,
-    run: (forceUpgrade = false, useBundled = false) =>
+    run: (forceUpgrade = false, useBundled = false, extraEnv: NodeJS.ProcessEnv = {}) =>
       run(launch, {
         PROCESSOR_ARCHITECTURE: "AMD64",
         BYCODA_TEST_EVENTS: events,
         BYCODA_HOST_FORCE_UPGRADE: forceUpgrade ? "1" : "0",
         BYCODA_HOST_PORT: "3774",
         ...(useBundled ? { BYCODA_HOST_ARCHIVE: bundled } : {}),
+        ...extraEnv,
       }),
   };
 }
@@ -154,6 +157,37 @@ it.skipIf(!shell)(
       "service install",
     ]);
     expect(readFileSync(fixture.downloads, "utf8").trim().split(/\r?\n/)).toHaveLength(4);
+  },
+  90_000,
+);
+
+it.skipIf(!shell)(
+  "reuses a verified package across failed desktop retries and then recovers",
+  async () => {
+    const fixture = await install(false);
+    // Preserve an independently installed runtime and its rollback copy.
+    await fixture.run(false, true);
+    const previous = readFileSync(join(fixture.base, "runtime-path"), "utf8");
+    const env = { BYCODA_HOST_REUSE_PACKAGE: "1", BYCODA_TEST_FAIL_INSTALL: "1" };
+    await expect(fixture.run(true, true, env)).rejects.toThrow("Host service setup failed");
+    const folders = readdirSync(join(fixture.base, "runtime")).sort();
+    const cached = folders.find((name) => name.includes("-package-"))!;
+    expect(folders).toHaveLength(2);
+    expect(readFileSync(join(fixture.base, "runtime-path"), "utf8")).toBe(previous);
+    await expect(fixture.run(true, true, env)).rejects.toThrow("Host service setup failed");
+    expect(readdirSync(join(fixture.base, "runtime")).sort()).toEqual(folders);
+    await fixture.run(true, true, { BYCODA_HOST_REUSE_PACKAGE: "1" });
+    expect(readFileSync(join(fixture.base, "runtime-path"), "utf8")).toBe(
+      join(fixture.base, "runtime", cached),
+    );
+    expect(existsSync(previous.trim())).toBe(true);
+    // A modified cache must be rejected before executing any package code.
+    writeFileSync(
+      join(fixture.base, "runtime", cached, "host.mjs"),
+      "throw new Error('must not execute')",
+    );
+    await expect(fixture.run(true, true, env)).rejects.toThrow("cached host package changed");
+    expect(readdirSync(join(fixture.base, "runtime")).sort()).toEqual(folders);
   },
   90_000,
 );

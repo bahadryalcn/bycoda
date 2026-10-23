@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { decorativeMotionEnabled, subscribeDecorativeMotion } from "./decorativeMotion";
+import {
+  decorativeMotionEnabled,
+  subscribeDecorativeMotion,
+  windowHasFocus,
+} from "./decorativeMotion";
 
 const native = vi.hoisted(() => ({
   isVisible: vi.fn(async () => true),
@@ -38,9 +42,9 @@ afterEach(() => {
   stop = undefined;
   vi.restoreAllMocks();
 });
+// Native reads are shared and coalesced, so drain the whole microtask queue.
 const flush = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let tick = 0; tick < 20; tick++) await Promise.resolve();
 };
 
 it("keeps visible motion running through native and DOM blur", async () => {
@@ -95,4 +99,43 @@ it("releases native listeners registered after the last consumer leaves", async 
   complete(releaseFocus);
   await flush();
   expect(releaseFocus).toHaveBeenCalledOnce();
+});
+
+it("pauses focus-gated work from the native focus state, not the DOM focus WKWebView keeps", async () => {
+  const listener = vi.fn();
+  stop = subscribeDecorativeMotion(listener);
+  await flush();
+  expect(windowHasFocus()).toBe(true);
+  expect(native.onFocusChanged).toHaveBeenCalledOnce();
+  const reads = native.isFocused.mock.calls.length;
+  // The DOM still reports focus after the window drops behind another app.
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  native.isFocused.mockResolvedValue(false);
+  listener.mockClear();
+  focus({ payload: false });
+  expect(windowHasFocus()).toBe(false);
+  expect(document.documentElement.dataset.windowFocus).toBe("off");
+  expect(listener).toHaveBeenCalledOnce();
+  await flush();
+  expect(windowHasFocus()).toBe(false);
+  // The follow-up read is the only extra query; no second subscription was made.
+  expect(native.isFocused.mock.calls.length).toBe(reads + 1);
+  expect(native.onFocusChanged).toHaveBeenCalledOnce();
+  // Decorative CSS motion keeps its own rules: unfocused is not hidden.
+  expect(decorativeMotionEnabled()).toBe(true);
+  native.isFocused.mockResolvedValue(true);
+  focus({ payload: true });
+  await flush();
+  expect(windowHasFocus()).toBe(true);
+  expect(document.documentElement.dataset.windowFocus).toBe("on");
+});
+
+it("does not wake subscribers for resize storms that change nothing", async () => {
+  const listener = vi.fn();
+  stop = subscribeDecorativeMotion(listener);
+  await flush();
+  listener.mockClear();
+  for (let i = 0; i < 20; i++) resize();
+  await flush();
+  expect(listener).not.toHaveBeenCalled();
 });

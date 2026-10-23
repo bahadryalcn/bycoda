@@ -88,12 +88,34 @@ try {
     $expected = ((Get-Content -LiteralPath $checksum -Raw).Trim() -split '\s+')[0]
     if ($expected -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid host package checksum.' }
     if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) { throw 'bycoda Host package checksum mismatch.' }
-    $unpacked = Join-Path $temporary 'unpacked'
-    Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
-    $actual = & (Join-Path $unpacked 'node.exe') (Join-Path $unpacked 'host.mjs') --version
-    if ($LASTEXITCODE -ne 0 -or $actual -ne $version) { throw 'bycoda Host version mismatch.' }
     $runtime = Join-Path $runtimeRoot ("$version-$target-" + [Guid]::NewGuid().ToString('N'))
-    Move-Item -LiteralPath $unpacked -Destination $runtime
+    $reusePackage = $env:BYCODA_HOST_REUSE_PACKAGE -eq '1'
+    if ($reusePackage) { $runtime = Join-Path $runtimeRoot ("$version-$target-package-" + $expected.ToLowerInvariant()) }
+    if (Test-Path -LiteralPath $runtime) {
+      # Never overwrite a runtime that may still serve requests. Reuse only
+      # bytes inventoried after the archive's checksum was verified.
+      $inventoryPath = Join-Path $runtime '.package-files.json'
+      if (-not (Test-Path -LiteralPath $inventoryPath)) { throw 'The cached host package is incomplete. Reinstall the host with the local update coordinator.' }
+      $inventory = Get-Content -LiteralPath $inventoryPath -Raw | ConvertFrom-Json
+      if ($inventory.Count -eq 0) { throw 'The cached host package inventory is empty.' }
+      foreach ($item in $inventory) {
+        $file = [IO.Path]::GetFullPath((Join-Path $runtime $item.path))
+        if (-not $file.StartsWith($runtime + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid cached host package path.' }
+        if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $item.hash) { throw 'The cached host package changed. Reinstall the host with the local update coordinator.' }
+      }
+    } else {
+      $unpacked = Join-Path $temporary 'unpacked'
+      Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
+      $actual = & (Join-Path $unpacked 'node.exe') (Join-Path $unpacked 'host.mjs') --version
+      if ($LASTEXITCODE -ne 0 -or $actual -ne $version) { throw 'bycoda Host version mismatch.' }
+      if ($reusePackage) {
+        $inventory = @(Get-ChildItem -LiteralPath $unpacked -File -Recurse | ForEach-Object {
+          @{ path = $_.FullName.Substring($unpacked.Length + 1); hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+        })
+        [IO.File]::WriteAllText((Join-Path $unpacked '.package-files.json'), (ConvertTo-Json -InputObject $inventory), (New-Object Text.UTF8Encoding($false)))
+      }
+      Move-Item -LiteralPath $unpacked -Destination $runtime
+    }
     $bin = Join-Path $base 'bin'
     New-Item -ItemType Directory -Force -Path $bin | Out-Null
     $runtimeName = Split-Path -Leaf $runtime

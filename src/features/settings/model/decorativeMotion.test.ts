@@ -8,6 +8,7 @@ import {
   loadDecorativeMotionEnabled,
   saveDecorativeMotionEnabled,
   subscribeDecorativeMotion,
+  windowHasFocus,
 } from "./decorativeMotion";
 
 let reduced = false;
@@ -67,6 +68,34 @@ describe("decorative motion", () => {
     expect(decorativeMotionEnabled()).toBe(true);
   });
 
+  it("follows DOM focus and blur for the window focus gate outside Tauri", () => {
+    const { listener } = subscribe();
+    expect(windowHasFocus()).toBe(true);
+    expect(document.documentElement.dataset.windowFocus).toBe("on");
+    window.dispatchEvent(new Event("blur"));
+    expect(windowHasFocus()).toBe(false);
+    expect(document.documentElement.dataset.windowFocus).toBe("off");
+    expect(listener).toHaveBeenCalledTimes(1);
+    // Decorative CSS motion itself keeps its existing rules while unfocused.
+    expect(decorativeMotionEnabled()).toBe(true);
+    window.dispatchEvent(new Event("focus"));
+    expect(windowHasFocus()).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("wakes subscribers only when the exposed state changes", () => {
+    const { listener } = subscribe();
+    for (let i = 0; i < 5; i++) {
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("focus"));
+    }
+    for (const notify of mediaListeners) notify();
+    expect(listener).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new Event("blur"));
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
   it("requires visibility without changing the saved choice", () => {
     const hidden = vi.spyOn(document, "hidden", "get");
     subscribe();
@@ -122,10 +151,13 @@ describe("decorative motion", () => {
     window.dispatchEvent(new CustomEvent(DECORATIVE_MOTION_CHANGE_EVENT));
     expect(decorativeMotionEnabled()).toBe(true);
     expect(listener).toHaveBeenCalledTimes(2);
+    localStorage.setItem(DECORATIVE_MOTION_KEY, "0");
+    window.dispatchEvent(new StorageEvent("storage", { key: null }));
+    expect(listener).toHaveBeenCalledTimes(3);
     localStorage.clear();
     window.dispatchEvent(new StorageEvent("storage", { key: null }));
     expect(decorativeMotionEnabled()).toBe(true);
-    expect(listener).toHaveBeenCalledTimes(3);
+    expect(listener).toHaveBeenCalledTimes(4);
   });
 
   it("honors live system changes without overwriting the user's choice", () => {

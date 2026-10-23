@@ -1,17 +1,29 @@
 import { focusManager, onlineManager } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { retainAsyncSubscription } from "../../shared/lib/asyncSubscription";
+import {
+  getWindowState,
+  refreshWindowState,
+  subscribeWindowFocus,
+  subscribeWindowState,
+  windowStateReads,
+} from "./windowState";
 
 /** WebViews do not consistently emit DOM visibility events on native hide/minimize. */
 export function installQueryLifecycle() {
   focusManager.setEventListener((setFocused) => {
     const report = (error: unknown) => console.warn("Query window lifecycle unavailable", error);
     let refreshNative: (() => Promise<void>) | undefined;
-    let revision = 0;
+    // Native reads started up to here are older than what focus or DOM visibility said since.
+    let ignoreThrough = -1;
+    let disposed = false;
+    const fromNative = () => {
+      const state = getWindowState();
+      if (disposed || !state || windowStateReads().applied <= ignoreThrough) return;
+      setFocused(state.visible && !state.minimized && state.focused);
+    };
     const visible = () => {
       if (document.visibilityState === "hidden") {
-        ++revision;
+        ignoreThrough = windowStateReads().started;
         setFocused(false);
       } else if (refreshNative) void refreshNative().catch(report);
       else setFocused(true);
@@ -19,37 +31,20 @@ export function installQueryLifecycle() {
     document.addEventListener("visibilitychange", visible);
     window.addEventListener("focus", visible);
     const releases: Array<() => void> = [];
-    let disposed = false;
     if (isTauri()) {
-      const nativeWindow = getCurrentWindow();
-      const syncNative = async () => {
-        const current = ++revision;
-        const [shown, minimized, focused] = await Promise.all([
-          nativeWindow.isVisible(),
-          nativeWindow.isMinimized(),
-          nativeWindow.isFocused(),
-        ]);
-        if (!disposed && current === revision) setFocused(shown && !minimized && focused);
+      refreshNative = async () => {
+        await refreshWindowState();
+        fromNative();
       };
-      refreshNative = syncNative;
+      // The shared window state owns the native listeners; resize covers hide/minimize.
+      releases.push(subscribeWindowState(fromNative));
       releases.push(
-        retainAsyncSubscription(
-          nativeWindow.onFocusChanged(({ payload }) => {
-            if (disposed) return;
-            ++revision;
-            // Native focus is authoritative even if WebKit's DOM visibility is stale.
-            setFocused(payload);
-          }),
-          report,
-        ),
-      );
-      releases.push(
-        retainAsyncSubscription(
-          nativeWindow.onResized(() => {
-            void syncNative().catch(report);
-          }),
-          report,
-        ),
+        subscribeWindowFocus((focused) => {
+          if (disposed) return;
+          ignoreThrough = windowStateReads().started;
+          // Native focus is authoritative even if WebKit's DOM visibility is stale.
+          setFocused(focused);
+        }),
       );
     }
     visible();

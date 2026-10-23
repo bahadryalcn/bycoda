@@ -34,8 +34,8 @@ async function fixture() {
 }
 
 describe("host checkpoint refs (perf)", () => {
-  // perf P8: checkpoint refs must be pruned/capped per session instead of a before/after pair per turn forever; remove .fails when fixed.
-  it.fails("does not keep a before/after ref pair for every turn of a session", async () => {
+  // perf P8: checkpoint refs must be pruned/capped per session instead of a before/after pair per turn forever.
+  it("does not keep a before/after ref pair for every turn of a session", async () => {
     const f = await fixture();
     const turns = 6;
     for (let i = 1; i <= turns; i++) {

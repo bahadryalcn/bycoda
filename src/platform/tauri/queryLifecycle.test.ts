@@ -13,6 +13,10 @@ const native = vi.hoisted(() => ({
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => native }));
 let stop: (() => void) | undefined;
+// Native reads are shared and coalesced, so drain the whole microtask queue.
+const settle = async () => {
+  for (let tick = 0; tick < 20; tick++) await Promise.resolve();
+};
 afterEach(() => {
   stop?.();
   stop = undefined;
@@ -35,8 +39,7 @@ it("uses native focus when DOM visibility is stale and handles offline/online ev
   });
   const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   stop = installQueryLifecycle();
-  await Promise.resolve();
-  await Promise.resolve();
+  await settle();
   expect(focusManager.isFocused()).toBe(true);
   // Native hide/minimize can leave WebView visibilityState at visible.
   focus({ payload: false });
@@ -50,8 +53,7 @@ it("uses native focus when DOM visibility is stale and handles offline/online ev
   visibility.mockReturnValue("visible");
   native.isMinimized.mockResolvedValueOnce(true);
   resize();
-  await Promise.resolve();
-  await Promise.resolve();
+  await settle();
   expect(focusManager.isFocused()).toBe(false);
   window.dispatchEvent(new Event("offline"));
   expect(onlineManager.isOnline()).toBe(false);

@@ -4,10 +4,18 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
 
-const state = vi.hoisted(() => ({ draw: vi.fn() }));
+const state = vi.hoisted(() => ({
+  draw: vi.fn(),
+  focused: true,
+  listeners: new Set<() => void>(),
+}));
 vi.mock("../model/decorativeMotion", () => ({
   decorativeMotionEnabled: () => true,
-  subscribeDecorativeMotion: () => () => {},
+  windowHasFocus: () => state.focused,
+  subscribeDecorativeMotion: (fn: () => void) => {
+    state.listeners.add(fn);
+    return () => state.listeners.delete(fn);
+  },
 }));
 vi.mock("./live-background", () => ({
   CLOSED_SIGNAL: {},
@@ -42,6 +50,8 @@ function runFor(ms: number): number {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.draw.mockClear();
+  state.focused = true;
+  state.listeners.clear();
   frameQueue = [];
   nextFrame = 0;
   scheduled = 0;
@@ -143,5 +153,20 @@ describe("live background frame loop", () => {
     state.draw.mockClear();
     runFor(2_000);
     expect(state.draw.mock.calls.length / 2).toBeLessThanOrEqual(31);
+  });
+
+  // perf P1: a window behind another application keeps its last frame and schedules nothing.
+  it("schedules no frames while the window is unfocused and resumes on focus", () => {
+    render({ speech: 30, activity: 30 });
+    runFor(500);
+    state.focused = false;
+    act(() => state.listeners.forEach((fn) => fn()));
+    const painted = state.draw.mock.calls.length;
+    expect(runFor(3_000)).toBe(0);
+    expect(state.draw.mock.calls.length).toBe(painted);
+    state.focused = true;
+    act(() => state.listeners.forEach((fn) => fn()));
+    expect(runFor(1_000)).toBeGreaterThan(0);
+    expect(state.draw.mock.calls.length).toBeGreaterThan(painted);
   });
 });

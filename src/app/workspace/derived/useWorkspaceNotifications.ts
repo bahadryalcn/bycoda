@@ -1,4 +1,6 @@
 import { useMemo } from "react";
+import { useStableValue } from "../../../shared/hooks/useStableValue";
+import { sameShallowItems } from "../helpers/stableProps";
 import {
   hiddenApprovalNotices,
   pendingApprovalNotices,
@@ -18,10 +20,18 @@ export function useWorkspaceNotifications({
   tabs,
   composerFocused,
 }: WorkspaceNotificationDeps) {
-  const hiddenApprovalToasts = useMemo(
-    () => hiddenApprovalNotices(sessions, activeTabId, tabs, composerFocused),
-    [sessions, activeTabId, tabs, composerFocused],
+  // Rebuilt on every shell change; kept while the notices themselves are the same,
+  // so the footer's toasts do not re-render for unrelated session updates.
+  const hiddenApprovalToasts = useStableValue(
+    useMemo(
+      () => hiddenApprovalNotices(sessions, activeTabId, tabs, composerFocused),
+      [sessions, activeTabId, tabs, composerFocused],
+    ),
+    sameShallowItems,
   );
-  const pendingNotifications = useMemo(() => pendingApprovalNotices(sessions), [sessions]);
+  const pendingNotifications = useStableValue(
+    useMemo(() => pendingApprovalNotices(sessions), [sessions]),
+    sameShallowItems,
+  );
   return { hiddenApprovalToasts, pendingNotifications };
 }
