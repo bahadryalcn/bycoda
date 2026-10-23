@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { decorativeMotionEnabled, subscribeDecorativeMotion } from "./decorativeMotion";
+import {
+  decorativeMotionEnabled,
+  subscribeDecorativeMotion,
+  windowHasFocus,
+} from "./decorativeMotion";
 
 const native = vi.hoisted(() => ({
   isVisible: vi.fn(async () => true),
@@ -95,4 +99,28 @@ it("releases native listeners registered after the last consumer leaves", async 
   complete(releaseFocus);
   await flush();
   expect(releaseFocus).toHaveBeenCalledOnce();
+});
+
+it("tracks window focus from the native event so canvas loops can pause unfocused", async () => {
+  stop = subscribeDecorativeMotion(vi.fn());
+  await flush();
+  expect(windowHasFocus()).toBe(true);
+  // WKWebView keeps document.hasFocus() true after the window drops behind another app.
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  native.isFocused.mockResolvedValue(false);
+  focus({ payload: false });
+  expect(windowHasFocus()).toBe(false);
+  await flush();
+  expect(windowHasFocus()).toBe(false);
+  // Decorative CSS motion is unaffected by focus; only the window's visibility gates it.
+  expect(decorativeMotionEnabled()).toBe(true);
+  native.isFocused.mockResolvedValue(true);
+  focus({ payload: true });
+  await flush();
+  expect(windowHasFocus()).toBe(true);
+  // A later native query (after a resize) keeps the gate in step as well.
+  native.isFocused.mockResolvedValue(false);
+  resize();
+  await flush();
+  expect(windowHasFocus()).toBe(false);
 });

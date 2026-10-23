@@ -6,6 +6,7 @@ import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
 
 const state = vi.hoisted(() => ({
   enabled: true,
+  focused: true,
   listeners: new Set<() => void>(),
   draw: vi.fn(),
   dispose: vi.fn(),
@@ -13,6 +14,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("../model/decorativeMotion", () => ({
   decorativeMotionEnabled: () => state.enabled,
+  windowHasFocus: () => state.focused,
   subscribeDecorativeMotion: (fn: () => void) => {
     state.listeners.add(fn);
     return () => state.listeners.delete(fn);
@@ -32,6 +34,7 @@ let raf: ReturnType<typeof vi.fn>, cancel: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.enabled = true;
+  state.focused = true;
   state.listeners.clear();
   vi.clearAllMocks();
   raf = vi.fn(() => 42);
@@ -125,4 +128,20 @@ it("caps painting at 30 fps even on a faster display", () => {
   expect(state.draw).toHaveBeenCalledOnce();
   raf.mock.calls[3][0](134);
   expect(state.draw).toHaveBeenCalledTimes(2);
+});
+
+it("pauses while another application has focus and resumes with it, keeping the scene", () => {
+  render();
+  intersect(true);
+  expect(raf).toHaveBeenCalledOnce();
+  const paints = state.draw.mock.calls.length;
+  state.focused = false;
+  act(() => state.listeners.forEach((fn) => fn()));
+  expect(cancel).toHaveBeenCalledWith(42);
+  expect(state.draw).toHaveBeenCalledTimes(paints);
+  expect(state.dispose).not.toHaveBeenCalled();
+  state.focused = true;
+  act(() => state.listeners.forEach((fn) => fn()));
+  expect(raf).toHaveBeenCalledTimes(2);
+  expect(state.create).toHaveBeenCalledOnce();
 });

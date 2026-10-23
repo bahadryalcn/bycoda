@@ -1,5 +1,9 @@
 import { useEffect, useRef } from "react";
-import { decorativeMotionEnabled, subscribeDecorativeMotion } from "../model/decorativeMotion";
+import {
+  decorativeMotionEnabled,
+  subscribeDecorativeMotion,
+  windowHasFocus,
+} from "../model/decorativeMotion";
 import {
   useLiveBackground,
   useLiveBackgroundIntensity,
@@ -190,6 +194,9 @@ export function LiveBackgroundCanvas({
     let intersects = typeof IntersectionObserver === "undefined";
     // Refresh on gate notifications, not every frame (the snapshot reads storage).
     let animate = decorativeMotionEnabled();
+    // Repainting every cell 30 times a second is the app's largest idle cost
+    // on a background window; keep the last frame until the window is used.
+    let focused = windowHasFocus();
     const signal = createLiveSignalDriver();
 
     const paint = (delta: number) => {
@@ -215,7 +222,8 @@ export function LiveBackgroundCanvas({
       paint(animate ? 0 : STILL_TIME);
     };
 
-    const running = () => animate && activeRef.current && intersects && width > 0 && height > 0;
+    const running = () =>
+      animate && focused && activeRef.current && intersects && width > 0 && height > 0;
 
     const tick = (now: number) => {
       frame = 0;
@@ -245,6 +253,7 @@ export function LiveBackgroundCanvas({
     updateLoopRef.current = updateLoop;
     const syncMotion = () => {
       animate = decorativeMotionEnabled();
+      focused = windowHasFocus();
       updateLoop();
     };
     const unsubscribe = subscribeDecorativeMotion(syncMotion);
