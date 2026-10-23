@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  commandSucceeds,
   launchAgent,
   systemdUnit,
   uninstallService,
@@ -181,7 +182,9 @@ it("restores the Linux definition if daemon-reload fails after removal", async (
             expect(existsSync(file)).toBe(false);
             throw new Error("reload timeout");
           }
-          return { stdout: "LoadState=loaded\nActiveState=inactive\nUnitFileState=disabled\n" };
+          return {
+            stdout: "LoadState=loaded\nActiveState=inactive\nUnitFileState=disabled\n",
+          };
         },
       }),
     ).rejects.toThrow("definition was preserved");
@@ -207,7 +210,9 @@ it.each(["darwin", "linux"] as const)(
               throw new Error(
                 'Could not find service "com.bycoda.host" in domain for user gui: 501',
               );
-            return { stdout: "LoadState=not-found\nActiveState=inactive\nUnitFileState=\n" };
+            return {
+              stdout: "LoadState=not-found\nActiveState=inactive\nUnitFileState=\n",
+            };
           },
         }),
       ).resolves.toBeInstanceOf(Array);
@@ -370,4 +375,13 @@ it("restores the Linux definition when reload leaves a registered unit", async (
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+it("judges a command by its exit code, not by how much it prints", async () => {
+  // `launchctl print gui/<uid>` lists every job of the login session and easily
+  // exceeds a small exec buffer; a long listing must not read as a failure.
+  const chatty = ["-e", "process.stdout.write('x'.repeat(1024 * 1024))"];
+  expect(await commandSucceeds(process.execPath, chatty)).toBe(true);
+  expect(await commandSucceeds(process.execPath, ["-e", "process.exit(3)"])).toBe(false);
+  expect(await commandSucceeds(join(tmpdir(), "no-such-command"), [])).toBe(false);
 });
