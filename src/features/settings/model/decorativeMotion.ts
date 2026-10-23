@@ -13,6 +13,9 @@ let unsaved: boolean | null = null;
 let media: MediaQueryList | null = null;
 const listeners = new Set<() => void>();
 let nativeVisible = true;
+// Tracked from Tauri's focus event: WKWebView keeps document.hasFocus() true
+// after the window drops behind another application.
+let windowFocused = typeof document === "undefined" || document.hasFocus();
 let releaseLifecycle: (() => void) | undefined;
 
 /** The stored choice stays independent of the system's accessibility setting. */
@@ -50,6 +53,14 @@ export function decorativeMotionEnabled(): boolean {
   );
 }
 
+/**
+ * Whether this window has input focus. Decorative CSS motion keeps running in
+ * an unfocused window; canvas loops that repaint every frame pause on it.
+ */
+export function windowHasFocus(): boolean {
+  return windowFocused;
+}
+
 function syncDecorativeMotionAttribute(): void {
   if (typeof document !== "undefined")
     document.documentElement.dataset.decorativeMotion = decorativeMotionEnabled() ? "on" : "off";
@@ -75,14 +86,20 @@ function installWindowLifecycle(): () => void {
   const releases: Array<() => void> = [];
   const native = isTauri() ? getCurrentWindow() : null;
   nativeVisible = true;
+  windowFocused = document.hasFocus();
   const report = (error: unknown) =>
     console.warn("Decorative motion window lifecycle unavailable", error);
   const refreshNative = async () => {
     if (!native) return;
     const current = ++revision;
-    const [shown, minimized] = await Promise.all([native.isVisible(), native.isMinimized()]);
+    const [shown, minimized, focused] = await Promise.all([
+      native.isVisible(),
+      native.isMinimized(),
+      native.isFocused(),
+    ]);
     if (disposed || current !== revision) return;
     nativeVisible = shown && !minimized;
+    windowFocused = focused;
     notify();
   };
   const visibility = () => {
@@ -90,13 +107,24 @@ function installWindowLifecycle(): () => void {
     notify();
     void refreshNative().catch(report);
   };
-  window.addEventListener("focus", visibility);
+  const onFocus = () => {
+    windowFocused = true;
+    visibility();
+  };
+  const onBlur = () => {
+    windowFocused = false;
+    ++revision;
+    notify();
+  };
+  window.addEventListener("focus", onFocus);
+  window.addEventListener("blur", onBlur);
   document.addEventListener("visibilitychange", visibility);
   if (native) {
     releases.push(
       retainAsyncSubscription(
-        native.onFocusChanged(() => {
+        native.onFocusChanged((event) => {
           if (disposed) return;
+          windowFocused = event.payload;
           visibility();
         }),
         report,
@@ -115,10 +143,12 @@ function installWindowLifecycle(): () => void {
   return () => {
     disposed = true;
     ++revision;
-    window.removeEventListener("focus", visibility);
+    window.removeEventListener("focus", onFocus);
+    window.removeEventListener("blur", onBlur);
     document.removeEventListener("visibilitychange", visibility);
     releases.forEach((release) => release());
     nativeVisible = true;
+    windowFocused = true;
   };
 }
 

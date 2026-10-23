@@ -8,6 +8,7 @@ import {
   loadDecorativeMotionEnabled,
   saveDecorativeMotionEnabled,
   subscribeDecorativeMotion,
+  windowHasFocus,
 } from "./decorativeMotion";
 
 let reduced = false;
@@ -65,6 +66,16 @@ describe("decorative motion", () => {
     expect(loadDecorativeMotionEnabled()).toBe(true);
     window.dispatchEvent(new Event("focus"));
     expect(decorativeMotionEnabled()).toBe(true);
+  });
+
+  it("follows DOM focus and blur for the window focus gate", () => {
+    const { listener } = subscribe();
+    expect(windowHasFocus()).toBe(true);
+    window.dispatchEvent(new Event("blur"));
+    expect(windowHasFocus()).toBe(false);
+    expect(listener).toHaveBeenCalled();
+    window.dispatchEvent(new Event("focus"));
+    expect(windowHasFocus()).toBe(true);
   });
 
   it("requires visibility without changing the saved choice", () => {
