@@ -9,6 +9,8 @@ import {
   realpath,
   rename,
   rm,
+  stat,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, resolve, relative } from "node:path";
@@ -114,6 +116,11 @@ async function seedIndex(cwd: string, index: string): Promise<boolean> {
     const listing = (await git(cwd, ["ls-files", "-v", "-z"])).toString().split("\0");
     if (listing.some((entry) => /^[a-zS]/.test(entry))) return false;
     await copyFile(real, index);
+    // Keep the real index's timestamp: git treats entries modified at or after
+    // it as racily clean and re-hashes them. A copy stamped "now" would let a
+    // same-size edit made within the timestamp granularity pass as unchanged.
+    const { atime, mtime } = await stat(real);
+    await utimes(index, atime, mtime);
     await git(cwd, ["read-tree", "-m", "HEAD"], index);
     return true;
   } catch {

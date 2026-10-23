@@ -84,7 +84,22 @@ fn seed_index(root: &Path, index: &Path, real: &Path) -> bool {
         return false;
     }
     std::fs::copy(real, index).is_ok()
+        && keep_index_timestamp(real, index)
         && output(root, &["read-tree", "-m", "HEAD"], Some(index)).is_ok()
+}
+
+/// Gives the copy the real index's modification time: git treats entries
+/// modified at or after it as racily clean and re-hashes them. A copy stamped
+/// "now" would let a same-size edit within the timestamp granularity pass.
+fn keep_index_timestamp(real: &Path, index: &Path) -> bool {
+    let Ok(modified) = std::fs::metadata(real).and_then(|meta| meta.modified()) else {
+        return false;
+    };
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(index)
+        .and_then(|file| file.set_modified(modified))
+        .is_ok()
 }
 
 fn checkpoint_ref_prefix(dir: &Path) -> Result<String, String> {
