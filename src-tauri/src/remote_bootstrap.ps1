@@ -123,6 +123,13 @@ try {
       }
       $published = $true
       [IO.File]::WriteAllText((Join-Path $bin 'bycoda-host.cmd'), $launcher, [Text.Encoding]::ASCII)
+      # Every install unpacks a fresh runtime (with its Node engine) beside the
+      # old ones. The new service answers now, so drop the others; an old
+      # node.exe still exiting stays locked and is removed by the next install.
+      foreach ($old in Get-ChildItem -LiteralPath $runtimeRoot -Directory) {
+        if ($old.Name.StartsWith('.') -or $old.FullName -eq $runtime) { continue }
+        Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+      }
     }
     Write-Output $connection
   } catch {

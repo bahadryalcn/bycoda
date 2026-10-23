@@ -1,8 +1,16 @@
 import { afterEach, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  existsSync,
+} from "node:fs";
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { version } from "../package.json";
 
@@ -46,11 +54,12 @@ function fixture(badChecksum = false) {
     .replace('BASE="$HOME/.bycoda-host"', `BASE=${quote(base)}`)
     .replace("@@VERSION@@", quote(version))
     .replace("@@RELEASE@@", "'https://example.invalid/releases'");
-  const run = (forceUpgrade = false, bundled = false) =>
+  const run = (forceUpgrade = false, bundled = false, extraEnv: NodeJS.ProcessEnv = {}) =>
     new Promise<{ code: number | null; out: string; error: string }>((resolve, reject) => {
       const child = spawn("sh", ["-s"], {
         env: {
           ...process.env,
+          ...extraEnv,
           PATH: `${bin}:/usr/bin:/bin`,
           BYCODA_TEST_ARCHIVE: archive,
           BYCODA_TEST_CHECKSUM: join(dir, "checksum"),
@@ -95,13 +104,41 @@ it.skipIf(process.platform === "win32")(
     expect((await run()).code).toBe(0);
     const oldRuntime = readFileSync(join(base, "runtime-path"), "utf8");
     expect((await run(true)).code).toBe(0);
-    expect(readFileSync(join(base, "runtime-path"), "utf8")).not.toBe(oldRuntime);
+    const newRuntime = readFileSync(join(base, "runtime-path"), "utf8");
+    expect(newRuntime).not.toBe(oldRuntime);
     expect(readFileSync(join(dir, "events"), "utf8").trim().split("\n")).toEqual([
       "service install",
       "service uninstall",
       "service install",
     ]);
     expect(readFileSync(join(dir, "downloads"), "utf8").trim().split("\n")).toHaveLength(4);
+    // The replaced runtime (about 115 MB with its Node engine) is not kept.
+    expect(existsSync(oldRuntime.trim())).toBe(false);
+    expect(existsSync(newRuntime.trim())).toBe(true);
+    expect(readdirSync(join(base, "runtime"))).toEqual([basename(newRuntime.trim())]);
+  },
+);
+it.skipIf(process.platform === "win32")(
+  "removes stale runtimes after an install but keeps the one a registered service still runs",
+  async () => {
+    const { dir, base, run } = fixture();
+    const stale = join(base, "runtime", "0.1.0-darwin-arm64-.install.stale");
+    const registered = join(base, "runtime", "0.1.0-darwin-arm64-.install.live");
+    const inProgress = join(base, "runtime", ".install.other");
+    for (const folder of [stale, registered, inProgress]) mkdirSync(folder, { recursive: true });
+    const agents = join(dir, "home", "Library", "LaunchAgents");
+    mkdirSync(agents, { recursive: true });
+    writeFileSync(
+      join(agents, "com.bycoda.host.plist"),
+      `<string>${registered}/bin/node</string><string>${registered}/host.mjs</string>`,
+    );
+    const result = await run(false, false, { HOME: join(dir, "home") });
+    expect(result.error).toBe("");
+    expect(result.code).toBe(0);
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(registered)).toBe(true);
+    expect(existsSync(inProgress)).toBe(true);
+    expect(existsSync(readFileSync(join(base, "runtime-path"), "utf8").trim())).toBe(true);
   },
 );
 it.skipIf(process.platform === "win32")(

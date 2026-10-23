@@ -1,4 +1,5 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
+import { spawn } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
@@ -35,7 +36,10 @@ export async function connectionInfo(
   });
   if (!response.ok) throw new Error("Host is not ready");
   if (expectedRuntime) {
-    const status = (await response.json()) as { pid?: number; runtime?: string };
+    const status = (await response.json()) as {
+      pid?: number;
+      runtime?: string;
+    };
     if (status.pid !== state.pid || status.runtime !== expectedRuntime) {
       throw new Error("The installed host runtime is not the one serving requests");
     }
@@ -224,7 +228,9 @@ export async function uninstallService(
       } catch (error) {
         if (!missingLaunchAgent(error)) throw error;
         // A failed bootout is safe only once launchd confirms this job is absent.
-        await rm(join(home, "Library/LaunchAgents", `${LABEL}.plist`), { force: true });
+        await rm(join(home, "Library/LaunchAgents", `${LABEL}.plist`), {
+          force: true,
+        });
         return [];
       }
       throw bootoutError ?? new Error("launchd still has the host registered");
@@ -304,6 +310,33 @@ export async function uninstallService(
   throw new Error("bycoda Host supports Windows, Linux and macOS");
 }
 
+/**
+ * Whether a command exits successfully, with its output discarded. Use it for
+ * probes whose listing may be large; a long listing is not a failure.
+ */
+export function commandSucceeds(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      env,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    const timer = setTimeout(() => child.kill(), 15_000);
+    child.once("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve(code === 0);
+    });
+  });
+}
+
 export async function installService(
   options: ServiceOptions,
 ): Promise<{ port: number; pid: number }> {
@@ -327,9 +360,9 @@ export async function installService(
     exec(command, args, { env, timeout: 15_000, maxBuffer: 128 * 1024 });
   if (process.platform === "darwin") {
     const domain = `gui/${process.getuid!()}`;
-    try {
-      await run("launchctl", ["print", domain]);
-    } catch {
+    // The domain listing names every job of the login session and grows well
+    // past a small exec buffer, so only its exit status says whether it exists.
+    if (!(await commandSucceeds("launchctl", ["print", domain]))) {
       throw new Error(
         "Sign in at the Mac's desktop once, then reconnect. bycoda Host runs as a login service; keep the Mac signed in and awake.",
       );
@@ -351,7 +384,9 @@ export async function installService(
       await run("launchctl", ["kickstart", `${domain}/${LABEL}`]);
     } else {
       const executable = await preparePosixNode(options.executable, options.directory);
-      await writeFile(file, launchAgent({ ...options, executable }, path), { mode: 0o600 });
+      await writeFile(file, launchAgent({ ...options, executable }, path), {
+        mode: 0o600,
+      });
       await run("launchctl", ["enable", `${domain}/${LABEL}`]);
       await run("launchctl", ["bootstrap", domain, file]);
     }
@@ -379,7 +414,9 @@ export async function installService(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       const executable = await preparePosixNode(options.executable, options.directory);
-      await writeFile(file, systemdUnit({ ...options, executable }, path), { mode: 0o600 });
+      await writeFile(file, systemdUnit({ ...options, executable }, path), {
+        mode: 0o600,
+      });
     }
     await run("systemctl", ["--user", "daemon-reload"], env);
     await run("systemctl", ["--user", "enable", "--now", "bycoda-host.service"], env);

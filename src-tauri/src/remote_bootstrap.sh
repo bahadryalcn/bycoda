@@ -72,3 +72,15 @@ if [ "$EXISTED" = 1 ] && { [ "$FORCE_UPGRADE" = 1 ] || [ "${BYCODA_HOST_REPAIR:-
 fi
 "$ENTRY" service install --port "$HOST_PORT" >/dev/null
 "$ENTRY" connection-info
+# Every install unpacks a fresh runtime (with its Node engine) beside the old
+# ones. Now that the new host answers, drop the others, except a runtime that a
+# registered service definition still launches and installs still in progress.
+RUNTIME=$(cat "$BASE/runtime-path")
+REGISTERED=$(cat "$HOME/Library/LaunchAgents/com.bycoda.host.plist" "$HOME/.config/systemd/user/bycoda-host.service" 2>/dev/null || true)
+for OLD in "$BASE"/runtime/*/; do
+  OLD=${OLD%/}
+  [ -d "$OLD" ] || continue
+  [ "$OLD" != "$RUNTIME" ] || continue
+  case "$REGISTERED" in *"$(basename "$OLD")"*) continue ;; esac
+  rm -rf "$OLD" || true
+done
