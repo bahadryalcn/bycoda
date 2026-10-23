@@ -51,7 +51,7 @@ import {
   loadCrewTheme,
   saveCrewTheme,
 } from "./settings";
-import { ALT, IS_MAC, MOD, SHIFT } from "../../../platform/tauri/platform";
+import { ALT, IS_LINUX, IS_MAC, MOD, SHIFT } from "../../../platform/tauri/platform";
 import { NOTES_PANEL_COMMAND } from "../../notes/notesPanel";
 
 const MODEL_CONTROLS_KEY = "bycoda.modelControls";
@@ -678,7 +678,8 @@ describe("settings search", () => {
   it("ranks label matches over keyword matches, and pages last", () => {
     expect(searchSettings("glass").map((result) => result.label)).toEqual([
       "Main pane glass",
-      "Window glass",
+      // Linux has no window glass setting.
+      ...(IS_LINUX ? [] : ["Window glass"]),
       "Blur radius",
       "Main pane opacity",
       "Sidebar opacity",
