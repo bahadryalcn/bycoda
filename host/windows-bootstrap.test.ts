@@ -152,8 +152,8 @@ it.skipIf(!shell)(
     await fixture.run(true);
     const newRuntime = readFileSync(join(fixture.base, "runtime-path"), "utf8");
     expect(newRuntime).not.toBe(oldRuntime);
-    // The replaced runtime is removed once the new service answers.
-    expect(existsSync(oldRuntime.trim())).toBe(false);
+    // The replaced runtime stays one install longer for sessions started from it.
+    expect(existsSync(oldRuntime.trim())).toBe(true);
     expect(existsSync(newRuntime.trim())).toBe(true);
     expect(readFileSync(fixture.events, "utf8").trim().split(/\r?\n/)).toEqual([
       "service install",
@@ -161,6 +161,10 @@ it.skipIf(!shell)(
       "service install",
     ]);
     expect(readFileSync(fixture.downloads, "utf8").trim().split(/\r?\n/)).toHaveLength(4);
+    // The next upgrade removes it once the new service answers.
+    await fixture.run(true);
+    expect(existsSync(oldRuntime.trim())).toBe(false);
+    expect(existsSync(newRuntime.trim())).toBe(true);
   },
   90_000,
 );

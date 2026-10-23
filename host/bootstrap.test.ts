@@ -113,10 +113,16 @@ it.skipIf(process.platform === "win32")(
       "service install",
     ]);
     expect(readFileSync(join(dir, "downloads"), "utf8").trim().split("\n")).toHaveLength(4);
-    // The replaced runtime (about 115 MB with its Node engine) is not kept.
-    expect(existsSync(oldRuntime.trim())).toBe(false);
+    // Each runtime is about 115 MB with its Node engine: only the current one
+    // and the one it replaced (still used by older sessions) are kept.
+    expect(existsSync(oldRuntime.trim())).toBe(true);
     expect(existsSync(newRuntime.trim())).toBe(true);
-    expect(readdirSync(join(base, "runtime"))).toEqual([basename(newRuntime.trim())]);
+    expect((await run(true)).code).toBe(0);
+    const latest = readFileSync(join(base, "runtime-path"), "utf8");
+    expect(existsSync(oldRuntime.trim())).toBe(false);
+    expect(readdirSync(join(base, "runtime")).sort()).toEqual(
+      [basename(latest.trim()), basename(newRuntime.trim())].sort(),
+    );
   },
 );
 it.skipIf(process.platform === "win32")(

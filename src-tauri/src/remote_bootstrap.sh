@@ -77,6 +77,13 @@ if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
   [ "$("$DEST/bycoda-host" --version)" = "$VERSION" ] || exit 1
   # Keep a real wrapper (rather than a symlink): it resolves the packaged Node
   # relative to the versioned executable, not this bin directory.
+  # The replaced runtime stays one install longer: sessions started from it
+  # (and a rollback) may still launch its files.
+  OLD_RUNTIME=$(cat "$BASE/runtime-path" 2>/dev/null || true)
+  if [ -n "$OLD_RUNTIME" ] && [ "$OLD_RUNTIME" != "$DEST" ]; then
+    printf '%s\n' "$OLD_RUNTIME" > "$TMP/previous-runtime-path"
+    mv "$TMP/previous-runtime-path" "$BASE/previous-runtime-path"
+  fi
   printf '%s\n' "$DEST" > "$TMP/runtime-path"
   mv "$TMP/runtime-path" "$BASE/runtime-path"
   cat > "$TMP/launcher" <<'SH'
@@ -96,14 +103,17 @@ fi
 "$ENTRY" service install --port "$HOST_PORT" >/dev/null
 "$ENTRY" connection-info
 # Every install unpacks a fresh runtime (with its Node engine) beside the old
-# ones. Now that the new host answers, drop the others, except a runtime that a
-# registered service definition still launches and installs still in progress.
+# ones. Now that the new host answers, drop the others, except the previous
+# runtime, a runtime that a registered service definition still launches and
+# installs still in progress.
 RUNTIME=$(cat "$BASE/runtime-path")
+PREVIOUS=$(cat "$BASE/previous-runtime-path" 2>/dev/null || true)
 REGISTERED=$(cat "$HOME/Library/LaunchAgents/com.bycoda.host.plist" "$HOME/.config/systemd/user/bycoda-host.service" 2>/dev/null || true)
 for OLD in "$BASE"/runtime/*/; do
   OLD=${OLD%/}
   [ -d "$OLD" ] || continue
   [ "$OLD" != "$RUNTIME" ] || continue
+  [ "$OLD" != "$PREVIOUS" ] || continue
   case "$REGISTERED" in *"$(basename "$OLD")"*) continue ;; esac
   rm -rf "$OLD" || true
 done
