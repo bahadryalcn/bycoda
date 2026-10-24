@@ -22,9 +22,9 @@ afterEach(() => {
   for (const close of cleanup.splice(0)) close();
 });
 function fixture() {
-  // macOS temp paths can use /var while filesystem operations resolve /private/var.
-  // Register the same canonical checkout identity that workspace path checks use.
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "bycoda-file-lifecycle-")));
+  // Match fs.promises.realpath used by workspace path checks: resolve macOS
+  // /var aliases and expand Windows 8.3 temp paths such as RUNNER~1.
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-file-lifecycle-")));
   const store = new HostStore(join(root, "host.db"));
   store.addProject(root, "Files");
   const workspace = new WorkspaceCommands(store, async (_id, fn) => fn());
