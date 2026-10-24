@@ -10,6 +10,7 @@ import { gateUsageBudget } from "./submit/submitUsageBudget";
 import type { SubmitDeps, SubmitPreflight } from "./submit/submitTypes";
 import type { Submit } from "../helpers/types";
 import { newSession, type Session } from "../../../features/sessions/model/session";
+import { sentQueuedMessage } from "../../../features/sessions/model/messageQueue";
 import {
   getSessions,
   resetSessionsStore,
@@ -90,8 +91,16 @@ async function queueHarness(
 it("stops the running turn before steering a row queued for another model", async () => {
   const running = { harness: "codex" as const, model: "running", modelSettings: {} };
   const saved = { ...running, model: "saved" };
-  const submit = vi.fn<Submit>(() => {
+  const submit = vi.fn<Submit>((sessionId, _text, _attachments, options) => {
     expect(getSessions()[0].busy).toBe(false);
+    // Accepted production submits consume their queued row before returning.
+    setSessions((all) =>
+      all.map((session) =>
+        session.id === sessionId
+          ? { ...sentQueuedMessage(session, options!.queuedMessageId!), busy: true }
+          : session,
+      ),
+    );
     return true;
   });
   const stop = vi.fn((sessionId: string) =>
@@ -105,7 +114,10 @@ it("stops the running turn before steering a row queued for another model", asyn
     submit,
     {
       runningModelTarget: running,
-      queuedMessages: [{ id: "head", text: "Saved task", attachments: [], modelTarget: saved }],
+      queuedMessages: [
+        { id: "head", text: "Saved task", attachments: [], modelTarget: saved },
+        { id: "tail", text: "Next task", attachments: [], modelTarget: saved },
+      ],
     },
     stop,
   );
@@ -121,6 +133,7 @@ it("stops the running turn before steering a row queued for another model", asyn
       expect.objectContaining({ queuedMessageId: "head", followUpBehavior: "steer" }),
     );
     expect(getSessions()[0].queueStatus).toBe("active");
+    expect(getSessions()[0].queuedMessages?.map((message) => message.id)).toEqual(["tail"]);
   } finally {
     await harness.cleanup();
   }
