@@ -7,6 +7,7 @@ import {
   symlinkSync,
   writeFileSync,
   existsSync,
+  realpathSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -21,7 +22,9 @@ afterEach(() => {
   for (const close of cleanup.splice(0)) close();
 });
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "bycoda-file-lifecycle-"));
+  // macOS temp paths can use /var while filesystem operations resolve /private/var.
+  // Register the same canonical checkout identity that workspace path checks use.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "bycoda-file-lifecycle-")));
   const store = new HostStore(join(root, "host.db"));
   store.addProject(root, "Files");
   const workspace = new WorkspaceCommands(store, async (_id, fn) => fn());

@@ -3307,7 +3307,9 @@ function ActivityPhaseGroup({
     for (let index = phase.steps.length - 1; index >= 0; index -= 1) {
       const step = phase.steps[index];
       if (step.role === "tool" && step.tool?.kind === "shell") {
-        compactCommand = step;
+        // Recognized app calls already have a compact action row; repeating the
+        // shell preview here exposes their full executable path and arguments.
+        compactCommand = bycodaToolCall(step) ? undefined : step;
         break;
       }
     }

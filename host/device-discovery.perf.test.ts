@@ -23,9 +23,18 @@ const android: DeviceSummary = {
   physical: true,
 };
 
+function discoveryHost(env: NodeJS.ProcessEnv = {}) {
+  const host = new DeviceHost("/unused-synthetic-device-cache", { platform: "darwin", env });
+  // A Mac runner may have an auto-detected Android SDK. Keep that optional
+  // source synthetic too, so fake timers never launch a real adb process.
+  vi.spyOn(host as unknown as { listMacAndroid: () => Promise<DeviceSummary[]> }, "listMacAndroid")
+    .mockResolvedValue([]);
+  return host;
+}
+
 it("returns healthy native discovery before a slow optional hub and shares later discovery results", async () => {
   vi.useFakeTimers();
-  const host = new DeviceHost("/unused-synthetic-device-cache", { platform: "darwin", env: {} });
+  const host = discoveryHost();
   const internal = host as unknown as {
     request: () => Promise<Response>;
     listIos: () => Promise<DeviceSummary[]>;
@@ -72,7 +81,7 @@ it("returns healthy native discovery before a slow optional hub and shares later
 
 it("keeps waiting for a usable pending source when native discovery is empty", async () => {
   vi.useFakeTimers();
-  const host = new DeviceHost("/unused-synthetic-device-cache", { platform: "darwin", env: {} });
+  const host = discoveryHost();
   const internal = host as unknown as { request: () => Promise<Response>; listIos: () => Promise<DeviceSummary[]> };
   vi.spyOn(internal, "listIos").mockResolvedValue([]);
   vi.spyOn(internal, "request").mockImplementation(() => new Promise((resolve) => {
@@ -90,7 +99,7 @@ it("keeps waiting for a usable pending source when native discovery is empty", a
 
 it("invalidates shared discovery when the selected SDK environment changes", async () => {
   const env = { DEVELOPER_DIR: "/synthetic/xcode-a" };
-  const host = new DeviceHost("/unused-synthetic-device-cache", { platform: "darwin", env });
+  const host = discoveryHost(env);
   const internal = host as unknown as {
     request: () => Promise<Response>;
     listIos: () => Promise<DeviceSummary[]>;

@@ -40,14 +40,6 @@ function setup() {
     calls.push(method);
     if (offline) throw new Error("offline");
     const id = String(params.sessionId);
-    let result = queues.get(id);
-    if (method.endsWith(".change"))
-      result = queues.change(
-        id,
-        params.before,
-        params.after,
-        params.takeOwnership ? String(params.clientId) : undefined,
-      );
     if (method.endsWith(".claim")) {
       expect(
         [...Array(localStorage.length)]
@@ -57,17 +49,13 @@ function setup() {
               key?.endsWith(":send") && JSON.parse(localStorage.getItem(key)!).accepted === false,
           ),
       ).toBe(true);
-      result = queues.claim(
-        id,
-        String(params.id),
-        String(params.clientId),
-        Number(params.revision),
-        params.steer === true,
-      );
-      if (loseClaim) throw new Error("claim response lost");
     }
-    if (method.endsWith(".finish"))
-      result = queues.finish(id, String(params.token), params.accepted === true);
+    const action = method.slice(method.lastIndexOf(".") + 1) as Parameters<SessionQueues["serve"]>[0];
+    const result = queues.serve(action, id, String(params.clientId), params, {
+      before: params.before,
+      after: params.after,
+    });
+    if (method.endsWith(".claim") && loseClaim) throw new Error("claim response lost");
     return result as never;
   };
   const client = (id: string) =>
@@ -102,7 +90,9 @@ it("retains unknown delivery without a legacy backup and retries cannot acknowle
   const original = f.client("desktop:old");
   await original.initialize({ messages: [row("a"), row("b")], status: "active" });
   await original.claim("a", false);
-  const restored = f.client("desktop:new");
+  // A restarted window keeps its identity; a different window must not adopt
+  // this window's journal from the shared origin.
+  const restored = f.client("desktop:old");
   await restored.initialize();
   expect(restored.snapshot().recovery).toBe("a");
   expect(restored.canDrain()).toBe(false);
@@ -110,7 +100,7 @@ it("retains unknown delivery without a legacy backup and retries cannot acknowle
   expect(f.queues.get("chat").messages.map((message) => message.id)).toEqual(["a", "b"]);
   expect(f.calls.some((method) => method.endsWith(".finish"))).toBe(false);
   await restored.resolveRecovery(false);
-  expect(f.queues.get("chat")).toMatchObject({ status: "paused", consumer: "desktop:new" });
+  expect(f.queues.get("chat")).toMatchObject({ status: "paused", drain: { holder: "desktop:old" } });
   expect(f.queues.get("chat").claim).toBeUndefined();
   expect(restored.snapshot().recovery).toBeUndefined();
   expect(f.queues.get("chat").messages.map((message) => message.id)).toEqual(["a", "b"]);
@@ -121,11 +111,27 @@ it("explicitly confirms delivery while keeping unrelated queued work paused", as
   const original = f.client("desktop:old");
   await original.initialize({ messages: [row("a"), row("b")], status: "active" });
   await original.claim("a", false);
-  const restored = f.client("desktop:new");
+  const restored = f.client("desktop:old");
   await restored.initialize({ messages: [] });
   await restored.resolveRecovery(true);
   expect(f.queues.get("chat").messages.map((message) => message.id)).toEqual(["b"]);
   expect(f.queues.get("chat").status).toBe("paused");
+});
+
+it("does not let another window adopt or settle an in-flight send", async () => {
+  const f = setup();
+  const original = f.client("desktop:old");
+  await original.initialize({ messages: [row("a")], status: "active" });
+  const token = await original.claim("a", false);
+  expect(token).toBeTruthy();
+  const other = f.client("desktop:new");
+  await other.initialize();
+  expect(other.snapshot().recovery).toBeUndefined();
+  expect(other.canDrain()).toBe(false);
+  await other.resolveRecovery(true);
+  expect(f.queues.get("chat").claim?.token).toBe(token);
+  expect(f.queues.get("chat").messages.map((message) => message.id)).toEqual(["a"]);
+  expect(f.calls.some((method) => method.endsWith(".finish"))).toBe(false);
 });
 
 it("reconciles a lost claim reply after client and queue-service restart without sending", async () => {
@@ -135,12 +141,14 @@ it("reconciles a lost claim reply after client and queue-service restart without
   f.loseClaim();
   await expect(original.claim("a", false)).rejects.toThrow("claim response lost");
   f.restart();
-  const restored = f.client("desktop:new");
+  const restored = f.client("desktop:old");
   await restored.initialize();
   expect(f.queues.get("chat")).toMatchObject({
     messages: [row("a")],
-    status: "paused",
-    consumer: "desktop:new",
+    // Only the claim reply was lost: no provider send started, so the queue
+    // keeps its active state after releasing that reservation.
+    status: "active",
+    drain: { holder: "desktop:old" },
   });
   expect(f.queues.get("chat").claim).toBeUndefined();
   expect(restored.snapshot().error).toBeUndefined();

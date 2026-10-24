@@ -613,6 +613,10 @@ describe("X browser background monitoring and messaging", () => {
       },
     });
     await s.social.tick();
+    // Inbound polling runs independently of dispatch; its authorized reply is
+    // queued for the next dispatch tick rather than delaying existing jobs.
+    expect(s.social.snapshot(owner).jobs).toMatchObject([{ kind: "reply", status: "queued" }]);
+    await s.social.tick();
     const snapshot = s.social.snapshot(owner);
     expect(snapshot.jobs).toHaveLength(1);
     expect(snapshot.jobs[0]).toMatchObject({
