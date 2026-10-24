@@ -8,9 +8,11 @@ export function inlineSessionSync(
   read: (id: string, revision: number) => SessionSync | undefined,
 ): RemoteChangesValue {
   if (!input.inlineSync || changes.reset) return changes;
+  const selected =
+    input.inlineSessionIds === undefined ? undefined : new Set(input.inlineSessionIds);
   let remaining = 64 * 1024 - Buffer.byteLength(JSON.stringify(changes));
   for (const entry of changes.sessions) {
-    if (entry.deleted || remaining <= 0) continue;
+    if (entry.deleted || remaining <= 0 || (selected && !selected.has(entry.sessionId))) continue;
     const cursor = input.sessions.find((value) => value.sessionId === entry.sessionId);
     if (!cursor || cursor.revision <= 0) continue;
     try {

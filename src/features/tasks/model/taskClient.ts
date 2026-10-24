@@ -21,10 +21,13 @@ import {
 } from "../../automations/model/machineResults";
 import { machineProjects, machineCapabilities } from "../../automations/model/machineSnapshot";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
+import { defaultProviderAccountId, supportsProviderAccounts } from "../../providers/model/providerAccounts";
+import { parseRemotePath } from "../../connections/model/remoteProjects";
 import { HOST_TASK_WORKSPACES, type TaskWorkspace } from "./taskWorkspace";
 import { HOST_CREW_TASKS } from "../../crews/model/crew";
 import {
   HOST_TASKS,
+  HOST_TASK_ACCOUNTS,
   HOST_TASKS_TODO,
   HOST_TASK_CONTINUATION,
   taskColumn,
@@ -65,6 +68,7 @@ export type TaskDraft = {
   prompt: string;
   cwd: string;
   harness: HarnessId;
+  providerAccountId?: string;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -145,6 +149,7 @@ export function newTaskDraft(cwd: string, harness: HarnessId, model: string): Ta
     cwd,
     harness,
     model,
+    ...(!parseRemotePath(cwd) && supportsProviderAccounts(harness) && defaultProviderAccountId(harness) !== "default" ? { providerAccountId: defaultProviderAccountId(harness) } : {}),
     modelSettings: {},
     runtimeMode: "auto",
     maxRunMinutes: 0,
@@ -166,6 +171,7 @@ export function draftFromTask(task: BoardTask): TaskDraft {
     prompt: task.prompt,
     cwd: task.cwd,
     harness: task.harness,
+    providerAccountId: task.providerAccountId,
     model: task.model,
     modelSettings: task.modelSettings,
     runtimeMode: task.runtimeMode,
@@ -213,6 +219,7 @@ export function hostTaskFromDraft(draft: TaskDraft, id: string, projectId: strin
     prompt: draft.prompt,
     projectId,
     harness: draft.harness,
+    ...(draft.providerAccountId === undefined ? {} : { providerAccountId: draft.providerAccountId }),
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
@@ -447,6 +454,7 @@ export async function saveTask(
   status: "todo" | "queued" = "queued",
 ): Promise<BoardTask> {
   const machine = taskMachineFor(machines, draft.cwd, draft.machineId);
+  await requireTaskAccount(machine, draft.providerAccountId);
   if (draft.crewDefinitionId && !(await machineCapabilities(machine)).includes(HOST_CREW_TASKS))
     throw new Error("Update this project's host to run tasks with a crew.");
   await requireTaskContinuation(machine, !draft.crewDefinitionId && draft.continueUntilDone);
@@ -494,6 +502,11 @@ export function taskMachineFor(
   if (!inferred || inferred.id !== machine.id)
     throw new Error("Choose a project on the selected machine.");
   return machine;
+}
+
+export async function requireTaskAccount(machine: RemoteMachine, accountId?: string): Promise<void> {
+  if (accountId && accountId !== "default" && !(await machineCapabilities(machine)).includes(HOST_TASK_ACCOUNTS))
+    throw new Error("Update the selected host to run tasks with the selected provider account.");
 }
 
 export async function requireTaskContinuation(
@@ -633,7 +646,7 @@ export async function deleteTask(task: BoardTask, discard = false): Promise<void
   await remoteRequest(
     task.machineId,
     "tasks.delete",
-    { taskId: task.id, ...(discard ? { discard: true } : {}) },
+    { taskId: task.id, expectedUpdatedAt: task.updatedAt, ...(discard ? { discard: true } : {}) },
     false,
     true,
   );

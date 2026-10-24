@@ -91,7 +91,7 @@ export function describeProjectConversationTool(action: string): string | undefi
   if (action.startsWith("goals."))
     return "Read goals wholly scoped to this project. List returns summaries; get returns paginated, redacted JSON text with plan and execution state. Multi-project goals require owner context and are excluded. This does not approve, start, replan, cancel or merge a goal.";
   if (action.startsWith("checkpoints."))
-    return "Read host-observed session checkpoints in this project; defaults to the calling session. Status is paginated; diff returns bounded original/current text with independent truncation offsets. Read-only: undo and keep require owner action.";
+    return "Read session checkpoints in this project from the owning host or desktop store; defaults to the calling session. Status is paginated; diff returns bounded original/current text with independent truncation offsets. An unavailable desktop is an error, never an empty checkpoint. Read-only: undo and keep require owner action.";
   if (action === "models.list")
     return "Read this project's progressive cached host model catalog with pagination. Pending providers and discovery errors remain explicit; an incomplete catalog is not proof that a model is unavailable. No sign-in or settings changes.";
   if (action === "providers.list")
@@ -138,6 +138,12 @@ export class ConversationProjectTools {
     private readonly optional: {
       stewards?: Pick<HostStewards, "list">;
       automations?: Pick<HostAutomations, "preview">;
+      session?: HostStore["session"];
+      checkpoints?: (
+        sessionId: string,
+        principal: RuntimeLogPrincipal,
+        authorized: () => boolean,
+      ) => Pick<HostCheckpoints, "status" | "fileDiff">;
     } = {},
   ) {}
 
@@ -238,15 +244,17 @@ export class ConversationProjectTools {
     if (action !== "checkpoints.status" && action !== "checkpoints.diff")
       throw new Error("Unsupported project conversation tool.");
     const sessionId = String(input.sessionId ?? principal.sessionId);
-    const session = this.store.session(sessionId);
+    const session = (this.optional.session ?? ((id) => this.store.session(id)))(sessionId);
     if (session.projectId !== principal.projectId)
       throw new Error("Session not found in this project scope.");
+    const checkpoints =
+      this.optional.checkpoints?.(sessionId, principal, authorized) ?? this.checkpoints;
     if (action === "checkpoints.status") {
-      const status = await this.checkpoints.status(sessionId, session.session.cwd);
+      const status = await checkpoints.status(sessionId, session.session.cwd);
       check();
       return { ...page(status.files, input), expectedCheckpoint: status.expectedCheckpoint };
     }
-    const diff = await this.checkpoints.fileDiff(
+    const diff = await checkpoints.fileDiff(
       sessionId,
       session.session.cwd,
       String(input.relative),

@@ -5,6 +5,8 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
+import { nextQueueStatus } from "../../../features/connections/model/queueState";
+import { noteSharedLocalStop } from "../../../features/connections/model/useSharedLocalQueues";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { cancelHarnessTurn, stopStreaming } from "../../../integrations/harness";
 import {
@@ -72,9 +74,14 @@ export function useSessionStop(deps: SessionStopDeps) {
       // that completion from draining another queued turn in the meantime.
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === sessionId && s.queuedMessages?.length ? { ...s, queueStatus: "paused" } : s,
+          s.id === sessionId && s.queuedMessages?.length
+            ? { ...s, queueStatus: nextQueueStatus(s.queueStatus, "pause") }
+            : s,
         ),
       );
+      // A send still unsettled (a recovery notice, a late provider answer) pauses the
+      // queue when it settles; the paused display alone would not stop a late success.
+      noteSharedLocalStop(sessionId);
       flushHarnessEvents();
       const generation = turnGen.current.get(sessionId) ?? 0;
       const failureBlockId = `stop-error:${sessionId}`;
@@ -105,7 +112,9 @@ export function useSessionStop(deps: SessionStopDeps) {
                         text: `Stop failed: ${detail}. Try Stop again.`,
                       },
                     ],
-                    ...(s.queuedMessages?.length ? { queueStatus: "paused" as const } : {}),
+                    ...(s.queuedMessages?.length
+                      ? { queueStatus: nextQueueStatus(s.queueStatus, "pause") }
+                      : {}),
                   }
                 : s,
             ),
@@ -127,7 +136,9 @@ export function useSessionStop(deps: SessionStopDeps) {
               worktreePreparing: undefined,
               blocks: completed.blocks.filter((block) => block.id !== failureBlockId),
             };
-            return ready.queuedMessages?.length ? { ...ready, queueStatus: "paused" } : ready;
+            return ready.queuedMessages?.length
+              ? { ...ready, queueStatus: nextQueueStatus(ready.queueStatus, "pause") }
+              : ready;
           }),
         );
         if (session) {

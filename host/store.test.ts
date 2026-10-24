@@ -191,6 +191,39 @@ describe("sparse journal checkpoints", () => {
     expect(summary(next).issueTurnId).toBeUndefined();
   });
 
+  it("durably journals hard provider events without rewriting unchanged history", () => {
+    const history: Block[] = Array.from({ length: 100 }, (_, index) => ({
+      id: `history-${index}`, role: "assistant", text: "x".repeat(64 * 1024),
+    }));
+    const exercise = (journal: boolean) => {
+      const { store, base, path } = setup(history);
+      let current = base;
+      const writes = store.snapshotWrites;
+      for (let index = 0; index < 10; index++) {
+        const block = { ...current.session.blocks.at(-1)!, text: `tool event ${index}` };
+        current = store.transaction(() => store.save({
+          ...current, revision: current.revision + 1,
+          session: { ...current.session, providerSessionId: "provider-current", blocks: [...current.session.blocks.slice(0, -1), block] },
+        }, { type: "tool.updated", index }, { journal, blockChanges: new Map([[block.id, block]]) }));
+      }
+      return { store, current, path, writes: store.snapshotWrites - writes };
+    };
+    const control = exercise(false);
+    const sparse = exercise(true);
+    expect(control.writes).toBe(10);
+    expect(sparse.writes).toBe(0);
+    // The hard event is durable before any timer, settlement, or close.
+    expect(sparse.store.db.prepare("SELECT revision FROM session_journal").get()!.revision).toBe(11);
+    expect(sparse.store.db.prepare("SELECT count(*) AS n FROM session_journal_blocks").get()!.n).toBe(1);
+    expect(sparse.store.db.prepare("SELECT provider_session_id FROM session_state").get()!.provider_session_id).toBe("provider-current");
+    const reader = new HostStore(sparse.path);
+    try {
+      expect(reader.session("sparse").session.blocks).toEqual(sparse.current.session.blocks);
+      expect(reader.session("sparse").session.providerSessionId).toBe("provider-current");
+      expect(reader.events("sparse", 1).events).toHaveLength(10);
+    } finally { reader.close(); }
+  });
+
   it("commits pending content and the receipt atomically with a hard save", () => {
     const { store, base } = setup([{ id: "a", role: "assistant", text: "base" }]);
     let next = edit(store, base, [{ ...base.session.blocks[0], text: "checkpoint" }]);

@@ -1,8 +1,8 @@
 import { t, useLocale } from "../../../shared/i18n/technical";
-import { useEffect, useRef, useState } from "react";
-import mammoth from "mammoth/mammoth.browser";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { loadDocx } from "../model/docxClient";
 import { documentErrorMessage } from "../model/documentViewer";
-import { sanitizeDocumentHtml } from "../model/documentHtml";
+import { sanitizeDocumentBody } from "../model/documentHtml";
 import { DocumentMessage } from "./DocumentMessage";
 import { useAnchoredZoom } from "./documentZoom";
 import { ZoomBadge } from "./ZoomBadge";
@@ -12,7 +12,7 @@ const MAX_ZOOM = 3;
 
 type State =
   | { status: "loading" }
-  | { status: "ready"; html: string }
+  | { status: "ready"; body: HTMLElement; empty: boolean }
   | { status: "error"; message: string };
 
 // Descendant styles for the converted markup, which carries no classes of its own.
@@ -34,29 +34,28 @@ export default function DocxViewer({ bytes }: { bytes: Uint8Array }) {
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setState({ status: "loading" });
-    const arrayBuffer = bytes.buffer.slice(
-      bytes.byteOffset,
-      bytes.byteOffset + bytes.byteLength,
-    ) as ArrayBuffer;
-    mammoth.convertToHtml({ arrayBuffer }).then(
-      (result) => {
-        if (!cancelled) {
+    loadDocx(bytes, controller.signal)
+      .then((html) => {
+        if (!controller.signal.aborted) {
+          const body = sanitizeDocumentBody(html);
           setState({
             status: "ready",
-            html: sanitizeDocumentHtml(result.value),
+            body,
+            empty: ![...body.childNodes].some(
+              (node) => node.nodeType !== Node.TEXT_NODE || node.textContent?.trim(),
+            ),
           });
         }
-      },
-      (cause: unknown) => {
-        if (!cancelled) {
+      })
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) {
           setState({ status: "error", message: documentErrorMessage(cause) });
         }
-      },
-    );
+      });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [bytes]);
 
@@ -74,15 +73,44 @@ export default function DocxViewer({ bytes }: { bytes: Uint8Array }) {
       </DocumentMessage>
     );
   }
-  if (!state.html.trim()) {
+  if (state.empty) {
     return <DocumentMessage title={t("This document has no readable content")} />;
   }
-  return <DocxPages html={state.html} />;
+  return <DocxPages body={state.body} />;
 }
 
-function DocxPages({ html }: { html: string }) {
+function DocxPages({ body }: { body: HTMLElement }) {
   useLocale();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  // Retain nodes through StrictMode effect replay without parsing sanitized HTML
+  // a second time. Each viewer owns this bounded, already-sanitized tree.
+  const nodes = useMemo(() => [...body.childNodes], [body]);
+  useLayoutEffect(() => {
+    const page = pageRef.current;
+    if (!page) return;
+    let index = 0;
+    let frame = 0;
+    const append = () => {
+      const fragment = document.createDocumentFragment();
+      const deadline = performance.now() + 6;
+      let count = 0;
+      do {
+        fragment.append(nodes[index++]);
+        count += 1;
+      } while (index < nodes.length && count < 50 && performance.now() < deadline);
+      page.append(fragment);
+      if (index < nodes.length) frame = requestAnimationFrame(append);
+    };
+    if (nodes.length) append();
+    return () => {
+      cancelAnimationFrame(frame);
+      // Return owned nodes in source order so a StrictMode/Activity replay can
+      // reattach the complete sanitized document without reparsing or cloning it.
+      for (const node of nodes) body.append(node);
+      page.replaceChildren();
+    };
+  }, [body, nodes]);
   const { zoom, reset } = useAnchoredZoom(scrollRef, "docx", {
     min: MIN_ZOOM,
     max: MAX_ZOOM,
@@ -91,11 +119,10 @@ function DocxPages({ html }: { html: string }) {
     <div className="relative h-full">
       <div ref={scrollRef} className="h-full overflow-auto overscroll-contain">
         <div
+          ref={pageRef}
           className={DOCUMENT_CLASS}
           // `zoom` scales text, spacing and the page width together.
           style={{ zoom }}
-          // Sanitized above: no scripts, handlers, remote loads or live links.
-          dangerouslySetInnerHTML={{ __html: html }}
         />
       </div>
       <ZoomBadge zoom={zoom} onReset={reset} />

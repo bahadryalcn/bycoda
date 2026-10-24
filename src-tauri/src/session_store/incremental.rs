@@ -99,26 +99,29 @@ pub(super) fn apply(conn: &Connection, delta: &SessionDelta) -> Result<Option<De
         return Err("Invalid transcript delta".into());
     }
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    let current: Option<i64> = tx
+    let current: Option<(i64, bool)> = tx
         .query_row(
-            "SELECT updated_at FROM sessions WHERE id=?1",
-            [&delta.session.id],
-            |r| r.get(0),
+            "SELECT updated_at, adopted_divergence IS ?2 FROM sessions WHERE id=?1",
+            params![&delta.session.id, delta.session.adopted_divergence],
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    if current != Some(delta.expected_updated_at) {
+    let Some((current_updated, same_divergence)) = current else {
+        return Ok(None);
+    };
+    if current_updated != delta.expected_updated_at {
         return Ok(None);
     }
-    let revision: Option<i64> = tx
+    let state: Option<(i64, i64)> = tx
         .query_row(
-            "SELECT revision FROM session_block_state WHERE session_id=?1 AND length>=0",
+            "SELECT revision, length FROM session_block_state WHERE session_id=?1 AND length>=0",
             [&delta.session.id],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    let Some(revision) = revision else {
+    let Some((revision, previous_length)) = state else {
         return Err("Transcript delta requires a full checkpoint".into());
     };
     if revision != delta.expected_revision {
@@ -157,7 +160,10 @@ pub(super) fn apply(conn: &Connection, delta: &SessionDelta) -> Result<Option<De
     if count != delta.length as i64 {
         return Err("Transcript delta has missing blocks".into());
     }
-    let updated_at = now_millis().max(delta.expected_updated_at + 1);
+    // The same rule as a full upsert (`upsert_session_core`): the transcript,
+    // a changed divergence or any other changed field moves `updated_at`;
+    // `adopted_base`, a record of what was agreed, must not on its own.
+    let transcript_changed = !delta.changes.is_empty() || delta.length as i64 != previous_length;
     let s = &delta.session;
     let settings = serde_json::to_string(&s.model_settings).map_err(|e| e.to_string())?;
     let linked = s
@@ -172,16 +178,31 @@ pub(super) fn apply(conn: &Connection, delta: &SessionDelta) -> Result<Option<De
         .map(serde_json::to_string)
         .transpose()
         .map_err(|e| e.to_string())?;
+    // Title, model, harness or provider-thread changes also reach the host
+    // through this stamp; only `adopted_base` alone leaves it alone.
+    let metadata_unchanged = super::session_metadata_unchanged(
+        &tx,
+        s,
+        &settings,
+        linked.as_deref(),
+        rewind_history.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
+    let updated_at = if transcript_changed || !same_divergence || !metadata_unchanged {
+        now_millis().max(delta.expected_updated_at + 1)
+    } else {
+        delta.expected_updated_at
+    };
     let archived_user = super::has_archived_user_block(s.rewind_history.as_ref());
     tx.execute("UPDATE sessions SET cwd=?2,harness=?3,model=?4,model_settings=?5,runtime_mode=?6,title=?7,
       provider_session_id=?8,provider_account_id=?9,context_used=?10,context_window=?11,branch=?12,worktree_cwd=?13,
       worktree_removed=?14,linked_work_item_json=?15,automation_id=?16,updated_at=?17,
-      rewind_history_json=?18,pending_context_replay=?19,
+      rewind_history_json=?18,pending_context_replay=?19,adopted_divergence=?21,adopted_base=?22,
       has_user_message=?20 OR EXISTS(SELECT 1 FROM session_blocks WHERE session_id=?1 AND json_extract(block_json,'$.role')='user'),
       is_draft=EXISTS(SELECT 1 FROM session_blocks WHERE session_id=?1 AND json_extract(block_json,'$.role')='user' AND json_extract(block_json,'$.draft')=1)
       WHERE id=?1",params![id,s.cwd,s.harness,s.model,settings,s.runtime_mode,s.title,s.provider_session_id,s.provider_account_id,
       s.context_used,s.context_window,s.branch,s.worktree_cwd,i64::from(s.worktree_removed),linked,s.automation_id,updated_at,
-      rewind_history,s.pending_context_replay,i64::from(archived_user)]).map_err(|e|e.to_string())?;
+      rewind_history,s.pending_context_replay,i64::from(archived_user),s.adopted_divergence,s.adopted_base]).map_err(|e|e.to_string())?;
     for change in &delta.changes {
         remember_worker_from_blocks(&tx, id, &json!([change.block])).map_err(|e| e.to_string())?;
     }
@@ -215,6 +236,176 @@ pub struct TranscriptPage {
     pub revision: i64,
 }
 
+#[derive(Default)]
+pub(super) struct LegacyPageCache {
+    entries: std::collections::VecDeque<LegacyPageEntry>,
+    bytes: usize,
+    #[cfg(test)]
+    builds: usize,
+    #[cfg(test)]
+    blob_bytes: usize,
+    #[cfg(test)]
+    fallback_reads: usize,
+}
+
+struct LegacyPageEntry {
+    id: String,
+    source: i64,
+    revision: i64,
+    offsets: Arc<Vec<(usize, usize)>>,
+}
+
+/// Validate the entire legacy array once, retaining byte positions rather than
+/// a second parsed copy of every historical block. IgnoredAny validates JSON
+/// strings/escapes/nesting without allocating their contents.
+pub(super) fn legacy_offsets(
+    raw: &str,
+    keep_going: &dyn Fn() -> bool,
+) -> Result<Option<Vec<(usize, usize)>>, String> {
+    let bytes = raw.as_bytes();
+    let mut cursor = 0;
+    let skip = |cursor: &mut usize| {
+        while bytes.get(*cursor).is_some_and(u8::is_ascii_whitespace) {
+            *cursor += 1;
+        }
+    };
+    skip(&mut cursor);
+    if bytes.get(cursor) != Some(&b'[') {
+        return Err("Legacy transcript is not an array".into());
+    }
+    cursor += 1;
+    skip(&mut cursor);
+    let mut offsets = Vec::new();
+    if bytes.get(cursor) != Some(&b']') {
+        loop {
+            if !keep_going() {
+                return Ok(None);
+            }
+            let start = cursor;
+            let mut stream = serde_json::Deserializer::from_slice(&bytes[cursor..])
+                .into_iter::<serde::de::IgnoredAny>();
+            stream
+                .next()
+                .ok_or("Incomplete legacy transcript")?
+                .map_err(|error| error.to_string())?;
+            cursor += stream.byte_offset();
+            offsets.push((start, cursor));
+            skip(&mut cursor);
+            match bytes.get(cursor) {
+                Some(b',') => {
+                    cursor += 1;
+                    skip(&mut cursor);
+                }
+                Some(b']') => break,
+                _ => return Err("Invalid legacy transcript separator".into()),
+            }
+        }
+    }
+    cursor += 1;
+    skip(&mut cursor);
+    if cursor != bytes.len() {
+        return Err("Trailing legacy transcript data".into());
+    }
+    Ok(Some(offsets))
+}
+
+fn legacy_page_offsets(
+    conn: &Connection,
+    id: &str,
+    revision: i64,
+    cache: Option<&Mutex<LegacyPageCache>>,
+) -> Result<Arc<Vec<(usize, usize)>>, String> {
+    let source: i64 = conn
+        .query_row(
+            "SELECT version FROM session_search_source_revision WHERE session_id=?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .unwrap_or(0);
+    let mut guard = cache
+        .map(|cache| cache.lock().map_err(|_| "Legacy page cache is locked"))
+        .transpose()?;
+    if let Some(cache) = guard.as_mut() {
+        if let Some(position) = cache.entries.iter().position(|entry| {
+            entry.id == id && entry.source == source && entry.revision == revision
+        }) {
+            let entry = cache.entries.remove(position).unwrap();
+            let offsets = entry.offsets.clone();
+            cache.entries.push_back(entry);
+            return Ok(offsets);
+        }
+    }
+    let raw: String = conn
+        .query_row(
+            "SELECT blocks_json FROM sessions WHERE id=?1",
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let offsets = Arc::new(legacy_offsets(&raw, &|| true)?.unwrap());
+    if let Some(cache) = guard.as_mut() {
+        #[cfg(test)]
+        {
+            cache.builds += 1;
+        }
+        let bytes = offsets.capacity() * std::mem::size_of::<(usize, usize)>();
+        if bytes <= 16 * 1024 * 1024 {
+            while let Some(position) = cache.entries.iter().position(|entry| entry.id == id) {
+                let entry = cache.entries.remove(position).unwrap();
+                cache.bytes -= entry.offsets.capacity() * std::mem::size_of::<(usize, usize)>();
+            }
+            cache.entries.push_back(LegacyPageEntry {
+                id: id.into(),
+                source,
+                revision,
+                offsets: offsets.clone(),
+            });
+            cache.bytes += bytes;
+            while cache.entries.len() > 4 || cache.bytes > 16 * 1024 * 1024 {
+                if let Some(entry) = cache.entries.pop_front() {
+                    cache.bytes -= entry.offsets.capacity() * std::mem::size_of::<(usize, usize)>();
+                }
+            }
+        }
+    }
+    Ok(offsets)
+}
+
+/// Incremental SQLite BLOB I/O also accepts TEXT cells. Unlike SQL substr,
+/// it does not materialize the whole legacy cell inside SQLite for each page.
+/// An unsuitable older storage layout retains its read-only SQL fallback.
+fn read_legacy_window(
+    conn: &Connection,
+    id: &str,
+    from: usize,
+    len: usize,
+) -> Result<(Vec<u8>, bool), String> {
+    let rowid = conn.query_row("SELECT rowid FROM sessions WHERE id=?1", [id], |row| {
+        row.get::<_, i64>(0)
+    });
+    if let Ok(rowid) = rowid {
+        if let Ok(blob) = conn.blob_open("main", "sessions", "blocks_json", rowid, true) {
+            if from.checked_add(len).is_none_or(|end| end > blob.len()) {
+                return Err("Legacy transcript page identity changed".into());
+            }
+            let mut bytes = vec![0; len];
+            blob.read_at_exact(&mut bytes, from)
+                .map_err(|error| error.to_string())?;
+            return Ok((bytes, true));
+        }
+    }
+    let bytes = conn
+        .query_row(
+            "SELECT substr(CAST(blocks_json AS BLOB),?2,?3) FROM sessions WHERE id=?1",
+            params![id, from as i64 + 1, len as i64],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    Ok((bytes, false))
+}
+
 #[tauri::command(async)]
 pub fn session_get_page(
     store: State<'_, SessionStore>,
@@ -224,22 +415,35 @@ pub fn session_get_page(
     limit: Option<usize>,
 ) -> Result<Option<TranscriptPage>, String> {
     store.with_read_conn(|conn| {
-        page(
+        page_with_cache(
             conn,
             &session_id,
             before,
             revision,
             limit.unwrap_or(80).clamp(1, 200),
+            Some(&store.legacy_page_cache),
         )
     })
 }
 
+#[cfg(test)]
 pub(super) fn page(
     conn: &Connection,
     id: &str,
     before: Option<usize>,
     expected: Option<i64>,
     limit: usize,
+) -> Result<Option<TranscriptPage>, String> {
+    page_with_cache(conn, id, before, expected, limit, None)
+}
+
+fn page_with_cache(
+    conn: &Connection,
+    id: &str,
+    before: Option<usize>,
+    expected: Option<i64>,
+    limit: usize,
+    cache: Option<&Mutex<LegacyPageCache>>,
 ) -> Result<Option<TranscriptPage>, String> {
     // A deferred read transaction pins metadata and blocks to the same WAL
     // snapshot. Cursors reject intervening writes rather than splice revisions.
@@ -252,8 +456,8 @@ pub(super) fn page(
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    let mut record = read_session_row_from(&tx, id, state.is_none()).map_err(|e| e.to_string())?;
-    let Some((mut session, settings, legacy)) = record.take() else {
+    let mut record = read_session_row_from(&tx, id, false).map_err(|e| e.to_string())?;
+    let Some((mut session, settings, _legacy)) = record.take() else {
         return Ok(None);
     };
     session.model_settings = serde_json::from_str(&settings).map_err(|e| e.to_string())?;
@@ -279,15 +483,36 @@ pub(super) fn page(
         (revision, total, blocks)
     } else {
         // Legacy databases remain readable; their first save normalizes blocks.
-        let blocks: Vec<Value> = serde_json::from_str(&legacy).map_err(|e| e.to_string())?;
-        let total = blocks.len();
         let revision = session.transcript_revision.unwrap_or(session.updated_at);
         if expected.is_some_and(|value| value != revision) {
             return Err("Transcript page revision changed".into());
         }
+        let offsets = legacy_page_offsets(&tx, id, revision, cache)?;
+        let total = offsets.len();
         let end = before.unwrap_or(total).min(total);
         let start = end.saturating_sub(limit);
-        (revision, total, blocks[start..end].to_vec())
+        let blocks = if start == end {
+            Vec::new()
+        } else {
+            let from = offsets[start].0;
+            let through = offsets[end - 1].1;
+            let (raw, _bounded_blob) = read_legacy_window(&tx, id, from, through - from)?;
+            #[cfg(test)]
+            if let Some(cache) = cache {
+                let mut cache = cache.lock().unwrap();
+                if _bounded_blob {
+                    cache.blob_bytes += raw.len();
+                } else {
+                    cache.fallback_reads += 1;
+                }
+            }
+            let mut array = Vec::with_capacity(raw.len() + 2);
+            array.push(b'[');
+            array.extend_from_slice(&raw);
+            array.push(b']');
+            serde_json::from_slice(&array).map_err(|error| error.to_string())?
+        };
+        (revision, total, blocks)
     };
     let end = before.unwrap_or(total).min(total);
     let start = end.saturating_sub(limit);
@@ -303,6 +528,131 @@ pub(super) fn page(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "bounded legacy paging cost comparison; run explicitly"]
+    fn legacy_paging_cost_comparison() {
+        for count in [10_000, 100_000] {
+            let store = SessionStore::open_in_memory().unwrap();
+            let conn = store.conn.lock().unwrap();
+            let (session, _) = seed(&conn);
+            let blocks:Vec<Value>=(0..count).map(|index|json!({"id":format!("b{index}"),"role":"assistant","text":"Unicode 🧩 Türkiye long historical text"})).collect();
+            let raw = serde_json::to_string(&blocks).unwrap();
+            conn.execute(
+                "UPDATE sessions SET blocks_json=?2 WHERE id=?1",
+                params![session.id, raw],
+            )
+            .unwrap();
+            let started = std::time::Instant::now();
+            for _ in 0..5 {
+                let parsed: Vec<Value> = serde_json::from_str(&raw).unwrap();
+                std::hint::black_box(parsed);
+            }
+            let control = started.elapsed();
+            let cache = Mutex::new(LegacyPageCache::default());
+            let started = std::time::Instant::now();
+            let mut before = None;
+            let mut revision = None;
+            for index in 0..5 {
+                let page = page_with_cache(&conn, &session.id, before, revision, 80, Some(&cache))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    page.session.blocks[79]["id"],
+                    format!("b{}", count - index * 80 - 1)
+                );
+                before = page.before;
+                revision = Some(page.revision);
+            }
+            println!("native legacy {count} blocks, {} bytes, 5 pages: old full-parse control {:?}; cached byte-window {:?}; offset builds {}",raw.len(),control,started.elapsed(),cache.lock().unwrap().builds);
+            assert_eq!(cache.lock().unwrap().builds, 1);
+        }
+    }
+
+    #[test]
+    fn legacy_offsets_validate_json_without_materializing_historical_values() {
+        for raw in [
+            "[]",
+            " [ 1, {\"text\":\"Türkçe 🧩 \\\"\",\"nested\":[null,true]},\"x\" ] ",
+            "[1,]",
+            "[",
+            "{}",
+            "[\"unterminated]",
+            "[1] junk",
+            "[[[false]]]",
+            "[01]",
+        ] {
+            let parsed = serde_json::from_str::<Vec<Value>>(raw);
+            let offsets = legacy_offsets(raw, &|| true);
+            assert_eq!(offsets.is_ok(), parsed.is_ok(), "{raw}");
+            if let (Ok(Some(offsets)), Ok(values)) = (offsets, parsed) {
+                let restored: Vec<Value> = offsets
+                    .iter()
+                    .map(|(from, to)| serde_json::from_str(&raw[*from..*to]).unwrap())
+                    .collect();
+                assert_eq!(restored, values);
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_page_cache_indexes_once_and_reads_stable_revision_windows() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let (session, _) = seed(&conn);
+        let blocks: Vec<Value> = (0..10_000).map(|index| json!({"id":format!("b{index}"),"role":"user","text":"🧩 quoted \\\"\ntext"})).collect();
+        let raw = serde_json::to_string(&blocks).unwrap();
+        conn.execute(
+            "UPDATE sessions SET blocks_json=?2 WHERE id=?1",
+            params![session.id, raw],
+        )
+        .unwrap();
+        let changes = conn.total_changes();
+        let cache = Mutex::new(LegacyPageCache::default());
+        let started = std::time::Instant::now();
+        let mut before = None;
+        let mut revision = None;
+        for page_index in 0..5 {
+            let page = page_with_cache(&conn, &session.id, before, revision, 80, Some(&cache))
+                .unwrap()
+                .unwrap();
+            let end = 10_000 - page_index * 80;
+            assert_eq!(
+                page.session.blocks,
+                Value::Array(blocks[end - 80..end].to_vec())
+            );
+            assert_eq!(page.total_blocks, 10_000);
+            before = page.before;
+            revision = Some(page.revision);
+        }
+        println!(
+            "native legacy 10k blocks / 5 pages: {:?}, full offset builds {}",
+            started.elapsed(),
+            cache.lock().unwrap().builds
+        );
+        assert_eq!(cache.lock().unwrap().builds, 1);
+        assert!(cache.lock().unwrap().blob_bytes < raw.len());
+        assert_eq!(cache.lock().unwrap().fallback_reads, 0);
+        assert_eq!(
+            conn.total_changes(),
+            changes,
+            "paging must remain read-only"
+        );
+        conn.execute(
+            "UPDATE sessions SET title='Unrelated metadata' WHERE id=?1",
+            [&session.id],
+        )
+        .unwrap();
+        page_with_cache(&conn, &session.id, None, revision, 80, Some(&cache)).unwrap();
+        assert_eq!(cache.lock().unwrap().builds, 1);
+        conn.execute("UPDATE sessions SET blocks_json='[{\"id\":\"new\",\"role\":\"user\",\"text\":\"new\"}]' WHERE id=?1",[&session.id]).unwrap();
+        assert!(page_with_cache(&conn, &session.id, None, revision, 80, Some(&cache)).is_err());
+        let latest = page_with_cache(&conn, &session.id, None, None, 80, Some(&cache))
+            .unwrap()
+            .unwrap();
+        assert_eq!(latest.session.blocks[0]["id"], "new");
+        assert_eq!(cache.lock().unwrap().builds, 2);
+    }
+
     fn session() -> SessionUpsert {
         serde_json::from_value(json!({"id":"delta-test","cwd":"/tmp/project","harness":"codex","model":"model",
             "modelSettings":{},"runtimeMode":"full","title":"Test","blocks":[
@@ -353,6 +703,120 @@ mod tests {
         assert!(page(&conn, &session.id, first.before, Some(first.revision), 1).is_err());
     }
     #[test]
+    fn delta_carries_the_adopted_base() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let (mut session, summary) = seed(&conn);
+        let base = r#"{"count":2,"chain":"0123456789abcdef0123456789abcdef"}"#;
+        session.adopted_base = Some(base.into());
+        apply(&conn, &delta(session.clone(), &summary))
+            .unwrap()
+            .unwrap();
+        let restored = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(restored.adopted_base.as_deref(), Some(base));
+        assert_eq!(restored.blocks[1]["text"], "after");
+    }
+    #[test]
+    fn a_delta_moves_updated_at_like_a_full_upsert_does() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let (mut session, summary) = seed(&conn);
+        let no_changes = |session: &SessionUpsert, at: i64, revision: i64| SessionDelta {
+            session: session.clone(),
+            expected_updated_at: at,
+            expected_revision: revision,
+            length: 2,
+            changes: vec![],
+        };
+
+        // Recording what was agreed is bookkeeping: history keeps its order.
+        session.adopted_base =
+            Some(r#"{"count":2,"chain":"0123456789abcdef0123456789abcdef"}"#.into());
+        let recorded = apply(
+            &conn,
+            &no_changes(
+                &session,
+                summary.updated_at,
+                summary.transcript_revision.unwrap(),
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(recorded.updated_at, summary.updated_at);
+
+        // A flagged divergence is something to tell the host, and so is the answer.
+        session.adopted_divergence = Some(r#"{"key":"k"}"#.into());
+        let flagged = apply(
+            &conn,
+            &no_changes(&session, recorded.updated_at, recorded.revision),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(flagged.updated_at > recorded.updated_at);
+        let same = apply(
+            &conn,
+            &no_changes(&session, flagged.updated_at, flagged.revision),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(same.updated_at, flagged.updated_at);
+
+        // Changed blocks always move it.
+        let changed = apply(
+            &conn,
+            &SessionDelta {
+                expected_updated_at: same.updated_at,
+                expected_revision: same.revision,
+                ..delta(session.clone(), &summary)
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert!(changed.updated_at > same.updated_at);
+    }
+    #[test]
+    fn a_delta_with_only_metadata_changes_still_moves_updated_at() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let (session, summary) = seed(&conn);
+        let mut at = summary.updated_at;
+        let mut revision = summary.transcript_revision.unwrap();
+        let mut step = |session: &SessionUpsert| {
+            let ack = apply(
+                &conn,
+                &SessionDelta {
+                    session: session.clone(),
+                    expected_updated_at: at,
+                    expected_revision: revision,
+                    length: 2,
+                    changes: vec![],
+                },
+            )
+            .unwrap()
+            .unwrap();
+            let moved = ack.updated_at > at;
+            at = ack.updated_at;
+            revision = ack.revision;
+            moved
+        };
+        let mut next = session.clone();
+        assert!(!step(&next), "nothing changed");
+        next.title = "Renamed".into();
+        assert!(step(&next), "title");
+        assert!(!step(&next), "same title again");
+        next.model = "other-model".into();
+        assert!(step(&next), "model");
+        next.harness = "claude".into();
+        assert!(step(&next), "harness");
+        next.provider_session_id = Some("thread-1".into());
+        assert!(step(&next), "provider thread");
+        next.adopted_base =
+            Some(r#"{"count":2,"chain":"0123456789abcdef0123456789abcdef"}"#.into());
+        assert!(!step(&next), "adopted_base alone");
+        next.adopted_divergence = Some(r#"{"key":"k"}"#.into());
+        assert!(step(&next), "divergence");
+    }
+    #[test]
     fn rewind_to_empty_active_transcript_keeps_archived_session_listable() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
@@ -395,7 +859,9 @@ mod tests {
         let conn = store.conn.lock().unwrap();
         let (mut session, summary) = seed(&conn);
         let stale = delta(session.clone(), &summary);
-        session.title = "Renamed".into();
+        // Only the recorded base: it leaves `updated_at` where it was.
+        session.adopted_base =
+            Some(r#"{"count":2,"chain":"0123456789abcdef0123456789abcdef"}"#.into());
         let changed = upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None)
             .unwrap()
             .unwrap();

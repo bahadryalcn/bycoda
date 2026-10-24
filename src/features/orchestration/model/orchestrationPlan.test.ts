@@ -5,6 +5,7 @@ import {
   orchestrationRepairPrompt,
   orchestrationPlanningPrompt,
   proposalBlock,
+  recoverTaggedOrchestrationProposals,
   validateProposedTasks,
   type OrchestrationProposal,
 } from "./orchestrationPlan";
@@ -43,6 +44,82 @@ const payload = {
 };
 
 describe("orchestration proposals", () => {
+  const revisionSession = () => ({
+    ...newSession("claude", "/repo"),
+    id: "lead",
+    blocks: [
+      { ...proposalBlock("original", completeOrchestrationProposal(draft, JSON.stringify(payload))), streaming: false },
+      { id: "refinement", role: "user" as const, text: "Keep the existing layout too" },
+      { id: "revision", role: "assistant" as const, text: `<bycoda_proposal>${JSON.stringify({ ...payload, title: "Updated layout" })}</bycoda_proposal>` },
+    ],
+  });
+
+  it("recovers a follow-up card with its action identity, original catalog and refinement", () => {
+    const session = revisionSession();
+    const recovered = recoverTaggedOrchestrationProposals(session);
+    const revision = recovered.blocks[2];
+    expect(revision.id).toBe("revision");
+    expect(revision.role).toBe("plan");
+    expect(revision.orchestration).toMatchObject({
+      status: "ready", title: "Updated layout", settings: draft.settings,
+      request: "Build settings\n\nKeep the existing layout too",
+    });
+    expect(revision.text).not.toContain("<bycoda_proposal>");
+    expect(session.blocks[2].role).toBe("assistant");
+    expect(recoverTaggedOrchestrationProposals(recovered)).toBe(recovered);
+    expect(sanitizeSessionForPersist(recovered).blocks[2].orchestration).toEqual(revision.orchestration);
+  });
+
+  it("keeps an invalid revision non-executable and available for repair", () => {
+    const session = revisionSession();
+    session.blocks[2].text = `<bycoda_proposal>${JSON.stringify({ ...payload, tasks: [{ ...task, model: "unavailable" }] })}</bycoda_proposal>`;
+    const revision = recoverTaggedOrchestrationProposals(session).blocks[2];
+    expect(revision.orchestration?.status).toBe("invalid");
+    expect(revision.orchestration?.error).toContain("outside the available catalog");
+    expect(revision.orchestration?.response).toContain("unavailable");
+  });
+
+  it("does not turn quoted, streaming, user, tool or context-free text into cards", () => {
+    for (const patch of [
+      { role: "user" as const }, { role: "tool" as const },
+      { streaming: true }, { internal: true },
+      { text: `Example: ${revisionSession().blocks[2].text}` },
+    ]) {
+      const session: import("../../sessions/model/session").Session = revisionSession();
+      session.blocks[2] = { ...session.blocks[2], ...patch };
+      expect(recoverTaggedOrchestrationProposals(session)).toBe(session);
+    }
+    const session = revisionSession();
+    session.blocks = session.blocks.slice(1);
+    expect(recoverTaggedOrchestrationProposals(session)).toBe(session);
+  });
+
+  it("never inherits approval or crosses a proposal or checkout ownership barrier", () => {
+    for (const patch of [
+      { status: "approved" as const }, { status: "starting" as const },
+      { status: "planning" as const }, { leadId: "other" },
+      { cwd: "/other" }, { checkoutCwd: "/other" },
+    ]) {
+      const session: import("../../sessions/model/session").Session = revisionSession();
+      session.blocks.splice(1, 0, {
+        ...session.blocks[0], id: "barrier",
+        orchestration: { ...session.blocks[0].orchestration!, ...patch },
+      });
+      expect(recoverTaggedOrchestrationProposals(session)).toBe(session);
+    }
+  });
+
+  it("does not recover a stopped turn or a reply followed by a provider failure", () => {
+    for (const notice of ["error", "interrupt"] as const) {
+      const session: import("../../sessions/model/session").Session = revisionSession();
+      session.blocks.push({ id: "failure", role: "system", text: "Turn failed", notice });
+      expect(recoverTaggedOrchestrationProposals(session)).toBe(session);
+    }
+    const session: import("../../sessions/model/session").Session = revisionSession();
+    session.blocks[1] = { ...session.blocks[1], turnOutcome: "stopped" };
+    expect(recoverTaggedOrchestrationProposals(session)).toBe(session);
+  });
+
   it("recovers an omitted harness from an exact, unambiguous catalog model without another turn", async () => {
     const repair = vi.fn();
     const result = await completeOrRepairOrchestrationProposal(

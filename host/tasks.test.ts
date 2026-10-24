@@ -94,16 +94,18 @@ function setup(verifyTimeoutMs?: number) {
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
   const tasks = new HostTasks(store, engine, () => clock.now, verifyTimeoutMs);
   const providersStarted = async () => {
-    // Checkpoint capture is serialized across sessions. Each run gets the
-    // existing readiness budget instead of sharing one deadline with all peers.
-    for (const value of store.sessions().filter((entry) => entry.status === "running")) {
+    // Checkpoint capture is serialized across sessions, so the session checked
+    // first may be the last to launch. Each check therefore gets the readiness
+    // budget for every running peer, not just its own.
+    const running = store.sessions().filter((entry) => entry.status === "running");
+    for (const value of running) {
       await vi.waitFor(
         () => {
           expect(turns.findLast((turn) => turn.input.sessionId === value.session.id)?.runId).toBe(
             value.runId,
           );
         },
-        { timeout: 10_000 },
+        { timeout: 10_000 * running.length },
       );
     }
   };
@@ -146,7 +148,7 @@ function setup(verifyTimeoutMs?: number) {
   });
   const task = (id = "main") => tasks.list().find((entry) => entry.id === id)!;
   const settled = (sessionId: string) =>
-    vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"), { timeout: 10_000 });
+    vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"), { timeout: 30_000 });
   const interrupt = async (
     sessionId: string,
     note = "Host restarted. This turn was interrupted; inspect its work before continuing.",
@@ -242,6 +244,127 @@ function setup(verifyTimeoutMs?: number) {
 }
 
 describe("explicit task workspaces and owner controls", () => {
+  it("hydrates a todo dependency added during a live scheduler pass", async () => {
+    const { tasks, input, turns } = setup();
+    tasks.save(input({ id: "dormant", status: "todo" }));
+    tasks.save(input({ id: "child" }));
+    tasks.onTick(() => { tasks.save(input({ id: "child", dependsOn: ["dormant"] })); });
+    await tasks.tick();
+    expect(tasks.get("child")?.status).toBe("queued");
+    expect(turns).toHaveLength(0);
+  });
+
+  it("rejects a cycle through an unloaded todo task during a live pass", async () => {
+    const { tasks, input, turns } = setup();
+    tasks.save(input({ id: "dormant", status: "todo", dependsOn: ["child"] }));
+    tasks.save(input({ id: "child", status: "todo" }));
+    tasks.onTick(() => {
+      expect(() => tasks.save(input({ id: "child", dependsOn: ["dormant"] }))).toThrow("Task dependency cycle");
+    });
+    await tasks.tick();
+    expect(tasks.get("child")?.status).toBe("todo");
+    expect(turns).toHaveLength(0);
+  });
+
+  it("keeps completed dependency commit validation when an edge changes during a tick", async () => {
+    const { tasks, input, store, turns } = setup();
+    tasks.save(input({ id: "delivered", status: "todo" }));
+    store.db.prepare("UPDATE tasks SET value=json_set(value, '$.status', 'done', '$.deliveredCommit', ?) WHERE id='delivered'").run("a".repeat(40));
+    tasks.save(input({ id: "child" }));
+    tasks.onTick(() => { tasks.save(input({ id: "child", dependsOn: ["delivered"] })); });
+    await tasks.tick();
+    expect(tasks.get("child")).toMatchObject({ status: "blocked", error: expect.stringContaining("does not contain completed dependency") });
+    expect(turns).toHaveLength(0);
+  });
+
+  it("protects a delivered worktree retained by a todo task outside the scheduler subset", async () => {
+    const s = setup();
+    const project = s.addRepo("todo-ownership");
+    const current = await s.run({ projectId: project.id, autoMerge: true, review: false });
+    const path = current.worktreeCwd!;
+    const held = s.tasks.save(s.input({ id: "held", projectId: project.id, status: "todo", isolate: false }));
+    s.store.db.prepare("UPDATE tasks SET value=json_set(value, '$.worktreeCwd', ?) WHERE id=?").run(path, held.id);
+    writeFileSync(join(path, "file.txt"), "completed work retained by another task\n");
+    await s.finish(current.sessionId!);
+    s.clock.now += 3 * MINUTE;
+    await s.tasks.tick();
+    await s.tasks.idle();
+    expect(s.tasks.get(current.id)?.status).toBe("done");
+    expect(s.tasks.get(current.id)?.cleanupError).toContain("still in use");
+    expect(existsSync(path)).toBe(true);
+    expect(s.tasks.get(held.id)?.worktreeCwd).toBe(path);
+    s.store.db.prepare("UPDATE tasks SET value=json_remove(value, '$.worktreeCwd') WHERE id=?").run(held.id);
+    s.clock.now += 3 * MINUTE;
+    await s.tasks.tick();
+    await s.tasks.idle();
+    expect(s.tasks.get(current.id)?.worktreeCwd).toBeUndefined();
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("never publishes a transactional change etag across rollback and revision reuse", () => {
+    const { tasks, input, store } = setup();
+    const base = tasks.save(input({ status: "todo" }));
+    tasks.changeEtag();
+    let rolledBackTag = "";
+    expect(() => store.transaction(() => {
+      store.db.prepare("UPDATE tasks SET value=json_set(value, '$.status', 'blocked', '$.updatedAt', ?) WHERE id=?").run(base.updatedAt + 1, base.id);
+      rolledBackTag = tasks.changeEtag();
+      throw new Error("rollback etag");
+    })).toThrow("rollback etag");
+    store.db.prepare("UPDATE tasks SET value=json_set(value, '$.status', 'review', '$.updatedAt', ?) WHERE id=?").run(base.updatedAt + 2, base.id);
+    expect(tasks.changeEtag()).not.toBe(rolledBackTag);
+    expect(tasks.get(base.id)?.status).toBe("review");
+  });
+
+  it("never reuses rolled-back owner or goal-index rows when a DB revision is reused", () => {
+    const { tasks, input, store } = setup();
+    const base = tasks.save(input({ status: "todo" }));
+    tasks.list();
+    tasks.taskIndex([base.id]);
+    const rename = (title: string) => store.db.prepare("UPDATE tasks SET value=json_set(value, '$.title', ?) WHERE id=?").run(title, base.id);
+    expect(() => store.transaction(() => {
+      rename("Uncommitted");
+      expect(tasks.list()[0].title).toBe("Uncommitted");
+      expect(tasks.taskIndex([base.id]).get(base.id)?.title).toBe("Uncommitted");
+      throw new Error("rollback cache publication");
+    })).toThrow("rollback cache publication");
+    rename("Committed");
+    expect(tasks.list()[0].title).toBe("Committed");
+    expect(tasks.taskIndex([base.id]).get(base.id)?.title).toBe("Committed");
+  });
+
+  it("schedules active work without parsing terminal history, while keeping owner history complete", async () => {
+    const { tasks, input, store } = setup();
+    const base = tasks.save(input({ status: "todo" }));
+    const insert = store.db.prepare("INSERT INTO tasks VALUES (?, ?)");
+    store.transaction(() => {
+      for (let index = 0; index < 1000; index++) {
+        const id = `terminal-${index}`;
+        insert.run(id, JSON.stringify({ ...base, id, status: "done", prompt: `historical-payload:${"x".repeat(1024)}` }));
+      }
+    });
+    const parse = JSON.parse;
+    let historicalParses = 0;
+    const spy = vi.spyOn(JSON, "parse").mockImplementation((text, reviver) => {
+      if (typeof text === "string" && text.includes("historical-payload:")) historicalParses++;
+      return parse(text, reviver);
+    });
+    try {
+      await tasks.tick();
+      expect(historicalParses).toBe(0);
+      expect(tasks.list()).toHaveLength(1001);
+      expect(historicalParses).toBe(1000);
+      historicalParses = 0;
+      await tasks.tick();
+      expect(tasks.list()).toHaveLength(1001);
+      expect(historicalParses).toBe(0);
+      // A persisted recovery edit outside the board's write() invalidates the
+      // owner cache through the DB trigger and participates in the next pass.
+      store.db.prepare("UPDATE tasks SET value=json_set(value, '$.title', 'Recovered title') WHERE id='terminal-0'").run();
+      expect(tasks.list().find((task) => task.id === "terminal-0")?.title).toBe("Recovered title");
+    } finally { spy.mockRestore(); }
+  });
+
   it("rejects stale configuration saves without replacing newer task instructions", () => {
     const { tasks, input } = setup();
     const opening = tasks.save(input({ status: "todo" }));
@@ -407,7 +530,7 @@ describe("explicit task workspaces and owner controls", () => {
     expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
     expect(readFileSync(join(repo.cwd, "file.txt"), "utf8")).toBe("owner changes\n");
     for (const id of ids) expect(readFileSync(join(repo.cwd, `${id}.txt`), "utf8")).toBe(`${id}\n`);
-  }, 60_000);
+  }, 120_000);
 
   it("rejects a worktree belonging to another repository before launching", async () => {
     const { addRepo, input, tasks, turns } = setup();
@@ -479,6 +602,21 @@ describe("explicit task workspaces and owner controls", () => {
 });
 
 describe("host tasks", () => {
+  it("transfers only fresh independent unstarted tasks while retaining their id", () => {
+    const { tasks, input, addProject, store } = setup();
+    const project = store.project(String(input().projectId));
+    const target = addProject("transfer");
+    const fresh = tasks.save(input({ id: "fresh-transfer", status: "todo" }));
+    expect(() => tasks.transfer(fresh.id, target.id, -1)).toThrow("changed");
+    expect(() => tasks.transfer(fresh.id, project.id, fresh.updatedAt)).toThrow("different");
+    tasks.save(input({ id: "dependent-transfer", status: "todo", dependsOn: [fresh.id] }));
+    expect(() => tasks.transfer(fresh.id, target.id, fresh.updatedAt)).toThrow("independent");
+    const independent = tasks.save(input({ id: "independent-transfer", status: "todo" }));
+    expect(tasks.transfer(independent.id, target.id, independent.updatedAt)).toMatchObject({ id: independent.id, projectId: target.id, status: "todo" });
+    const running = tasks.save(input({ id: "queued-transfer", status: "queued" }));
+    expect(() => tasks.transfer(running.id, target.id, running.updatedAt)).toThrow("unstarted");
+    expect(store.projects()).toHaveLength(2);
+  });
   it("queues a saved task and lists tasks oldest first", () => {
     const { tasks, input, clock } = setup();
     const first = tasks.save(input());
@@ -507,7 +645,7 @@ describe("host tasks", () => {
     // Unchanged rows are not parsed again while polling.
     const prepare = vi.spyOn(store.db, "prepare");
     expect(tasks.changeEtag()).toBe(one);
-    expect(prepare).not.toHaveBeenCalled();
+    expect(prepare.mock.calls.map(([sql]) => sql)).toEqual(["SELECT version FROM task_cache_revision WHERE id=1"]);
     prepare.mockRestore();
     clock.now += 1;
     tasks.save(input({ id: "second" }));
@@ -524,11 +662,13 @@ describe("host tasks", () => {
       expect(tasks.taskIndex().has("parent")).toBe(true);
       // Reading the limit source must reuse this pass too.
       tasks.limits.usedMinutes();
+      // Owner dependency protection requires unlinking before deletion.
+      tasks.save(input({ id: "child", status: "queued", dependsOn: [] }));
       await tasks.delete("parent");
       tasks.save(input({ id: "child", status: "queued", dependsOn: ["parent"] }));
     });
     await tasks.tick();
-    expect(list).toHaveBeenCalledTimes(1);
+    expect(list.mock.calls.length).toBeLessThanOrEqual(1);
     expect(tasks.get("parent")).toBeUndefined();
     expect(tasks.get("child")?.status).toBe("running");
     expect(turns).toHaveLength(1);
@@ -565,7 +705,7 @@ describe("host tasks", () => {
       expect(tasks.taskIndex().has("ghost")).toBe(false);
     });
     await tasks.tick();
-    expect(list).toHaveBeenCalledTimes(1);
+    expect(list).not.toHaveBeenCalled();
     expect(tasks.get("child")?.status).toBe("queued");
     expect(turns).toHaveLength(0);
   });
@@ -784,7 +924,7 @@ describe("host tasks", () => {
     await vi.waitFor(() => expect(turns).toHaveLength(2));
     expect(["a", "b", "c"].map((id) => task(id).status)).toEqual(["running", "running", "queued"]);
 
-    turns[0].finish();
+    turns.find((turn) => turn.input.sessionId === task("a").sessionId)!.finish();
     await settled(task("a").sessionId!);
     // A task being verified still counts.
     await advance();

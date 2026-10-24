@@ -479,12 +479,19 @@ export function statusTextFromSystem(rec: Record<string, unknown>): string | und
   return compact ? "Compacted context" : undefined;
 }
 
+/** Claude can report an API failure as an assistant row before a success result. */
+export function errorFromAssistant(rec: Record<string, unknown>): string | undefined {
+  if (rec.type !== "assistant" || isSubagentMessage(rec)) return undefined;
+  if (rec.isApiErrorMessage !== true && (typeof rec.error !== "string" || !rec.error.trim())) return undefined;
+  return assistantTextBlocks(rec).join("").trim() || String(rec.error || "Claude API request failed.");
+}
+
 export function turnStatusFromResult(rec: Record<string, unknown>): {
   status: "completed" | "failed" | "interrupted" | "cancelled";
   error?: string;
 } {
   const subtype = stringField(rec, "subtype") ?? "";
-  if (subtype === "success") return { status: "completed" };
+  if (subtype === "success" && rec.is_error !== true) return { status: "completed" };
   const errors = Array.isArray(rec.errors)
     ? rec.errors.filter((item): item is string => typeof item === "string")
     : [];

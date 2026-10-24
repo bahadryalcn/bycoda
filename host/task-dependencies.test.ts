@@ -30,6 +30,26 @@ function setup() {
 }
 
 describe("task dependency cycles", () => {
+  it("does not release unfinished dependents by deleting their prerequisite", async () => {
+    const { tasks, input } = setup();
+    tasks.save({ ...input("a"), status: "todo" });
+    tasks.save({ ...input("b", ["a"]), status: "todo" });
+    await expect(tasks.delete("a")).rejects.toThrow("Other unfinished tasks depend");
+    expect(tasks.get("a")).toBeDefined();
+    await tasks.delete("b");
+    await tasks.delete("a");
+    expect(tasks.list()).toEqual([]);
+  });
+  it("refuses stale or malformed deletion revisions while keeping retries idempotent", async () => {
+    const { tasks, input } = setup();
+    const saved = tasks.save({ ...input("a"), status: "todo" });
+    await expect(tasks.delete("a", false, saved.updatedAt + 1)).rejects.toThrow("This task changed");
+    await expect(tasks.delete("a", false, -1)).rejects.toThrow("Invalid task revision");
+    expect(tasks.get("a")).toBeDefined();
+    await tasks.delete("a", false, saved.updatedAt);
+    await tasks.delete("a", false, saved.updatedAt);
+    expect(tasks.get("a")).toBeUndefined();
+  });
   it("rejects a forward reference closed by a later save, without inserting it", () => {
     const { tasks, input } = setup();
     tasks.save(input("a", ["b"]));

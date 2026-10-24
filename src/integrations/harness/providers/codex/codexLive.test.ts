@@ -206,6 +206,10 @@ describe("codex live turn sequence", () => {
         ],
       });
       expect(parse().some((entry) => entry.method === "skills/config/write")).toBe(false);
+      // Replacing developer_instructions would drop Codex's built-in mode prompt.
+      expect(parse().find((entry) => entry.method === "turn/start")?.params).toMatchObject({
+        collaborationMode: { settings: { developer_instructions: null } },
+      });
       notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
       await turn;
     },

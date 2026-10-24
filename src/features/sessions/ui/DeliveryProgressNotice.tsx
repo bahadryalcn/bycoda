@@ -1,7 +1,12 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { DeliveryReviewChoice, type DeliveryReviewOutcome } from "./DeliveryReviewChoice";
 import { useT } from "../../../shared/i18n";
+import { nextQueueStatus } from "../../connections/model/queueState";
+import {
+  deliveryResolverFor,
+  useDeliveryReviewRequest,
+  useLateSettlementPossible,
+} from "../model/deliveryReview";
 import { getSessions, setSessions } from "../model/sessionsStore";
 import type { QueuedMessage } from "../model/session";
 import {
@@ -49,7 +54,10 @@ export function DeliveryProgressNotice({
     client?.snapshot ?? (() => noClientState),
   );
   const [clock, setClock] = useState<{ startedAt: number; elapsed: number }>();
-  const [review, setReview] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [resolveError, setResolveError] = useState<string>();
+  const focusRequest = useDeliveryReviewRequest(sessionId);
+  const lateSettlement = useLateSettlementPossible(sessionId);
   const unknownRow = messages.find((row) => row.deliveryUnknown);
   const pending = deliveryIsPending(progress?.stage);
   const startedAt = progress?.startedAt;
@@ -94,17 +102,49 @@ export function DeliveryProgressNotice({
   }, [sessionId, progress, messages, client, clientState]);
   if (!progress && !unknownRow) return null;
   const stage = unknownRow && !pending ? "unknown" : (progress?.stage ?? "unknown");
-  const resolve = (accepted: boolean) => {
-    if (!unknownRow) return;
+  const outcomeText = (outcome: DeliveryReviewOutcome) =>
+    outcome === "delivered"
+      ? t("Marked as delivered. The message was not sent again.")
+      : outcome === "discard"
+        ? t("Discarded. The message was not sent.")
+        : outcome === "retry"
+          ? t("The message is queued to send again.")
+          : t("The queue is paused. Resume it only after checking the conversation.");
+  const choose = (outcome: DeliveryReviewOutcome) => {
+    if (!unknownRow || working) return;
     // Shared claimed sends use the existing durable recovery notice instead.
     if (client?.snapshot().queue.claim) return;
+    const removed = outcome === "delivered" || outcome === "discard";
+    const finish = () => {
+      const owner =
+        readDeliveryProgress(sessionId, unknownRow.id) ??
+        beginDeliveryProgress(sessionId, unknownRow.id, "unknown");
+      updateDeliveryProgress(
+        sessionId,
+        owner,
+        removed ? "accepted" : "rejected",
+        outcomeText(outcome),
+      );
+    };
+    // A pane showing another computer's queue decides through the shared queue.
+    const resolver = deliveryResolverFor(sessionId);
+    if (resolver) {
+      setWorking(true);
+      setResolveError(undefined);
+      void resolver(unknownRow.id, outcome)
+        .then(finish)
+        .catch((reason) => setResolveError(String(reason).replace(/^Error: /, "")))
+        .finally(() => setWorking(false));
+      return;
+    }
     setSessions((sessions) =>
       sessions.map((session) =>
         session.id === sessionId
           ? {
               ...session,
-              queueStatus: "paused",
-              queuedMessages: accepted
+              // Sending again is the owner's decision that it never arrived.
+              queueStatus: outcome === "retry" ? "active" : nextQueueStatus(undefined, "unknown"),
+              queuedMessages: removed
                 ? session.queuedMessages?.filter((row) => row.id !== unknownRow.id)
                 : session.queuedMessages?.map((row) =>
                     row.id === unknownRow.id ? { ...row, deliveryUnknown: undefined } : row,
@@ -113,18 +153,7 @@ export function DeliveryProgressNotice({
           : session,
       ),
     );
-    const owner =
-      readDeliveryProgress(sessionId, unknownRow.id) ??
-      beginDeliveryProgress(sessionId, unknownRow.id, "unknown");
-    updateDeliveryProgress(
-      sessionId,
-      owner,
-      accepted ? "accepted" : "rejected",
-      accepted
-        ? "Marked as delivered. The message was not sent again."
-        : "The queue is paused. Resume it only after checking the conversation.",
-    );
-    setReview(false);
+    finish();
   };
   return (
     <div className="px-4 py-1 text-xs text-(--ui-text-secondary)" data-delivery-progress={stage}>
@@ -146,29 +175,18 @@ export function DeliveryProgressNotice({
         {progress?.detail && !unknownRow ? <div>{t(progress.detail)}</div> : null}
       </div>
       {unknownRow && !clientState.queue.claim ? (
-        <Button variant="ghost" onClick={() => setReview(true)}>
-          {t("Review delivery")}
-        </Button>
+        <DeliveryReviewChoice
+          text={unknownRow.text}
+          working={working}
+          lateSettlement={lateSettlement}
+          focusRequest={focusRequest}
+          onChoose={choose}
+        />
       ) : null}
-      {review && unknownRow ? (
-        <Modal title={t("Review queued delivery")} onClose={() => setReview(false)}>
-          <div className="space-y-3 p-4 text-sm">
-            <p>
-              {t(
-                "Check the conversation for this request before choosing. Keeping it queued pauses the queue and does not resend it.",
-              )}
-            </p>
-            <p className="max-h-40 overflow-auto whitespace-pre-wrap break-words">
-              {unknownRow.text}
-            </p>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="secondary" onClick={() => resolve(false)}>
-                {t("Keep queued, pause")}
-              </Button>
-              <Button onClick={() => resolve(true)}>{t("Already delivered")}</Button>
-            </div>
-          </div>
-        </Modal>
+      {resolveError ? (
+        <div role="alert" className="mt-1 text-ui-caption text-(--ui-tone-danger-fg)">
+          {resolveError}
+        </div>
       ) : null}
     </div>
   );

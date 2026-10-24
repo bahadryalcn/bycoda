@@ -64,6 +64,8 @@ export class ConversationGoalTools {
       "list" | "create" | "replan" | "cancel" | "update" | "delete"
     >,
     private readonly tasks: Pick<HostTasks, "list">,
+    // Desktop conversations need not have an adopted row in the host store.
+    private readonly session: HostStore["session"] = (id) => store.session(id),
   ) {}
 
   async call(
@@ -77,7 +79,7 @@ export class ConversationGoalTools {
     };
     check();
     this.store.project(principal.projectId);
-    const caller = this.store.session(principal.sessionId);
+    const caller = this.session(principal.sessionId);
     if (caller.projectId !== principal.projectId)
       throw new Error("Session belongs to another project.");
     if (action === "goals.create") {
@@ -89,6 +91,7 @@ export class ConversationGoalTools {
         projectIds: [principal.projectId],
         leadProjectId: principal.projectId,
         harness: caller.session.harness,
+        providerAccountId: caller.session.providerAccountId,
         model: caller.session.model,
         modelSettings: { ...caller.session.modelSettings },
         runtimeMode: caller.session.runtimeMode,
@@ -139,6 +142,7 @@ export class ConversationGoalTools {
         !goal.manualStart ||
         goal.continueUntilDone ||
         goal.harness !== caller.session.harness ||
+        (goal.providerAccountId ?? "default") !== (caller.session.providerAccountId ?? "default") ||
         goal.model !== caller.session.model ||
         goal.runtimeMode !== caller.session.runtimeMode ||
         Object.keys(settings).length !== Object.keys(goalSettings).length ||

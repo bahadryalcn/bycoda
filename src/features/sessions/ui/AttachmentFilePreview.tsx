@@ -73,7 +73,7 @@ function AttachmentTextPreview({ readBytes }: { readBytes: () => Promise<Uint8Ar
   return (
     <pre
       tabIndex={0}
-      className="h-full min-w-0 overflow-auto whitespace-pre-wrap break-words p-3 select-text font-mono text-(length:--ui-font-caption) text-content"
+      className="max-h-[min(620px,70dvh)] min-w-0 overflow-auto whitespace-pre-wrap break-words p-3 select-text font-mono text-(length:--ui-font-caption) text-content"
     >
       {state.text}
     </pre>
@@ -129,15 +129,17 @@ export function AttachmentFilePreview({
   }, [attachment.size, attachment.loadPreview, attachment.data, path]);
   // Session-only remote attachments use their authorized reader; never send their raw host path to an OS opener.
   const externalPath = attachment.loadPreview ? null : (path ?? null);
+  const kind = documentKind(attachment.name);
+  const fitContent = !mediaKind(attachment.name) && (!kind || kind === "csv" || kind === "tsv");
   return (
     <Modal
       title={attachment.name}
       onClose={onClose}
       size="lg"
       fitViewport
-      className="h-[min(760px,85dvh)] bg-(--ui-surface)"
+      className={`${fitContent ? "" : "h-[min(760px,85dvh)] "}bg-(--ui-surface)`}
     >
-      <div className="h-full min-h-0">
+      <div className={fitContent ? "min-h-0" : "h-full min-h-0"}>
         {mediaKind(attachment.name) ? (
           <MediaView
             path={externalPath ?? attachment.name}
@@ -151,6 +153,7 @@ export function AttachmentFilePreview({
             cwd=""
             readBytes={readBytes}
             externalPath={externalPath}
+            fitContent={fitContent}
           />
         ) : (
           <AttachmentTextPreview readBytes={readBytes} />

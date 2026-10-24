@@ -338,6 +338,21 @@ html [data-activity-dock] {
   margin-inline-start: -0.25rem;
   background: var(--ui-surface);
 }
+.activity-dock {
+  container: activity-dock / inline-size;
+}
+@container activity-dock (max-width: 28rem) {
+  .activity-dock-summary {
+    flex-basis: 100%;
+  }
+  .activity-dock-summary > span,
+  .activity-dock-summary .truncate {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+  }
+}
 .activity-dock-clock {
   flex: none;
   font-variant-numeric: tabular-nums;

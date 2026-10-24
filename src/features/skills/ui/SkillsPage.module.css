@@ -149,6 +149,22 @@
 .detail {
   flex: 1;
 }
+.creation {
+  flex: 1;
+  align-self: center;
+  inline-size: 100%;
+  max-inline-size: 48rem;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: 1rem clamp(1rem, 3cqi, 2rem);
+}
+.creation > h2 {
+  margin-block-end: 1rem;
+}
+.creation[hidden],
+.detail[hidden] {
+  display: none;
+}
 .detailHeader {
   padding-inline: clamp(1rem, 3cqi, 2rem);
 }
@@ -197,10 +213,11 @@
     flex-basis: 100%;
     border-inline-end: 0;
   }
-  .library:has(+ .workspace .detail) {
+  .library:has(+ .workspace .detail),
+  .library:has(+ .workspace .creation:not([hidden])) {
     display: none;
   }
-  .workspace:not(:has(.detail)) {
+  .workspace:not(:has(.detail)):not(:has(.creation:not([hidden]))) {
     display: none;
   }
 }

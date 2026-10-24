@@ -11,17 +11,30 @@ describe("live background default", () => {
     expect(loadLiveBackground()).toBe("none");
   });
 
-  it("keeps the animated scene an earlier install has been seeing", async () => {
-    localStorage.clear();
+  it.each(["bycoda.onboarding.v1", "bycoda.recentProjects"])(
+    "maps the earlier implicit default to Latent Face when %s exists",
+    async (historyKey) => {
+      localStorage.clear();
+      localStorage.setItem(historyKey, "existing");
+      vi.resetModules();
+      const fresh = await import("./liveBackground");
+      expect(localStorage.getItem(LIVE_BACKGROUND_KEY)).toBe("gradient-ascii");
+      expect(fresh.loadLiveBackground()).toBe("latent-face");
+      expect(localStorage.getItem(LIVE_BACKGROUND_KEY)).toBe("gradient-ascii");
+    },
+  );
+
+  it("does not revive animation for an earlier install that explicitly chose none", async () => {
     localStorage.setItem("bycoda.onboarding.v1", "complete");
+    localStorage.setItem(LIVE_BACKGROUND_KEY, "none");
     vi.resetModules();
     const fresh = await import("./liveBackground");
-    expect(localStorage.getItem(LIVE_BACKGROUND_KEY)).toBe("gradient-ascii");
-    expect(fresh.loadLiveBackground()).toBe("gradient-ascii");
+    expect(fresh.loadLiveBackground()).toBe("none");
+    expect(localStorage.getItem(LIVE_BACKGROUND_KEY)).toBe("none");
   });
 
   it("still honours an explicit choice of an animated scene", () => {
-    saveLiveBackground("code-rain");
-    expect(loadLiveBackground()).toBe("code-rain");
+    saveLiveBackground("thought-weaver");
+    expect(loadLiveBackground()).toBe("thought-weaver");
   });
 });

@@ -13,6 +13,13 @@ const native = vi.hoisted(() => ({
   onFocusChanged: vi.fn(),
   onResized: vi.fn(),
 }));
+const platform = vi.hoisted(() => ({ mac: true }));
+vi.mock("../../../platform/tauri/platform", async (load) => ({
+  ...(await load<typeof import("../../../platform/tauri/platform")>()),
+  get IS_MAC() {
+    return platform.mac;
+  },
+}));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => native }));
 let focus: (event: { payload: boolean }) => void;
@@ -22,6 +29,7 @@ const releaseFocus = vi.fn(),
   releaseResize = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks();
+  platform.mac = true;
   localStorage.clear();
   vi.spyOn(document, "hidden", "get").mockReturnValue(false);
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
@@ -128,6 +136,38 @@ it("pauses focus-gated work from the native focus state, not the DOM focus WKWeb
   await flush();
   expect(windowHasFocus()).toBe(true);
   expect(document.documentElement.dataset.windowFocus).toBe("on");
+});
+
+it("trusts the page's focus on Windows, where WebView2 takes focus from the native window", async () => {
+  platform.mac = false;
+  const listener = vi.fn();
+  stop = subscribeDecorativeMotion(listener);
+  await flush();
+  // tao reports the window unfocused once its WebView2 child has keyboard focus.
+  native.isFocused.mockResolvedValue(false);
+  focus({ payload: false });
+  await flush();
+  expect(windowHasFocus()).toBe(true);
+  expect(document.documentElement.dataset.windowFocus).toBe("on");
+  // Another application in front blurs the page.
+  vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  window.dispatchEvent(new Event("blur"));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(windowHasFocus()).toBe(false);
+  expect(document.documentElement.dataset.windowFocus).toBe("off");
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  window.dispatchEvent(new Event("focus"));
+  expect(windowHasFocus()).toBe(true);
+});
+
+it("stays focused when focus moves into an iframe on the page", async () => {
+  platform.mac = false;
+  stop = subscribeDecorativeMotion(vi.fn());
+  await flush();
+  // The window blurs, but the document (and its iframe) keeps focus.
+  window.dispatchEvent(new Event("blur"));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(windowHasFocus()).toBe(true);
 });
 
 it("does not wake subscribers for resize storms that change nothing", async () => {

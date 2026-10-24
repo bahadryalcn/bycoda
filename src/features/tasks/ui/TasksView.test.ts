@@ -782,7 +782,7 @@ it("confirms before discarding the branch of an unmerged task", async () => {
   await act(async () => button(dialog(), "Delete")!.click());
   expect(requests).toContainEqual({
     method: "tasks.delete",
-    params: { taskId: "main", discard: true },
+    params: { taskId: "main", expectedUpdatedAt: 1, discard: true },
   });
 });
 

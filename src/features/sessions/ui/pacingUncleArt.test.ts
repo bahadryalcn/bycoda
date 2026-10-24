@@ -81,4 +81,25 @@ describe("pacing uncle", () => {
     expect(ctx.fillRect).toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
+  it("leaves the canvas untouched while the frame does not change", () => {
+    const target: Record<string, unknown> = {};
+    const ctx = new Proxy(target, {
+      get: (_, key: string) => (key in target ? target[key] : (target[key] = vi.fn())),
+    }) as unknown as CanvasRenderingContext2D;
+    target.imageSmoothingEnabled = true;
+    const pause = [...Array(400).keys()]
+      .map((i) => i / 12)
+      .find((t) => {
+        const a = pacingPose(t, 44);
+        const b = pacingPose(t + 1 / 12, 44);
+        return !a.walk && !b.walk && a.act === undefined && b.act === undefined && a.dir === b.dir;
+      })!;
+    drawPacingUncle(ctx, 80, 32, pause, "lotr");
+    drawPacingUncle(ctx, 80, 32, pause + 1 / 12, "lotr");
+    expect(ctx.clearRect).toHaveBeenCalledTimes(1);
+    // A resized canvas comes back with smoothing on and is painted again.
+    target.imageSmoothingEnabled = true;
+    drawPacingUncle(ctx, 80, 32, pause + 1 / 12, "lotr");
+    expect(ctx.clearRect).toHaveBeenCalledTimes(2);
+  });
 });

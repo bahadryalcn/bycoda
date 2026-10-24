@@ -76,3 +76,12 @@
   place-content: center;
   padding: 16px;
 }
+
+/* Pair topic headings without stretching a short card to its taller neighbour. */
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .appearance-section-body
+  > .settings-group
+  > .settings-group-content {
+  align-self: start;
+}

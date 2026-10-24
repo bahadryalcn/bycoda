@@ -110,6 +110,7 @@ export function HarnessUpdateNotice({
       title={updates.length === 1 ? t("Harness update available") : t("Harness updates available")}
       durationMs={allUpdated ? 5000 : null}
       placement="top-end"
+      width="lg"
       offset={topOffset}
       onDismiss={dismiss}
       dismissDisabled={busy}
@@ -153,42 +154,46 @@ function HarnessUpdateRow({
   useLocale();
   return (
     <article className="py-2.5">
-      <div className="flex items-center gap-2">
-        <HarnessIcon harness={update.harness} className="icon-md shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium">
-          {HARNESS_TITLE[update.harness]}
-        </span>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <HarnessIcon harness={update.harness} className="icon-md shrink-0" />
+            <span className="min-w-0 break-words text-ui-secondary font-medium">
+              {HARNESS_TITLE[update.harness]}
+            </span>
+          </div>
+          {state.status !== "updated" ? (
+            <div className="pt-1 font-mono text-ui-micro tabular-nums text-(--ui-text-muted)">
+              {update.installed} → {update.latest}
+            </div>
+          ) : null}
+        </div>
         {state.status === "updated" ? (
-          <span className="flex shrink-0 items-center gap-1 text-ui-micro text-success">
+          <span className="flex flex-wrap items-center justify-end gap-1 text-ui-micro tabular-nums text-success">
             <Check className="icon-sm" />
             {t("Updated to ")}
             {state.version}
           </span>
         ) : (
-          <>
-            <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-muted)">
-              {update.installed} → {update.latest}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              disabled={state.status === "updating"}
-              className="inline-flex shrink-0 items-center gap-1.5"
-              onClick={onUpdate}
-            >
-              {state.status === "updating" ? (
-                <>
-                  <Loader className="icon-xs animate-spin" />
-                  {t("Updating")}
-                </>
-              ) : state.status === "failed" ? (
-                t("Retry")
-              ) : (
-                t("Update")
-              )}
-            </Button>
-          </>
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            disabled={state.status === "updating"}
+            className="inline-flex shrink-0 items-center gap-1.5"
+            onClick={onUpdate}
+          >
+            {state.status === "updating" ? (
+              <>
+                <Loader className="icon-xs animate-spin" />
+                {t("Updating")}
+              </>
+            ) : state.status === "failed" ? (
+              t("Retry")
+            ) : (
+              t("Update")
+            )}
+          </Button>
         )}
       </div>
       {state.status === "failed" ? (

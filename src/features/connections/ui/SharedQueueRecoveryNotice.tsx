@@ -1,9 +1,12 @@
 import { useState, useSyncExternalStore } from "react";
 import { Alert } from "../../../shared/ui/Alert";
-import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
-import { useLocalSharedQueueClient } from "../model/useSharedLocalQueues";
+import { DeliveryReviewChoice } from "../../sessions/ui/DeliveryReviewChoice";
+import { resumeSharedLocalQueue, useLocalSharedQueueClient } from "../model/useSharedLocalQueues";
 import { t, useLocale } from "../../../shared/i18n";
+import {
+  useDeliveryReviewRequest,
+  useLateSettlementPossible,
+} from "../../sessions/model/deliveryReview";
 import {
   readDeliveryProgress,
   updateDeliveryProgress,
@@ -20,28 +23,38 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
     client?.subscribe ?? subscribe,
     client?.snapshot ?? (() => empty),
   );
-  const [open, setOpen] = useState(false);
+  const focusRequest = useDeliveryReviewRequest(sessionId);
+  const lateSettlement = useLateSettlementPossible(sessionId);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string>();
   if (!client || !state.recovery) return null;
-  const resolve = async (accepted: boolean) => {
+  const choose = async (outcome: "delivered" | "retry" | "keep" | "discard") => {
     if (working) return;
     setWorking(true);
     setError(undefined);
     const recoveryId = client.snapshot().queue.claim?.id;
     try {
-      await client.resolveRecovery(accepted);
+      // Delivered and discarded both take the row out; neither sends it again.
+      await client.resolveRecovery(outcome === "delivered" || outcome === "discard");
+      // "Send again" is the owner saying it never arrived: keep the row and let the queue drain.
+      if (outcome === "retry" && (await resumeSharedLocalQueue(sessionId)) === "late")
+        throw new Error(
+          t(
+            "The provider has not answered yet and may still deliver this message. Wait for the answer, or stop the turn.",
+          ),
+        );
       const progress = recoveryId ? readDeliveryProgress(sessionId, recoveryId) : undefined;
-      if (progress)
+      if (progress && outcome !== "retry")
         updateDeliveryProgress(
           sessionId,
           progress,
-          accepted ? "accepted" : "rejected",
-          accepted
-            ? "Marked as delivered. The message was not sent again."
-            : "The queue is paused. Resume it only after checking the conversation.",
+          outcome === "keep" ? "rejected" : "accepted",
+          outcome === "delivered"
+            ? t("Marked as delivered. The message was not sent again.")
+            : outcome === "discard"
+              ? t("Discarded. The message was not sent.")
+              : t("The queue is paused. Resume it only after checking the conversation."),
         );
-      setOpen(false);
     } catch (reason) {
       setError(String(reason).replace(/^Error: /, ""));
     } finally {
@@ -50,43 +63,18 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
   };
   return (
     <Alert tone="warning" role="alert" inline className="shrink-0">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span>{t("Queued delivery is unknown. Sending is held for review.")}</span>
-        <Button variant="secondary" onClick={() => setOpen(true)}>
-          {t("Review delivery")}
-        </Button>
+      <div className="text-ui-caption">
+        {t("Queued delivery is unknown. Sending is held for review.")}
       </div>
-      {open ? (
-        <Modal
-          title={t("Review queued delivery")}
-          onClose={() => {
-            if (!working) setOpen(false);
-          }}
-        >
-          <div className="space-y-3 p-4 text-sm">
-            <p>
-              {t(
-                "Check the conversation for this request before choosing. Keeping it queued pauses the queue and does not resend it.",
-              )}
-            </p>
-            <p className="max-h-40 overflow-auto whitespace-pre-wrap break-words">
-              {state.recovery}
-            </p>
-            {error ? (
-              <Alert tone="danger" role="alert">
-                {error}
-              </Alert>
-            ) : null}
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="secondary" disabled={working} onClick={() => void resolve(false)}>
-                {t("Keep queued, pause")}
-              </Button>
-              <Button disabled={working} onClick={() => void resolve(true)}>
-                {t("Already delivered")}
-              </Button>
-            </div>
-          </div>
-        </Modal>
+      <DeliveryReviewChoice
+        text={state.recovery}
+        working={working}
+        lateSettlement={lateSettlement}
+        focusRequest={focusRequest}
+        onChoose={(outcome) => void choose(outcome)}
+      />
+      {error ? (
+        <div className="mt-1 text-ui-caption text-(--ui-tone-danger-fg)">{error}</div>
       ) : null}
     </Alert>
   );

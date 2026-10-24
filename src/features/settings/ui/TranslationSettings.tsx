@@ -15,6 +15,8 @@ import {
 import {
   saveDefaultTranslationChoice,
   useDefaultTranslationChoice,
+  saveDefaultRepromptChoice,
+  useDefaultRepromptChoice,
   type TranslationChoice,
 } from "../../sessions/model/translationPreferences";
 import { Group, Row } from "./settingsControls";
@@ -23,16 +25,32 @@ const ModelPicker = lazy(() =>
   import("../../sessions/ui/ModelPicker").then((module) => ({ default: module.ModelPicker })),
 );
 
-export function TranslationSettings({ embedded = false }: { embedded?: boolean }) {
-  const choice = useDefaultTranslationChoice();
+export function TranslationSettings({
+  embedded = false,
+  action = "translation",
+}: {
+  embedded?: boolean;
+  action?: "translation" | "reprompt";
+}) {
+  const translationChoice = useDefaultTranslationChoice();
+  const repromptChoice = useDefaultRepromptChoice();
+  const reprompt = action === "reprompt";
+  const choice = reprompt ? repromptChoice : translationChoice;
+  const saveChoice = reprompt ? saveDefaultRepromptChoice : saveDefaultTranslationChoice;
   const selected: TranslationChoice = choice ?? defaultSessionChoice();
   const control = (
     <Row
-      id="translation-model-default"
-      label={t("Default translation model")}
-      description={t(
-        "Used for text translations across conversations. Without a selection, uses the conversation model.",
-      )}
+      id={reprompt ? "reprompt-model-default" : "translation-model-default"}
+      label={reprompt ? t("Default reprompt model") : t("Default translation model")}
+      description={
+        reprompt
+          ? t(
+              "Used to clarify prompts across conversations. Without a selection, uses the conversation model.",
+            )
+          : t(
+              "Used for text translations across conversations. Without a selection, uses the conversation model.",
+            )
+      }
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {!choice && (
@@ -47,7 +65,7 @@ export function TranslationSettings({ embedded = false }: { embedded?: boolean }
             accountChoices
             allowedHarnesses={HARNESSES.filter(canRunHarnessTextPrompt)}
             onChange={(harness, model, accountId) =>
-              saveDefaultTranslationChoice({
+              saveChoice({
                 harness,
                 model,
                 modelSettings: defaultModelSettings(resolveModel(harness, model)),
@@ -57,7 +75,7 @@ export function TranslationSettings({ embedded = false }: { embedded?: boolean }
               })
             }
             onSettingsChange={(modelSettings) =>
-              saveDefaultTranslationChoice({
+              saveChoice({
                 ...selected,
                 providerAccountId:
                   choice?.providerAccountId ??
@@ -70,7 +88,7 @@ export function TranslationSettings({ embedded = false }: { embedded?: boolean }
           />
         </Suspense>
         {choice && (
-          <Button variant="link" onClick={() => saveDefaultTranslationChoice(undefined)}>
+          <Button variant="link" onClick={() => saveChoice(undefined)}>
             {t("Use conversation model")}
           </Button>
         )}
@@ -80,7 +98,7 @@ export function TranslationSettings({ embedded = false }: { embedded?: boolean }
   return embedded ? (
     control
   ) : (
-    <Group title={t("Translation")} persistence={{ mode: "automatic" }}>
+    <Group title={reprompt ? t("Reprompt") : t("Translation")} persistence={{ mode: "automatic" }}>
       {control}
     </Group>
   );

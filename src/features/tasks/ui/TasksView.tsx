@@ -18,6 +18,14 @@ import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TaskWorkspacePicker } from "./TaskWorkspacePicker";
+import { TaskBulkToolbar } from "./TaskBulkToolbar";
+import { TaskList } from "./TaskList";
+import { TaskAccountPicker } from "./TaskAccountPicker";
+import {
+  defaultProviderAccountId,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
+import { bulkTaskKey } from "../model/taskBulkActions";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { HostModelSource } from "../../connections/ui/HostModelSource";
 import { CrewTaskPicker } from "../../crews/ui/CrewTaskPicker";
@@ -362,6 +370,14 @@ function TasksContent({
   const [sessionPreview, setSessionPreview] = useState<BackgroundSessionTarget | null>(null);
   const [statusDetails, setStatusDetails] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [bulkSelection, setBulkSelection] = useState(new Set<string>());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [listView, setListView] = useRetainedState(`${viewStateKey}:list`, false);
+  const [searchQuery, setSearchQuery] = useRetainedState(`${viewStateKey}:search`, "");
+  const [statusFilter, setStatusFilter] = useRetainedState(`${viewStateKey}:status`, "all");
+  const [machineFilter, setMachineFilter] = useRetainedState(`${viewStateKey}:machine`, "all");
+  const [projectFilter, setProjectFilter] = useRetainedState(`${viewStateKey}:project`, "all");
   const [now, setNow] = useState(Date.now);
   const [loading, setLoading] = useState(true);
   const [boardDataState, setBoardDataState] = useState<RemoteDataState>({
@@ -446,13 +462,33 @@ function TasksContent({
   );
   const tasks = useMemo(
     () =>
-      goalFilter === ALL_GOALS
-        ? visibleTasks
-        : visibleTasks.filter(
-            (task) => task.goalId && goalKey(task.machineId, task.goalId) === goalFilter,
-          ),
-    [goalFilter, visibleTasks],
+      visibleTasks.filter(
+        (task) =>
+          (goalFilter === ALL_GOALS ||
+            (task.goalId && goalKey(task.machineId, task.goalId) === goalFilter)) &&
+          (statusFilter === "all" || taskColumn(task.status) === statusFilter) &&
+          (machineFilter === "all" || task.machineId === machineFilter) &&
+          (projectFilter === "all" || task.cwd === projectFilter) &&
+          (!searchQuery.trim() ||
+            `${task.title}\n${task.prompt}\n${task.id}`
+              .toLocaleLowerCase()
+              .includes(searchQuery.trim().toLocaleLowerCase())),
+      ),
+    [goalFilter, visibleTasks, statusFilter, machineFilter, projectFilter, searchQuery],
   );
+  const activeFilterCount =
+    Number(goalFilter !== ALL_GOALS) +
+    Number(statusFilter !== "all") +
+    Number(machineFilter !== "all") +
+    Number(projectFilter !== "all");
+  // Changing scope drops hidden selections; select-all never means hidden tasks.
+  useEffect(() => {
+    const visible = new Set(tasks.map(bulkTaskKey));
+    setBulkSelection((current) => {
+      const next = new Set([...current].filter((key) => visible.has(key)));
+      return next.size === current.size ? current : next;
+    });
+  }, [tasks]);
   const newReviewNotes = tasks.reduce(
     (count, task) => count + unreadReviewNotes(task.reviewNotes),
     0,
@@ -486,7 +522,7 @@ function TasksContent({
     }
   };
 
-  const { board, refresh: refreshQueries, putTask } = useTaskBoardQueries();
+  const { board, refresh: refreshQueries, putTask, removeTask } = useTaskBoardQueries();
   const refresh = useCallback(() => refreshQueries(), [refreshQueries]);
   const retryBoard = () => void refreshQueries(true);
   const previousBoard = useRef<typeof board | null>(null);
@@ -980,6 +1016,34 @@ function TasksContent({
     <div className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)">
       <header className="task-board-toolbar">
         <h1 className="sr-only">{t("Tasks")}</h1>
+        <TextField
+          fieldClassName="task-search-field"
+          label={t("Search tasks")}
+          hideLabel
+          placeholder={t("Search tasks")}
+          type="search"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.currentTarget.value)}
+        />
+        <Button
+          variant="ghost"
+          aria-pressed={listView}
+          disabled={bulkBusy || selectMode}
+          onClick={() => setListView((value) => !value)}
+        >
+          {t(listView ? "Board view" : "List view")}
+        </Button>
+        <Button
+          variant="ghost"
+          aria-pressed={selectMode}
+          disabled={bulkBusy}
+          onClick={() => {
+            setSelectMode((value) => !value);
+            setBulkSelection(new Set());
+          }}
+        >
+          {t(selectMode ? "Finish selection" : "Select tasks")}
+        </Button>
         {machines.length === 0 ? (
           <span className="min-w-[min(100%,14rem)] flex-1 text-ui-caption text-(--ui-text-secondary)">
             {loading
@@ -999,7 +1063,7 @@ function TasksContent({
             {newReviewNotes === 1 ? t("note") : t("notes")}
           </span>
         ) : null}
-        {goals.length > 0 ? (
+        {goals.length > 0 || visibleTasks.length > 0 ? (
           <>
             <Button
               ref={filterTrigger}
@@ -1009,12 +1073,12 @@ function TasksContent({
               tooltip={t("Filters")}
               aria-haspopup="dialog"
               aria-expanded={filtersOpen}
-              selected={goalFilter !== ALL_GOALS}
-              aria-pressed={goalFilter !== ALL_GOALS}
+              selected={activeFilterCount > 0}
+              aria-pressed={activeFilterCount > 0}
               onClick={() => setFiltersOpen((open) => !open)}
             >
               <ListFilter className="icon-sm" />
-              {goalFilter !== ALL_GOALS ? (
+              {activeFilterCount > 0 ? (
                 <span className="task-filter-active" aria-hidden="true" />
               ) : null}
             </Button>
@@ -1029,30 +1093,80 @@ function TasksContent({
                 }}
               >
                 <div className="task-filter-popover" role="dialog" aria-label={t("Filters")}>
-                  <SearchableSelect
-                    variant="pill"
-                    align="end"
-                    label={t("Show goal")}
-                    layer={LAYER.submenu}
-                    value={goalFilter}
-                    options={[
-                      {
-                        value: ALL_GOALS,
-                        get label() {
-                          return t("All tasks");
+                  <label className="task-filter-field">
+                    <span>{t("Status")}</span>
+                    <SearchableSelect
+                      label={t("Status")}
+                      value={statusFilter}
+                      options={[
+                        { value: "all", label: t("All") },
+                        ...TASK_COLUMNS.map((status) => ({
+                          value: status,
+                          label: t(COLUMN_LABELS[status]),
+                        })),
+                      ]}
+                      onChange={setStatusFilter}
+                    />
+                  </label>
+                  <label className="task-filter-field">
+                    <span>{t("Machine")}</span>
+                    <SearchableSelect
+                      label={t("Machine")}
+                      value={machineFilter}
+                      options={[
+                        { value: "all", label: t("All") },
+                        ...machines.map((machine) => ({ value: machine.id, label: machine.name })),
+                      ]}
+                      onChange={setMachineFilter}
+                    />
+                  </label>
+                  <label className="task-filter-field">
+                    <span>{t("Project")}</span>
+                    <SearchableSelect
+                      label={t("Project")}
+                      value={projectFilter}
+                      options={[
+                        { value: "all", label: t("All") },
+                        ...[...new Set(visibleTasks.map((task) => task.cwd))].map((cwd) => ({
+                          value: cwd,
+                          label: cwd,
+                        })),
+                      ]}
+                      onChange={setProjectFilter}
+                    />
+                  </label>
+                  <label className="task-filter-field">
+                    <span>{t("Show goal")}</span>
+                    <SearchableSelect
+                      variant="pill"
+                      align="end"
+                      label={t("Show goal")}
+                      layer={LAYER.submenu}
+                      value={goalFilter}
+                      options={[
+                        {
+                          value: ALL_GOALS,
+                          get label() {
+                            return t("All tasks");
+                          },
                         },
-                      },
-                      ...goals.map((goal) => ({
-                        value: goalKey(goal.machineId, goal.id),
-                        label: goal.title,
-                      })),
-                    ]}
-                    onChange={setGoalFilter}
-                  />
+                        ...goals.map((goal) => ({
+                          value: goalKey(goal.machineId, goal.id),
+                          label: goal.title,
+                        })),
+                      ]}
+                      onChange={setGoalFilter}
+                    />
+                  </label>
                   <Button
                     variant="ghost"
-                    disabled={goalFilter === ALL_GOALS}
-                    onClick={() => setGoalFilter(ALL_GOALS)}
+                    disabled={activeFilterCount === 0}
+                    onClick={() => {
+                      setGoalFilter(ALL_GOALS);
+                      setStatusFilter("all");
+                      setMachineFilter("all");
+                      setProjectFilter("all");
+                    }}
                   >
                     {t("Reset")}
                   </Button>
@@ -1165,6 +1279,23 @@ function TasksContent({
           </Button>
         </div>
       </header>
+      {selectMode ? (
+        <TaskBulkToolbar
+          tasks={tasks}
+          selected={bulkSelection}
+          onSelect={setBulkSelection}
+          disabled={acting !== null}
+          onBusy={setBulkBusy}
+          onUpdated={(task) => {
+            putTask(task);
+            setTasks((current) => upsertBoardItem(current, task));
+          }}
+          onDeleted={(task) => {
+            removeTask(task);
+            setTasks((current) => current.filter((row) => bulkTaskKey(row) !== bulkTaskKey(task)));
+          }}
+        />
+      ) : null}
       {confirmDialog}
       {statusDetails ? (
         <Modal title={t("Task board status")} onClose={() => setStatusDetails(false)}>
@@ -1474,8 +1605,8 @@ function TasksContent({
       <div className="@container/task-area flex min-h-0 min-w-0 flex-1">
         {goalSessions ? (
           <Modal title={t("Task sessions")} size="lg" onClose={() => setGoalSessions(null)}>
-            <div className="grid gap-3 p-4">
-              <p>{goalSessions.title}</p>
+            <div className="grid gap-3 p-4 text-ui-secondary">
+              <p className="break-words font-medium">{goalSessions.title}</p>
               {visibleTasks
                 .filter(
                   (task) =>
@@ -1484,12 +1615,11 @@ function TasksContent({
                 .map((task) => {
                   const sessions = taskSessionIds(task);
                   return (
-                    <div
-                      key={task.id}
-                      className="grid gap-1 rounded-md border border-(--ui-tone-neutral-border) p-3"
-                    >
-                      <strong>{task.title}</strong>
-                      <span>{t(STATUS_LABELS[task.status])}</span>
+                    <div key={task.id} className="task-session-row">
+                      <span className="break-words font-medium">{task.title}</span>
+                      <span className="text-ui-caption text-(--ui-text-secondary)">
+                        {t(STATUS_LABELS[task.status])}
+                      </span>
                       <span className="break-all text-ui-micro">
                         {task.branch} {task.worktreeCwd ?? task.workspace?.checkoutCwd ?? task.cwd}
                       </span>
@@ -1507,7 +1637,9 @@ function TasksContent({
                             {t("Open worker session")}
                           </Button>
                         ) : (
-                          <span>{t("Session will appear when this task starts.")}</span>
+                          <span className="text-ui-caption text-(--ui-text-secondary)">
+                            {t("Session will appear when this task starts.")}
+                          </span>
                         )}
                         {sessions.review ? (
                           <Button
@@ -1537,6 +1669,26 @@ function TasksContent({
             <div className="grid h-full place-items-center text-(--ui-text-secondary)">
               <LoaderCircle className="icon-md animate-spin" />
             </div>
+          ) : listView || selectMode ? (
+            tasks.length ? (
+              <TaskList
+                tasks={tasks}
+                selection={selectMode}
+                selected={bulkSelection}
+                disabled={bulkBusy}
+                onToggle={(task, checked) =>
+                  setBulkSelection((current) => {
+                    const next = new Set(current);
+                    if (checked) next.add(bulkTaskKey(task));
+                    else next.delete(bulkTaskKey(task));
+                    return next;
+                  })
+                }
+                onOpen={(task) => openCard(`${task.machineId}:${task.id}`)}
+              />
+            ) : (
+              <EmptyState description={t("No tasks match your search or filters.")} />
+            )
           ) : (
             <>
               <div className="task-board-column-picker">
@@ -1654,7 +1806,7 @@ function TasksContent({
                               goal={taskContext(task).goal}
                               waitingForText={JSON.stringify(taskContext(task).waitingFor)}
                               actionsFor={cardActions}
-                              busy={acting != null}
+                              busy={acting != null || bulkBusy}
                               openingState={JSON.stringify(
                                 [taskSessionIds(task).worker, taskSessionIds(task).review].map(
                                   (id) =>
@@ -2797,6 +2949,11 @@ function TaskForm({
                 onChange({
                   ...draft,
                   machineId: id,
+                  providerAccountId:
+                    machines.some((entry) => entry.id === id && isLocalSyncMachine(entry)) &&
+                    supportsProviderAccounts(draft.harness)
+                      ? defaultProviderAccountId(draft.harness)
+                      : undefined,
                   crewDefinitionId: undefined,
                   workspace: undefined,
                   cwd:
@@ -2934,8 +3091,26 @@ function TaskForm({
                 model={draft.model}
                 values={draft.modelSettings}
                 project={draft.cwd}
-                onChange={(harness, model) => onChange({ ...draft, harness, model })}
+                onChange={(harness, model) =>
+                  onChange({
+                    ...draft,
+                    harness,
+                    model,
+                    providerAccountId:
+                      harness === draft.harness
+                        ? draft.providerAccountId
+                        : target && isLocalSyncMachine(target) && supportsProviderAccounts(harness)
+                          ? defaultProviderAccountId(harness)
+                          : undefined,
+                  })
+                }
                 onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+              />
+              <TaskAccountPicker
+                harness={draft.harness}
+                accountId={draft.providerAccountId}
+                local={Boolean(target && isLocalSyncMachine(target))}
+                onChange={(id) => update("providerAccountId", id)}
               />
               {draft.harness !== "fx" ? (
                 <AccessPicker
@@ -3032,9 +3207,9 @@ function ContinueUntilDoneField({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-2">
+    <label className="flex cursor-pointer items-start gap-2 text-ui-secondary">
       <Checkbox checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      <span>
+      <span className="min-w-0">
         <span className="block">{t("Continue until complete")}</span>
         <span className="block text-ui-micro text-(--ui-text-secondary)">
           {t("Keeps correcting while progress is made; asks for input when needed.")}
@@ -3084,16 +3259,18 @@ function AutoMergeField({
   useLocale();
   return (
     <label
-      className={`flex items-center gap-1.5 ${disabled ? "text-(--ui-text-disabled)" : "cursor-pointer"}`}
+      className={`flex items-start gap-2 text-ui-secondary ${disabled ? "text-(--ui-text-disabled)" : "cursor-pointer"}`}
     >
       <Checkbox
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
       />
-      {t("Merge automatically")}
-      <span className="text-ui-micro text-(--ui-text-secondary)">
-        {t("Merges into the base branch when every check passes")}
+      <span className="min-w-0">
+        <span className="block">{t("Merge automatically")}</span>
+        <span className="block text-ui-micro text-(--ui-text-secondary)">
+          {t("Merges into the base branch when every check passes")}
+        </span>
       </span>
     </label>
   );
@@ -3689,14 +3866,14 @@ function GoalSettingsForm({
   return (
     <form
       aria-label={t("Edit goal settings")}
-      className="grid min-w-0 gap-3 p-4"
+      className="grid min-w-0 gap-3 p-4 text-ui-secondary"
       onSubmit={(event) => {
         event.preventDefault();
         if (!saving && valid) void onSave(settings);
       }}
     >
-      <p className="break-words">{goal.title}</p>
-      <p>
+      <p className="break-words font-medium">{goal.title}</p>
+      <p className="text-ui-caption text-(--ui-text-secondary)">
         {t(
           "Applies to existing unfinished tasks. Enabling automatic merge can deliver tasks that already passed review.",
         )}
@@ -3711,7 +3888,7 @@ function GoalSettingsForm({
           checked={settings.continueUntilDone}
           onChange={(value) => update("continueUntilDone", value)}
         />
-        <label>
+        <label className="grid min-w-0 gap-1 text-ui-caption">
           {t("Concurrent tasks in this goal")}
           <SearchableSelect
             label={t("Concurrent tasks in this goal")}
@@ -3739,13 +3916,15 @@ function GoalSettingsForm({
             update("maxRunMinutes", event.target.value === "" ? NaN : Number(event.target.value))
           }
         />
-        <p>
+        <p className="text-ui-caption text-(--ui-text-secondary)">
           {t(
             "Zero disables the run limit. Limits apply to waiting tasks; active tasks keep their current limit. Blocked tasks still require restart.",
           )}
         </p>
         {goal.status === "planning" ? (
-          <p>{t("Wait for planning to finish before changing the run limit.")}</p>
+          <p className="text-ui-caption text-(--ui-text-secondary)">
+            {t("Wait for planning to finish before changing the run limit.")}
+          </p>
         ) : null}
       </fieldset>
       {error ? (
@@ -3870,7 +4049,18 @@ function GoalForm({
               label: isLocalSyncMachine(entry) ? t("This computer") : entry.name,
             }))}
             onChange={(machineId) =>
-              onChange({ ...draft, machineId, cwds: [], leadCwd: "", workspaces: undefined })
+              onChange({
+                ...draft,
+                machineId,
+                cwds: [],
+                leadCwd: "",
+                workspaces: undefined,
+                providerAccountId:
+                  machines.some((entry) => entry.id === machineId && isLocalSyncMachine(entry)) &&
+                  supportsProviderAccounts(draft.harness)
+                    ? defaultProviderAccountId(draft.harness)
+                    : undefined,
+              })
             }
           />
           <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
@@ -3966,8 +4156,26 @@ function GoalForm({
               model={draft.model}
               values={draft.modelSettings}
               project={lead || "~"}
-              onChange={(harness, model) => onChange({ ...draft, harness, model })}
+              onChange={(harness, model) =>
+                onChange({
+                  ...draft,
+                  harness,
+                  model,
+                  providerAccountId:
+                    harness === draft.harness
+                      ? draft.providerAccountId
+                      : target && isLocalSyncMachine(target) && supportsProviderAccounts(harness)
+                        ? defaultProviderAccountId(harness)
+                        : undefined,
+                })
+              }
               onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+            />
+            <TaskAccountPicker
+              harness={draft.harness}
+              accountId={draft.providerAccountId}
+              local={Boolean(target && isLocalSyncMachine(target))}
+              onChange={(id) => update("providerAccountId", id)}
             />
             {draft.harness !== "fx" ? (
               <AccessPicker

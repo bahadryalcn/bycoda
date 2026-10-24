@@ -101,6 +101,36 @@ it("shows a retryable status failure even when no file list has arrived", async 
   expect(container.textContent).toContain("Retry");
 });
 
+it("explains a saved checkpoint failure and refreshes without claiming to recreate it", async () => {
+  mocks.status.mockRejectedValueOnce(
+    new Error("Workspace checkpoint failed: Not a directory (os error 20)"),
+  );
+  await act(async () =>
+    root.render(createElement(SessionReview, { sessionId: "failed", cwd: "/repo", onOpenDiff })),
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "could not be fully recorded",
+  );
+  expect(container.textContent).not.toContain("Retry");
+  const refresh = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Refresh",
+  )!;
+  let resolve: (value: { files: [] }) => void;
+  mocks.status.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const calls = mocks.status.mock.calls.length;
+  await act(async () => refresh.click());
+  expect(refresh.disabled).toBe(true);
+  await act(async () => refresh.click());
+  expect(mocks.status).toHaveBeenCalledTimes(calls + 1);
+  await act(async () => resolve!({ files: [] }));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
 it("automatically refreshes a recording checkpoint without presenting it as an error", async () => {
   vi.useFakeTimers();
   try {

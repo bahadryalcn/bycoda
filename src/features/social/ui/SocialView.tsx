@@ -1,4 +1,4 @@
-import { NativeSelect } from "../../../shared/ui/Select";
+import { NativeSelect, Select } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
@@ -233,6 +233,12 @@ export function SocialView({
   const [refreshing, setRefreshing] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [visited, setVisited] = useState<Tab[]>(["Accounts"]);
+  const selectTab = (item: Tab) => {
+    setNotice("");
+    setError("");
+    setTab(item);
+    setVisited((current) => (current.includes(item) ? current : [...current, item]));
+  };
   const [automationMode, setAutomationMode] = useState("publish");
   const [filter, setFilter] = useState("");
   const [offsets, setOffsets] = useState<SocialWorkspaceQuery["offsets"]>({});
@@ -722,6 +728,17 @@ export function SocialView({
             </Button>
           </div>
         </header>
+        <div className="social-section-picker">
+          <Select
+            label={t("Social Media sections")}
+            value={tab}
+            options={tabs.map((item) => ({ value: item, label: tabLabel(item) }))}
+            onValueChange={(value) => {
+              const next = tabs.find((item) => item === value);
+              if (next) selectTab(next);
+            }}
+          />
+        </div>
         <nav aria-label={t("Social Media sections")} className="social-tabs">
           {tabs.map((item) => {
             const Icon = tabIcons[item];
@@ -732,12 +749,7 @@ export function SocialView({
                 key={item}
                 title={tabLabel(item)}
                 aria-current={tab === item ? "page" : undefined}
-                onClick={() => {
-                  setNotice("");
-                  setError("");
-                  setTab(item);
-                  setVisited((current) => (current.includes(item) ? current : [...current, item]));
-                }}
+                onClick={() => selectTab(item)}
               >
                 <Icon className="social-nav-icon" aria-hidden="true" />
                 <span className="social-nav-label">{tabLabel(item)}</span>

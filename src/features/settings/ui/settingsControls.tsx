@@ -51,29 +51,43 @@ export function SettingsFeedback({
   state,
   children,
   action,
+  presentation = "surface",
 }: {
   state: "loading" | "success" | "error" | "empty" | "warning";
   children: ReactNode;
   action?: ReactNode;
+  /** Quiet empty information inside an already framed Group. Errors retain Alert. */
+  presentation?: "surface" | "inset";
 }) {
   return (
     <div className="settings-feedback" data-state={state}>
-      <Alert
-        tone={
-          state === "error"
-            ? "danger"
-            : state === "warning"
-              ? "warning"
-              : state === "success"
-                ? "success"
-                : "info"
-        }
-        role={state === "error" ? "alert" : "status"}
-        aria-live={state === "error" ? "assertive" : "polite"}
-        aria-atomic="true"
-      >
-        {children}
-      </Alert>
+      {state === "empty" && presentation === "inset" ? (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="text-ui-caption text-(--ui-text-secondary)"
+        >
+          {children}
+        </div>
+      ) : (
+        <Alert
+          tone={
+            state === "error"
+              ? "danger"
+              : state === "warning"
+                ? "warning"
+                : state === "success"
+                  ? "success"
+                  : "info"
+          }
+          role={state === "error" ? "alert" : "status"}
+          aria-live={state === "error" ? "assertive" : "polite"}
+          aria-atomic="true"
+        >
+          {children}
+        </Alert>
+      )}
       {action}
     </div>
   );

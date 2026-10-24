@@ -22,7 +22,13 @@ export type HostSessionRequest = <T>(method: string, params: unknown) => Promise
 export interface SessionAccess {
   readonly kind: "local-host" | "remote-host";
   list(projectId: string, known?: string): Promise<HostSessionList>;
-  page(sessionId: string, before?: number, revision?: number): Promise<HostSessionPage>;
+  page(
+    sessionId: string,
+    before?: number,
+    revision?: number,
+    /** Ask for block digests and the transcript head (`sessions.digests`). */
+    digests?: boolean,
+  ): Promise<HostSessionPage>;
   sync(
     sessionId: string,
     options?: {
@@ -31,6 +37,8 @@ export interface SessionAccess {
       partial?: boolean;
       loadedBlockIds?: string[];
       windowStart?: number;
+      /** Ask for block digests and the transcript head (`sessions.digests`). */
+      digests?: boolean;
     },
   ): Promise<SessionSyncResponse>;
   block(sessionId: string, blockId: string, revision: number): Promise<SessionSyncResponse>;
@@ -48,8 +56,14 @@ function hostAccess(kind: SessionAccess["kind"], request: HostSessionRequest): S
         projectId,
         ...(known === undefined ? {} : { known }),
       }),
-    page: (sessionId, before, revision) =>
-      request("sessions.page", { sessionId, before, revision, preview: true }),
+    page: (sessionId, before, revision, digests) =>
+      request("sessions.page", {
+        sessionId,
+        before,
+        revision,
+        preview: true,
+        ...(digests ? { digests: true } : {}),
+      }),
     sync: (sessionId, options = {}) => request("sessions.sync", { sessionId, ...options }),
     block: (sessionId, blockId, revision) =>
       request("sessions.block", { sessionId, blockId, revision }),

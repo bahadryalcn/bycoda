@@ -152,7 +152,6 @@ export function buildTurnSteerParams(input: {
 }
 
 export function buildTurnStartParams(input: {
-  skillInstructions?: string;
   threadId: string;
   runtimeMode: RuntimeMode;
   controlsAgents?: boolean;
@@ -200,7 +199,9 @@ export function buildTurnStartParams(input: {
             settings: {
               model: input.model.trim(),
               reasoning_effort: input.effort ?? null,
-              developer_instructions: input.skillInstructions ?? null,
+              // A non-null value replaces the mode's built-in instructions
+              // (including Plan). Owner policy travels in the turn input instead.
+              developer_instructions: null,
             },
           },
         }

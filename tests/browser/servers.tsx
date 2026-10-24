@@ -489,6 +489,16 @@ Object.assign(window, {
           typeof input.identityFile === "string" ? input.identityFile : undefined;
         return structuredClone(record);
       }
+      if (command === "server_ssh_remove") {
+        const index = sshRecords.findIndex((record) => record.id === input.id);
+        if (index >= 0) sshRecords.splice(index, 1);
+        return;
+      }
+      if (command === "remote_disconnect") {
+        const index = machines.findIndex((machine) => machine.id === input.machineId);
+        if (index >= 0) machines.splice(index, 1);
+        return;
+      }
       if (command === "server_ssh_save") {
         const existing = sshRecords.findIndex((record) => record.id === input.id);
         const record: ServerRecord = {
@@ -654,7 +664,7 @@ function Fixture() {
     ) : null;
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", gap: 8, padding: 4 }}>
+      <div style={{ display: "flex", gap: 8, padding: "4px 16px" }}>
         <Button onClick={() => setVisible(!visible)}>Toggle servers</Button>
       </div>
       <div style={{ display: "flex", minHeight: 0, flex: 1 }}>

@@ -44,6 +44,7 @@ const terminalActions = vi.hoisted(() => ({
   open: undefined as ReturnType<typeof vi.fn> | undefined,
 }));
 vi.mock("./ServersTerminalWorkspace", () => ({
+  useServerInventoryVisible: () => true,
   useOpenServerTerminal: () => terminalActions.open,
   useOpenQuickServerTerminal: () => undefined,
 }));
@@ -117,19 +118,85 @@ const render = async () => {
   await act(async () => root.render(createElement(ServersView)));
 };
 const click = async (label: string) => {
-  const button = [...container.querySelectorAll("button")].find(
+  const button = [...document.body.querySelectorAll("button")].find(
     (entry) => entry.textContent?.includes(label) || entry.getAttribute("aria-label") === label,
   )!;
   expect(button).toBeTruthy();
   await act(async () => button.click());
 };
 const search = async (value: string) => {
-  const input = container.querySelector("input")!;
+  const input = document.body.querySelector("input")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 };
+
+it("keeps filtered-out selection explicit and confirms the exact mixed deletion scope", async () => {
+  fixture.extraServers = [
+    { id: "ssh-b", name: "Build SSH", kind: "ssh", metadata: { tags: [], favorite: false } },
+  ];
+  await render();
+  await click("Actions for Home Mac");
+  await act(async () => menuItem("Select")!.click());
+  await act(async () =>
+    document.body.querySelector<HTMLInputElement>('[aria-label="Select visible servers"]')!.click(),
+  );
+  expect(document.body.querySelector('[aria-label="Server details"]')).toBeNull();
+  await search("Build SSH");
+  expect(document.body.textContent).toContain("2 selected");
+  expect(document.body.textContent).toContain("1 hidden");
+  await click("Delete selected");
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("Home Mac");
+  expect(dialog.textContent).toContain("Build SSH");
+  expect(removeSshConnection).not.toHaveBeenCalled();
+  await act(async () =>
+    [...dialog.querySelectorAll("button")]
+      .find((button) => button.textContent === "Cancel")!
+      .click(),
+  );
+  expect(disconnectMachine).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("2 selected");
+});
+
+it("removes successful bulk members once and retries only failures without double submission", async () => {
+  fixture.extraServers = [
+    { id: "ssh-b", name: "Build SSH", kind: "ssh", metadata: { tags: [], favorite: false } },
+  ];
+  let release!: () => void;
+  vi.mocked(disconnectMachine).mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  vi.mocked(removeSshConnection).mockRejectedValueOnce(new Error("Locked record"));
+  await render();
+  await click("Actions for Home Mac");
+  await act(async () => menuItem("Select")!.click());
+  await act(async () =>
+    document.body.querySelector<HTMLInputElement>('[aria-label="Select visible servers"]')!.click(),
+  );
+  await click("Delete selected");
+  const confirm = () =>
+    [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+      (button) => button.textContent === "Delete selected",
+    )!;
+  await act(async () => {
+    confirm().click();
+    confirm().click();
+  });
+  expect(disconnectMachine).toHaveBeenCalledTimes(1);
+  await act(async () => release());
+  expect(document.body.textContent).toContain("1 selected");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Locked record");
+  expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("Home Mac");
+  await act(async () => confirm().click());
+  expect(disconnectMachine).toHaveBeenCalledTimes(1);
+  expect(removeSshConnection).toHaveBeenCalledTimes(2);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
 
 it("opens Termius migration from the Add menu", async () => {
   await render();
@@ -156,22 +223,24 @@ it("shows real recovery progress and keeps degraded features visible after Host 
   await act(async () => {
     recovery = reconnectRemoteMachine(machine.environmentId);
   });
-  expect(container.querySelector("[data-server-row]")?.textContent).toContain("Reconnecting");
-  expect(container.querySelector('button[aria-label="Reconnect"]')?.getAttribute("aria-busy")).toBe(
-    "true",
-  );
-  expect(container.querySelector('button[aria-label="Cancel reconnect"]')).toBeTruthy();
+  expect(document.body.querySelector("[data-server-row]")?.textContent).toContain("Reconnecting");
+  expect(
+    document.body.querySelector('button[aria-label="Reconnect"]')?.getAttribute("aria-busy"),
+  ).toBe("true");
+  expect(document.body.querySelector('button[aria-label="Cancel reconnect"]')).toBeTruthy();
   await act(async () => {
     recordFeatureHealth(machine.environmentId, "files", false);
     finish({});
     await recovery;
   });
-  expect(container.querySelector("[data-server-row]")?.textContent).toContain("Refresh pending");
-  expect(container.querySelector('[aria-label="Server details"]')?.textContent).toContain(
+  expect(document.body.querySelector("[data-server-row]")?.textContent).toContain(
+    "Refresh pending",
+  );
+  expect(document.body.querySelector('[aria-label="Server details"]')?.textContent).toContain(
     "Unavailable",
   );
   await act(async () => recordFeatureHealth(machine.environmentId, "files", true));
-  expect(container.querySelector("[data-server-row]")?.textContent).toContain("Connected");
+  expect(document.body.querySelector("[data-server-row]")?.textContent).toContain("Connected");
 });
 
 it("prevents double-click connection when the target cannot connect", async () => {
@@ -195,7 +264,7 @@ it("prevents double-click connection when the target cannot connect", async () =
       }),
     ),
   );
-  const row = container.querySelector<HTMLButtonElement>("[data-server-row]")!;
+  const row = document.body.querySelector<HTMLButtonElement>("[data-server-row]")!;
   await act(async () =>
     row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0, detail: 2 })),
   );
@@ -208,10 +277,10 @@ it("prevents double-click connection when the target cannot connect", async () =
 it("selects on a single click and opens the canonical SSH record once on double click", async () => {
   terminalActions.open = vi.fn();
   await render();
-  const row = container.querySelector<HTMLButtonElement>("[data-server-row]")!;
+  const row = document.body.querySelector<HTMLButtonElement>("[data-server-row]")!;
   await act(async () => row.click());
   expect(terminalActions.open).not.toHaveBeenCalled();
-  expect(container.querySelector('[aria-label="Server details"]')).toBeTruthy();
+  expect(document.body.querySelector('[aria-label="Server details"]')).toBeTruthy();
   await act(async () =>
     row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0, detail: 2 })),
   );
@@ -223,7 +292,7 @@ it("selects on a single click and opens the canonical SSH record once on double 
 it("connects with Enter without repeating the connection and closes details back to the row", async () => {
   terminalActions.open = vi.fn();
   await render();
-  const row = container.querySelector<HTMLButtonElement>("[data-server-row]")!;
+  const row = document.body.querySelector<HTMLButtonElement>("[data-server-row]")!;
   await act(async () => {
     row.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
@@ -234,7 +303,7 @@ it("connects with Enter without repeating the connection and closes details back
   });
   expect(terminalActions.open).toHaveBeenCalledOnce();
   await click("Close server details");
-  expect(container.querySelector('[aria-label="Server details"]')).toBeNull();
+  expect(document.body.querySelector('[aria-label="Server details"]')).toBeNull();
   expect(document.activeElement).toBe(row);
 });
 
@@ -242,7 +311,7 @@ it("does not launch SSH for a Host record with no SSH endpoint", async () => {
   terminalActions.open = vi.fn();
   fixture.machines = [{ ...machine, ssh: undefined, endpoint: "http://127.0.0.1:3776" }];
   await render();
-  const row = container.querySelector<HTMLButtonElement>("[data-server-row]")!;
+  const row = document.body.querySelector<HTMLButtonElement>("[data-server-row]")!;
   await act(async () =>
     row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0, detail: 2 })),
   );
@@ -253,7 +322,7 @@ it("does not launch SSH for a Host record with no SSH endpoint", async () => {
 it("selects canonical machines and delegates add, edit and reconnect to existing flows", async () => {
   await render();
   await click("Home Mac");
-  const details = container.querySelector('[aria-label="Server details"]')!;
+  const details = document.body.querySelector('[aria-label="Server details"]')!;
   expect(details.textContent).toContain("2222");
   expect(details.textContent).toContain("3774");
   await click("Server actions");
@@ -274,13 +343,13 @@ it("selects canonical machines and delegates add, edit and reconnect to existing
 it("filters names and addresses and distinguishes no matches from an empty inventory", async () => {
   await render();
   await search("ME@HOME");
-  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(1);
+  expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(1);
   await search("absent");
-  expect(container.textContent).toContain("No matching servers.");
-  expect(container.textContent).not.toContain("No machines connected.");
+  expect(document.body.textContent).toContain("No matching servers.");
+  expect(document.body.textContent).not.toContain("No machines connected.");
   fixture.machines = [];
   await render();
-  expect(container.textContent).toContain("No machines connected.");
+  expect(document.body.textContent).toContain("No machines connected.");
 });
 
 it("keeps the last list and selection visible when refresh fails and allows retry", async () => {
@@ -288,11 +357,11 @@ it("keeps the last list and selection visible when refresh fails and allows retr
   await click("Home Mac");
   fixture.error = "database unavailable";
   await render();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
     "Showing last loaded data",
   );
-  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(1);
-  expect(container.querySelector('[aria-label="Server details"]')).toBeTruthy();
+  expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(1);
+  expect(document.body.querySelector('[aria-label="Server details"]')).toBeTruthy();
   await click("Retry");
   expect(fixture.refresh).toHaveBeenCalledOnce();
 });
@@ -300,28 +369,30 @@ it("keeps the last list and selection visible when refresh fails and allows retr
 it("separates initial loading and load failure from an empty successful inventory", async () => {
   Object.assign(fixture, { machines: [], loaded: false, loading: true });
   await render();
-  expect(container.querySelector('[role="status"]')?.textContent).toContain("Loading servers");
-  expect(container.textContent).not.toContain("No machines connected.");
+  expect(document.body.querySelector('[role="status"]')?.textContent).toContain("Loading servers");
+  expect(document.body.textContent).not.toContain("No machines connected.");
   Object.assign(fixture, { loading: false, error: "unavailable" });
   await render();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t load servers");
-  expect(container.textContent).not.toContain("No machines connected.");
+  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t load servers",
+  );
+  expect(document.body.textContent).not.toContain("No machines connected.");
 });
 
 it("restores search, selection and scroll after navigating away and returning", async () => {
   await render();
   await search("Home");
   await click("Home Mac");
-  const scroller = container.querySelector(".overflow-y-auto")!;
+  const scroller = document.body.querySelector(".overflow-y-auto")!;
   scroller.scrollTop = 90;
   await act(async () => scroller.dispatchEvent(new Event("scroll", { bubbles: true })));
   await act(async () => root.render(null));
   await render();
-  expect(container.querySelector("input")?.value).toBe("Home");
-  expect(container.querySelector('[data-server-row][aria-pressed="true"]')?.textContent).toContain(
-    "Home Mac",
-  );
-  expect(container.querySelector(".overflow-y-auto")?.scrollTop).toBe(90);
+  expect(document.body.querySelector("input")?.value).toBe("Home");
+  expect(
+    document.body.querySelector('[data-server-row][aria-pressed="true"]')?.textContent,
+  ).toContain("Home Mac");
+  expect(document.body.querySelector(".overflow-y-auto")?.scrollTop).toBe(90);
 });
 
 it("does not expose credentials from a URL endpoint", async () => {
@@ -335,15 +406,15 @@ it("does not expose credentials from a URL endpoint", async () => {
   ];
   await render();
   await click("URL host");
-  expect(container.textContent).toContain("https://example.test:3774");
-  expect(container.textContent).not.toContain("private");
-  expect(container.textContent).not.toContain("secret");
+  expect(document.body.textContent).toContain("https://example.test:3774");
+  expect(document.body.textContent).not.toContain("private");
+  expect(document.body.textContent).not.toContain("secret");
 });
 
 it("updates the machine's status from shared host health without losing inventory", async () => {
   applyRemoteConnection(machine.environmentId, { type: "ok", at: 1 });
   await render();
-  expect(container.querySelector("li")?.textContent).toContain("Connected");
+  expect(document.body.querySelector("li")?.textContent).toContain("Connected");
   await act(async () =>
     applyRemoteConnection(machine.environmentId, {
       type: "failure",
@@ -351,11 +422,13 @@ it("updates the machine's status from shared host health without losing inventor
       at: 2,
     }),
   );
-  expect(container.querySelector("li")?.textContent).toContain("Not connected");
-  expect(container.querySelector("li")?.textContent).toContain("Home Mac");
-  expect(container.querySelector("li")?.textContent).not.toContain("The machine did not answer");
+  expect(document.body.querySelector("li")?.textContent).toContain("Not connected");
+  expect(document.body.querySelector("li")?.textContent).toContain("Home Mac");
+  expect(document.body.querySelector("li")?.textContent).not.toContain(
+    "The machine did not answer",
+  );
   await click("Home Mac");
-  const disclosure = container.querySelector(
+  const disclosure = document.body.querySelector(
     '[aria-label="Server details"] details',
   ) as HTMLDetailsElement;
   expect(disclosure).toBeTruthy();
@@ -365,7 +438,7 @@ it("updates the machine's status from shared host health without losing inventor
     disclosure.open = true;
   });
   expect(disclosure.open).toBe(true);
-  expect(container.querySelector('[data-server-row][aria-pressed="true"]')).toBeTruthy();
+  expect(document.body.querySelector('[data-server-row][aria-pressed="true"]')).toBeTruthy();
 });
 
 const sshServer: ServerRecord = {
@@ -379,9 +452,9 @@ it("lists SSH-only endpoints without calling host health or offering host instal
   fixture.extraServers = [sshServer];
   await render();
   await search("linux");
-  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(1);
+  expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(1);
   await click("Personal SSH");
-  const details = container.querySelector('[aria-label="Server details"]')!;
+  const details = document.body.querySelector('[aria-label="Server details"]')!;
   expect(details.textContent).toContain("alice@remote.example");
   expect(details.textContent).toContain("2200");
   expect(details.textContent).not.toContain("Host service port");
@@ -421,7 +494,7 @@ it("patches only owned organization fields, leaving last-use and forwards native
   fixture.extraServers = [{ ...sshServer, metadata: { ...sshServer.metadata, lastUsedAt: 123 } }];
   await render();
   await click("Personal SSH");
-  const form = container.querySelector("details form")!;
+  const form = document.body.querySelector("details form")!;
   await act(async () =>
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
@@ -436,7 +509,7 @@ it("explicitly clears a saved group instead of omitting the patch field", async 
   fixture.extraServers = [sshServer];
   await render();
   await click("Personal SSH");
-  const form = container.querySelector("details form")!;
+  const form = document.body.querySelector("details form")!;
   const input = form.querySelector("input")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "");
@@ -462,19 +535,19 @@ it("filters favorites without clearing hidden selection and resets inside the po
     '[role="switch"][aria-label="Favorites only"]',
   ) as HTMLButtonElement;
   await act(async () => favorites.click());
-  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(1);
-  expect(container.querySelector("li")?.textContent).toContain("Personal SSH");
-  expect(container.querySelector('[aria-label="Server details"]')?.textContent).toContain(
+  expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(1);
+  expect(document.body.querySelector("li")?.textContent).toContain("Personal SSH");
+  expect(document.body.querySelector('[aria-label="Server details"]')?.textContent).toContain(
     "Home Mac",
   );
   const reset = [...popover.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Reset filters"),
   )!;
   await act(async () => reset.click());
-  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(2);
-  expect(container.querySelector('[data-server-row][aria-pressed="true"]')?.textContent).toContain(
-    "Home Mac",
-  );
+  expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(2);
+  expect(
+    document.body.querySelector('[data-server-row][aria-pressed="true"]')?.textContent,
+  ).toContain("Home Mac");
 });
 
 it("searches and displays the effective SSH destination while preserving the editable base", async () => {
@@ -490,9 +563,9 @@ it("searches and displays the effective SSH destination while preserving the edi
   terminalActions.open = vi.fn();
   await render();
   await search("group-user");
-  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(1);
+  expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(1);
   await click("Inherited destination");
-  const details = container.querySelector('[aria-label="Server details"]')!;
+  const details = document.body.querySelector('[aria-label="Server details"]')!;
   expect(details.textContent).toContain("group-user@target.invalid");
   expect(details.textContent).toContain("2200");
   expect(server.sshEndpoint).toEqual({ host: "target.invalid", user: "local-user", port: 22 });
@@ -500,7 +573,7 @@ it("searches and displays the effective SSH destination while preserving the edi
 });
 
 const rowFor = (id: string) =>
-  container.querySelector<HTMLButtonElement>(`[data-server-row="${id}"]`)!;
+  document.body.querySelector<HTMLButtonElement>(`[data-server-row="${id}"]`)!;
 const menuItem = (label: string) =>
   [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
     item.textContent?.includes(label),
@@ -540,7 +613,7 @@ it("opens the server context menu on right click with the expected actions", asy
     expect(menuItem(label), label).toBeTruthy();
   }
   await act(async () => menuItem("Show details")!.click());
-  expect(container.querySelector('[aria-label="Server details"]')?.textContent).toContain(
+  expect(document.body.querySelector('[aria-label="Server details"]')?.textContent).toContain(
     "Personal SSH",
   );
   expect(document.querySelector('[role="menu"], [role="menuitem"]')).toBeNull();
@@ -599,7 +672,7 @@ it("deletes an SSH server only after confirmation and clears the selection it he
   expect(removeSshConnection).not.toHaveBeenCalled();
   await clickInDocument("Confirm delete", question);
   expect(removeSshConnection).toHaveBeenCalledExactlyOnceWith("ssh-stable");
-  expect(container.querySelector('[aria-label="Server details"]')).toBeNull();
+  expect(document.body.querySelector('[aria-label="Server details"]')).toBeNull();
 });
 
 it("reports a failed delete inline and keeps the server selected", async () => {
@@ -615,8 +688,8 @@ it("reports a failed delete inline and keeps the server selected", async () => {
   await clickInDocument("Delete", question);
   await settleQuestion();
   await clickInDocument("Confirm delete", question);
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("database locked");
-  expect(container.querySelector('[aria-label="Server details"]')?.textContent).toContain(
+  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain("database locked");
+  expect(document.body.querySelector('[aria-label="Server details"]')?.textContent).toContain(
     "Personal SSH",
   );
 });
@@ -699,13 +772,13 @@ it("saves a custom color once after edits settle and flushes on dismiss", async 
 it("switches between list and card layouts and remembers the choice", async () => {
   await render();
   const layout = () =>
-    container.querySelector("[data-servers-layout]")?.getAttribute("data-servers-layout");
+    document.body.querySelector("[data-servers-layout]")?.getAttribute("data-servers-layout");
   expect(layout()).toBe("list");
   await click("Card view");
   expect(layout()).toBe("cards");
-  expect(container.querySelector('[aria-label="Card view"]')?.getAttribute("aria-pressed")).toBe(
-    "true",
-  );
+  expect(
+    document.body.querySelector('[aria-label="Card view"]')?.getAttribute("aria-pressed"),
+  ).toBe("true");
   expect(localStorage.getItem("bycoda.servers.layout")).toBe("cards");
   await act(async () => root.render(null));
   await render();

@@ -7,6 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { SshIdentityField } from "./SshIdentityField";
 import { Alert } from "../../../shared/ui/Alert";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Select } from "../../../shared/ui/Select";
 import { Terminal, Lock } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { setServerSshIdentity, type ServerRecord } from "../model/serverInventory";
@@ -63,6 +64,13 @@ export function ServersConnectionTools({
   const [busy, setBusy] = useState(false);
   const [panel, setPanel] = useState("connection");
   const panelId = useId();
+  const panels = [
+    { value: "connection", label: t("Connection") },
+    ...(canAssignKey ? [{ value: "forwards", label: t("Port forwarding") }] : []),
+    { value: "automation", label: t("Automation") },
+    { value: "settings", label: t("Organization") },
+    { value: "activity", label: t("Activity") },
+  ];
   const act = async (callback: () => Promise<void>) => {
     if (pending.current) return;
     pending.current = true;
@@ -78,7 +86,7 @@ export function ServersConnectionTools({
     }
   };
   return (
-    <div className="mbs-4 flex min-w-0 flex-col gap-4">
+    <div className="server-connection-tools mbs-4 flex min-w-0 flex-col gap-4">
       {endpoint?.httpProxy ? (
         <p className="w-full break-all text-xs text-(--ui-text-muted)">
           {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
@@ -103,19 +111,18 @@ export function ServersConnectionTools({
           </Button>
         ) : null}
       </div>
-      <SegmentedControl
-        label={t("Server tools")}
-        selectionRole="pressed"
-        value={panel}
-        onValueChange={setPanel}
-        options={[
-          { value: "connection", label: t("Connection") },
-          ...(canAssignKey ? [{ value: "forwards", label: t("Port forwarding") }] : []),
-          { value: "automation", label: t("Automation") },
-          { value: "settings", label: t("Organization") },
-          { value: "activity", label: t("Activity") },
-        ]}
-      />
+      <div className="server-tools-selector">
+        <Select label={t("Server tools")} value={panel} onValueChange={setPanel} options={panels} />
+      </div>
+      <div className="server-tools-segments">
+        <SegmentedControl
+          label={t("Server tools")}
+          selectionRole="pressed"
+          value={panel}
+          onValueChange={setPanel}
+          options={panels}
+        />
+      </div>
       <div id={`${panelId}-connection`} hidden={panel !== "connection"}>
         {canAssignKey ? (
           <section aria-label={t("Credentials")} className="flex min-w-0 flex-col gap-3">

@@ -2,6 +2,15 @@
   min-inline-size: 0;
 }
 
+/* Keep paired headings aligned without stretching a one-row card to its peer. */
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .general-settings
+  > .settings-group
+  > .settings-group-content {
+  align-self: start;
+}
+
 .general-save-note,
 .general-dependency,
 .general-detail {

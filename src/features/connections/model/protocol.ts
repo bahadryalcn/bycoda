@@ -144,13 +144,21 @@ export type HostSession = {
   pinned?: boolean;
   /** Temporary branch created by the composer for automatic first-turn naming. */
   autoWorktreeBranch?: string;
+  /** Sent when a request asks for digests (`sessions.digests`): the head of the
+   * whole transcript, over the digests of the full blocks. */
+  head?: import("../../sync/model/conversationHead").ConversationHead;
   /** Host-only: the revision at which each block last changed. */
   blockRevisions?: Record<string, number>;
   /** Shared with this machine's desktop app, whichever side started it: the
    * desktop copy's last `updated_at` the host has caught up with (0 before
    * the desktop has a copy). `revision` is this session's revision when it
    * last matched the desktop copy; absent while the host has its own turns. */
-  desktop?: { updatedAt: number; revision?: number };
+  desktop?: {
+    updatedAt: number;
+    revision?: number;
+    /** The transcript both last agreed on; which side changed since is judged against it. */
+    base?: import("../../sync/model/conversationHead").ConversationHead;
+  };
 };
 export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" | "desktop"> & {
   issue?: "retrying" | "failed";
@@ -252,6 +260,8 @@ export type MachineChangesRequest = {
   activeProjects?: { projectId: string; lastActiveAt: number }[];
   activeSessions?: { sessionId: string; lastActiveAt: number }[];
   inlineSync?: boolean;
+  /** Optional per-session transcript opt-in; omitted by legacy clients. */
+  inlineSessionIds?: string[];
   /** Native per-window registration token, not a host identity. */
   subscriptionId?: string;
   tasksKnown?: string;
@@ -313,6 +323,7 @@ type HostCommandBody =
       worktreeCwd?: string;
       autoWorktreeBranch?: string;
       harness: RemoteProvider;
+      providerAccountId?: string;
       model: string;
       modelSettings?: Record<string, string>;
       runtimeMode: RuntimeMode;

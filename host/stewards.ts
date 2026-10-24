@@ -233,6 +233,9 @@ export class HostStewards {
     if (!task) throw new Error("Task not found.");
     if (task.source !== "steward" || task.status !== "todo")
       throw new Error("Only a to-do suggestion from a steward can be declined.");
+    // A dependency/branch guard may reject deletion. Do not suppress a proposal
+    // title until its task has actually been removed.
+    await this.tasks.delete(taskId);
     const steward = task.stewardId ? this.find(task.stewardId) : undefined;
     if (steward) {
       const title = normalizeStewardTitle(task.title);
@@ -242,7 +245,6 @@ export class HostStewards {
       ].slice(-MAX_DECLINED);
       this.write({ ...steward, declined, updatedAt: this.now() });
     }
-    await this.tasks.delete(taskId);
   }
 
   /** Settles finished runs, stops runs past their time limit, starts due ones.

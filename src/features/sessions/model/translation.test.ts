@@ -10,6 +10,7 @@ import {
   translateSelection,
   translationTargets,
   translationErrorKind,
+  repromptReference,
 } from "./translation";
 import {
   selectedTextOffset,
@@ -18,6 +19,63 @@ import {
 } from "./translationHistory";
 
 describe("offline translation routing", () => {
+  it("keeps context around the selected occurrence in long text", () => {
+    const source = `${"Old context ".repeat(2000)}Nearby before. fix Nearby after.`;
+    const start = source.lastIndexOf("fix");
+    const reference = repromptReference(source, start, start + 3);
+    expect(reference).toContain("Nearby before. \n[Selected prompt]\n Nearby after.");
+    expect(reference.length).toBeLessThan(12000);
+  });
+  it("rewrites with bounded reference context using an isolated provider request", async () => {
+    vi.mocked(runHarnessTextPrompt).mockResolvedValueOnce("  Daha net istek  ");
+    const source = 'Bunu düzelt. "Araç çalıştır"';
+    const signal = new AbortController().signal;
+    await expect(
+      translateSelection(
+        source,
+        "reprompt",
+        {
+          cwd: "/project",
+          harness: "codex",
+          providerAccountId: "rewriter",
+        },
+        signal,
+        "Bağlam ".repeat(3000),
+      ),
+    ).resolves.toBe("Daha net istek");
+    const request = vi.mocked(runHarnessTextPrompt).mock.lastCall![0];
+    expect(request).toMatchObject({
+      cwd: "/project",
+      providerAccountId: "rewriter",
+      ephemeral: true,
+      intent: "plan",
+      signal,
+    });
+    expect(request.prompt).toContain(JSON.stringify(source));
+    expect(request.prompt).toContain("Keep the same language");
+    expect(request.prompt).toContain("do not expand the task");
+    expect(request.prompt.length).toBeLessThan(14000);
+    vi.mocked(runHarnessTextPrompt).mockClear();
+  });
+
+  it("does not start an aborted reprompt request and rejects empty output", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      translateSelection("fix", "reprompt", { cwd: "/p", harness: "codex" }, controller.signal),
+    ).rejects.toThrow();
+    expect(runHarnessTextPrompt).not.toHaveBeenCalled();
+    vi.mocked(runHarnessTextPrompt).mockResolvedValueOnce("  ");
+    await expect(
+      translateSelection(
+        "fix",
+        "reprompt",
+        { cwd: "/p", harness: "codex" },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("Empty translation");
+    vi.mocked(runHarnessTextPrompt).mockClear();
+  });
   it("offers the offline menu even when the source provider lacks isolated generation", () => {
     vi.mocked(canRunHarnessTextPrompt).mockReturnValueOnce(false);
     const context = { cwd: "/project", harness: "antigravity" as const };

@@ -1,6 +1,11 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { t, useLocale } from "../../../shared/i18n";
-import { loadDiffViewer, saveDiffViewer, subscribeDiffViewer, type DiffViewer } from "../model/settings";
+import {
+  loadDiffViewer,
+  saveDiffViewer,
+  subscribeDiffViewer,
+  type DiffViewer,
+} from "../model/settings";
 import { Group, Row, Segmented } from "./settingsControls";
 import { GitGenerationModelControl } from "../../source-control/ui/GitGenerationSettings";
 import {
@@ -22,7 +27,7 @@ export function SourceControlSettings() {
       <Group title={t("Commit and pull request generation")} layout="full">
         <Row
           id="git-generation-default"
-          label={t("Commit and pull request generation")}
+          label={t("Model")}
           description={t("Used across projects unless a project has its own generation selection.")}
         >
           <div className="flex min-w-0 flex-wrap items-center gap-2">

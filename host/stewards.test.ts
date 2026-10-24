@@ -340,6 +340,15 @@ describe("host stewards", () => {
     expect(tasks.list()).toEqual([]);
   });
 
+  it("keeps a proposal and its suppression list when dependent work prevents declining", async () => {
+    const { stewards, tasks, input, taskInput, steward } = setup();
+    stewards.save(input());
+    tasks.save(taskInput({ id: "protected-proposal", title: "Keep me", source: "steward", stewardId: "steward" }));
+    tasks.save(taskInput({ id: "dependent-proposal", dependsOn: ["protected-proposal"] }));
+    await expect(stewards.decline("protected-proposal")).rejects.toThrow("depend");
+    expect(tasks.get("protected-proposal")).toBeTruthy();
+    expect(steward().declined).not.toContain("keep me");
+  });
   it("declines a to-do suggestion: deletes it and remembers its title", async () => {
     const { stewards, tasks, input, taskInput, steward } = setup();
     stewards.save(input());

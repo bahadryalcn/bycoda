@@ -1,5 +1,7 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { HostSession } from "../src/features/connections/model/protocol";
+import type { Block } from "../src/features/sessions/model/session";
+import { blockDigest, conversationHead } from "../src/features/sync/model/conversationDigest";
 import {
   partialSessionSync,
   previewBlock,
@@ -249,4 +251,126 @@ it("pins history pages while a live revision advances", () => {
   const previous = pages.page(read, "s", first.before, first.revision);
   expect(previous.revision).toBe(1);
   expect(previous.totalBlocks).toBe(150);
+});
+
+describe("digests", () => {
+  const fullBlocks = (): Block[] => [
+    { id: "plain", role: "user", text: "hello", startedAt: 5, durationMs: 90 },
+    {
+      id: "files",
+      role: "user",
+      text: "[file1] [image1]",
+      attachments: [
+        {
+          id: "f1",
+          name: "clip.mkv",
+          mimeType: "video/x-matroska",
+          kind: "file",
+          size: 9,
+          path: "C:/files/clip.mkv",
+          data: "AAAA",
+        },
+        {
+          id: "f2",
+          name: "shot.png",
+          mimeType: "image/png",
+          kind: "image",
+          size: 4,
+          previewUrl: "blob:x",
+        },
+      ],
+    },
+    { id: "long", role: "assistant", text: "word ".repeat(30_000) },
+    {
+      id: "tool",
+      role: "tool",
+      text: "",
+      tool: { id: "t1", name: "Bash", status: "done", output: "line\n".repeat(40_000) },
+    } as unknown as Block,
+    {
+      id: "image",
+      role: "assistant",
+      text: "made",
+      image: { path: "C:/out.png", name: "out.png", mimeType: "image/png", size: 3, data: "AAA" },
+    },
+    { id: "unicode", role: "assistant", text: "naïve 日本語 \u{1f600} \ud800 end" },
+  ];
+
+  it("gives a shrunk block the digest of the full block, and an unshrunk block the same one", () => {
+    for (const block of fullBlocks()) {
+      const wire = previewBlock(block, 7, true);
+      expect(blockDigest(wire)).toBe(blockDigest(block));
+      // The same after the wire: JSON round trip, as the other side receives it.
+      expect(blockDigest(JSON.parse(JSON.stringify(wire)))).toBe(blockDigest(block));
+      if (wire.remoteContent) expect(wire.remoteContent.digest).toBe(blockDigest(block));
+    }
+    const marked = fullBlocks().filter((block) => previewBlock(block, 1).remoteContent);
+    expect(marked.map((block) => block.id)).toEqual(["files", "long", "tool", "image"]);
+  });
+
+  it("does not depend on what a machine keeps locally", () => {
+    const [plain, files] = fullBlocks();
+    expect(blockDigest({ ...plain!, durationMs: 1, startedAt: 9, turnMetrics: {} as never })).toBe(
+      blockDigest(plain!),
+    );
+    const moved = {
+      ...files!,
+      attachments: files!.attachments!.map(({ path: _path, data: _data, ...rest }) => rest),
+    };
+    expect(blockDigest(moved)).toBe(blockDigest(files!));
+    expect(blockDigest({ ...plain!, text: "hello!" })).not.toBe(blockDigest(plain!));
+    expect(
+      blockDigest({
+        ...files!,
+        attachments: [{ ...files!.attachments![0]!, name: "other.mkv" }, files!.attachments![1]!],
+      }),
+    ).not.toBe(blockDigest(files!));
+  });
+
+  it("is absent unless asked for", () => {
+    const wire = previewBlock(fullBlocks()[1]!, 3);
+    expect(wire.remoteContent).toEqual({ revision: 3, bytes: expect.any(Number) });
+    const value = { ...snapshot(), session: { ...snapshot().session, blocks: fullBlocks() } };
+    expect(previewSession(value as HostSession)).not.toHaveProperty("head");
+    expect(transcriptPage(value as HostSession).value).not.toHaveProperty("head");
+  });
+
+  it("carries the head of the whole transcript on a snapshot, a page and a window", () => {
+    const value = {
+      ...snapshot(),
+      session: { ...snapshot().session, blocks: fullBlocks() },
+    } as HostSession;
+    const head = conversationHead(value.session.blocks)!;
+    expect(previewSession(value, true).head).toEqual(head);
+    const page = transcriptPage(value, undefined, undefined, true, true);
+    expect(page.value.head).toEqual(head);
+    // A page holds only part of the blocks, never the head of just those.
+    expect(transcriptPage(value, 3, undefined, true, true).value.head).toEqual(head);
+    expect(previewSession(page.value as HostSession, true).head).toEqual(head);
+    const sync = {
+      kind: "delta" as const,
+      base: 1,
+      value: { ...value, session: { ...value.session, blocks: undefined as never } },
+      blockIds: value.session.blocks.map((block) => block.id),
+      blocks: value.session.blocks,
+    };
+    const partial = partialSessionSync(sync as never, value, ["tool", "image"], true);
+    expect(partial).toMatchObject({ kind: "delta", partial: true, value: { head } });
+    expect(
+      (partial as { blocks: Block[] }).blocks.find((block) => block.id === "tool")?.remoteContent
+        ?.digest,
+    ).toBe(blockDigest(value.session.blocks[3]!));
+  });
+
+  it("makes the digests of a transcript reconstructed from pages agree with its head", () => {
+    const value = snapshot();
+    let page = transcriptPage(value, undefined, undefined, true, true);
+    let blocks = page.value.session.blocks;
+    while (page.before !== undefined) {
+      page = transcriptPage(value, page.before, value.revision, true, true);
+      blocks = [...page.value.session.blocks, ...blocks];
+    }
+    expect(conversationHead(blocks)).toEqual(page.value.head);
+    expect(conversationHead(blocks)).toEqual(conversationHead(value.session.blocks));
+  });
 });

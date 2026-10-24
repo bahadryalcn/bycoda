@@ -97,7 +97,7 @@ const render = (props: { active?: boolean; speech?: number; activity?: number } 
   act(() =>
     root.render(
       createElement(LiveBackgroundCanvas, {
-        effect: "gradient-ascii",
+        effect: "latent-face",
         intensity: 0.4,
         active: true,
         speech: -1,

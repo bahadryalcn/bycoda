@@ -32,6 +32,30 @@ it("attaches only small matching deltas for opted in clients", () => {
   expect(read).not.toHaveBeenCalled();
 });
 
+it("only materializes opted-in session deltas while keeping hidden control hints", () => {
+  const changes = value();
+  changes.sessions.push({ sessionId: "hidden", revision: 2 });
+  const read = vi.fn(() => delta());
+  const selected = inlineSessionSync(
+    {
+      ...input,
+      inlineSessionIds: ["s"],
+      sessions: [...input.sessions, { sessionId: "hidden", revision: 1 }],
+    },
+    changes,
+    read,
+  );
+  expect(selected.sessions.find((entry) => entry.sessionId === "hidden")).toEqual({
+    sessionId: "hidden",
+    revision: 2,
+  });
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(read).toHaveBeenCalledWith("s", 1);
+  read.mockClear();
+  inlineSessionSync({ ...input, inlineSessionIds: [] }, value(), read);
+  expect(read).not.toHaveBeenCalled();
+});
+
 it("falls back to hints for byte/block budgets, snapshots and changed revisions", () => {
   for (const sync of [
     delta("ü".repeat(65536)),

@@ -136,9 +136,15 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   );
   const [choice, setChoice] = useState(loadLastModelChoice);
   const [defaultModels, setDefaultModels] = useState(loadDefaultModels);
-  const [claudeHooks, setClaudeHooks] = useStoredPreferenceState(loadClaudeHooks, subscribeClaudeHooks);
+  const [claudeHooks, setClaudeHooks] = useStoredPreferenceState(
+    loadClaudeHooks,
+    subscribeClaudeHooks,
+  );
   const [scope, setScope] = useState<string>(GLOBAL_PROVIDER_SCOPE);
-  const [hiddenGlobally, setHiddenGlobally] = useStoredPreferenceState(loadHiddenPickerProviders, subscribePickerVisibility);
+  const [hiddenGlobally, setHiddenGlobally] = useStoredPreferenceState(
+    loadHiddenPickerProviders,
+    subscribePickerVisibility,
+  );
   const [selectedProvider, setSelectedProvider] = useState<HarnessId | null>(
     () => loadLastModelChoice()?.harness ?? null,
   );
@@ -292,7 +298,9 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
         persistence={{ mode: "automatic" }}
         action={
           <div className="provider-cli-scope">
-            <span className="text-ui-micro text-(--ui-text-secondary)">{t("Apply defaults to")}</span>
+            <span className="text-ui-micro text-(--ui-text-secondary)">
+              {t("Apply defaults to")}
+            </span>
             <Select
               label={t("Provider defaults scope")}
               value={scope}
@@ -310,6 +318,40 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
         }
       >
         <div className="provider-cli-workspace">
+          <div className="provider-cli-select">
+            <SearchableSelect
+              label={t("Providers")}
+              value={activeProvider ?? ""}
+              searchPlaceholder={t("Search providers…")}
+              options={orderedHarnesses.map((harness) => {
+                const available = isHarnessAvailable(harness);
+                const inPicker =
+                  !hiddenGlobally.includes(harness) &&
+                  (!project || !(projectSettings.hidden ?? []).includes(harness));
+                const isDefault = project
+                  ? effectiveDefaultHarness === harness
+                  : choice?.harness === harness;
+                return {
+                  value: harness,
+                  label: HARNESS_TITLE[harness],
+                  description: [
+                    available
+                      ? t("CLI detected")
+                      : hasProbedHarnessAvailability()
+                        ? t("CLI not found")
+                        : t("Checking CLI…"),
+                    isDefault ? t("Default provider") : !inPicker ? t("Hidden") : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                };
+              })}
+              onChange={(value) => {
+                const provider = orderedHarnesses.find((harness) => harness === value);
+                if (provider) setSelectedProvider(provider);
+              }}
+            />
+          </div>
           <nav className="provider-cli-selector" aria-label={t("Providers")}>
             {orderedHarnesses.map((harness) => {
               const available = isHarnessAvailable(harness);
@@ -607,7 +649,9 @@ export function HarnessUpdateSettingsRow({
           <HarnessIcon harness={check.harness} className="icon-md shrink-0" />
           {title}
           {check.status !== "unknown" ? (
-            <span className="font-mono text-ui-caption text-(--ui-text-muted)">{check.installed}</span>
+            <span className="font-mono text-ui-caption text-(--ui-text-muted)">
+              {check.installed}
+            </span>
           ) : null}
         </span>
       }

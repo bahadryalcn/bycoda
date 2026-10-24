@@ -1,5 +1,7 @@
 import { canDispatchQueuedHead, reorderQueuedMessages } from "../../sessions/model/messageQueue";
 import { applyQueuedEdit } from "../../sessions/model/queuedMessageEdit";
+import { nextQueueStatus } from "./queueState";
+import type { DeliveryReviewOutcome } from "../../sessions/model/deliveryReview";
 import type {
   Attachment,
   MessageQueueStatus,
@@ -24,6 +26,13 @@ export type RemoteQueue = {
 };
 
 export const EMPTY_REMOTE_QUEUE: RemoteQueue = { messages: [] };
+
+/** First wait before the queue offers its head again after the host answered `LEASE_HELD`. */
+export const LEASE_RETRY_BASE_MS = 2_000;
+/** The wait doubles up to this; the queue keeps trying at that pace and never gives up. */
+export const LEASE_RETRY_MAX_MS = 60_000;
+export const leaseRetryDelay = (attempt: number): number =>
+  Math.min(LEASE_RETRY_BASE_MS * 2 ** Math.max(0, attempt), LEASE_RETRY_MAX_MS);
 export const REMOTE_QUEUE_MAX_MESSAGES = 100;
 export const REMOTE_QUEUE_MAX_BYTES = 32 * 1024 * 1024;
 
@@ -114,14 +123,44 @@ export function setRemoteEditing(queue: RemoteQueue, messageId?: string): Remote
 /** "Send next" on a restored queue and "Resume" on a paused one: let it drain. */
 export function releaseRemoteQueue(queue: RemoteQueue): RemoteQueue {
   return queue.messages.length > 0 && queue.status !== "active"
-    ? { ...queue, status: "active" }
+    ? { ...queue, status: nextQueueStatus(queue.status, "resume") }
     : queue;
+}
+
+/**
+ * The owner's decision on a row whose delivery nobody confirmed, made from any
+ * computer. It never sends anything by itself.
+ *  - delivered / discard: the row leaves the queue; what is behind it waits (paused)
+ *  - retry: the row is queued to send again and the queue drains
+ *  - keep: the row stays queued and the queue pauses
+ */
+export function resolveUnknownRow(
+  queue: RemoteQueue,
+  messageId: string,
+  outcome: DeliveryReviewOutcome,
+): RemoteQueue {
+  if (!queue.messages.some((row) => row.id === messageId && row.deliveryUnknown)) return queue;
+  if (outcome === "delivered" || outcome === "discard") {
+    const next = removeRemoteMessage(queue, messageId);
+    return next.messages.length
+      ? { ...next, status: nextQueueStatus(next.status, "unknown") }
+      : next;
+  }
+  const messages = queue.messages.map((row) =>
+    row.id === messageId ? { ...row, deliveryUnknown: undefined } : row,
+  );
+  return {
+    ...queue,
+    messages,
+    status: outcome === "retry" ? "active" : nextQueueStatus(queue.status, "unknown"),
+    editingId: queue.editingId === messageId ? undefined : queue.editingId,
+  };
 }
 
 /** The user stopped the turn: what is queued waits for them instead of sending next. */
 export function pauseRemoteQueue(queue: RemoteQueue): RemoteQueue {
   return queue.messages.length > 0 && queue.status !== "paused"
-    ? { ...queue, status: "paused" }
+    ? { ...queue, status: nextQueueStatus(queue.status, "pause") }
     : queue;
 }
 

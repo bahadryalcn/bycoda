@@ -124,6 +124,59 @@ describe("restoring a session whose repair cannot be persisted", () => {
     expect(restored?.blocks.some((block) => block.text === "archived only")).toBe(false);
   });
 
+  it("restores a flagged host divergence as a record that locks nothing, and an answered one as answered", async () => {
+    const restore = async (stored: string | undefined) => {
+      const record = codexRecord();
+      record.adoptedDivergence = stored;
+      invoke.mockImplementation(async (command: string) =>
+        command === "session_get" ? record : null,
+      );
+      return getSession("s1");
+    };
+    // A stale flag must not hold sending while the host cannot be reached (or
+    // after a downgrade); only a pass that reaches the host flags it again.
+    const unanswered = await restore(JSON.stringify({ key: "3:a:b:x:y" }));
+    expect(unanswered).toMatchObject({ adoptedDivergence: { key: "3:a:b:x:y" } });
+    expect(unanswered?.adoptedSyncConflict).toBeUndefined();
+    const answered = await restore(JSON.stringify({ key: "3:a:b:x:y", keep: true }));
+    expect(answered?.adoptedDivergence).toEqual({ key: "3:a:b:x:y", keep: true });
+    expect(answered?.adoptedSyncConflict).toBeUndefined();
+    for (const damaged of [undefined, "", "not json", "[]", '{"key":""}', '{"keep":true}'])
+      expect(await restore(damaged)).not.toHaveProperty("adoptedDivergence");
+  });
+
+  it("restores the agreed base, the host head of a divergence, and ignores damaged ones", async () => {
+    const restore = async (base: string | undefined, divergence?: string) => {
+      const record = codexRecord();
+      record.adoptedBase = base;
+      record.adoptedDivergence = divergence;
+      invoke.mockImplementation(async (command: string) =>
+        command === "session_get" ? record : null,
+      );
+      return getSession("s1");
+    };
+    const head = { count: 2, chain: "0123456789abcdef0123456789abcdef" };
+    const restored = await restore(
+      JSON.stringify(head),
+      JSON.stringify({ key: "heads::2.x", hostHead: head }),
+    );
+    expect(restored?.adoptedBase).toEqual(head);
+    expect(restored?.adoptedDivergence).toEqual({ key: "heads::2.x", hostHead: head });
+    for (const damaged of [
+      undefined,
+      "",
+      "not json",
+      "[]",
+      '{"count":-1,"chain":""}',
+      '{"count":2,"chain":"short"}',
+      JSON.stringify({ count: 2, chain: "f".repeat(5_000) }),
+    ])
+      expect(await restore(damaged)).not.toHaveProperty("adoptedBase");
+    // A damaged head does not discard the divergence it came with.
+    const partial = await restore(undefined, JSON.stringify({ key: "k", hostHead: { count: 1 } }));
+    expect(partial?.adoptedDivergence).toEqual({ key: "k" });
+  });
+
   it("restores an archived conversation when rewind left no active user blocks", async () => {
     const record = codexRecord();
     record.blocks = [];

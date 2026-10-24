@@ -1,5 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import graphLayout from "./GitGraphLayout.module.css";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { pathKey } from "../../../shared/lib/paths";
@@ -463,19 +464,21 @@ export function GitHistoryGraph({
               >
                 <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
               </Button>
-              <div className="max-w-sm min-w-0 flex-1">
+              <div className={graphLayout.search}>
                 <GraphSearchInput value={query} onChange={setQuery} />
               </div>
               {actions ? (
-                <SegmentedControl
-                  label={t("History scope")}
-                  value={fullShowAll ? "all" : "current"}
-                  options={[
-                    { value: "current", label: t("Current branch") },
-                    { value: "all", label: t("All branches") },
-                  ]}
-                  onValueChange={(value) => setFullShowAll(value === "all")}
-                />
+                <div className={graphLayout.scope}>
+                  <SegmentedControl
+                    label={t("History scope")}
+                    value={fullShowAll ? "all" : "current"}
+                    options={[
+                      { value: "current", label: t("Current branch") },
+                      { value: "all", label: t("All branches") },
+                    ]}
+                    onValueChange={(value) => setFullShowAll(value === "all")}
+                  />
+                </div>
               ) : null}
             </>
           }

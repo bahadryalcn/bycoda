@@ -16,12 +16,36 @@ export type VoiceRuntimeStatus = {
   ready: boolean;
 };
 export type VoiceChunk = { audio?: string; sampleRate?: number; done?: boolean; error?: string };
+export type VoiceSetupStatus = {
+  state: "idle" | "installing" | "ready" | "error";
+  stage?: "environment" | "packages" | "models" | "checking";
+  requestedConfig?: VoiceRuntimeConfig;
+  config?: VoiceRuntimeConfig;
+  error?: "python_missing" | "install_failed";
+  detail?: string;
+};
 
 function request<T>(method: string, params: Record<string, unknown> = {}) {
   // Microphone processing stays on this desktop even when the active project is remote.
   return hostToolRequest<T>("", "voice.local.v1", method, params, { kind: "local" });
 }
 export const localVoiceBackend = {
+  setup: (config: VoiceRuntimeConfig) =>
+    hostToolRequest<VoiceSetupStatus>(
+      "",
+      "voice.local.setup.v1",
+      "voice.local.setup",
+      { config },
+      { kind: "local" },
+    ),
+  setupStatus: () =>
+    hostToolRequest<VoiceSetupStatus>(
+      "",
+      "voice.local.setup.v1",
+      "voice.local.setupStatus",
+      {},
+      { kind: "local" },
+    ),
   start: (config?: VoiceRuntimeConfig) =>
     request<LocalVoiceInfo>("voice.local.start", config ? { config } : {}),
   inspect: (config: VoiceRuntimeConfig) =>

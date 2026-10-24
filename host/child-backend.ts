@@ -215,7 +215,7 @@ export class HostChildBackend implements ChildBackend {
     if (command === "harness_social_bridge") {
       if (!this.socialAccess) return null as T;
       try {
-        this.socialAccess.service.store.session(id);
+        this.socialAccess.service.sessionIdentity(id.replace(/#\d+$/, ""));
         return {
           command: process.execPath,
           args: [process.argv[1]],

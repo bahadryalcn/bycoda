@@ -18,6 +18,7 @@ import type { HostSession } from "./protocol";
 import type { AdoptedEntry } from "./adoptedSessions";
 import { bindHarnessSession, isLiveHarness } from "../../../integrations/harness/core/registry";
 import { notifyRemoteRecovered } from "./remoteHealth";
+import { adoptedBeatFailed, noteAdoptedBeat } from "./hostWake";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("./connections", () => ({
@@ -55,7 +56,7 @@ function Probe({
   const loadRunning = useRef(onLoadRunning);
   const refreshRef = useRef<RefreshAdoptedSession>(undefined);
   useAdoptedSessions(ref, setSessions, loadRunning, refreshRef);
-  refresh = (id, target) => refreshRef.current!(id, target);
+  refresh = (id, target, resolution) => refreshRef.current!(id, target, resolution);
   current = sessions[0];
   return createElement("span", null, current.continuingElsewhere ? "working" : "idle");
 }
@@ -186,7 +187,7 @@ it("hands over host-running sessions that are not loaded here", async () => {
   expect(onLoadRunning).toHaveBeenCalledWith(["s2"]);
 });
 
-it("preserves a conflict in history, updates the open session, and retains the composer draft and attachments", async () => {
+it("keeping both saves one branch in history, updates the open session, and retains the composer draft and attachments", async () => {
   const initial = {
     ...newSession("claude", "/repo"),
     id: "s1",
@@ -212,9 +213,10 @@ it("preserves a conflict in history, updates the open session, and retains the c
   const added = vi.fn();
   window.addEventListener("bycoda:adopted-session-added", added);
   try {
-    await act(async () => expect(await refresh("s1")).toBe(true));
+    await act(async () => expect(await refresh("s1", undefined, "keep-both")).toBe(true));
     expect(upsertSession).toHaveBeenCalledOnce();
     expect(vi.mocked(upsertSession).mock.calls[0][0].blocks).toEqual(initial.blocks);
+    expect(vi.mocked(upsertSession).mock.calls[0][0].title).toContain("(branch, ");
     expect(added).toHaveBeenCalledOnce();
     expect(current.blocks).toEqual(remote.blocks);
     expect(current.continuingElsewhere).toBe(true);
@@ -226,10 +228,11 @@ it("preserves a conflict in history, updates the open session, and retains the c
   }
 });
 
-it("keeps conflicts and drafts when the automatic history backup fails, then retries", async () => {
+it("flags a divergence once, keeps the conversation and drafts, and never saves a copy on its own", async () => {
   const initial = {
     ...newSession("claude", "/repo"),
     id: "s1",
+    providerSessionId: "local-thread",
     blocks: [{ id: "u", role: "user" as const, text: "local" }],
   };
   const remote = { ...initial, blocks: [{ id: "u", role: "user" as const, text: "host" }] };
@@ -243,63 +246,49 @@ it("keeps conflicts and drafts when the automatic history backup fails, then ret
   await act(async () => root.render(createElement(Probe, { initial })));
   expect(current.blocks).toEqual(initial.blocks);
   expect(current.adoptedSyncConflict).toBe(true);
+  const flagged = current.adoptedDivergence;
+  expect(flagged?.key).toEqual(expect.any(String));
   setComposerDraft("s1", "unsent draft");
   const attachments = [{ name: "draft.png", kind: "image" as const, data: "AA" }];
   setComposerAttachments("s1", attachments);
-  vi.mocked(upsertSession)
-    .mockClear()
-    .mockResolvedValue(null as never);
   await act(async () => vi.advanceTimersByTimeAsync(5_000));
-  expect(current.blocks).toEqual(initial.blocks);
-  expect(current.adoptedSyncConflict).toBe(true);
-  expect(current.continuingElsewhere).toBe(true);
-  expect(upsertSession).toHaveBeenCalledTimes(1);
-  expect(getComposerDraft("s1")).toBe("unsent draft");
-  expect(getComposerAttachments("s1")).toEqual(attachments);
-  await act(async () => vi.advanceTimersByTimeAsync(10_000));
-  expect(upsertSession).toHaveBeenCalledTimes(3);
-  vi.mocked(upsertSession).mockResolvedValue({ id: "backup" } as never);
-  await act(async () => vi.advanceTimersByTimeAsync(5_000));
-  expect(current.blocks).toEqual(remote.blocks);
-  expect(current.adoptedSyncConflict).toBeUndefined();
-  expect(current.continuingElsewhere).toBe(true);
-  expect(getComposerDraft("s1")).toBe("unsent draft");
-  expect(getComposerAttachments("s1")).toEqual(attachments);
-  vi.mocked(upsertSession).mockClear();
-  await act(async () => vi.advanceTimersByTimeAsync(15_000));
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
   expect(upsertSession).not.toHaveBeenCalled();
+  expect(current.blocks).toEqual(initial.blocks);
+  expect(current.providerSessionId).toBe("local-thread");
+  expect(current.adoptedSyncConflict).toBe(true);
+  expect(current.adoptedDivergence).toBe(flagged);
+  expect(current.continuingElsewhere).toBe(true);
+  expect(getComposerDraft("s1")).toBe("unsent draft");
+  expect(getComposerAttachments("s1")).toEqual(attachments);
 });
 
-it("automatically preserves divergence and follows the host without a Sync click", async () => {
-  const initial = {
+it("does not flag again a divergence the user already answered, nor save a copy for it", async () => {
+  const base = {
     ...newSession("claude", "/repo"),
     id: "s1",
-    adoptedSyncConflict: true,
-    providerSessionId: "local-thread",
-    automationId: "local-automation",
     blocks: [{ id: "u", role: "user" as const, text: "local" }],
   };
-  const remote = { ...initial, blocks: [{ id: "u", role: "user" as const, text: "host" }] };
-  setComposerDraft("s1", "unsent draft");
-  vi.mocked(upsertSession).mockResolvedValue({ id: "backup" } as never);
+  const remote = { ...base, blocks: [{ id: "u", role: "user" as const, text: "host" }] };
+  const { adoptedDivergenceKey } = await import("./adoptedSessions");
+  const initial = {
+    ...base,
+    adoptedDivergence: { key: adoptedDivergenceKey(base, remote), keep: true as const },
+  };
   vi.mocked(loadRemoteSession).mockResolvedValue({
     session: remote,
     projectId: "p",
     revision: 5,
-    status: "running",
+    status: "idle",
     updatedAt: 10,
   });
   await act(async () => root.render(createElement(Probe, { initial })));
-  expect(upsertSession).toHaveBeenCalledOnce();
-  const copy = vi.mocked(upsertSession).mock.calls[0][0];
-  expect(copy.blocks).toEqual(initial.blocks);
-  expect(copy.providerSessionId).toBeUndefined();
-  expect(copy.automationId).toBeUndefined();
-  expect(copy.queuedMessages).toBeUndefined();
-  expect(current.blocks).toEqual(remote.blocks);
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  expect(loadRemoteSession).toHaveBeenCalled();
+  expect(upsertSession).not.toHaveBeenCalled();
+  expect(current.blocks).toEqual(base.blocks);
   expect(current.adoptedSyncConflict).toBeUndefined();
-  expect(current.continuingElsewhere).toBe(true);
-  expect(getComposerDraft("s1")).toBe("unsent draft");
+  expect(current.adoptedDivergence).toEqual(initial.adoptedDivergence);
 });
 
 it.each(["focus", "online", "visibilitychange", "recovered"])(
@@ -382,7 +371,27 @@ it("queues an explicit refresh behind automatic polling and deduplicates repeate
     await first;
   });
   expect(loadRemoteSession).toHaveBeenCalledTimes(2);
-  expect(loadRemoteSession).toHaveBeenLastCalledWith("local", "s1", undefined);
+  // A host without `sessions.digests` is not asked for them.
+  expect(loadRemoteSession).toHaveBeenLastCalledWith("local", "s1", undefined, { digests: false });
+});
+
+it("asks a host that advertises digests for them, for a refresh and for a new session", async () => {
+  vi.mocked(loadRemoteCapabilities).mockResolvedValue(["sessions.desktop", "sessions.digests"]);
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  vi.mocked(loadRemoteSession).mockResolvedValue({
+    session: initial,
+    projectId: "p",
+    revision: 5,
+    status: "idle",
+    updatedAt: 10,
+  } as HostSession);
+  await act(async () => root.render(createElement(Probe, { initial })));
+  await act(async () => {
+    await refresh("s1");
+  });
+  expect(loadRemoteSession).toHaveBeenCalled();
+  for (const call of vi.mocked(loadRemoteSession).mock.calls)
+    expect(call[3]).toEqual({ digests: true });
 });
 
 it("reports an unavailable host without replacing the local conversation", async () => {
@@ -460,4 +469,98 @@ it("validates the task machine and project before an explicit host refresh", asy
   );
   expect(loadRemoteSession).not.toHaveBeenCalled();
   expect(current).toBe(previous);
+});
+
+// Step 8: with the host's heartbeat naming what moved, the 5 s / 20 s timer is gone.
+const listCalls = () =>
+  vi.mocked(remoteRequest).mock.calls.filter(([, method]) => method === "sessions.adopted").length;
+function idleHost(initial: Session, revision = 5, blocks = initial.blocks) {
+  entries = [{ id: "s1", projectId: "p", revision, updatedAt: 10, status: "idle" }];
+  vi.mocked(loadRemoteSession).mockResolvedValue({
+    session: { ...initial, blocks },
+    projectId: "p",
+    revision,
+    status: "idle",
+    updatedAt: 10,
+  } as HostSession);
+}
+
+it("polls only once a minute while the host heartbeat reports changes", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  idleHost(initial);
+  await act(async () => root.render(createElement(Probe, { initial })));
+  // Until the host has said anything, the old cadence still applies.
+  await act(async () => noteAdoptedBeat({ ids: [], reset: true }));
+  const before = listCalls();
+  await act(async () => vi.advanceTimersByTimeAsync(55_000));
+  // The old timer ran eleven passes in these 55 seconds.
+  expect(listCalls()).toBe(before);
+  await act(async () => vi.advanceTimersByTimeAsync(6_000));
+  expect(listCalls()).toBe(before + 1);
+  // The heartbeat answering with nothing new starts no pass.
+  await act(async () => noteAdoptedBeat({ ids: [], reset: false }));
+  expect(listCalls()).toBe(before + 1);
+});
+
+it("shows a change the host reports within one beat, without any timer", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  idleHost(initial);
+  await act(async () => root.render(createElement(Probe, { initial })));
+  await act(async () => noteAdoptedBeat({ ids: [], reset: true }));
+  expect(current.blocks).toHaveLength(0);
+  idleHost(initial, 6, [{ id: "reply", role: "assistant", text: "from the other computer" }]);
+  await act(async () => noteAdoptedBeat({ ids: ["s1"], reset: false }));
+  expect(current.blocks.map((block) => block.id)).toEqual(["reply"]);
+});
+
+it("still delivers a reported change to a hidden window", async () => {
+  const hidden = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  try {
+    const initial = { ...newSession("claude", "/repo"), id: "s1" };
+    idleHost(initial);
+    await act(async () => root.render(createElement(Probe, { initial })));
+    await act(async () => noteAdoptedBeat({ ids: [], reset: true }));
+    const before = listCalls();
+    await act(async () => vi.advanceTimersByTimeAsync(50_000));
+    expect(listCalls()).toBe(before);
+    idleHost(initial, 6, [{ id: "reply", role: "assistant", text: "while hidden" }]);
+    await act(async () => noteAdoptedBeat({ ids: ["s1"], reset: false }));
+    expect(current.blocks.map((block) => block.id)).toEqual(["reply"]);
+  } finally {
+    hidden.mockRestore();
+  }
+});
+
+it("falls back to its own cadence, with no tight loop, when the heartbeat stops or the host is down", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  idleHost(initial);
+  await act(async () => root.render(createElement(Probe, { initial })));
+  await act(async () => noteAdoptedBeat({ ids: [], reset: true }));
+  vi.mocked(remoteRequest).mockRejectedValue(new Error("offline"));
+  const before = listCalls();
+  // The heartbeat failing is told to the mirror once; it looks at the host itself.
+  await act(async () => adoptedBeatFailed());
+  await act(async () => adoptedBeatFailed());
+  expect(listCalls()).toBe(before + 1);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  // One look every 5 s while unreachable, as before: never a retry loop.
+  expect(listCalls() - before).toBeLessThanOrEqual(13);
+  expect(listCalls() - before).toBeGreaterThanOrEqual(10);
+});
+
+it("retries a conversation it could not mirror with growing delays, not every few seconds", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  idleHost(initial);
+  // A conversation from a project this desktop never opened stays the host's alone.
+  entries = [
+    ...entries,
+    { id: "s2", projectId: "elsewhere", revision: 2, updatedAt: 10, status: "idle" },
+  ];
+  await act(async () => root.render(createElement(Probe, { initial })));
+  await act(async () => noteAdoptedBeat({ ids: [], reset: true }));
+  const before = listCalls();
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  // 5 s, 10 s, 20 s, 40 s...: three looks where the old timer made twelve.
+  expect(listCalls() - before).toBeGreaterThanOrEqual(2);
+  expect(listCalls() - before).toBeLessThanOrEqual(4);
 });

@@ -34,6 +34,10 @@
   border-radius: 10px;
   background: var(--ui-surface);
 }
+.provider-cli-select {
+  display: none;
+  min-inline-size: 0;
+}
 .provider-cli-option {
   justify-content: flex-start;
   min-inline-size: 0;
@@ -297,15 +301,10 @@
     gap: 8px;
   }
   .provider-cli-selector {
-    display: flex;
-    gap: 4px;
-    overflow-x: auto;
-    padding: 3px;
+    display: none;
   }
-  .provider-cli-option {
-    flex: 0 0 auto;
-    inline-size: auto;
-    min-block-size: 32px;
+  .provider-cli-select {
+    display: block;
   }
   .provider-cli-header {
     align-items: flex-start;

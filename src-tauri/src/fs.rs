@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex, Weak};
+use std::sync::{mpsc, Arc, Mutex, OnceLock, Weak};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -1160,23 +1160,62 @@ pub(crate) struct GitInfo {
 /// can lag by at most `GIT_INFO_TTL`, which only affects a label.
 const GIT_INFO_TTL: Duration = Duration::from_secs(3);
 
-static GIT_INFO_CACHE: Mutex<Option<HashMap<PathBuf, (Instant, GitInfo)>>> = Mutex::new(None);
+type GitInfoFlight = Arc<OnceLock<(Instant, GitInfo)>>;
 
-pub(crate) fn git_info_for(root: &Path) -> GitInfo {
-    if let Ok(mut guard) = GIT_INFO_CACHE.lock() {
-        let cache = guard.get_or_insert_with(HashMap::new);
-        cache.retain(|_, (at, _)| at.elapsed() < GIT_INFO_TTL);
-        if let Some((_, info)) = cache.get(root) {
-            return info.clone();
+struct GitInfoCache {
+    entries: Mutex<HashMap<PathBuf, GitInfoFlight>>,
+    ttl: Duration,
+    capacity: usize,
+}
+
+impl GitInfoCache {
+    fn new(ttl: Duration, capacity: usize) -> Self {
+        Self {
+            entries: Mutex::new(HashMap::new()),
+            ttl,
+            capacity,
         }
     }
-    let info = git_info_uncached(root);
-    if let Ok(mut guard) = GIT_INFO_CACHE.lock() {
-        guard
-            .get_or_insert_with(HashMap::new)
-            .insert(root.to_path_buf(), (Instant::now(), info.clone()));
+
+    fn get(&self, root: PathBuf, lookup: impl FnOnce() -> GitInfo) -> GitInfo {
+        let flight = {
+            let mut entries = self
+                .entries
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            entries.retain(|_, value| value.get().is_none_or(|(at, _)| at.elapsed() < self.ttl));
+            if let Some(value) = entries.get(&root) {
+                Some(value.clone())
+            } else if entries.len() < self.capacity {
+                let value = Arc::new(OnceLock::new());
+                entries.insert(root, value.clone());
+                Some(value)
+            } else {
+                // Do not evict a flight with waiters or block an unrelated
+                // checkout behind a full cache of genuinely active lookups.
+                None
+            }
+        };
+        let Some(flight) = flight else {
+            return lookup();
+        };
+        flight
+            .get_or_init(|| {
+                let value = lookup();
+                (Instant::now(), value)
+            })
+            .1
+            .clone()
     }
-    info
+}
+
+static GIT_INFO_CACHE: OnceLock<GitInfoCache> = OnceLock::new();
+
+pub(crate) fn git_info_for(root: &Path) -> GitInfo {
+    let identity = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    GIT_INFO_CACHE
+        .get_or_init(|| GitInfoCache::new(GIT_INFO_TTL, 256))
+        .get(identity, || git_info_uncached(root))
 }
 
 fn git_info_uncached(root: &Path) -> GitInfo {
@@ -8480,6 +8519,113 @@ fn normalize_native_separators(path: &std::path::Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn git_info_singleflight_shares_cold_requests_and_preserves_parallel_roots() {
+        use std::sync::Barrier;
+        let old = Arc::new(Mutex::new(HashMap::<PathBuf, GitInfo>::new()));
+        let old_gate = Arc::new(Barrier::new(50));
+        let old_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let controls: Vec<_> = (0..50)
+            .map(|_| {
+                let old = old.clone();
+                let gate = old_gate.clone();
+                let calls = old_calls.clone();
+                std::thread::spawn(move || {
+                    if old.lock().unwrap().get(&PathBuf::from("shared")).is_none() {
+                        // The old TTL cache released its lock for the subprocess.
+                        // All clients begin on a genuinely cold cache together.
+                        gate.wait();
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(20));
+                        old.lock()
+                            .unwrap()
+                            .insert(PathBuf::from("shared"), GitInfo::default());
+                    }
+                })
+            })
+            .collect();
+        for thread in controls {
+            thread.join().unwrap();
+        }
+        assert_eq!(old_calls.load(Ordering::SeqCst), 50);
+        let cache = Arc::new(GitInfoCache::new(Duration::from_secs(1), 4));
+        let gate = Arc::new(Barrier::new(50));
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let threads: Vec<_> = (0..50)
+            .map(|_| {
+                let cache = cache.clone();
+                let gate = gate.clone();
+                let calls = calls.clone();
+                std::thread::spawn(move || {
+                    gate.wait();
+                    cache.get(PathBuf::from("shared"), || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(20));
+                        GitInfo {
+                            branch: Some("main".into()),
+                            repo: Some("repo".into()),
+                        }
+                    })
+                })
+            })
+            .collect();
+        for thread in threads {
+            assert_eq!(thread.join().unwrap().branch.as_deref(), Some("main"));
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        println!(
+            "native same-root cold 50 readers: old lookup control50; singleflight {}",
+            calls.load(Ordering::SeqCst)
+        );
+        let gate = Arc::new(Barrier::new(2));
+        let (send, receive) = mpsc::channel();
+        for root in ["a", "b"] {
+            let cache = cache.clone();
+            let gate = gate.clone();
+            let send = send.clone();
+            std::thread::spawn(move || {
+                cache.get(PathBuf::from(root), || {
+                    gate.wait();
+                    GitInfo::default()
+                });
+                send.send(()).unwrap();
+            });
+        }
+        receive.recv_timeout(Duration::from_secs(2)).unwrap();
+        receive.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(cache.entries.lock().unwrap().len() <= 4);
+    }
+
+    #[test]
+    fn git_info_singleflight_expires_after_completion_and_recovers_panicked_lookup() {
+        let cache = GitInfoCache::new(Duration::from_millis(5), 1);
+        let root = PathBuf::from("expiry");
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            cache.get(root.clone(), || panic!("lookup failed"));
+        }));
+        assert_eq!(
+            cache
+                .get(root.clone(), || GitInfo {
+                    branch: Some("first".into()),
+                    ..Default::default()
+                })
+                .branch
+                .as_deref(),
+            Some("first")
+        );
+        std::thread::sleep(Duration::from_millis(10));
+        assert_eq!(
+            cache
+                .get(root, || GitInfo {
+                    branch: Some("second".into()),
+                    ..Default::default()
+                })
+                .branch
+                .as_deref(),
+            Some("second")
+        );
+    }
+
     #[test]
     fn commit_stats_keep_literal_paths_and_rename_destinations() {
         let mut counts = HashMap::new();

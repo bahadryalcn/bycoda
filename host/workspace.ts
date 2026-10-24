@@ -2,6 +2,7 @@ import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { withHostGitMutation } from "./git-mutations";
+import { withWorkspaceMutation } from "./workspace-mutations";
 import {
   lstat,
   mkdir,
@@ -526,8 +527,6 @@ export async function readHostFile(root: string, input: unknown): Promise<string
   return bytes.toString("utf8");
 }
 
-const hostFileWrites = new Map<string, Promise<void>>();
-
 export async function writeHostFile(
   root: string,
   input: unknown,
@@ -542,8 +541,6 @@ export async function writeHostFile(
   )
     throw new Error("Invalid file content");
   const path = await existingPath(root, input);
-  const canonical = await realpath(path);
-  const key = process.platform === "win32" ? canonical.toLowerCase() : canonical;
   const write = async () => {
     const current = await readHostFile(root, input);
     if (current !== expected) throw new Error("File changed on the host; reload before saving");
@@ -555,13 +552,7 @@ export async function writeHostFile(
   };
   // The comparison belongs inside the queue: two clients may read the same
   // version, but only the first write may replace that version.
-  const pending = (hostFileWrites.get(key) ?? Promise.resolve()).then(write, write);
-  hostFileWrites.set(key, pending);
-  try {
-    await pending;
-  } finally {
-    if (hostFileWrites.get(key) === pending) hostFileWrites.delete(key);
-  }
+  await withWorkspaceMutation(root, write);
 }
 
 /** Create a new file or folder under an existing workspace directory. */
@@ -571,6 +562,10 @@ export async function createHostPath(
   name: unknown,
   isDir: unknown,
 ): Promise<string> {
+  return withWorkspaceMutation(root, () => createHostPathUnlocked(root, parent, name, isDir));
+}
+
+async function createHostPathUnlocked(root: string, parent: unknown, name: unknown, isDir: unknown): Promise<string> {
   if (
     typeof name !== "string" ||
     typeof isDir !== "boolean" ||

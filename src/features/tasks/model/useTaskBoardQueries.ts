@@ -287,5 +287,18 @@ export function useTaskBoardQueries() {
     },
     [client, machines],
   );
-  return { board, refresh, putTask };
+  const removeTask = useCallback((removed: BoardTask) => {
+    const machine = machines.find((machine) => machine.id === removed.machineId);
+    if (!machine) return;
+    const scope = ["task-board", ...identity(machine), "tasks"];
+    const filter = { predicate: (query: { queryKey: readonly unknown[] }) => scope.every((part, index) => query.queryKey[index] === part) };
+    // Cancel older reads before updating the cache, so a pre-delete answer cannot
+    // put an acknowledged deletion back into the board.
+    void client.cancelQueries(filter);
+    client.setQueriesData<MachineResult<BoardTask>[]>(filter, (results) => results?.map((result) => ({
+      ...result,
+      data: result.data.filter((task) => task.id !== removed.id || task.projectId !== removed.projectId),
+    })));
+  }, [client, machines]);
+  return { board, refresh, putTask, removeTask };
 }

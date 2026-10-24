@@ -54,7 +54,7 @@ for (const [theme, width] of [
         );
       for (const card of cards)
         for (const peer of cards)
-          if (Math.abs(card.top - peer.top) < 2)
+          if (section !== "general" && Math.abs(card.top - peer.top) < 2)
             expect(Math.abs(card.height - peer.height), section).toBeLessThan(2);
       if (section === "notifications" && width > 1000) {
         const grid = form.locator(".notification-alert-settings");

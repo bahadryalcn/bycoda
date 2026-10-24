@@ -194,6 +194,34 @@ test("composer blank space focuses the larger draft while controls remain operab
   await expect(page.locator("[data-composer-plus]")).toBeVisible();
 });
 
+test("reprompt previews, applies and reverses selected text in both themes", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const light of [false, true]) {
+    await page.goto("/tests/browser/composer-extras.html?translation-selection");
+    await page.evaluate(value => document.documentElement.classList.toggle("theme-light", value), light);
+    await page.setViewportSize({ width: light ? 390 : 1000, height: 800 });
+    const input = page.getByRole("textbox", { name: "Message", exact: true });
+    const original = "Before selam after";
+    await input.fill(original);
+    await input.evaluate((el: HTMLTextAreaElement) => { el.focus(); el.setSelectionRange(7, 12); el.dispatchEvent(new Event("select", { bubbles: true })); });
+    const action = page.getByRole("toolbar", { name: "Selected text actions" }).getByRole("button", { name: "Reprompt", exact: true });
+    await action.focus();
+    await action.press("Enter");
+    const result = page.getByRole("dialog", { name: "Reprompt", exact: true });
+    await expect(result).toContainText("Rewritten prompt");
+    await expect(result).toContainText("Translated fixture text");
+    await expect(input).toHaveValue(original);
+    expect(await result.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await result.getByRole("button", { name: "Apply prompt", exact: true }).click();
+    await expect(input).toHaveValue("Before Translated fixture text after");
+    await input.press("ArrowUp");
+    await expect(input).toHaveValue(original);
+    await input.press("ArrowDown");
+    await expect(input).toHaveValue("Before Translated fixture text after");
+  }
+});
+
 test("Antigravity translates directly and only connected providers are listed", async ({
   page,
 }) => {
@@ -338,6 +366,8 @@ test("hints unfold in 3D and remain complete when motion is reduced", async ({
   await page.setViewportSize({ width: 640, height: 800 });
   await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts&hint-motion");
   const hint = page.locator(".composer-tips-text");
+  await expect(hint).toHaveCount(0);
+  await page.locator(".composer-tips-icon").hover();
   await expect(hint).toBeVisible();
   const fullText = await hint.getAttribute("aria-label");
   expect((await hint.innerText()).replaceAll("\u00a0", " ")).toBe(fullText);
@@ -403,95 +433,59 @@ for (const variant of ["", "&remote", "&project-picker"]) {
   });
 }
 
-test("chat metadata keeps hints muted and preserves controls in narrow and scaled panels", async ({
+test("chat tips open on demand and preserve controls in narrow and scaled panels", async ({
   page,
 }, testInfo) => {
   await initializeChatLayout(page);
-  await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts&long-account");
+  await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts&workspace-footer");
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   const hint = page.locator(".composer-tips-icon");
+  const tooltip = page.getByRole("tooltip");
+  const folders = page.getByRole("button", { name: "Folders for this session", exact: true });
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
       theme === "light",
     );
-    for (const width of [320, 420, 640, 1100]) {
-      await page.setViewportSize({ width, height: 800 });
-      await expect(hint).toBeInViewport();
+    for (const width of [320, 390, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await input.focus();
+      await page.mouse.move(0, 0);
+      await expect(tooltip).toHaveCount(0);
       await expect(input).toBeInViewport();
       await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
-      const styles = await page.locator("[data-composer-box]").evaluate((box) => {
-        const agent = getComputedStyle(document.querySelector("[data-session-agent]")!);
-        const label = getComputedStyle(box.querySelector(".composer-tips-icon")!);
-        const copy = getComputedStyle(box.querySelector(".composer-tips-text")!);
-        const canvas = document.createElement("canvas");
-        canvas.width = canvas.height = 1;
-        const ctx = canvas.getContext("2d")!;
-        const luminance = (color: string) => {
-          ctx.clearRect(0, 0, 1, 1);
-          ctx.fillStyle = color;
-          ctx.fillRect(0, 0, 1, 1);
-          const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-          const linear = [r, g, b]
-            .map((c) => c / 255)
-            .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-          return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
-        };
-        const text = luminance(agent.color);
-        const hintText = luminance(copy.color);
-        const background = luminance(getComputedStyle(box).backgroundColor);
-        return {
-          colors: [agent.color, label.color, copy.color],
-          sizes: [agent.fontSize, label.fontSize, copy.fontSize],
-          opacity: [agent.opacity, label.opacity, copy.opacity],
-          contrast: (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05),
-          hintContrast:
-            (Math.max(hintText, background) + 0.05) / (Math.min(hintText, background) + 0.05),
-          contained: box.scrollWidth <= box.clientWidth + 1,
-        };
-      });
-      expect(styles.colors[1]).toBe(styles.colors[2]);
-      expect(styles.colors[2]).not.toBe(styles.colors[0]);
-      expect(styles.sizes).toEqual(["12px", "11px", "11px"]);
-      expect(styles.opacity).toEqual(["1", "1", "1"]);
-      expect(styles.contrast).toBeGreaterThanOrEqual(4.5);
-      expect(styles.hintContrast).toBeLessThan(styles.contrast);
-      expect(styles.contained).toBe(true);
+      await expect(folders).toBeInViewport();
+      expect(
+        await folders.evaluate(
+          (button) => !!button.closest("[data-composer-workspace] [data-composer-directories]"),
+        ),
+      ).toBe(true);
+      await hint.hover();
+      await expect(tooltip).toBeInViewport();
+      const previous = await tooltip.innerText();
+      await hint.click();
+      await expect(tooltip).not.toHaveText(previous!);
+      await page.keyboard.press("Escape");
+      await expect(tooltip).toHaveCount(0);
+      await expect(input).toHaveValue("Keep this chat draft");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await expect(page.locator(".composer-tips-copy")).toBeVisible();
-      await expect(page.locator("[data-composer] [data-session-agent]")).toHaveCount(0);
-      await expect(page.locator("[data-session-header] [data-session-agent]")).toBeVisible();
-      await hint.click();
-      const dialog = page.getByRole("dialog", { name: "Chat tips", exact: true });
-      await expect(dialog).toHaveCount(0);
-      await expect(page.locator("[data-composer-tips] [title]")).toHaveCount(0);
-      await expect(input).toHaveValue("Keep this chat draft");
       await page.screenshot({
         path: testInfo.outputPath(`chat-${theme}-${width}.png`),
         animations: "disabled",
       });
     }
   }
-  await page.setViewportSize({ width: 1440, height: 900 });
   for (const zoom of [1.25, 1.5]) {
     await page.locator("main").evaluate((main, scale) => {
       main.style.inlineSize = "420px";
       main.style.zoom = String(scale);
-      main.style.minBlockSize = `${900 / scale}px`;
     }, zoom);
-    await expect(input).toBeInViewport();
-    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
-    expect(
-      await page
-        .locator("[data-composer-box]")
-        .evaluate((box) => box.scrollWidth <= box.clientWidth + 1),
-    ).toBe(true);
-    await page.screenshot({
-      path: testInfo.outputPath(`chat-split-${zoom}.png`),
-      animations: "disabled",
-    });
+    await hint.hover();
+    await expect(tooltip).toBeInViewport();
+    await expect(folders).toBeInViewport();
+    await page.keyboard.press("Escape");
   }
 });
 

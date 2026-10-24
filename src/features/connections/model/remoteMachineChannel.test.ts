@@ -10,6 +10,48 @@ import {
 
 vi.mock("./connections", () => ({ remoteRequest: vi.fn() }));
 
+it("only requests inline bodies for currently visible demand while keeping hidden revision subscriptions", async () => {
+  vi.useFakeTimers();
+  vi.mocked(remoteRequest).mockResolvedValue({
+    instanceId: "boot",
+    reset: false,
+    sessions: [],
+    projects: [],
+  });
+  let visible = true;
+  const stopVisible = subscribeRemoteMachineChannel(
+    "inline-visibility",
+    () => ({ inlineSync: visible, sessions: [{ sessionId: "visible", revision: 4 }] }),
+    vi.fn(),
+  );
+  const stopHidden = subscribeRemoteMachineChannel(
+    "inline-visibility",
+    { inlineSync: false, sessions: [{ sessionId: "hidden", revision: 9 }] },
+    vi.fn(),
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  expect(vi.mocked(remoteRequest).mock.lastCall?.[2]).toMatchObject({
+    inlineSync: true,
+    inlineSessionIds: ["visible"],
+    sessions: [
+      { sessionId: "visible", revision: 4 },
+      { sessionId: "hidden", revision: 9 },
+    ],
+  });
+  visible = false;
+  await vi.advanceTimersByTimeAsync(1_000);
+  const last = vi.mocked(remoteRequest).mock.lastCall?.[2];
+  expect(last).not.toHaveProperty("inlineSync");
+  expect(last).toMatchObject({
+    sessions: [
+      { sessionId: "visible", revision: 4 },
+      { sessionId: "hidden", revision: 9 },
+    ],
+  });
+  stopVisible();
+  stopHidden();
+});
+
 it("does not verify a subscriber omitted from the current native scheduling round", async () => {
   vi.useFakeTimers();
   vi.mocked(remoteRequest).mockResolvedValue({

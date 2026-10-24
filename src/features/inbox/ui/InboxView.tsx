@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import "./InboxView.css";
 import { Badge } from "../../../shared/ui/Badge";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -17,6 +18,7 @@ import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ChevronsUpDown,
+  ChevronLeft,
   CheckCheck,
   CircleX,
   ExternalLink,
@@ -279,6 +281,7 @@ export function InboxView({
     () => peekInboxForRail(recents, cwd)?.errors ?? {},
   );
   const [refresh, setRefresh] = useState(0);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [jiraView, setJiraView] = useRetainedState<"list" | "board">(
     `${viewStateKey}:jira-view`,
     "list",
@@ -374,6 +377,7 @@ export function InboxView({
     setSource("github");
     setSearchInput("");
     setSelectedKey(targetSelectionKey);
+    setDetailOpen(true);
   }, [target, targetSelectionKey, setSelectedKey, setSearchInput]);
 
   useEffect(() => {
@@ -630,6 +634,7 @@ export function InboxView({
     setFailedReadItem(saved ? null : item);
     setReadStatusError(saved ? null : "Could not save read status. Please try again.");
     setSelectedKey(key);
+    setDetailOpen(true);
   });
   const visibleItems = useMemo(() => {
     if (!sourceAvailable) return [];
@@ -774,6 +779,7 @@ export function InboxView({
   };
 
   const onSourceChange = (next: InboxSource) => {
+    setDetailOpen(false);
     setSource(next);
     if (!pullRequestsOnly) saveInboxSource(next);
   };
@@ -793,7 +799,7 @@ export function InboxView({
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-tone-neutral-border)"
+      className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-tone-neutral-border)"
     >
       <div className="flex h-9 shrink-0 items-center gap-px border-b border-(--ui-tone-neutral-border) px-2">
         {visibleSources.length > 0 ? (
@@ -1215,9 +1221,16 @@ export function InboxView({
           </div>
         </>
       ) : (
-        <div className="flex min-h-0 min-w-0 flex-1">
+        <div className="inbox-list-detail flex min-h-0 min-w-0 flex-1" data-detail-open={detailOpen}>
           {list}
-          <div className="relative flex min-h-0 min-w-0 flex-1">
+          <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="inbox-detail-back shrink-0 border-b border-(--ui-tone-neutral-border) px-2 py-1">
+              <Button variant="ghost" onClick={() => setDetailOpen(false)}>
+                <ChevronLeft className="icon-sm" aria-hidden="true" />
+                {t("Back")}
+              </Button>
+            </div>
+            <div className="relative flex min-h-0 min-w-0 flex-1">
             <div className="min-h-0 min-w-0 flex-1">
               <InboxDetailBody
                 item={selected}
@@ -1243,6 +1256,7 @@ export function InboxView({
                 onClose={() => setDiscussionOpen(false)}
               />
             ) : null}
+            </div>
           </div>
         </div>
       )}

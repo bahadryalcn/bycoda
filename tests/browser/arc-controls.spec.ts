@@ -634,6 +634,12 @@ test("search focus has one owner across shared fields and host tool overrides", 
           await expect(owner).toHaveCSS("outline-width", "1px");
           await expect(owner).toHaveCSS("outline-offset", "-1px");
           await expect(owner).toHaveCSS("box-shadow", "none");
+          expect(
+            await owner.evaluate((node) => {
+              const css = getComputedStyle(node);
+              return css.outlineColor === css.color;
+            }),
+          ).toBe(false);
           if (name !== "Standalone search") await expect(field).toHaveCSS("outline-style", "none");
         }
         const after = await owner.boundingBox();
@@ -732,6 +738,11 @@ test("text fields keep focus on one border with pointer and keyboard", async ({ 
             border: style.border,
             shadow: "none",
           });
+          if (!name.startsWith("Invalid")) {
+            expect(style.color).not.toBe(
+              await field.evaluate((node) => getComputedStyle(node).color),
+            );
+          }
         }
         const after = await field.boundingBox();
         expect(after!.width).toBe(before!.width);

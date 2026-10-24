@@ -1,6 +1,34 @@
 // Included in the existing checkpoint test module to reuse its isolated fixtures.
 
 #[test]
+fn turn_ignores_metadata_files_but_keeps_real_peer_record_errors() {
+    let repo = tmp("turn-metadata");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    for name in [".DS_Store", "Thumbs.db", "notes"] {
+        std::fs::write(store.root.join(name), "metadata").unwrap();
+    }
+    store.recover_interrupted_turns();
+    store.begin_turn("session", &cwd, "one").unwrap();
+    std::fs::write(repo.0.join("a.txt"), "agent\n").unwrap();
+    store.finish_turn("session", &cwd, "one", false).unwrap();
+    assert!(store.status("session", &cwd).unwrap().files[0].undoable);
+    store.undo("session", &cwd, None).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(repo.0.join("a.txt")).unwrap(),
+        "base\n"
+    );
+    let peer = store.root.join("peer");
+    std::fs::create_dir_all(&peer).unwrap();
+    std::fs::create_dir(peer.join("turn.json")).unwrap();
+    let error = store.begin_turn("session", &cwd, "two").unwrap_err();
+    assert!(error.contains("Cannot read checkpoint"), "{error}");
+    assert!(error.contains("turn.json"), "{error}");
+    assert!(peer.join("turn.json").is_dir());
+}
+
+#[test]
 fn turn_shared_review_includes_own_new_files_without_adopting_peer_edits() {
     let repo = tmp("turn-own-new");
     assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
@@ -385,13 +413,19 @@ fn prune_orphans_removes_only_old_folders_of_deleted_idle_sessions() {
     let known: HashSet<String> = ["kept".to_string()].into();
 
     // Too recent: a session may checkpoint before its first save.
-    assert_eq!(store.prune_orphans(&known, std::time::Duration::from_secs(3600)), 0);
+    assert_eq!(
+        store.prune_orphans(&known, std::time::Duration::from_secs(3600)),
+        0
+    );
     assert!(store.session_dir("deleted").exists());
 
     assert_eq!(store.prune_orphans(&known, std::time::Duration::ZERO), 1);
     assert!(store.session_dir("kept").exists());
     assert!(!store.session_dir("deleted").exists());
-    assert!(store.session_dir("busy").exists(), "an active turn is never pruned");
+    assert!(
+        store.session_dir("busy").exists(),
+        "an active turn is never pruned"
+    );
     store.finish_turn("busy", &cwd, "one", false).unwrap();
 }
 
@@ -402,7 +436,12 @@ fn turn_record(store: &CheckpointStore, session: &str) -> serde_json::Value {
 
 /// Leaves `session` with an active turn, as after a forced kill, and returns a
 /// store over the same root whose recovery barrier starts empty, as at launch.
-fn crashed_session(store: &CheckpointStore, cwd: &str, session: &str, turn: &str) -> CheckpointStore {
+fn crashed_session(
+    store: &CheckpointStore,
+    cwd: &str,
+    session: &str,
+    turn: &str,
+) -> CheckpointStore {
     store.begin_turn(session, cwd, turn).unwrap();
     CheckpointStore::new(store.root.clone())
 }

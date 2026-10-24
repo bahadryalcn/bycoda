@@ -15,9 +15,11 @@ type State =
 export default function SheetViewer({
   bytes,
   format,
+  fitContent = false,
 }: {
   bytes: Uint8Array;
   format?: "csv" | "tsv";
+  fitContent?: boolean;
 }) {
   useLocale();
   const [state, setState] = useState<State>({ status: "loading" });
@@ -59,7 +61,7 @@ export default function SheetViewer({
     return <DocumentMessage title={t("This workbook has no sheets")} />;
   }
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className={`flex min-h-0 flex-col ${fitContent ? "" : "h-full"}`}>
       <div
         role="tabpanel"
         id={`${id}-panel`}
@@ -67,7 +69,7 @@ export default function SheetViewer({
         aria-label={names.length === 1 ? names[0] : undefined}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <SheetGridView key={active} grid={state.book.sheets[Math.min(active, names.length - 1)]} />
+        <SheetGridView key={active} grid={state.book.sheets[Math.min(active, names.length - 1)]} fitContent={fitContent} />
       </div>
       {state.book.omittedSheets > 0 ? (
         <p role="status" className="px-3 text-xs text-[var(--ui-text-secondary)]">

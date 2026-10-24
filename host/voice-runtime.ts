@@ -53,6 +53,8 @@ def available(name):
 def model_path(path, repo, required):
     if path:
         return path if all(os.path.isfile(os.path.join(path, f)) for f in required) else None
+    owned = os.path.join(os.path.expanduser('~'), '.bycoda', 'voice', 'models', 'voxcpm2' if repo == 'openbmb/VoxCPM2' else 'whisper-small')
+    if all(os.path.isfile(os.path.join(owned, f)) for f in required): return owned
     try:
         from huggingface_hub import snapshot_download
         p = snapshot_download(repo, local_files_only=True)
@@ -68,7 +70,7 @@ t = model_path(c.get('ttsPath'), 'openbmb/VoxCPM2', ['config.json', 'model.safet
 if c.get('natural', True):
     if not available('voxcpm'): missing.append('voxcpm')
     if not t: missing.append('VoxCPM2 model')
-print(json.dumps({'python': sys.executable, 'whisperPath': w, 'ttsPath': t, 'missing': missing, 'ready': not missing}))
+print(json.dumps({**({'python': sys.executable} if (3, 10) <= sys.version_info[:2] < (3, 13) else {}), 'whisperPath': w, 'ttsPath': t, 'missing': missing, 'ready': not missing}))
 `;
 
 function inspect(
@@ -94,7 +96,15 @@ function inspect(
     const finish = () => {
       clearTimeout(timer);
       try {
-        resolve(JSON.parse(output));
+        const value = JSON.parse(output);
+        resolve(
+          value &&
+            typeof value.ready === "boolean" &&
+            Array.isArray(value.missing) &&
+            value.missing.every((item: unknown) => typeof item === "string")
+            ? value
+            : undefined,
+        );
       } catch {
         resolve(undefined);
       }
@@ -123,6 +133,14 @@ export async function inspectVoiceRuntime(value?: unknown): Promise<VoiceRuntime
           process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
         ),
         process.platform === "win32" ? "python" : "python3",
+        ...(process.platform === "win32" ? [] : ["python3.12", "python3.11", "python3.10"]),
+        ...(process.platform === "darwin"
+          ? ["3.12", "3.11", "3.10"].flatMap((version) => [
+              `/Library/Frameworks/Python.framework/Versions/${version}/bin/python${version}`,
+              `/opt/homebrew/opt/python@${version}/bin/python${version}`,
+              `/usr/local/opt/python@${version}/bin/python${version}`,
+            ])
+          : []),
       ];
   if (!config.python && process.platform === "win32") {
     const base = join(
@@ -137,7 +155,15 @@ export async function inspectVoiceRuntime(value?: unknown): Promise<VoiceRuntime
   for (const candidate of new Set(candidates.filter((p): p is string => Boolean(p)))) {
     const status = await inspect(candidate, config);
     if (!status) continue;
-    if (!best || status.missing.length < best.missing.length) best = status;
+    // A working interpreter with missing packages is more useful than an
+    // incompatible system Python that happens to have more packages installed.
+    if (
+      !best ||
+      (status.python && !best.python) ||
+      (Boolean(status.python) === Boolean(best.python) &&
+        status.missing.length < best.missing.length)
+    )
+      best = status;
     if (status.ready) return status;
   }
   return (

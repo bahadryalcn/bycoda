@@ -286,6 +286,19 @@ export function SettingsView({
       </div>
 
       <header className="bycoda-settings-toolbar">
+        <div className="bycoda-settings-category-picker">
+          <SearchableSelect
+            label={t("Settings categories")}
+            value={section}
+            disabled={!onSelectSection}
+            options={categories.map((category) => ({
+              value: category.id,
+              label: category.label,
+              keywords: settingsSectionDescription(category.id),
+            }))}
+            onChange={(value) => onReveal(value as SettingsSectionId, null)}
+          />
+        </div>
         <div className="bycoda-settings-toolbar-actions">
           <SidebarUpdateFooter />
           <SettingsSearch onReveal={onReveal} />
@@ -305,19 +318,6 @@ export function SettingsView({
       </header>
 
       <div className="bycoda-settings-body">
-        <div className="bycoda-settings-category-picker">
-          <SearchableSelect
-            label={t("Settings categories")}
-            value={section}
-            disabled={!onSelectSection}
-            options={categories.map((category) => ({
-              value: category.id,
-              label: category.label,
-              keywords: settingsSectionDescription(category.id),
-            }))}
-            onChange={(value) => onReveal(value as SettingsSectionId, null)}
-          />
-        </div>
         <nav
           ref={navigationRef}
           className="bycoda-settings-categories"

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { Activity, useLayoutEffect, useRef, useState } from "react";
 import { registerSshWorkspaceCatalog } from "../model/sshMobileWorkspaceControl";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { OverlayNav } from "../../../app/shell/TitleBar";
@@ -9,6 +9,9 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Modal } from "../../../shared/ui/Modal";
+import "./ServersView.css";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
@@ -17,7 +20,11 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
 import { QuickConnect } from "./QuickConnect";
-import { useOpenQuickServerTerminal, useOpenServerTerminal } from "./ServersTerminalWorkspace";
+import {
+  useOpenQuickServerTerminal,
+  useOpenServerTerminal,
+  useServerInventoryVisible,
+} from "./ServersTerminalWorkspace";
 import { SshServerEditor } from "./SshServerEditor";
 import { SshSettings } from "./SshSettings";
 import { TermiusImportDialog } from "./TermiusImportDialog";
@@ -53,6 +60,7 @@ import { disconnectMachine, requestMachineEdit } from "../model/connections";
 import { requestMachineAdd } from "../model/machineAdd";
 import type { RemoteMachine } from "../model/protocol";
 import { MachineStatus, ReconnectAction } from "./ServerStatus";
+import { RemoteConnectionDetails } from "./RemoteConnectionDetails";
 import { ServerItem, type ServerMenuAt } from "./ServerItem";
 import { ServerColorPopover } from "./ServerColorPopover";
 import { serverAccentColor } from "./serverColor";
@@ -127,6 +135,7 @@ export function ServersView({
   const { servers, loaded, loading, error, refresh } = useServerInventory();
   const openQuick = useOpenQuickServerTerminal();
   const openTerminal = useOpenServerTerminal();
+  const inventoryVisible = useServerInventoryVisible();
   const [layout, setLayout] = useServersLayout();
   const canConnect = (server: ServerRecord) =>
     Boolean(openTerminal && (server.kind === "ssh" || server.machine?.ssh));
@@ -151,6 +160,10 @@ export function ServersView({
   }>();
   const [deleting, setDeleting] = useState<string>();
   const [actionError, setActionError] = useState("");
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [bulkTargets, setBulkTargets] = useState<ServerRecord[]>();
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const bulkLock = useRef(false);
   const [group, setGroup] = useRetainedState("servers:group", "");
   const [tag, setTag] = useRetainedState("servers:tag", "");
   const [favoritesOnly, setFavoritesOnly] = useRetainedState("servers:favorites", false);
@@ -193,11 +206,54 @@ export function ServersView({
   mobileCatalog.current = { ready: loaded && !loading && !error, servers: filtered };
   useLayoutEffect(() => registerSshWorkspaceCatalog(() => mobileCatalog.current), []);
   const selected = servers.find((server) => server.id === selectedId);
+  const detailAnchor = selected
+    ? (Array.from(
+        list.current?.querySelectorAll<HTMLButtonElement>("[data-server-row]") ?? [],
+      ).find((row) => row.dataset.serverRow === selected.id) ?? list)
+    : list;
   const menuServer = menu ? servers.find((server) => server.id === menu.serverId) : undefined;
   const colorServer = colorTarget
     ? servers.find((server) => server.id === colorTarget.serverId)
     : undefined;
   const filterCount = Number(!!group) + Number(!!tag) + Number(favoritesOnly) + Number(recentFirst);
+  // Membership is separate from the inspected row. Hidden selections remain explicit.
+  const checkedServers = servers.filter((server) => checkedIds.has(server.id));
+  const visibleChecked = filtered.filter((server) => checkedIds.has(server.id)).length;
+  const checkServer = (id: string, checked: boolean) =>
+    setCheckedIds((previous) => {
+      const next = new Set(previous);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const runBulk = async (targets: ServerRecord[], remove: boolean) => {
+    if (bulkLock.current) return;
+    bulkLock.current = true;
+    setBulkBusy(true);
+    setActionError("");
+    const failed: ServerRecord[] = [];
+    const failures: string[] = [];
+    try {
+      for (const server of targets) {
+        try {
+          if (remove) {
+            if (server.kind === "ssh") await removeSshConnection(server.id);
+            else await disconnectMachine(server.id);
+            setSelectedId((current) => (current === server.id ? undefined : current));
+          } else await updateServerMetadata(server.id, { favorite: true });
+          checkServer(server.id, false);
+        } catch (reason) {
+          failed.push(server);
+          failures.push(`${server.name}: ${errorText(reason)}`);
+        }
+      }
+      if (remove) setBulkTargets(failed.length ? failed : undefined);
+      setActionError(failures.join("\n"));
+    } finally {
+      bulkLock.current = false;
+      setBulkBusy(false);
+    }
+  };
 
   const runAction = async (work: () => Promise<unknown>) => {
     setActionError("");
@@ -208,6 +264,12 @@ export function ServersView({
     }
   };
   const menuItems = (server: ServerRecord): ContextMenuItem[] => [
+    {
+      kind: "item",
+      id: "select",
+      label: t("Select"),
+      disabled: bulkBusy || checkedIds.has(server.id),
+    },
     ...(canConnect(server)
       ? [
           {
@@ -271,7 +333,10 @@ export function ServersView({
   ];
   const pickMenuItem = (server: ServerRecord, id: string, at: ServerMenuAt) => {
     setMenu(undefined);
-    if (id === "connect") connect(server);
+    if (id === "select") {
+      setSelectedId(undefined);
+      checkServer(server.id, true);
+    } else if (id === "connect") connect(server);
     else if (id === "details") setSelectedId(server.id);
     else if (id === "edit") {
       if (server.kind === "ssh") setEditor(server);
@@ -328,10 +393,10 @@ export function ServersView({
         {IS_MAC ? null : <WindowControls />}
       </div>
       <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
-        <div className="flex min-w-0 basis-64 flex-1 items-center gap-2">
+        <div className="servers-search-actions flex min-w-0 basis-64 flex-1 items-center gap-2">
           <SearchInput
             appearance="field"
-            containerClassName="min-w-0 flex-1"
+            containerClassName="servers-search min-w-0 flex-1"
             aria-label={t("Search servers")}
             placeholder={t("Search by name or address")}
             value={search}
@@ -496,7 +561,7 @@ export function ServersView({
         <div
           ref={list}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-          className={`min-h-0 min-w-0 overflow-y-auto p-2 @min-[44rem]/servers:p-3 @min-[44rem]/servers:flex-1 ${selected ? "max-h-[40%] shrink-0 @min-[44rem]/servers:max-h-none" : "flex-1"}`}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto p-2 @min-[44rem]/servers:p-3"
         >
           {loaded && servers.length === 0 ? (
             <EmptyState
@@ -529,11 +594,77 @@ export function ServersView({
               </Button>
             </div>
           ) : null}
-          <div className="mbe-3 hidden items-center justify-between gap-2 text-xs text-(--ui-text-muted) @min-[44rem]/servers:flex">
-            <span>
-              {t("Servers")} <span className="tabular-nums">({filtered.length})</span>
-            </span>
-            {group ? <span className="truncate">{group}</span> : null}
+          <div
+            aria-busy={bulkBusy}
+            className="servers-selection-bar sticky top-0 z-[1] bg-(--ui-surface) text-xs"
+          >
+            {checkedServers.length > 0 ? (
+              <Checkbox
+                aria-label={t("Select visible servers")}
+                disabled={!filtered.length || bulkBusy}
+                checked={filtered.length > 0 && visibleChecked === filtered.length}
+                indeterminate={visibleChecked > 0 && visibleChecked < filtered.length}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setCheckedIds((previous) => {
+                    const next = new Set(previous);
+                    for (const server of filtered) {
+                      if (checked) next.add(server.id);
+                      else next.delete(server.id);
+                    }
+                    return next;
+                  });
+                }}
+              />
+            ) : null}
+            <h1 className="min-w-0 text-sm font-medium">
+              {t("Servers")}{" "}
+              <span className="text-(--ui-text-muted) tabular-nums">
+                {filtered.length === servers.length
+                  ? servers.length
+                  : `${filtered.length} / ${servers.length}`}
+              </span>
+            </h1>
+            {checkedServers.length ? (
+              <>
+                <span role="status" className="text-(--ui-text-secondary)">
+                  {t("{p0} selected", { p0: checkedServers.length })}
+                  {checkedServers.length > visibleChecked
+                    ? ` · ${t("{p0} hidden", { p0: checkedServers.length - visibleChecked })}`
+                    : ""}
+                </span>
+                <Button
+                  variant="ghost"
+                  disabled={bulkBusy}
+                  onClick={() => setCheckedIds(new Set())}
+                >
+                  {t("Clear selection")}
+                </Button>
+                <div className="ms-auto flex gap-1">
+                  <Button
+                    variant="ghost"
+                    disabled={bulkBusy}
+                    onClick={() => void runBulk(checkedServers, false)}
+                    startIcon={<Star className="icon-sm" />}
+                  >
+                    {t("Favorite")}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    disabled={bulkBusy}
+                    onClick={() => {
+                      setActionError("");
+                      setBulkTargets([...checkedServers]);
+                    }}
+                    startIcon={<Trash2 className="icon-sm" />}
+                  >
+                    {t("Delete selected")}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <span className="ms-auto text-(--ui-text-muted)">{group}</span>
+            )}
           </div>
           <ul
             aria-label={t("Servers")}
@@ -551,6 +682,13 @@ export function ServersView({
                 address={address(server)}
                 layout={layout}
                 selected={selectedId === server.id}
+                checked={checkedIds.has(server.id)}
+                selectionMode={checkedServers.length > 0}
+                busy={bulkBusy}
+                onCheck={(checked) => {
+                  setSelectedId(undefined);
+                  checkServer(server.id, checked);
+                }}
                 accent={serverAccentColor(server)}
                 canConnect={canConnect(server)}
                 onSelect={() => setSelectedId(server.id)}
@@ -561,84 +699,107 @@ export function ServersView({
           </ul>
         </div>
         {selected ? (
-          <section
-            aria-label={t("Server details")}
-            className="flex min-h-0 min-w-0 flex-1 flex-col border-t border-stroke @min-[44rem]/servers:w-[min(45%,28rem)] @min-[44rem]/servers:flex-none @min-[44rem]/servers:border-t-0 @min-[44rem]/servers:border-s"
-          >
-            <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-stroke px-4 py-3">
-              <Server aria-hidden className="icon-md shrink-0 text-(--ui-text-muted)" />
-              <h2 className="min-w-0 flex-1 truncate text-base font-medium" title={selected.name}>
-                {selected.name}
-              </h2>
-              {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Server actions")}
-                aria-haspopup="menu"
-                aria-expanded={menu?.serverId === selected.id}
-                onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
-              >
-                <MoreHorizontal aria-hidden className="icon-sm" />
-              </Button>
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Close server details")}
-                onClick={() => {
-                  setSelectedId(undefined);
-                  Array.from(
-                    list.current?.querySelectorAll<HTMLButtonElement>("[data-server-row]") ?? [],
-                  )
-                    .find((row) => row.dataset.serverRow === selected.id)
-                    ?.focus({ preventScroll: true });
-                }}
-              >
-                <X aria-hidden className="icon-sm" />
-              </Button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {selected.machine ? (
-                <div className="mbe-3 flex items-start justify-between gap-2">
-                  <MachineStatus key={selected.id} machine={selected.machine} details />
-                  <div className="flex shrink-0 items-center">
-                    <ReconnectAction machine={selected.machine} />
+          <Activity mode={inventoryVisible ? "visible" : "hidden"}>
+            <Popover
+              anchor={detailAnchor}
+              side="bottom"
+              align="end"
+              width={480}
+              maxHeight={560}
+              autoFocus={false}
+              solid
+              ignore="[data-server-row]"
+              onDismiss={() => setSelectedId(undefined)}
+              role="region"
+              aria-label={t("Server details")}
+              className="flex min-h-0 min-w-0 flex-col"
+            >
+              <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-stroke px-4 py-3">
+                <Server aria-hidden className="icon-md shrink-0 text-(--ui-text-muted)" />
+                <h2 className="min-w-0 flex-1 truncate text-base font-medium" title={selected.name}>
+                  {selected.name}
+                </h2>
+                {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  label={t("Server actions")}
+                  aria-haspopup="menu"
+                  aria-expanded={menu?.serverId === selected.id}
+                  onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
+                >
+                  <MoreHorizontal aria-hidden className="icon-sm" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  label={t("Close server details")}
+                  onClick={() => {
+                    setSelectedId(undefined);
+                    Array.from(
+                      list.current?.querySelectorAll<HTMLButtonElement>("[data-server-row]") ?? [],
+                    )
+                      .find((row) => row.dataset.serverRow === selected.id)
+                      ?.focus({ preventScroll: true });
+                  }}
+                >
+                  <X aria-hidden className="icon-sm" />
+                </Button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                {selected.machine ? (
+                  <div className="mbe-3 flex items-start justify-between gap-2">
+                    <MachineStatus
+                      key={selected.id}
+                      machine={selected.machine}
+                      details
+                      showDiagnostics={false}
+                    />
+                    <div className="flex shrink-0 items-center">
+                      <ReconnectAction machine={selected.machine} />
+                    </div>
                   </div>
-                </div>
-              ) : null}
-              <dl className="mbs-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
-                <dt className="text-(--ui-text-muted)">{t("Address")}</dt>
-                <dd className="break-all">{address(selected)}</dd>
-                {selected.machine?.ssh || selected.sshEndpoint ? (
-                  <>
-                    <dt className="text-(--ui-text-muted)">{t("SSH port")}</dt>
-                    <dd>
-                      {selected.effectiveSshEndpoint?.port ??
-                        selected.sshEndpoint?.port ??
-                        selected.machine?.ssh?.port ??
-                        22}
-                    </dd>
-                    {selected.machine?.ssh ? (
+                ) : null}
+                <details className="server-connection-details">
+                  <summary>{t("Diagnostics")}</summary>
+                  {selected.machine ? (
+                    <RemoteConnectionDetails environmentId={selected.machine.environmentId} />
+                  ) : null}
+                  <dl className="mbs-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
+                    <dt className="text-(--ui-text-muted)">{t("Address")}</dt>
+                    <dd className="break-all">{address(selected)}</dd>
+                    {selected.machine?.ssh || selected.sshEndpoint ? (
                       <>
-                        <dt className="text-(--ui-text-muted)">{t("Host service port")}</dt>
-                        <dd>{selected.machine.ssh.remotePort}</dd>
+                        <dt className="text-(--ui-text-muted)">{t("SSH port")}</dt>
+                        <dd>
+                          {selected.effectiveSshEndpoint?.port ??
+                            selected.sshEndpoint?.port ??
+                            selected.machine?.ssh?.port ??
+                            22}
+                        </dd>
+                        {selected.machine?.ssh ? (
+                          <>
+                            <dt className="text-(--ui-text-muted)">{t("Host service port")}</dt>
+                            <dd>{selected.machine.ssh.remotePort}</dd>
+                          </>
+                        ) : null}
                       </>
                     ) : null}
-                  </>
-                ) : null}
-              </dl>
-              <ServersConnectionTools
-                key={selected.id}
-                server={selected}
-                servers={servers}
-                onUseServer={setSelectedId}
-                onEditServer={(existing) => {
-                  setSelectedId(existing.id);
-                  setEditor(existing);
-                }}
-              />
-            </div>
-          </section>
+                  </dl>
+                </details>
+                <ServersConnectionTools
+                  key={selected.id}
+                  server={selected}
+                  servers={servers}
+                  onUseServer={setSelectedId}
+                  onEditServer={(existing) => {
+                    setSelectedId(existing.id);
+                    setEditor(existing);
+                  }}
+                />
+              </div>
+            </Popover>
+          </Activity>
         ) : null}
       </div>
       {menuServer && menu ? (
@@ -666,6 +827,52 @@ export function ServersView({
             onPick={(patch) => saveColor(colorServer.id, patch)}
           />
         </Popover>
+      ) : null}
+      {bulkTargets ? (
+        <Modal
+          title={t("Delete {p0} servers?", { p0: bulkTargets.length })}
+          size="sm"
+          onClose={() => {
+            if (!bulkLock.current) setBulkTargets(undefined);
+          }}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button disabled={bulkBusy} onClick={() => setBulkTargets(undefined)}>
+                {t("Cancel")}
+              </Button>
+              <Button
+                variant="danger"
+                loading={bulkBusy}
+                onClick={() => void runBulk(bulkTargets, true)}
+              >
+                {t("Delete selected")}
+              </Button>
+            </div>
+          }
+        >
+          <div className="flex flex-col gap-3 p-4 text-sm">
+            <p>
+              {t(
+                "Removes saved connections from bycoda. Remote machines and their running sessions are not deleted.",
+              )}
+            </p>
+            <ul className="max-h-48 overflow-auto">
+              {bulkTargets.map((server) => (
+                <li key={server.id} className="py-1">
+                  <span className="font-medium">{server.name}</span>
+                  <span className="block break-all text-xs text-(--ui-text-muted)">
+                    {address(server)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {actionError ? (
+              <Alert tone="danger" role="alert">
+                <span className="whitespace-pre-wrap">{actionError}</span>
+              </Alert>
+            ) : null}
+          </div>
+        </Modal>
       ) : null}
       {deleteTarget ? (
         <Popover

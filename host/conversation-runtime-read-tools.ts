@@ -1,4 +1,5 @@
 import { basename, resolve } from "node:path";
+import { statSync } from "node:fs";
 import type { HostStore } from "./store";
 import type { HostLimits } from "./limits";
 import type { RuntimeLogPrincipal } from "./runtime-log-tools";
@@ -41,7 +42,7 @@ export function describeRuntimeReadConversationTool(action: string): string | un
   if (action === "shell.profiles")
     return "Discover the host's installed command-shell profiles and default/chosen IDs. Returns shell metadata, not environment variables or profile contents; does not select a shell or execute a command.";
   if (action.startsWith("attachments."))
-    return "List or read only attachments already accepted into the calling session's host transcript, including managed generated images. No sessionId/path/owner override. Metadata excludes paths and inline payloads; readable=false means unsupported by host chunk reads. Read returns exact base64 bytes in bounded chunks (default 12 KiB, max 48 KiB); continue from nextOffset. This never claims, uploads or grants access to drafts/other sessions.";
+    return "List or read only attachments already accepted into the calling host or desktop session's transcript, including managed generated images. No sessionId/path/owner override. Metadata excludes paths and inline payloads; readable=false means the file is unavailable or unsupported by host chunk reads, including desktop-local files not present in host storage. Read returns exact base64 bytes in bounded chunks (default 12 KiB, max 48 KiB); continue from nextOffset. This never claims, uploads or grants access to drafts/other sessions.";
   return undefined;
 }
 
@@ -51,6 +52,7 @@ export class ConversationRuntimeReadTools {
     private readonly limits: Pick<HostLimits, "state">,
     private readonly shells: typeof listShellProfiles = listShellProfiles,
     private readonly read: typeof readAttachmentChunk = readAttachmentChunk,
+    private readonly session: HostStore["session"] = (id) => store.session(id),
   ) {}
 
   async call(
@@ -94,18 +96,22 @@ export class ConversationRuntimeReadTools {
         chosenId: installed.has(profiles.chosenId ?? "") ? profiles.chosenId : null,
       };
     }
-    const session = this.store.session(principal.sessionId);
+    const session = this.session(principal.sessionId);
     if (session.projectId !== principal.projectId)
       throw new Error("Session belongs to another project.");
     if (action === "attachments.read") {
       // The existing chunk reader proves transcript membership and resolves only
       // managed IDs; no caller-supplied filesystem path ever reaches it.
       const offset = Number(input.offset ?? 0);
-      const chunk = await this.read(this.store, {
-        sessionId: principal.sessionId,
-        id: input.id,
-        offset,
-      });
+      const chunk = await this.read(
+        this.store,
+        {
+          sessionId: principal.sessionId,
+          id: input.id,
+          offset,
+        },
+        this.session,
+      );
       check();
       const cap = 3 * Math.floor(Number(input.maxBytes ?? 12288) / 3);
       const bytes = Buffer.from(chunk.data, "base64").subarray(0, cap);
@@ -159,7 +165,10 @@ export class ConversationRuntimeReadTools {
         let readable = false;
         try {
           const path = attachmentPath(this.store, file.id);
+          const info = statSync(path);
           readable =
+            info.isFile() &&
+            info.size === file.size &&
             Number.isSafeInteger(file.size) &&
             file.size >= 0 &&
             file.size <= MAX_REMOTE_ATTACHMENT_BYTES &&

@@ -1,0 +1,424 @@
+import { DatabaseSync } from "node:sqlite";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { isTransientDrainError, QueueDrainer, queueRowCommands } from "./queue-drainer";
+import { CLAIM_GRACE_MS, QUEUE_STALL_MS, SessionQueues } from "./session-queue";
+import { RunLeases } from "./run-lease";
+import { QUEUE_LEASE_TTL_MS } from "../src/features/connections/model/sharedQueue";
+import { RUN_LEASE_TTL_MS } from "../src/features/sync/model/runLease";
+
+const row = (id: string, extra: object = {}) => ({ id, text: id, attachments: [], ...extra });
+const databases: DatabaseSync[] = [];
+const drainers: QueueDrainer[] = [];
+
+function setup(ready = true) {
+  const db = new DatabaseSync(":memory:");
+  databases.push(db);
+  const queues = new SessionQueues(db);
+  const world = { ready, sent: [] as string[], refuse: undefined as string | undefined };
+  const drainer = new QueueDrainer(queues, {
+    ready: () => world.ready,
+    send: (_id, message) => {
+      if (world.refuse) throw new Error(world.refuse);
+      world.sent.push(message.id);
+      world.ready = false; // the turn it started is running
+    },
+    transaction: (action) => action(),
+  });
+  drainers.push(drainer);
+  const enqueue = (id = "chat", owner?: string, status: "active" | "paused" = "active") =>
+    queues.change(id, { messages: [] }, { messages: [row("a"), row("b")], status }, owner);
+  return { queues, world, drainer, enqueue, db };
+}
+/** Microtasks run: the drainer looks at a queue after the current call stack. */
+const settle = async () => {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+};
+
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => {
+  drainers.splice(0).forEach((drainer) => drainer.close());
+  databases.splice(0).forEach((db) => db.close());
+  vi.useRealTimers();
+});
+
+it("sends the head of an unleased queue the moment it appears, then the next one when the turn settles", async () => {
+  const { world, queues, drainer, enqueue } = setup();
+  enqueue();
+  await settle();
+  expect(world.sent).toEqual(["a"]);
+  expect(queues.get("chat").messages.map((message) => message.id)).toEqual(["b"]);
+  // The turn started by "a" is running: the rest waits, however often it is asked.
+  drainer.kick("chat");
+  await settle();
+  expect(world.sent).toEqual(["a"]);
+  world.ready = true;
+  drainer.kick("chat"); // the engine's settled event
+  await settle();
+  expect(world.sent).toEqual(["a", "b"]);
+  expect(queues.get("chat").messages).toEqual([]);
+});
+
+it("leaves a queue with a live lease to its holder and takes over once the lease runs out, with the one timer", async () => {
+  const { world, queues, enqueue } = setup();
+  enqueue("chat", "desktop:a");
+  await settle();
+  expect(world.sent).toEqual([]);
+  expect(vi.getTimerCount()).toBe(1);
+  await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS - 1_000);
+  expect(world.sent).toEqual([]);
+  // The holder keeps it alive on its heartbeat: the timer moves, nothing is sent.
+  expect(queues.renew("chat", "desktop:a", 1)).not.toBeNull();
+  await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS - 1_000);
+  expect(world.sent).toEqual([]);
+  await vi.advanceTimersByTimeAsync(2_000);
+  await settle();
+  expect(world.sent).toEqual(["a"]);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("does not drain a paused queue, a row being edited or an unconfirmed head", async () => {
+  const { world, queues, enqueue } = setup();
+  enqueue("paused", undefined, "paused");
+  const editing = queues.change(
+    "editing",
+    { messages: [] },
+    { messages: [row("a")], status: "paused" },
+  );
+  queues.change("editing", editing, { ...editing, status: "active", editingId: "a" });
+  const flagged = queues.change(
+    "flagged",
+    { messages: [] },
+    { messages: [row("a", { deliveryUnknown: true })], status: "paused" },
+  );
+  queues.change("flagged", flagged, { ...flagged, status: "active" });
+  await settle();
+  expect(world.sent).toEqual([]);
+});
+
+it("finds waiting queues again after a restart", async () => {
+  const { world, db, drainer, queues } = setup();
+  drainer.close();
+  queues.change("chat", { messages: [] }, { messages: [row("a")], status: "active" });
+  const restarted = new QueueDrainer(new SessionQueues(db), {
+    ready: () => true,
+    send: (_id, message) => void world.sent.push(message.id),
+    transaction: (action) => action(),
+  });
+  drainers.push(restarted);
+  await settle();
+  expect(world.sent).toEqual(["a"]);
+});
+
+it("holds the queue for its owner when the host refuses the message, and keeps it when a turn raced in", async () => {
+  const { world, queues, enqueue } = setup();
+  world.refuse = "Draft not found";
+  enqueue();
+  await settle();
+  expect(world.sent).toEqual([]);
+  expect(queues.get("chat")).toMatchObject({ status: "paused" });
+  expect(queues.get("chat").messages.map((message) => message.id)).toEqual(["a", "b"]);
+  // A refusal because the conversation just started running is not a hold.
+  const raced = setup();
+  raced.world.refuse = "This session is already running";
+  const original = raced.world;
+  raced.drainer.close();
+  const drainer = new QueueDrainer(raced.queues, {
+    ready: () => original.ready,
+    send: () => {
+      original.ready = false;
+      throw new Error("This session is already running");
+    },
+    transaction: (action) => action(),
+  });
+  drainers.push(drainer);
+  raced.enqueue();
+  await settle();
+  expect(raced.queues.get("chat").status).toBe("active");
+});
+
+it("gives up on the claim of a sender that is gone and never sends that row again by itself", async () => {
+  const { world, queues, drainer, enqueue } = setup();
+  const owned = enqueue("chat", "desktop:a");
+  queues.claim("chat", "a", "desktop:a", owned.revision);
+  await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS + 5);
+  drainer.kick("chat");
+  await settle();
+  expect(world.sent).toEqual([]);
+  expect(queues.get("chat")).toMatchObject({ status: "paused" });
+  expect(queues.get("chat").messages[0]).toMatchObject({ id: "a", deliveryUnknown: true });
+});
+
+it("turns a queued row into the host's own commands", () => {
+  const session = { harness: "codex", model: "gpt", runtimeMode: "supervised", modelSettings: {} };
+  expect(queueRowCommands("s", row("r", { intent: "plan" }) as never, session)).toEqual([
+    {
+      type: "send",
+      commandId: "queue-drain:s:r",
+      sessionId: "s",
+      text: "r",
+      attachments: [],
+      intent: "plan",
+    },
+  ]);
+  expect(queueRowCommands("s", row("c", { text: " /Compact " }) as never, session)).toEqual([
+    { type: "compact", commandId: "queue-drain:s:c", sessionId: "s" },
+  ]);
+  const retargeted = queueRowCommands(
+    "s",
+    row("r", {
+      modelTarget: { harness: "codex", model: "other", modelSettings: { effort: "high" } },
+    }) as never,
+    session,
+  );
+  expect(retargeted.map((command) => command.type)).toEqual(["configure", "send"]);
+  expect(retargeted[0]).toMatchObject({ model: "other", runtimeMode: "supervised" });
+  expect(() => queueRowCommands("s", row("x", { text: "/clear" }) as never, session)).toThrow(
+    /desktop/,
+  );
+  expect(() =>
+    queueRowCommands("s", row("x", { intent: "orchestrate" }) as never, session),
+  ).toThrow(/desktop/);
+});
+
+it("waits while a desktop window runs the conversation and sends when its run lease ends, with the same one timer", async () => {
+  const db = new DatabaseSync(":memory:");
+  databases.push(db);
+  const queues = new SessionQueues(db);
+  const runs = new RunLeases();
+  const sent: string[] = [];
+  const drainer = new QueueDrainer(queues, {
+    ready: () => !runs.holder("chat"),
+    send: (_id, message) => void sent.push(message.id),
+    transaction: (action) => action(),
+    wakeAt: () => runs.nextExpiry(),
+    expired: () => void runs.takeExpired(),
+  });
+  drainers.push(drainer);
+  runs.acquire("chat", "desktop:a");
+  queues.change("chat", { messages: [] }, { messages: [row("a")], status: "active" });
+  await settle();
+  expect(sent).toEqual([]);
+  // The window crashed: nothing renews the lease, and the host looks again once it ends.
+  drainer.kick("chat");
+  await vi.advanceTimersByTimeAsync(RUN_LEASE_TTL_MS + 1_000);
+  await settle();
+  expect(sent).toEqual(["a"]);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+// H1: a steer or "send now" claim carries no lease; the drainer must not mistake it for a dead sender.
+it("leaves a fresh leaseless claim alone and gives up on it only after the grace", async () => {
+  const { world, queues, drainer, enqueue } = setup();
+  const queue = enqueue("chat", undefined, "paused");
+  const active = queues.change("chat", queue, { ...queue, status: "active" });
+  world.ready = false; // a turn runs on the host; the steer goes to it
+  const claimed = queues.claim("chat", "a", "desktop:a", active.revision, true);
+  drainer.kick("chat");
+  await settle();
+  expect(queues.get("chat")).toMatchObject({ status: "active", claim: { id: "a" } });
+  expect(queues.get("chat").messages[0].deliveryUnknown).toBeUndefined();
+  // The steer is accepted: the queue goes on, nothing is held.
+  const done = queues.finish("chat", claimed.claim!.token, true);
+  expect(done).toMatchObject({ status: "active" });
+  expect(done.messages.map((message) => message.id)).toEqual(["b"]);
+  // A sender that never answers is given up on, by the one timer, past the grace.
+  const stuck = queues.claim("chat", "b", "desktop:a", done.revision, true);
+  expect(stuck.claim).toBeDefined();
+  await settle();
+  expect(vi.getTimerCount()).toBe(1);
+  await vi.advanceTimersByTimeAsync(CLAIM_GRACE_MS + 10);
+  expect(queues.get("chat")).toMatchObject({ status: "paused" });
+  expect(queues.get("chat").messages[0]).toMatchObject({ id: "b", deliveryUnknown: true });
+});
+
+// M4: a stale claim must not block the conversation just because its queue is paused.
+it("gives up on a stale claim of a paused queue", async () => {
+  const { queues, enqueue } = setup();
+  const queue = enqueue("chat", undefined, "active");
+  queues.claim("chat", "a", "desktop:a", queue.revision, true);
+  queues.hold("chat");
+  expect(queues.get("chat").claim).toBeDefined();
+  await vi.advanceTimersByTimeAsync(CLAIM_GRACE_MS + 10);
+  expect(queues.get("chat").claim).toBeUndefined();
+  expect(queues.get("chat").messages[0].deliveryUnknown).toBe(true);
+});
+
+// H2: what the turn that just ended says about the queue behind it.
+it("goes on after a turn that ended well, but holds the queue after a Stop or a failure", async () => {
+  const { world, queues, drainer, enqueue } = setup();
+  enqueue();
+  await settle();
+  expect(world.sent).toEqual(["a"]);
+  world.ready = true;
+  drainer.settled("chat", {});
+  await settle();
+  expect(world.sent).toEqual(["a", "b"]);
+
+  // The user stopped the turn: the owner decides when the rest goes.
+  const stopped = setup();
+  stopped.enqueue();
+  await settle();
+  stopped.world.ready = true;
+  stopped.drainer.settled("chat", { cancelled: true });
+  await settle();
+  expect(stopped.world.sent).toEqual(["a"]);
+  expect(stopped.queues.get("chat")).toMatchObject({ status: "paused", holdReason: "stopped" });
+  stopped.drainer.kick("chat");
+  await settle();
+  expect(stopped.world.sent).toEqual(["a"]);
+
+  // The provider failed: one failure does not burn the whole queue.
+  const failed = setup();
+  failed.queues.change(
+    "chat",
+    { messages: [] },
+    { messages: [row("a"), row("b"), row("c")], status: "active" },
+  );
+  await settle();
+  failed.world.ready = true;
+  failed.drainer.settled("chat", { error: "Provider crashed" });
+  await settle();
+  failed.drainer.kickAll();
+  await settle();
+  expect(failed.world.sent).toEqual(["a"]);
+  expect(failed.queues.get("chat")).toMatchObject({
+    status: "paused",
+    holdReason: "Provider crashed",
+  });
+  expect(failed.queues.get("chat").messages.map((message) => message.id)).toEqual(["b", "c"]);
+
+  // A turn cut short (the host stopped or restarted, its storage failed) is not a
+  // turn that ended well: the owner decides, so nothing is sent on its own.
+  const closing = setup();
+  closing.enqueue();
+  await settle();
+  closing.world.ready = true;
+  closing.drainer.settled("chat", {
+    interrupted: true,
+    reason: "Host restarted. This turn was interrupted; inspect its work before continuing.",
+  });
+  await settle();
+  closing.drainer.kickAll();
+  await settle();
+  expect(closing.world.sent).toEqual(["a"]);
+  expect(closing.queues.get("chat")).toMatchObject({
+    status: "paused",
+    holdReason: "Host restarted. This turn was interrupted; inspect its work before continuing.",
+  });
+});
+
+// H2: a host that is busy for a moment says nothing about the message.
+it("keeps a queue that met a host which is stopping, rewinding or switching, and sends when it can", async () => {
+  for (const message of [
+    "Host is stopping",
+    "A conversation change is in progress",
+    "Wait for the branch switch to finish",
+    "LEASE_HELD: This session is running in bycoda on that computer.",
+  ]) {
+    const { world, queues, drainer, enqueue } = setup();
+    world.refuse = message;
+    enqueue();
+    await settle();
+    expect(world.sent).toEqual([]);
+    expect(queues.get("chat").status).toBe("active");
+    expect(queues.get("chat").messages).toHaveLength(2);
+    world.refuse = undefined;
+    drainer.kickWaiting();
+    await settle();
+    expect(world.sent).toEqual(["a"]);
+  }
+});
+
+it("holds the queue with the reason when the host refuses a message for good", async () => {
+  const { world, queues, enqueue } = setup();
+  world.refuse = "Draft not found";
+  enqueue();
+  await settle();
+  expect(queues.get("chat")).toMatchObject({ status: "paused", holdReason: "Draft not found" });
+});
+
+// M5: a holder that could send but does not is not kept alive.
+it("tells a lease holder that makes no progress apart from one waiting on a busy conversation", async () => {
+  const { world, queues, drainer, enqueue } = setup();
+  const owned = enqueue("chat", "desktop:a");
+  const epoch = owned.drain!.epoch;
+  await settle();
+  const keepAlive = async (ms: number) => {
+    for (let waited = 0; waited < ms; waited += 5_000) {
+      await vi.advanceTimersByTimeAsync(Math.min(5_000, ms - waited));
+      queues.renew("chat", "desktop:a", epoch);
+    }
+  };
+  // Its conversation runs a turn for much longer than the limit: waiting is not a stall,
+  // and the end of that turn gives the holder the whole limit again to send.
+  world.ready = false;
+  await keepAlive(QUEUE_STALL_MS * 2);
+  expect(drainer.holderStalled("chat")).toBe(false);
+  world.ready = true;
+  expect(drainer.holderStalled("chat")).toBe(false); // the first free look starts the clock
+  await keepAlive(QUEUE_STALL_MS - 5_000);
+  expect(drainer.holderStalled("chat")).toBe(false);
+  await keepAlive(5_000);
+  expect(drainer.holderStalled("chat")).toBe(true);
+  // The host stops renewing and takes the lease: the row is sent by the host.
+  queues.release("chat", "desktop:a", epoch);
+  await settle();
+  expect(world.sent).toEqual(["a"]);
+});
+
+it("classifies refusals that only mean the conversation is busy", () => {
+  for (const text of [
+    "This session is already running",
+    "Host is stopping",
+    "A conversation change is in progress",
+    "Wait for the branch switch to finish",
+    "Session cleanup is still pending.",
+    "Wait for the current turn before changing settings",
+    "LEASE_HELD: busy",
+  ])
+    expect(isTransientDrainError(new Error(text))).toBe(true);
+  for (const text of ["Draft not found", "The host cannot send this queued message."])
+    expect(isTransientDrainError(new Error(text))).toBe(false);
+});
+
+// A holder that cannot send for a reason of its own is neither stalled nor replaced.
+it("does not count a holder that reports it cannot send, and does not send on the host's own copy meanwhile", async () => {
+  const { world, queues, drainer, enqueue } = setup();
+  const owned = enqueue("chat", "desktop:a");
+  const epoch = owned.drain!.epoch;
+  await settle();
+  world.ready = true;
+  drainer.noteBlocked("chat", "desktop:a", true);
+  expect(drainer.holderStalled("chat")).toBe(false);
+  for (let waited = 0; waited < QUEUE_STALL_MS * 3; waited += 5_000) {
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(queues.renew("chat", "desktop:a", epoch)).not.toBeNull();
+    drainer.noteBlocked("chat", "desktop:a", true); // every beat says so again
+    expect(drainer.holderStalled("chat")).toBe(false);
+  }
+  expect(world.sent).toEqual([]);
+  // Beats stop (the window closed): the lease and the mark run out, and the host takes over.
+  await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS + 2_000);
+  await settle();
+  expect(world.sent).toEqual(["a"]);
+});
+
+it("ends the block with the beat that no longer reports it, and counts the holder again", async () => {
+  const { world, queues, drainer, enqueue } = setup();
+  const epoch = enqueue("chat", "desktop:a").drain!.epoch;
+  await settle();
+  world.ready = true;
+  const beats = async (ms: number, blocked: boolean) => {
+    for (let waited = 0; waited < ms; waited += 5_000) {
+      await vi.advanceTimersByTimeAsync(5_000);
+      queues.renew("chat", "desktop:a", epoch);
+      drainer.noteBlocked("chat", "desktop:a", blocked);
+    }
+  };
+  await beats(QUEUE_STALL_MS + 5_000, true);
+  expect(drainer.holderStalled("chat")).toBe(false);
+  await beats(5_000, false);
+  expect(drainer.holderStalled("chat")).toBe(false); // the clock starts now
+  await beats(QUEUE_STALL_MS, false);
+  expect(drainer.holderStalled("chat")).toBe(true);
+});

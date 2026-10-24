@@ -20,6 +20,14 @@
   working copy with workspace-relative paths.
 - `files.write` / `files.create` save through the editor service. Pass the hash from
   `files.read` as `expectedHash`. Your normal file tools also work.
+- `files.inspect` returns a bounded file/tree fingerprint. Pass it as
+  `expectedHash` to `files.rename`, `files.move`, `files.copy` or `files.delete`.
+  Move/copy need an existing `destinationParent` in the same working copy;
+  rename accepts one name. Changed trees, collisions, links, Git internals and
+  workspace-root deletion are refused. Deletion removes the inspected tree.
+  Host editor saves and lifecycle actions share a checkout queue and recheck the
+  inspected hash immediately before commit. External programs are outside that
+  queue; this is not an atomic transaction over arbitrary filesystem writers.
 
 ## Git and checkpoints
 - In the UI: the Changes panel, commit graph, branch picker, worktrees, stash, conflict
@@ -28,6 +36,12 @@
 - The owner commits, merges and pushes. Never do this without an explicit request.
 - Checkpoints snapshot the working tree on each turn. `checkpoints.status` and
   `checkpoints.diff` show what this session changed. Undo/rewind is an owner action.
+- Reads use the session's owning store: host turns read host checkpoints; desktop
+  turns use the connected desktop. An unavailable desktop is an error, not proof
+  that the session has no changes. Reading never adopts or transfers the session.
+- `attachments.list` reads accepted transcript metadata from host and desktop
+  sessions. Use `attachments.read` only when `readable=true`; local-only desktop
+  files may be listed but unavailable in host storage. No arbitrary path reads.
 
 ## Terminals
 - Each project has a terminal dock. The shell profile is set in Settings > Terminal.

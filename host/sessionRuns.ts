@@ -16,6 +16,7 @@ export type SessionRunSpec = {
   requestId?: string;
   projectId: string;
   harness: RemoteProvider;
+  providerAccountId?: string;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -59,6 +60,7 @@ export function launchSessionRun(
       projectId: spec.projectId,
       ...(spec.worktreeCwd ? { worktreeCwd: spec.worktreeCwd } : {}),
       harness: spec.harness,
+      ...(spec.providerAccountId === undefined ? {} : { providerAccountId: spec.providerAccountId }),
       model: spec.model,
       modelSettings: spec.modelSettings,
       runtimeMode: spec.runtimeMode,

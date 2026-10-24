@@ -557,18 +557,20 @@ export function UsageOverview({
               </>
             )}
             {(Object.keys(filters) as (keyof UsageFilters)[]).map((key) => (
-              <SearchableSelect
-                key={key}
-                multiple
-                label={t(names[key])}
-                placeholder={t("All")}
-                value={filters[key]}
-                options={[...options[key]].map(([value, label]) => ({ value, label: t(label) }))}
-                onChange={(values) => {
-                  setFilters((f) => ({ ...f, [key]: values }));
-                  setSelectedSession(null);
-                }}
-              />
+              <div key={key} className="grid min-w-0 gap-1">
+                <span className="text-ui-caption text-(--ui-text-secondary)">{t(names[key])}</span>
+                <SearchableSelect
+                  multiple
+                  label={t(names[key])}
+                  placeholder={t("All")}
+                  value={filters[key]}
+                  options={[...options[key]].map(([value, label]) => ({ value, label: t(label) }))}
+                  onChange={(values) => {
+                    setFilters((f) => ({ ...f, [key]: values }));
+                    setSelectedSession(null);
+                  }}
+                />
+              </div>
             ))}
             <Button
               variant="ghost"

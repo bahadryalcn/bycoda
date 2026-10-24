@@ -121,12 +121,14 @@ describe("stdio HTTP MCP proxy", () => {
               .trim()
               .split("\n")
               .map((m) => JSON.parse(m));
-            expect(messages.map((m) => m.id)).toEqual([1, 2, "call"]);
-            expect(messages[0].result.serverInfo.name).toBe(`bycoda-${scope}`);
-            expect(messages[1].result.tools.some((t: { name: string }) => t.name === tool)).toBe(
+            expect(messages).toHaveLength(3);
+            const byId = new Map(messages.map((message) => [message.id, message]));
+            expect([...byId.keys()]).toEqual(expect.arrayContaining([1, 2, "call"]));
+            expect(byId.get(1).result.serverInfo.name).toBe(`bycoda-${scope}`);
+            expect(byId.get(2).result.tools.some((t: { name: string }) => t.name === tool)).toBe(
               true,
             );
-            expect(messages[2].result.isError).toBeUndefined();
+            expect(byId.get("call").result.isError).toBeUndefined();
           }
         }
       }

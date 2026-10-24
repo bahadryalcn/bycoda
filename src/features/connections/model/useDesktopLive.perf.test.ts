@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Session } from "../../sessions/model/session";
 import { DESKTOP_LIVE_CAPABILITY, DESKTOP_LIVE_MS, type DesktopLiveHandlers } from "./desktopLive";
+import { adoptedBeatFresh, setAdoptedWaker } from "./hostWake";
 import { useDesktopLive } from "./useDesktopLive";
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), build: vi.fn() }));
@@ -69,6 +70,7 @@ afterEach(() => {
   act(() => root.unmount());
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  setAdoptedWaker(undefined);
 });
 
 describe("desktop live heartbeat while nothing changes", () => {
@@ -97,6 +99,42 @@ describe("desktop live heartbeat while nothing changes", () => {
     // Two more ticks stay inside the host's idle-heartbeat window.
     await advance(DESKTOP_LIVE_MS * 2);
     expect(mocks.request.mock.calls.length).toBe(settled);
+  });
+
+  // Step 8: the adopted-session mirror runs on the heartbeat's answer, not on its own timer.
+  it("wakes the adopted-session mirror only when the host reports a change", async () => {
+    const wake = vi.fn();
+    setAdoptedWaker(wake);
+    let seq = 0;
+    mocks.request.mockImplementation(async (_machine: string, _method: string, payload: any) => {
+      // The host moves one adopted session on its third answer.
+      const moved = payload.adoptedSeq !== undefined && ++seq === 3;
+      return {
+        adopted: {
+          seq: moved ? 1 : 0,
+          ids: moved ? ["a"] : [],
+          reset: payload.adoptedSeq === undefined,
+        },
+      };
+    });
+    // Busy, so that every tick reaches the host.
+    sessionsRef.current = [{ id: "a", cwd: "/repo", blocks: [], busy: true } as unknown as Session];
+    await act(async () => {
+      root.render(createElement(Probe));
+    });
+    await advance(DESKTOP_LIVE_MS * 6);
+    expect(mocks.request.mock.calls.length).toBeGreaterThanOrEqual(5);
+    // The first answer (a reset) and the one change: nothing else wakes it.
+    expect(wake.mock.calls).toEqual([[undefined], [["a"]]]);
+    expect(adoptedBeatFresh()).toBe(true);
+  });
+
+  it("holds one timer while idle", async () => {
+    await act(async () => {
+      root.render(createElement(Probe));
+    });
+    await advance(DESKTOP_LIVE_MS * 4);
+    expect(vi.getTimerCount()).toBe(1);
   });
 
   it("reports a session that starts running within one tick", async () => {

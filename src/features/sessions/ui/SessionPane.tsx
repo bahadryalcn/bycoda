@@ -1008,6 +1008,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           blocks={stableBlocks}
           busy={sessionBusy}
           pendingQuestion={hasPendingQuestion}
+          deliveryUnconfirmed={stableSession.queuedMessages?.some((message) => message.deliveryUnknown)}
           backgroundTasks={session.backgroundTasks}
           backgroundAgents={session.backgroundAgents}
           visible={visible}

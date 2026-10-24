@@ -4,12 +4,13 @@ import type { SubmitTurnEvents } from "./submitTurnEvents";
 import { inboxAskPrompt } from "../../../../features/inbox/model/inboxAsk";
 import { announceSessionFinished } from "../../../../features/notifications/model/notifications";
 import { orchestrator, shellPath } from "../../../../features/orchestration/model/orchestration";
-import { completeOrRepairOrchestrationProposal, completeOrchestrationProposal, orchestrationPlanningPrompt, orchestrationRepairPrompt, withOrchestrationProposal } from "../../../../features/orchestration/model/orchestrationPlan";
+import { completeOrRepairOrchestrationProposal, completeOrchestrationProposal, orchestrationPlanningPrompt, orchestrationRepairPrompt, recoverTaggedOrchestrationProposals, withOrchestrationProposal } from "../../../../features/orchestration/model/orchestrationPlan";
 import { prepareAttachments } from "../../../../features/sessions/model/attachments";
 import { beginSessionTurn, finishSessionTurn, flushSessionCheckpoint } from "../../../../features/sessions/model/checkpoint";
 import { completeHandoff, consumeHandoff, isPreparingHandoff, userMessagesAfterHandoff, wrapHandoffPrompt } from "../../../../features/sessions/model/handoff";
 import { CONTINUE_PROMPT } from "../../../../features/sessions/model/inFlight";
 import { buildPlanPrompt, isProviderFailureText, planTurnPrompt } from "../../../../features/sessions/model/plan";
+import { markSharedProviderSend } from "../../../../features/connections/model/useSharedLocalQueues";
 import { preparePrompt } from "../../../../features/sessions/model/promptPreparation";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
 import { canRewindHarnessLastTurn, forgetHarnessSession, promoteLastAssistantToPlan, rewindHarnessLastTurn, sendHarnessTurn, stopHarnessSession, stopStreaming } from "../../../../integrations/harness";
@@ -121,6 +122,8 @@ export async function runSubmitDispatch(
       if (turnGen.current.get(sessionId) !== gen) return Promise.resolve();
       recordPerformanceEvent("dispatch", {}, traceId);
       const finishDispatch = startPerformanceSpan("dispatch", {}, traceId);
+      // A queued send waits for the provider from here on, not from its claim.
+      markSharedProviderSend(sessionId);
       return sendHarnessTurn({
         harness: current.harness,
         sessionId,
@@ -273,13 +276,16 @@ export async function runSubmitDispatch(
                 : intent === "plan" && !turn.nativePlanSeen && !providerFailed
                   ? promoteLastAssistantToPlan(stopped, planEventKey)
                   : stopped;
+            const recovered = !providerFailed && turn.buildSucceeded
+              ? recoverTaggedOrchestrationProposals(finalized)
+              : finalized;
             return approvedPlan && intent === "build"
               ? withPlanStatus(
-                  finalized,
+                  recovered,
                   approvedPlan.id,
                   turn.buildSucceeded && !providerFailed ? "built" : "ready",
                 )
-              : finalized;
+              : recovered;
           }),
         ),
     });

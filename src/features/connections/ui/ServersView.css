@@ -1,0 +1,105 @@
+.server-list-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-bottom: 1px solid var(--color-stroke);
+  border-radius: var(--control-radius, 6px);
+}
+.server-list-row[data-checked],
+.server-card[data-checked] {
+  background: var(--ui-surface-selected);
+}
+.server-selection {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  flex: 0 0 36px;
+  cursor: pointer;
+}
+.server-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+}
+.server-group {
+  flex: 0 1 24%;
+}
+.server-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.server-card[data-selection-mode] .server-identity {
+  flex-basis: calc(100% - 36px);
+}
+.server-card .server-row-actions {
+  justify-content: flex-end;
+  width: 100%;
+  border-top: 1px solid var(--color-stroke);
+}
+.servers-selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 8px;
+}
+.server-connection-details {
+  margin-block-start: 8px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.server-connection-details > summary {
+  cursor: pointer;
+  padding-block: 4px;
+}
+.server-connection-tools {
+  container-type: inline-size;
+}
+.server-tools-selector {
+  display: none;
+}
+@container (max-width: 640px) {
+  .server-tools-selector {
+    display: block;
+  }
+  .server-tools-segments {
+    display: none;
+  }
+}
+@container servers (max-width: 600px) {
+  .servers-search-actions {
+    display: contents;
+  }
+  .servers-search {
+    flex-basis: 100%;
+    min-inline-size: 100%;
+  }
+  .server-list-row .server-identity {
+    display: grid;
+    grid-template-columns: 2px minmax(0, 1fr);
+    gap: 3px 8px;
+  }
+  .server-row-status {
+    grid-column: 2;
+  }
+  .server-group {
+    display: none;
+  }
+  .server-selection {
+    flex-basis: 32px;
+  }
+  .server-row-actions {
+    gap: 0;
+    padding-inline: 0;
+  }
+}
+@media (pointer: coarse) {
+  .server-selection {
+    flex-basis: 44px;
+    min-height: 44px;
+  }
+}

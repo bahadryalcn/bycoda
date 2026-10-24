@@ -96,6 +96,38 @@
   overflow-wrap: anywhere;
 }
 
+.nameText {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branchText {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.details {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.details > summary {
+  cursor: pointer;
+  inline-size: fit-content;
+}
+
+.detailValues {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-block-start: 8px;
+  overflow-wrap: anywhere;
+}
+
 .branch,
 .metadata {
   display: flex;

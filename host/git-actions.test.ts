@@ -1,5 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -663,6 +672,145 @@ describe("stopped operations", () => {
 });
 
 describe("BranchCache", () => {
+  it("never caches a retargeted junction's branch under its previous repository identity", async () => {
+    const folder = temp("bycoda-branch-retarget-");
+    const a = join(folder, "a");
+    const b = join(folder, "b");
+    const alias = join(folder, "alias");
+    mkdirSync(a);
+    mkdirSync(b);
+    writeFileSync(join(a, "branch"), "repo-a");
+    writeFileSync(join(b, "branch"), "repo-b");
+    symlinkSync(a, alias, process.platform === "win32" ? "junction" : "dir");
+    let now = 0;
+    const lookup = vi.fn(async (cwd: string) => readFileSync(join(cwd, "branch"), "utf8"));
+    const cache = new BranchCache(lookup, 4_000, 256, () => now);
+    expect(await cache.get(alias)).toBe("repo-a");
+    unlinkSync(alias);
+    symlinkSync(b, alias, process.platform === "win32" ? "junction" : "dir");
+    // Branch TTL expired, but normalizeProjectPath's 5s identity hint did not.
+    now = 4_001;
+    expect(await cache.get(alias)).toBe("repo-b");
+    expect(await cache.get(a)).toBe("repo-a");
+    expect(await cache.get(b)).toBe("repo-b");
+    expect(await cache.get(alias)).toBe("repo-b");
+  });
+
+  it("does not extend a stale alias binding when the former target is refreshed independently", async () => {
+    const folder = temp("bycoda-branch-retarget-refresh-");
+    const a = join(folder, "a"),
+      b = join(folder, "b"),
+      alias = join(folder, "alias");
+    mkdirSync(a);
+    mkdirSync(b);
+    writeFileSync(join(a, "branch"), "repo-a");
+    writeFileSync(join(b, "branch"), "repo-b");
+    symlinkSync(a, alias, process.platform === "win32" ? "junction" : "dir");
+    let now = 0;
+    const cache = new BranchCache(
+      async (cwd) => readFileSync(join(cwd, "branch"), "utf8"),
+      4_000,
+      256,
+      () => now,
+    );
+    expect(await cache.get(alias)).toBe("repo-a");
+    unlinkSync(alias);
+    symlinkSync(b, alias, process.platform === "win32" ? "junction" : "dir");
+    now = 4_001;
+    expect(await cache.get(a)).toBe("repo-a");
+    expect(await cache.get(alias)).toBe("repo-b");
+    expect(await cache.get(a)).toBe("repo-a");
+  });
+
+  it("shares equivalent checkout spellings and clears only the changed root", async () => {
+    const cwd = temp("bycoda-branch-cache-");
+    const other = temp("bycoda-branch-cache-other-");
+    const lookup = vi.fn(async () => "main");
+    const cache = new BranchCache(lookup);
+    await cache.get(cwd);
+    await cache.get(other);
+    const alias =
+      process.platform === "win32" ? cwd.replace(/\\/g, "/").toUpperCase() + "/" : cwd + "/./";
+    await cache.get(alias);
+    expect(lookup).toHaveBeenCalledTimes(2);
+    cache.clear(alias);
+    await cache.get(other);
+    expect(lookup).toHaveBeenCalledTimes(2);
+    await cache.get(cwd);
+    expect(lookup).toHaveBeenCalledTimes(3);
+  });
+
+  it("shares one cold lookup across many canonical aliases", async () => {
+    const folder = temp("bycoda-branch-many-");
+    const alias = join(folder, "alias");
+    const target = join(folder, "target");
+    mkdirSync(target);
+    symlinkSync(target, alias, process.platform === "win32" ? "junction" : "dir");
+    const lookup = vi.fn(async (cwd: string) => {
+      expect(realpathSync.native(cwd)).toBe(realpathSync.native(target));
+      return "main";
+    });
+    const cache = new BranchCache(lookup);
+    const values = await Promise.all(
+      Array.from({ length: 50 }, (_, index) => cache.get(index % 2 ? target : alias)),
+    );
+    expect(values.every((value) => value === "main")).toBe(true);
+    expect(lookup).toHaveBeenCalledOnce();
+  });
+
+  it("does not reuse a resolution that was invalidated before it completed", async () => {
+    const cwd = temp("bycoda-branch-resolving-");
+    const lookup = vi.fn(async () => "main");
+    const cache = new BranchCache(lookup);
+    const before = cache.get(cwd);
+    cache.clear(cwd);
+    const after = cache.get(cwd);
+    expect(await Promise.all([before, after])).toEqual(["main", "main"]);
+    expect(lookup).toHaveBeenCalledTimes(2);
+    expect(await cache.get(cwd)).toBe("main");
+    expect(lookup).toHaveBeenCalledTimes(2);
+  });
+
+  it("never publishes a late pre-clear lookup over the replacement lookup", async () => {
+    const cwd = temp("bycoda-branch-pending-");
+    const replies: Array<(value: string) => void> = [];
+    const lookup = vi.fn(() => new Promise<string>((resolve) => replies.push(resolve)));
+    const cache = new BranchCache(lookup);
+    const before = cache.get(cwd);
+    await vi.waitFor(() => expect(replies).toHaveLength(1));
+    cache.clear(cwd);
+    const after = cache.get(cwd);
+    await vi.waitFor(() => expect(replies).toHaveLength(2));
+    replies[1]("new");
+    expect(await after).toBe("new");
+    replies[0]("old");
+    expect(await before).toBe("old");
+    expect(await cache.get(cwd)).toBe("new");
+    expect(lookup).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears a retargeted alias's current target without clearing an unrelated repository", async () => {
+    const folder = temp("bycoda-branch-clear-retarget-");
+    const a = join(folder, "a"),
+      b = join(folder, "b"),
+      other = join(folder, "other"),
+      alias = join(folder, "alias");
+    for (const path of [a, b, other]) mkdirSync(path);
+    symlinkSync(a, alias, process.platform === "win32" ? "junction" : "dir");
+    const lookup = vi.fn(async () => "main");
+    const cache = new BranchCache(lookup);
+    await cache.get(alias);
+    await cache.get(b);
+    await cache.get(other);
+    unlinkSync(alias);
+    symlinkSync(b, alias, process.platform === "win32" ? "junction" : "dir");
+    cache.clear(alias);
+    await cache.get(other);
+    expect(lookup).toHaveBeenCalledTimes(3);
+    await cache.get(b);
+    expect(lookup).toHaveBeenCalledTimes(4);
+  });
+
   it("shares one lookup between concurrent callers and honours the TTL", async () => {
     let now = 0;
     const lookup = vi.fn(async (_cwd: string) => "main");
@@ -707,5 +855,16 @@ describe("BranchCache", () => {
     expect(
       (cache as unknown as { entries: Map<string, unknown> }).entries.size,
     ).toBeLessThanOrEqual(3);
+    const queued = Array.from({ length: 50 }, (_, index) =>
+      cache.get(`/missing-branch-scope-${index}`),
+    );
+    const state = cache as unknown as {
+      aliases: Map<string, unknown>;
+      resolving: Map<string, unknown>;
+    };
+    expect(state.resolving.size).toBeLessThanOrEqual(3);
+    await Promise.all(queued);
+    expect(state.aliases.size).toBeLessThanOrEqual(3);
+    expect(state.resolving.size).toBe(0);
   });
 });

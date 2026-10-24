@@ -1,5 +1,16 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
-import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -31,6 +42,51 @@ async function fixture() {
   return { dir, cwd, git, checkpoints: new HostCheckpoints(join(dir, "checkpoints")) };
 }
 describe("host turn checkpoints", () => {
+  it("detects changed archived legacy peers and keeps corrupt replacements fail closed", async () => {
+    const f = await fixture();
+    const dir = join(f.dir, "checkpoints", "legacy");
+    await mkdir(dir, { recursive: true });
+    const file = join(dir, "manifest.json");
+    const legacy = { cwd: f.cwd, head: null, shared: false, files: {} };
+    await writeFile(file, JSON.stringify(legacy).padEnd(1024));
+    await f.checkpoints.begin("session", f.cwd, "one");
+    await writeFile(join(f.cwd, "a.txt"), "agent\n");
+    await f.checkpoints.finish("session", f.cwd, "one");
+    expect((await f.checkpoints.status("session", f.cwd)).files[0].undoable).toBe(true);
+    const meta = await stat(file);
+    const replacement = join(dir, "legacy-replacement.tmp");
+    await writeFile(
+      replacement,
+      JSON.stringify({ ...legacy, active: { id: "old-runtime", tree: "", dirty: {} } }).padEnd(
+        1024,
+      ),
+    );
+    await utimes(replacement, meta.atime, meta.mtime);
+    await rename(replacement, file);
+    expect((await f.checkpoints.status("session", f.cwd)).files[0].undoable).toBe(false);
+    await writeFile(file, JSON.stringify(legacy).padEnd(1024));
+    expect((await f.checkpoints.status("session", f.cwd)).files[0].undoable).toBe(true);
+    await writeFile(file, "broken json");
+    await expect(f.checkpoints.status("session", f.cwd)).rejects.toThrow();
+  });
+
+  it("ignores metadata and ordinary files without hiding corrupt peer records", async () => {
+    const f = await fixture();
+    const root = join(f.dir, "checkpoints");
+    await mkdir(root);
+    for (const name of [".DS_Store", "Thumbs.db", "notes"])
+      await writeFile(join(root, name), "metadata");
+    await f.checkpoints.begin("session", f.cwd, "one");
+    await writeFile(join(f.cwd, "a.txt"), "agent\n");
+    await f.checkpoints.finish("session", f.cwd, "one");
+    expect((await f.checkpoints.status("session", f.cwd)).files[0].undoable).toBe(true);
+    await f.checkpoints.change("session", f.cwd, "a.txt", true);
+    expect(await readFile(join(f.cwd, "a.txt"), "utf8")).toBe("base\n");
+    await mkdir(join(root, "peer"));
+    await writeFile(join(root, "peer", "manifest.json"), "broken json");
+    await expect(f.checkpoints.begin("session", f.cwd, "two")).rejects.toThrow();
+    expect(await readFile(join(root, "peer", "manifest.json"), "utf8")).toBe("broken json");
+  });
   it("starts a turn beside an untracked nested repository and still reviews regular files", async () => {
     const f = await fixture();
     await mkdir(join(f.cwd, "nested"));
@@ -43,7 +99,9 @@ describe("host turn checkpoints", () => {
     await f.checkpoints.begin("session", f.cwd, "one");
     await writeFile(join(f.cwd, "a.txt"), "one\n");
     await f.checkpoints.finish("session", f.cwd, "one");
-    expect((await f.checkpoints.status("session", f.cwd)).files.map((file) => file.relative)).toEqual(["a.txt"]);
+    expect(
+      (await f.checkpoints.status("session", f.cwd)).files.map((file) => file.relative),
+    ).toEqual(["a.txt"]);
   });
   it("binds guarded keep/undo to the exact reviewed delta and rejects a later completed turn", async () => {
     const f = await fixture();
@@ -52,18 +110,24 @@ describe("host turn checkpoints", () => {
     await f.checkpoints.finish("session", f.cwd, "one");
     const first = await f.checkpoints.status("session", f.cwd);
     expect(first.expectedCheckpoint).toMatch(/^[a-f0-9]{64}$/);
-    expect((await f.checkpoints.fileDiff("session", f.cwd, "a.txt")).expectedCheckpoint).toBe(first.expectedCheckpoint);
+    expect((await f.checkpoints.fileDiff("session", f.cwd, "a.txt")).expectedCheckpoint).toBe(
+      first.expectedCheckpoint,
+    );
     await f.checkpoints.begin("session", f.cwd, "two");
     await writeFile(join(f.cwd, "a.txt"), "two\n");
     await f.checkpoints.finish("session", f.cwd, "two");
     for (const undo of [true, false])
-      await expect(f.checkpoints.change("session", f.cwd, "a.txt", undo, first.expectedCheckpoint)).rejects.toThrow("checkpoint changed");
+      await expect(
+        f.checkpoints.change("session", f.cwd, "a.txt", undo, first.expectedCheckpoint),
+      ).rejects.toThrow("checkpoint changed");
     expect(await readFile(join(f.cwd, "a.txt"), "utf8")).toBe("two\n");
     const latest = await f.checkpoints.status("session", f.cwd);
     expect(latest.expectedCheckpoint).not.toBe(first.expectedCheckpoint);
     await f.checkpoints.change("session", f.cwd, "a.txt", true, latest.expectedCheckpoint);
     expect(await readFile(join(f.cwd, "a.txt"), "utf8")).toBe("base\n");
-    await expect(f.checkpoints.change("session", f.cwd, "a.txt", false, latest.expectedCheckpoint)).rejects.toThrow("checkpoint changed");
+    await expect(
+      f.checkpoints.change("session", f.cwd, "a.txt", false, latest.expectedCheckpoint),
+    ).rejects.toThrow("checkpoint changed");
   });
   it("recovers only its exact settled lease while preserving an independently active native peer", async () => {
     const f = await fixture();

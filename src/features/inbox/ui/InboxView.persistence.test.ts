@@ -170,3 +170,17 @@ it("restores the selected inbox item and list position after leaving the tool", 
     container.querySelector('button[title="Inbox issue 1"]')?.getAttribute("aria-current"),
   ).toBe("true");
 });
+
+it("returns from the narrow detail view without clearing the selected item or list position", async () => {
+  await show();
+  const second = container.querySelector<HTMLButtonElement>('button[title="Inbox issue 2"]')!;
+  const scroller = second.closest("ul")!.parentElement!;
+  scroller.scrollTop = 420;
+  await act(async () => second.click());
+  expect(container.querySelector(".inbox-list-detail")?.getAttribute("data-detail-open")).toBe("true");
+  const back = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Back")!;
+  await act(async () => back.click());
+  expect(container.querySelector(".inbox-list-detail")?.getAttribute("data-detail-open")).toBe("false");
+  expect(second.getAttribute("aria-current")).toBe("true");
+  expect(scroller.scrollTop).toBe(420);
+});

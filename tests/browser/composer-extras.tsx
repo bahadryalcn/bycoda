@@ -208,7 +208,7 @@ function Fixture() {
         cwd={fixtureCwd}
         focused={new URLSearchParams(location.search).has("hint-motion")}
         hideProjectPicker={!showProjectPicker}
-        hideBranchPicker
+        hideBranchPicker={!new URLSearchParams(location.search).has("workspace-footer")}
         hideTopBar={!chatLayout}
         remoteSession={remoteLayout}
         remoteFeatures={remoteLayout ? { attachments: true, plan: true, draft: true } : undefined}

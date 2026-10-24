@@ -3,6 +3,9 @@ import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotio
 import { loadCrewTheme, subscribeCrewTheme } from "../../settings/model/settings";
 import { drawPacingUncle } from "./pacingUncleArt";
 
+/** About 1000 / `PACING_FPS` from the art module. */
+const FRAME_MS = 83;
+
 /**
  * A small decorative walker that follows the crew theme; the activity text
  * remains the accessible status.
@@ -17,24 +20,25 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    let last = 0;
+    let last: number | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let intersects = typeof IntersectionObserver === "undefined";
     let width = 0;
     const height = 32;
     const paint = () => drawPacingUncle(ctx, width, height, elapsed.current, theme);
-    // A 20 Hz timer, not a per-vsync frame chain: the walk only changes every 50 ms.
+    // A 12 Hz timer, not a per-vsync frame chain: the pixel art only changes 12 times a
+    // second, and unchanged frames (pauses, idle beads) do not touch the canvas at all.
     const tick = () => {
       const now = performance.now();
-      if (last) elapsed.current += Math.min(now - last, 100) / 1000;
+      if (last !== null) elapsed.current += Math.min(now - last, 250) / 1000;
       last = now;
       paint();
-      timer = setTimeout(tick, 50);
+      timer = setTimeout(tick, FRAME_MS);
     };
     const update = () => {
       if (timer !== null) clearTimeout(timer);
       timer = null;
-      last = 0;
+      last = null;
       const nextWidth = canvas.clientWidth;
       if (nextWidth !== width || canvas.width === 300) {
         width = nextWidth;
@@ -46,7 +50,7 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
       paint();
       if (motion && visible && intersects && width > 0) {
         last = performance.now();
-        timer = setTimeout(tick, 50);
+        timer = setTimeout(tick, FRAME_MS);
       }
     };
     const intersection =

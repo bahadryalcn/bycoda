@@ -75,6 +75,35 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
 });
+it("selects a tool from the compact chooser without starting resource sampling", async () => {
+  await toolAct(async () =>
+    root.render(
+      createElement(SessionHostTools, {
+        cwd: "/compact-tools",
+        sessionId: "session",
+        title: "Tools",
+      }),
+    ),
+  );
+  const chooser = container.querySelector<HTMLButtonElement>(
+    '[aria-label^="Conversation tool selection:"]',
+  )!;
+  await toolAct(async () => chooser.click());
+  const resourceOption = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (option) => option.textContent?.includes("Resource usage"),
+  )!;
+  expect(resourceOption).toBeTruthy();
+  await toolAct(async () => resourceOption.click());
+  expect(container.querySelector("[data-active-tool]")?.getAttribute("data-active-tool")).toBe(
+    "resources",
+  );
+  expect(chooser.getAttribute("aria-label")).toContain("Resource usage");
+  expect(container.textContent).toContain("No samples yet");
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "resources.read"),
+  ).toBe(false);
+});
+
 it("discovers servers only while the development servers tab is visible", async () => {
   await toolAct(async () =>
     root.render(

@@ -92,9 +92,9 @@ for (const theme of ["light", "dark"]) {
       const session = page.locator("[data-server-terminal-session]:visible");
       const typography = session.getByRole("group", { name: "Terminal text size" });
       await expect(typography).toHaveCount(0);
-      await expect(
-        session.getByRole("button", { name: "Bash suggestions", exact: true }),
-      ).toBeVisible();
+      await session.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Suggestions", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
       expect(await requests()).toHaveLength(1);
       await page.evaluate(
         (id) =>
@@ -110,7 +110,7 @@ for (const theme of ["light", "dark"]) {
       await page.getByRole("button", { name: "Servers", exact: true }).click();
       const search = page.getByRole("textbox", { name: "Search servers" });
       await search.fill("Server 02");
-      const next = inventory.getByRole("button");
+      const next = inventory.locator("[data-server-row]");
       await next.focus();
       await page.keyboard.press("Space");
       await expect(page.getByRole("region", { name: "Server details" })).toBeVisible();
@@ -156,7 +156,7 @@ for (const [query, title] of [
     await page.goto(`/tests/browser/servers.html?terminalWorkspace&sshFixture&${query}`);
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .locator('[data-server-row="ssh-duplicate"]')
       .dblclick();
     const review = page.getByRole("dialog", { name: title, exact: true });
     await expect(review).toBeVisible();

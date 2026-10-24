@@ -337,6 +337,12 @@ export class HostStore {
     }
   }
 
+  /** Derived readers may use uncommitted rows, but must not publish them in a
+   * revision cache: a rollback followed by another write can reuse a revision. */
+  get transactionActive(): boolean {
+    return this.inTransaction;
+  }
+
   /** Provider side effects must never escape an uncommitted command batch. */
   afterCommit(effect: () => void): void {
     if (this.inTransaction) this.commitEffects.push(effect);
@@ -502,7 +508,7 @@ export class HostStore {
 
   /** Sessions taken over from this machine's desktop app, without parsing
    * their transcripts. */
-  adopted(): {
+  adopted(projectId?: string): {
     id: string;
     projectId: string;
     revision: number;
@@ -515,9 +521,9 @@ export class HostStore {
       this.db
         .prepare(
           `SELECT id, project_id, revision, updated_at, status, desktop_updated_at
-        FROM session_state WHERE has_desktop=1`,
+        FROM session_state WHERE has_desktop=1${projectId === undefined ? "" : " AND project_id=?"}`,
         )
-        .all()
+        .all(...(projectId === undefined ? [] : [projectId]))
         .map((row) => [
           String(row.id),
           {
@@ -531,6 +537,10 @@ export class HostStore {
         ]),
     );
     for (const [id, { value }] of this.pending) {
+      if (projectId !== undefined && value.projectId !== projectId) {
+        rows.delete(id);
+        continue;
+      }
       if (value.desktop == null) rows.delete(id);
       else
         rows.set(id, {
@@ -720,7 +730,7 @@ export class HostStore {
   save(
     input: HostSession,
     event: unknown,
-    options: { deferred?: boolean; blockChanges?: BlockChanges } = {},
+    options: { deferred?: boolean; journal?: boolean; blockChanges?: BlockChanges } = {},
   ): HostSession {
     this.changeVersion++;
     this.touchProject(input.projectId);
@@ -735,7 +745,7 @@ export class HostStore {
     };
     const id = value.session.id;
     const row = { revision: value.revision, event };
-    if (options.deferred && previous) {
+    if ((options.deferred || options.journal) && previous && previous.projectId === input.projectId) {
       let changes =
         options.blockChanges ?? changedBlocks(previous.session.blocks, value.session.blocks);
       if (!changes) {
@@ -755,8 +765,9 @@ export class HostStore {
       entry.value = value;
       entry.events.push(row);
       this.pending.set(id, entry);
-      this.arm(id, entry);
       this.updateStateMetadata(value);
+      if (options.journal) this.flushPending(id);
+      else this.arm(id, entry);
       return value;
     }
     // Pending soft state goes out in the same write, so the stored snapshot
@@ -902,8 +913,9 @@ export class HostStore {
     this.snapshotWrites++;
   }
 
-  /** Streaming checkpoints serialize changed blocks only. Hard commands still
-   * commit a full compatible checkpoint together with their receipt. */
+  /** Streaming and immediately durable provider-event checkpoints serialize
+   * changed blocks only. Commands/receipts and settled turns still commit full
+   * compatible snapshots; journal publication remains in the same transaction. */
   private writeJournal(
     value: HostSession,
     rows: { revision: number; event: unknown }[],
@@ -947,7 +959,7 @@ export class HostStore {
           );
       this.db
         .prepare(
-          "UPDATE session_state SET summary=?, revision=?, updated_at=?, status=?, has_desktop=?, desktop_updated_at=? WHERE id=?",
+          "UPDATE session_state SET summary=?, revision=?, updated_at=?, status=?, has_desktop=?, desktop_updated_at=?, provider_session_id=?, harness=?, session_cwd=?, shell_running=? WHERE id=?",
         )
         .run(
           JSON.stringify(summary(value)),
@@ -956,6 +968,10 @@ export class HostStore {
           value.status,
           value.desktop == null ? 0 : 1,
           value.desktop?.updatedAt ?? null,
+          value.session.providerSessionId || null,
+          value.session.harness ?? null,
+          value.session.cwd ?? null,
+          value.session.blocks.some((block) => block.shell?.running) ? 1 : 0,
           id,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");

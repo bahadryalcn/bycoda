@@ -217,7 +217,9 @@ export function WorktreesPage({
                 <FolderTree aria-hidden="true" className={styles.treeIcon} />
                 <div className={styles.identity}>
                   <div className={styles.name}>
-                    <span>{projectName(tree.path)}</span>
+                    <span className={styles.nameText} title={projectName(tree.path)}>
+                      {projectName(tree.path)}
+                    </span>
                     {pathKey(tree.path) === pathKey(project) && (
                       <Badge size="sm" tone="info">
                         {t("Selected project folder")}
@@ -234,14 +236,11 @@ export function WorktreesPage({
                   ) : null}
                   <p className={styles.branch}>
                     <GitBranch aria-hidden="true" className="size-3 shrink-0" />
-                    <span className="min-w-0 break-all">
+                    <span className={styles.branchText} title={tree.branch ?? tree.head}>
                       {tree.branch
-                        ? t("Current branch: {p0}", { p0: tree.branch })
+                        ? tree.branch
                         : t("Detached at {p0}", { p0: tree.head.slice(0, 7) })}
                     </span>
-                  </p>
-                  <p className={styles.path} title={prettyCwd(tree.path)}>
-                    {prettyCwd(tree.path)}
                   </p>
                   <div className={styles.metadata}>
                     <span>
@@ -281,6 +280,18 @@ export function WorktreesPage({
                       </Badge>
                     )}
                   </div>
+                  <details className={styles.details}>
+                    <summary>{t("Details")}</summary>
+                    <div className={styles.detailValues}>
+                      <span>{projectName(tree.path)}</span>
+                      <span>
+                        {tree.branch
+                          ? t("Current branch: {p0}", { p0: tree.branch })
+                          : t("Detached at {p0}", { p0: tree.head.slice(0, 7) })}
+                      </span>
+                      <span className={styles.path}>{prettyCwd(tree.path)}</span>
+                    </div>
+                  </details>
                 </div>
                 <div className={styles.rowActions}>
                   <Button

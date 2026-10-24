@@ -7,6 +7,23 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { HostChildBackend } from "./child-backend";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
+import type { SocialService } from "./social";
+
+it("discovers Social MCP for a resolved desktop session and numeric child suffix", async () => {
+  const backend = new HostChildBackend();
+  const sessionIdentity = vi.fn((id: string) => {
+    if (id !== "desktop-session") throw new Error("Unknown session");
+    return {};
+  });
+  backend.setSocialAccess({ sessionIdentity } as unknown as SocialService, "http://127.0.0.1:1234");
+  expect(
+    await backend.invoke("harness_social_bridge", { sessionId: "desktop-session#2" }),
+  ).toMatchObject({
+    mcpUrl: "http://127.0.0.1:1234/mcp/social",
+  });
+  expect(sessionIdentity).toHaveBeenCalledWith("desktop-session");
+  expect(await backend.invoke("harness_social_bridge", { sessionId: "unknown" })).toBeNull();
+});
 
 it("reads bounded task output tails and rejects mismatched task paths", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-output-test-"));

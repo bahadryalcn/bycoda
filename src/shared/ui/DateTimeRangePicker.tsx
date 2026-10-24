@@ -26,6 +26,7 @@ export function DateTimeRangePicker({
   const t = useT();
   const locale = useLocale();
   const anchor = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [start, setStart] = useState(() => toLocalDateTime(value.start));
   const [end, setEnd] = useState(() => toLocalDateTime(value.end));
@@ -66,6 +67,7 @@ export function DateTimeRangePicker({
       </Button>
       {open && (
         <Popover
+          ref={panel}
           anchor={anchor}
           align="end"
           onDismiss={() => setOpen(false)}
@@ -92,6 +94,8 @@ export function DateTimeRangePicker({
                   : null
               }
               months={1}
+              boundary={() => panel.current}
+              expandInFlow
               onChange={(range) => {
                 setStart(toLocalDateTime(range.start));
                 const next = new Date(range.end);

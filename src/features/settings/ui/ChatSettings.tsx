@@ -61,8 +61,9 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
   return (
     <div className="chat-settings">
       <VoiceSettings />
-      <Group title={t("Translation")} layout="full">
+      <Group title={t("Translation and reprompt")} layout="full">
         <TranslationSettings embedded />
+        <TranslationSettings embedded action="reprompt" />
       </Group>
       <Group title={t("Conversation view")} layout="full">
         <ConversationDisplaySettings appearance={appearance} />

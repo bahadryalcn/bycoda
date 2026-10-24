@@ -14,6 +14,13 @@ const input = {
 };
 
 describe("continuous task execution contract", () => {
+  it("retains named profiles, rejects paths and preserves the legacy default", () => {
+    expect(parseHostTask({ ...input, providerAccountId: "account-work" }).providerAccountId).toBe("account-work");
+    expect(parseHostTask(input).providerAccountId).toBeUndefined();
+    for (const providerAccountId of ["../other", "", 12, null])
+      expect(() => parseHostTask({ ...input, providerAccountId })).toThrow("Invalid provider account ID");
+    expect(() => parseHostTask({ ...input, harness: "grok", providerAccountId: "work" })).toThrow("Invalid provider account ID");
+  });
   it("preserves an enabled option and removes a disabled one", () => {
     expect(parseHostTask({ ...input, continueUntilDone: true }).continueUntilDone).toBe(true);
     expect(parseHostTask({ ...input, continueUntilDone: false }).continueUntilDone).toBeUndefined();

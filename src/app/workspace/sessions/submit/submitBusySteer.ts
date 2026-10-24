@@ -1,5 +1,6 @@
 import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 
+import { nextQueueStatus } from "../../../../features/connections/model/queueState";
 import { inboxAskPrompt } from "../../../../features/inbox/model/inboxAsk";
 import { isBackgroundOnly } from "../../../../features/sessions/model/activityDock";
 import {
@@ -26,11 +27,52 @@ import { t } from "../../../../shared/i18n";
 import { type SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import { userTurnCards } from "../../helpers/sessionHelpers";
 import { DeliveryUnknownError } from "../../../../shared/lib/deliveryUnknown";
+import { trackLateSettlement } from "../../../../features/sessions/model/deliveryReview";
+import { markSharedProviderSend } from "../../../../features/connections/model/useSharedLocalQueues";
 import {
   beginDeliveryProgress,
   readDeliveryProgress,
   updateDeliveryProgress,
 } from "../../../../features/sessions/model/deliveryProgress";
+
+/** Parks the submitted message in the conversation's queue: it is sent when the
+ * conversation is free. A queue-row action already owns retained content, so it
+ * leaves that row in place rather than appending a copy. */
+export function queueSubmittedFollowUp(
+  ctx: SubmitDeps,
+  input: SubmitInput,
+  pre: SubmitPreflight,
+): SubmissionAcceptance {
+  const { dismissNoticesForContinuedSession } = ctx;
+  const { sessionId, text, attachments, options } = input;
+  const { storedCurrent, intent, noteCard, handoffCard, rawCommand } = pre;
+  if (options?.queuedMessageId) return false;
+  setSessions((prev) =>
+    prev.map((s) =>
+      s.id === sessionId
+        ? appendQueuedMessage(
+            {
+              ...s,
+              inboxCard: rawCommand ? s.inboxCard : undefined,
+              noteCard: rawCommand ? s.noteCard : undefined,
+              handoffCard: rawCommand ? s.handoffCard : undefined,
+            },
+            {
+              id: crypto.randomUUID(),
+              text,
+              attachments,
+              noteCard,
+              handoffCard,
+              intent,
+              modelTarget: queuedModelTarget(options?.buildTarget ?? storedCurrent),
+            },
+          )
+        : s,
+    ),
+  );
+  dismissNoticesForContinuedSession(sessionId);
+  return true;
+}
 
 export function steerBusySubmit(
   ctx: SubmitDeps,
@@ -53,39 +95,16 @@ export function steerBusySubmit(
     harnessText,
     pendingSwitch,
   } = pre;
-  const queueFollowUp = (): SubmissionAcceptance => {
-    // A queue-row action already owns retained content. Falling back to
-    // the queue must leave that row in place rather than append a copy.
-    if (options?.queuedMessageId) return false;
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === sessionId
-          ? appendQueuedMessage(
-              {
-                ...s,
-                inboxCard: rawCommand ? s.inboxCard : undefined,
-                noteCard: rawCommand ? s.noteCard : undefined,
-                handoffCard: rawCommand ? s.handoffCard : undefined,
-              },
-              {
-                id: crypto.randomUUID(),
-                text,
-                attachments,
-                noteCard,
-                handoffCard,
-                intent,
-                modelTarget: queuedModelTarget(options?.buildTarget ?? storedCurrent),
-              },
-            )
-          : s,
-      ),
-    );
-    dismissNoticesForContinuedSession(sessionId);
-    return true;
-  };
-  // The host runs this conversation for another computer. The shared queue
-  // takes the message; it starts here once the host's turn has arrived.
-  if (current.continuingElsewhere && !current.busy && !pendingSwitch) return queueFollowUp();
+  const queueFollowUp = (): SubmissionAcceptance => queueSubmittedFollowUp(ctx, input, pre);
+  // The host runs this conversation for another computer, or two versions of it
+  // await the user's choice. The queue takes the message; it starts here once the
+  // host's turn has arrived or the choice is made, and never extends the conflict.
+  if (
+    (current.continuingElsewhere || current.adoptedSyncConflict) &&
+    !current.busy &&
+    !pendingSwitch
+  )
+    return queueFollowUp();
   if (current.busy && !pendingSwitch) {
     if (
       operatorCommand.matched &&
@@ -191,11 +210,12 @@ export function steerBusySubmit(
             sessionId,
             progress,
             "rejected",
-            "The turn was stopped. The message remains queued.",
+            t("The turn was stopped. The message remains queued."),
           );
           return false;
         }
         updateDeliveryProgress(sessionId, progress, "provider");
+        markSharedProviderSend(sessionId);
         await steerHarnessTurn({
           onReady: () => updateDeliveryProgress(sessionId, progress, "confirming"),
           harness: current.harness,
@@ -215,8 +235,12 @@ export function steerBusySubmit(
             sessionId,
             progress,
             "unknown",
-            "Delivery is not confirmed. The message is held and will not be sent again automatically.",
+            t(
+              "Delivery is not confirmed. The message is held and will not be sent again automatically.",
+            ),
           );
+          // While the provider may still answer, the review does not offer "Send again".
+          trackLateSettlement(sessionId, error.settlement);
           void error.settlement.then((result) => {
             if (result === "unknown") return;
             setSessions((prev) =>
@@ -238,7 +262,7 @@ export function steerBusySubmit(
                 if (!held || !sameAttempt) return entry;
                 return {
                   ...entry,
-                  queueStatus: "paused",
+                  queueStatus: nextQueueStatus(entry.queueStatus, "reject"),
                   queuedMessages: entry.queuedMessages?.map((row) =>
                     row.id === messageId ? { ...row, deliveryUnknown: undefined } : row,
                   ),
@@ -250,8 +274,8 @@ export function steerBusySubmit(
               progress,
               result === "accepted" ? "accepted" : "rejected",
               result === "accepted"
-                ? "The provider confirmed delivery. The message was not sent again."
-                : "The provider rejected the message. It remains queued and paused.",
+                ? t("The provider confirmed delivery. The message was not sent again.")
+                : t("The provider rejected the message. It remains queued and paused."),
             );
           });
           if (options?.queuedMessageId) throw error;
@@ -263,7 +287,7 @@ export function steerBusySubmit(
             sessionId,
             progress,
             "rejected",
-            "The turn was stopped. The message remains queued.",
+            t("The turn was stopped. The message remains queued."),
           );
           return false;
         }

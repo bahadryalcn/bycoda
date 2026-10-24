@@ -485,19 +485,19 @@ function ConnectedCrewEditor({
     : "";
 
   const header = (
-    <div className="flex min-w-0 flex-wrap items-end gap-3">
+    <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-end gap-3 @min-[36rem]/crew-editor:grid-cols-[auto_minmax(0,1fr)_auto]">
       <CrewAppearancePicker crewId={draft.id} look={look} onChange={setLook} disabled={pending} />
       <TextField
         label={t("Crew name")}
         placeholder={t("e.g. Mobile app")}
         value={draft.name}
-        fieldClassName="min-w-48 flex-1"
+        fieldClassName="min-w-0"
         autoFocus={isNew && !draft.name}
         error={showIssues && issues.name ? t("Name the crew.") : undefined}
         onChange={(event) => update({ name: event.target.value })}
       />
       {isNew ? (
-        <div className="flex flex-col gap-1">
+        <div className="col-span-2 flex min-w-0 flex-col items-start gap-1 @min-[36rem]/crew-editor:col-span-1">
           <span className="text-ui-body font-medium">{t("Available in")}</span>
           <SegmentedControl
             label={t("Available in")}
@@ -514,7 +514,7 @@ function ConnectedCrewEditor({
           />
         </div>
       ) : (
-        <Badge size="md" className="mb-2">
+        <Badge size="md" className="col-span-2 mb-2 w-fit @min-[36rem]/crew-editor:col-span-1">
           {scopeLabel}
         </Badge>
       )}
@@ -968,55 +968,61 @@ function ConnectedCrewEditor({
   const footer =
     page.kind === "add" ? (
       <>
-        <span role="status" className="min-w-0 flex-1 truncate text-ui-caption text-danger">
+        <span role="status" className="min-w-0 break-words text-ui-caption text-danger">
           {addMode === "new" &&
           addIssues &&
           (!newMember.name.trim() || !newMember.candidates.length)
             ? t("Every member needs a name and a model.")
             : ""}
         </span>
-        <Button
-          variant="primary"
-          loading={pending}
-          disabled={pending || (addMode === "library" && !picked.length)}
-          onClick={() => addPicked(page.role)}
-        >
-          {addMode === "library" ? t("Add {p0} members", { p0: picked.length }) : t("Add to crew")}
-        </Button>
+        <div className="flex min-w-0 flex-wrap justify-end gap-2">
+          <Button
+            variant="primary"
+            loading={pending}
+            disabled={pending || (addMode === "library" && !picked.length)}
+            onClick={() => addPicked(page.role)}
+          >
+            {addMode === "library"
+              ? t("Add {p0} members", { p0: picked.length })
+              : t("Add to crew")}
+          </Button>
+        </div>
       </>
     ) : (
       <>
         <span
           role="status"
-          className={`min-w-0 flex-1 truncate text-ui-caption ${issueSummary && (showIssues || draft.agents.length) ? "text-danger" : "text-(--ui-text-secondary)"}`}
+          className={`min-w-0 break-words text-ui-caption ${issueSummary && (showIssues || draft.agents.length) ? "text-danger" : "text-(--ui-text-secondary)"}`}
         >
           {issueSummary && (showIssues || draft.agents.length)
             ? issueSummary
             : notice ||
               (dirty ? t("Unsaved changes are kept until you save or discard them.") : "")}
         </span>
-        {dirty ? (
-          <Button variant="ghost" disabled={pending} onClick={discard}>
-            {t("Discard")}
-          </Button>
-        ) : null}
-        <Button
-          variant={onStart ? "secondary" : "primary"}
-          loading={pending}
-          disabled={pending || conflict || (!dirty && !isNew)}
-          onClick={() => save(false)}
-        >
-          {isNew ? t("Create crew") : t("Save")}
-        </Button>
-        {onStart ? (
+        <div className="flex min-w-0 flex-wrap justify-end gap-2">
+          {dirty ? (
+            <Button variant="ghost" disabled={pending} onClick={discard}>
+              {t("Discard")}
+            </Button>
+          ) : null}
           <Button
-            variant="primary"
-            disabled={pending || conflict}
-            onClick={() => (dirty || isNew ? save(true) : onStart(draft.id))}
+            variant={onStart ? "secondary" : "primary"}
+            loading={pending}
+            disabled={pending || conflict || (!dirty && !isNew)}
+            onClick={() => save(false)}
           >
-            {dirty || isNew ? t("Save and start work") : t("Start work")}
+            {isNew ? t("Create crew") : t("Save")}
           </Button>
-        ) : null}
+          {onStart ? (
+            <Button
+              variant="primary"
+              disabled={pending || conflict}
+              onClick={() => (dirty || isNew ? save(true) : onStart(draft.id))}
+            >
+              {dirty || isNew ? t("Save and start work") : t("Start work")}
+            </Button>
+          ) : null}
+        </div>
       </>
     );
 
@@ -1027,12 +1033,18 @@ function ConnectedCrewEditor({
       onClose={() => {
         if (!pending) onClose();
       }}
-      footer={footer}
+      footer={
+        <div className="@container/crew-footer w-full">
+          <div className="grid min-w-0 items-center gap-2 @min-[36rem]/crew-footer:grid-cols-[minmax(0,1fr)_auto]">
+            {footer}
+          </div>
+        </div>
+      }
     >
       <fieldset
         ref={body}
         disabled={pending}
-        className="flex min-w-0 flex-col gap-4 border-0 p-4 pt-2"
+        className="@container/crew-editor flex min-w-0 flex-col gap-4 border-0 p-4 pt-2"
       >
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {conflict ? (

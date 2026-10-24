@@ -141,7 +141,7 @@ const nodeWatch: GitWatchFactory = (path, recursive, onEvent, onError) => {
 };
 
 export type GitWatchOptions = {
-  onChange?: () => void;
+  onChange?: (cwd: string, change?: GitChange) => void;
   watch?: GitWatchFactory;
   resolve?: (cwd: string) => Promise<{ gitDir: string; commonDir: string }>;
   now?: () => number;
@@ -290,7 +290,7 @@ export class GitWatches {
   }
 
   private fail(entry: Entry) {
-    this.options.onChange?.();
+    this.options.onChange?.(entry.cwd);
     this.closeWatchers(entry);
     entry.state = "failed";
     entry.failedAt = this.now();
@@ -370,7 +370,7 @@ export class GitWatches {
   private bump(entry: Entry, change: GitChange) {
     if (change.index) entry.indexRev++;
     if (change.refs) entry.refsRev++;
-    this.options.onChange?.();
+    this.options.onChange?.(entry.cwd, change);
   }
 
   /** Starts watching optional folders that git has created since. */

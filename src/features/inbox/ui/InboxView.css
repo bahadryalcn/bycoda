@@ -1,0 +1,21 @@
+.bycoda-inbox {
+  container: inbox / inline-size;
+}
+.inbox-detail-back {
+  display: none;
+}
+@container inbox (max-width: 44rem) {
+  .inbox-list-detail > .inbox-list-panel {
+    /* Keep the desktop resize preference intact while filling a single-column view. */
+    width: 100% !important;
+    border-inline-end: 0;
+    flex: 1;
+  }
+  .inbox-list-detail:not([data-detail-open="true"]) > .inbox-detail-pane,
+  .inbox-list-detail[data-detail-open="true"] > .inbox-list-panel {
+    display: none;
+  }
+  .inbox-detail-back {
+    display: block;
+  }
+}

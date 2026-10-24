@@ -2,23 +2,28 @@ import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject }
 import { ContextMenuRow } from "./arc/context-menu/context-menu";
 import { Popover, type PopoverAnchor } from "./Popover";
 import { Check } from "./icons";
+import { Badge } from "./Badge";
 import styles from "./DropdownMenu.module.css";
+
+export type DropdownMenuAction = {
+  kind: "item";
+  id: string;
+  label: string;
+  icon?: ReactNode;
+  description?: string;
+  shortcut?: string;
+  title?: string;
+  disabled?: boolean;
+  danger?: boolean;
+  checked?: boolean;
+  selectionRole?: "radio" | "checkbox";
+  badge?: string;
+};
 
 export type DropdownMenuItem =
   | { kind: "sep" }
-  | {
-      kind: "item";
-      id: string;
-      label: string;
-      icon?: ReactNode;
-      description?: string;
-      shortcut?: string;
-      title?: string;
-      disabled?: boolean;
-      danger?: boolean;
-      checked?: boolean;
-      selectionRole?: "radio" | "checkbox";
-    };
+  | DropdownMenuAction
+  | { kind: "group"; id: string; label: string; items: DropdownMenuAction[] };
 
 export interface DropdownMenuProps {
   anchor: PopoverAnchor;
@@ -30,6 +35,7 @@ export interface DropdownMenuProps {
   side?: "top" | "bottom" | "left" | "right";
   align?: "start" | "center" | "end";
   width?: number;
+  [attribute: `data-${string}`]: string | boolean | undefined;
 }
 
 /** A controlled, single-level action menu. Popover owns placement and dismissal. */
@@ -43,6 +49,7 @@ export function DropdownMenu({
   side = "bottom",
   align = "end",
   width = 228,
+  ...dataAttributes
 }: DropdownMenuProps) {
   const surface = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -121,8 +128,62 @@ export function DropdownMenu({
       enabled[next]?.focus({ preventScroll: true });
     }
   };
+  const renderAction = (item: DropdownMenuAction) => (
+    <ContextMenuRow
+      key={item.id}
+      type="button"
+      role={
+        item.checked == null
+          ? "menuitem"
+          : item.selectionRole === "radio"
+            ? "menuitemradio"
+            : "menuitemcheckbox"
+      }
+      aria-checked={item.checked}
+      aria-label={item.label}
+      aria-description={item.description}
+      disabled={item.disabled}
+      title={item.title}
+      destructive={item.danger}
+      data-menu-label={item.label}
+      data-described={item.description ? "true" : undefined}
+      className={styles.row}
+      tabIndex={-1}
+      onPointerMove={(event) => {
+        if (!item.disabled) event.currentTarget.focus({ preventScroll: true });
+      }}
+      onClick={() => {
+        if (item.disabled || closed.current) return;
+        close(true);
+        onPick(item.id);
+      }}
+    >
+      {item.icon ? (
+        <span className={styles.icon} aria-hidden="true">
+          {item.icon}
+        </span>
+      ) : null}
+      <span className={styles.copy}>
+        <span className={styles.label}>
+          <span>{item.label}</span>
+          {item.badge ? <Badge size="sm">{item.badge}</Badge> : null}
+        </span>
+        {item.description ? <span className={styles.description}>{item.description}</span> : null}
+      </span>
+      {item.checked != null ? (
+        <span className={styles.icon} aria-hidden="true">
+          {item.checked ? <Check /> : null}
+        </span>
+      ) : item.shortcut ? (
+        <span className={styles.shortcut} aria-hidden="true">
+          {item.shortcut}
+        </span>
+      ) : null}
+    </ContextMenuRow>
+  );
   return (
     <Popover
+      {...dataAttributes}
       ref={surface}
       anchor={anchor}
       role="menu"
@@ -138,47 +199,17 @@ export function DropdownMenu({
       {items.map((item, index) =>
         item.kind === "sep" ? (
           <div role="separator" key={`sep-${index}`} className={styles.separator} />
+        ) : item.kind === "group" ? (
+          item.items.length ? (
+            <div key={item.id} role="group" aria-label={item.label} className={styles.group}>
+              <div className={styles.heading} aria-hidden="true">
+                {item.label}
+              </div>
+              {item.items.map(renderAction)}
+            </div>
+          ) : null
         ) : (
-          <ContextMenuRow
-            key={item.id}
-            type="button"
-            role={item.checked == null ? "menuitem" : item.selectionRole === "radio" ? "menuitemradio" : "menuitemcheckbox"}
-            aria-checked={item.checked}
-            aria-label={item.label}
-            aria-description={item.description}
-            disabled={item.disabled}
-            title={item.title}
-            destructive={item.danger}
-            data-menu-label={item.label}
-            tabIndex={-1}
-            onPointerMove={(event) => {
-              if (!item.disabled) event.currentTarget.focus({ preventScroll: true });
-            }}
-            onClick={() => {
-              if (item.disabled || closed.current) return;
-              close(true);
-              onPick(item.id);
-            }}
-          >
-            {item.icon ? (
-              <span className={styles.icon} aria-hidden="true">
-                {item.icon}
-              </span>
-            ) : null}
-            <span className={styles.copy}>
-              <span>{item.label}</span>
-              {item.description ? (
-                <span className={styles.description}>{item.description}</span>
-              ) : null}
-            </span>
-            {item.checked ? (
-              <Check className={styles.icon} aria-hidden="true" />
-            ) : item.shortcut ? (
-              <span className={styles.shortcut} aria-hidden="true">
-                {item.shortcut}
-              </span>
-            ) : null}
-          </ContextMenuRow>
+          renderAction(item)
         ),
       )}
     </Popover>

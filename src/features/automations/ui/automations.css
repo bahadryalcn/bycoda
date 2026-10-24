@@ -59,10 +59,25 @@
 .automation-assistant-controls {
   display: flex;
   flex-wrap: wrap;
+  gap: 12px;
+  min-inline-size: 0;
+}
+.automation-assistant-context,
+.automation-assistant-launch {
+  display: flex;
+  flex: 1 1 18rem;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  min-inline-size: 0;
 }
-.automation-assistant-controls > :last-child {
+.automation-assistant-model {
+  display: flex;
+  flex: 1 1 10rem;
+  min-inline-size: 0;
+  align-items: center;
+}
+.automation-assistant-launch > :last-child {
   margin-inline-start: auto;
 }
 @container (min-width: 1000px) {

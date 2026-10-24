@@ -77,6 +77,19 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
     if action.starts_with("servers.") {
         return servers::call(app, action, input);
     }
+    if matches!(action, "checkpoints.status" | "checkpoints.diff") {
+        return crate::checkpoint::conversation_checkpoint_read(
+            app,
+            action,
+            input["sessionId"]
+                .as_str()
+                .ok_or("Checkpoint session required")?,
+            request["cwd"]
+                .as_str()
+                .ok_or("Project directory required")?,
+            input["relative"].as_str(),
+        );
+    }
     if action.starts_with("ui.")
         || matches!(
             action,
@@ -147,6 +160,30 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
             input.clone(),
             authority,
         );
+    }
+    if action == "tasks.write.authorize" {
+        let operation = &input["operation"];
+        let message = task_approval_message(operation)?;
+        let approved = app
+            .dialog()
+            .message(message)
+            .title("bycoda — Task operation approval")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Approve this operation".into(),
+                "Cancel".into(),
+            ))
+            .blocking_show();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "Clock unavailable")?
+            .as_millis() as u64;
+        if request["deadline"]
+            .as_u64()
+            .is_none_or(|deadline| deadline <= now)
+        {
+            return Err("Task approval expired".into());
+        }
+        return Ok(json!({ "approved": approved }));
     }
     if action == "inbox.write.authorize" {
         // Native-only acknowledgement: the agent cannot supply an approval boolean.
@@ -247,6 +284,47 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
         ),
         _ => Err("Unsupported desktop tool".into()),
     }
+}
+
+fn task_approval_message(operation: &Value) -> Result<String, String> {
+    let id = operation["taskId"]
+        .as_str()
+        .ok_or("Task identity required")?;
+    let title = operation["title"].as_str().ok_or("Task title required")?;
+    let revision = operation["expectedUpdatedAt"]
+        .as_u64()
+        .ok_or("Task revision required")?;
+    let detail = match operation["action"].as_str() {
+        Some("tasks.delete") => {
+            "Delete this task entry. Unmerged branch work will not be discarded.".to_string()
+        }
+        Some("tasks.transfer") => format!(
+            "Move this unstarted task to project: {} ({})",
+            operation["targetProjectName"]
+                .as_str()
+                .ok_or("Target project name required")?,
+            operation["targetProjectId"]
+                .as_str()
+                .ok_or("Target project required")?
+        ),
+        Some("tasks.notes.resolve") => format!(
+            "Mark note {} as {}.\n\n{}",
+            operation["noteId"]
+                .as_str()
+                .ok_or("Note identity required")?,
+            if operation["resolved"]
+                .as_bool()
+                .ok_or("Note status required")?
+            {
+                "resolved"
+            } else {
+                "unresolved"
+            },
+            operation["note"].as_str().ok_or("Note preview required")?
+        ),
+        _ => return Err("Unsupported task approval".into()),
+    };
+    Ok(format!("{detail}\n\nTask: {title}\nID: {id}\nRevision: {revision}\n\nApprove only this exact operation."))
 }
 
 fn inbox_reply_approval_context(operation: &Value) -> Result<String, String> {
@@ -502,6 +580,19 @@ pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command)
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn task_approval_is_exact_and_rejects_unimplemented_actions() {
+        let operation = json!({"action":"tasks.transfer", "taskId":"task-1", "title":"Move pending work", "expectedUpdatedAt":42, "targetProjectId":"target", "targetProjectName":"Destination"});
+        let message = task_approval_message(&operation).unwrap();
+        for required in ["task-1", "Destination", "target", "42"] {
+            assert!(message.contains(required));
+        }
+        let mut unsupported = operation.clone();
+        unsupported["action"] = json!("tasks.merge");
+        assert!(task_approval_message(&unsupported).is_err());
+        let note = json!({"action":"tasks.notes.resolve", "taskId":"task-1", "title":"Review", "expectedUpdatedAt":43, "noteId":"finding", "resolved":false, "note":"Check the fix"});
+        assert!(task_approval_message(&note).unwrap().contains("unresolved"));
+    }
     #[test]
     fn desktop_relay_polls_quickly_when_active_and_backs_off_when_unreachable() {
         use std::time::Duration;

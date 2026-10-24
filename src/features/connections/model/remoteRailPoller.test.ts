@@ -2,10 +2,76 @@ import { afterEach, expect, it, vi } from "vitest";
 import { RAIL_POLL_CONCURRENCY, startRailPoller } from "./remoteRailPoller";
 import type { HostSessionSummary } from "./protocol";
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 const list = (status: "idle" | "running" = "idle") =>
   [{ id: "s", title: "S", status }] as HostSessionSummary[];
+
+it("slows hidden fallback reads and wakes immediately online without overlapping reads", async () => {
+  vi.useFakeTimers();
+  const doc = Object.assign(new EventTarget(), { hidden: true });
+  const win = new EventTarget();
+  const network = { onLine: true };
+  vi.stubGlobal("document", doc);
+  vi.stubGlobal("window", win);
+  vi.stubGlobal("navigator", network);
+  const load = vi.fn(async () => list());
+  const stop = startRailPoller({ targets: ["a"], load, onResult: vi.fn() });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(load).toHaveBeenCalledTimes(3);
+  network.onLine = false;
+  win.dispatchEvent(new Event("offline"));
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(load).toHaveBeenCalledTimes(3);
+  doc.hidden = false;
+  network.onLine = true;
+  win.dispatchEvent(new Event("online"));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(load).toHaveBeenCalledTimes(4);
+  stop();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("coalesces repeated focus wakes behind one in-flight read and removes wake listeners on stop", async () => {
+  vi.useFakeTimers();
+  const doc = Object.assign(new EventTarget(), { hidden: false });
+  const win = new EventTarget();
+  vi.stubGlobal("document", doc);
+  vi.stubGlobal("window", win);
+  vi.stubGlobal("navigator", { onLine: true });
+  const releases: (() => void)[] = [];
+  let active = 0;
+  let peak = 0;
+  const load = vi.fn(
+    () =>
+      new Promise<HostSessionSummary[]>((resolve) => {
+        active++;
+        peak = Math.max(peak, active);
+        releases.push(() => {
+          active--;
+          resolve(list());
+        });
+      }),
+  );
+  const stop = startRailPoller({ targets: ["a"], load, onResult: vi.fn(), foregroundMs: 3000 });
+  await vi.advanceTimersByTimeAsync(0);
+  for (let i = 0; i < 4; i++) win.dispatchEvent(new Event("focus"));
+  expect(load).toHaveBeenCalledTimes(1);
+  releases.shift()!();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(load).toHaveBeenLastCalledWith("a", true);
+  expect(peak).toBe(1);
+  stop();
+  releases.shift()!();
+  await vi.advanceTimersByTimeAsync(0);
+  win.dispatchEvent(new Event("focus"));
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(vi.getTimerCount()).toBe(0);
+});
 
 it("publishes a healthy target without waiting for a slow one", async () => {
   vi.useFakeTimers();

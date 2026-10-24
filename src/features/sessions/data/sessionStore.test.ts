@@ -119,6 +119,46 @@ describe("conversation rewind persistence", () => {
   });
 });
 
+describe("host divergence persistence", () => {
+  it("saves a flagged divergence and its answer with the session, and nothing otherwise", () => {
+    const session = newSession("claude", "/repo");
+    expect(sanitizeSessionForPersist(session)).not.toHaveProperty("adoptedDivergence");
+    session.adoptedDivergence = { key: "3:a:b:x:y", keep: true };
+    const payload = sanitizeSessionForPersist(session);
+    expect(JSON.parse(payload.adoptedDivergence!)).toEqual({ key: "3:a:b:x:y", keep: true });
+    expect(persistFingerprint(session)).not.toBe(
+      persistFingerprint({ ...session, adoptedDivergence: undefined }),
+    );
+  });
+
+  it("saves the host head a divergence was flagged against", () => {
+    const session = newSession("claude", "/repo");
+    const hostHead = { count: 4, chain: "0123456789abcdef0123456789abcdef" };
+    session.adoptedDivergence = { key: "heads::1.a:2.b:3.c", hostHead };
+    expect(JSON.parse(sanitizeSessionForPersist(session).adoptedDivergence!)).toEqual({
+      key: "heads::1.a:2.b:3.c",
+      hostHead,
+    });
+  });
+});
+
+describe("agreed base persistence", () => {
+  it("saves the transcript head both computers last agreed on, and nothing otherwise", () => {
+    const session = newSession("claude", "/repo");
+    expect(sanitizeSessionForPersist(session)).not.toHaveProperty("adoptedBase");
+    const base = { count: 3, chain: "0123456789abcdef0123456789abcdef" };
+    session.adoptedBase = base;
+    expect(JSON.parse(sanitizeSessionForPersist(session).adoptedBase!)).toEqual(base);
+    // A new agreement is a change to save, or it would be lost on the next restart.
+    expect(persistFingerprint(session)).not.toBe(
+      persistFingerprint({ ...session, adoptedBase: undefined }),
+    );
+    expect(persistFingerprint(session)).not.toBe(
+      persistFingerprint({ ...session, adoptedBase: { ...base, count: 4 } }),
+    );
+  });
+});
+
 describe("Codex Shell row recovery", () => {
   it("relabels from the command saved on the row, keeping redactions", () => {
     // The command Codex sent with the item is already on the row as its preview

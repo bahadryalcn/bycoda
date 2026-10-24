@@ -27,6 +27,7 @@ function PendingServerTabs({
         </p>
       ) : null}
       <ServerTerminalRestorePreview
+        defaultOpen={false}
         restore={{
           ...state.restore,
           tabs: state.restore.tabs.filter((tab) => state.pending.includes(tab.tabId)),
@@ -53,7 +54,7 @@ export function ServerTerminalRestoreControls({
   const [loading, setLoading] = useState(false);
   if (!state.owner) return null;
   return (
-    <div className="flex shrink-0 flex-col gap-2 border-t border-stroke px-3 py-2 text-xs">
+    <div className="flex shrink-0 flex-col gap-2 border-t border-stroke px-4 py-2 text-xs">
       <div className="flex items-center gap-2 text-(--ui-text-muted)">
         <Switch
           label={t("Remember saved SSH tabs")}
@@ -61,7 +62,6 @@ export function ServerTerminalRestoreControls({
           disabled={!state.initialized}
           onCheckedChange={(checked) => serverTerminalRestoreState.setEnabled(checked, openTabs)}
         />
-        {t("Remember saved SSH tabs")}
       </div>
       {state.loadFailed ? (
         <div className="flex flex-wrap items-center gap-2">

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { parseProviderAccountId } from "../src/features/providers/model/providerAccountId";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, dirname, join } from "node:path";
 import { HostCheckpoints } from "./checkpoints";
@@ -23,6 +24,15 @@ import {
 import { isVisionImage } from "../src/features/sessions/model/attachments";
 import { isSessionErrorBlock } from "../src/features/sessions/model/sessionIssue";
 import { adoptedTranscriptLead } from "../src/features/connections/model/adoptedSessions";
+import { transcriptDigests } from "../src/features/sync/model/conversationDigest";
+import { LeaseHeldError } from "../src/features/sync/model/runLease";
+import {
+  atHead,
+  chooseBase,
+  headOfDigests,
+  reconcile,
+  type Reconciled,
+} from "../src/features/sync/model/conversationHead";
 import type {
   HarnessEvent,
   HarnessSessionInput,
@@ -169,6 +179,7 @@ export function parseCommand(input: unknown): HostCommand {
         ? { autoWorktreeBranch: v.autoWorktreeBranch as string }
         : {}),
       harness: v.harness,
+      ...(v.providerAccountId === undefined ? {} : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
       model: text(v.model, "model", 200),
       ...(v.modelSettings !== undefined ? { modelSettings: modelSettings(v.modelSettings) } : {}),
       runtimeMode: v.runtimeMode as Session["runtimeMode"],
@@ -393,6 +404,27 @@ export class HostEngine {
   >();
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private closing = false;
+  /** A turn ended and the session is idle again, and how it ended (the host drains its queue). */
+  onSettled?: (
+    sessionId: string,
+    outcome: { cancelled?: boolean; error?: string; interrupted?: boolean; reason?: string },
+  ) => void;
+  /** Conversations whose turn was found running at startup and settled as interrupted. */
+  readonly recoveredInterrupted: string[] = [];
+  /** A rewind, clear or branch switch ended: conversations waiting on it may go on. */
+  onUnblocked?: () => void;
+  /** Why a turn cannot start in this conversation right now, apart from one running in it. */
+  busyReason(sessionId: string): string | undefined {
+    if (this.closing) return "Host is stopping";
+    if (this.rewinding.has(sessionId)) return "A conversation change is in progress";
+    try {
+      if (this.switchingProjects.has(this.store.session(sessionId).projectId))
+        return "A branch switch is in progress";
+    } catch {
+      /* unknown conversation */
+    }
+    return undefined;
+  }
   private rewinding = new Set<string>();
   readonly checkpoints: HostCheckpoints;
 
@@ -455,6 +487,7 @@ export class HostEngine {
           ),
           { type: "interrupted" },
         );
+        this.recoveredInterrupted.push(value.session.id);
       }
       if (value.session.providerSessionId)
         this.provider(value.session.harness).bind(
@@ -484,6 +517,7 @@ export class HostEngine {
       return await action();
     } finally {
       this.switchingProjects.delete(projectId);
+      this.onUnblocked?.();
     }
   }
 
@@ -538,11 +572,13 @@ export class HostEngine {
     event: unknown,
     deferred = false,
     blockChanges?: BlockChanges,
+    journal = false,
   ): HostSession {
     return this.store.transaction(() =>
       this.store.save({ ...value, revision: value.revision + 1, updatedAt: Date.now() }, event, {
         deferred,
         blockChanges,
+        journal,
       }),
     );
   }
@@ -551,18 +587,26 @@ export class HostEngine {
   adoptSession(snapshot: HostSession): HostSession {
     const id = snapshot.session.id;
     if (this.rewinding.has(id)) throw new Error("A conversation change is in progress");
-    if (snapshot.status === "running")
-      throw new Error("This session is running in bycoda on that computer. Wait for it to finish.");
+    if (snapshot.status === "running") throw new LeaseHeldError("desktop");
     const provider = this.provider(snapshot.session.harness);
     const saved = this.store.transaction(() => {
       try {
         return this.store.session(id);
       } catch {
+        // The desktop's bookkeeping about its own host copy stays on the desktop.
+        const { adoptedBase: _base, ...session } = snapshot.session;
+        const digests = transcriptDigests(session.blocks);
         return this.store.save(
           {
             ...snapshot,
+            session,
             status: "idle",
-            desktop: { updatedAt: snapshot.updatedAt, revision: snapshot.revision },
+            desktop: {
+              updatedAt: snapshot.updatedAt,
+              revision: snapshot.revision,
+              // Both hold this transcript now.
+              ...(digests ? { base: headOfDigests(digests) } : {}),
+            },
           },
           { type: "adopted" },
         );
@@ -638,19 +682,47 @@ export class HostEngine {
     const unseenFailures = new Set(
       current.session.blocks.filter((block) => isSessionErrorBlock(block) && !seen.has(block.id)),
     );
-    const lead =
-      same || synced
-        ? undefined
-        : adoptedTranscriptLead(session, {
-            ...current.session,
-            blocks: current.session.blocks.filter((block) => !unseenFailures.has(block)),
-          });
+    // Which side changed since both last held the same transcript, from the
+    // digests of the full blocks. Unreadable content falls back to comparing it.
+    const mine = transcriptDigests(session.blocks);
+    const held = transcriptDigests(current.session.blocks);
+    const keptBlocks = current.session.blocks.filter((block) => !unseenFailures.has(block));
+    // The desktop names the host transcript it last agreed on (and, when the user
+    // kept its version of a divergence, the one it replaced); the host remembers
+    // the same. A host that has not moved since one of them has nothing to add.
+    // Before the host recorded one, an unchanged revision says the same.
+    const base = held
+      ? (chooseBase(held, session.adoptedBase, current.desktop.base) ??
+        (synced ? headOfDigests(held) : undefined))
+      : undefined;
+    const hostUnchanged = !!held && !!base && atHead(held, base);
+    let verdict: Reconciled | undefined;
+    if (mine && held) {
+      const compared =
+        hostUnchanged || unseenFailures.size === 0 ? held : transcriptDigests(keptBlocks);
+      verdict = compared ? reconcile(mine, compared, base) : undefined;
+      // The host's own failure notice, which the desktop has not seen, is host content.
+      if (verdict === "equal" && compared !== held) verdict = "hostAhead";
+    }
+    // Content the digests cannot judge, or tell apart (a turn sealed at quit), is
+    // compared block by block as before.
+    const compare = !same && !synced && (verdict === undefined || verdict === "conflict");
+    const lead = compare
+      ? adoptedTranscriptLead(session, { ...current.session, blocks: keptBlocks })
+      : undefined;
     const accepted =
-      !same && (synced || lead === "local" || (lead === "same" && unseenFailures.size === 0));
-    if (!same && !accepted)
+      !same &&
+      (verdict === undefined || verdict === "conflict"
+        ? synced || lead === "local" || (lead === "same" && unseenFailures.size === 0)
+        : verdict === "localAhead" || (verdict === "equal" && unseenFailures.size === 0));
+    if (!same && !accepted) {
+      const behind = verdict === undefined || verdict === "conflict" ? lead : verdict;
       console.warn(
-        `Kept host transcript for session ${id}: the desktop copy ${lead ? "is behind it" : "diverged"}`,
+        `Kept host transcript for session ${id}: the desktop copy ${behind ? "is behind it" : "diverged"}`,
       );
+    }
+    const agreed =
+      (accepted || verdict === "equal") && mine ? headOfDigests(mine) : current.desktop.base;
     const saved = this.save(
       {
         ...current,
@@ -676,6 +748,9 @@ export class HostEngine {
             accepted || synced || (same && !stale)
               ? current.revision + 1
               : current.desktop.revision,
+          // Where both last agreed: the desktop's transcript once taken, or the
+          // host's own when the desktop holds the same one.
+          ...(agreed ? { base: agreed } : {}),
         },
       },
       { type: accepted ? "desktopRefreshed" : same ? "desktopSeen" : "desktopDiverged" },
@@ -705,13 +780,15 @@ export class HostEngine {
     live.timer = undefined;
     if (!live.events.length) return;
     const events = live.events;
+    const deferred = events.every((event) => BATCHED.has(event.type));
     // Only batched streaming deltas may wait for the store checkpoint; a batch
     // holding anything else (tool start, approval, question, ...) is written now.
     live.value = this.save(
       live.value,
       { type: "events", events },
-      events.every((event) => BATCHED.has(event.type)),
+      deferred,
       live.blockChanges,
+      !deferred,
     );
     live.events = [];
     live.blockChanges = new Map();
@@ -755,6 +832,12 @@ export class HostEngine {
             );
           this.live.delete(id);
           this.running.delete(id);
+          // The turn ended through this path (its normal end could not be saved):
+          // whoever drains the conversation's queue is told it was cut short.
+          this.onSettled?.(id, {
+            interrupted: true,
+            reason: "Session storage failed during this turn. Inspect its work before continuing.",
+          });
           if (latest.session.providerSessionId)
             provider.bind(id, latest.session.providerSessionId, latest.session.cwd);
         } catch (error) {
@@ -831,6 +914,7 @@ export class HostEngine {
             id: randomUUID(),
             cwd,
             harness: command.harness,
+            ...(command.providerAccountId === undefined ? {} : { providerAccountId: command.providerAccountId }),
             model: command.model,
             runtimeMode: command.runtimeMode,
             modelSettings: command.modelSettings ?? {},
@@ -1374,6 +1458,7 @@ export class HostEngine {
       });
     } finally {
       this.rewinding.delete(command.sessionId);
+      this.onUnblocked?.();
     }
   }
 
@@ -1500,6 +1585,7 @@ export class HostEngine {
       throw error;
     } finally {
       this.rewinding.delete(command.sessionId);
+      this.onUnblocked?.();
     }
   }
 
@@ -1834,6 +1920,18 @@ export class HostEngine {
           );
         }
         this.running.delete(session.id);
+        this.onSettled?.(session.id, {
+          ...(active.cancelled ? { cancelled: true } : {}),
+          ...(this.closing || active.persistenceFailed
+            ? {
+                interrupted: true,
+                reason: this.closing
+                  ? "Host stopped. This turn was interrupted."
+                  : "Session storage failed during this turn. Inspect its work before continuing.",
+              }
+            : {}),
+          ...(!active.cancelled && !this.closing && error ? { error } : {}),
+        });
         // stop/forget releases callbacks and native resources; bind only retained
         // provider conversation identity for an explicit future follow-up.
         const persisted = this.store.session(session.id).session;

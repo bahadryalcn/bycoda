@@ -47,6 +47,7 @@ function SessionReviewContent({
   const [acting, setActing] = useState<"keep" | "undo" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const request = useRef(0);
   const actingRef = useRef(false);
   const filesRef = useRef(files);
@@ -59,6 +60,7 @@ function SessionReviewContent({
       setFiles([]);
       return;
     }
+    setRefreshing(true);
     return sessionCheckpointStatus(sessionId, cwd)
       .then((status) => {
         if (generation !== request.current) return;
@@ -74,6 +76,9 @@ function SessionReviewContent({
           setRecording(pending);
           setError(pending ? null : message);
         }
+      })
+      .finally(() => {
+        if (generation === request.current) setRefreshing(false);
       });
   }, [sessionId, cwd]);
 
@@ -146,8 +151,21 @@ function SessionReviewContent({
   const errorNotice = error ? (
     <Alert tone="danger" role="alert">
       {error}{" "}
-      <Button variant="ghost" type="button" onClick={load}>
-        {t("Retry")}
+      {error.startsWith("Workspace checkpoint failed:") && (
+        <p>
+          {t(
+            "This turn's changes could not be fully recorded. Fix the reported error before starting a new turn. Refresh only checks the saved checkpoint.",
+          )}
+        </p>
+      )}
+      <Button
+        variant="ghost"
+        type="button"
+        onClick={load}
+        loading={refreshing}
+        disabled={refreshing}
+      >
+        {t(error.startsWith("Workspace checkpoint failed:") ? "Refresh" : "Retry")}
       </Button>
     </Alert>
   ) : null;

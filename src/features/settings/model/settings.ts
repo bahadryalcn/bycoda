@@ -875,7 +875,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Live background");
     },
     keywords:
-      "animated wallpaper matrix code rain ascii face speech ai slats web threads scanner lightfall prism side rays light pixel blast dot grid hyperspeed letter glitch motion backdrop",
+      "animated wallpaper ascii ai neural tree latent face thought weaver ascii mask calm motion backdrop sinir ağacı gizil yüz düşünce dokuyucu ascii maske sakin arka plan",
   },
   {
     id: "translation-model-default",
@@ -884,6 +884,15 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Default translation model");
     },
     keywords: "translation translate language model provider account default çeviri dil varsayılan",
+  },
+  {
+    id: "reprompt-model-default",
+    section: "chat",
+    get label() {
+      return t("Default reprompt model");
+    },
+    keywords:
+      "reprompt rewrite clarify prompt model provider account default yeniden yaz netleştir varsayılan",
   },
   {
     id: "git-generation-default",
@@ -1399,21 +1408,7 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "streaming-text-mode": ["Paced (default)", "Immediate with adaptive fade"],
   "crew-growth": ["Color with context", "Grow with context"],
   "chat-background": ["Empty only", "All sessions"],
-  "live-background": [
-    "Gradient ASCII",
-    "Code rain",
-    "Micro slats",
-    "Web threads",
-    "Scanner",
-    "Lightfall",
-    "Prism",
-    "Side rays",
-    "Light rays",
-    "Pixel blast",
-    "Dot grid",
-    "Hyperspeed",
-    "Letter glitch",
-  ],
+  "live-background": ["Neural tree", "Latent face", "Thought weaver", "ASCII mask"],
   "format-on-save": ["Editor", "Advanced editor settings", "Prettier"],
   "diff-view": ["Editor", "Unified", "Code review"],
   "agent-clis": [

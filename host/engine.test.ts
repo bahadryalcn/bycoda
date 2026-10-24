@@ -14,8 +14,20 @@ import {
 } from "../src/features/connections/model/protocol";
 import { sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { isActivityBlock, isNoticeBlock } from "../src/features/sessions/model/transcriptActivity";
+import { conversationHead } from "../src/features/sync/model/conversationDigest";
 
 const cleanups: Array<() => Promise<void> | void> = [];
+
+it("validates and persists the explicitly selected profile before sending a new host session", async () => {
+  const { engine, store, project, turns } = setup();
+  const command = { type: "create", commandId: "named-profile", projectId: project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised", providerAccountId: "account-work" };
+  const created = engine.command(command);
+  expect(store.session(created.sessionId).session.providerAccountId).toBe("account-work");
+  engine.command({ type: "send", commandId: "send-named", sessionId: created.sessionId, text: "hello" });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  expect(turns[0].input.providerAccountId).toBe("account-work");
+  expect(() => parseCommand({ ...command, providerAccountId: "../outside" })).toThrow("Invalid provider account ID");
+});
 
 it("sends the reviewed note snapshot once while persisting display metadata without its body", async () => {
   const { engine, store, id, turns, provider } = setup();
@@ -124,6 +136,36 @@ it("surfaces provider startup rejection as a failed turn outside folded activity
   expect(isNoticeBlock(session.blocks.at(-1)!)).toBe(true);
   expect(isActivityBlock(session.blocks.at(-1)!)).toBe(false);
   expect(session.blocks.at(-1)?.text).toContain("active writer");
+});
+
+it("tells who is waiting on a turn how it ended, and why a conversation cannot start one", async () => {
+  const { engine, store, id, provider, turns } = setup();
+  const ended: Array<{ cancelled?: boolean; error?: string; interrupted?: boolean }> = [];
+  engine.onSettled = (_id, outcome) => void ended.push(outcome);
+  expect(engine.busyReason(id)).toBeUndefined();
+  // A turn that ends well.
+  engine.command({ type: "send", commandId: "ok-1", sessionId: id, text: "one" });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  turns[0].finish();
+  await vi.waitFor(() => expect(ended).toHaveLength(1));
+  expect(ended[0]).toEqual({});
+  // A turn the user stopped is not a failure, whatever the provider says.
+  engine.command({ type: "send", commandId: "ok-2", sessionId: id, text: "two" });
+  await vi.waitFor(() => expect(turns).toHaveLength(2));
+  engine.command({ type: "cancel", commandId: "stop-2", sessionId: id, runId: store.session(id).runId! });
+  await vi.waitFor(() => expect(ended).toHaveLength(2));
+  expect(ended[1]).toEqual({ cancelled: true });
+  // A provider that fails carries its message.
+  provider.send = vi.fn(async () => {
+    throw new Error("provider exploded");
+  });
+  engine.command({ type: "send", commandId: "ok-3", sessionId: id, text: "three" });
+  await vi.waitFor(() => expect(ended).toHaveLength(3));
+  expect(ended[2]).toEqual({ error: "provider exploded" });
+  // The host going down is told apart too.
+  const stopping = engine.close();
+  expect(engine.busyReason(id)).toBe("Host is stopping");
+  await stopping;
 });
 
 it("attributes only successful edit tool paths to the active checkpoint turn", async () => {
@@ -1242,6 +1284,138 @@ describe("headless session ownership", () => {
     expect(store.session(id).session.blocks.map((block) => block.id)).toEqual(["phone", "desk"]);
   });
 
+  describe("a persisted base decides which side changed", () => {
+    const user = (id: string, text: string) => ({ id, role: "user" as const, text });
+    const reply = (id: string, text: string) => ({ id, role: "assistant" as const, text });
+    /** An adopted session whose host and desktop last agreed on `blocks`. */
+    function agreed(blocks: ReturnType<typeof user>[], mismatched = false) {
+      const fixture = setup("claude");
+      const base = fixture.store.session(fixture.id);
+      const saved = fixture.store.save(
+        {
+          ...base,
+          revision: base.revision + 1,
+          desktop: {
+            updatedAt: 1,
+            // A revision that no longer says the host is unchanged: only the base can.
+            revision: mismatched ? 0 : base.revision + 1,
+            base: conversationHead(blocks),
+          },
+          session: { ...base.session, blocks },
+        },
+        { type: "test.adopted" },
+      );
+      return { ...fixture, saved };
+    }
+    const appended = (value: ReturnType<typeof structuredClone<any>>, ...blocks: any[]) => {
+      const snapshot = structuredClone(value);
+      snapshot.updatedAt = Date.now() + 5_000;
+      delete snapshot.blockRevisions;
+      snapshot.session.blocks.push(...blocks);
+      return snapshot;
+    };
+
+    it("records the head both hold when the host adopts and when it takes the desktop's turns", () => {
+      const { engine, store, id, saved } = agreed([user("u1", "Start"), reply("a1", "Done")]);
+      expect(store.session(id).desktop?.base).toEqual(conversationHead(saved.session.blocks));
+      engine.refreshFromDesktop(appended(saved, user("u2", "More")));
+      const after = store.session(id);
+      expect(after.session.blocks.map((block) => block.id)).toEqual(["u1", "a1", "u2"]);
+      expect(after.desktop?.base).toEqual(conversationHead(after.session.blocks));
+    });
+
+    it("takes a desktop rewind when the host has not moved since the base, whatever the revisions say", () => {
+      const { engine, store, id, saved } = agreed([user("u1", "Start"), reply("a1", "Done")], true);
+      const rewound = structuredClone(saved);
+      rewound.updatedAt = Date.now() + 5_000;
+      rewound.session.blocks = [user("u1", "Start")];
+      engine.refreshFromDesktop(rewound);
+      expect(store.session(id).session.blocks.map((block) => block.id)).toEqual(["u1"]);
+    });
+
+    it("keeps its own turn and flags it when both sides appended after the same base", () => {
+      const { engine, store, id, saved } = agreed([user("u1", "Start")], true);
+      store.save(
+        {
+          ...saved,
+          revision: saved.revision + 1,
+          session: { ...saved.session, blocks: [...saved.session.blocks, user("phone", "Phone")] },
+        },
+        { type: "test.remote" },
+      );
+      const save = vi.spyOn(store, "save");
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      engine.refreshFromDesktop(appended(saved, user("desk", "Desktop")));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("diverged"));
+      warn.mockRestore();
+      expect(save.mock.calls.at(-1)?.[1]).toEqual({ type: "desktopDiverged" });
+      expect(store.session(id).session.blocks.map((block) => block.id)).toEqual(["u1", "phone"]);
+      // The agreement is not moved by a conflict.
+      expect(store.session(id).desktop?.base).toEqual(conversationHead([user("u1", "Start")]));
+    });
+
+    it("keeps its own turn when the desktop only lags it", () => {
+      const { engine, store, id, saved } = agreed([user("u1", "Start")], true);
+      store.save(
+        {
+          ...saved,
+          revision: saved.revision + 1,
+          session: { ...saved.session, blocks: [...saved.session.blocks, user("phone", "Phone")] },
+        },
+        { type: "test.remote" },
+      );
+      const lagging = structuredClone(saved);
+      lagging.updatedAt = Date.now() + 5_000;
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      engine.refreshFromDesktop(lagging);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("is behind it"));
+      warn.mockRestore();
+      expect(store.session(id).session.blocks.map((block) => block.id)).toEqual(["u1", "phone"]);
+    });
+
+    it("converges when the desktop keeps its version: its base names the host transcript it replaces", () => {
+      const { engine, store, id, saved } = agreed([user("u1", "Start")], true);
+      const hosted = store.save(
+        {
+          ...saved,
+          revision: saved.revision + 1,
+          session: { ...saved.session, blocks: [...saved.session.blocks, user("phone", "Phone")] },
+        },
+        { type: "test.remote" },
+      );
+      const kept = appended(saved, user("desk", "Desktop"));
+      kept.session.adoptedBase = conversationHead(hosted.session.blocks);
+      engine.refreshFromDesktop(kept);
+      expect(store.session(id).session.blocks.map((block) => block.id)).toEqual(["u1", "desk"]);
+      expect(store.session(id).desktop?.base).toEqual(
+        conversationHead(store.session(id).session.blocks),
+      );
+      // The host copy carries none of the desktop's own bookkeeping.
+      expect(store.session(id).session).not.toHaveProperty("adoptedBase");
+    });
+
+    it("compares an adopted copy whose blocks carry files by their digests", () => {
+      const file = {
+        id: "f1",
+        name: "a.png",
+        mimeType: "image/png",
+        kind: "image" as const,
+        size: 1,
+      };
+      const sent = (path?: string) => ({
+        ...user("phone", "[image1]"),
+        attachments: [{ ...file, ...(path ? { path } : {}) }],
+      });
+      const { engine, store, id, saved } = agreed([sent("C:/host/files/f1")] as never, true);
+      // The desktop stored the file elsewhere: the same message, one turn further.
+      const continued = structuredClone(saved);
+      continued.updatedAt = Date.now() + 5_000;
+      continued.session.blocks = [sent("D:/desktop/f1"), user("desk", "Next")] as never;
+      engine.refreshFromDesktop(continued);
+      expect(store.session(id).session.blocks.map((block) => block.id)).toEqual(["phone", "desk"]);
+    });
+  });
+
   it("switches a historic chat between providers with context on the next send", async () => {
     const { engine, store, turns, id } = setup("claude");
     const value = store.session(id);
@@ -2091,6 +2265,8 @@ describe("headless session ownership", () => {
       ),
     );
     const recovered = new HostEngine(store, { codex: provider });
+    // Whoever drains the queue is told which turns were cut short by the restart.
+    expect(recovered.recoveredInterrupted).toEqual([id]);
     expect(store.session(id).status).toBe("interrupted");
     expect(store.session(id).session.busy).toBe(false);
     expect(store.session(id).session.blocks[0].durationMs).toBe(2_000);
@@ -2165,6 +2341,8 @@ describe("headless session ownership", () => {
 
   it("retries a failed final settlement", async () => {
     const { engine, store, turns, id } = setup();
+    const ended: Array<{ cancelled?: boolean; error?: string; interrupted?: boolean; reason?: string }> = [];
+    engine.onSettled = (_id, outcome) => void ended.push(outcome);
     engine.command({
       type: "send",
       commandId: "send",
@@ -2188,6 +2366,10 @@ describe("headless session ownership", () => {
         timeout: 4_000,
       });
       expect(store.session(id).session.busy).toBe(false);
+      // The retry path tells the queue's drainer the turn was cut short, like the normal one.
+      expect(ended).toEqual([
+        expect.objectContaining({ interrupted: true, reason: expect.stringContaining("storage failed") }),
+      ]);
     } finally {
       log.mockRestore();
     }

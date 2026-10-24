@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
 import { LAYER } from "../lib/layers";
+import { cumulativeCssZoom } from "../lib/cssZoom";
 import { OverlayMenuLayer, OverlayParent, overlayContainsTarget, useOverlay } from "./overlay";
 import {
   placePopover,
@@ -272,10 +273,21 @@ function WebPopover({
     const el = frame.current;
     const rect = anchorRect(anchorRef.current);
     if (!el || !rect) return;
+    // DOM rects are physical viewport pixels; CSS placement and offset sizes
+    // belong to the portal frame's cumulative zoom, not the trigger's zoom.
+    const zoom = cumulativeCssZoom(el);
+    const logicalAnchor = {
+      left: rect.left / zoom,
+      top: rect.top / zoom,
+      right: rect.right / zoom,
+      bottom: rect.bottom / zoom,
+      width: rect.width / zoom,
+      height: rect.height / zoom,
+    };
     const next = placePopover(
-      rect,
+      logicalAnchor,
       { width: el.offsetWidth, height: el.offsetHeight },
-      { width: window.innerWidth, height: window.innerHeight },
+      { width: window.innerWidth / zoom, height: window.innerHeight / zoom },
       { side, align, gap, padding, width, minHeight, maxHeight },
     );
     setPosition((prev) => (samePosition(prev, next) ? prev : next));

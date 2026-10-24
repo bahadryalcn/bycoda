@@ -256,6 +256,204 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
 }
 
 describe("campaign dispatch fairness", () => {
+  it("rotates bounded candidate pages so held work cannot starve later eligible jobs", async () => {
+    const s = fixture();
+    const blocked = await s.account(),
+      active = await s.account();
+    const campaign = await s.campaign([blocked]);
+    const [held] = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
+    await s.call("accounts.pause", { accountId: blocked.id, paused: true });
+    const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
+    s.store.db.exec("BEGIN");
+    try {
+      for (let index = 0; index < 400; index++) {
+        const job = { ...held, id: `held-page-${index}`, scheduledAt: s.clock.value - 1_000 };
+        insert.run(job.id, job.id, blocked.id, "queued", job.scheduledAt, JSON.stringify(job));
+      }
+      s.store.db.exec("COMMIT");
+    } catch (error) {
+      s.store.db.exec("ROLLBACK");
+      throw error;
+    }
+    s.clock.value++;
+    const eligible = await s.campaign([active]);
+    await s.call("campaigns.schedule", { id: eligible.id });
+    await s.enable();
+    await s.social.tick();
+    expect(s.send).not.toHaveBeenCalled();
+    await s.social.tick();
+    expect(s.send).not.toHaveBeenCalled();
+    await s.social.tick();
+    expect(s.send).toHaveBeenCalledOnce();
+    expect(s.send.mock.calls[0][0].id).toBe(active.id);
+    expect(
+      s.store.db
+        .prepare("SELECT count(*) AS n FROM social_jobs WHERE account_id=? AND status='queued'")
+        .get(blocked.id)?.n,
+    ).toBe(401);
+  });
+
+  it("schedules due work without parsing terminal job history", async () => {
+    const s = fixture();
+    const account = await s.account();
+    const campaign = await s.campaign([account]);
+    const [job] = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
+    const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
+    s.store.db.exec("BEGIN");
+    try {
+      for (let index = 0; index < 5_000; index++) {
+        const historical = {
+          ...job,
+          id: `history-${index}`,
+          status: "cancelled",
+          historyOnly: true,
+        };
+        insert.run(
+          historical.id,
+          historical.id,
+          account.id,
+          historical.status,
+          historical.scheduledAt,
+          JSON.stringify(historical),
+        );
+      }
+      s.store.db.exec("COMMIT");
+    } catch (error) {
+      s.store.db.exec("ROLLBACK");
+      throw error;
+    }
+    await s.enable();
+    const parse = JSON.parse;
+    let historyParses = 0;
+    const spy = vi.spyOn(JSON, "parse").mockImplementation((value, reviver) => {
+      if (value.includes('"historyOnly":true')) historyParses++;
+      return parse(value, reviver);
+    });
+    try {
+      await s.social.tick();
+      expect(historyParses).toBe(0);
+      expect(s.send).toHaveBeenCalledOnce();
+      await s.social.pollAccount(account.id);
+      expect(historyParses).toBe(0);
+      expect(s.poll.mock.calls[0][2]).toEqual([`post-${job.id}`]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("admits newly due work on another tick while generation is waiting", async () => {
+    const s = fixture();
+    const account = await s.account();
+    await s.enable();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const internal = s.social as unknown as { generateQueuedDraft: () => Promise<boolean> };
+    const generate = vi
+      .spyOn(internal, "generateQueuedDraft")
+      .mockResolvedValue(false)
+      .mockImplementationOnce(async () => {
+        await gate;
+        return true;
+      });
+    const first = s.social.tick();
+    let second: Promise<void> | undefined;
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const campaign = await s.campaign([account]);
+      await s.call("campaigns.schedule", { id: campaign.id });
+      second = s.social.tick();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(s.send).toHaveBeenCalledOnce();
+    } finally {
+      release();
+      await Promise.all([first, second]);
+      generate.mockRestore();
+    }
+  });
+
+  it("admits due work while another account's poll remains pending", async () => {
+    const s = fixture();
+    const slow = await s.account(),
+      active = await s.account();
+    await s.enable();
+    await s.call("inbox.polling", { enabled: true });
+    let release!: () => void, entered!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    s.poll.mockImplementation(async (account) => {
+      if (account.id === slow.id) {
+        entered();
+        await gate;
+      }
+      return { events: [] };
+    });
+    const first = s.social.tick();
+    let second: Promise<void> | undefined;
+    try {
+      await waiting;
+      const campaign = await s.campaign([active]);
+      await s.call("campaigns.schedule", { id: campaign.id });
+      second = s.social.tick();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(s.send).toHaveBeenCalledOnce();
+      expect(s.send.mock.calls[0][0].id).toBe(active.id);
+    } finally {
+      release();
+      await Promise.all([first, second]);
+    }
+  });
+
+  it("preserves the credential rotation preflight before dispatch", async () => {
+    const s = fixture();
+    const slow = await s.account(),
+      active = await s.account();
+    s.tokens.set(slow.id, {
+      accessToken: "old-synthetic",
+      refreshToken: "synthetic-refresh",
+      expiresAt: s.clock.value + 500,
+    });
+    s.store.db
+      .prepare(
+        "UPDATE social_records SET value=json_set(value,'$.expiresAt',?) WHERE kind='account' AND id=?",
+      )
+      .run(s.clock.value + 500, slow.id);
+    for (const account of [slow, active]) {
+      const campaign = await s.campaign([account]);
+      await s.call("campaigns.schedule", { id: campaign.id });
+      s.clock.value++;
+    }
+    await s.enable();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    s.social.refreshCredential = vi.fn(async () => {
+      await gate;
+      return {
+        accessToken: "rotated-synthetic",
+        refreshToken: "synthetic-refresh",
+        expiresAt: s.clock.value + 3_600_000,
+      };
+    });
+    const ticking = s.social.tick();
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(s.send).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await ticking;
+    }
+    expect(s.send.mock.calls.find(([account]) => account.id === slow.id)?.[2]).toBe(
+      "rotated-synthetic",
+    );
+  });
+
   it.each(["account", "campaign", "executor", "cooldown"] as const)(
     "skips twenty held %s jobs and resumes them without duplicate dispatches",
     async (heldBy) => {
@@ -1615,12 +1813,21 @@ describe("Merkezi sosyal servis", () => {
   it("compares reviewed social policies atomically and requires an explicit owner change", async () => {
     const s = fixture();
     const expectedPolicies = await s.call("policy.get", {});
-    const policies = { global: { maxContentCharacters: 400 }, platforms: { x: { maxCommentCharacters: 90 } } };
+    const policies = {
+      global: { maxContentCharacters: 400 },
+      platforms: { x: { maxCommentCharacters: 90 } },
+    };
     const input = { expectedPolicies, policies, confirm: "UPDATE_SOCIAL_POLICY" };
-    await expect(s.call("policy.saveReviewed", { ...input, confirm: "SEND" })).rejects.toThrow("Confirm");
-    await expect(s.call("policy.saveReviewed", input, s.session().principal)).rejects.toThrow("owner");
+    await expect(s.call("policy.saveReviewed", { ...input, confirm: "SEND" })).rejects.toThrow(
+      "Confirm",
+    );
+    await expect(s.call("policy.saveReviewed", input, s.session().principal)).rejects.toThrow(
+      "owner",
+    );
     expect(await s.call("policy.saveReviewed", input)).toEqual(policies);
-    await expect(s.call("policy.saveReviewed", { ...input, policies: { global: {}, platforms: {} } })).rejects.toThrow("changed");
+    await expect(
+      s.call("policy.saveReviewed", { ...input, policies: { global: {}, platforms: {} } }),
+    ).rejects.toThrow("changed");
     expect(await s.call("policy.get", {})).toEqual(policies);
     expect(s.social.snapshot(owner).sendingEnabled).toBe(false);
     expect(s.social.snapshot(owner).jobs).toEqual([]);
@@ -2252,6 +2459,9 @@ describe("Merkezi sosyal servis", () => {
       createHash("sha256").update(device.token).digest("hex"),
     );
     expect(s.social.principalForToken(grant.token)).toBeTruthy();
+    const sibling = s.social.issueSessionGrant(session.id);
+    expect(s.social.principalForToken(grant.token)).toBeTruthy();
+    expect(s.social.principalForToken(sibling.token)).toBeTruthy();
     s.store.revokeDevice(device.id);
     expect(s.social.principalForToken(grant.token)).toBeUndefined();
   });

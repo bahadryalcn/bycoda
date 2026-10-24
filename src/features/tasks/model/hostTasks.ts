@@ -1,4 +1,5 @@
 import { NO_VERDICT } from "./taskRules";
+import { parseProviderAccountId } from "../../providers/model/providerAccountId";
 import { parseTaskWorkspace, type TaskWorkspace } from "./taskWorkspace";
 import { parseCrewScopes } from "../../crews/model/crew";
 export {
@@ -19,6 +20,8 @@ import { RUNTIME_MODES, type RuntimeMode } from "../../sessions/model/session";
 /** A backlog of tasks a machine's host works through on its own, whether or
  * not a desktop is open. The host advertises this capability when it has it. */
 export const HOST_TASKS = "tasks";
+/** Explicit local account profiles for unattended task and goal runs. */
+export const HOST_TASK_ACCOUNTS = "tasks.provider-accounts";
 
 /** The host keeps manual to-do items: tasks the owner adds by hand that no
  * agent starts until they are moved to the queue. The host advertises this
@@ -101,6 +104,8 @@ export type HostTaskInput = {
   /** The host's ID for the project folder. */
   projectId: string;
   harness: RemoteProvider;
+  /** Local profile on the executing host. Absent retains legacy host default. */
+  providerAccountId?: string;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -397,6 +402,7 @@ export function parseHostTask(input: unknown): HostTaskInput {
     prompt: v.prompt,
     projectId: v.projectId,
     harness: v.harness,
+    ...(v.providerAccountId === undefined ? {} : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
     model: v.model,
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,

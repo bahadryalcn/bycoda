@@ -1,5 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { saveDefaultTranslationChoice, translationContextWithDefault } from "./translationPreferences";
+import {
+  saveDefaultTranslationChoice,
+  saveDefaultRepromptChoice,
+  loadDefaultRepromptChoice,
+  translationContextWithDefault,
+} from "./translationPreferences";
 
 const context = { cwd: "/p", harness: "codex" as const, providerAccountId: "session-account" };
 
@@ -13,6 +18,32 @@ function stubStorage() {
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("keeps reprompt defaults independent and preserves project and account boundaries", () => {
+  stubStorage();
+  saveDefaultTranslationChoice({ harness: "claude", model: "translator" });
+  expect(translationContextWithDefault(context, "reprompt")).toBe(context);
+  saveDefaultRepromptChoice({
+    harness: "claude",
+    model: "rewriter",
+    modelSettings: { effort: "medium" },
+  });
+  expect(translationContextWithDefault(context, "reprompt")).toMatchObject({
+    cwd: "/p",
+    harness: "claude",
+    model: "rewriter",
+    modelSettings: { effort: "medium" },
+    providerAccountId: undefined,
+  });
+  expect(translationContextWithDefault(context).model).toBe("translator");
+  saveDefaultRepromptChoice({ harness: "codex", model: "rewriter" });
+  expect(translationContextWithDefault(context, "reprompt").providerAccountId).toBe(
+    "session-account",
+  );
+  saveDefaultRepromptChoice(undefined);
+  expect(loadDefaultRepromptChoice()).toBeUndefined();
+  expect(translationContextWithDefault(context, "reprompt")).toBe(context);
+});
 
 it("keeps the session account when the default choice has none and uses the same harness", () => {
   stubStorage();

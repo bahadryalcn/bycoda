@@ -212,8 +212,12 @@ export function resolveAttachments(store: HostStore, refs: RemoteAttachment[]): 
 
 /** Reads only an attachment already accepted into this session. Paths supplied
  * by the client are never used, and each response stays below the RPC cap. */
-export async function readAttachmentChunk(store: HostStore, input: Record<string, unknown>) {
-  const session = store.session(String(input.sessionId ?? ""));
+export async function readAttachmentChunk(
+  store: HostStore,
+  input: Record<string, unknown>,
+  sessionFor: HostStore["session"] = (id) => store.session(id),
+) {
+  const session = sessionFor(String(input.sessionId ?? ""));
   const generated = session.session.blocks.find(
     (block) => block.id === input.id && block.image,
   )?.image;

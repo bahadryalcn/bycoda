@@ -1,8 +1,9 @@
-import type { KeyboardEvent, MouseEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { Server, Star } from "../../../shared/ui/icons";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { MoreHorizontal, Server, Star, Terminal } from "../../../shared/ui/icons";
 import type { ServerRecord } from "../model/serverInventory";
 import type { ServersLayout } from "./serversLayout";
 import { MachineStatus } from "./ServerStatus";
@@ -17,6 +18,10 @@ type ServerItemProps = {
   address: string;
   layout: ServersLayout;
   selected: boolean;
+  checked?: boolean;
+  selectionMode?: boolean;
+  busy?: boolean;
+  onCheck?: (checked: boolean) => void;
   /** Resolved palette or custom color; undefined means the server has no color. */
   accent?: string;
   canConnect: boolean;
@@ -31,12 +36,29 @@ export function ServerItem({
   address,
   layout,
   selected,
+  checked,
+  selectionMode = false,
+  busy,
+  onCheck,
   accent,
   canConnect,
   onSelect,
   onConnect,
   onMenu,
 }: ServerItemProps) {
+  const press = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const origin = useRef({ x: 0, y: 0 });
+  const held = useRef(false);
+  const check = useRef(onCheck);
+  check.current = onCheck;
+  const cancelPress = () => {
+    clearTimeout(press.current);
+    press.current = undefined;
+  };
+  useEffect(() => {
+    if (busy) cancelPress();
+    return cancelPress;
+  }, [busy]);
   const cards = layout === "cards";
   const group = server.metadata.group ?? "";
   const tags = server.metadata.tags;
@@ -60,6 +82,8 @@ export function ServerItem({
 
   const onContextMenu = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
+    cancelPress();
+    if (held.current) return;
     onMenu({ x: event.clientX, y: event.clientY });
   };
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -67,6 +91,11 @@ export function ServerItem({
       event.preventDefault();
       event.stopPropagation();
       onMenu(event.currentTarget);
+      return;
+    }
+    if (selectionMode && event.key === "Enter") {
+      event.preventDefault();
+      if (!event.repeat && !event.nativeEvent.isComposing) onCheck?.(!checked);
       return;
     }
     if (event.key !== "Enter" || !canConnect || event.nativeEvent.isComposing) return;
@@ -79,30 +108,73 @@ export function ServerItem({
   return (
     <li
       className={
-        cards ? "min-w-0 overflow-hidden rounded-lg border border-stroke" : "min-w-0 rounded-md"
+        cards
+          ? "server-card min-w-0 overflow-hidden rounded-lg border border-stroke"
+          : "server-list-row"
       }
+      data-checked={checked || undefined}
+      data-selection-mode={selectionMode || undefined}
     >
+      {onCheck && selectionMode ? (
+        <label className="server-selection">
+          <Checkbox
+            aria-label={t("Select {p0}", { p0: server.name })}
+            checked={checked}
+            disabled={busy}
+            onChange={(event) => onCheck(event.target.checked)}
+          />
+        </label>
+      ) : null}
       <Button
         variant="item"
-        selected={selected}
-        aria-pressed={selected}
+        selected={selectionMode ? checked : selected}
+        aria-pressed={selectionMode ? checked : selected}
+        disabled={busy}
+        motion="none"
         data-server-row={server.id}
-        aria-keyshortcuts={canConnect ? "Enter" : undefined}
+        aria-keyshortcuts={canConnect && !selectionMode ? "Enter" : undefined}
         aria-description={
-          canConnect
+          canConnect && !selectionMode
             ? t("Double-click or press Enter to connect via SSH. Space shows details.")
             : undefined
         }
         className={
           cards
-            ? "h-auto w-full flex-col items-stretch gap-0 p-0 text-left"
-            : "h-auto min-h-10 w-full items-center gap-3 px-2.5 py-1.5 text-left"
+            ? "server-identity h-auto min-w-0 flex-1 flex-col items-stretch gap-0 p-0 text-left"
+            : "server-identity h-auto min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left"
         }
-        onClick={onSelect}
+        onPointerDown={(event) => {
+          cancelPress();
+          held.current = false;
+          if (event.button !== 0 || !event.isPrimary || busy || !onCheck) return;
+          origin.current = { x: event.clientX, y: event.clientY };
+          press.current = setTimeout(() => {
+            held.current = true;
+            check.current?.(true);
+          }, 500);
+        }}
+        onPointerMove={(event) => {
+          if (Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 8)
+            cancelPress();
+        }}
+        onPointerUp={cancelPress}
+        onPointerCancel={cancelPress}
+        onPointerLeave={cancelPress}
+        onDragStart={cancelPress}
+        onClick={(event) => {
+          if (held.current && event.detail !== 0) {
+            held.current = false;
+            return;
+          }
+          if (selectionMode) onCheck?.(!checked);
+          else onSelect();
+        }}
         onContextMenu={onContextMenu}
         onDoubleClick={(event) => {
           if (
             !canConnect ||
+            selectionMode ||
+            held.current ||
             event.button !== 0 ||
             event.ctrlKey ||
             event.metaKey ||
@@ -150,11 +222,8 @@ export function ServerItem({
         ) : (
           <>
             {accentBar}
-            <span className="min-w-0 flex-1 @min-[36rem]/servers:flex @min-[36rem]/servers:items-center @min-[36rem]/servers:gap-3">
-              <span
-                title={server.name}
-                className="block min-w-0 truncate font-medium @min-[36rem]/servers:max-w-[40%]"
-              >
+            <span className="min-w-0 flex-1">
+              <span title={server.name} className="block min-w-0 truncate text-sm font-medium">
                 {server.name}
               </span>
               <span
@@ -167,18 +236,40 @@ export function ServerItem({
             {groupTags ? (
               <span
                 title={groupTags}
-                className="hidden max-w-40 min-w-0 truncate text-xs text-(--ui-text-muted) @min-[36rem]/servers:block"
+                className="server-group min-w-0 truncate text-xs text-(--ui-text-muted)"
               >
                 {groupTags}
               </span>
             ) : null}
-            <span className="flex shrink-0 items-center gap-2">
+            <span className="server-row-status flex shrink-0 items-center gap-2">
               {favorite}
               {status}
             </span>
           </>
         )}
       </Button>
+      <div className="server-row-actions">
+        {canConnect ? (
+          <Button
+            variant="secondary"
+            disabled={busy}
+            iconOnly
+            label={t("Connect to {p0}", { p0: server.name })}
+            onClick={onConnect}
+          >
+            <Terminal aria-hidden className="icon-sm" />
+          </Button>
+        ) : null}
+        <Button
+          variant="ghost"
+          disabled={busy}
+          iconOnly
+          label={t("Actions for {p0}", { p0: server.name })}
+          onClick={(event) => onMenu(event.currentTarget)}
+        >
+          <MoreHorizontal aria-hidden className="icon-sm" />
+        </Button>
+      </div>
     </li>
   );
 }

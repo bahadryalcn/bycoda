@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Session } from "../../sessions/model/session";
 import type { SharedQueue } from "./sharedQueue";
-import { useSharedLocalQueues } from "./useSharedLocalQueues";
+import { useSharedLocalQueues, wakeSharedLocalQueues } from "./useSharedLocalQueues";
 
 const mocks = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -25,6 +25,8 @@ const IDLE_SESSIONS = 4;
 let root: Root;
 let sessionsRef: { current: Session[] };
 let hidden = false;
+/** Every pass of the dispatcher reads `document.hidden` once: a count of its wakeups. */
+let hiddenReads = 0;
 const reachable = { current: true };
 const queue: SharedQueue = { messages: [], revision: 0 };
 
@@ -53,7 +55,11 @@ beforeEach(() => {
   hidden = false;
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  hiddenReads = 0;
+  vi.spyOn(document, "hidden", "get").mockImplementation(() => {
+    hiddenReads++;
+    return hidden;
+  });
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() =>
     hidden ? "hidden" : "visible",
   );
@@ -106,6 +112,31 @@ describe("shared local queue sync cost while idle", () => {
     const before = hostCalls();
     await advance(60_000);
     expect(hostCalls() - before).toBe(0);
+  });
+
+  // Step 8: no 1.5 s interval. The 0.6.70 dispatcher ran 36 passes in 55 s of nothing;
+  // now only the one 60 s safety pass is left.
+  it("wakes the dispatcher far less often than the old 1.5 s tick while nothing changes", async () => {
+    await mountAndSettle();
+    const before = hiddenReads;
+    await advance(55_000);
+    expect(hiddenReads - before).toBeLessThanOrEqual(36 / 12);
+  });
+
+  it("holds a single timer once every idle queue has been looked at", async () => {
+    await mountAndSettle();
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(1);
+  });
+
+  it("still delivers a woken queue while the document is hidden", async () => {
+    await mountAndSettle();
+    hidden = true;
+    document.dispatchEvent(new Event("visibilitychange"));
+    await advance(1_500);
+    const before = hostCalls();
+    wakeSharedLocalQueues(["idle-1"]);
+    await advance(1_500);
+    expect(hostCalls() - before).toBeGreaterThanOrEqual(1);
   });
 
   it("stops issuing requests once unmounted", async () => {

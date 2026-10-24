@@ -11,7 +11,7 @@ import {
 import type { EditorView } from "@codemirror/view";
 import { t, useLocale } from "../../../shared/i18n";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
-import { notePreviewBlocks, replacePreviewBlock } from "../previewBlocks";
+import { NotePreviewParser, notePreviewReferences, replacePreviewBlock } from "../previewBlocks";
 import { NoteMarkdownEditor } from "./NoteMarkdownEditor";
 
 export function NoteEditablePreview({
@@ -60,15 +60,10 @@ export function NoteEditablePreview({
 
   const deferredValue = useDeferredValue(value);
   const previewValue = currentActive ? value : deferredValue;
-  const blocks = useMemo(() => notePreviewBlocks(previewValue), [previewValue]);
-  const definitions = useMemo(
-    () =>
-      blocks
-        .filter((block) => block.definition)
-        .map((block) => block.text)
-        .join("\n"),
-    [blocks],
-  );
+  const parser = useRef<NotePreviewParser | null>(null);
+  if (!parser.current) parser.current = new NotePreviewParser();
+  const blocks = useMemo(() => parser.current!.parse(previewValue), [previewValue]);
+  const referencesFor = useMemo(() => notePreviewReferences(blocks), [blocks]);
   const start = (from: number, to: number) => {
     if (deferredValue !== value) return;
     localValue.current = value;
@@ -91,10 +86,9 @@ export function NoteEditablePreview({
   };
   const renderBlocks = (from = 0, to = previewValue.length) =>
     blocks
-      .map((block, index) => ({ block, index }))
-      .filter(({ block }) => block.from >= from && block.to <= to)
-      .map(({ block, index }) => (
-        <div key={index} className="note-preview-block">
+      .filter((block) => block.from >= from && block.to <= to)
+      .map((block) => (
+        <div key={block.key} className="note-preview-block">
           <div
             role="button"
             tabIndex={0}
@@ -115,7 +109,11 @@ export function NoteEditablePreview({
             {block.definition ? (
               <pre className="whitespace-pre-wrap text-[12px] text-content/70">{block.text}</pre>
             ) : (
-              <AgentMarkdown text={`${block.text}\n\n${definitions}`} cwd={cwd} hardBreaks />
+              <AgentMarkdown
+                text={`${block.text}\n\n${referencesFor(block.text)}`}
+                cwd={cwd}
+                hardBreaks
+              />
             )}
           </div>
           <Button

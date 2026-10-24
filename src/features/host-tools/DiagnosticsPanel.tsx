@@ -220,44 +220,54 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
       {!sample && !busy && !error ? (
         <EmptyState description={t("Take a sample to start the charts.")} />
       ) : null}
-      <div className="resource-cards">
-        <article className="resource-card">
-          <h4>{t("bycoda host CPU")}</h4>
-          <strong className="resource-value">
-            {sample?.process.cpuPercent != null ? `${sample.process.cpuPercent.toFixed(1)}%` : "—"}
-          </strong>
-          <ResourceChart samples={samples} metric="cpu" label={t("bycoda host CPU")} />
-        </article>
-        <article className="resource-card">
-          <h4>{t("bycoda host memory")}</h4>
-          <strong className="resource-value">{sample ? mib(sample.process.rssBytes) : "—"}</strong>
-          <ResourceChart samples={samples} metric="memory" label={t("bycoda host memory")} />
-        </article>
-      </div>
-      <article className="resource-card resource-system-memory">
-        <div className="resource-memory-heading">
-          <h4>{t("Computer memory")}</h4>
-          <strong>{memoryUsed !== null ? `${memoryUsed.toFixed(1)}% ${t("Used")}` : "—"}</strong>
-        </div>
-        <div
-          className="resource-memory-bar"
-          role={memoryUsed !== null ? "meter" : undefined}
-          aria-label={t("Computer memory")}
-          aria-valuemin={memoryUsed !== null ? 0 : undefined}
-          aria-valuemax={memoryUsed !== null ? 100 : undefined}
-          aria-valuenow={memoryUsed ?? undefined}
-        >
-          <span style={{ inlineSize: `${memoryUsed ?? 0}%` }} />
-        </div>
-        <div className="resource-memory-legend">
-          <span>
-            {t("Available")} <strong>{sample ? gib(sample.host.freeMemoryBytes) : "—"}</strong>
-          </span>
-          <span>
-            {t("Total")} <strong>{sample ? gib(sample.host.totalMemoryBytes) : "—"}</strong>
-          </span>
-        </div>
-      </article>
+      {sample ? (
+        <>
+          <div className="resource-cards">
+            <article className="resource-card">
+              <h4>{t("bycoda host CPU")}</h4>
+              <strong className="resource-value">
+                {sample?.process.cpuPercent != null
+                  ? `${sample.process.cpuPercent.toFixed(1)}%`
+                  : "—"}
+              </strong>
+              <ResourceChart samples={samples} metric="cpu" label={t("bycoda host CPU")} />
+            </article>
+            <article className="resource-card">
+              <h4>{t("bycoda host memory")}</h4>
+              <strong className="resource-value">
+                {sample ? mib(sample.process.rssBytes) : "—"}
+              </strong>
+              <ResourceChart samples={samples} metric="memory" label={t("bycoda host memory")} />
+            </article>
+          </div>
+          <article className="resource-card resource-system-memory">
+            <div className="resource-memory-heading">
+              <h4>{t("Computer memory")}</h4>
+              <strong>
+                {memoryUsed !== null ? `${memoryUsed.toFixed(1)}% ${t("Used")}` : "—"}
+              </strong>
+            </div>
+            <div
+              className="resource-memory-bar"
+              role={memoryUsed !== null ? "meter" : undefined}
+              aria-label={t("Computer memory")}
+              aria-valuemin={memoryUsed !== null ? 0 : undefined}
+              aria-valuemax={memoryUsed !== null ? 100 : undefined}
+              aria-valuenow={memoryUsed ?? undefined}
+            >
+              <span style={{ inlineSize: `${memoryUsed ?? 0}%` }} />
+            </div>
+            <div className="resource-memory-legend">
+              <span>
+                {t("Available")} <strong>{sample ? gib(sample.host.freeMemoryBytes) : "—"}</strong>
+              </span>
+              <span>
+                {t("Total")} <strong>{sample ? gib(sample.host.totalMemoryBytes) : "—"}</strong>
+              </span>
+            </div>
+          </article>
+        </>
+      ) : null}
       {sample ? (
         <div className="resource-history-caption">
           <span>{t("Sample history")}</span>

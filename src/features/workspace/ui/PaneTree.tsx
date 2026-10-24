@@ -367,6 +367,11 @@ function PaneTreeComponent({
   );
   const sashes = maximum ? [] : layoutSashes(tree);
   const inSplit = leaves.length > 1;
+  // Keep saved split ratios and mounted drafts; narrow windows can scroll the
+  // layout or use the existing maximize control instead of crushing each input.
+  const minimumLayoutWidth = inSplit && !maximum
+    ? Math.max(...leaves.map((pane) => 320 / Math.max(pane.rect.w, 0.1)))
+    : undefined;
   // Only this tree's sessions (its panes, tab groups and agent file tabs), so a
   // status change in an unrelated session leaves the tree alone.
   // A hidden tree keeps what it last showed, as the memo below keeps its props.
@@ -589,9 +594,11 @@ function PaneTreeComponent({
   }, []);
 
   return (
+    <div className="h-full min-h-0 min-w-0 overflow-x-auto">
     <div
       ref={treeRef}
       className="relative h-full min-h-0 min-w-0"
+      style={{ minWidth: minimumLayoutWidth }}
       data-pane-maximized={maximum?.id}
     >
       {renderLeaves.map((leaf) => {
@@ -631,7 +638,7 @@ function PaneTreeComponent({
             }}
             onInputCapture={() => session && onSessionInteraction?.(session.id)}
             data-pane-can-maximize={(inSplit || maximum) && !hidden ? "true" : undefined}
-            className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden ${focusedId === leaf.id ? "ring-1 ring-inset ring-(--ui-tone-accent-border)" : ""} ${dragging ? "opacity-40" : ""}`}
+            className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden ${inSplit && !maximum && focusedId === leaf.id ? "ring-1 ring-inset ring-(--ui-field-border-focus)" : ""} ${dragging ? "opacity-40" : ""}`}
             // The new pane focuses its composer or editor while it is still
             // offscreen, and focus scrolls this clip box to reveal it, which
             // fights the slide. Scroll events land before paint, so undoing
@@ -875,6 +882,7 @@ function PaneTreeComponent({
           onCancel={() => setDraft(null)}
         />
       ))}
+    </div>
     </div>
   );
 }

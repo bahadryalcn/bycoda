@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -9,6 +10,7 @@ import type {
 } from "../src/features/connections/model/protocol";
 import type { Block, Session } from "../src/features/sessions/model/session";
 import { DesktopLive } from "./desktopLive";
+import { parseHead } from "../src/features/sync/model/conversationHead";
 
 // Must match the desktop app's Tauri identifiers and its session database
 // (src-tauri/tauri*.conf.json, src-tauri/src/session_store.rs).
@@ -140,6 +142,7 @@ export class DesktopSessions {
   private query<T>(
     path: string,
     run: (db: DatabaseSync, columns: () => Set<string>) => T,
+    required = false,
   ): T | undefined {
     for (let attempt = 0; ; attempt++) {
       try {
@@ -152,6 +155,8 @@ export class DesktopSessions {
         this.drop(path);
         if (attempt > 0) {
           console.error("Could not read desktop sessions:", error);
+          if (required && !["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? ""))
+            throw new Error("Desktop session metadata is temporarily unavailable.", { cause: error });
           return undefined;
         }
       }
@@ -224,9 +229,10 @@ export class DesktopSessions {
       for (const file of [path, `${path}-wal`]) {
         try {
           const stat = statSync(file);
-          parts.push(`${stat.mtimeMs}:${stat.size}`);
-        } catch {
-          parts.push("-");
+          parts.push(`${file}:${stat.dev}:${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`);
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          parts.push(code === "ENOENT" || code === "ENOTDIR" ? "-" : `unavailable:${code ?? "unknown"}`);
         }
       }
     return parts.join("|");
@@ -234,6 +240,7 @@ export class DesktopSessions {
 
   /** Releases every cached connection (host shutdown). */
   close(): void {
+    this.listSnapshots.clear();
     for (const path of [...this.handles.keys()]) this.drop(path);
   }
 
@@ -258,7 +265,7 @@ export class DesktopSessions {
       ${optional("branch")}, ${optional("archived", "0")}, ${optional("worktree_cwd")},
       ${optional("has_user_message", "1")}, ${optional("pinned", "0")},
       ${optional("linked_work_item_json")}, ${optional("provider_account_id")},
-      ${optional("is_draft", "0")}, ${optional("inbox_ask")}
+      ${optional("is_draft", "0")}, ${optional("inbox_ask")}, ${optional("adopted_base")}
       FROM ${transcriptView ? "session_transcripts" : "sessions"} WHERE ${where}`;
     const running = new Set<string>();
     try {
@@ -322,6 +329,7 @@ export class DesktopSessions {
     where: string | ((db: DatabaseSync, columns: Set<string>) => [string, string[]] | undefined),
     args: string[],
     blocks = true,
+    required = false,
   ): Found[] {
     const best = new Map<string, Found>();
     for (const path of this.paths()) {
@@ -330,7 +338,7 @@ export class DesktopSessions {
         const filter =
           typeof where === "string" ? ([where, args] as [string, string[]]) : where(db, set);
         return filter ? this.rows(db, set, filter[0], filter[1], blocks) : [];
-      }) ?? []) {
+      }, required) ?? []) {
         const id = String(found.row.id);
         const old = best.get(id);
         if (!old) best.set(id, found);
@@ -351,7 +359,55 @@ export class DesktopSessions {
     return [...best.values()];
   }
 
+  private listSnapshots = new Map<string, {
+    database: string;
+    refreshed: number;
+    live: string;
+    ids: string[];
+    stored: boolean[];
+    bytes: number;
+    value: { fingerprint: string; sessions: HostSessionSummary[] };
+  }>();
+
+  /** Metadata-only validation is shared by direct lists and change watchers.
+   * A database commit in another project may require checking local metadata,
+   * but must not invalidate this project's materialized host/branch list. */
+  listSnapshot(projectCwd: string, projectId: string, providers: readonly string[]) {
+    const key = JSON.stringify([normalizeProjectPath(projectCwd, this.platform), projectId, providers]);
+    const database = this.fingerprint();
+    const previous = this.listSnapshots.get(key);
+    if (previous && previous.database === database && Date.now() - previous.refreshed < 30_000 && previous.live === this.live.listVersion(previous.ids, previous.stored)) {
+      this.listSnapshots.delete(key);
+      this.listSnapshots.set(key, previous);
+      return previous.value;
+    }
+    const rows = this.listRows(projectCwd, providers);
+    const sessions = rows.map((row) => this.summaryOf(row, projectId));
+    const json = JSON.stringify(sessions);
+    const fingerprint = createHash("sha256").update(json).digest("base64url");
+    const value = previous?.value.fingerprint === fingerprint ? previous.value : { fingerprint, sessions };
+    const ids = value.sessions.map((session) => session.id);
+    const stored = rows.map((row) => row.stored);
+    this.listSnapshots.delete(key);
+    this.listSnapshots.set(key, {
+      database, refreshed: Date.now(), ids, stored, live: this.live.listVersion(ids, stored), bytes: Buffer.byteLength(json), value,
+    });
+    let bytes = 0;
+    for (const entry of this.listSnapshots.values()) bytes += entry.bytes;
+    while (this.listSnapshots.size > 32 || bytes > 16 * 1024 * 1024) {
+      const first = this.listSnapshots.keys().next().value;
+      if (first === undefined) break;
+      bytes -= this.listSnapshots.get(first)!.bytes;
+      this.listSnapshots.delete(first);
+    }
+    return value;
+  }
+
   list(projectCwd: string, projectId: string, providers: readonly string[]): HostSessionSummary[] {
+    return this.listSnapshot(projectCwd, projectId, providers).sessions;
+  }
+
+  private listRows(projectCwd: string, providers: readonly string[]): Found[] {
     const target = normalizeProjectPath(projectCwd, this.platform);
     if (providers.length === 0) return [];
     // Listing is polled; transcripts are only read for an opened session.
@@ -375,13 +431,13 @@ export class DesktopSessions {
       },
       [],
       false,
+      true,
     )
       .filter(
         ({ row }) =>
           providers.includes(String(row.harness)) &&
           normalizeProjectPath(String(row.cwd), this.platform) === target,
-      )
-      .map((found) => this.summaryOf(found, projectId));
+      );
   }
 
   /** When the owning desktop copy last changed, without reading its
@@ -487,6 +543,8 @@ export class DesktopSessions {
       console.warn(`[bycoda] desktop transcript ${id} is unreadable; skipping its snapshot`);
       return undefined;
     }
+    // The transcript this desktop last agreed on with the host; an older app has no column.
+    const adoptedBase = parseHead(parse(row.adopted_base));
     const session: Session = {
       id: String(row.id),
       harness: String(row.harness) as Session["harness"],
@@ -501,6 +559,7 @@ export class DesktopSessions {
       ...(row.branch ? { branch: String(row.branch) } : {}),
       ...(row.worktree_cwd ? { worktreeCwd: String(row.worktree_cwd) } : {}),
       ...(row.linked_work_item_json ? { linkedWorkItem: parse(row.linked_work_item_json) } : {}),
+      ...(adoptedBase ? { adoptedBase } : {}),
       // A turn the desktop is running shows as running to whoever watches.
       ...(found.inFlight ? { busy: true } : {}),
     };

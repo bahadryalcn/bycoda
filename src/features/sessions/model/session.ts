@@ -334,7 +334,12 @@ export type TurnMetrics = {
 
 export type Block = {
   /** Bounded remote preview; full content is requested explicitly, never persisted. */
-  remoteContent?: { revision: number; bytes: number };
+  remoteContent?: {
+    revision: number;
+    bytes: number;
+    /** Digest of the full block this preview was made from, when requested (`sessions.digests`). */
+    digest?: string;
+  };
   id: string;
   role: BlockRole;
   text: string;
@@ -560,14 +565,32 @@ export type Session = {
   pendingQuestion?: UserQuestionPrompt;
   /** The local host is running a turn for this session for another computer; Send is held. In-memory. */
   continuingElsewhere?: boolean;
-  /** A host mirror was rejected; the local transcript is intact. In-memory. */
+  /** A host mirror was rejected; the local transcript is intact. In-memory: after
+   * a restart only the record (`adoptedDivergence`) returns, and the next pass
+   * that reaches the host proves the conflict again before it locks sending. */
   adoptedSyncConflict?: boolean;
+  /** The proven divergence from this computer's host copy that was flagged, and
+   * whether the user chose to keep this version. Persisted so a restart neither
+   * repeats the notice nor answers it. */
+  adoptedDivergence?: AdoptedDivergence;
+  /** The transcript this computer and its host last agreed on, so the next
+   * comparison knows which side changed since. Persisted. */
+  adoptedBase?: import("../../sync/model/conversationHead").ConversationHead;
   /** Archived transcript tails removed by explicit conversation rewind. */
   rewindHistory?: ConversationRewindEntry[];
   /** Remote archive metadata was shortened for transport; host archive is intact. */
   rewindHistoryTruncated?: boolean;
   /** One-shot replay context, derived only from the retained transcript prefix. */
   pendingContextReplay?: string;
+};
+
+/** `key` names one divergence by the content that differs; `keep` records the
+ * user's choice to keep this computer's version for it. */
+export type AdoptedDivergence = {
+  key: string;
+  keep?: true;
+  /** The host's transcript when this was flagged; keeping this version agrees on it. */
+  hostHead?: import("../../sync/model/conversationHead").ConversationHead;
 };
 
 export type PendingHarnessSwitch = {

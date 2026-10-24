@@ -106,6 +106,7 @@ export function NoteMarkdownEditor({
   const schemeConfig = useRef(new Compartment());
   const initial = useRef({ scheme, autoFocus, minHeight, showLineNumbers });
   const valueRef = useRef(value);
+  const documentValue = useRef<string | undefined>(undefined);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const onPasteImagesRef = useRef(onPasteImages);
@@ -117,8 +118,9 @@ export function NoteMarkdownEditor({
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    documentValue.current = normalizeLineBreaks(valueRef.current);
     const view = new EditorView({
-      doc: normalizeLineBreaks(valueRef.current),
+      doc: documentValue.current,
       parent: host,
       extensions: [
         minimalSetup,
@@ -181,7 +183,9 @@ export function NoteMarkdownEditor({
           if (update.transactions.every((tr) => tr.annotation(externalChange))) {
             return;
           }
-          onChangeRef.current(update.state.doc.toString());
+          const next = update.state.doc.toString();
+          documentValue.current = next;
+          onChangeRef.current(next);
         }),
       ],
     });
@@ -199,6 +203,8 @@ export function NoteMarkdownEditor({
     const view = viewRef.current;
     if (!view) return;
     const next = normalizeLineBreaks(value);
+    // The local update listener already materialized this exact document for onChange.
+    if (next === documentValue.current) return;
     const current = view.state.doc.toString();
     if (next === current) return;
     // Replace only what differs so the caret and undo history stay useful.
@@ -211,6 +217,7 @@ export function NoteMarkdownEditor({
       currentEnd -= 1;
       nextEnd -= 1;
     }
+    documentValue.current = next;
     view.dispatch({
       changes: {
         from: start,

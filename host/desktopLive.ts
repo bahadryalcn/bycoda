@@ -20,6 +20,12 @@ export const DESKTOP_BEAT_STALE_MS = 20_000;
 const MAX_PENDING_BLOCKS = 50;
 const MAX_COMMANDS = 100;
 export const DESKTOP_COMMAND_RETAIN_MS = 5 * 60_000;
+/**
+ * How long the desktop database's in-flight mark is believed from an app that
+ * never sent a heartbeat. A crashed app leaves the mark behind for good; without
+ * an end the host would never send a queued message of that conversation.
+ */
+export const DESKTOP_STORED_RUNNING_MS = 15 * 60_000;
 
 export type DesktopCommand = {
   id: string;
@@ -137,12 +143,27 @@ export class DesktopLive {
   private clients = new Map<string, number>();
   private sessions = new Map<string, LiveSession>();
   private commands: (DesktopCommand & { queuedAt: number })[] = [];
-  private directories = new Map<string, { at: number; value?: DesktopProjectDirectory }>();
+  private directories = new Map<string, { at: number; value?: DesktopProjectDirectory; revision?: string }>();
 
   private lastChange = 0;
 
   onChange?: () => void;
+  /** A window reported a conversation busy (each beat while it runs). */
+  onBusy?: (sessionId: string, clientId: string) => void;
+  /** A conversation a window ran is no longer busy there (`idle`), or the window stopped answering (`gone`). */
+  onIdle?: (sessionId: string, clientId: string, reason?: "idle" | "gone") => void;
+  /** When the in-flight mark of a session was first seen while no app had beat. */
+  private storedSince = new Map<string, number>();
   constructor(private readonly now: () => number = Date.now) {}
+
+  /** Only running state, including heartbeat/stored-mark expiry, influences
+   * list metadata. Prompt text changes must not reread SQLite list rows. */
+  listVersion(ids: readonly string[], stored: readonly boolean[]): string {
+    let states = "";
+    for (let index = 0; index < ids.length; index++)
+      states += this.running(ids[index], stored[index]) ? "1" : "0";
+    return states;
+  }
 
   private reclaimCommands(): void {
     const now = this.now();
@@ -162,7 +183,7 @@ export class DesktopLive {
     return this.lastChange;
   }
 
-  beat(input: unknown): { commands: DesktopCommand[] } {
+  beat(input: unknown): { commands: DesktopCommand[]; projectDirectoryRevision?: string } {
     const value =
       input && typeof input === "object" && !Array.isArray(input)
         ? (input as Record<string, unknown>)
@@ -170,9 +191,16 @@ export class DesktopLive {
     if (!Array.isArray(value.sessions)) throw new Error("Invalid desktop sessions");
     const clientId =
       typeof value.clientId === "string" && value.clientId ? value.clientId : "legacy";
+    const revision = typeof value.projectDirectoryRevision === "string" &&
+      value.projectDirectoryRevision.length > 0 && value.projectDirectoryRevision.length <= 64
+      ? value.projectDirectoryRevision : undefined;
     if (Object.hasOwn(value, "projectDirectory")) {
       const projection = parseDesktopProjectDirectory(value.projectDirectory);
-      this.directories.set(clientId, { at: this.now(), value: projection });
+      this.directories.set(clientId, { at: this.now(), value: projection, revision: projection ? revision : undefined });
+    } else if (revision) {
+      const previous = this.directories.get(clientId);
+      if (previous?.value && previous.revision === revision)
+        previous.at = this.now();
     }
     const acked = new Set(Array.isArray(value.acked) ? value.acked.map(String) : []);
     const next = new Map(this.sessions);
@@ -203,6 +231,8 @@ export class DesktopLive {
           : {};
       const fingerprint = JSON.stringify([pending, patch]);
       const previous = this.sessions.get(entry.id);
+      if (entry.busy === true) this.onBusy?.(entry.id, clientId);
+      else if (previous?.busy && previous.clientId === clientId) this.onIdle?.(entry.id, clientId);
       next.set(entry.id, {
         clientId,
         busy: entry.busy === true,
@@ -223,7 +253,8 @@ export class DesktopLive {
         previous.clientId === clientId &&
         !reported.has(id) &&
         (previous.busy || previous.fingerprint !== "[[],{}]")
-      )
+      ) {
+        if (previous.busy) this.onIdle?.(id, clientId);
         next.set(id, {
           clientId,
           busy: false,
@@ -232,6 +263,7 @@ export class DesktopLive {
           fingerprint: "[[],{}]",
           changedAt: this.changeStamp(),
         });
+      }
     let changed =
       [...next].some(([id, value]) => this.sessions.get(id)?.changedAt !== value.changedAt) ||
       next.size !== this.sessions.size;
@@ -242,6 +274,7 @@ export class DesktopLive {
         !acked.has(command.id) || this.sessions.get(command.sessionId)?.clientId !== clientId,
     );
     this.clients.set(clientId, this.now());
+    this.storedSince.clear();
     for (const [id, beatAt] of this.clients) {
       if (this.now() - beatAt <= DESKTOP_BEAT_STALE_MS) continue;
       this.clients.delete(id);
@@ -249,6 +282,7 @@ export class DesktopLive {
       for (const [sessionId, session] of this.sessions)
         if (session.clientId === id) {
           this.sessions.delete(sessionId);
+          if (session.busy) this.onIdle?.(sessionId, id, "gone");
           changed = true;
         }
     }
@@ -257,6 +291,8 @@ export class DesktopLive {
     this.reclaimCommands();
     if (changed) this.onChange?.();
     return {
+      ...(revision && this.directories.get(clientId)?.revision === revision
+        ? { projectDirectoryRevision: revision } : {}),
       commands: this.commands
         .filter((command) => this.sessions.get(command.sessionId)?.clientId === clientId)
         .map(({ queuedAt: _queuedAt, ...command }) => command),
@@ -333,9 +369,38 @@ export class DesktopLive {
    * only trusted from an app that doesn't send heartbeats. */
   running(id: string, stored: boolean): boolean {
     const alive = this.alive();
-    if (alive === undefined) return stored;
+    if (alive === undefined) {
+      if (!stored) {
+        this.storedSince.delete(id);
+        return false;
+      }
+      // No app has beat since this host started: the mark is all there is. It is
+      // believed for a while; a crashed app leaves it behind for good.
+      const since = this.storedSince.get(id) ?? this.now();
+      this.storedSince.set(id, since);
+      while (this.storedSince.size > 512)
+        this.storedSince.delete(this.storedSince.keys().next().value!);
+      return this.now() - since < DESKTOP_STORED_RUNNING_MS;
+    }
     const session = this.sessions.get(id);
     return alive && !!session?.busy && this.clientAlive(session.clientId);
+  }
+
+  /** When the earliest in-flight mark believed without a heartbeat stops counting, so the host looks again then. */
+  nextStoredExpiry(): number | undefined {
+    if (this.alive() !== undefined) return undefined;
+    let earliest: number | undefined;
+    for (const since of this.storedSince.values()) {
+      const at = since + DESKTOP_STORED_RUNNING_MS;
+      if (at > this.now()) earliest = Math.min(earliest ?? at, at);
+    }
+    return earliest;
+  }
+
+  /** The window that reports `id` busy right now, if it is alive. */
+  busyClient(id: string): string | undefined {
+    const session = this.sessions.get(id);
+    return session?.busy && this.clientAlive(session.clientId) ? session.clientId : undefined;
   }
 
   /** Live prompts laid over a stored session, and when they last changed. */

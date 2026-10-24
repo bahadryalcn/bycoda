@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
   gitDiffIndex,
@@ -68,7 +68,20 @@ export function GitGraphWorkspace({
   const [feedback] = useGitPanelState(cwd, "feedback");
   const read = useCallback(() => gitDiffIndex(cwd), [cwd]);
   const index = useGitResource(cwd, `graph-index:${cwd}`, true, read);
-  const [rail, setRail] = useState(true);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  // An explicit toggle survives resizing; otherwise use the space available to this workspace.
+  const [rail, setRail] = useState<boolean | null>(null);
+  const railVisible = rail ?? !compact;
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const resize = () => setCompact(workspace.clientWidth < 960);
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(workspace);
+    return () => observer.disconnect();
+  }, []);
   const [actionAnchor, setActionAnchor] = useState<HTMLElement | null>(null);
   const {
     width: railWidth,
@@ -78,7 +91,8 @@ export function GitGraphWorkspace({
     onDoubleClick: onBranchDoubleClick,
   } = useDragResize({
     min: 180,
-    max: () => Math.min(400, window.innerWidth - 720),
+    max: () =>
+      Math.max(180, Math.min(400, (workspaceRef.current?.clientWidth ?? window.innerWidth) - 720)),
     initial: branchWidth,
     defaultWidth: 240,
     onCommit: (width) => {
@@ -108,7 +122,13 @@ export function GitGraphWorkspace({
     dragging: inspectorDragging,
   } = useDragResize({
     min: 360,
-    max: () => Math.max(360, window.innerWidth - (rail ? railWidth : 0) - 440),
+    max: () =>
+      Math.max(
+        360,
+        (workspaceRef.current?.clientWidth ?? window.innerWidth) -
+          (railVisible ? railWidth : 0) -
+          440,
+      ),
     initial: inspectorWidth,
     defaultWidth: 520,
     direction: "left",
@@ -182,7 +202,10 @@ export function GitGraphWorkspace({
     setConflict({ path, relative });
   };
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-[var(--ui-surface)] text-content">
+    <div
+      ref={workspaceRef}
+      className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--ui-surface)] text-content"
+    >
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke bg-[var(--ui-surface)] px-3 py-2">
         <Button
           size="sm"
@@ -192,8 +215,8 @@ export function GitGraphWorkspace({
           motion="none"
           type="button"
           aria-label={t("Toggle branches")}
-          aria-pressed={rail}
-          onClick={() => setRail(!rail)}
+          aria-pressed={railVisible}
+          onClick={() => setRail(!railVisible)}
         >
           <PanelLeft className="size-4" />
         </Button>
@@ -338,11 +361,11 @@ export function GitGraphWorkspace({
         />
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-x-auto">
-        {rail ? (
+        {railVisible ? (
           <>
             <aside
               ref={setBranchPaneRef}
-              className="flex min-w-0 shrink-0 flex-col bg-[var(--ui-surface)] max-h-full"
+              className="flex max-h-full min-w-[180px] shrink-0 flex-col overflow-hidden bg-[var(--ui-surface)]"
             >
               <GitGraphBranches
                 cwd={cwd}

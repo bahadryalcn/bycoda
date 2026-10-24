@@ -3,8 +3,10 @@ import { newSession, type Session } from "../../sessions/model/session";
 import {
   EMPTY_REMOTE_QUEUE,
   REMOTE_QUEUE_MAX_BYTES,
+  LEASE_RETRY_MAX_MS,
   editRemoteMessage,
   enqueueRemoteMessage,
+  leaseRetryDelay,
   nextRemoteQueuedMessage,
   pauseRemoteQueue,
   queueSessionFields,
@@ -242,5 +244,13 @@ describe("reordering a remote queue", () => {
     const queue = queueOf("a", "c", "d");
     expect(reorderRemoteMessages(queue, ["a", "c", "d"])).toBe(queue);
     expect(ids(reorderRemoteMessages(queue, ["c", "b", "a"]))).toEqual(["c", "a", "d"]);
+  });
+});
+
+describe("waiting for a desktop's turn", () => {
+  it("doubles the wait and then keeps trying at the cap instead of giving up", () => {
+    expect([0, 1, 2, 3, 4].map(leaseRetryDelay)).toEqual([2_000, 4_000, 8_000, 16_000, 32_000]);
+    expect(leaseRetryDelay(5)).toBe(LEASE_RETRY_MAX_MS);
+    expect(leaseRetryDelay(50)).toBe(LEASE_RETRY_MAX_MS);
   });
 });

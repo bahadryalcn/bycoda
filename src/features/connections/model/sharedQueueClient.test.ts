@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DatabaseSync } from "node:sqlite";
+import { SessionQueues } from "../../../../host/session-queue";
 import { invoke } from "@tauri-apps/api/core";
 import { SharedQueueClient, type QueueTransport } from "./sharedQueueClient";
-import { mergeQueueChange, type SharedQueue } from "./sharedQueue";
+import { mergeQueueChange, QUEUE_LEASE_TTL_MS, type SharedQueue } from "./sharedQueue";
 import { recordRemoteCapabilities } from "./connections";
 import {
   ATTACHMENT_OWNERSHIP_CAPABILITY,
@@ -38,8 +40,9 @@ function fixture() {
         ...mergeQueueChange(queue, {
           before: params.before as SharedQueue,
           after: params.after as SharedQueue,
-          consumer: params.takeOwnership ? String(params.clientId) : undefined,
         }),
+        // A host from before drain leases: the first owner is permanent.
+        ...(params.takeOwnership ? { consumer: String(params.clientId) } : {}),
         revision: queue.revision + 1,
       };
     }
@@ -279,8 +282,8 @@ it("keeps interactive retry behind an in-flight queue mutation", async () => {
         ...mergeQueueChange(queue, {
           before: params.before as SharedQueue,
           after: params.after as SharedQueue,
-          consumer: String(params.clientId),
         }),
+        consumer: String(params.clientId),
         revision: queue.revision + 1,
       };
     } else if (method.endsWith(".get")) reads++;
@@ -357,7 +360,8 @@ it("restores unpublished local rows from the durable baseline without resurrecti
   const a = f.client("desktop:a");
   await a.initialize({ messages: [message("consumed")], status: "active" });
   f.replace({ ...f.queue(), messages: [], status: undefined, revision: f.queue().revision + 1 });
-  const restored = f.client("desktop:new");
+  // The app restarted: the window keeps its identity, and with it its saved queue.
+  const restored = f.client("desktop:a");
   await restored.initialize({
     messages: [message("consumed"), message("offline-new")],
     status: "restored",
@@ -386,7 +390,8 @@ it("recovers an acknowledged desktop send after a lost finish response", async (
   const token = await a.claim("a", false);
   f.offline(true);
   await expect(a.finish(token!, true)).rejects.toThrow();
-  const restored = f.client("desktop:new");
+  // The app restarted: the window keeps its identity, and with it its saved queue.
+  const restored = f.client("desktop:a");
   f.offline(false);
   await restored.initialize();
   expect(restored.snapshot().queue.messages).toEqual([]);
@@ -511,4 +516,547 @@ it("hands closed-window queue claims to durable global drafts and retires them a
   } finally {
     vi.mocked(invoke).mockImplementation(original);
   }
+});
+
+it("claims again against the new revision when another computer changed the queue first", async () => {
+  const clientId = "desktop:racing";
+  let queue: SharedQueue = {
+    messages: [message("a")],
+    revision: 1,
+    consumer: clientId,
+    status: "active",
+  };
+  let claims = 0;
+  const request: QueueTransport = async (method, params) => {
+    if (method.endsWith(".claim")) {
+      claims++;
+      // The other computer appends after the desktop read and before its claim lands.
+      if (claims === 1) queue = { ...queue, revision: 2, messages: [message("a"), message("b")] };
+      if (params.revision !== queue.revision)
+        throw new Error("The shared queue changed. Refresh it before sending.");
+      queue = {
+        ...queue,
+        revision: queue.revision + 1,
+        claim: { id: String(params.id), clientId, token: "token" },
+      };
+    }
+    return structuredClone(queue) as never;
+  };
+  const client = new SharedQueueClient("machine", "host", "racing-chat", clientId, request);
+  await client.initialize();
+  expect(await client.claim("a", false)).toBe("token");
+  expect(claims).toBe(2);
+});
+
+it("stops retrying a claim that keeps being refused and reports the refusal", async () => {
+  const clientId = "desktop:racing";
+  let queue: SharedQueue = {
+    messages: [message("a")],
+    revision: 1,
+    consumer: clientId,
+    status: "active",
+  };
+  let claims = 0;
+  const request: QueueTransport = async (method) => {
+    if (method.endsWith(".claim")) {
+      claims++;
+      queue = { ...queue, revision: queue.revision + 1 };
+      throw new Error("The shared queue changed. Refresh it before sending.");
+    }
+    return structuredClone(queue) as never;
+  };
+  const client = new SharedQueueClient("machine", "host", "racing-chat", clientId, request);
+  await client.initialize();
+  await expect(client.claim("a", false)).rejects.toThrow(/shared queue changed/);
+  expect(claims).toBeLessThan(10);
+});
+
+it("reports an unconfirmed send from its journal, but not while no send was started", async () => {
+  const f = fixture();
+  const a = f.client("desktop:a");
+  await a.initialize({ messages: [message("a")], status: "active" });
+  expect(await a.unconfirmed()).toBe(false);
+  expect(await a.claim("a", false)).toBe("token");
+  expect(await a.unconfirmed()).toBe(true);
+  expect(a.snapshot().recovery).toBe("a");
+  await a.resolveRecovery(true);
+  expect(await a.unconfirmed()).toBe(false);
+  expect(f.queue().messages).toEqual([]);
+});
+
+/** The host's durable queue behind its real RPC surface, with a clock the test moves. */
+function leasedHost() {
+  const clock = { at: 5_000_000 };
+  const queues = new SessionQueues(new DatabaseSync(":memory:"), () => clock.at);
+  const request: QueueTransport = async (method, params) => {
+    const action = method.split(".").pop() as "get" | "change" | "claim" | "finish" | "lease";
+    vi.setSystemTime(clock.at);
+    return structuredClone(
+      queues.serve(
+        action,
+        String(params.sessionId),
+        String(params.clientId),
+        params,
+        action === "change" ? { before: params.before, after: params.after } : undefined,
+      ),
+    ) as never;
+  };
+  const client = (id: string) =>
+    new SharedQueueClient("machine", "host", "chat", id, request, async (_m, files) => files);
+  return { clock, queues, client };
+}
+const waitingRow = (id: string) => ({ id, text: id, attachments: [] });
+
+describe("acknowledgement replay", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(5_000_000);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  /** A host whose reply to `finish` can be lost after it applied the change. */
+  function lossyHost() {
+    const host = leasedHost();
+    let lose = false;
+    const request: QueueTransport = async (method, params) => {
+      const action = method.split(".").pop() as "get" | "change" | "claim" | "finish" | "lease";
+      const reply = structuredClone(
+        host.queues.serve(
+          action,
+          String(params.sessionId),
+          String(params.clientId),
+          params,
+          action === "change" ? { before: params.before, after: params.after } : undefined,
+        ),
+      );
+      if (lose && action === "finish") throw new Error("reply lost");
+      return reply as never;
+    };
+    return {
+      ...host,
+      loseNextFinish: () => {
+        lose = true;
+      },
+      reachable: () => {
+        lose = false;
+      },
+      client: (id: string) =>
+        new SharedQueueClient("machine", "host", "chat", id, request, async (_m, files) => files),
+    };
+  }
+  const sendKey = (id: string) =>
+    `bycoda:shared-queue:v2:${JSON.stringify(["host", "chat", id])}:send`;
+  const twoRows = (queue: { messages: unknown[] }) => ({
+    ...queue,
+    messages: [waitingRow("a"), waitingRow("b")],
+    status: "active" as const,
+  });
+
+  it("does not pause the queue when a delivered send is replayed after its reply was lost", async () => {
+    const host = lossyHost();
+    const first = host.client("desktop:win");
+    await first.initialize();
+    first.update(twoRows);
+    await first.sync();
+    const token = await first.claim("a", false);
+    host.loseNextFinish();
+    await expect(first.finish(token!, true)).rejects.toThrow("reply lost");
+    host.reachable();
+    // The app restarted before it learned the host had applied the change.
+    const restarted = host.client("desktop:win");
+    await restarted.initialize();
+    expect(restarted.snapshot().error).toBeUndefined();
+    expect(restarted.snapshot().recovery).toBeUndefined();
+    expect(host.queues.get("chat").messages.map((row) => row.id)).toEqual(["b"]);
+    expect(host.queues.get("chat").status).toBe("active");
+    expect(restarted.canDrain()).toBe(true);
+  });
+
+  it("still holds the queue when a refused send is replayed", async () => {
+    const host = lossyHost();
+    const first = host.client("desktop:win");
+    await first.initialize();
+    first.update(twoRows);
+    await first.sync();
+    const token = await first.claim("a", false);
+    host.loseNextFinish();
+    await expect(first.finish(token!, false)).rejects.toThrow("reply lost");
+    host.reachable();
+    const restarted = host.client("desktop:win");
+    await restarted.initialize();
+    await restarted.sync();
+    expect(host.queues.get("chat").messages.map((row) => row.id)).toEqual(["a", "b"]);
+    expect(host.queues.get("chat").status).toBe("paused");
+  });
+
+  it("does not pause the queue when a wait for the host is replayed", async () => {
+    const host = lossyHost();
+    const first = host.client("desktop:win");
+    await first.initialize();
+    first.update(twoRows);
+    await first.sync();
+    const token = await first.claim("a", false);
+    host.loseNextFinish();
+    // Not accepted, but not a refusal either: the host was busy with its own turn.
+    await expect(first.finish(token!, false, false)).rejects.toThrow("reply lost");
+    host.reachable();
+    const restarted = host.client("desktop:win");
+    await restarted.initialize();
+    expect(host.queues.get("chat").status).toBe("active");
+  });
+
+  it("settles a replay against a host that moved on, instead of failing every later read", async () => {
+    const host = lossyHost();
+    const first = host.client("desktop:win");
+    await first.initialize();
+    first.update(twoRows);
+    await first.sync();
+    const token = await first.claim("a", false);
+    host.loseNextFinish();
+    await expect(first.finish(token!, true)).rejects.toThrow("reply lost");
+    host.reachable();
+    // Meanwhile another send went through, so the host's record of this token is gone.
+    const current = host.queues.get("chat");
+    const next = host.queues.claim("chat", "b", "desktop:win", current.revision, false, {
+      epoch: current.drain!.epoch,
+    });
+    host.queues.finish("chat", next.claim!.token, true);
+    const restarted = host.client("desktop:win");
+    await restarted.initialize();
+    expect(restarted.snapshot().error).toBeUndefined();
+    expect(restarted.snapshot().recovery).toBeUndefined();
+    expect(localStorage.getItem(sendKey("desktop:win"))).toBeNull();
+  });
+
+  it("takes the queue over from a live holder on request, without changing it", async () => {
+    const host = lossyHost();
+    const first = host.client("desktop:one");
+    await first.initialize();
+    first.update((queue) => ({ ...queue, messages: [waitingRow("a")], status: "active" }));
+    await first.sync();
+    const second = host.client("desktop:two");
+    await second.initialize();
+    expect(second.heldByOther()).toBe(true);
+    await second.takeOver();
+    expect(second.canDrain()).toBe(true);
+    expect(second.heldByOther()).toBe(false);
+    expect(host.queues.get("chat")).toMatchObject({
+      messages: [waitingRow("a")],
+      status: "active",
+      drain: { holder: "desktop:two", epoch: 2 },
+    });
+  });
+});
+
+describe("drain lease", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(5_000_000);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("lets a desktop that sees waiting work take the lease, and never a remote computer", async () => {
+    const host = leasedHost();
+    const mac = host.client("remote:mac");
+    await mac.initialize();
+    mac.update((queue) => enqueueRemoteMessage(queue, waitingRow("m1")));
+    await mac.sync();
+    expect(host.queues.get("chat").drain).toBeUndefined();
+    expect(mac.canDrain()).toBe(false);
+    expect(mac.hostDrains()).toBe(true);
+    const desktop = host.client("desktop:win");
+    await desktop.initialize();
+    expect(desktop.canDrain()).toBe(true);
+    expect(host.queues.get("chat").drain).toMatchObject({ holder: "desktop:win", epoch: 1 });
+    expect(desktop.heldLease()).toEqual({ sessionId: "chat", epoch: 1 });
+    expect(desktop.dispatch("m1")).toMatchObject({ leaseAware: true, epoch: 1 });
+    // The Mac sees who holds it, and may still send a row it picked itself.
+    await mac.sync();
+    expect(mac.heldByOther()).toBe(true);
+    expect(mac.canSendSelected()).toBe(false);
+  });
+
+  it("leaves a live lease to its holder, and takes the queue over only when asked to", async () => {
+    const host = leasedHost();
+    const first = host.client("desktop:one");
+    await first.initialize();
+    first.update((queue) => enqueueRemoteMessage(queue, waitingRow("a")));
+    await first.sync();
+    const second = host.client("desktop:two");
+    await second.initialize();
+    expect(second.canDrain()).toBe(false);
+    expect(second.heldByOther()).toBe(true);
+    // Resume: an explicit takeover.
+    second.update((queue) => ({ ...queue, status: "active" }), true);
+    await second.sync();
+    expect(second.canDrain()).toBe(true);
+    expect(host.queues.get("chat").drain).toMatchObject({ holder: "desktop:two", epoch: 2 });
+    // The first window finds it has lost the queue.
+    await first.sync();
+    expect(first.canDrain()).toBe(false);
+    await expect(first.claim("a", false)).resolves.toBeUndefined();
+  });
+
+  it("stops draining the moment the heartbeat says the lease is gone, and when the lease ran out unrenewed", async () => {
+    const host = leasedHost();
+    const desktop = host.client("desktop:win");
+    await desktop.initialize();
+    desktop.update((queue) => enqueueRemoteMessage(queue, waitingRow("a")));
+    await desktop.sync();
+    expect(desktop.canDrain()).toBe(true);
+    desktop.noteLease({ holder: "desktop:win", epoch: 1, expiresAt: Date.now() + 60_000 });
+    vi.advanceTimersByTime(30_000);
+    expect(desktop.canDrain()).toBe(true); // renewed by the heartbeat
+    desktop.noteLease(null);
+    expect(desktop.canDrain()).toBe(false);
+    expect(desktop.heldLease()).toBeUndefined();
+    // The next look takes it back under a new epoch.
+    host.clock.at += QUEUE_LEASE_TTL_MS + 1_000;
+    await desktop.sync();
+    expect(desktop.canDrain()).toBe(true);
+    expect(host.queues.get("chat").drain?.epoch).toBe(2);
+    // Without renewals the client itself stops trusting its lease at expiry.
+    vi.advanceTimersByTime(QUEUE_LEASE_TTL_MS + 5_000);
+    expect(desktop.canDrain()).toBe(false);
+  });
+
+  it("keeps the lease of a hidden window that beats only about once a minute", async () => {
+    const host = leasedHost();
+    const desktop = host.client("desktop:win");
+    await desktop.initialize();
+    desktop.update((queue) => enqueueRemoteMessage(queue, waitingRow("a")));
+    await desktop.sync();
+    const lease = host.queues.get("chat").drain!;
+    // Three throttled beats in a row, each a minute after the last.
+    for (let beat = 0; beat < 3; beat++) {
+      host.clock.at += 60_000;
+      expect(host.queues.live(host.queues.get("chat"))).toBe(true);
+      expect(host.queues.renew("chat", "desktop:win", lease.epoch)).not.toBeNull();
+    }
+    expect(host.queues.get("chat").drain?.epoch).toBe(lease.epoch);
+  });
+
+  it("passes the host's extra bookkeeping along without tripping over it", async () => {
+    const host = leasedHost();
+    const plain = host.client("desktop:win");
+    const request: QueueTransport = async (method, params) => {
+      const reply = (await (plain as unknown as { request: QueueTransport }).request(
+        method,
+        params,
+      )) as SharedQueue & Record<string, unknown>;
+      return {
+        ...reply,
+        holdReason: "Provider crashed",
+        ...(reply.claim ? { claim: { ...reply.claim, at: 1, legacy: true } } : {}),
+        ...(reply.drain ? { drain: { ...reply.drain, legacy: true } } : {}),
+        settled: { token: "old", clientId: "desktop:win", accepted: true, prior: "active" },
+      } as never;
+    };
+    const client = new SharedQueueClient(
+      "machine",
+      "host",
+      "chat",
+      "desktop:win",
+      request,
+      async (_m, files) => files,
+    );
+    await client.initialize();
+    client.update((queue) => ({
+      ...enqueueRemoteMessage(queue, waitingRow("a")),
+      status: "active",
+    }));
+    await client.sync();
+    const token = await client.claim("a", false);
+    expect(token).toBeDefined();
+    await client.finish(token!, true);
+    expect(client.snapshot().error).toBeUndefined();
+    expect(client.snapshot().queue.messages).toEqual([]);
+    expect((client.snapshot().queue as SharedQueue).holdReason).toBe("Provider crashed");
+  });
+
+  it("judges the lease by the host's clock, however far apart the two clocks are", async () => {
+    const host = leasedHost();
+    host.clock.at += 3_600_000; // the host runs an hour ahead of this computer
+    const desktop = host.client("desktop:win");
+    await desktop.initialize();
+    desktop.update((queue) => enqueueRemoteMessage(queue, waitingRow("a")));
+    await desktop.sync();
+    expect(desktop.canDrain()).toBe(true);
+  });
+});
+
+describe("desktop window storage", () => {
+  beforeEach(() => localStorage.clear());
+  it("keeps one saved queue per window, and hands the old shared one to the first window that starts", async () => {
+    const f = fixture();
+    const oldKey = `bycoda:shared-queue:v1:${JSON.stringify(["host", "chat", "desktop"])}`;
+    const saved = { base: { messages: [], revision: 0 }, desired: { messages: [message("kept")] } };
+    localStorage.setItem(oldKey, JSON.stringify(saved));
+    const first = f.client("desktop:one");
+    expect(first.snapshot().queue.messages).toEqual([message("kept")]);
+    // A second window does not read the first one's pending edits.
+    const second = f.client("desktop:two");
+    expect(second.snapshot().queue.messages).toEqual([]);
+  });
+
+  it("copies the old queue and send journal instead of moving them, so a downgrade keeps pending state", async () => {
+    const f = fixture();
+    const oldKey = `bycoda:shared-queue:v1:${JSON.stringify(["host", "chat", "desktop"])}`;
+    const saved = { base: { messages: [], revision: 0 }, desired: { messages: [message("kept")] } };
+    const journal = { token: "t", clientId: "desktop", accepted: null };
+    localStorage.setItem(oldKey, JSON.stringify(saved));
+    localStorage.setItem(`${oldKey}:send`, JSON.stringify(journal));
+    f.client("desktop:one");
+    f.client("desktop:two");
+    // An older build still finds exactly what it saved.
+    expect(JSON.parse(localStorage.getItem(oldKey)!)).toEqual(saved);
+    expect(JSON.parse(localStorage.getItem(`${oldKey}:send`)!)).toEqual(journal);
+    // And only the first window adopted it.
+    const v2 = (id: string) =>
+      localStorage.getItem(`bycoda:shared-queue:v2:${JSON.stringify(["host", "chat", id])}`);
+    expect(v2("desktop:one")).toEqual(JSON.stringify(saved));
+    expect(v2("desktop:two")).toBeNull();
+  });
+});
+
+describe("one host, two computers (review round 2)", () => {
+  const rows = (...ids: string[]) => ids.map((id) => ({ id, text: id, attachments: [] }));
+  function hosted(lose?: { claimReply?: boolean }) {
+    const queues = new SessionQueues(new DatabaseSync(":memory:"), () => Date.now());
+    const calls: string[] = [];
+    const request: QueueTransport = async (method, params) => {
+      const action = method.split(".").pop() as "get";
+      calls.push(action);
+      const reply = structuredClone(
+        queues.serve(
+          action,
+          String(params.sessionId),
+          String(params.clientId),
+          params,
+          action === ("change" as string)
+            ? { before: params.before, after: params.after }
+            : undefined,
+        ),
+      );
+      if (lose?.claimReply && action === ("claim" as string)) {
+        lose.claimReply = false;
+        throw new Error("reply lost");
+      }
+      return reply as never;
+    };
+    const make = (id: string) =>
+      new SharedQueueClient("machine", "host", "chat", id, request, async (_m, files) => files);
+    return { queues, calls, make };
+  }
+
+  it("does not pause the queue when only the reply to a claim was lost", async () => {
+    const lose = { claimReply: false };
+    const { queues, make } = hosted(lose);
+    const desk = make("desktop:win");
+    await desk.initialize();
+    desk.update((queue) => ({ ...queue, messages: rows("a", "b"), status: "active" }));
+    await desk.sync();
+    lose.claimReply = true;
+    await expect(desk.claim("a", false)).rejects.toThrow("reply lost");
+    await desk.sync(true);
+    expect(queues.get("chat").status).toBe("active");
+    expect(queues.get("chat").claim).toBeUndefined();
+    expect(queues.get("chat").messages.map((row) => row.id)).toEqual(["a", "b"]);
+  });
+
+  it("settles a competing edit by itself: kept as a new message, queue paused, reason shown", async () => {
+    const { queues, make } = hosted();
+    const desk = make("desktop:win");
+    const mac = make("remote:mac");
+    await desk.initialize();
+    await mac.initialize();
+    desk.update((queue) => ({ ...queue, messages: rows("a"), status: "active" }));
+    await desk.sync();
+    await mac.sync();
+    mac.update((queue) => editRemoteMessage(queue, "a", "from the mac", []));
+    await mac.sync();
+    desk.update((queue) => editRemoteMessage(queue, "a", "from the desktop", []));
+    await desk.sync().catch(() => {});
+    await desk.sync();
+    expect(desk.snapshot().error).toBeUndefined();
+    expect(desk.snapshot().notice).toMatch(/another computer/i);
+    expect(queues.get("chat").status).toBe("paused");
+    expect(
+      queues
+        .get("chat")
+        .messages.map((row) => row.text)
+        .sort(),
+    ).toEqual(["from the desktop", "from the mac"]);
+    // Syncing goes on: a later edit is accepted again.
+    expect(desk.update((queue) => queue)).toBe(true);
+  });
+
+  it("a Stop pressed while a send is unsettled pauses the queue when a late success arrives", async () => {
+    const { queues, make } = hosted();
+    const desk = make("desktop:win");
+    await desk.initialize();
+    desk.update((queue) => ({ ...queue, messages: rows("a", "b"), status: "active" }));
+    await desk.sync();
+    const token = (await desk.claim("a", false))!;
+    desk.noteStop();
+    await desk.finish(token, true);
+    expect(queues.get("chat").messages.map((row) => row.id)).toEqual(["b"]);
+    expect(queues.get("chat").status).toBe("paused");
+  });
+
+  it("gives its lease back, and stops asking a host that has no such call", async () => {
+    const calls: string[] = [];
+    let unsupported = false;
+    const base = hosted();
+    const request: QueueTransport = async (method, params) => {
+      if (method.endsWith(".release")) {
+        calls.push(`release@${String(params.epoch)}`);
+        if (unsupported) throw new Error("unknown method sessions.queue.release");
+        return null as never;
+      }
+      const action = method.split(".").pop() as "get";
+      return structuredClone(
+        base.queues.serve(
+          action,
+          String(params.sessionId),
+          String(params.clientId),
+          params,
+          action === ("change" as string)
+            ? { before: params.before, after: params.after }
+            : undefined,
+        ),
+      ) as never;
+    };
+    const desk = new SharedQueueClient(
+      "machine",
+      "host",
+      "chat",
+      "desktop:win",
+      request,
+      async (_m, f) => f,
+    );
+    await desk.initialize();
+    desk.update((queue) => ({ ...queue, messages: rows("a"), status: "active" }), true);
+    await desk.sync();
+    const lease = desk.heldLease();
+    expect(lease).toBeDefined();
+    await desk.releaseLease();
+    expect(calls).toEqual([`release@${lease!.epoch}`]);
+    expect(desk.heldLease()).toBeUndefined();
+    unsupported = true;
+    const other = new SharedQueueClient(
+      "machine",
+      "host",
+      "other",
+      "desktop:win",
+      request,
+      async (_m, f) => f,
+    );
+    await other.initialize();
+    other.update((queue) => ({ ...queue, messages: rows("a"), status: "active" }), true);
+    await other.sync();
+    await other.releaseLease();
+    await other.releaseLease();
+    expect(calls.length).toBe(2); // the second attempt is not repeated
+  });
 });

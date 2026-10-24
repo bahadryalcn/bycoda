@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { readToolWindow } from "../../../app/model/toolWindows";
 import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
 import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
+import { parseHead, type ConversationHead } from "../../sync/model/conversationHead";
 import { PersistenceBaselines } from "./persistenceBaselines";
 import {
   getSessionRecovery,
@@ -38,6 +39,7 @@ import {
 } from "../../../platform/tauri/fs";
 import { backfillOmpInterjections, ompStatusSplitTexts } from "../model/ompInterjections";
 import type {
+  AdoptedDivergence,
   AgentRunMeta,
   AgentStep,
   Block,
@@ -62,7 +64,7 @@ import type {
 
 import { HARNESSES, RUNTIME_MODES } from "../model/session";
 
-import { restoreOrchestrationProposal } from "../../orchestration/model/orchestrationPlan";
+import { recoverTaggedOrchestrationProposals, restoreOrchestrationProposal } from "../../orchestration/model/orchestrationPlan";
 
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
 
@@ -115,6 +117,8 @@ type SessionRecord = {
   automationId?: string | null;
   rewindHistory?: ConversationRewindEntry[] | null;
   pendingContextReplay?: string | null;
+  adoptedDivergence?: string | null;
+  adoptedBase?: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -139,6 +143,8 @@ type SessionUpsertPayload = {
   automationId?: string;
   rewindHistory?: ConversationRewindEntry[];
   pendingContextReplay?: string;
+  adoptedDivergence?: string;
+  adoptedBase?: string;
 };
 
 /** Only real chats belong in project history — blank tabs stay ephemeral. */
@@ -189,7 +195,40 @@ function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks">
     ...(typeof session.pendingContextReplay === "string" && session.pendingContextReplay
       ? { pendingContextReplay: session.pendingContextReplay.slice(0, 24_000) }
       : {}),
+    ...(session.adoptedDivergence
+      ? { adoptedDivergence: JSON.stringify(session.adoptedDivergence) }
+      : {}),
+    ...(session.adoptedBase ? { adoptedBase: JSON.stringify(session.adoptedBase) } : {}),
   };
+}
+
+/** A flagged host divergence saved with its session: bounded and validated. */
+function parseAdoptedDivergence(value: unknown): AdoptedDivergence | undefined {
+  if (typeof value !== "string" || !value || value.length > 2_048) return undefined;
+  try {
+    const record: unknown = JSON.parse(value);
+    if (!record || typeof record !== "object" || Array.isArray(record)) return undefined;
+    const { key, keep, hostHead } = record as { key?: unknown; keep?: unknown; hostHead?: unknown };
+    if (typeof key !== "string" || !key || key.length > 1_024) return undefined;
+    const head = parseHead(hostHead);
+    return {
+      key,
+      ...(keep === true ? { keep: true as const } : {}),
+      ...(head ? { hostHead: head } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** The transcript head this computer and its host last agreed on. */
+function parseAdoptedBase(value: unknown): ConversationHead | undefined {
+  if (typeof value !== "string" || !value || value.length > 256) return undefined;
+  try {
+    return parseHead(JSON.parse(value));
+  } catch {
+    return undefined;
+  }
 }
 
 function sanitizeRewindHistory(value: unknown): ConversationRewindEntry[] | undefined {
@@ -709,7 +748,7 @@ export async function getSession(
     try {
       const record = await invoke<SessionRecord | null>("session_get", { sessionId });
       if (!record) return null;
-      const session = recordToSession(record);
+      const session = recoverTaggedOrchestrationProposals(recordToSession(record));
       persistenceBaselines.set(sessionId, {
         blocks: incrementalBlocks(session),
         updatedAt: record.updatedAt,
@@ -764,13 +803,13 @@ export async function getSession(
         pages.push(recordToSession(previous.session).blocks);
         before = previous.before;
       }
-      const complete = session.historyLoading
+      const complete = recoverTaggedOrchestrationProposals(session.historyLoading
         ? {
             ...session,
             blocks: pages.reverse().flat(),
             historyLoading: false,
           }
-        : session;
+        : session);
       if (deletedSessionIds.has(sessionId)) return;
       // A tail snapshot never becomes a persistence baseline. Only the complete
       // logical transcript may be checkpointed or used for provider resume.
@@ -1632,6 +1671,8 @@ function recordToSession(record: SessionRecord): Session {
     : [];
   const linkedWorkItem = sanitizeLinkedWorkItem(record.linkedWorkItem);
   const rewindHistory = sanitizeRewindHistory(record.rewindHistory);
+  const adoptedDivergence = parseAdoptedDivergence(record.adoptedDivergence);
+  const adoptedBase = parseAdoptedBase(record.adoptedBase);
   // Removed Gemini CLI sessions continue in a fresh Antigravity conversation.
   const legacyGemini = record.harness === LEGACY_GEMINI;
   return {
@@ -1666,6 +1707,11 @@ function recordToSession(record: SessionRecord): Session {
     ...(typeof record.pendingContextReplay === "string" && record.pendingContextReplay
       ? { pendingContextReplay: record.pendingContextReplay.slice(0, 24_000) }
       : {}),
+    // A restored divergence is only a record of what was flagged. It locks
+    // nothing (`adoptedSyncConflict`) until a pass proves it against a
+    // reachable host, so an unreachable or downgraded host cannot hold sending.
+    ...(adoptedDivergence ? { adoptedDivergence } : {}),
+    ...(adoptedBase ? { adoptedBase } : {}),
     ...(contextFromRecord(record) ?? {}),
   };
 }

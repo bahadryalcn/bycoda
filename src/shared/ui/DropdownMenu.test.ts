@@ -167,17 +167,93 @@ it("keeps an empty or fully disabled menu keyboard safe", async () => {
 
 it("announces mutually exclusive choices as radios without changing the callback owner", async () => {
   const pick = vi.fn();
-  await act(async () => root.render(createElement(DropdownMenu, {
-    anchor, label: "Merge method", onPick: pick, onClose: vi.fn(),
-    items: [
-      { kind: "item", id: "merge", label: "Merge", checked: true, selectionRole: "radio" },
-      { kind: "item", id: "squash", label: "Squash", checked: false, selectionRole: "radio" },
-    ],
-  })));
+  await act(async () =>
+    root.render(
+      createElement(DropdownMenu, {
+        anchor,
+        label: "Merge method",
+        onPick: pick,
+        onClose: vi.fn(),
+        items: [
+          { kind: "item", id: "merge", label: "Merge", checked: true, selectionRole: "radio" },
+          { kind: "item", id: "squash", label: "Squash", checked: false, selectionRole: "radio" },
+        ],
+      }),
+    ),
+  );
   const radios = document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]');
   expect(radios).toHaveLength(2);
   expect(radios[0].getAttribute("aria-checked")).toBe("true");
   expect(radios[1].getAttribute("aria-checked")).toBe("false");
   await act(async () => radios[1].click());
   expect(pick).toHaveBeenCalledExactlyOnceWith("squash");
+});
+
+it("navigates across named groups, skips disabled actions and keeps selection with the owner", async () => {
+  const pick = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(DropdownMenu, {
+        anchor,
+        label: "Composer actions",
+        onPick: pick,
+        onClose: vi.fn(),
+        "data-composer-plus": true,
+        items: [
+          {
+            kind: "group",
+            id: "add",
+            label: "Add to message",
+            items: [
+              {
+                kind: "item",
+                id: "upload",
+                label: "Upload file",
+                disabled: true,
+                description: "Attachments are unavailable",
+              },
+              { kind: "item", id: "skills", label: "Skills" },
+            ],
+          },
+          { kind: "group", id: "empty", label: "Unavailable group", items: [] },
+          {
+            kind: "group",
+            id: "mode",
+            label: "Mode",
+            items: [
+              {
+                kind: "item",
+                id: "plan",
+                label: "Plan mode",
+                checked: true,
+                description: "Review a plan before building",
+              },
+              {
+                kind: "item",
+                id: "orchestrator",
+                label: "Orchestrator",
+                badge: "v1",
+                checked: false,
+              },
+            ],
+          },
+        ],
+      }),
+    ),
+  );
+  expect(document.querySelectorAll('[role="group"]')).toHaveLength(2);
+  expect(document.querySelector("[data-composer-plus]")).not.toBeNull();
+  expect(focused()).toBe("Skills");
+  await key("ArrowDown");
+  expect(focused()).toBe("Plan mode");
+  expect(document.activeElement?.getAttribute("aria-checked")).toBe("true");
+  await key("End");
+  expect(focused()).toBe("Orchestrator");
+  expect(document.activeElement?.textContent).toContain("v1");
+  await key("ArrowDown");
+  expect(focused()).toBe("Skills");
+  await key("p");
+  await act(async () => (document.activeElement as HTMLButtonElement).click());
+  expect(pick).toHaveBeenCalledExactlyOnceWith("plan");
+  expect(document.activeElement).toBe(anchor);
 });

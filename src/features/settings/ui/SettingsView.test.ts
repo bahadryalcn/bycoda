@@ -326,7 +326,7 @@ describe("settings pages", () => {
 
   it("groups settings by the workflow they configure and preserves old anchor routes", async () => {
     const ownership = {
-      chat: ["chat-width", "code-word-wrap", "streaming-text-mode", "translation-model-default"],
+      chat: ["chat-width", "code-word-wrap", "streaming-text-mode", "translation-model-default", "reprompt-model-default"],
       worktrees: ["git-generation-default", "diff-view", "project-worktrees"],
       groupLock: ["mask-emails", "file-access", "start-in-privacy-mode"],
     } as const;
@@ -630,7 +630,11 @@ describe("settings pages", () => {
     expect(container.querySelector('[aria-label="Show remaining usage"]')).toBeNull();
     expect(container.querySelector('[data-setting-id="provider-usage"]')).toBeNull();
     await render("usage");
-    await vi.waitFor(() => expect(container.querySelector('[role="meter"]')).not.toBeNull());
+    // The usage page is a lazy module; its first transform can exceed the 1 s
+    // default when the whole suite is loading modules in parallel.
+    await vi.waitFor(() => expect(container.querySelector('[role="meter"]')).not.toBeNull(), {
+      timeout: 15_000,
+    });
     expect(
       container
         .querySelector('[role="meter"][aria-label="Default account session remaining"]')

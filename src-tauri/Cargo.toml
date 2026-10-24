@@ -34,7 +34,7 @@ crypto_secretbox = "=0.1.1"
 zeroize = "1"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
-rusqlite = { version = "0.40.2", features = ["bundled", "hooks"], default-features = false }
+rusqlite = { version = "0.40.2", features = ["bundled", "hooks", "blob"], default-features = false }
 ureq = { version = "2.12.1", default-features = false, features = ["tls", "gzip"] }
 webpki-roots = "=1.0.9"
 url = "2.5"

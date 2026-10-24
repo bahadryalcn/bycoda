@@ -12,6 +12,40 @@ type HostCall = {
 };
 const fixture = "/tests/browser/tasks.html";
 
+test("bulk cleanup uses one confirmation, preserves code and retries only failed deletions", async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 900 });
+  await page.goto(`${fixture}?boardControls&bulk&bulkFailure`);
+  await page.getByRole("button", { name: "Select tasks", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
+  await expect(page.getByText("102 selected", { exact: true })).toBeVisible();
+  const actions = page.getByRole("region", { name: "Selected task actions" });
+  await actions.getByRole("button", { name: "Delete", exact: true }).click();
+  const confirm = page.getByRole("dialog", { name: "Delete selected tasks", exact: true });
+  await expect(confirm).toContainText("100 are eligible");
+  await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(actions).toContainText("99 succeeded, 2 skipped, 1 failed");
+  await actions.getByRole("button", { name: "Retry failed tasks", exact: true }).click();
+  await page.getByRole("dialog", { name: "Delete selected tasks", exact: true }).getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(actions).toContainText("1 succeeded, 0 skipped, 0 failed");
+  const calls = await page.evaluate(() => (window as unknown as { taskFixtureCalls: HostCall[] }).taskFixtureCalls.filter((call) => call.args.method === "tasks.delete"));
+  expect(calls).toHaveLength(101);
+  const ids = calls.map((call) => (call.args.params as { taskId?: string }).taskId);
+  expect(ids.filter((id) => id === "bulk-42")).toHaveLength(2);
+  expect(ids).not.toContain("protected");
+  expect(ids).not.toContain("active");
+  await expect(page.getByRole("button", { name: "Protected unmerged work", exact: true })).toBeVisible();
+});
+
+test("search-scoped selection never includes hidden tasks", async ({ page }) => {
+  await page.goto(`${fixture}?boardControls&bulk`);
+  await page.getByRole("searchbox", { name: "Search tasks", exact: true }).fill("Cleanup task 99");
+  await page.getByRole("button", { name: "Select tasks", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
+  await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search tasks", exact: true }).fill("Protected");
+  await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
+});
+
 test("compact goal filters retain scope, reset and keyboard menu focus", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -28,11 +62,16 @@ test("compact goal filters retain scope, reset and keyboard menu focus", async (
   await expect(page.getByRole("article", { name: "Independent task", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(filters).toBeFocused();
-  const delivery = page
+  const deliveryMenu = page
     .getByRole("article", { name: "Completed task", exact: true })
-    .getByRole("button", { name: "Choose delivery target", exact: true });
+    .getByRole("button", { name: "More actions", exact: true });
+  await deliveryMenu.focus();
+  await page.keyboard.press("Enter");
+  const delivery = page.getByRole("menuitem", { name: "Choose delivery target", exact: true });
   await delivery.focus();
   await expect(delivery).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(deliveryMenu).toBeFocused();
 });
 
 for (const width of [390, 768, 1440]) {

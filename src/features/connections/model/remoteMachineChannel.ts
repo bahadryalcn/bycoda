@@ -87,6 +87,7 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
   const git = new Map<string, string | undefined>();
   const taskEtags = new Set<string>();
   let inlineSync = false;
+  const inlineSessionIds = new Set<string>();
   const activeSessions = new Map<string, number>();
   for (const { demand: source } of channel.subscribers) {
     const demand = typeof source === "function" ? source() : source;
@@ -99,11 +100,13 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
       activeSessions.set(sessionId, Math.max(activeSessions.get(sessionId) ?? 0, lastActiveAt));
     }
     inlineSync ||= demand.inlineSync === true;
-    for (const session of demand.sessions ?? [])
+    for (const session of demand.sessions ?? []) {
+      if (demand.inlineSync === true) inlineSessionIds.add(session.sessionId);
       sessions.set(
         session.sessionId,
         Math.min(sessions.get(session.sessionId) ?? session.revision, session.revision),
       );
+    }
     for (const project of demand.projects ?? []) {
       if (!projects.has(project.projectId)) projects.set(project.projectId, project.known);
       else if (projects.get(project.projectId) !== project.known)
@@ -132,7 +135,7 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
             .map(([projectId, lastActiveAt]) => ({ projectId, lastActiveAt })),
         }
       : {}),
-    ...(inlineSync ? { inlineSync: true } : {}),
+    ...(inlineSync ? { inlineSync: true, inlineSessionIds: [...inlineSessionIds] } : {}),
     ...(channel.instanceId && !channel.refreshPending ? { instanceId: channel.instanceId } : {}),
     sessions: [...sessions].map(([sessionId, revision]) => ({
       sessionId,

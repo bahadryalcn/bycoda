@@ -406,6 +406,8 @@ html.theme-light {
   --ui-focus-ring-color: var(--color-accent);
   --ui-focus-width: 2px;
   --ui-focus-offset: 2px;
+  --ui-field-border-hover: color-mix(in oklab, var(--color-content) 24%, var(--ui-surface));
+  --ui-field-border-focus: color-mix(in oklab, var(--color-content) 36%, var(--ui-surface));
   --motion-reorder-duration: 160ms;
   --motion-tab-close-duration: 200ms;
   --motion-feedback-duration: 120ms;

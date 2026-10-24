@@ -405,7 +405,7 @@ function LiveBackgroundCard() {
       id="live-background"
       title={t("Live background")}
       description={t(
-        "An animated scene behind your chat panes. While the AI replies, the scene reacts; the default face speaks the reply. It stays still when decorative animations are off.",
+        "Quiet AI scenes in the space beside your conversation. Hidden when there is no room beside the text.",
       )}
     >
       <div className="border-b border-stroke p-4">

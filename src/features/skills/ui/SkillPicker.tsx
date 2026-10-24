@@ -273,7 +273,6 @@ export function CreateSkillForm({
       </p>
       <TextField
         className={monospace ? "font-mono" : "font-sans"}
-        hideLabel
         label={t("Skill name")}
         ref={input}
         value={name}

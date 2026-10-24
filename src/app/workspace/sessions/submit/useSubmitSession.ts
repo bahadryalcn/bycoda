@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { isRunLeasePending } from "../../../../features/connections/model/runLeaseClient";
 import type { Attachment } from "../../../../features/sessions/model/session";
 import type { SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import type { Submit, SubmitOptions } from "../../helpers/types";
@@ -6,6 +7,7 @@ import { gateProjectLocation } from "./submitProjectLocation";
 import { prepareSubmitPreflight } from "./submitPreflight";
 import { routeSubmitSession } from "./submitRouting";
 import { steerBusySubmit } from "./submitBusySteer";
+import { gateRunLease } from "./submitRunLease";
 import { startSubmittedTurn } from "./submitTurnRun";
 import { prepareSubmittedTurn } from "./submitTurnSetup";
 import type { SubmitDeps, SubmitInput } from "./submitTypes";
@@ -36,6 +38,8 @@ export function useSubmitSession(deps: SubmitDeps) {
     ): SubmissionAcceptance => {
       const input: SubmitInput = { sessionId, text, attachments, options };
       if (isUsageBudgetChecking(sessionId, deps.refs.turnGen.current.get(sessionId))) return false;
+      // The run lease is being asked for: this second send must not also start a turn.
+      if (isRunLeasePending(sessionId)) return false;
       const routed = routeSubmitSession(deps, input);
       if (routed !== undefined) return routed;
       const preflight = prepareSubmitPreflight(deps, input);
@@ -51,7 +55,8 @@ export function useSubmitSession(deps: SubmitDeps) {
         startSubmittedTurn(deps, input, pre, setup.setup);
         return true;
       };
-      return gateUsageBudget(deps, input, pre, dispatch) ?? dispatch();
+      const start = () => gateUsageBudget(deps, input, pre, dispatch) ?? dispatch();
+      return gateRunLease(deps, input, pre, start) ?? start();
     },
     [
       applyProjectLocationChange,

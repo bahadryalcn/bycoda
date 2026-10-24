@@ -58,6 +58,27 @@ it("evicts the oldest page to obey both entry and aggregate byte bounds", () => 
   expect(byBytes.map((entry) => entry.key)).toEqual([record(1).key, record(2).key]);
 });
 
+it("retains a same-revision expanded page when a narrower late response arrives", () => {
+  const expanded = {
+    ...record(1),
+    snapshot: {
+      ...snapshot,
+      history: { revision: 5, totalBlocks: 10, before: 0 },
+      session: {
+        ...snapshot.session,
+        blocks: Array.from({ length: 10 }, (_, index) => ({
+          id: `b${index}`,
+          role: "assistant" as const,
+          text: String(index),
+        })),
+      },
+    },
+  };
+  const narrow = { ...expanded, savedAt: 100, snapshot };
+  expect(planRemotePageCacheWrites([expanded], narrow)).toEqual([expanded]);
+  expect(planRemotePageCacheWrites([narrow], expanded)).toEqual([expanded]);
+});
+
 it("fails closed for wrong schema, expired records, and owner-key mismatches", () => {
   const now = 50_000_000;
   const valid = {

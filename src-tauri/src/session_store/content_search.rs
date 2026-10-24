@@ -17,8 +17,8 @@
 //! re-indexed. That is how existing rows are covered after the migration — the
 //! migration only creates empty tables (instant), and [`sync_index`] fills them
 //! lazily, from a background thread after startup and, bounded by a time budget,
-//! ahead of each search. Upserts do not touch the index, so the hot write path
-//! costs nothing extra; the next sync notices the new `updated_at`.
+//! ahead of each search. Small transactional revision/dirty rows identify changed
+//! sessions; foreground searches never reconstruct the full freshness library.
 //!
 //! Matching is token-based: every whitespace-separated query term must occur,
 //! the last word of each term as a prefix (the FTS table keeps prefix indexes
@@ -38,8 +38,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{
-    begin_session_search, block_texts, session_search_is_current, SearchProgressGuard,
-    SessionSearchRelease, SessionSearchToken, SessionStore, SEARCH_PROGRESS_INTERVAL,
+    begin_session_search, session_search_is_current, SearchProgressGuard, SessionSearchRelease,
+    SessionSearchToken, SessionStore, SEARCH_PROGRESS_INTERVAL,
 };
 
 /// Block index within a session lives in the low bits of the FTS rowid.
@@ -82,7 +82,78 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
            prefix = '2 3 4',
            tokenize = 'unicode61 remove_diacritics 0'
          );",
-    )
+    )?;
+    if !conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions')",
+        [],
+        |row| row.get::<_, bool>(0),
+    )? {
+        return Ok(());
+    }
+    let columns = conn
+        .prepare("PRAGMA table_info(session_search_index)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !columns.iter().any(|column| column == "source_version") {
+        conn.execute_batch(
+            "ALTER TABLE session_search_index ADD COLUMN source_version INTEGER NOT NULL DEFAULT 0",
+        )?;
+    }
+    conn.execute_batch(&format!("
+      CREATE TABLE IF NOT EXISTS session_search_revision (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL);
+      INSERT OR IGNORE INTO session_search_revision VALUES(1,0);
+      CREATE TABLE IF NOT EXISTS session_search_source_revision (session_id TEXT PRIMARY KEY, version INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS session_search_dirty (session_id TEXT PRIMARY KEY, updated_at INTEGER NOT NULL, version INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS session_search_dirty_newest ON session_search_dirty(updated_at DESC, session_id);
+      INSERT OR IGNORE INTO session_search_source_revision SELECT id,0 FROM sessions;
+      UPDATE session_search_revision SET version=MAX(version, COALESCE((SELECT MAX(version) FROM session_search_source_revision),0)) WHERE id=1;
+      INSERT INTO session_search_dirty SELECT s.id,s.updated_at,r.version FROM sessions s
+        JOIN session_search_source_revision r ON r.session_id=s.id LEFT JOIN session_search_index i ON i.session_id=s.id
+        WHERE s.has_user_message=1 AND s.inbox_ask IS NULL
+          AND (i.session_id IS NULL OR i.source_updated_at!=s.updated_at OR i.source_version!=r.version)
+        ON CONFLICT(session_id) DO UPDATE SET updated_at=excluded.updated_at,version=excluded.version;
+      DELETE FROM session_search_dirty WHERE session_id NOT IN(SELECT id FROM sessions);
+      DELETE FROM session_search_source_revision WHERE session_id NOT IN(SELECT id FROM sessions);
+      CREATE TRIGGER IF NOT EXISTS session_search_dirty_insert AFTER INSERT ON sessions BEGIN
+        UPDATE session_search_revision SET version=version+1 WHERE id=1;
+        INSERT INTO session_search_source_revision VALUES(NEW.id,(SELECT version FROM session_search_revision WHERE id=1))
+          ON CONFLICT(session_id) DO UPDATE SET version=excluded.version;
+        DELETE FROM session_search_dirty WHERE session_id=NEW.id;
+        INSERT INTO session_search_dirty SELECT NEW.id,NEW.updated_at,(SELECT version FROM session_search_revision WHERE id=1)
+          WHERE NEW.has_user_message=1 AND NEW.inbox_ask IS NULL;
+      END;
+      CREATE TRIGGER IF NOT EXISTS session_search_dirty_update AFTER UPDATE OF updated_at,blocks_json,has_user_message,inbox_ask ON sessions
+        WHEN OLD.updated_at IS NOT NEW.updated_at OR OLD.blocks_json IS NOT NEW.blocks_json
+          OR OLD.has_user_message IS NOT NEW.has_user_message OR OLD.inbox_ask IS NOT NEW.inbox_ask BEGIN
+        UPDATE session_search_revision SET version=version+1 WHERE id=1;
+        INSERT INTO session_search_source_revision VALUES(NEW.id,(SELECT version FROM session_search_revision WHERE id=1))
+          ON CONFLICT(session_id) DO UPDATE SET version=excluded.version;
+        DELETE FROM session_search_dirty WHERE session_id=NEW.id;
+        INSERT INTO session_search_dirty SELECT NEW.id,NEW.updated_at,(SELECT version FROM session_search_revision WHERE id=1)
+          WHERE NEW.has_user_message=1 AND NEW.inbox_ask IS NULL;
+        DELETE FROM session_search_fts WHERE rowid BETWEEN
+          (SELECT key << {KEY_SHIFT} FROM session_search_index WHERE session_id=NEW.id)
+          AND (SELECT (key << {KEY_SHIFT}) | ((1 << {KEY_SHIFT})-1) FROM session_search_index WHERE session_id=NEW.id)
+          AND (NEW.has_user_message!=1 OR NEW.inbox_ask IS NOT NULL);
+        DELETE FROM session_search_blocks WHERE id BETWEEN
+          (SELECT key << {KEY_SHIFT} FROM session_search_index WHERE session_id=NEW.id)
+          AND (SELECT (key << {KEY_SHIFT}) | ((1 << {KEY_SHIFT})-1) FROM session_search_index WHERE session_id=NEW.id)
+          AND (NEW.has_user_message!=1 OR NEW.inbox_ask IS NOT NULL);
+        DELETE FROM session_search_index WHERE session_id=NEW.id AND (NEW.has_user_message!=1 OR NEW.inbox_ask IS NOT NULL);
+      END;
+      CREATE TRIGGER IF NOT EXISTS session_search_dirty_delete AFTER DELETE ON sessions BEGIN
+        DELETE FROM session_search_fts WHERE rowid BETWEEN
+          (SELECT key << {KEY_SHIFT} FROM session_search_index WHERE session_id=OLD.id)
+          AND (SELECT (key << {KEY_SHIFT}) | ((1 << {KEY_SHIFT})-1) FROM session_search_index WHERE session_id=OLD.id);
+        DELETE FROM session_search_blocks WHERE id BETWEEN
+          (SELECT key << {KEY_SHIFT} FROM session_search_index WHERE session_id=OLD.id)
+          AND (SELECT (key << {KEY_SHIFT}) | ((1 << {KEY_SHIFT})-1) FROM session_search_index WHERE session_id=OLD.id);
+        DELETE FROM session_search_index WHERE session_id=OLD.id;
+        DELETE FROM session_search_source_revision WHERE session_id=OLD.id;
+        DELETE FROM session_search_dirty WHERE session_id=OLD.id;
+      END;"))?;
+    // Repair a legacy build's orphan rows once at open, not on every query.
+    prune_orphans(conn)
 }
 
 // --- folding and tokenising -------------------------------------------------
@@ -296,13 +367,7 @@ struct IndexedBlock {
     text: String,
 }
 
-fn truncate_chars(text: &str, max: usize) -> String {
-    match text.char_indices().nth(max) {
-        Some((index, _)) => text[..index].to_owned(),
-        None => text.to_owned(),
-    }
-}
-
+#[cfg(test)]
 fn extract_blocks(blocks: &Value) -> Vec<IndexedBlock> {
     let Some(items) = blocks.as_array() else {
         return Vec::new();
@@ -313,35 +378,78 @@ fn extract_blocks(blocks: &Value) -> Vec<IndexedBlock> {
         if out.len() >= MAX_BLOCKS_PER_SESSION {
             break;
         }
-        let role = block
-            .get("role")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let id = block.get("id").and_then(Value::as_str).unwrap_or_default();
-        if id.is_empty() || !INDEXED_ROLES.contains(&role) {
-            continue;
+        if let Some(value) = extract_block(block, &mut tool_chars) {
+            out.push(value);
         }
-        let joined = block_texts(block).join("\n");
-        if joined.is_empty() {
-            continue;
-        }
-        let text = if role == "tool" {
-            if tool_chars >= MAX_TOOL_CHARS_PER_SESSION {
-                continue;
-            }
-            let text = truncate_chars(&joined, MAX_TOOL_BLOCK_CHARS);
-            tool_chars += text.chars().count();
-            text
-        } else {
-            truncate_chars(&joined, MAX_BLOCK_CHARS)
-        };
-        out.push(IndexedBlock {
-            block_id: id.to_owned(),
-            role: role.to_owned(),
-            text,
-        });
     }
     out
+}
+
+fn extract_block(block: &Value, tool_chars: &mut usize) -> Option<IndexedBlock> {
+    let role = block
+        .get("role")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let id = block.get("id").and_then(Value::as_str).unwrap_or_default();
+    if id.is_empty()
+        || !INDEXED_ROLES.contains(&role)
+        || (role == "tool" && *tool_chars >= MAX_TOOL_CHARS_PER_SESSION)
+    {
+        return None;
+    }
+    let max = if role == "tool" {
+        MAX_TOOL_BLOCK_CHARS
+    } else {
+        MAX_BLOCK_CHARS
+    };
+    let mut text = String::new();
+    let mut count = 0;
+    for path in [
+        "/text",
+        "/image/name",
+        "/image/alt",
+        "/tool/title",
+        "/tool/detail",
+        "/tool/preview/query",
+        "/tool/preview/path",
+        "/tool/preview/output",
+        "/tool/preview/title",
+    ] {
+        let Some(part) = block
+            .pointer(path)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+        else {
+            continue;
+        };
+        if !text.is_empty() && count < max {
+            text.push('\n');
+            count += 1;
+        }
+        for ch in part.chars().take(max.saturating_sub(count)) {
+            text.push(ch);
+            count += 1;
+        }
+        if count >= max {
+            break;
+        }
+    }
+    if text.is_empty() {
+        return None;
+    }
+    if role == "tool" {
+        *tool_chars += count;
+    }
+    Some(IndexedBlock {
+        block_id: id.into(),
+        role: role.into(),
+        text,
+    })
+}
+
+fn may_continue(deadline: Option<Instant>, keep_going: &dyn Fn() -> bool) -> bool {
+    !deadline.is_some_and(|limit| Instant::now() >= limit) && keep_going()
 }
 
 fn key_range(key: i64) -> (i64, i64) {
@@ -389,12 +497,19 @@ fn write_index(
     conn: &Connection,
     session_id: &str,
     updated_at: i64,
+    version: i64,
     blocks: &[IndexedBlock],
+    deadline: Option<Instant>,
+    keep_going: &dyn Fn() -> bool,
 ) -> rusqlite::Result<bool> {
+    if !may_continue(deadline, keep_going) {
+        return Ok(false);
+    }
     let tx = conn.unchecked_transaction()?;
     let current: bool = tx.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sessions WHERE id = ?1 AND updated_at = ?2)",
-        params![session_id, updated_at],
+        "SELECT EXISTS(SELECT 1 FROM sessions s JOIN session_search_source_revision r ON r.session_id=s.id
+          WHERE s.id=?1 AND s.updated_at=?2 AND r.version=?3 AND s.has_user_message=1 AND s.inbox_ask IS NULL)",
+        params![session_id, updated_at, version],
         |row| row.get(0),
     )?;
     if !current {
@@ -410,16 +525,16 @@ fn write_index(
     let key = match key {
         Some(key) => {
             tx.execute(
-                "UPDATE session_search_index SET source_updated_at = ?2 WHERE key = ?1",
-                params![key, updated_at],
+                "UPDATE session_search_index SET source_updated_at=?2,source_version=?3 WHERE key=?1",
+                params![key, updated_at, version],
             )?;
             key
         }
         None => {
             tx.execute(
-                "INSERT INTO session_search_index (session_id, source_updated_at)
-                 VALUES (?1, ?2)",
-                params![session_id, updated_at],
+                "INSERT INTO session_search_index (session_id, source_updated_at, source_version)
+                 VALUES (?1, ?2, ?3)",
+                params![session_id, updated_at, version],
             )?;
             tx.last_insert_rowid()
         }
@@ -430,15 +545,21 @@ fn write_index(
         // differs are rewritten, which is also what makes edits, removals and
         // reorders land exactly as a full rebuild would.
         let (low, high) = key_range(key);
-        let existing: HashMap<i64, (String, String, String)> = tx
-            .prepare(
-                "SELECT id, block_id, role, text FROM session_search_blocks
+        let mut statement = tx.prepare(
+            "SELECT id, block_id, role, text FROM session_search_blocks
                  WHERE id BETWEEN ?1 AND ?2",
-            )?
-            .query_map(params![low, high], |row| {
-                Ok((row.get(0)?, (row.get(1)?, row.get(2)?, row.get(3)?)))
-            })?
-            .collect::<rusqlite::Result<_>>()?;
+        )?;
+        let rows = statement.query_map(params![low, high], |row| {
+            Ok((row.get(0)?, (row.get(1)?, row.get(2)?, row.get(3)?)))
+        })?;
+        let mut existing: HashMap<i64, (String, String, String)> = HashMap::new();
+        for row in rows {
+            if !may_continue(deadline, keep_going) {
+                return Ok(false);
+            }
+            let (id, value) = row?;
+            existing.insert(id, value);
+        }
         let mut delete_block = tx.prepare("DELETE FROM session_search_blocks WHERE id = ?1")?;
         let mut delete_fts = tx.prepare("DELETE FROM session_search_fts WHERE rowid = ?1")?;
         let mut insert_block = tx.prepare(
@@ -448,6 +569,9 @@ fn write_index(
         let mut insert_fts =
             tx.prepare("INSERT INTO session_search_fts (rowid, folded) VALUES (?1, ?2)")?;
         for (offset, block) in blocks.iter().enumerate() {
+            if !may_continue(deadline, keep_going) {
+                return Ok(false);
+            }
             let id = low + offset as i64;
             if let Some((block_id, role, text)) = existing.get(&id) {
                 if *block_id == block.block_id && *role == block.role && *text == block.text {
@@ -463,10 +587,17 @@ fn write_index(
             .keys()
             .filter(|id| **id >= low + blocks.len() as i64)
         {
+            if !may_continue(deadline, keep_going) {
+                return Ok(false);
+            }
             delete_block.execute(params![id])?;
             delete_fts.execute(params![id])?;
         }
     }
+    tx.execute(
+        "DELETE FROM session_search_dirty WHERE session_id=?1 AND version=?2",
+        params![session_id, version],
+    )?;
     tx.commit()?;
     Ok(true)
 }
@@ -477,27 +608,32 @@ fn es(error: rusqlite::Error) -> String {
 
 /// Sessions the index does not cover (or covers at an older `updated_at`),
 /// newest first. Reads only the covering index, never a transcript.
-fn stale_sessions(conn: &Connection) -> rusqlite::Result<Vec<(String, i64)>> {
-    let indexed: HashMap<String, i64> = conn
-        .prepare("SELECT session_id, source_updated_at FROM session_search_index")?
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    let mut stale: Vec<(String, i64)> = conn
-        .prepare(
-            "SELECT id, updated_at
-             FROM sessions INDEXED BY sessions_cwd_cover_idx
-             WHERE has_user_message = 1
-               AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)",
-        )?
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?
-        .into_iter()
-        .filter(|(id, updated_at)| indexed.get(id) != Some(updated_at))
-        .collect();
-    stale.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    Ok(stale)
+fn stale_sessions(conn: &Connection) -> rusqlite::Result<Vec<(String, i64, i64)>> {
+    conn.prepare("SELECT session_id,updated_at,version FROM session_search_dirty ORDER BY updated_at DESC,session_id LIMIT 64")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .collect()
+}
+
+fn pending_count(conn: &Connection) -> rusqlite::Result<usize> {
+    conn.query_row("SELECT COUNT(*) FROM session_search_dirty", [], |row| {
+        row.get::<_, i64>(0).map(|value| value as usize)
+    })
+}
+
+fn with_index_reader<T>(
+    store: &SessionStore,
+    read: impl FnOnce(&Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    let reader = store
+        .read_conn
+        .lock()
+        .map_err(|_| "Session search reader is locked")?;
+    if let Some(reader) = reader.as_ref() {
+        read(reader)
+    } else {
+        let conn = store.lock_conn()?;
+        read(&conn)
+    }
 }
 
 fn prune_orphans(conn: &Connection) -> rusqlite::Result<()> {
@@ -518,27 +654,118 @@ fn prune_orphans(conn: &Connection) -> rusqlite::Result<()> {
 
 /// Indexes one session. The store lock is held only to read the blob and to
 /// write the rows, not while the JSON is parsed.
-fn index_session(store: &SessionStore, id: &str, updated_at: i64) -> Result<bool, String> {
-    let raw: Option<String> = store
-        .lock_conn()?
-        .query_row(
-            "SELECT blocks_json FROM session_transcripts WHERE id = ?1 AND updated_at = ?2",
-            params![id, updated_at],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(es)?;
-    let Some(raw) = raw else {
+fn index_session(
+    store: &SessionStore,
+    id: &str,
+    updated_at: i64,
+    version: i64,
+    deadline: Option<Instant>,
+    keep_going: &dyn Fn() -> bool,
+) -> Result<bool, String> {
+    let length: Option<i64> = with_index_reader(store, |conn| {
+        conn.query_row(
+        "SELECT COALESCE(st.length,-1) FROM sessions s JOIN session_search_source_revision r ON r.session_id=s.id
+          LEFT JOIN session_block_state st ON st.session_id=s.id WHERE s.id=?1 AND s.updated_at=?2 AND r.version=?3",
+        params![id,updated_at,version], |row| row.get(0),
+    ).optional().map_err(es)
+    })?;
+    let Some(length) = length else {
         return Ok(false);
     };
-    // A blob that does not parse is recorded as empty so it is not retried on
-    // every search; it stays untouched in `sessions`.
-    let blocks = serde_json::from_str::<Value>(&raw)
-        .map(|value| extract_blocks(&value))
-        .unwrap_or_default();
-    drop(raw);
+    let mut blocks = Vec::new();
+    let mut tool_chars = 0;
+    if length >= 0 {
+        let mut cursor = 0i64;
+        while cursor < length && blocks.len() < MAX_BLOCKS_PER_SESSION {
+            if !may_continue(deadline, keep_going) {
+                return Ok(false);
+            }
+            let batch = with_index_reader(store, |conn| {
+                let current: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM session_search_source_revision WHERE session_id=?1 AND version=?2)", params![id,version], |row| row.get(0)).map_err(es)?;
+                if !current {
+                    return Ok(None);
+                }
+                let mut statement = conn.prepare("SELECT ordinal,block_json FROM session_blocks WHERE session_id=?1 AND ordinal>=?2 ORDER BY ordinal LIMIT 64").map_err(es)?;
+                let mut rows = statement.query(params![id, cursor]).map_err(es)?;
+                let mut out: Vec<(i64, String)> = Vec::new();
+                let mut bytes = 0;
+                while let Some(row) = rows.next().map_err(es)? {
+                    let raw: String = row.get(1).map_err(es)?;
+                    if !out.is_empty() && bytes + raw.len() > 2 * 1024 * 1024 {
+                        break;
+                    }
+                    bytes += raw.len();
+                    out.push((row.get(0).map_err(es)?, raw));
+                }
+                Ok(Some(out))
+            })?;
+            let Some(batch) = batch else {
+                return Ok(false);
+            };
+            if batch.is_empty() {
+                break;
+            }
+            for (ordinal, raw) in batch {
+                if !may_continue(deadline, keep_going) {
+                    return Ok(false);
+                }
+                cursor = ordinal + 1;
+                match serde_json::from_str::<Value>(&raw) {
+                    Ok(value) => {
+                        if let Some(block) = extract_block(&value, &mut tool_chars) {
+                            blocks.push(block);
+                        }
+                    }
+                    Err(_) => {
+                        blocks.clear();
+                        cursor = length;
+                        break;
+                    }
+                }
+                if blocks.len() >= MAX_BLOCKS_PER_SESSION {
+                    break;
+                }
+            }
+        }
+    } else {
+        let raw: Option<String> = with_index_reader(store, |conn| {
+            conn.query_row(
+            "SELECT s.blocks_json FROM sessions s JOIN session_search_source_revision r ON r.session_id=s.id WHERE s.id=?1 AND r.version=?2",
+            params![id,version], |row| row.get(0),
+        ).optional().map_err(es)
+        })?;
+        let Some(raw) = raw else {
+            return Ok(false);
+        };
+        let offsets = match super::incremental::legacy_offsets(&raw, &|| {
+            may_continue(deadline, keep_going)
+        }) {
+            Ok(Some(offsets)) => offsets,
+            Ok(None) => return Ok(false),
+            Err(_) => Vec::new(), // Legacy malformed blobs stay untouched and index as empty.
+        };
+        for (start, end) in offsets {
+            if !may_continue(deadline, keep_going) {
+                return Ok(false);
+            }
+            let block: Value =
+                serde_json::from_str(&raw[start..end]).map_err(|error| error.to_string())?;
+            if let Some(block) = extract_block(&block, &mut tool_chars) {
+                blocks.push(block);
+            }
+            if blocks.len() >= MAX_BLOCKS_PER_SESSION {
+                break;
+            }
+        }
+    }
+    if !may_continue(deadline, keep_going) {
+        return Ok(false);
+    }
     let conn = store.lock_conn()?;
-    write_index(&conn, id, updated_at, &blocks).map_err(es)
+    write_index(
+        &conn, id, updated_at, version, &blocks, deadline, keep_going,
+    )
+    .map_err(es)
 }
 
 /// Brings the index up to date, newest sessions first, until `deadline` passes
@@ -548,21 +775,27 @@ pub(super) fn sync_index(
     deadline: Option<Instant>,
     keep_going: &dyn Fn() -> bool,
 ) -> Result<usize, String> {
-    let stale = {
-        let conn = store.lock_conn()?;
-        prune_orphans(&conn).map_err(es)?;
-        stale_sessions(&conn).map_err(es)?
-    };
-    let mut remaining = stale.len();
-    for (id, updated_at) in stale {
-        if deadline.is_some_and(|limit| Instant::now() >= limit) || !keep_going() {
+    while may_continue(deadline, keep_going) {
+        let stale = with_index_reader(store, |conn| stale_sessions(conn).map_err(es))?;
+        if stale.is_empty() {
             break;
         }
-        if index_session(store, &id, updated_at)? {
-            remaining -= 1;
+        let mut progressed = false;
+        for (id, updated_at, version) in stale {
+            if !may_continue(deadline, keep_going) {
+                break;
+            }
+            if index_session(store, &id, updated_at, version, deadline, keep_going)? {
+                progressed = true;
+            } else if !may_continue(deadline, keep_going) {
+                break;
+            }
+        }
+        if !progressed {
+            break;
         }
     }
-    Ok(remaining)
+    with_index_reader(store, |conn| pending_count(conn).map_err(es))
 }
 
 /// Startup pass: index everything, in the background, off the UI path.
@@ -570,7 +803,11 @@ pub(super) fn index_in_background(store: &SessionStore) {
     let Ok(_guard) = store.search_index_lock.lock() else {
         return;
     };
-    if let Err(error) = sync_index(store, None, &|| true) {
+    if let Err(error) = sync_index(
+        store,
+        Some(Instant::now() + Duration::from_secs(30)),
+        &|| true,
+    ) {
         eprintln!("session search index: {error}");
     }
 }
@@ -679,10 +916,7 @@ pub(super) fn search_content(
                 session_search_is_current(token.as_ref())
             })?
         }
-        Err(_) => {
-            let conn = store.lock_conn()?;
-            stale_sessions(&conn).map_err(es)?.len()
-        }
+        Err(_) => with_index_reader(store, |conn| pending_count(conn).map_err(es))?,
     };
     if !session_search_is_current(token.as_ref()) {
         return Ok(ContentSearchResult::default());
@@ -911,6 +1145,212 @@ mod tests {
             .query_row("SELECT sqlite_version()", [], |row| row.get(0))
             .unwrap();
         ensure_schema(&conn).unwrap_or_else(|e| panic!("sqlite {version} lacks FTS5: {e}"));
+    }
+
+    #[test]
+    fn dirty_queue_does_not_enumerate_fresh_history_and_tracks_same_timestamp_changes() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            let tx = conn.unchecked_transaction().unwrap();
+            for index in 0..10_000 {
+                insert_session_at(&tx, &format!("s{index}"), "/w", "T", &json!([]), 1000);
+            }
+            tx.execute_batch("INSERT INTO session_search_index(session_id,source_updated_at,source_version)
+              SELECT s.id,s.updated_at,r.version FROM sessions s JOIN session_search_source_revision r ON r.session_id=s.id;
+              DELETE FROM session_search_dirty;").unwrap();
+            tx.commit().unwrap();
+            let steps = Arc::new(AtomicUsize::new(0));
+            let count = steps.clone();
+            conn.progress_handler(
+                100,
+                Some(move || {
+                    count.fetch_add(1, Ordering::Relaxed);
+                    false
+                }),
+            )
+            .unwrap();
+            let control: Vec<String> = conn
+                .prepare("SELECT session_id FROM session_search_index")
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            assert_eq!(control.len(), 10_000);
+            let before = steps.swap(0, Ordering::Relaxed);
+            assert_eq!(pending_count(&conn).unwrap(), 0);
+            assert!(stale_sessions(&conn).unwrap().is_empty());
+            let after = steps.load(Ordering::Relaxed);
+            conn.progress_handler(0, None::<fn() -> bool>).unwrap();
+            println!("native fresh-index 10k metadata rows: control progress ticks {before}; dirty queue {after}");
+            assert!(before > after);
+            insert_session_at(
+                &conn,
+                "changed",
+                "/w",
+                "T",
+                &json!([message("m", "user", "alpha")]),
+                1000,
+            );
+        }
+        assert_eq!(sync_index(&store, None, &|| true).unwrap(), 0);
+        assert_eq!(search(&store, "alpha").sessions.len(), 1);
+        {
+            let conn = store.lock_conn().unwrap();
+            conn.execute(
+                "UPDATE sessions SET blocks_json=?2 WHERE id=?1",
+                params!["changed", json!([message("m", "user", "beta")]).to_string()],
+            )
+            .unwrap();
+        }
+        assert_eq!(search(&store, "beta").sessions.len(), 1);
+        assert!(search(&store, "alpha").sessions.is_empty());
+    }
+
+    #[test]
+    fn a_changing_session_does_not_starve_independent_indexing_work() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            insert_session_at(
+                &conn,
+                "stable",
+                "/w",
+                "Stable",
+                &json!([message("stable-block", "user", "stableword")]),
+                1000,
+            );
+            insert_session_at(
+                &conn,
+                "hot",
+                "/w",
+                "Hot",
+                &json!([message("hot-block", "user", "hotword")]),
+                2000,
+            );
+        }
+        // Model a source that changes during catch-up. A failed version pin is
+        // not global cancellation: another session must still make progress.
+        let keep = || {
+            if let Ok(conn) = store.conn.try_lock() {
+                conn.execute(
+                    "UPDATE sessions SET updated_at=updated_at+1 WHERE id='hot'",
+                    [],
+                )
+                .unwrap();
+            }
+            true
+        };
+        assert_eq!(sync_index(&store, None, &keep).unwrap(), 1);
+        let conn = store.lock_conn().unwrap();
+        assert!(conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM session_search_index WHERE session_id='stable')",
+                [],
+                |row| row.get::<_, bool>(0)
+            )
+            .unwrap());
+        assert_eq!(pending_count(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn cancelled_large_session_indexing_keeps_last_published_revision_and_pending_work() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            insert_session_at(
+                &conn,
+                "s",
+                "/w",
+                "T",
+                &json!([message("old", "user", "oldneedle")]),
+                1000,
+            );
+        }
+        assert_eq!(sync_index(&store, None, &|| true).unwrap(), 0);
+        {
+            let conn = store.lock_conn().unwrap();
+            let blocks = Value::Array(
+                (0..5000)
+                    .map(|index| message(&format!("b{index}"), "assistant", "newneedle"))
+                    .collect(),
+            );
+            insert_session_at(&conn, "s", "/w", "T", &blocks, 2000);
+            let raw: Vec<String> = blocks
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(Value::to_string)
+                .collect();
+            super::super::incremental::checkpoint(&conn, "s", &blocks, &raw).unwrap();
+        }
+        let checks = AtomicUsize::new(0);
+        assert_eq!(
+            sync_index(&store, None, &|| checks.fetch_add(1, Ordering::Relaxed)
+                < 12)
+            .unwrap(),
+            1
+        );
+        {
+            let conn = store.lock_conn().unwrap();
+            assert_eq!(
+                conn.query_row(
+                    "SELECT source_updated_at FROM session_search_index WHERE session_id='s'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+                1000
+            );
+            let version: i64 = conn
+                .query_row(
+                    "SELECT version FROM session_search_dirty WHERE session_id='s'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let candidate = extract_blocks(&Value::Array(
+                (0..100)
+                    .map(|index| {
+                        message(&format!("new-{index}"), "user", "partial must stay hidden")
+                    })
+                    .collect(),
+            ));
+            let writes = AtomicUsize::new(0);
+            assert!(
+                !write_index(&conn, "s", 2000, version, &candidate, None, &|| writes
+                    .fetch_add(1, Ordering::Relaxed)
+                    < 12)
+                .unwrap()
+            );
+            assert_eq!(
+                conn.query_row(
+                    "SELECT source_updated_at FROM session_search_index WHERE session_id='s'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+                1000
+            );
+            assert_eq!(
+                conn.query_row("SELECT COUNT(*) FROM session_search_blocks", [], |row| row
+                    .get::<_, i64>(
+                    0
+                ))
+                .unwrap(),
+                1
+            );
+            assert_eq!(pending_count(&conn).unwrap(), 1);
+        }
+        assert_eq!(sync_index(&store, None, &|| true).unwrap(), 0);
+        assert_eq!(search(&store, "newneedle").sessions.len(), 1);
+        assert!(search(&store, "oldneedle").sessions.is_empty());
     }
 
     #[test]

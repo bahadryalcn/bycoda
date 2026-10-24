@@ -96,7 +96,13 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
         const accounts = page.locator('[data-setting-id="provider-accounts"]');
         const add = accounts.getByRole("button", { name: labels.account, exact: true });
         for (const [index, provider] of ["Claude Code", "Codex"].entries()) {
-          await page.getByRole("button", { name: new RegExp(`^${provider},`) }).click();
+          const providerSearch = page.locator(".provider-cli-select").getByRole("button");
+          if (await providerSearch.isVisible()) {
+            await providerSearch.click();
+            await page.getByRole("option", { name: new RegExp(`^${provider}`) }).click();
+          } else {
+            await page.getByRole("button", { name: new RegExp(`^${provider},`) }).click();
+          }
           await add.click();
           const form = accounts.locator("form");
           await expect(form).toBeVisible();

@@ -591,22 +591,25 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                     {server.transport || "MCP"}
                   </span>
                 </h3>
-                <div className={styles.detailContent}>
-                  {server.configPath ? (
-                    <span className={styles.path}>{server.configPath}</span>
-                  ) : (
-                    <p>{scopeDescription(server.scope)}</p>
-                  )}
-                  {server.provider !== "claude" ? (
-                    <p>
-                      {server.configPath
-                        ? t("Edit or remove this entry in its provider configuration.")
-                        : t(
-                            "Configuration path unavailable. Open this provider's settings to manage the entry.",
-                          )}
-                    </p>
-                  ) : null}
-                </div>
+                <details className={styles.disclosure}>
+                  <summary>{t("Connection details")}</summary>
+                  <div className={styles.detailContent}>
+                    {server.configPath ? (
+                      <span className={styles.path}>{server.configPath}</span>
+                    ) : (
+                      <p>{scopeDescription(server.scope)}</p>
+                    )}
+                    {server.provider !== "claude" ? (
+                      <p>
+                        {server.configPath
+                          ? t("Edit or remove this entry in its provider configuration.")
+                          : t(
+                              "Configuration path unavailable. Open this provider's settings to manage the entry.",
+                            )}
+                      </p>
+                    ) : null}
+                  </div>
+                </details>
               </section>
               <div className={styles.actions}>
                 {server.provider !== "claude_desktop" &&

@@ -16,15 +16,22 @@ import * as expoGo from "./expo-go";
 import { RuntimeLogsService } from "./runtime-logs";
 import { HostChildBackend } from "./child-backend";
 import { HostTasks } from "./tasks";
+import { HostGoals } from "./goals";
+import { DesktopSessions } from "./desktopSessions";
 import { HostNotes } from "./host-notes";
 import { GenericAcpService } from "./generic-acp";
 import * as accessCenter from "./access-center";
 import { ConversationDesktopRelay } from "./conversation-tools";
 import { DevicePreviews } from "./device-preview";
 import { ProviderInboxBridge } from "./provider-inbox";
+import { VoiceSetupService } from "./voice-setup";
+import { LocalVoiceService } from "./voice-local";
 import { configureChildBackend } from "../src/integrations/harness/core/child";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
+import { QUEUE_LEASE_TTL_MS } from "../src/features/connections/model/sharedQueue";
+import { RUN_LEASE_TTL_MS } from "../src/features/sync/model/runLease";
+import { CLAIM_GRACE_MS, SessionQueues } from "./session-queue";
 
 const modelProbe = vi.hoisted(() => vi.fn());
 vi.mock("../src/integrations/harness/providers/codex/codexCatalog", () => ({
@@ -627,6 +634,40 @@ describe("scoped Conversation Tools RPC", () => {
       s.call("conversation.tools.call", { action, input }, grant.token);
     return { ...s, created, grant, tool };
   }
+  it("creates goal plans from a desktop-only conversation without adopting it", async () => {
+    const s = await sessionTools();
+    const source = s.store.session(s.created.sessionId);
+    const id = "desktop-only-goal-caller";
+    const snapshot = { ...source, session: { ...source.session, id } };
+    const cwd = vi.spyOn(DesktopSessions.prototype, "projectCwd").mockImplementation((sessionId) =>
+      sessionId === id ? s.project.cwd : undefined,
+    );
+    const read = vi.spyOn(DesktopSessions.prototype, "snapshot").mockImplementation((sessionId) =>
+      sessionId === id ? snapshot : undefined,
+    );
+    const create = vi.spyOn(HostGoals.prototype, "create").mockImplementation((raw) => ({
+      ...(raw as ReturnType<HostGoals["create"]>), status: "planning", taskIds: [], createdAt: 1, updatedAt: 1,
+    }));
+    try {
+      expect(() => s.store.session(id)).toThrow("Session not found on this machine");
+      const issued = await s.call("conversation.access.issue", { sessionId: id });
+      expect(issued.value.error).toBeUndefined();
+      const result = await s.call("conversation.tools.call", {
+        action: "goals.create", input: { goalId: "desktop-plan", title: "Plan", prompt: "Implement safely" },
+      }, issued.value.result.token);
+      expect(result.value.error).toBeUndefined();
+      expect(result.value.result).toMatchObject({
+        id: "desktop-plan", projectIds: [s.project.id], harness: source.session.harness,
+        model: source.session.model, runtimeMode: source.session.runtimeMode,
+        approvePlan: true, manualStart: true, isolate: false, autoMerge: false,
+      });
+      expect(create).toHaveBeenCalledOnce();
+      expect(() => s.store.session(id)).toThrow("Session not found on this machine");
+      expect(s.send).not.toHaveBeenCalled();
+    } finally {
+      create.mockRestore(); read.mockRestore(); cwd.mockRestore();
+    }
+  });
   it("routes the expanded project catalog through scoped RPC", async () => {
     const s = await sessionTools();
     writeFileSync(join(s.project.cwd, "mcp-parity.txt"), "api_key=private-value\nhello");
@@ -647,6 +688,99 @@ describe("scoped Conversation Tools RPC", () => {
     expect((await s.tool("devServers.openExternal", { id: "foreign", port: 5173 })).value.error).toBeTruthy();
     expect(s.send).not.toHaveBeenCalled();
   });
+  it("reads desktop-only checkpoints and attachments without adopting the conversation", async () => {
+    const s = await sessionTools();
+    const source = s.store.session(s.created.sessionId);
+    const id = "desktop-only-tool-caller";
+    const attachmentId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    mkdirSync(s.store.attachmentDir, { recursive: true });
+    writeFileSync(join(s.store.attachmentDir, attachmentId), "desktop bytes");
+    const snapshot: typeof source = {
+      ...source,
+      session: {
+        ...source.session,
+        id,
+        blocks: [
+          {
+            id: "accepted",
+            role: "user",
+            text: "",
+            attachments: [
+              {
+                id: attachmentId,
+                name: "accepted.txt",
+                kind: "file",
+                mimeType: "text/plain",
+                size: 13,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const cwd = vi
+      .spyOn(DesktopSessions.prototype, "projectCwd")
+      .mockImplementation((target) => (target === id ? s.project.cwd : undefined));
+    const read = vi
+      .spyOn(DesktopSessions.prototype, "snapshot")
+      .mockImplementation((target) => (target === id ? snapshot : undefined));
+    const relay = vi
+      .spyOn(ConversationDesktopRelay.prototype, "call")
+      .mockImplementation(async (action) => {
+        if (action === "checkpoints.status") return { files: [{ relative: "desktop.txt" }] };
+        if (action === "checkpoints.diff")
+          return {
+            relative: "desktop.txt",
+            original: "before",
+            current: "after",
+            binary: false,
+            tooLarge: false,
+          };
+        throw new Error("Unexpected desktop action");
+      });
+    try {
+      const issued = await s.call("conversation.access.issue", { sessionId: id });
+      expect(issued.value.error).toBeUndefined();
+      const tool = (action: string, input = {}) =>
+        s.call("conversation.tools.call", { action, input }, issued.value.result.token);
+      expect((await tool("checkpoints.status")).value.result).toMatchObject({
+        total: 1,
+        items: [{ relative: "desktop.txt" }],
+      });
+      expect(
+        (await tool("checkpoints.diff", { relative: "desktop.txt" })).value.result,
+      ).toMatchObject({ original: "before", current: "after" });
+      expect(relay).toHaveBeenCalledWith(
+        "checkpoints.diff",
+        { sessionId: id, relative: "desktop.txt" },
+        s.project.cwd,
+        expect.objectContaining({ sessionId: id, projectId: s.project.id }),
+        expect.any(Function),
+      );
+      expect((await tool("attachments.list")).value.result).toMatchObject({
+        total: 1,
+        items: [{ id: attachmentId, readable: true }],
+      });
+      expect((await tool("attachments.read", { id: attachmentId })).value.result).toMatchObject({
+        data: Buffer.from("desktop bytes").toString("base64"),
+        nextOffset: null,
+      });
+      expect(
+        (await tool("attachments.read", { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })).value
+          .error,
+      ).toMatch(/not found/);
+      const count = relay.mock.calls.length;
+      expect((await tool("checkpoints.status", { sessionId: "foreign" })).value.error).toBeTruthy();
+      expect(relay).toHaveBeenCalledTimes(count);
+      relay.mockRejectedValueOnce(new Error("Desktop unavailable"));
+      expect((await tool("checkpoints.status")).value.error).toMatch(/Desktop unavailable/);
+      expect(() => s.store.session(id)).toThrow("Session not found on this machine");
+    } finally {
+      relay.mockRestore();
+      read.mockRestore();
+      cwd.mockRestore();
+    }
+  });
   it("routes task dependencies, evidence and queue ordering without starting work", async () => {
     const s = await sessionTools();
     const first = (await s.tool("tasks.create", { taskId: "dependency", title: "First", prompt: "first" })).value.result;
@@ -658,6 +792,61 @@ describe("scoped Conversation Tools RPC", () => {
     expect((await s.tool("tasks.update", { taskId: second.id, dependsOn: ["foreign"] })).value.error).toBeTruthy();
     expect((await s.tool("tasks.reorder", { order: [{ taskId: first.id, expectedUpdatedAt: first.updatedAt }] })).value.error).toBeUndefined();
     expect(s.send).not.toHaveBeenCalled();
+  });
+  it("runs inspected file lifecycle operations through the editor service", async () => {
+    const s = await sessionTools();
+    mkdirSync(join(s.project.cwd, "destination"));
+    mkdirSync(join(s.project.cwd, "tree"));
+    writeFileSync(join(s.project.cwd, "tree", "file.txt"), "first");
+    const inspect = async (path: string) => (await s.tool("files.inspect", { path })).value.result.hash;
+    let hash = await inspect("tree");
+    writeFileSync(join(s.project.cwd, "tree", "file.txt"), "changed");
+    expect((await s.tool("files.delete", { path: "tree", expectedHash: hash })).value.error).toMatch(/changed/);
+    hash = await inspect("tree");
+    expect((await s.tool("files.rename", { path: "tree", name: "renamed", expectedHash: hash })).value.result.path).toBe("renamed");
+    hash = await inspect("renamed");
+    expect((await s.tool("files.copy", { path: "renamed", destinationParent: "destination", expectedHash: hash })).value.result.path).toBe("destination/renamed");
+    expect((await s.tool("files.move", { path: "renamed", destinationParent: "destination", expectedHash: hash })).value.error).toMatch(/exists/);
+    expect((await s.tool("files.read", { path: "destination/renamed/file.txt" })).value.result.text).toBe("changed");
+    hash = await inspect("renamed/file.txt");
+    expect((await s.tool("files.move", { path: "renamed/file.txt", destinationParent: "destination", expectedHash: hash })).value.result.path).toBe("destination/file.txt");
+    expect((await s.tool("files.delete", { path: "destination/file.txt", expectedHash: hash })).value.result.deleted).toBe(true);
+    expect((await s.tool("files.inspect", { path: "." })).value.error).toBeTruthy();
+    expect((await s.tool("files.inspect", { path: "../outside" })).value.error).toBeTruthy();
+    mkdirSync(join(s.project.cwd, "protected", ".git"), { recursive: true });
+    expect((await s.tool("files.inspect", { path: "protected" })).value.error).toBeTruthy();
+  });
+
+  it("requires exact owner approval and current revisions for task transfer, notes and deletion", async () => {
+    const s = await sessionTools();
+    const destination = join(s.directory, "transfer-target");
+    mkdirSync(destination);
+    const target = s.store.addProject(destination, "Target");
+    const task = (await s.tool("tasks.create", { taskId: "transfer", title: "Transfer me", prompt: "Work", status: "todo" })).value.result;
+    const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockResolvedValue({ approved: false });
+    try {
+      const input = { taskId: task.id, expectedUpdatedAt: task.updatedAt, targetProjectId: target.id };
+      expect((await s.tool("tasks.transfer", input)).value.error).toMatch(/approval/);
+      expect((await s.tool("tasks.get", { taskId: task.id })).value.result.projectId).toBe(s.project.id);
+      relay.mockResolvedValue({ approved: true });
+      expect((await s.tool("tasks.transfer", input)).value.result).toMatchObject({ id: task.id, projectId: target.id, status: "todo" });
+      expect((await s.tool("tasks.get", { taskId: task.id })).value.error).toMatch(/not in this project/);
+      const noteTask = (await s.tool("tasks.create", { taskId: "notes-task", title: "Notes", prompt: "Work", status: "todo" })).value.result;
+      s.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.reviewNotes',json(?)) WHERE id=?").run(JSON.stringify([{ id: "finding", text: "Verify fix", createdAt: 1 }]), noteTask.id);
+      // Existing host API observes external test fixtures through its task lookup.
+      expect((await s.tool("tasks.notes.resolve", { taskId: noteTask.id, noteId: "finding", resolved: true, expectedUpdatedAt: noteTask.updatedAt })).value.result.reviewNotes[0].resolvedAt).toBeTypeOf("number");
+      const latest = (await s.tool("tasks.get", { taskId: noteTask.id })).value.result;
+      expect((await s.tool("tasks.delete", { taskId: latest.id, expectedUpdatedAt: 0 })).value.error).toMatch(/changed/);
+      expect((await s.tool("tasks.delete", { taskId: latest.id, expectedUpdatedAt: latest.updatedAt })).value.result.deleted).toBe(true);
+      const guarded = (await s.tool("tasks.create", { taskId: "guarded", title: "Guarded", prompt: "Work", status: "todo" })).value.result;
+      relay.mockImplementationOnce(async () => {
+        // Preserve the same timestamp to prove approval checks the full task,
+        // rather than trusting a clock-based revision alone.
+        s.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.title',?) WHERE id=?").run("Changed during approval", guarded.id);
+        return { approved: true };
+      });
+      expect((await s.tool("tasks.delete", { taskId: guarded.id, expectedUpdatedAt: guarded.updatedAt })).value.error).toMatch(/changed during approval/i);
+    } finally { relay.mockRestore(); }
   });
   it("allows paired owner browser takeover while denying takeover by conversation tools", async () => {
     const s = await sessionTools();
@@ -1046,6 +1235,41 @@ describe("conversation browser runtime", () => {
   });
 });
 
+it("allows explicit local voice setup only with paired desktop credentials", async () => {
+  const s = await setup();
+  const start = vi.spyOn(VoiceSetupService.prototype, "start").mockReturnValue({ state: "installing", stage: "environment", requestedConfig: { natural: false } });
+  try {
+    expect((await s.call("environment.describe")).value.result.capabilities).toContain("voice.local.setup.v1");
+    expect((await s.call("voice.local.setupStatus")).value.result).toEqual({ state: "idle" });
+    expect(start).not.toHaveBeenCalled();
+    expect((await s.call("voice.local.setup", { config: { natural: false } })).value.result.state).toBe("installing");
+    expect(start).toHaveBeenCalledExactlyOnceWith({ natural: false });
+    expect((await s.call("voice.local.setup", {}, "invalid")).status).toBe(401);
+    expect((await s.call("voice.local.setup", {}, s.first.token, {}, { Origin: "http://example.test" })).status).toBe(403);
+    const created = s.engine.command({ type: "create", commandId: crypto.randomUUID(), projectId: s.project.id, harness: "codex", model: "gpt", runtimeMode: "supervised" });
+    const grant = (await s.call("conversation.access.issue", { sessionId: created.sessionId })).value.result;
+    expect((await s.call("voice.local.setup", {}, grant.token)).value.error).toContain("Session conversation credentials");
+    expect(start).toHaveBeenCalledOnce();
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { start.mockRestore(); }
+});
+
+it("keeps voice setup and running voice mutually exclusive across desktop windows", async () => {
+  const s = await setup();
+  const active = vi.spyOn(LocalVoiceService.prototype, "isActive", "get").mockReturnValue(true);
+  const startSetup = vi.spyOn(VoiceSetupService.prototype, "start").mockReturnValue({ state: "installing" });
+  const status = vi.spyOn(VoiceSetupService.prototype, "status").mockReturnValue({ state: "installing" });
+  const startVoice = vi.spyOn(LocalVoiceService.prototype, "start");
+  try {
+    expect((await s.call("voice.local.setup")).value.error).toContain("Disconnect voice");
+    expect(startSetup).not.toHaveBeenCalled();
+    expect((await s.call("voice.local.setupStatus")).value.result.state).toBe("installing");
+    active.mockReturnValue(false);
+    expect((await s.call("voice.local.start")).value.error).toBe("Voice setup is still running.");
+    expect(startVoice).not.toHaveBeenCalled();
+  } finally { active.mockRestore(); startSetup.mockRestore(); status.mockRestore(); startVoice.mockRestore(); }
+});
+
 async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = false) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-server-test-"));
   const store = new HostStore(join(directory, "host.db"));
@@ -1282,6 +1506,41 @@ describe("shared queued messages", () => {
     await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
   });
 
+  it("tells the owning desktop which shared queues another computer changed through its heartbeat", async () => {
+    const s = await setup();
+    const created = s.engine.command({
+      type: "create",
+      commandId: "queue-wake-create",
+      projectId: s.project.id,
+      harness: "codex",
+      model: "gpt",
+      runtimeMode: "supervised",
+    });
+    const sessionId = created.sessionId;
+    const beat = async (queueSeq?: number) =>
+      (
+        await s.call("sessions.desktopLive", {
+          clientId: "desktop-window",
+          sessions: [],
+          ...(queueSeq === undefined ? {} : { queueSeq }),
+        })
+      ).value.result.queues;
+    const first = await beat();
+    expect(first).toMatchObject({ ids: [], reset: true });
+    expect(await beat(first.seq)).toEqual({ seq: first.seq, ids: [], boot: first.boot });
+    const row = { id: "remote-row", text: "from the phone", attachments: [] };
+    await s.call("sessions.queue.change", {
+      sessionId,
+      clientId: "remote:phone",
+      before: { messages: [] },
+      after: { messages: [row], status: "active" },
+      takeOwnership: false,
+    });
+    const next = await beat(first.seq);
+    expect(next.ids).toEqual([sessionId]);
+    expect(await beat(next.seq)).toEqual({ seq: next.seq, ids: [], boot: next.boot });
+  });
+
   it("shares unsent rows between paired computers and consumes them with a durable receipt once", async () => {
     const s = await setup();
     const created = s.engine.command({
@@ -1348,6 +1607,430 @@ describe("shared queued messages", () => {
     expect((await s.call("sessions.queue.get", { sessionId, clientId }, "invalid")).status).toBe(
       401,
     );
+  });
+
+  describe("drain lease", () => {
+    const create = (s: Awaited<ReturnType<typeof setup>>, commandId: string) =>
+      s.engine.command({
+        type: "create",
+        commandId,
+        projectId: s.project.id,
+        harness: "codex",
+        model: "gpt",
+        runtimeMode: "supervised",
+      }).sessionId;
+    const aware = { leaseAware: true };
+    const rows = (...ids: string[]) =>
+      ids.map((id) => ({ id, text: `send ${id}`, attachments: [] }));
+
+    it("advertises the capability and answers an aware client with the lease, an older one with a consumer", async () => {
+      const s = await setup();
+      const sessionId = create(s, "lease-cap");
+      expect((await s.call("environment.describe")).value.result.capabilities).toContain(
+        "sessions.queue.lease",
+      );
+      s.send.mockClear();
+      const running = s.engine.command({
+        type: "send",
+        commandId: "lease-cap-turn",
+        sessionId,
+        text: "busy",
+      });
+      expect(running.sessionId).toBe(sessionId);
+      const queued = await s.call("sessions.queue.change", {
+        sessionId,
+        clientId: "desktop:win1",
+        ...aware,
+        before: { messages: [] },
+        after: { messages: rows("a"), status: "active" },
+      });
+      expect(queued.value.result).toMatchObject({ leased: true });
+      expect(typeof queued.value.result.hostTime).toBe("number");
+      expect(queued.value.result.drain).toBeUndefined();
+      const granted = await s.call("sessions.queue.lease", {
+        sessionId,
+        clientId: "desktop:win1",
+        ...aware,
+      });
+      expect(granted.value.result.drain).toMatchObject({ holder: "desktop:win1", epoch: 1 });
+      // Another window is refused; a remote computer can never hold the lease.
+      expect(
+        (
+          await s.call("sessions.queue.lease", {
+            sessionId,
+            clientId: "desktop:win2",
+            ...aware,
+          })
+        ).value.error,
+      ).toMatch(/drain lease/);
+      expect(
+        (await s.call("sessions.queue.lease", { sessionId, clientId: "remote:mac", ...aware }))
+          .value.error,
+      ).toMatch(/desktop/);
+      const takeover = await s.call("sessions.queue.lease", {
+        sessionId,
+        clientId: "desktop:win2",
+        takeover: true,
+        ...aware,
+      });
+      expect(takeover.value.result.drain).toMatchObject({ holder: "desktop:win2", epoch: 2 });
+      // The old holder is fenced out of claiming; the new one claims at its epoch.
+      const read = (
+        await s.call("sessions.queue.get", { sessionId, clientId: "desktop:win1", ...aware })
+      ).value.result;
+      expect(
+        (
+          await s.call("sessions.queue.claim", {
+            sessionId,
+            clientId: "desktop:win1",
+            id: "a",
+            revision: read.revision,
+            epoch: 1,
+            ...aware,
+          })
+        ).value.error,
+      ).toMatch(/drain lease/);
+      // An older client reading the same queue sees the live holder as its consumer.
+      const legacy = await s.call("sessions.queue.get", { sessionId, clientId: "desktop:old" });
+      expect(legacy.value.result.consumer).toBe("desktop:win2");
+      expect(legacy.value.result.leased).toBeUndefined();
+      s.finish();
+    });
+
+    it("keeps a desktop's leases alive on its heartbeat and tells it which one it lost", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        const s = await setup();
+        const sessionId = create(s, "lease-beat");
+        s.engine.command({ type: "send", commandId: "lease-beat-turn", sessionId, text: "busy" });
+        await s.call("sessions.queue.change", {
+          sessionId,
+          clientId: "desktop:win1",
+          ...aware,
+          before: { messages: [] },
+          after: { messages: rows("a"), status: "active" },
+        });
+        const first = (
+          await s.call("sessions.queue.lease", { sessionId, clientId: "desktop:win1", ...aware })
+        ).value.result.drain;
+        const beat = async (clientId: string, epoch: number) =>
+          (
+            await s.call("sessions.desktopLive", {
+              clientId,
+              sessions: [],
+              queueLeases: [{ sessionId, epoch }],
+            })
+          ).value.result.queueLeases;
+        // Early in the lease nothing needs to be written, the lease is simply confirmed.
+        vi.setSystemTime(Date.now() + QUEUE_LEASE_TTL_MS * 0.15);
+        expect((await beat("win1", 1))[sessionId]).toEqual(first);
+        // Past half of the lease the beat extends it.
+        vi.setSystemTime(Date.now() + QUEUE_LEASE_TTL_MS * 0.4);
+        const renewed = (await beat("win1", 1))[sessionId];
+        expect(renewed.expiresAt).toBeGreaterThan(first.expiresAt);
+        // A wrong epoch or another window's beat renews nothing.
+        expect((await beat("win1", 5))[sessionId]).toBeNull();
+        expect((await beat("win2", 1))[sessionId]).toBeNull();
+        const read = (
+          await s.call("sessions.queue.get", { sessionId, clientId: "desktop:win1", ...aware })
+        ).value.result;
+        expect(read.drain.expiresAt).toBe(renewed.expiresAt);
+        expect(read.revision).toBeGreaterThan(0);
+        s.finish();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("sends the queue itself once the holder's lease ran out, and not while it is alive", async () => {
+      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+      try {
+        const s = await setup();
+        const sessionId = create(s, "lease-drain");
+        s.engine.command({ type: "send", commandId: "lease-drain-turn", sessionId, text: "busy" });
+        await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+        await s.call("sessions.queue.change", {
+          sessionId,
+          clientId: "remote:mac",
+          ...aware,
+          before: { messages: [] },
+          after: { messages: rows("a", "b"), status: "active" },
+        });
+        await s.call("sessions.queue.lease", { sessionId, clientId: "desktop:win1", ...aware });
+        // The turn ends while the desktop holds the queue: the host leaves it alone.
+        s.finish();
+        await vi.waitFor(() => expect(s.store.sessionStatus(sessionId)).toBe("idle"));
+        await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS / 2);
+        expect(s.send).toHaveBeenCalledOnce();
+        // The desktop is gone: at the end of its lease the host sends the head itself.
+        await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS / 2 + 2_000);
+        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2));
+        expect(s.turn().text).toBe("send a");
+        const queue = (
+          await s.call("sessions.queue.get", { sessionId, clientId: "remote:mac", ...aware })
+        ).value.result;
+        expect(queue.messages.map((row: { id: string }) => row.id)).toEqual(["b"]);
+        // The turn it started settles and the host sends the next one, once.
+        s.finish();
+        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(3));
+        expect(s.turn().text).toBe("send b");
+        s.finish();
+        await vi.waitFor(() => expect(s.store.sessionStatus(sessionId)).toBe("idle"));
+        expect(
+          (await s.call("sessions.queue.get", { sessionId, clientId: "remote:mac", ...aware }))
+            .value.result.messages,
+        ).toEqual([]);
+        expect(s.send).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps an older client's queue its own while it keeps asking, and drains it when it goes quiet", async () => {
+      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+      try {
+        const s = await setup();
+        const sessionId = create(s, "lease-legacy");
+        s.engine.command({ type: "send", commandId: "lease-legacy-turn", sessionId, text: "busy" });
+        await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+        const clientId = "remote:old-mac";
+        // No `leaseAware`: it asks to own the queue the way it always did.
+        const published = await s.call("sessions.queue.change", {
+          sessionId,
+          clientId,
+          before: { messages: [] },
+          after: { messages: rows("a"), status: "active" },
+          takeOwnership: true,
+        });
+        expect(published.value.result.consumer).toBe(clientId);
+        s.finish();
+        await vi.waitFor(() => expect(s.store.sessionStatus(sessionId)).toBe("idle"));
+        // It polls like it always did: still its queue, the host stays out.
+        for (let i = 0; i < 4; i++) {
+          await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS / 5);
+          expect(
+            (await s.call("sessions.queue.get", { sessionId, clientId })).value.result.consumer,
+          ).toBe(clientId);
+        }
+        expect(s.send).toHaveBeenCalledOnce();
+        // It stops (its window closed): after the lease the host sends the row.
+        await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS + 5_000);
+        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2));
+        expect(s.turn().text).toBe("send a");
+        s.finish();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe("run lease and claims", () => {
+    const create = (s: Awaited<ReturnType<typeof setup>>, commandId: string) =>
+      s.engine.command({
+        type: "create",
+        commandId,
+        projectId: s.project.id,
+        harness: "codex",
+        model: "gpt",
+        runtimeMode: "supervised",
+      }).sessionId;
+    const aware = { leaseAware: true };
+    const acquire = async (
+      s: Awaited<ReturnType<typeof setup>>,
+      sessionId: string,
+      clientId: string,
+    ) => await s.call("sessions.runLease", { sessionId, clientId, action: "acquire" });
+    const beat = async (
+      s: Awaited<ReturnType<typeof setup>>,
+      sessionId: string,
+      instance: string,
+      epoch: number,
+    ) =>
+      (
+        await s.call("sessions.desktopLive", {
+          clientId: instance,
+          sessions: [{ id: sessionId, busy: true }],
+          runLeases: [{ sessionId, epoch }],
+        })
+      ).value.result.runLeases;
+
+    it("asks for a conversation the host knows, like the queue calls", async () => {
+      const s = await setup();
+      expect((await acquire(s, "no-such-session", "desktop:win1")).value.error).toBeTruthy();
+      expect((await acquire(s, "", "desktop:win1")).value.error).toBeTruthy();
+      const sessionId = create(s, "run-lease-known");
+      expect((await acquire(s, sessionId, "desktop:win1")).value.result.lease).toMatchObject({
+        holder: "desktop:win1",
+      });
+    });
+
+    it("keeps a throttled hidden window's lease across its longest gap between beats", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        const s = await setup();
+        const sessionId = create(s, "run-lease-gap");
+        const lease = (await acquire(s, sessionId, "desktop:win1")).value.result.lease;
+        // A hidden window beats about once a minute: the lease outlives the gap.
+        vi.setSystemTime(Date.now() + 60_000);
+        const refused = await s.call("commands.dispatch", {
+          type: "send",
+          commandId: "run-lease-gap-send",
+          sessionId,
+          text: "from the other computer",
+        });
+        expect(refused.value.error).toMatch(/LEASE_HELD/);
+        expect((await beat(s, sessionId, "win1", lease.epoch))[sessionId]).toMatchObject({
+          holder: "desktop:win1",
+          epoch: lease.epoch,
+        });
+        s.finish();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("tells a window its run lease is lost when another side runs the conversation", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        const s = await setup();
+        const sessionId = create(s, "run-lease-lost");
+        const mine = (await acquire(s, sessionId, "desktop:win1")).value.result.lease;
+        expect((await beat(s, sessionId, "win1", mine.epoch))[sessionId]).toMatchObject({
+          epoch: mine.epoch,
+        });
+        // Another window runs the conversation after this one's lease ran out.
+        vi.setSystemTime(Date.now() + RUN_LEASE_TTL_MS + 30_000);
+        const other = (await acquire(s, sessionId, "desktop:win2")).value.result.lease;
+        expect(other.holder).toBe("desktop:win2");
+        expect((await beat(s, sessionId, "win1", mine.epoch))[sessionId]).toBeNull();
+        expect((await beat(s, sessionId, "win2", other.epoch))[sessionId]).toMatchObject({
+          holder: "desktop:win2",
+        });
+        s.finish();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("grants a lapsed lease again when nobody took the conversation, and refuses it while the host runs a turn", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        const s = await setup();
+        const sessionId = create(s, "run-lease-regrant");
+        const first = (await acquire(s, sessionId, "desktop:win1")).value.result.lease;
+        vi.setSystemTime(Date.now() + RUN_LEASE_TTL_MS + 30_000);
+        const again = (await beat(s, sessionId, "win1", first.epoch))[sessionId];
+        expect(again).toMatchObject({ holder: "desktop:win1" });
+        expect(again.epoch).toBeGreaterThan(first.epoch);
+        // The lease lapses again and the host starts a turn of its own meanwhile.
+        vi.setSystemTime(Date.now() + RUN_LEASE_TTL_MS + 30_000);
+        s.engine.command({ type: "send", commandId: "run-lease-host-turn", sessionId, text: "go" });
+        await vi.waitFor(() => expect(s.store.sessionStatus(sessionId)).toBe("running"));
+        expect((await beat(s, sessionId, "win1", again.epoch))[sessionId]).toBeNull();
+        s.finish();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("lets a send through once the claim of a queue send that never settled is past its grace", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        const s = await setup();
+        const sessionId = create(s, "stale-claim");
+        const queue = (
+          await s.call("sessions.queue.change", {
+            sessionId,
+            clientId: "desktop:win1",
+            ...aware,
+            before: { messages: [] },
+            after: {
+              messages: [{ id: "a", text: "send a", attachments: [] }],
+              status: "paused",
+            },
+          })
+        ).value.result;
+        // A "send now" claim: no lease behind it.
+        const claim = await s.call("sessions.queue.claim", {
+          sessionId,
+          clientId: "desktop:win1",
+          id: "a",
+          revision: queue.revision,
+          steer: true,
+          ...aware,
+        });
+        expect(claim.value.result.claim).toBeDefined();
+        const send = (commandId: string) =>
+          s.call("commands.dispatch", { type: "send", commandId, sessionId, text: "hello" });
+        // Within the grace the sender is believed: this is a wait.
+        expect((await send("stale-claim-1")).value.error).toMatch(/LEASE_HELD/);
+        vi.setSystemTime(Date.now() + CLAIM_GRACE_MS + 1_000);
+        // Past it the claim is given up on, and the conversation is not blocked for good.
+        expect((await send("stale-claim-2")).value.error).toBeUndefined();
+        const after = (
+          await s.call("sessions.queue.get", { sessionId, clientId: "desktop:win1", ...aware })
+        ).value.result;
+        expect(after.claim).toBeUndefined();
+        expect(after.messages[0]).toMatchObject({ id: "a", deliveryUnknown: true });
+        s.finish();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("sends a queue that waited on a usage limit as soon as the limit is dismissed", async () => {
+      const s = await setup();
+      const sessionId = create(s, "usage-wake");
+      const current = s.store.session(sessionId);
+      s.store.save(
+        {
+          ...current,
+          revision: current.revision + 1,
+          session: { ...current.session, usageLimit: { resetsAt: Date.now() + 3_600_000 } },
+        },
+        { type: "test.usageLimit" },
+      );
+      s.send.mockClear();
+      await s.call("sessions.queue.change", {
+        sessionId,
+        clientId: "remote:mac",
+        ...aware,
+        before: { messages: [] },
+        after: { messages: [{ id: "a", text: "send a", attachments: [] }], status: "active" },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(s.send).not.toHaveBeenCalled();
+      const dismissed = await s.call("commands.dispatch", {
+        type: "usageLimit",
+        commandId: "usage-wake-dismiss",
+        sessionId,
+        action: "dismiss",
+      });
+      expect(dismissed.value.error).toBeUndefined();
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      expect(s.turn().text).toBe("send a");
+      s.finish();
+    });
+
+
+    it("answers the queue and adopted cursors with the host's boot, so a restart resets a client", async () => {
+      const first = await setup();
+      const second = await setup();
+      const beatOf = async (s: Awaited<ReturnType<typeof setup>>, cursors: object = {}) =>
+        (await s.call("sessions.desktopLive", { clientId: "win1", sessions: [], ...cursors }))
+          .value.result;
+      const one = await beatOf(first);
+      const two = await beatOf(second);
+      expect(one.queues.boot).not.toBe(two.queues.boot);
+      expect(one.adopted.boot).not.toBe(two.adopted.boot);
+      // The cursor one host run issued means nothing to another.
+      const stale = await beatOf(second, { queueSeq: one.queues.seq, adoptedSeq: one.adopted.seq });
+      expect(stale.queues.reset).toBe(true);
+      expect(stale.adopted.reset).toBe(true);
+      const own = await beatOf(second, { queueSeq: two.queues.seq, adoptedSeq: two.adopted.seq });
+      expect(own.queues.reset).toBeUndefined();
+      expect(own.adopted.reset).toBeUndefined();
+    });
   });
 });
 
@@ -2097,12 +2780,35 @@ describe("remote host API", () => {
   });
   it("retries model discovery after a provider becomes available", async () => {
     const s = await setup();
+    modelProbe.mockClear();
     modelProbe.mockRejectedValueOnce(new Error("Login required"));
     modelProbe.mockResolvedValueOnce([{ id: "codex:test", name: "Test" }]);
     const first = await s.call("models.list", { projectId: s.project.id });
     expect(first.value.result.errors.codex).toBe("Login required");
-    const second = await s.call("models.list", { projectId: s.project.id });
+    // A failed provider backs off between ordinary reads, so a refresh storm
+    // cannot re-run a failing login probe; an explicit refresh retries at once.
+    const backedOff = await s.call("models.list", { projectId: s.project.id });
+    expect(backedOff.value.result.errors.codex).toBe("Login required");
+    expect(modelProbe).toHaveBeenCalledTimes(1);
+    const second = await s.call("models.list", { projectId: s.project.id, refresh: true });
     expect(second.value.result.models.codex).toEqual([{ id: "codex:test", name: "Test" }]);
+    expect(modelProbe).toHaveBeenCalledTimes(2);
+  });
+  it("retries failed model discovery on an ordinary read once the backoff elapses", async () => {
+    const s = await setup();
+    modelProbe.mockClear();
+    modelProbe.mockRejectedValueOnce(new Error("Login required"));
+    modelProbe.mockResolvedValueOnce([{ id: "codex:test", name: "Test" }]);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const first = await s.call("models.list", { projectId: s.project.id });
+      expect(first.value.result.errors.codex).toBe("Login required");
+      vi.setSystemTime(Date.now() + 30_000);
+      const second = await s.call("models.list", { projectId: s.project.id });
+      expect(second.value.result.models.codex).toEqual([{ id: "codex:test", name: "Test" }]);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(modelProbe).toHaveBeenCalledTimes(2);
   });
   it("advertises newer providers only to desktops that request them", async () => {
@@ -3239,4 +3945,210 @@ it("claims host queue attachment exports before returning an offline-editable sn
   expect(
     s.store.db.prepare("SELECT legacy FROM attachment_ownership_files WHERE id=?").get(id)?.legacy,
   ).toBe(1);
+});
+
+describe("host turns in an adopted conversation and desktop-only queue blocks", () => {
+  /** A host whose desktop database knows every conversation (adopted): the queue status then follows the desktop's flag, not the host's run. */
+  async function adopted() {
+    const directory = mkdtempSync(join(tmpdir(), "bycoda-adopted-queue-"));
+    const store = new HostStore(join(directory, "host.db"));
+    let finish = () => {};
+    const send = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const engine = new HostEngine(store, {
+      codex: { send, stop: async () => finish(), cancel: async () => finish(), bind: () => {}, approve: () => {}, answer: () => {} },
+    } as never);
+    const project = await engine.openProject(directory);
+    const desktop = new DesktopSessions();
+    vi.spyOn(desktop, "metadata").mockImplementation(
+      () => ({ cwd: project.cwd, harness: "codex", running: false }) as never,
+    );
+    const server = createHostServer(engine, ["codex"], undefined, undefined, undefined, desktop);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/rpc`;
+    const device = store.issueDevice("Laptop");
+    const call = async (method: string, params: unknown = {}) => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${device.token}` },
+        body: JSON.stringify({ version: 1, environmentId: store.environmentId, method, params }),
+      });
+      return (await response.json()) as { result?: any; error?: string };
+    };
+    cleanups.push(async () => {
+      await engine.close();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      store.close();
+      rmSync(directory, { recursive: true, force: true });
+    });
+    const sessionId = engine.command({
+      type: "create",
+      commandId: "adopted-create",
+      projectId: project.id,
+      harness: "codex",
+      model: "gpt",
+      runtimeMode: "supervised",
+    } as never).sessionId;
+    return { engine, store, call, send, sessionId, finish: () => finish(), desktop };
+  }
+  const aware = { leaseAware: true };
+  const row = (id: string, extra: object = {}) => ({ id, text: id, attachments: [], ...extra });
+
+  it("leaves a queued row that needs a configure alone while the host runs a turn of the adopted conversation", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    try {
+      const s = await adopted();
+      s.engine.command({ type: "send", commandId: "mac-turn", sessionId: s.sessionId, text: "mac turn" } as never);
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      await s.call("sessions.queue.change", {
+        sessionId: s.sessionId,
+        clientId: "remote:mac",
+        ...aware,
+        before: { messages: [] },
+        after: {
+          messages: [row("a", { modelTarget: { harness: "codex", model: "other-model", modelSettings: {} } })],
+          status: "active",
+        },
+      });
+      await vi.advanceTimersByTimeAsync(50);
+      // Not held for "Wait for the current turn before changing settings": it just waits.
+      const waiting = (await s.call("sessions.queue.get", { sessionId: s.sessionId, clientId: "remote:mac", ...aware })).result;
+      expect(waiting).toMatchObject({ status: "active" });
+      expect(waiting.holdReason).toBeUndefined();
+      expect(waiting.messages).toHaveLength(1);
+      s.finish();
+      await vi.waitFor(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+        expect(s.send).toHaveBeenCalledTimes(2);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not take the lease from a holder that waits for a host turn of the adopted conversation", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    try {
+      const s = await adopted();
+      s.engine.command({ type: "send", commandId: "mac-turn", sessionId: s.sessionId, text: "mac turn" } as never);
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      await s.call("sessions.queue.change", {
+        sessionId: s.sessionId,
+        clientId: "desktop:win1",
+        ...aware,
+        before: { messages: [] },
+        after: { messages: [row("a")], status: "active" },
+      });
+      const lease = (await s.call("sessions.queue.lease", { sessionId: s.sessionId, clientId: "desktop:win1", ...aware })).result.drain;
+      let lost = 0;
+      for (let waited = 0; waited < 100_000; waited += 1_500) {
+        await vi.advanceTimersByTimeAsync(1_500);
+        const beat = (
+          await s.call("sessions.desktopLive", {
+            clientId: "win1",
+            sessions: [],
+            queueLeases: [{ sessionId: s.sessionId, epoch: lease.epoch }],
+          })
+        ).result;
+        if (beat.queueLeases?.[s.sessionId] === null) lost++;
+      }
+      expect(lost).toBe(0);
+      expect(s.send).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("neither replaces a holder that reports it cannot send nor sends on the host's own copy meanwhile", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    try {
+      const s = await adopted();
+      s.engine.command({ type: "send", commandId: "mac-turn", sessionId: s.sessionId, text: "mac turn" } as never);
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      await s.call("sessions.queue.change", {
+        sessionId: s.sessionId,
+        clientId: "desktop:win1",
+        ...aware,
+        before: { messages: [] },
+        after: { messages: [row("a")], status: "active" },
+      });
+      const lease = (await s.call("sessions.queue.lease", { sessionId: s.sessionId, clientId: "desktop:win1", ...aware })).result.drain;
+      s.finish();
+      await vi.waitFor(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+        expect(s.store.sessionStatus(s.sessionId)).toBe("idle");
+      });
+      s.send.mockClear();
+      const beat = async (blocked: boolean) =>
+        (
+          await s.call("sessions.desktopLive", {
+            clientId: "win1",
+            sessions: [],
+            queueLeases: [{ sessionId: s.sessionId, epoch: lease.epoch, ...(blocked ? { blocked: true } : {}) }],
+          })
+        ).result.queueLeases?.[s.sessionId];
+      // Blocked for three minutes of beats: the lease stays, the host sends nothing.
+      for (let waited = 0; waited < 180_000; waited += 5_000) {
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(await beat(true)).toMatchObject({ holder: "desktop:win1", epoch: lease.epoch });
+      }
+      expect(s.send).not.toHaveBeenCalled();
+      // The conflict is resolved but the window still does not send: after the stall limit the host does.
+      let released = false;
+      for (let waited = 0; waited < 90_000 && !released; waited += 5_000) {
+        await vi.advanceTimersByTimeAsync(5_000);
+        released = (await beat(false)) === null;
+      }
+      expect(released).toBe(true);
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds a queue behind a turn the host restart cut short instead of sending its next row", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "bycoda-restart-queue-"));
+    const store = new HostStore(join(directory, "host.db"));
+    const send = vi.fn(async () => {});
+    const provider = { send, stop: async () => {}, cancel: async () => {}, bind: () => {}, approve: () => {}, answer: () => {} } as never;
+    const first = new HostEngine(store, { codex: provider });
+    const project = await first.openProject(directory);
+    const sessionId = first.command({
+      type: "create",
+      commandId: "restart-create",
+      projectId: project.id,
+      harness: "codex",
+      model: "gpt",
+      runtimeMode: "supervised",
+    } as never).sessionId;
+    const value = store.session(sessionId);
+    store.transaction(() =>
+      store.save(
+        { ...value, revision: value.revision + 1, status: "running", runId: "old-run", session: { ...value.session, busy: true } },
+        { type: "accepted" },
+      ),
+    );
+    // A queue that was waiting on that turn.
+    new SessionQueues(store.db).change(sessionId, { messages: [] }, { messages: [row("a")], status: "active" } as never);
+    const restarted = new HostEngine(store, { codex: provider });
+    const server = createHostServer(restarted, ["codex"]);
+    cleanups.push(async () => {
+      await restarted.close();
+      await first.close();
+      server.closeAllConnections();
+      store.close();
+      rmSync(directory, { recursive: true, force: true });
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    expect(send).not.toHaveBeenCalled();
+    expect(new SessionQueues(store.db).get(sessionId)).toMatchObject({
+      status: "paused",
+      holdReason: expect.stringContaining("Host restarted"),
+    });
+  });
 });

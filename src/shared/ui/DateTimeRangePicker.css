@@ -1,5 +1,8 @@
 .date-time-range-panel {
   inline-size: min(24rem, calc(100vw - 24px));
+  max-inline-size: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .date-time-range-panel form {
   display: grid;

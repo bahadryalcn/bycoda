@@ -83,6 +83,31 @@ async function render() {
   await act(async () => root.render(createElement(SkillsPage, { cwd: "D:/repo" })));
 }
 
+it("keeps a new skill draft while selecting an existing skill and returning to creation", async () => {
+  await render();
+  await click("Add skill");
+  const name = container.querySelector<HTMLInputElement>('input[aria-label="Skill name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      name,
+      "new-draft",
+    );
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Project guide");
+  const preview = container.querySelector('[aria-label="Skill preview"]');
+  expect(preview).not.toBeNull();
+  expect(preview?.hasAttribute("hidden")).toBe(false);
+  await click("Add skill");
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="Skill name"]')?.value).toBe(
+    "new-draft",
+  );
+  await click("Cancel");
+  expect(container.querySelector("form")).toBeNull();
+  expect(container.querySelector('[aria-label="Skill preview"]')).toBe(preview);
+  expect(preview?.hasAttribute("hidden")).toBe(false);
+});
+
 it("keeps policy explanations collapsed without changing owner restrictions", async () => {
   saveDisabledSkillPaths([skills[0].path]);
   await render();

@@ -83,20 +83,20 @@ afterEach(() => {
 const mount = () => act(() => root.render(createElement(PacingUncle, { visible: true })));
 
 describe("pacing uncle wake-up rate", () => {
-  // perf P7: animate on a ~50 ms timer, not a per-vsync rAF chain.
-  it("wakes the page at most ~20 times a second while walking", () => {
+  // perf P7: animate on a 12 Hz timer, not a per-vsync rAF chain.
+  it("wakes the page at most ~12 times a second while walking", () => {
     mount();
     wakeups = 0;
     runFor(2_000);
-    expect(wakeups / 2).toBeLessThanOrEqual(25);
+    expect(wakeups / 2).toBeLessThanOrEqual(13);
   });
 
-  it("keeps walking: repaints several times a second and never faster than 25 Hz", () => {
+  it("keeps walking: repaints several times a second and never faster than 13 Hz", () => {
     mount();
     state.paint.mockClear();
     runFor(2_000);
     expect(state.paint.mock.calls.length).toBeGreaterThanOrEqual(10);
-    expect(state.paint.mock.calls.length / 2).toBeLessThanOrEqual(25);
+    expect(state.paint.mock.calls.length / 2).toBeLessThanOrEqual(13);
   });
 
   it("leaves no pending frame or timer after unmount", () => {

@@ -19,6 +19,7 @@ export type ProjectRef = {
 };
 export type RemoteChangesInput = {
   inlineSync?: boolean;
+  inlineSessionIds?: string[];
   instanceId?: string;
   sessions: { sessionId: string; revision: number }[];
   projects: { projectId: string; known?: string }[];

@@ -22,6 +22,7 @@ import {
 import type { HostStore } from "./store";
 import type { HostTasks } from "./tasks";
 import type { HostTask } from "../src/features/tasks/model/hostTasks";
+import { hasUnmergedBranch, orderTasksForDeletion } from "../src/features/tasks/model/taskRules";
 
 const FEEDBACK_LIMIT = 8000;
 const MAX_PLANNER_FORMAT_REPAIRS = 2;
@@ -82,9 +83,10 @@ export class HostGoals {
     private readonly now: () => number = Date.now,
   ) {
     store.db.exec("CREATE TABLE IF NOT EXISTS goals (id TEXT PRIMARY KEY, value TEXT NOT NULL);");
+    store.db.exec("CREATE INDEX IF NOT EXISTS goals_scheduler_status ON goals(json_extract(value, '$.status'))");
     tasks.onTick(() => this.work());
     tasks.limits.track(() =>
-      this.all().flatMap((goal) =>
+      this.all(false, true).flatMap((goal) =>
         goal.status === "planning" && goal.plannerSessionId
           ? [goal.plannerStartedAt ?? goal.createdAt]
           : [],
@@ -250,7 +252,9 @@ export class HostGoals {
     if (own.some((task) => task.status === "running" || task.status === "verifying"))
       throw new Error("Stop this goal’s running tasks before deleting it.");
     if (goal.status === "planning") this.stopPlanner(goal);
-    if (withTasks) for (const task of own) await this.tasks.delete(task.id, true);
+    if (withTasks && own.some(hasUnmergedBranch))
+      throw new Error("Unmerged work is protected. Review or discard those tasks individually before deleting the goal with its tasks.");
+    if (withTasks) for (const task of orderTasksForDeletion(own)) await this.tasks.delete(task.id, false);
     this.store.db.prepare("DELETE FROM goals WHERE id=?").run(id);
   }
 
@@ -258,7 +262,7 @@ export class HostGoals {
    * the task board's tick, before queued tasks start. */
   private work(): void {
     const now = this.now();
-    for (const goal of this.all()) {
+    for (const goal of this.all(false, true)) {
       try {
         if (goal.status === "planning" && goal.plannerRecoveryPending) {
           this.resumePlanner(goal, now);
@@ -280,11 +284,13 @@ export class HostGoals {
     this.follow(now);
   }
 
-  private all(followOnly = false): HostGoal[] {
+  private all(followOnly = false, planningOnly = false): HostGoal[] {
     return this.store.db
       .prepare(
         followOnly
           ? "SELECT value FROM goals WHERE json_extract(value, '$.status') IN ('running', 'blocked')"
+          : planningOnly
+            ? "SELECT value FROM goals WHERE json_extract(value, '$.status') IN ('planning', 'blocked')"
           : "SELECT value FROM goals",
       )
       .all()
@@ -352,6 +358,7 @@ export class HostGoals {
         ? { worktreeCwd: projects.find((project) => project.lead)!.workingCwd }
         : {}),
       harness: goal.harness,
+      providerAccountId: goal.providerAccountId,
       model: goal.model,
       modelSettings: goal.modelSettings,
       runtimeMode: goal.runtimeMode,
@@ -559,6 +566,7 @@ export class HostGoals {
           prompt: task.prompt,
           projectId,
           harness: goal.harness,
+          providerAccountId: goal.providerAccountId,
           model: goal.model,
           modelSettings: goal.modelSettings,
           runtimeMode: goal.runtimeMode,
@@ -589,7 +597,7 @@ export class HostGoals {
   private follow(now: number): void {
     const goals = this.all(true).filter((goal) => goal.taskIds.length);
     if (!goals.length) return;
-    let tasks = this.tasks.taskIndex();
+    let tasks = this.tasks.taskIndex(goals.flatMap((goal) => goal.taskIds));
     let recoveredTasks: Map<string, HostTask> | undefined;
     for (const goal of goals) {
       for (const id of goal.taskIds) {

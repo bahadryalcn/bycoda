@@ -449,7 +449,8 @@ export function JiraBoardView({
         onDragStart={(e) => e.preventDefault()}
       >
         <Button
-          variant="ghost"
+          variant="item"
+          align="start"
           className="jira-board-card-open"
           type="button"
           onClick={() => {

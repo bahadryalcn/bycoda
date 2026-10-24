@@ -32,6 +32,60 @@ const skillDocuments = new Map(
 );
 mockIPC(
   (command, args) => {
+    // Voice setup is entirely synthetic. It never reaches the owner's host or installs files.
+    const voiceFixture = new URLSearchParams(location.search).get("voice");
+    if (voiceFixture) {
+      const machine = {
+        id: "fixture-voice-local",
+        name: "This computer",
+        localHost: true,
+        endpoint: "http://127.0.0.1:9999",
+        environmentId: "fixture-voice-local",
+      };
+      if (command === "local_host_connect") return voiceFixture === "error" ? null : machine;
+      if (command === "remote_machines") return [machine];
+      if (command === "plugin:dialog|open") return "/fixture/voice/existing-model";
+      if (command === "remote_request") {
+        const config = (args.params as { config?: Record<string, unknown> })?.config ?? {};
+        const installed =
+          voiceFixture === "ready" || sessionStorage.getItem("fixture-voice-installed") === "1";
+        const installedConfig = {
+          natural: config.natural !== false,
+          python: "/fixture/voice/bin/python",
+          whisperPath: "/fixture/voice/models/whisper",
+          ttsPath: "/fixture/voice/models/natural",
+        };
+        if (args.method === "environment.describe")
+          return {
+            environmentId: machine.environmentId,
+            capabilities: ["voice.local.v1", "voice.local.setup.v1"],
+          };
+        if (args.method === "voice.local.inspect")
+          return installed
+            ? { ready: true, missing: [], ...installedConfig }
+            : {
+                ready: false,
+                missing: ["faster-whisper", "Whisper model", "voxcpm", "VoxCPM2 model"],
+                python: "/fixture/python3",
+              };
+        if (args.method === "voice.local.setup") {
+          sessionStorage.setItem("fixture-voice-install-request", JSON.stringify(config));
+          sessionStorage.setItem("fixture-voice-install-polls", "0");
+          return { state: "installing", stage: "environment", requestedConfig: config };
+        }
+        if (args.method === "voice.local.setupStatus") {
+          const requested = sessionStorage.getItem("fixture-voice-install-request");
+          if (!requested && voiceFixture !== "installing") return { state: "idle" };
+          const requestedConfig = requested ? JSON.parse(requested) : { natural: true };
+          const polls = Number(sessionStorage.getItem("fixture-voice-install-polls") ?? "0") + 1;
+          sessionStorage.setItem("fixture-voice-install-polls", String(polls));
+          if (voiceFixture === "installing" || polls < 2)
+            return { state: "installing", stage: "models", requestedConfig };
+          sessionStorage.setItem("fixture-voice-installed", "1");
+          return { state: "ready", config: installedConfig, requestedConfig };
+        }
+      }
+    }
     // Synthetic terminal preferences, isolated from the owner's hosts.
     const shellFixture = new URLSearchParams(location.search).get("terminal");
     if (shellFixture) {

@@ -37,6 +37,8 @@ import { browseHostFolder } from "./browse";
 import { formatWorkspaceText } from "./editor-format";
 import { listHostClaudeCommands } from "./claude-commands";
 import { deleteHostSkill, exportHostSkill, importHostSkill, listHostSkills } from "./skills";
+import { withWorkspaceMutation } from "./workspace-mutations";
+import { inspectConversationPath } from "./conversation-file-mutations";
 import { migrateSkillPolicy, setSkillEnabled } from "./skill-policy";
 import {
   createHostPath,
@@ -186,6 +188,10 @@ export class WorkspaceCommands {
         ),
       );
     }
+    if (["rename_path", "delete_path", "copy_path", "move_path"].includes(String(command))) {
+      return this.locate(input.path ?? input.from).then(({ root }) =>
+        withWorkspaceMutation(root, () => this.runCommand(command as WorkspaceCommand, input)));
+    }
     return this.runCommand(command as WorkspaceCommand, input);
   }
 
@@ -228,13 +234,13 @@ export class WorkspaceCommands {
       case "create_path":
         return this.create(input.parent, input.name, input.isDir);
       case "rename_path":
-        return this.rename(input.path, input.name);
+        return this.rename(input.path, input.name, input.expectedHash);
       case "delete_path":
-        return this.delete(input.path);
+        return this.delete(input.path, input.expectedHash);
       case "copy_path":
-        return this.copy(input.from, input.destParent);
+        return this.copy(input.from, input.destParent, input.expectedHash);
       case "move_path":
-        return this.move(input.from, input.destParent);
+        return this.move(input.from, input.destParent, input.expectedHash);
       case "git_diff_index":
         return this.gitIndex(input.cwd);
       case "git_diff_files":
@@ -647,7 +653,7 @@ export class WorkspaceCommands {
       }
       invalidateHostFilePaths(root);
     };
-    const pending = (textFileSaves.get(key) ?? Promise.resolve()).then(save, save);
+    const pending = (textFileSaves.get(key) ?? Promise.resolve()).then(() => withWorkspaceMutation(root, save), () => withWorkspaceMutation(root, save));
     textFileSaves.set(key, pending);
     try {
       await pending;
@@ -684,7 +690,15 @@ export class WorkspaceCommands {
     return joined(parent as string, name as string);
   }
 
-  private async rename(input: unknown, name: unknown): Promise<string> {
+  private async verifyExpectedPath(root: string, input: unknown, path: string, expectedHash: unknown) {
+    if (expectedHash === undefined) return;
+    if (typeof expectedHash !== "string" || !/^[a-f0-9]{64}$/.test(expectedHash)) throw new Error("Invalid path fingerprint.");
+    const inspected = await inspectConversationPath(root, input);
+    const actual = await existingPath(root, input);
+    if (inspected.hash !== expectedHash || actual !== path || actual !== workspacePath(root, input)) throw new Error("Path changed before commit; inspect it again.");
+  }
+
+  private async rename(input: unknown, name: unknown, expectedHash?: unknown): Promise<string> {
     if (typeof name !== "string" || !name.trim() || /^[\\/]/.test(name) || name.includes("\0"))
       throw new Error("A file or folder name must be provided.");
     const { root, path: from } = await this.existing(input);
@@ -702,13 +716,15 @@ export class WorkspaceCommands {
       throw new Error(alreadyExists(name));
     if (!relative(from, to).startsWith("..")) throw new Error("Cannot move a folder into itself.");
     await mkdir(dirname(to), { recursive: true });
+    await this.verifyExpectedPath(root, input, from, expectedHash);
     await rename(from, to);
     invalidateHostFilePaths(root);
     return target;
   }
 
-  private async delete(input: unknown): Promise<void> {
+  private async delete(input: unknown, expectedHash?: unknown): Promise<void> {
     const { root, path } = await this.existing(input);
+    await this.verifyExpectedPath(root, input, path, expectedHash);
     await rm(path, { recursive: true });
     invalidateHostFilePaths(root);
   }
@@ -726,7 +742,7 @@ export class WorkspaceCommands {
     return { root: parent.root, source: source.path, parent: parent.path };
   }
 
-  private async copy(from: unknown, destParent: unknown): Promise<string> {
+  private async copy(from: unknown, destParent: unknown, expectedHash?: unknown): Promise<string> {
     const { root, source, parent } = await this.destination(from, destParent);
     const name = basename(source);
     const ext = extname(name);
@@ -739,15 +755,18 @@ export class WorkspaceCommands {
           () => true,
           () => false,
         )
-      )
+      ) {
+        if (expectedHash !== undefined) throw new Error(alreadyExists(name));
         continue;
-      await cp(source, to, { recursive: true, errorOnExist: true });
+      }
+      await this.verifyExpectedPath(root, from, source, expectedHash);
+      await cp(source, to, { recursive: true, errorOnExist: true, force: false });
       invalidateHostFilePaths(root);
       return joined(destParent as string, candidate);
     }
   }
 
-  private async move(from: unknown, destParent: unknown): Promise<string> {
+  private async move(from: unknown, destParent: unknown, expectedHash?: unknown): Promise<string> {
     const { root, source, parent } = await this.destination(from, destParent);
     const name = basename(source);
     const to = resolve(parent, name);
@@ -759,6 +778,7 @@ export class WorkspaceCommands {
       )
     )
       throw new Error(alreadyExists(name));
+    await this.verifyExpectedPath(root, from, source, expectedHash);
     await rename(source, to);
     invalidateHostFilePaths(root);
     return joined(destParent as string, name);

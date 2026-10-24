@@ -547,12 +547,6 @@ html[data-performance-no-blur] {
   --glass-blur: 0px;
 }
 
-/* Semantic artwork roles follow light, dark and custom theme status colors. */
-:root {
-  --live-background-signal: var(--color-success);
-  --live-background-spectrum: var(--color-feature);
-}
-
 /* Fixed light/dark samples remain legible while the surrounding theme changes.
    Palette-specific samples supply content colors from the selected theme data. */
 :root {

@@ -39,6 +39,28 @@ const defaults = createStoredSetting<string | null>({
   storageEvents: true,
 });
 
+const repromptDefaults = createStoredSetting<string | null>({
+  key: "bycoda.reprompt.default.v1",
+  fallback: null,
+  parse: (raw) => raw,
+  serialize: (raw) => raw ?? "null",
+  event: "bycoda:reprompt-default",
+  storageEvents: true,
+});
+
+export function saveDefaultRepromptChoice(choice: TranslationChoice | undefined) {
+  repromptDefaults.save(choice ? JSON.stringify(choice) : null);
+}
+
+export function loadDefaultRepromptChoice() {
+  return parseTranslationChoice(repromptDefaults.load());
+}
+
+export function useDefaultRepromptChoice() {
+  const raw = useSyncExternalStore(repromptDefaults.subscribe, repromptDefaults.load, () => null);
+  return useMemo(() => parseTranslationChoice(raw), [raw]);
+}
+
 export function saveDefaultTranslationChoice(choice: TranslationChoice | undefined) {
   defaults.save(choice ? JSON.stringify(choice) : null);
 }
@@ -53,8 +75,12 @@ export function useDefaultTranslationChoice() {
 }
 
 /** Keep execution on the calling session's machine and project. */
-export function translationContextWithDefault(context: TranslationContext): TranslationContext {
-  const choice = loadDefaultTranslationChoice();
+export function translationContextWithDefault(
+  context: TranslationContext,
+  action: "translation" | "reprompt" = "translation",
+): TranslationContext {
+  const choice =
+    action === "reprompt" ? loadDefaultRepromptChoice() : loadDefaultTranslationChoice();
   if (!choice) return context;
   // A session account only applies to the same harness; an explicit choice account always wins.
   const { providerAccountId, ...rest } = choice;

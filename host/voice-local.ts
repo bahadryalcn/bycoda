@@ -46,8 +46,23 @@ export class LocalVoiceService {
     }
   >();
   private idle?: ReturnType<typeof setInterval>;
+  private starting = 0;
+
+  /** Includes asynchronous preflight so setup cannot race a new voice connection. */
+  get isActive(): boolean {
+    return this.starting > 0 || Boolean(this.loading || this.child) || this.leases.size > 0;
+  }
 
   async start(value?: unknown): Promise<LocalVoiceInfo> {
+    this.starting++;
+    try {
+      return await this.startRuntime(value);
+    } finally {
+      this.starting--;
+    }
+  }
+
+  private async startRuntime(value?: unknown): Promise<LocalVoiceInfo> {
     const config = voiceRuntimeConfig(value);
     const key = JSON.stringify(config);
     if (this.loading && this.runtimeKey !== key)

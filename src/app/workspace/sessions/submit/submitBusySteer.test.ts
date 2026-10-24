@@ -164,3 +164,33 @@ it("queues a message sent while the host runs the conversation for another compu
   ).toBe(false);
   expect(getSessions()[0].queuedMessages).toHaveLength(1);
 });
+
+it("queues a message typed while two versions of the conversation await the user's choice", () => {
+  const session = {
+    ...newSession("codex", "/fake"),
+    id: "steer-test",
+    adoptedSyncConflict: true,
+    adoptedDivergence: { key: "k" },
+  };
+  resetSessionsStore([session]);
+  const ctx = {
+    dismissNoticesForContinuedSession: vi.fn(),
+    enqueueHarnessEvent: vi.fn(),
+    flushHarnessEvents: vi.fn(),
+    refs: { turnGen: { current: new Map([[session.id, 1]]) } },
+  } as unknown as SubmitDeps;
+  const input = { sessionId: session.id, text: "while choosing", attachments: [] } as SubmitInput;
+  const pre = {
+    storedCurrent: session,
+    current: session,
+    intent: "default",
+    submittedText: input.text,
+    harnessText: input.text,
+    operatorCommand: { matched: false },
+    initialWorkCwd: session.cwd,
+  } as unknown as SubmitPreflight;
+  // It does not run, so it cannot grow the conflict; it waits for the answer.
+  expect(steerBusySubmit(ctx, input, pre)).toBe(true);
+  expect(getSessions()[0].queuedMessages?.map((row) => row.text)).toEqual(["while choosing"]);
+  expect(getSessions()[0].queueStatus).not.toBe("paused");
+});

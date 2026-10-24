@@ -1,0 +1,62 @@
+.dialog {
+  container-type: inline-size;
+}
+
+.header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+}
+
+.title {
+  min-inline-size: 0;
+  font-size: var(--ui-font-secondary);
+  line-height: 1.25;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.toolbar {
+  display: flex;
+  flex: 1;
+  min-inline-size: 0;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: 8px;
+}
+
+.search {
+  flex: 1 1 12rem;
+  min-inline-size: min(100%, 12rem);
+  max-inline-size: 24rem;
+}
+
+.scope {
+  flex: 0 0 auto;
+}
+
+@container (max-width: 900px) {
+  .header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .title {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .toolbar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-wrap: wrap;
+    margin-inline-start: 0;
+  }
+
+  .scope {
+    flex-basis: 100%;
+    min-inline-size: 0;
+  }
+}

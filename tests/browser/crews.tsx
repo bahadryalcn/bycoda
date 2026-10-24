@@ -12,6 +12,7 @@ import {
   type SavedCrewAgent,
 } from "../../src/features/crews/model/crew";
 import { setLanguagePreference } from "../../src/shared/i18n";
+import { createDefaultCrew } from "../../src/features/crews/model/crewDefaults";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { Button } from "../../src/shared/ui/Button";
 import "../../src/styles/index.css";
@@ -88,6 +89,21 @@ let agents: SavedCrewAgent[] =
           updatedAt: 1,
         },
       ];
+if (params.has("defaults")) {
+  const defaults = createDefaultCrew(
+    {
+      models: {
+        codex: [
+          { id: candidate.model, harness: candidate.harness, name: "Codex fixture", settings: [] },
+        ],
+      },
+      errors: {},
+    },
+    1,
+  )!;
+  definitions = [defaults.definition];
+  agents = defaults.agents;
+}
 let starts = 0;
 let runs = [
   {
@@ -250,6 +266,7 @@ mockIPC((command, args) => {
   if (command.startsWith("plugin:")) return null;
   throw new Error(`Unsupported fixture operation ${command}`);
 });
+if (params.has("defaults")) runs = [];
 // Another session saving the same crew while it is open here.
 Object.assign(window, {
   simulateCrewUpdate: () => {

@@ -95,7 +95,6 @@ export function TransientNotice({
       ref={surface}
       tone={tone}
       aria-label={ariaLabel}
-      title={title}
       style={{
         zIndex: anchor === "viewport" ? LAYER.toast : undefined,
         boxShadow: "var(--shadow-floating)",
@@ -103,31 +102,47 @@ export function TransientNotice({
       }}
       className={`${anchor === "viewport" ? "fixed" : "absolute"} end-3 ${widthClass}`}
     >
-      <div className="flex min-w-0 items-start gap-2">
-        <div className="min-w-0 flex-1 self-center break-words">
-          {message}
-          {children}
-          {progress ? (
-            <Progress compact value={progress.value * 100} max={100} label={progress.label} />
-          ) : null}
-        </div>
-        {actions}
-        {action ? (
-          <Button variant="secondary" size="sm" disabled={action.disabled} onClick={action.onClick}>
-            {action.label}
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex min-w-0 items-start gap-2">
+          <div className="min-w-0 flex-1 self-center break-words">
+            {title ? <strong className="text-ui-secondary font-medium">{title}</strong> : message}
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            iconOnly
+            label={t("Dismiss notice")}
+            tooltip={t("Dismiss notice")}
+            disabled={dismissDisabled}
+            onClick={onDismiss}
+          >
+            <X className="size-3.5" aria-hidden />
           </Button>
+        </div>
+        {actions || action ? (
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+            {actions}
+            {action ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={action.disabled}
+                onClick={action.onClick}
+              >
+                {action.label}
+              </Button>
+            ) : null}
+          </div>
         ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          iconOnly
-          label={t("Dismiss notice")}
-          tooltip={t("Dismiss notice")}
-          disabled={dismissDisabled}
-          onClick={onDismiss}
-        >
-          <X className="size-3.5" aria-hidden />
-        </Button>
+        {children || progress || (title && message) ? (
+          <div className="min-w-0 break-words">
+            {title ? message : null}
+            {children}
+            {progress ? (
+              <Progress compact value={progress.value * 100} max={100} label={progress.label} />
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </Alert>
   );

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HostStore } from "./store";
@@ -131,6 +131,13 @@ async function setup() {
 }
 
 describe("runtime read conversation tools", () => {
+  it("does not advertise missing host attachment bytes as readable", async () => {
+    const { call, store, id } = await setup();
+    unlinkSync(attachmentPath(store, id));
+    const list = (await call("attachments.list")) as { items: { readable: boolean }[] };
+    expect(list.items).toHaveLength(3);
+    expect(list.items.every((item) => !item.readable)).toBe(true);
+  });
   it("returns only aggregate allowlisted host limits and public shell metadata", async () => {
     const { call } = await setup();
     expect(await call("host.limits.status")).toEqual({

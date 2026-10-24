@@ -10,6 +10,8 @@ import { PaneTree } from "../../workspace/ui/PaneTree";
 import { leaf } from "../../workspace/model/layout";
 import { TitleBar } from "../../../app/shell/TitleBar";
 import { remoteSessionState } from "../model/remoteSessionState";
+import { mergeQueueChange, type SharedQueue } from "../model/sharedQueue";
+import { deliveryResolverFor } from "../../sessions/model/deliveryReview";
 import type { Block, Session } from "../../sessions/model/session";
 import { rewindConversationBeforeMessage } from "../../sessions/model/conversationRewind";
 import { SHELL_FOLLOW_UP_PROMPT } from "../../sessions/model/shellRun";
@@ -63,6 +65,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 vi.mock("../model/remotePageCache", () => ({
   readRemotePageCache: vi.fn(),
   writeRemotePageCache: vi.fn(),
+  flushRemotePageCache: vi.fn().mockResolvedValue(undefined),
   deleteRemotePageCache: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/webview", () => ({
@@ -193,7 +196,12 @@ let dispatchDelay: Promise<void> | undefined;
 let attachmentReadDelay: Promise<void> | undefined;
 let describeDelay: Promise<void> | undefined;
 let steerFailure: string | undefined;
+/** What the host answers to a `send` (a refusal, as the other computer's turn makes it). */
+let sendFailure: string | undefined;
 let receiptRunId: string | undefined;
+/** The host keeps the queue (`sessions.queue`); the test plays the host's side of it. */
+let sharedQueueSupported = false;
+let hostQueue: SharedQueue = { messages: [], revision: 0 };
 let queueReadFailed = false;
 let branchFailure: string | undefined;
 let branchActionFailure: string | undefined;
@@ -243,7 +251,10 @@ beforeEach(() => {
   attachmentReadDelay = undefined;
   describeDelay = undefined;
   steerFailure = undefined;
+  sendFailure = undefined;
   receiptRunId = undefined;
+  sharedQueueSupported = false;
+  hostQueue = { messages: [], revision: 0 };
   queueReadFailed = false;
   branchFailure = undefined;
   branchActionFailure = undefined;
@@ -319,6 +330,7 @@ beforeEach(() => {
           "sessions.plan",
           "sessions.draft",
           ...(steerSupported ? ["sessions.steer"] : []),
+          ...(sharedQueueSupported ? ["sessions.queue"] : []),
           ...(harnessSwitchSupported ? ["sessions.harnessSwitch"] : []),
           ...(lazyHistorySupported ? ["sessions.lazyHistory", "machine.changes"] : []),
           ...(inlineSyncSupported ? ["machine.changes", "machine.changes.inlineSync"] : []),
@@ -482,9 +494,19 @@ beforeEach(() => {
     if (method === "attachments.upload") return { offset: (params as { size: number }).size };
     if (method === "attachments.claim" || method === "attachments.release") return {};
     if (method === "attachments.claims") return { claims: [] };
+    if (method.startsWith("sessions.queue.")) {
+      const queueParams = params as unknown as { before: SharedQueue; after: SharedQueue };
+      if (method.endsWith(".change"))
+        hostQueue = {
+          ...mergeQueueChange(hostQueue, { before: queueParams.before, after: queueParams.after }),
+          revision: hostQueue.revision + 1,
+        };
+      return { ...structuredClone(hostQueue), leased: true, hostTime: Date.now() };
+    }
     if (method === "commands.dispatch") {
       if (dispatchDelay && params.type !== "cancel") await dispatchDelay;
       if (params.type === "steer" && steerFailure) throw new Error(steerFailure);
+      if (params.type === "send" && sendFailure) throw new Error(sendFailure);
       return dispatch(params);
     }
     if (method === "sessions.delete") {
@@ -2464,7 +2486,9 @@ it("refreshes an adopted conversation without remounting or clearing its unsent 
   expect(container.querySelector("textarea")).toBe(composer);
   expect(composer.value).toBe("my unsent draft");
   expect(container.textContent).toContain("latest host conversation");
-  expect(container.textContent).toContain("(local copy)");
+  // A plain sync never makes a copy: two changed versions are the user's to answer.
+  expect(container.textContent).toContain("Conversation synced.");
+  expect(container.textContent).not.toContain("(local copy)");
   // Composer drafts survive mounts; leave the next test an empty composer.
   await type("");
 });
@@ -2686,6 +2710,40 @@ slow("resumes a restored queue during a busy turn without sending another turn",
   expect(remoteOverrides.session?.queuedMessages).toHaveLength(1);
 });
 
+slow(
+  "Resume on an unconfirmed delivery asks for the owner's choice, which then decides through the shared queue",
+  async () => {
+    sharedQueueSupported = true;
+    hostQueue = {
+      messages: [
+        { id: "unknown", text: "maybe sent", attachments: [], deliveryUnknown: true },
+        { id: "next", text: "after it", attachments: [] },
+      ],
+      revision: 3,
+      status: "paused",
+    };
+    openRunningChat();
+    await renderRemoteProbe();
+    await settle();
+    const revision = hostQueue.revision;
+    await act(async () => {
+      expect(await remoteOverrides.onResumeQueue!("shell")).toMatchObject({
+        kind: "waiting",
+        message: expect.stringContaining("Choose what happened"),
+      });
+    });
+    // Nothing was released: the host would never send the unconfirmed head anyway.
+    expect(hostQueue.revision).toBe(revision);
+    expect(hostQueue.status).toBe("paused");
+    const resolve = deliveryResolverFor(host!.session.id);
+    expect(resolve).toBeDefined();
+    await act(async () => resolve!("unknown", "retry"));
+    expect(hostQueue.messages.map((row) => row.id)).toEqual(["unknown", "next"]);
+    expect(hostQueue.messages[0].deliveryUnknown).toBeUndefined();
+    expect(hostQueue.status).toBe("active");
+  },
+);
+
 slow("keeps one chat's queue from showing on another", async () => {
   savedQueue = [{ id: "q1", text: "belongs to the first", attachments: [] }];
   openExistingChat();
@@ -2794,6 +2852,121 @@ slow(
     endTurn();
     await settle();
     expect(sends()).toHaveLength(0);
+  },
+);
+
+it("queues a follow-up refused because a desktop owns the turn without pausing the queue", async () => {
+  steerSupported = true;
+  steerFailure =
+    "Host rejected request: This desktop-owned turn cannot be redirected through the host. Queue the message or stop it first.";
+  openRunningChat();
+  await renderRemoteProbe();
+  await act(async () => {
+    expect(remoteOverrides.onSubmit!("shell", "Send this after the turn", [])).toBe(true);
+  });
+  await settle();
+  expect(remoteOverrides.session?.queuedMessages?.map((row) => row.text)).toEqual([
+    "Send this after the turn",
+  ]);
+  expect(remoteOverrides.session?.queueStatus).toBe("active");
+}, 20_000);
+
+it("queues a send the host refuses with LEASE_HELD while the desktop runs a turn: not paused, no error, no failed message", async () => {
+  sendFailure =
+    "Host rejected request: LEASE_HELD: This session is running in bycoda on that computer. Wait for it to finish.";
+  openExistingChat({ status: "idle" });
+  await renderRemoteProbe();
+  await act(async () => {
+    expect(remoteOverrides.onSubmit!("shell", "Typed while the desktop was busy", [])).toBe(true);
+  });
+  await settle();
+  expect(remoteOverrides.session?.queuedMessages?.map((row) => row.text)).toEqual([
+    "Typed while the desktop was busy",
+  ]);
+  expect(remoteOverrides.session?.queueStatus).not.toBe("paused");
+  expect(container.textContent).not.toContain("LEASE_HELD");
+  expect(container.textContent).not.toContain("Try again");
+  // It is offered again only after a wait, not in a loop against the host.
+  const attempts = commands.length;
+  await settle();
+  expect(commands.length).toBe(attempts);
+  // The desktop's turn is visible, then ends: the same message goes out, once.
+  sendFailure = undefined;
+  setHost({ status: "running", runId: "run-9", busy: true });
+  await settle();
+  expect(sends()).toHaveLength(0);
+  endTurn();
+  await vi.waitFor(() => expect(sentTexts()).toEqual(["Typed while the desktop was busy"]), {
+    timeout: 8_000,
+  });
+}, 30_000);
+
+slow(
+  "keeps a refused follow-up in the shared queue while the desktop is claiming one of its rows",
+  async () => {
+    sharedQueueSupported = true;
+    steerSupported = true;
+    steerFailure = "Host rejected request: steering unavailable";
+    hostQueue = {
+      messages: [{ id: "claimed", text: "being sent", attachments: [] }],
+      revision: 3,
+      status: "active",
+      claim: { id: "claimed", clientId: "desktop:win", token: "t" },
+    };
+    openRunningChat();
+    await renderRemoteProbe();
+    await act(async () => {
+      expect(remoteOverrides.onSubmit!("shell", "Keep this follow-up", [])).toBe(true);
+    });
+    // The composer let go of the text. The queue is busy for a moment: it is not lost.
+    setTimeout(() => {
+      hostQueue = {
+        ...hostQueue,
+        messages: hostQueue.messages.slice(1),
+        claim: undefined,
+        revision: 4,
+      };
+    }, 300);
+    await vi.waitFor(
+      () => expect(hostQueue.messages.map((row) => row.text)).toEqual(["Keep this follow-up"]),
+      { timeout: 8_000 },
+    );
+    expect(hostQueue.status).toBe("paused");
+  },
+);
+
+slow(
+  "shows a follow-up the queue could not keep, with a reason and Try again, instead of dropping it",
+  async () => {
+    sharedQueueSupported = true;
+    steerSupported = true;
+    steerFailure = "Host rejected request: steering unavailable";
+    hostQueue = {
+      messages: [{ id: "claimed", text: "being sent", attachments: [] }],
+      revision: 3,
+      status: "active",
+      claim: { id: "claimed", clientId: "desktop:win", token: "t" },
+    };
+    openRunningChat();
+    await render();
+    await whenStopShown();
+    await type("Do not lose me");
+    await act(async () => byLabel("Send")!.click());
+    await vi.waitFor(
+      () => expect(container.textContent).toContain("could not be saved to the queue"),
+      {
+        timeout: 12_000,
+      },
+    );
+    expect(container.querySelector("ol[aria-label='Transcript']")?.textContent).toContain(
+      "Do not lose me",
+    );
+    expect(
+      [...container.querySelectorAll("button")].some((button) =>
+        button.textContent?.includes("Try again"),
+      ),
+    ).toBe(true);
+    expect(hostQueue.messages.map((row) => row.text)).toEqual(["being sent"]);
   },
 );
 
@@ -3161,6 +3334,44 @@ slow("does not continue a lost turn it never saw running, only offers Continue",
   await settle();
   expect(commands).toHaveLength(0);
   expect(container.querySelector("[data-interrupted-turn]")).not.toBeNull();
+});
+
+it.each(["window", "pane"] as const)("keeps %s-hidden running-session control hints without applying in-flight inline transcript data", async (mode) => {
+  inlineSyncSupported = true;
+  openExistingChat();
+  const published = vi.fn();
+  const currentShell = shell();
+  await render(currentShell, { onRemoteSnapshot: published });
+  await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
+  if (mode === "window") {
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  } else await render(currentShell, { visible: false, onRemoteSnapshot: published });
+  const before = published.mock.calls.length;
+  const cacheBefore = vi.mocked(writeRemotePageCache).mock.calls.length;
+  const base = host!.revision;
+  host = { ...host!, revision: base + 1, status: "running", session: { ...host!.session,
+    blocks: [...host!.session.blocks, { id: "hidden-inline", role: "assistant", text: "Hidden tail" }],
+  } };
+  const { session: { blocks, ...session }, blockRevisions: _revisions, ...value } = host;
+  inlineDelta = { kind: "delta", base, value: { ...value, session }, blocks: [blocks.at(-1)!], blockIds: blocks.map((block) => block.id) };
+  machineSessionRevisionHint = host.revision;
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1_200)); });
+  expect(published).toHaveBeenCalledTimes(before);
+  expect(writeRemotePageCache).toHaveBeenCalledTimes(cacheBefore);
+  const demand = vi.mocked(invoke).mock.calls.filter(([, input]) => (input as { method?: string })?.method === "machine.changes").at(-1)?.[1] as { params: { inlineSync?: boolean; sessions: unknown[] } };
+  expect(demand.params.inlineSync).not.toBe(true);
+  expect(demand.params.sessions).toHaveLength(1);
+  const contentReads = () => vi.mocked(invoke).mock.calls.filter(([, input]) =>
+    ["sessions.get", "sessions.sync", "sessions.page"].includes((input as { method?: string })?.method ?? "")).length;
+  const readsBeforeActivation = contentReads();
+  if (mode === "window") {
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  } else await render(currentShell, { visible: true, onRemoteSnapshot: published });
+  await vi.waitFor(() => expect(container.textContent).toContain("Hidden tail"));
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 250)); });
+  expect(contentReads()).toBe(readsBeforeActivation + 1);
 });
 
 it.each(["inline", "mismatched", "legacy"] as const)(

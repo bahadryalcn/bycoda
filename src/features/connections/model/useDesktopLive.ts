@@ -12,13 +12,22 @@ import {
 import type { DesktopInboxReply } from "../../inbox/model/remoteInbox";
 import { loadRemoteCapabilities, remoteRequest } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
+import { desktopInstanceId } from "./desktopInstance";
+import { heldRunLeases, noteRunLeases } from "./runLeaseClient";
+import { adoptedBeatFailed, noteAdoptedBeat } from "./hostWake";
+import {
+  heldSharedQueueLeases,
+  noteSharedQueueLeases,
+  wakeSharedLocalQueues,
+} from "./useSharedLocalQueues";
 import type { RemoteMachine } from "./protocol";
 import { buildMobileProjectDirectory } from "../../projects/model/mobileProjectDirectory";
 import { withMobileProjectLogos } from "../../projects/model/mobileProjectLogos";
 
 const MACHINE_RECHECK_MS = 15_000;
-// One identity per WebView, stable across StrictMode effect remounts.
-const desktopClientId = crypto.randomUUID();
+// One identity per WebView, stable across StrictMode remounts and app restarts:
+// the host knows this desktop's queue leases by it.
+const desktopClientId = desktopInstanceId();
 
 /** Tells the local host this desktop is alive and which sessions are busy or
  * waiting on input, and runs the stop/approve/answer commands watchers sent
@@ -82,6 +91,10 @@ export function useDesktopLive(
           },
           unacked,
           handled,
+          onQueuesChanged: wakeSharedLocalQueues,
+          onAdopted: (change) => noteAdoptedBeat(change),
+          queueLeases: { held: heldSharedQueueLeases, answered: noteSharedQueueLeases },
+          runLeases: { held: heldRunLeases, answered: noteRunLeases },
           beat,
           deletions: state.current.deletions,
           inbox: {
@@ -103,6 +116,7 @@ export function useDesktopLive(
       } catch {
         machineId = undefined; // Host unreachable; the next tick looks again.
         beat.idleAt = undefined;
+        adoptedBeatFailed();
       } finally {
         running = false;
       }

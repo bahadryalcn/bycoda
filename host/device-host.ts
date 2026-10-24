@@ -54,6 +54,20 @@ const TOOLS = {
   hub: { name: "expo-device-hub", version: DEVICE_HUB_VERSION, entry: "dist/server/cli.mjs" },
   agent: { name: "agent-device", version: AGENT_DEVICE_VERSION, entry: "bin/agent-device.mjs" },
 };
+type HubDevices = {
+  simulators?: DeviceSummary[];
+  emulators?: DeviceSummary[];
+  errors?: { message: string }[];
+};
+type DeviceDiscovery = {
+  key: string;
+  hub?: PromiseSettledResult<HubDevices>;
+  native?: PromiseSettledResult<DeviceSummary[] | undefined>;
+  macAndroid?: PromiseSettledResult<DeviceSummary[]>;
+  ready: Promise<void>;
+  complete: Promise<void>;
+  completedAt?: number;
+};
 export function deviceActionArgs(action: DeviceAction): string[] {
   const coordinate = (value: number) => {
     if (!Number.isInteger(value) || value < 0 || value > 20000)
@@ -146,6 +160,7 @@ export class DeviceHost {
   private readonly agentTargets = new Map<string, string>();
   private readonly stateDir: string;
   private iosSupport?: { checkedAt: number; result: Promise<boolean> };
+  private discovery?: DeviceDiscovery;
   constructor(
     private readonly baseDir: string,
     private readonly options: {
@@ -409,25 +424,107 @@ export class DeviceHost {
     return response;
   }
   async list(): Promise<{ devices: DeviceSummary[]; errors: string[] }> {
-    type HubDevices = {
-      simulators?: DeviceSummary[];
-      emulators?: DeviceSummary[];
-      errors?: { message: string }[];
-    };
     // Native discovery must still run when the optional hub API is unhealthy.
     const nativePlatform = this.platform === "darwin" ? "ios" : "android";
     const canDiscoverNative = this.platform === "darwin" || this.platform === "win32";
     const canDiscoverMacAndroid =
       this.platform === "darwin" && !!(this.env.ANDROID_HOME || this.env.ANDROID_SDK_ROOT);
-    const [hub, native, macAndroid] = await Promise.allSettled([
-      this.request("/api/devices").then((response) => response.json() as Promise<HubDevices>),
-      canDiscoverNative
-        ? this.platform === "darwin"
-          ? this.listIos()
-          : this.listWindowsAndroid()
-        : Promise.resolve(undefined),
-      canDiscoverMacAndroid ? this.listMacAndroid() : Promise.resolve([] as DeviceSummary[]),
+    const env = this.env;
+    const key = JSON.stringify([
+      this.platform,
+      this.origin,
+      this.child?.pid,
+      env.ANDROID_HOME,
+      env.ANDROID_SDK_ROOT,
+      env.DEVELOPER_DIR,
+      env.PATH,
     ]);
+    let discovery = this.discovery;
+    if (
+      !discovery ||
+      discovery.key !== key ||
+      (discovery.completedAt !== undefined && Date.now() - discovery.completedAt >= 1_000)
+    ) {
+      let ready!: () => void;
+      const current: DeviceDiscovery = {
+        key,
+        ready: new Promise<void>((resolve) => {
+          ready = resolve;
+        }),
+        complete: Promise.resolve(),
+      };
+      const observe = <T>(
+        promise: Promise<T>,
+        save: (result: PromiseSettledResult<T>) => void,
+        usable: (value: T) => boolean,
+      ) =>
+        promise.then(
+          (value) => {
+            save({ status: "fulfilled", value });
+            if (usable(value)) ready();
+          },
+          (reason) => {
+            save({ status: "rejected", reason });
+          },
+        );
+      current.complete = Promise.all([
+        observe(
+          this.request("/api/devices").then((response) => response.json() as Promise<HubDevices>),
+          (value) => {
+            current.hub = value;
+          },
+          (value) =>
+            (!canDiscoverNative && !canDiscoverMacAndroid) ||
+            !!(value.simulators?.length || value.emulators?.length),
+        ),
+        observe(
+          canDiscoverNative
+            ? this.platform === "darwin"
+              ? this.listIos()
+              : this.listWindowsAndroid()
+            : Promise.resolve(undefined),
+          (value) => {
+            current.native = value;
+          },
+          // Empty native enumeration is authoritative for that platform, but
+          // is not a usable device that should hide a healthy pending source.
+          (value) => (value?.length ?? 0) > 0,
+        ),
+        observe(
+          canDiscoverMacAndroid ? this.listMacAndroid() : Promise.resolve([] as DeviceSummary[]),
+          (value) => {
+            current.macAndroid = value;
+          },
+          (value) => canDiscoverMacAndroid && value.length > 0,
+        ),
+      ]).then(() => {
+        current.completedAt = Date.now();
+      });
+      this.discovery = discovery = current;
+    }
+    await Promise.race([discovery.ready, discovery.complete]);
+    // Gather sources that settle together, without holding healthy results for
+    // the optional hub's 20s timeout. Later reads share the same pending discovery.
+    if (discovery.completedAt === undefined) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          discovery.complete,
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, 100);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    const pending = (source: string) => ({
+      status: "rejected" as const,
+      reason: `${source} device discovery is still running; refresh to include its results.`,
+    });
+    const hub = discovery.hub ?? pending("Optional hub");
+    const native = discovery.native ?? pending("Native");
+    const macAndroid = discovery.macAndroid ?? pending("Android");
     if (
       hub.status === "rejected" &&
       (native.status === "rejected" || !native.value) &&
@@ -545,14 +642,17 @@ export class DeviceHost {
   private async listWindowsAndroid(): Promise<DeviceSummary[]> {
     const options = { env: this.env, timeoutMs: 10_000 };
     const adb = this.androidBinary("adb");
-    const connected = await deviceCommand(adb, ["devices", "-l"], options);
-    const names = existsSync(this.androidBinary("emulator"))
-      ? (await deviceCommand(this.androidBinary("emulator"), ["-list-avds"], options))
-          .split(/\r?\n/)
-          .map((name) => name.trim())
-          .filter(Boolean)
-          .slice(0, 200)
-      : [];
+    const [connected, avds] = await Promise.all([
+      deviceCommand(adb, ["devices", "-l"], options),
+      existsSync(this.androidBinary("emulator"))
+        ? deviceCommand(this.androidBinary("emulator"), ["-list-avds"], options)
+        : Promise.resolve(""),
+    ]);
+    const names = avds
+      .split(/\r?\n/)
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .slice(0, 200);
     const devices: DeviceSummary[] = names.map((name) => ({
       id: name,
       name,

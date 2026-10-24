@@ -13,6 +13,7 @@ const principal = {
 function setup() {
   const session = {
     harness: "codex",
+    providerAccountId: "account-work",
     model: "current-model",
     modelSettings: { effort: "medium" },
     runtimeMode: "supervised",
@@ -55,6 +56,40 @@ function setup() {
 }
 
 describe("conversation goal writes", () => {
+  it("pins the caller account rather than using the unauthenticated host default", async () => {
+    const f = setup();
+    await f.create();
+    expect(f.goals.create).toHaveBeenCalledWith(expect.objectContaining({ providerAccountId: "account-work" }));
+    f.rows[0].providerAccountId = "another-profile";
+    await expect(f.call("goals.update", { goalId: "goal", expectedUpdatedAt: 1, maxRunMinutes: 10 })).rejects.toThrow("owner UI");
+  });
+  it("inherits desktop-only caller settings through the verified session resolver", async () => {
+    const f = setup();
+    const caller = f.store.session("caller");
+    f.store.session.mockImplementation(() => { throw new Error("Session not found on this machine"); });
+    const resolve = vi.fn(() => caller);
+    const helper = new ConversationGoalTools(f.store, f.goals, { list: () => [] }, resolve);
+    const goal = await helper.call("goals.create", {
+      goalId: "desktop-goal", title: "Desktop plan", prompt: "Implement safely",
+    }, principal, () => true);
+    expect(resolve).toHaveBeenCalledWith("caller");
+    expect(goal).toMatchObject({
+      harness: f.session.harness, model: f.session.model,
+      modelSettings: f.session.modelSettings, runtimeMode: f.session.runtimeMode,
+      projectIds: [principal.projectId], approvePlan: true, manualStart: true,
+      isolate: false,
+    });
+    expect(f.goals.create).toHaveBeenCalledWith(expect.objectContaining({ autoMerge: false }));
+    resolve.mockReturnValue({ ...caller, projectId: "foreign" });
+    await expect(helper.call("goals.create", {
+      goalId: "foreign-goal", title: "Foreign", prompt: "Denied",
+    }, principal, () => true)).rejects.toThrow("another project");
+    await expect(helper.call("goals.create", {
+      goalId: "revoked-goal", title: "Revoked", prompt: "Denied",
+    }, principal, () => false)).rejects.toThrow("revoked");
+    expect(f.goals.create).toHaveBeenCalledTimes(1);
+  });
+
   it("updates only bounded operational limits with matching execution identity and revision", async () => {
     const f = setup();
     await f.create();

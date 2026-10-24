@@ -50,6 +50,7 @@ pub struct CheckpointStore {
     leases: PathBuf,
     gates: Arc<Mutex<LockMap<String, Weak<Mutex<()>>>>>,
     barrier: Arc<turn::RecoveryBarrier>,
+    active_turn_index: Arc<Mutex<turn::ActiveTurnIndex>>,
 }
 
 fn checkpoint_gate(gates: &mut LockMap<String, Weak<Mutex<()>>>, key: String) -> Arc<Mutex<()>> {
@@ -76,6 +77,7 @@ impl CheckpointStore {
             leases,
             gates: Arc::new(Mutex::new(LockMap::new())),
             barrier: Arc::new(turn::RecoveryBarrier::default()),
+            active_turn_index: Arc::new(Mutex::new(turn::ActiveTurnIndex::default())),
         }
     }
 
@@ -646,7 +648,10 @@ impl CheckpointStore {
         };
         for entry in entries.flatten() {
             let session_id = entry.file_name().to_string_lossy().into_owned();
-            if session_id == except_session_id {
+            if session_id == except_session_id
+                || validate_id(&session_id, "session").is_err()
+                || !entry.file_type().is_ok_and(|kind| kind.is_dir())
+            {
                 continue;
             }
             let dir = entry.path();
@@ -892,6 +897,31 @@ pub async fn session_checkpoint_status(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Read the desktop's checkpoint store for a host-authorized Conversation Tool.
+/// Never consult the host store: desktop turns capture their snapshots here.
+pub(crate) fn conversation_checkpoint_read(
+    app: &AppHandle,
+    action: &str,
+    session_id: &str,
+    cwd: &str,
+    relative: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    validate_id(session_id, "session")?;
+    let store = app.state::<CheckpointStore>();
+    store.coordinated(session_id, &[cwd], |store| match action {
+        "checkpoints.status" => {
+            serde_json::to_value(store.status(session_id, cwd)?).map_err(|error| error.to_string())
+        }
+        "checkpoints.diff" => serde_json::to_value(store.file_diff(
+            session_id,
+            cwd,
+            relative.ok_or("Checkpoint relative path required")?,
+        )?)
+        .map_err(|error| error.to_string()),
+        _ => Err("Unsupported checkpoint read".into()),
+    })
 }
 
 #[tauri::command]

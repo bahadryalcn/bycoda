@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Attachment, Block, Session } from "../../sessions/model/session";
 import {
+  ADOPTED_FLAGGED_REFETCH_MS,
+  adoptedBranchId,
+  adoptedDivergenceKey,
   adoptedTranscriptLead,
   desktopCopyOf,
   mergeAdoptedSession,
@@ -87,7 +90,7 @@ describe("refreshAdoptedSession", () => {
     expect(current().blocks).toHaveLength(2);
   });
 
-  it("saves the divergent transcript before replacing it and establishes a new merge baseline", async () => {
+  it("keeping both saves one branch with its context before replacing the original, and establishes a new merge baseline", async () => {
     const session = local({
       blocks: [block("local")],
       adoptedSyncConflict: true,
@@ -103,22 +106,27 @@ describe("refreshAdoptedSession", () => {
           resolve = done;
         }),
     );
-    const refresh = refreshAdoptedSession(deps, "s1");
+    const refresh = refreshAdoptedSession(deps, "s1", "keep-both");
     await vi.waitFor(() => expect(deps.preserve).toHaveBeenCalledOnce());
     expect(deps.apply).not.toHaveBeenCalled();
     const copy = vi.mocked(deps.preserve!).mock.calls[0][0];
     expect(copy.id).not.toBe(session.id);
     expect(copy).toMatchObject({
-      title: "Local (local copy)",
       blocks: session.blocks,
       cwd: session.cwd,
     });
+    expect(copy.title).toMatch(/^Local \(branch, \d{4}-\d\d-\d\d \d\d:\d\d\)$/);
+    expect(copy.title).not.toContain("local copy");
+    // The branch keeps its context by replaying it once, and starts a thread of its own:
+    // the provider thread stays with the conversation both computers keep.
+    expect(copy.pendingContextReplay).toContain("USER: local");
     expect(copy.providerSessionId).toBeUndefined();
     expect(copy.automationId).toBeUndefined();
     expect(copy.queuedMessages).toBeUndefined();
     resolve(true);
     expect(await refresh).toBe(true);
     expect(current().adoptedSyncConflict).toBeUndefined();
+    expect(current().providerSessionId).toBe(host({}).session.providerSessionId);
     expect(current().blocks).toEqual(host({}).session.blocks);
     // A host rewind after explicit replacement uses the newly accepted baseline.
     vi.mocked(deps.list).mockResolvedValue([entry({ revision: 6 })]);
@@ -127,12 +135,12 @@ describe("refreshAdoptedSession", () => {
     expect(current().blocks).toEqual([]);
   });
 
-  it("keeps the original conversation when the backup cannot be saved", async () => {
+  it("keeps the original conversation when the branch cannot be saved", async () => {
     const { deps, current } = setup(local({ blocks: [block("local")] }));
     const original = current();
     vi.mocked(deps.preserve!).mockResolvedValue(false);
-    await expect(refreshAdoptedSession(deps, "s1")).rejects.toThrow(
-      "Could not save the local copy",
+    await expect(refreshAdoptedSession(deps, "s1", "keep-both")).rejects.toThrow(
+      "Could not save this computer's version",
     );
     expect(current()).toBe(original);
     expect(deps.apply).not.toHaveBeenCalled();
@@ -151,15 +159,93 @@ describe("refreshAdoptedSession", () => {
     }
   });
 
-  it("does not replace a conversation edited while its backup is being saved", async () => {
+  it("does not replace a conversation edited while its branch is being saved", async () => {
     const { deps, current, change } = setup(local({ blocks: [block("local")] }));
     vi.mocked(deps.preserve!).mockImplementation(async () => {
       change({ ...current(), blocks: [block("newer-local")] });
       return true;
     });
-    await expect(refreshAdoptedSession(deps, "s1")).rejects.toThrow("changed while refreshing");
+    await expect(refreshAdoptedSession(deps, "s1", "keep-both")).rejects.toThrow(
+      "changed while refreshing",
+    );
     expect(current().blocks).toEqual([block("newer-local")]);
     expect(deps.apply).not.toHaveBeenCalled();
+  });
+
+  it("carries a queue update that arrives while the branch is saved instead of failing after it exists", async () => {
+    const { deps, current, change } = setup(local({ blocks: [block("local")] }));
+    const queued = [{ id: "q1", text: "from the phone", attachments: [] }];
+    vi.mocked(deps.preserve!).mockImplementation(async () => {
+      // The shared queue replaces the session object, not its conversation.
+      change({ ...current(), queuedMessages: queued, queueStatus: "active" });
+      return true;
+    });
+    await expect(refreshAdoptedSession(deps, "s1", "keep-both")).resolves.toBe(true);
+    expect(deps.preserve).toHaveBeenCalledOnce();
+    expect(current().blocks.map((entry) => entry.id)).toEqual(["a", "b"]);
+    expect(current().queuedMessages).toEqual(queued);
+    expect(current().queueStatus).toBe("active");
+  });
+
+  it("never saves a copy while the user is choosing: a plain refresh of two changed versions only flags them", async () => {
+    const { deps, current } = setup(local({ blocks: [block("local")] }));
+    const original = current();
+    const conflict = vi.fn();
+    deps.conflict = conflict;
+    expect(await refreshAdoptedSession(deps, "s1")).toBe(false);
+    expect(deps.preserve).not.toHaveBeenCalled();
+    expect(deps.apply).not.toHaveBeenCalled();
+    expect(current()).toBe(original);
+    expect(conflict).toHaveBeenCalledOnce();
+    expect(conflict.mock.calls[0]![0]).toBe(original);
+    expect(conflict.mock.calls[0]![1].key).toBe(adoptedDivergenceKey(original, host({}).session));
+  });
+
+  it("keeping the other version replaces this one without a copy and takes the host's provider thread", async () => {
+    const { deps, current } = setup(
+      local({
+        blocks: [block("local")],
+        adoptedSyncConflict: true,
+        providerSessionId: "mine",
+        adoptedDivergence: { key: "k" },
+      }),
+      host({ providerSessionId: "theirs" }),
+    );
+    expect(await refreshAdoptedSession(deps, "s1", "keep-other")).toBe(false);
+    expect(deps.preserve).not.toHaveBeenCalled();
+    expect(current().blocks.map((item) => item.id)).toEqual(["a", "b"]);
+    expect(current().providerSessionId).toBe("theirs");
+    expect(current().adoptedSyncConflict).toBeUndefined();
+    expect(current().adoptedDivergence).toBeUndefined();
+  });
+
+  it("answers the same conflict with the same branch, so a retry or a restart never makes a second one", async () => {
+    const mine = local({ blocks: [block("local")] });
+    const first = setup(mine);
+    await refreshAdoptedSession(first.deps, "s1", "keep-both");
+    const branch = vi.mocked(first.deps.preserve!).mock.calls[0]![0];
+    expect(branch.id).toBe(adoptedBranchId("s1", adoptedDivergenceKey(mine, host({}).session)));
+    expect(branch.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
+    const second = setup(mine);
+    await refreshAdoptedSession(second.deps, "s1", "keep-both");
+    expect(vi.mocked(second.deps.preserve!).mock.calls[0]![0].id).toBe(branch.id);
+    // Already saved (and maybe continued since): it is neither saved again nor overwritten.
+    const third = setup(mine);
+    third.deps.stored = async () => branch;
+    expect(await refreshAdoptedSession(third.deps, "s1", "keep-both")).toBe(true);
+    expect(third.deps.preserve).not.toHaveBeenCalled();
+    expect(third.current().blocks.map((item) => item.id)).toEqual(["a", "b"]);
+  });
+
+  it("applies a resolution only to a conflict that is still there", async () => {
+    // The host only lags: keeping both would branch for nothing.
+    const { deps, current } = setup(
+      local({ blocks: [block("a"), block("b"), block("c")], adoptedSyncConflict: true }),
+    );
+    expect(await refreshAdoptedSession(deps, "s1", "keep-both")).toBe(false);
+    expect(deps.preserve).not.toHaveBeenCalled();
+    expect(current().adoptedSyncConflict).toBeUndefined();
+    expect(current().blocks.map((item) => item.id)).toEqual(["a", "b", "c"]);
   });
 
   it("leaves the local conversation untouched when the host fails or removes the session", async () => {
@@ -440,7 +526,6 @@ describe("adopted sessions after quitting mid-turn or with a lagging host", () =
         current = merged;
       },
       mirrored,
-      autoRefreshConflicts: true,
       preserve,
       conflict,
     });
@@ -501,41 +586,139 @@ describe("adopted sessions after quitting mid-turn or with a lagging host", () =
     }
   });
 
-  it("saves one copy per divergence the host keeps refusing", async () => {
+  it("flags a divergence the host keeps refusing once and never saves a copy", async () => {
     const reply = (text: string) => ({ id: "r1", role: "assistant", text }) as Block;
     let current = local({ blocks: [user("u1"), reply("desktop")] });
     let revision = 5;
     const remote = () => ({ ...host({ blocks: [user("u1"), reply("host")] }), revision });
     const preserve = vi.fn(async () => true);
-    const conflict = vi.fn();
+    const apply = vi.fn((merged: Session) => {
+      current = merged;
+    });
+    const conflict = vi.fn((flagged: Session, divergence?: { key: string }) => {
+      current = { ...flagged, adoptedSyncConflict: true, adoptedDivergence: divergence };
+    });
     const deps: AdoptedMirrorDeps = {
       list: async () => [entry({ revision })],
       load: async () => remote(),
       local: () => [current],
-      apply: (merged) => {
-        current = merged;
-      },
+      apply,
       mirrored: new Map(),
-      autoRefreshConflicts: true,
       preserve,
       conflict,
     };
     await mirrorAdoptedSessions(deps);
-    expect(preserve).toHaveBeenCalledOnce();
-    // The same block differs again after a local turn on the replaced copy.
-    current = { ...current, blocks: [user("u1"), reply("desktop"), user("next")] };
+    expect(preserve).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+    expect(conflict).toHaveBeenCalledOnce();
+    expect(current.blocks.map((entry) => entry.id)).toEqual(["u1", "r1"]);
+    expect((current.blocks[1] as Block).text).toBe("desktop");
+    const key = current.adoptedDivergence!.key;
+    // The host moves on without touching the disputed block: still that divergence.
+    // A flagged conversation is only compared again after a few seconds.
     revision = 6;
     await mirrorAdoptedSessions(deps);
-    expect(preserve).toHaveBeenCalledOnce();
     expect(conflict).toHaveBeenCalledOnce();
-    expect(current.blocks.at(-1)?.id).toBe("next");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + ADOPTED_FLAGGED_REFETCH_MS + 1_000);
+      await mirrorAdoptedSessions(deps);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(preserve).not.toHaveBeenCalled();
+    expect(conflict.mock.calls.map(([, divergence]) => divergence?.key)).toEqual([key, key]);
   });
 
-  it("still saves a separate copy when the lagging host diverged", async () => {
+  it("stays silent about a divergence the user chose to keep, across passes and restarts", async () => {
+    const reply = (text: string) => ({ id: "r1", role: "assistant", text }) as Block;
+    let current = local({
+      blocks: [user("u1"), reply("desktop")],
+      adoptedSyncConflict: true,
+    });
+    const diverged = host({ blocks: [user("u1"), reply("host")] });
+    const key = adoptedDivergenceKey(current, diverged.session);
+    current = { ...current, adoptedDivergence: { key, keep: true } };
+    const preserve = vi.fn(async () => true);
+    const conflict = vi.fn();
+    for (const revision of [5, 6]) {
+      // A fresh `mirrored` map is an app restart: nothing but the session remembers.
+      const mirrored = new Map<string, number>();
+      await mirrorAdoptedSessions({
+        list: async () => [entry({ revision })],
+        load: async () => ({ ...diverged, revision }),
+        local: () => [current],
+        apply: (merged) => {
+          current = merged;
+        },
+        mirrored,
+        preserve,
+        conflict,
+      });
+      expect(mirrored.get("s1")).toBe(revision);
+    }
+    expect(preserve).not.toHaveBeenCalled();
+    expect(conflict).not.toHaveBeenCalled();
+    expect(current.adoptedSyncConflict).toBeUndefined();
+    expect(current.adoptedDivergence).toEqual({ key, keep: true });
+  });
+
+  it("asks again when the divergence is a different one than the one kept", async () => {
+    const reply = (text: string) => ({ id: "r1", role: "assistant", text }) as Block;
+    const current = local({
+      blocks: [user("u1"), reply("desktop")],
+      adoptedDivergence: { key: "an-older-divergence", keep: true },
+    });
+    const conflict = vi.fn();
+    await mirrorAdoptedSessions({
+      list: async () => [entry()],
+      load: async () => host({ blocks: [user("u1"), reply("host")] }),
+      local: () => [current],
+      apply: vi.fn(),
+      mirrored: new Map(),
+      conflict,
+    });
+    expect(conflict).toHaveBeenCalledOnce();
+    expect(conflict.mock.calls[0][1]).toEqual({
+      key: expect.not.stringMatching(/older/),
+      hostHead: { count: 2, chain: expect.stringMatching(/^[0-9a-f]{32}$/) },
+    });
+  });
+
+  it("clears the flag and its record once the conversations agree again", async () => {
+    const current = local({
+      blocks: [block("a")],
+      adoptedSyncConflict: true,
+      adoptedDivergence: { key: "0:a:a:x:y" },
+    });
+    const merged = mergeAdoptedSession(current, host({ blocks: [block("a"), block("b")] }));
+    expect(merged?.adoptedSyncConflict).toBeUndefined();
+    expect(merged?.adoptedDivergence).toBeUndefined();
+  });
+
+  it("names a divergence by the transcripts' heads, not by the host revision or the pass", () => {
+    const reply = (text: string) => ({ id: "r1", role: "assistant", text }) as Block;
+    const mine = local({ blocks: [user("u1"), reply("desktop")] });
+    const theirs = (text: string, extra: Block[] = []) =>
+      host({ blocks: [user("u1"), reply(text), ...extra] }).session;
+    const key = adoptedDivergenceKey(mine, theirs("host"));
+    expect(adoptedDivergenceKey(mine, theirs("host"))).toBe(key);
+    // The host moving on is a different divergence: it has to be asked about again,
+    // or keeping this version would silently stop meaning anything.
+    expect(adoptedDivergenceKey(mine, theirs("host", [user("later")]))).not.toBe(key);
+    expect(adoptedDivergenceKey(mine, theirs("host, edited again"))).not.toBe(key);
+    // Both appended after a different agreement: not the same divergence.
+    const base = { count: 1, chain: "0123456789abcdef0123456789abcdef" };
+    expect(adoptedDivergenceKey({ ...mine, adoptedBase: base }, theirs("host"))).not.toBe(key);
+  });
+
+  it("flags, and does not copy, when the lagging host diverged", async () => {
     const session = local({ blocks: [...sealed, user("continue")] });
     const mirror = mirrorAfterRestart(session, [openTurn[0], user("elsewhere")]);
     await mirror.run;
-    expect(mirror.preserve).toHaveBeenCalledOnce();
+    expect(mirror.preserve).not.toHaveBeenCalled();
+    expect(mirror.conflict).toHaveBeenCalledOnce();
+    expect(mirror.current()).toBe(session);
   });
 });
 
@@ -597,7 +780,10 @@ describe("mirrorAdoptedSessions", () => {
       conflict,
     });
     expect(apply).not.toHaveBeenCalled();
-    expect(conflict).toHaveBeenCalledWith(current);
+    expect(conflict).toHaveBeenCalledWith(current, {
+      key: expect.any(String),
+      hostHead: { count: 1, chain: expect.any(String) },
+    });
     expect(mirrored.has("s1")).toBe(false);
   });
 
@@ -636,7 +822,7 @@ describe("mirrorAdoptedSessions", () => {
     expect(conflict).toHaveBeenCalledTimes(1);
   });
 
-  it("does not mark a closed conflicting session or a failed adoption caught up", async () => {
+  it("records a closed conflicting session's divergence instead of marking it caught up, and not a failed adoption", async () => {
     const mirrored = new Map<string, number>();
     const save = vi.fn();
     await mirrorAdoptedSessions({
@@ -648,18 +834,71 @@ describe("mirrorAdoptedSessions", () => {
       stored: async () => local(),
       save,
     });
-    expect(save).not.toHaveBeenCalled();
-    expect(mirrored.has("s1")).toBe(false);
+    // The divergence is saved with the closed session (no blocks replaced), so it
+    // shows when opened; only then is this revision settled.
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]![0]).toMatchObject({
+      blocks: [expect.objectContaining({ id: "a" })],
+      adoptedDivergence: { key: expect.any(String) },
+    });
+    expect(save.mock.calls[0]![0].adoptedDivergence.keep).toBeUndefined();
+    expect(mirrored.get("s1")).toBe(5);
+    const failedAdoption = new Map<string, number>();
     await mirrorAdoptedSessions({
       list: async () => [entry()],
       load: async () => host({}),
       local: () => [],
       apply: vi.fn(),
-      mirrored,
+      mirrored: failedAdoption,
       stored: async () => null,
       save,
       adopt: async () => false,
     });
+    expect(failedAdoption.has("s1")).toBe(false);
+  });
+  it("saves a closed conversation's divergence once, so the safety pass stops fetching it", async () => {
+    const mirrored = new Map<string, number>();
+    let stored = local();
+    const load = vi.fn(async () => host({ blocks: [] }));
+    const save = vi.fn(async (merged: Session) => {
+      stored = merged;
+      return true;
+    });
+    const deps: AdoptedMirrorDeps = {
+      list: async () => [entry()],
+      load,
+      local: () => [],
+      apply: vi.fn(),
+      mirrored,
+      stored: async () => stored,
+      stamp: async () => 1,
+      save,
+    };
+    await mirrorAdoptedSessions(deps);
+    await mirrorAdoptedSessions(deps);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledTimes(1);
+    // The host moved on and it is still the same difference: recorded, not saved again.
+    mirrored.clear();
+    await mirrorAdoptedSessions(deps);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(mirrored.get("s1")).toBe(5);
+  });
+
+  it("retries a closed conversation's divergence when the guarded save refuses", async () => {
+    const mirrored = new Map<string, number>();
+    const save = vi.fn(async () => false);
+    await mirrorAdoptedSessions({
+      list: async () => [entry()],
+      load: async () => host({ blocks: [] }),
+      local: () => [],
+      apply: vi.fn(),
+      mirrored,
+      stored: async () => local(),
+      stamp: async () => 1,
+      save,
+    });
+    expect(save).toHaveBeenCalledTimes(1);
     expect(mirrored.has("s1")).toBe(false);
   });
   it("applies once per revision and reports running ids", async () => {
@@ -1065,9 +1304,10 @@ describe("divergence judged by conversation content", () => {
     expect(mirrored.get("s1")).toBe(5);
   });
 
-  it("an explicit refresh still preserves a real local divergence separately", async () => {
+  it("an explicit refresh leaves a real local divergence for the user's answer, with no copy", async () => {
     let current = local({ blocks: [prompt, block("mine")] });
     const preserve = vi.fn(async () => true);
+    const conflict = vi.fn();
     expect(
       await refreshAdoptedSession(
         {
@@ -1079,12 +1319,14 @@ describe("divergence judged by conversation content", () => {
           },
           mirrored: new Map(),
           preserve,
+          conflict,
         },
         "s1",
       ),
-    ).toBe(true);
-    expect(preserve).toHaveBeenCalledOnce();
-    expect(current.blocks.map((item) => item.id)).toEqual(["u1", "theirs"]);
+    ).toBe(false);
+    expect(preserve).not.toHaveBeenCalled();
+    expect(conflict).toHaveBeenCalledOnce();
+    expect(current.blocks.map((item) => item.id)).toEqual(["u1", "mine"]);
   });
 });
 
@@ -1165,7 +1407,6 @@ describe("a session adopted while the host was still writing it", () => {
       },
       mirrored: new Map(),
       preserve,
-      autoRefreshConflicts: true,
     });
     expect(preserve).not.toHaveBeenCalled();
     expect(current.blocks).toEqual([prompt, complete, followUp]);
@@ -1217,7 +1458,6 @@ describe("a session adopted while the host was still writing it", () => {
       },
       mirrored: new Map(),
       preserve,
-      autoRefreshConflicts: true,
     });
     expect(load).not.toHaveBeenCalled();
     expect(preserve).not.toHaveBeenCalled();

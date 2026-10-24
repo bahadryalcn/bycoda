@@ -36,14 +36,25 @@ export type DesktopLiveSession = {
 
 export type DesktopLivePayload = {
   projectDirectory?: DesktopProjectDirectory;
+  /** Omit directory contents only after the host acknowledges this revision. */
+  projectDirectoryRevision?: string;
   deletions?: { version: 1; replies: { id: string; error?: string }[] };
   clientId?: string;
   sessions: DesktopLiveSession[];
   acked?: string[];
   inbox?: DesktopInboxPayload;
+  /** The last shared-queue change cursor this desktop saw (`queues.seq`). */
+  queueSeq?: number;
+  /** The last adopted-session change cursor this desktop saw (`adopted.seq`). */
+  adoptedSeq?: number;
+  /** The shared queues this desktop holds the drain lease of; the beat keeps them alive. `blocked`: it cannot send them now (a sync conflict). */
+  queueLeases?: { sessionId: string; epoch: number; blocked?: boolean }[];
+  /** The conversations this window runs a turn of under a run lease; the beat keeps them alive. */
+  runLeases?: { sessionId: string; epoch: number }[];
 };
 
 export type DesktopLiveResult = {
+  projectDirectoryRevision?: string;
   deletions?: {
     jobs: { id: string; sessionId: string; cwd: string }[];
     acked: string[];
@@ -51,6 +62,14 @@ export type DesktopLiveResult = {
   commands?: DesktopLiveCommand[];
   inbox?: { jobs?: DesktopInboxJob[]; acked?: string[] };
   notesRevision?: number;
+  /** Shared queues changed since `queueSeq`; `reset` when that cannot be told. */
+  queues?: { seq: number; ids: string[]; reset?: boolean };
+  /** Adopted sessions whose host copy moved since `adoptedSeq`; `reset` when that cannot be told. */
+  adopted?: { seq: number; ids: string[]; reset?: boolean };
+  /** Per queue in `queueLeases`: the extended lease, or `null` when it was lost. */
+  queueLeases?: Record<string, { holder: string; epoch: number; expiresAt: number } | null>;
+  /** Per conversation in `runLeases`: the lease kept, or `null` when another side runs it now. */
+  runLeases?: Record<string, { holder: string; epoch: number; expiresAt: number } | null>;
 };
 export type DesktopInboxRunner = {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -214,9 +233,14 @@ export function applyDesktopLiveCommand(
 export type DesktopLiveBeat = {
   idleAt?: number;
   notesRevision?: number;
+  queueSeq?: number;
+  adoptedSeq?: number;
   directoryFingerprint?: string;
+  directorySequence?: number;
+  directoryAck?: string;
+  directoryResend?: boolean;
   /** The last directory serialized, so an unchanged object is not stringified again. */
-  serialized?: { directory: DesktopProjectDirectory; json: string };
+  serialized?: { directory: DesktopProjectDirectory; json: string; revision?: string };
 };
 
 /** One exchange with the host: report live sessions plus what was handled
@@ -233,6 +257,21 @@ export async function runDesktopLiveTick(deps: {
   handlers: DesktopLiveHandlers;
   unacked: Set<string>;
   handled: Set<string>;
+  /** Shared queues another computer changed: `undefined` means any of them. */
+  onQueuesChanged?: (ids: string[] | undefined) => void;
+  /** Every answer of a host that reports adopted-session changes: the ids that
+   * moved (empty when none), or `reset` when the cursor is new or was lost. */
+  onAdopted?: (change: { ids: string[]; reset: boolean }) => void;
+  /** The drain leases this desktop holds, and what the host answered for them. */
+  queueLeases?: {
+    held: () => { sessionId: string; epoch: number; blocked?: boolean }[];
+    answered: (answers: NonNullable<DesktopLiveResult["queueLeases"]>) => void;
+  };
+  /** The run leases of the turns this window runs; `answered` returns the conversations whose lease was lost. */
+  runLeases?: {
+    held: () => { sessionId: string; epoch: number }[];
+    answered: (answers: NonNullable<DesktopLiveResult["runLeases"]>) => string[];
+  };
   inbox?: DesktopInboxRunner;
   deletions?: {
     results: Map<string, { id: string; error?: string }>;
@@ -244,6 +283,7 @@ export async function runDesktopLiveTick(deps: {
   const live = buildDesktopLiveSessions(deps.sessions());
   const projectDirectory = deps.projectDirectory?.();
   let directoryFingerprint: string | undefined;
+  let directoryRevision: string | undefined;
   if (projectDirectory) {
     // Directory builders return the same object while their inputs are unchanged;
     // logo previews make the JSON large, so only a new object is serialized.
@@ -252,11 +292,19 @@ export async function runDesktopLiveTick(deps: {
       serialized?.directory === projectDirectory
         ? serialized.json
         : JSON.stringify(projectDirectory);
-    if (deps.beat)
-      deps.beat.serialized = { directory: projectDirectory, json: directoryFingerprint };
+    if (deps.beat) {
+      directoryRevision = serialized?.json === directoryFingerprint ? serialized.revision : undefined;
+      if (!directoryRevision) {
+        deps.beat.directorySequence = (deps.beat.directorySequence ?? 0) + 1;
+        directoryRevision = String(deps.beat.directorySequence);
+      }
+      deps.beat.serialized = { directory: projectDirectory, json: directoryFingerprint, revision: directoryRevision };
+    }
   }
-  const directoryChanged = directoryFingerprint !== deps.beat?.directoryFingerprint;
+  const directoryChanged = directoryFingerprint !== deps.beat?.directoryFingerprint || deps.beat?.directoryResend === true;
   const inboxReplies = [...(deps.inbox?.results.values() ?? [])].slice(0, 2);
+  const heldLeases = deps.queueLeases?.held() ?? [];
+  const heldRuns = deps.runLeases?.held() ?? [];
   const idle =
     live.length === 0 &&
     acked.length === 0 &&
@@ -274,7 +322,9 @@ export async function runDesktopLiveTick(deps: {
   )
     return;
   const payload: DesktopLivePayload = {
-    ...(projectDirectory ? { projectDirectory } : {}),
+    ...(projectDirectory && (!directoryRevision || deps.beat?.directoryAck !== directoryRevision)
+      ? { projectDirectory } : {}),
+    ...(directoryRevision ? { projectDirectoryRevision: directoryRevision } : {}),
     ...(deps.deletions && deps.handlers.delete
       ? {
           deletions: {
@@ -286,6 +336,10 @@ export async function runDesktopLiveTick(deps: {
     ...(deps.clientId ? { clientId: deps.clientId } : {}),
     sessions: live,
     ...(acked.length > 0 ? { acked } : {}),
+    ...(deps.beat?.queueSeq !== undefined ? { queueSeq: deps.beat.queueSeq } : {}),
+    ...(deps.beat?.adoptedSeq !== undefined ? { adoptedSeq: deps.beat.adoptedSeq } : {}),
+    ...(heldLeases.length ? { queueLeases: heldLeases } : {}),
+    ...(heldRuns.length ? { runLeases: heldRuns } : {}),
     ...(deps.inbox
       ? {
           inbox: {
@@ -296,7 +350,19 @@ export async function runDesktopLiveTick(deps: {
       : {}),
   };
   const result = await deps.request(payload);
-  if (deps.beat) deps.beat.directoryFingerprint = directoryFingerprint;
+  if (deps.beat) {
+    deps.beat.directoryFingerprint = directoryFingerprint;
+    deps.beat.directoryAck = directoryRevision && result?.projectDirectoryRevision === directoryRevision
+      ? directoryRevision : undefined;
+    // A restarted host cannot acknowledge an omitted projection. Retry the
+    // full privacy snapshot next beat; old hosts keep the legacy full cadence.
+    deps.beat.directoryResend = !!projectDirectory && !payload.projectDirectory && !deps.beat.directoryAck;
+  }
+  if (result?.queueLeases) deps.queueLeases?.answered(result.queueLeases);
+  // A run lease the host took back: another computer runs this conversation now,
+  // so this window stops its turn instead of writing next to it.
+  if (result?.runLeases && deps.runLeases)
+    for (const sessionId of deps.runLeases.answered(result.runLeases)) deps.handlers.stop(sessionId);
   if (deps.deletions && deps.handlers.delete) {
     const runner = deps.deletions;
     for (const id of result?.deletions?.acked ?? []) runner.results.delete(id);
@@ -354,6 +420,25 @@ export async function runDesktopLiveTick(deps: {
     }
   }
   if (deps.beat) deps.beat.idleAt = idle ? now() : undefined;
+  const queues = result?.queues;
+  if (queues && Number.isSafeInteger(queues.seq) && Array.isArray(queues.ids)) {
+    // The first answer only establishes the cursor: every queue is read on
+    // first sight anyway. After that, the changed ones are re-read at once.
+    // An answer with nothing new wakes nobody.
+    const changed = queues.ids.filter((id) => typeof id === "string");
+    if (deps.beat?.queueSeq !== undefined && (queues.reset || changed.length > 0))
+      deps.onQueuesChanged?.(queues.reset ? undefined : changed);
+    if (deps.beat) deps.beat.queueSeq = queues.seq;
+  }
+  const adopted = result?.adopted;
+  if (adopted && Number.isSafeInteger(adopted.seq) && Array.isArray(adopted.ids)) {
+    // The first answer is a reset: the desktop reads the list once to catch up.
+    deps.onAdopted?.({
+      ids: adopted.ids.filter((id) => typeof id === "string"),
+      reset: adopted.reset === true || deps.beat?.adoptedSeq === undefined,
+    });
+    if (deps.beat) deps.beat.adoptedSeq = adopted.seq;
+  }
   for (const id of acked) deps.unacked.delete(id);
   const commands = Array.isArray(result?.commands) ? result.commands : [];
   for (const command of commands) {

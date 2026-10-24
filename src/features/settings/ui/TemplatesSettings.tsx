@@ -128,10 +128,10 @@ export function TemplatesSettings() {
             rows.map((row) => (
               <div
                 key={row.id}
-                className="flex flex-col gap-2 border-b border-stroke px-4 py-3 last:border-b-0"
+                className="@container/template-entry flex flex-col gap-2 border-b border-stroke px-4 py-3 last:border-b-0"
               >
-                <div className="flex flex-wrap items-center gap-2">
-                  <label className="flex min-w-0 flex-1 basis-40 flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 @min-[480px]/template-entry:grid-cols-[minmax(0,1fr)_9rem_auto]">
+                  <label className="flex min-w-0 flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
                     {t("Template name")}
                     <TextField
                       hideLabel
@@ -143,24 +143,22 @@ export function TemplatesSettings() {
                       autoComplete="off"
                     />
                   </label>
-                  <label className="flex w-36 max-w-full flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
-                    {t("Template trigger")}
-                    <span className="flex items-center gap-1">
-                      <span aria-hidden className="text-(--ui-text-muted)">
-                        {TRIGGER_PREFIX}
-                      </span>
-                      <TextField
-                        hideLabel
-                        label={t("Template trigger")}
-                        value={row.trigger ?? ""}
-                        onChange={(event) => update(row.id, { trigger: event.target.value })}
-                        placeholder={t("trigger (optional)")}
-                        spellCheck={false}
-                        autoComplete="off"
-                      />
+                  <label className="col-start-1 row-start-2 flex w-36 max-w-full flex-col gap-1 text-ui-caption text-(--ui-text-secondary) @min-[480px]/template-entry:col-start-2 @min-[480px]/template-entry:row-start-1">
+                    <span>
+                      {t("Template trigger")} <span aria-hidden>({TRIGGER_PREFIX})</span>
                     </span>
+                    <TextField
+                      hideLabel
+                      label={t("Template trigger")}
+                      value={row.trigger ?? ""}
+                      onChange={(event) => update(row.id, { trigger: event.target.value })}
+                      placeholder={t("trigger (optional)")}
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
                   </label>
                   <Button
+                    className="col-start-2 row-start-1 @min-[480px]/template-entry:col-start-3"
                     variant="ghost"
                     size="sm"
                     tone="danger"

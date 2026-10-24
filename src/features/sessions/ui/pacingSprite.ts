@@ -26,6 +26,23 @@ export function facing(p: PacingPose): { front: boolean; sx: number; beat: numbe
 
 export const blinking = (elapsed: number, period = 3.1) => elapsed % period < 0.13;
 
+/** Clock-driven details, quantized with the frame so identical frames are drawn once. */
+export type PacingLook = {
+  blink: boolean;
+  /** The bead an idle uncle is counting, 0..11. */
+  count: number;
+  /** Seconds into the face-the-reader gesture. */
+  gesture: number;
+};
+export type PacingWalker = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  baseline: number,
+  scale: number,
+  p: PacingPose,
+  look: PacingLook,
+) => void;
+
 export const shift = (rects: Rect[], dx: number, dy: number): Rect[] =>
   rects.map(([x, y, w, h, c]) => [x + dx, y + dy, w, h, c]);
 

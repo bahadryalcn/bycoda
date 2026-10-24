@@ -134,9 +134,15 @@ function LiveBackgroundTile({
       onKeyDown={onKeyDown}
       className="flex min-w-0 flex-col gap-1"
     >
-      <span className="relative block aspect-[12/7] w-full overflow-hidden rounded-md bg-background-base">
+      <span className="relative block aspect-square w-full overflow-hidden rounded-md bg-background-base">
         {visible && scene !== "none" ? (
-          <LiveBackgroundCanvas effect={scene} intensity={1} still className="absolute inset-0" />
+          <LiveBackgroundCanvas
+            effect={scene}
+            intensity={1}
+            still
+            demoSpeech
+            className="absolute inset-0"
+          />
         ) : null}
       </span>
       <span className="truncate px-0.5 text-ui-micro leading-4">{label}</span>

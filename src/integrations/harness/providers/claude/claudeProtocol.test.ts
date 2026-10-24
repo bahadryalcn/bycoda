@@ -43,6 +43,7 @@ import {
   toolStartFromEvent,
   toolTitle,
   turnStatusFromResult,
+  errorFromAssistant,
   turnMetricsFromResult,
   isUsageLimitResult,
   usageLimitFromRateLimitEvent,
@@ -358,6 +359,15 @@ describe("usage limits", () => {
 });
 
 describe("turnStatusFromResult", () => {
+  it("does not accept a success subtype when the result marks an error", () => {
+    expect(turnStatusFromResult({ subtype: "success", is_error: true, errors: ["OAuth refresh failed"] })).toEqual({ status: "failed", error: "OAuth refresh failed" });
+  });
+  it("reads typed assistant API failures without treating ordinary error discussions as failures", () => {
+    const row = { type: "assistant", message: { content: [{ type: "text", text: "Failed to authenticate: OAuth session expired and could not be refreshed" }] } };
+    expect(errorFromAssistant({ ...row, error: "authentication_failed" })).toBe("Failed to authenticate: OAuth session expired and could not be refreshed");
+    expect(errorFromAssistant(row)).toBeUndefined();
+    expect(errorFromAssistant({ ...row, error: "authentication_failed", parent_tool_use_id: "child" })).toBeUndefined();
+  });
   it("treats aborted terminals as interrupted", () => {
     expect(
       turnStatusFromResult({

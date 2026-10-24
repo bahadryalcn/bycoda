@@ -1,5 +1,7 @@
 import { HARNESSES, type Block, type HarnessId, type Session } from "../../sessions/model/session";
 import { isEqualOrInside, pathKey } from "../../../shared/lib/paths";
+import { isSessionErrorBlock } from "../../sessions/model/sessionIssue";
+import { isTurnInterruptMessage } from "../../sessions/model/inFlight";
 
 export type OrchestrationChoice = {
   harness: HarnessId;
@@ -326,6 +328,66 @@ export function proposalBlock(id: string, proposal: OrchestrationProposal): Bloc
     orchestration: proposal,
     streaming: true,
   };
+}
+
+/** Recover plan revisions sent through an ordinary chat turn, including saved history. */
+export function recoverTaggedOrchestrationProposals(session: Session): Session {
+  const interrupted = new Set<string>();
+  let turnBlocks: Block[] = [];
+  const finishTurn = () => {
+    if (turnBlocks.some((block) => block.turnOutcome === "stopped" ||
+      isSessionErrorBlock(block) || block.notice === "interrupt" ||
+      (block.role === "system" && isTurnInterruptMessage(block.text)))) {
+      for (const block of turnBlocks) interrupted.add(block.id);
+    }
+    turnBlocks = [];
+  };
+  for (const block of session.blocks) {
+    if (block.role === "user" && !block.draft) finishTurn();
+    turnBlocks.push(block);
+  }
+  finishTurn();
+  let previous: OrchestrationProposal | undefined;
+  let revisionRequest = "";
+  let changed = false;
+  const blocks = session.blocks.map((block): Block => {
+    if (block.orchestration) {
+      const proposal = block.orchestration;
+      previous =
+        proposal.leadId === session.id &&
+        pathKey(proposal.cwd) === pathKey(session.cwd) &&
+        pathKey(proposal.checkoutCwd ?? proposal.cwd) === pathKey(session.worktreeCwd ?? session.cwd) &&
+        (proposal.status === "ready" || proposal.status === "invalid")
+          ? proposal
+          : undefined;
+      revisionRequest = "";
+      return block;
+    }
+    if (block.role === "user" && !block.internal) revisionRequest = block.text;
+    if (
+      !previous || block.streaming || block.internal || interrupted.has(block.id) ||
+      (block.role !== "assistant" && block.role !== "plan") ||
+      !/^\s*<bycoda_proposal>[\s\S]*<\/bycoda_proposal>\s*$/.test(block.text)
+    ) return block;
+    const proposal = completeOrchestrationProposal(
+      {
+        ...previous,
+        request: revisionRequest ? `${previous.request}\n\n${revisionRequest}` : previous.request,
+      },
+      block.text,
+    );
+    changed = true;
+    previous = proposal;
+    revisionRequest = "";
+    return {
+      ...block,
+      role: "plan",
+      text: proposalMarkdown(proposal),
+      orchestration: proposal,
+      plan: undefined,
+    };
+  });
+  return changed ? { ...session, blocks } : session;
 }
 
 /** A reload must never turn a half-generated card into an executable plan. */

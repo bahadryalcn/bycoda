@@ -306,7 +306,9 @@ not a new product build or UI test suite.
 ## Appearance and motion
 
 Text-field focus is owned by `src/styles/arc.css`: one 1px outline inset on the
-existing border, with the shared danger token for invalid fields. `SearchInput`
+existing border using `--ui-field-border-focus`, with the shared danger token for
+invalid fields. Hover uses `--ui-field-border-hover`; neither state uses the text
+or accent color as its border. `SearchInput`
 owns this outline by default for `appearance="field"` or `standalone`; an
 unframed bare input defaults to the menu owner. For a bordered composite, use `SearchInputGroup`
 and `focusOwner="group"`; for an already framed menu header, use

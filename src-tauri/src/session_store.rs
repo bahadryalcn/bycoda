@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -43,6 +43,8 @@ pub struct SessionStore {
     /// One search-index builder at a time: the startup pass and a search both
     /// run `content_search::sync_index`, and indexing a session twice is waste.
     search_index_lock: Mutex<()>,
+    search_background_queued: AtomicBool,
+    legacy_page_cache: Mutex<incremental::LegacyPageCache>,
 }
 
 impl SessionStore {
@@ -78,6 +80,8 @@ impl SessionStore {
             read_conn: Mutex::new(Some(read_conn)),
             list_conn: Mutex::new(Some(list_conn)),
             search_index_lock: Mutex::new(()),
+            search_background_queued: AtomicBool::new(false),
+            legacy_page_cache: Mutex::new(Default::default()),
         })
     }
 
@@ -93,6 +97,8 @@ impl SessionStore {
             read_conn: Mutex::new(None),
             list_conn: Mutex::new(None),
             search_index_lock: Mutex::new(()),
+            search_background_queued: AtomicBool::new(false),
+            legacy_page_cache: Mutex::new(Default::default()),
         })
     }
 
@@ -163,18 +169,41 @@ fn init_with(
 /// Builds the message-content search index for sessions it does not cover yet
 /// (a fresh migration, a bulk import) off the startup path.
 fn start_search_indexing(app: &AppHandle) {
+    queue_search_indexing(app, std::time::Duration::from_secs(5));
+}
+
+fn queue_search_indexing(app: &AppHandle, delay: std::time::Duration) {
+    let Some(store) = app.try_state::<SessionStore>() else {
+        return;
+    };
+    if store.search_background_queued.swap(true, Ordering::AcqRel) {
+        return;
+    }
     let app = app.clone();
+    let recovery_app = app.clone();
     let spawned = std::thread::Builder::new()
         .name("session-search-index".into())
         .spawn(move || {
             // Let startup finish first; this is catch-up work, not on the
             // critical path, and a search indexes what it needs by itself.
-            std::thread::sleep(std::time::Duration::from_secs(5));
+            std::thread::sleep(delay);
             if let Some(store) = app.try_state::<SessionStore>() {
+                struct Reset<'a>(&'a AtomicBool);
+                impl Drop for Reset<'_> {
+                    fn drop(&mut self) {
+                        self.0.store(false, Ordering::Release);
+                    }
+                }
+                let _reset = Reset(&store.search_background_queued);
                 content_search::index_in_background(&store);
             }
         });
     if let Err(error) = spawned {
+        if let Some(store) = recovery_app.try_state::<SessionStore>() {
+            store
+                .search_background_queued
+                .store(false, Ordering::Release);
+        }
         eprintln!("session search index thread: {error}");
     }
 }
@@ -215,6 +244,13 @@ pub struct SessionUpsert {
     /// One-shot context replay derived from the retained transcript prefix.
     #[serde(default)]
     pub pending_context_replay: Option<String>,
+    /// JSON of a flagged host divergence and its answer; opaque to the store.
+    #[serde(default)]
+    pub adopted_divergence: Option<String>,
+    /// JSON of the transcript head this computer and its host last agreed on;
+    /// opaque to the store.
+    #[serde(default)]
+    pub adopted_base: Option<String>,
     /// Original timestamps of an imported conversation. Used only when the row
     /// is first created, so imported history sorts where it happened rather
     /// than at the moment of the import; every later write moves `updated_at`
@@ -303,6 +339,10 @@ pub struct SessionRecord {
     pub rewind_history: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_context_replay: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adopted_divergence: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adopted_base: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -739,10 +779,15 @@ fn search_store(
 /// `cancel_session_search` under the same `searchOwner`.
 #[tauri::command(async)]
 pub fn session_search_content(
+    app: AppHandle,
     store: State<'_, SessionStore>,
     options: ContentSearchOptions,
 ) -> Result<ContentSearchResult, String> {
-    content_search::search_content(&store, &options)
+    let result = content_search::search_content(&store, &options)?;
+    if result.pending > 0 {
+        queue_search_indexing(&app, std::time::Duration::ZERO);
+    }
+    Ok(result)
 }
 
 #[tauri::command(async)]
@@ -1319,6 +1364,8 @@ fn migrate_versions(conn: &Connection) -> rusqlite::Result<()> {
         ("automation_id", "TEXT"),
         ("rewind_history_json", "TEXT"),
         ("pending_context_replay", "TEXT"),
+        ("adopted_divergence", "TEXT"),
+        ("adopted_base", "TEXT"),
     ] {
         ensure_session_column(conn, column, decl)?;
     }
@@ -1479,10 +1526,6 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 
     // Keep independent schema helpers outside this transaction: some own their
     // own transaction (notably ensure_orchestration_history).
-    // Message-content search index: derived tables, created empty like the ones
-    // around it (so no version row, and instant however many sessions exist).
-    // Sessions are indexed lazily; see `content_search`.
-    content_search::ensure_schema(conn)?;
     // Create even when a version row already exists (another build may have
     // used the same numbers, or a previous run recorded the version without
     // the table). Restore writes into these; missing tables look like a
@@ -1549,6 +1592,9 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::automations::ensure_tables(conn)?;
     ensure_orchestration_history(conn)?;
     incremental::ensure_schema(conn)?;
+    // Source-revision/dirty metadata requires all current session columns.
+    // Only metadata is reconciled here; transcripts remain lazily indexed.
+    content_search::ensure_schema(conn)?;
     Ok(())
 }
 
@@ -1721,6 +1767,54 @@ fn upsert_session_with_git(
     Ok(result)
 }
 
+/// Whether the row already stores every field that tells the host something
+/// changed (everything but the transcript, `adopted_base`, the derived git
+/// branch and context usage). Compared with SQL `IS`, so NULLs match NULLs.
+pub(crate) fn session_metadata_unchanged(
+    conn: &Connection,
+    session: &SessionUpsert,
+    model_settings: &str,
+    linked_work_item_json: Option<&str>,
+    rewind_history_json: Option<&str>,
+) -> rusqlite::Result<bool> {
+    let trimmed = |value: &Option<String>| {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    conn.query_row(
+        "SELECT cwd IS ?2 AND harness IS ?3 AND model IS ?4 AND model_settings IS ?5
+            AND runtime_mode IS ?6 AND title IS ?7 AND provider_session_id IS ?8
+            AND provider_account_id IS ?9 AND worktree_cwd IS ?10
+            AND worktree_removed IS ?11 AND linked_work_item_json IS ?12
+            AND automation_id IS ?13 AND rewind_history_json IS ?14
+            AND pending_context_replay IS ?15
+         FROM sessions WHERE id = ?1",
+        params![
+            session.id,
+            session.cwd,
+            session.harness,
+            session.model,
+            model_settings,
+            session.runtime_mode,
+            session.title,
+            trimmed(&session.provider_session_id),
+            trimmed(&session.provider_account_id),
+            trimmed(&session.worktree_cwd),
+            i64::from(session.worktree_removed),
+            linked_work_item_json,
+            trimmed(&session.automation_id),
+            rewind_history_json,
+            session.pending_context_replay,
+        ],
+        |row| row.get::<_, Option<bool>>(0),
+    )
+    .optional()
+    .map(|value| value.flatten().unwrap_or(false))
+}
+
 fn upsert_session_core(
     conn: &Connection,
     session: &SessionUpsert,
@@ -1787,36 +1881,51 @@ fn upsert_session_core(
     // the bytes itself, so the old blob is neither copied out nor parsed. Text
     // written another way only reads as "changed", which just moves
     // `updated_at` once.
-    let existing: Option<(i64, i64, bool, i64, i64)> = conn
+    //
+    // A changed `adopted_divergence` (a divergence flagged, or the user's answer
+    // to it) moves `updated_at` even when the blocks are the same: the host
+    // reads that to learn the answer, and `adopted_base` is only a record of
+    // what was agreed, which must not reorder history on its own.
+    let existing: Option<(i64, i64, bool, i64, i64, bool)> = conn
         .prepare(
-            "SELECT created_at, updated_at, blocks_json = ?2, archived, pinned FROM session_transcripts WHERE id = ?1",
+            "SELECT created_at, updated_at, blocks_json = ?2, archived, pinned, adopted_divergence IS ?3 FROM session_transcripts WHERE id = ?1",
         )?
         .query_row(
-            params![session.id, blocks_json],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            params![session.id, blocks_json, session.adopted_divergence],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )
         .optional()?;
     if let Some(expected) = expected {
-        if existing.as_ref().map(|(_, updated, _, _, _)| *updated) != expected {
+        if existing.as_ref().map(|(_, updated, _, _, _, _)| *updated) != expected {
             return Ok(None);
         }
     }
     let created_at = existing
         .as_ref()
-        .map(|(value, _, _, _, _)| *value)
+        .map(|(value, _, _, _, _, _)| *value)
         .unwrap_or_else(|| session.created_at.unwrap_or(now));
+    // A title, model, harness or provider-thread change with the same blocks is
+    // still something the host has to learn: its only desktop stamp is this one.
+    let metadata_unchanged = existing.is_none()
+        || session_metadata_unchanged(
+            conn,
+            session,
+            &model_settings,
+            linked_work_item_json.as_deref(),
+            rewind_history_json.as_deref(),
+        )?;
     let updated_at = match &existing {
-        Some((_, prev_updated, true, _, _)) => *prev_updated,
-        Some((_, previous, _, _, _)) => now.max(previous + 1),
+        Some((_, prev_updated, true, _, _, true)) if metadata_unchanged => *prev_updated,
+        Some((_, previous, _, _, _, _)) => now.max(previous + 1),
         None => session.updated_at.unwrap_or(now),
     };
     let archived = existing
         .as_ref()
-        .map(|(_, _, _, value, _)| *value != 0)
+        .map(|(_, _, _, value, _, _)| *value != 0)
         .unwrap_or(false);
     let pinned = existing
         .as_ref()
-        .map(|(_, _, _, _, value)| *value != 0)
+        .map(|(_, _, _, _, value, _)| *value != 0)
         .unwrap_or(false);
 
     conn.prepare(
@@ -1825,8 +1934,8 @@ fn upsert_session_core(
            provider_session_id, blocks_json, created_at, updated_at, branch,
            context_used, context_window, worktree_cwd, has_user_message,
            linked_work_item_json, provider_account_id, worktree_removed, is_draft,
-           automation_id, rewind_history_json, pending_context_replay
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
+           automation_id, rewind_history_json, pending_context_replay, adopted_divergence, adopted_base
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
          ON CONFLICT(id) DO UPDATE SET
            cwd = excluded.cwd,
            harness = excluded.harness,
@@ -1848,7 +1957,9 @@ fn upsert_session_core(
            is_draft = excluded.is_draft,
            automation_id = excluded.automation_id,
            rewind_history_json = excluded.rewind_history_json,
-           pending_context_replay = excluded.pending_context_replay",
+           pending_context_replay = excluded.pending_context_replay,
+           adopted_divergence = excluded.adopted_divergence,
+           adopted_base = excluded.adopted_base",
     )?
     .execute(
         params![
@@ -1875,6 +1986,8 @@ fn upsert_session_core(
             automation_id,
             rewind_history_json,
             session.pending_context_replay,
+            session.adopted_divergence,
+            session.adopted_base,
         ],
     )?;
 
@@ -2618,7 +2731,8 @@ fn read_session_row_from(
                 provider_session_id, CASE WHEN ?2 THEN blocks_json ELSE '[]' END, created_at, updated_at,
                 context_used, context_window, branch, worktree_cwd,
                 linked_work_item_json, provider_account_id, worktree_removed,
-                automation_id, rewind_history_json, pending_context_replay
+                automation_id, rewind_history_json, pending_context_replay, adopted_divergence,
+                adopted_base
          FROM session_transcripts
          WHERE id = ?1 AND inbox_ask IS NULL",
         params![session_id,include_blocks],
@@ -2647,6 +2761,8 @@ fn read_session_row_from(
                 automation_id: nonempty(row.get(18)?),
                 rewind_history: optional_json(row.get(19)?),
                 pending_context_replay: row.get(20)?,
+                adopted_divergence: row.get(21)?,
+                adopted_base: row.get(22)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
             };
@@ -2912,6 +3028,8 @@ mod tests {
             automation_id: None,
             rewind_history: None,
             pending_context_replay: None,
+            adopted_divergence: None,
+            adopted_base: None,
             created_at: None,
             updated_at: None,
         }
@@ -2940,6 +3058,97 @@ mod tests {
             restored.pending_context_replay.as_deref(),
             Some("retained transcript context")
         );
+    }
+
+    #[test]
+    fn adopted_divergence_round_trips_and_clears() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut session = sample("divergence-roundtrip", "/tmp/project", "Divergence");
+        session.adopted_divergence = Some(r#"{"key":"3:a:b","keep":true}"#.into());
+        upsert_session(&conn, &session).unwrap();
+        let restored = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(
+            restored.adopted_divergence.as_deref(),
+            Some(r#"{"key":"3:a:b","keep":true}"#)
+        );
+
+        session.adopted_divergence = None;
+        upsert_session(&conn, &session).unwrap();
+        let restored = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(restored.adopted_divergence, None);
+    }
+
+    #[test]
+    fn adopted_base_round_trips_and_clears() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut session = sample("base-roundtrip", "/tmp/project", "Base");
+        let base = r#"{"count":3,"chain":"0123456789abcdef0123456789abcdef"}"#;
+        session.adopted_base = Some(base.into());
+        upsert_session(&conn, &session).unwrap();
+        let restored = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(restored.adopted_base.as_deref(), Some(base));
+        // The divergence and the base are separate columns.
+        assert_eq!(restored.adopted_divergence, None);
+
+        session.adopted_base = None;
+        upsert_session(&conn, &session).unwrap();
+        let restored = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(restored.adopted_base, None);
+    }
+
+    #[test]
+    fn an_answered_divergence_moves_updated_at_but_a_recorded_base_does_not() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut session = sample("answer-touch", "/tmp/project", "Answer");
+        let first = upsert_session(&conn, &session).unwrap().updated_at;
+
+        // Recording what was agreed is bookkeeping: history keeps its order.
+        session.adopted_base =
+            Some(r#"{"count":1,"chain":"0123456789abcdef0123456789abcdef"}"#.into());
+        let recorded = upsert_session(&conn, &session).unwrap().updated_at;
+        assert_eq!(recorded, first);
+
+        // A flagged divergence, and the answer to it, are something to tell the host.
+        session.adopted_divergence = Some(r#"{"key":"k"}"#.into());
+        let flagged = upsert_session(&conn, &session).unwrap().updated_at;
+        assert!(flagged > recorded);
+        let same = upsert_session(&conn, &session).unwrap().updated_at;
+        assert_eq!(same, flagged);
+        session.adopted_divergence = Some(r#"{"key":"k","keep":true}"#.into());
+        let answered = upsert_session(&conn, &session).unwrap().updated_at;
+        assert!(answered > flagged);
+    }
+
+    #[test]
+    fn a_metadata_only_save_moves_updated_at_but_a_repeat_or_base_does_not() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut session = sample("metadata-touch", "/tmp/project", "Metadata");
+        let mut last = upsert_session(&conn, &session).unwrap().updated_at;
+        let mut moved = |session: &SessionUpsert| {
+            let at = upsert_session(&conn, session).unwrap().updated_at;
+            let did = at > last;
+            last = at;
+            did
+        };
+        assert!(!moved(&session), "repeat of the same save");
+        session.title = "Renamed".into();
+        assert!(moved(&session), "title");
+        session.model = "other-model".into();
+        assert!(moved(&session), "model");
+        session.harness = "claude".into();
+        assert!(moved(&session), "harness");
+        session.provider_session_id = Some("thread-1".into());
+        assert!(moved(&session), "provider thread");
+        assert!(!moved(&session), "same provider thread again");
+        session.adopted_base =
+            Some(r#"{"count":1,"chain":"0123456789abcdef0123456789abcdef"}"#.into());
+        assert!(!moved(&session), "adopted_base alone");
+        session.adopted_divergence = Some(r#"{"key":"k"}"#.into());
+        assert!(moved(&session), "divergence");
     }
 
     #[test]
@@ -3451,7 +3660,7 @@ mod tests {
     }
 
     #[test]
-    fn upsert_moves_updated_at_only_when_blocks_change() {
+    fn upsert_moves_updated_at_when_blocks_or_metadata_change() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
         let first = upsert_session(&conn, &sample("s1", "/tmp/a", "First")).unwrap();
@@ -3460,14 +3669,17 @@ mod tests {
         let mut same = sample("s1", "/tmp/a", "Retitled");
         same.blocks =
             serde_json::from_str(r#"[{"text":"hello","role":"user","id":"b1"}]"#).unwrap();
+        let retitled = upsert_session(&conn, &same).unwrap();
+        assert!(retitled.updated_at > first.updated_at);
+        assert_eq!(retitled.title, "Retitled");
+        std::thread::sleep(std::time::Duration::from_millis(5));
         let unchanged = upsert_session(&conn, &same).unwrap();
-        assert_eq!(unchanged.updated_at, first.updated_at);
-        assert_eq!(unchanged.title, "Retitled");
+        assert_eq!(unchanged.updated_at, retitled.updated_at);
         std::thread::sleep(std::time::Duration::from_millis(5));
         let mut changed = sample("s1", "/tmp/a", "Retitled");
         changed.blocks = json!([{ "id": "b1", "role": "user", "text": "hello!" }]);
         let bumped = upsert_session(&conn, &changed).unwrap();
-        assert!(bumped.updated_at > first.updated_at);
+        assert!(bumped.updated_at > retitled.updated_at);
     }
 
     #[test]
@@ -3749,16 +3961,19 @@ mod tests {
     }
 
     #[test]
-    fn upsert_same_blocks_keeps_updated_at() {
+    fn upsert_same_blocks_and_metadata_keeps_updated_at() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
         let first = upsert_session(&conn, &sample("s1", "/tmp/a", "First")).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(5));
-        let mut next = sample("s1", "/tmp/a", "First");
-        next.model = "gpt-5.4".into();
+        let next = sample("s1", "/tmp/a", "First");
         let second = upsert_session(&conn, &next).unwrap();
         assert_eq!(second.updated_at, first.updated_at);
-        assert_eq!(second.model, "gpt-5.4");
+        let mut renamed = next.clone();
+        renamed.model = "gpt-5.4".into();
+        let third = upsert_session(&conn, &renamed).unwrap();
+        assert!(third.updated_at > first.updated_at);
+        assert_eq!(third.model, "gpt-5.4");
     }
 
     #[test]

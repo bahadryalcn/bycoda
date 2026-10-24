@@ -1,0 +1,41 @@
+/* Artwork occupies only the unused chat gutter. Full-width and narrow chats
+   keep every pixel for reading; this never changes the owner's content width. */
+.live-background-rail {
+  position: absolute;
+  inset: 4rem 0.75rem 10rem auto;
+  width: clamp(0px, calc((100% - var(--appearance-chat-width, 56rem)) / 2 - 1.5rem), 16rem);
+  pointer-events: none;
+  overflow: hidden;
+  z-index: -1;
+  container-type: inline-size;
+  container-name: live-art;
+}
+
+.live-background-figure {
+  display: none;
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: min(100%, 20rem);
+}
+
+@container live-art (min-width: 72px) {
+  .live-background-figure {
+    display: block;
+  }
+}
+
+/* The ASCII mask is the one scene the owner placed behind the conversation: it covers the
+   whole pane, centered, and keeps text readable through its own low alpha. */
+.live-background-rail-behind {
+  inset: 0;
+  width: auto;
+  container-type: normal;
+}
+
+.live-background-rail-behind .live-background-figure {
+  display: block;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}

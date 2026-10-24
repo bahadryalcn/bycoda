@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession, type Session } from "../../sessions/model/session";
 import { AdoptedSessionNotice, BackgroundSessionIndicator } from "./AdoptedSessionNotice";
 import { setLanguagePreference } from "../../../shared/i18n";
+import { getSessions, resetSessionsStore } from "../../sessions/model/sessionsStore";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -34,7 +35,7 @@ const buttonText = () => {
   return copy.textContent;
 };
 
-it("shows both warnings, disables repeat clicks, and explains the preserved copy after success", async () => {
+it("shows the warning, disables repeat clicks, and reports the sync without any copy", async () => {
   let finish!: (preserved: boolean) => void;
   const onRefresh = vi.fn(
     () =>
@@ -67,8 +68,9 @@ it("shows both warnings, disables repeat clicks, and explains the preserved copy
       }),
     );
   });
-  expect(container.textContent).toContain("project history");
-  expect(container.textContent).toContain("(local copy)");
+  expect(container.textContent).toContain("Conversation synced.");
+  expect(container.textContent).not.toContain("local copy");
+  expect(container.textContent).not.toContain("project history");
   expect(button()).toBeNull();
 });
 
@@ -212,8 +214,21 @@ it("translates background, conflict, action and success messages into Turkish", 
   expect(button().textContent).toBe("Konuşmayı eşitle");
   await act(async () => button().click());
   expect(container.textContent).toContain("Konuşma eşitlendi.");
-  expect(container.textContent).toContain("proje geçmişine");
   expect(container.textContent).not.toContain("host");
+  act(() =>
+    root.render(
+      createElement(AdoptedSessionNotice, {
+        session: { ...session, adoptedDivergence: { key: "k" } },
+        onRefresh: vi.fn(),
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("iki bilgisayarda değiştirildi");
+  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
+    "Bunu koru",
+    "Diğerini koru",
+    "İkisini de koru",
+  ]);
 });
 
 it("keeps background execution in an accessible action with tap and keyboard details", async () => {
@@ -235,4 +250,142 @@ it("keeps background execution in an accessible action with tap and keyboard det
     root.render(createElement(BackgroundSessionIndicator, { session: { ...session, busy: true } })),
   );
   expect(button()).toBeNull();
+});
+
+const choices = () => [...container.querySelectorAll("button")];
+const choiceTexts = () => choices().map((item) => item.textContent);
+
+it("offers the three choices only for a proven divergence, and Keep this records the answer on the session", () => {
+  const flagged: Session = { ...session, adoptedDivergence: { key: "3:a:b:x:y" } };
+  resetSessionsStore([flagged]);
+  const onRefresh = vi.fn();
+  // A conflict without a proven divergence has just the sync action.
+  act(() => root.render(createElement(AdoptedSessionNotice, { session, onRefresh })));
+  expect(choiceTexts()).toEqual(["Sync conversation"]);
+  expect(container.textContent).toContain("Sync to compare them again");
+
+  act(() => root.render(createElement(AdoptedSessionNotice, { session: flagged, onRefresh })));
+  expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
+  expect(container.textContent).toContain("changed on two computers");
+  expect(choiceTexts()).toEqual(["Keep this", "Keep other", "Keep both"]);
+  // What each answer costs is visible text, not only a tooltip.
+  expect(container.textContent).toContain("Keep this discards the other computer's changes");
+  expect(container.textContent).toContain("Keep other discards the changes made here");
+  // Dropping the other computer's work is asked twice, with Keep both on offer.
+  act(() => choices()[0].click());
+  expect(onRefresh).not.toHaveBeenCalled();
+  expect(getSessions()[0].adoptedDivergence?.keep).toBeUndefined();
+  expect(container.textContent).toContain("Discard the other computer's changes");
+  expect(choiceTexts()).toEqual(["Discard and keep this", "Keep both", "Back"]);
+  act(() => choices()[2].click());
+  expect(choiceTexts()).toEqual(["Keep this", "Keep other", "Keep both"]);
+  expect(getSessions()[0].adoptedDivergence?.keep).toBeUndefined();
+  act(() => choices()[0].click());
+  act(() => choices()[0].click());
+  expect(onRefresh).not.toHaveBeenCalled();
+  expect(getSessions()[0]).toMatchObject({
+    adoptedSyncConflict: undefined,
+    adoptedDivergence: { key: "3:a:b:x:y", keep: true },
+  });
+  // The session is answered: the notice leaves with the conflict flag.
+  act(() =>
+    root.render(createElement(AdoptedSessionNotice, { session: getSessions()[0], onRefresh })),
+  );
+  expect(container.textContent).toBe("");
+});
+
+it("Keep both is one click away from the Keep this confirmation", async () => {
+  const flagged: Session = { ...session, adoptedDivergence: { key: "k" } };
+  resetSessionsStore([flagged]);
+  const onRefresh = vi.fn(async () => true);
+  act(() => root.render(createElement(AdoptedSessionNotice, { session: flagged, onRefresh })));
+  act(() => choices()[0].click());
+  await act(async () => choices()[1].click());
+  expect(onRefresh).toHaveBeenCalledExactlyOnceWith(flagged.id, undefined, "keep-both");
+  expect(getSessions()[0].adoptedDivergence?.keep).toBeUndefined();
+});
+
+it("Keep other asks for the other version once, with no copy, and says which one was kept", async () => {
+  const flagged: Session = { ...session, adoptedDivergence: { key: "k" } };
+  let finish!: (branched: boolean) => void;
+  const onRefresh = vi.fn(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  act(() => root.render(createElement(AdoptedSessionNotice, { session: flagged, onRefresh })));
+  act(() => {
+    choices()[1].click();
+    choices()[1].click();
+  });
+  expect(onRefresh).toHaveBeenCalledExactlyOnceWith(flagged.id, undefined, "keep-other");
+  // Nothing else can be chosen while the answer is being applied.
+  expect(choices().every((item) => item.disabled)).toBe(true);
+  await act(async () => {
+    finish(false);
+    root.render(
+      createElement(AdoptedSessionNotice, {
+        session: { ...flagged, adoptedSyncConflict: undefined, adoptedDivergence: undefined },
+        onRefresh,
+      }),
+    );
+  });
+  expect(container.textContent).toContain("The other computer's version was kept");
+  expect(container.textContent).not.toContain("local copy");
+});
+
+it("Keep both asks for one branch and tells where it is", async () => {
+  const flagged: Session = { ...session, adoptedDivergence: { key: "k" } };
+  const onRefresh = vi.fn(async () => true);
+  act(() => root.render(createElement(AdoptedSessionNotice, { session: flagged, onRefresh })));
+  await act(async () => choices()[2].click());
+  expect(onRefresh).toHaveBeenCalledExactlyOnceWith(flagged.id, undefined, "keep-both");
+  await act(async () =>
+    root.render(
+      createElement(AdoptedSessionNotice, {
+        session: { ...flagged, adoptedSyncConflict: undefined, adoptedDivergence: undefined },
+        onRefresh,
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Both versions are kept");
+  expect(container.textContent).toContain("new conversation in project history");
+  expect(container.textContent).not.toContain("(local copy)");
+});
+
+it("keeps the choices on screen when applying one fails, and a later answer can be tried again", async () => {
+  const flagged: Session = { ...session, adoptedDivergence: { key: "k" } };
+  const onRefresh = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(true);
+  act(() => root.render(createElement(AdoptedSessionNotice, { session: flagged, onRefresh })));
+  await act(async () => choices()[2].click());
+  expect(container.textContent).toContain("Check the connection and try again");
+  expect(choiceTexts()).toEqual(["Keep this", "Keep other", "Keep both"]);
+  expect(choices().some((item) => item.disabled)).toBe(false);
+  await act(async () => choices()[2].click());
+  expect(onRefresh).toHaveBeenCalledTimes(2);
+});
+
+it("cannot answer during a local turn, and a sync that finds two versions asks instead of saying it synced", async () => {
+  const flagged: Session = { ...session, adoptedDivergence: { key: "k" } };
+  act(() =>
+    root.render(
+      createElement(AdoptedSessionNotice, {
+        session: { ...flagged, busy: true },
+        onRefresh: vi.fn(),
+      }),
+    ),
+  );
+  expect(choices().map((item) => [item.textContent, item.disabled])).toEqual([
+    ["Keep this", false],
+    ["Keep other", true],
+    ["Keep both", true],
+  ]);
+  // A plain sync that ends flagged with a divergence leaves the question open.
+  resetSessionsStore([flagged]);
+  const onRefresh = vi.fn(async () => false);
+  act(() => root.render(createElement(AdoptedSessionNotice, { session, onRefresh })));
+  await act(async () => button().click());
+  expect(onRefresh).toHaveBeenCalledOnce();
+  expect(container.textContent).not.toContain("Conversation synced.");
 });

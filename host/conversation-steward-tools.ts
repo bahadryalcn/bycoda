@@ -4,6 +4,7 @@ import type { RuntimeLogPrincipal } from "./runtime-log-tools";
 import type { Session } from "../src/features/sessions/model/session";
 import { scrubRuntimeLogText } from "./runtime-logs";
 import type { StewardRun } from "../src/features/tasks/model/hostStewards";
+import type { HostTasks } from "./tasks";
 
 const text = { type: "string", minLength: 1, maxLength: 300 };
 const schedule = {
@@ -23,6 +24,8 @@ const object = (properties: Record<string, unknown>, required: string[]) => ({
   additionalProperties: false,
 });
 export const STEWARD_CONVERSATION_TOOLS = {
+  "stewards.delete": object(target, ["stewardId", "expectedUpdatedAt"]),
+  "stewards.decline": object({ ...target, taskId: text, expectedTaskUpdatedAt: { type: "integer", minimum: 0 } }, ["stewardId", "expectedUpdatedAt", "taskId", "expectedTaskUpdatedAt"]),
   "stewards.create": object({ stewardId: text, ...schedule, enabled: { type: "boolean" } }, [
     "stewardId",
     "scheduleKind",
@@ -42,7 +45,7 @@ export const isStewardConversationTool = (action: string): action is StewardConv
   Object.hasOwn(STEWARD_CONVERSATION_TOOLS, action);
 export const describeStewardConversationTool = (action: string) =>
   isStewardConversationTool(action)
-    ? "Manage this project's scheduled steward with revision checks. Creation inherits this session's provider/model/permission mode and never auto-starts or auto-merges proposed tasks. Updates only schedule/focus/proposal limits. Owner configurations with autoStart/autoMerge or a different permission mode can only be paused/stopped here. A steward agent cannot manage its own steward. Pause stops future schedules; stopRun requests cancellation of the exact active turn; poll stewards.get for settlement."
+    ? "Manage this project's scheduled steward with revision checks. Creation inherits this session's provider/model/permission mode and never auto-starts or auto-merges proposed tasks. Updates only schedule/focus/proposal limits. A steward agent cannot manage its own steward. Pause stops future schedules; stopRun requests cancellation of the exact active turn; poll stewards.get for settlement. Delete requires a settled run and preserves proposals. Decline requires both steward and proposal revisions, deletes only that steward's unstarted to-do proposal in this project and remembers its title; it cannot discard branches or active work. Broader execution configurations cannot be resumed or run by an agent."
     : undefined;
 const runReceipt = (run: StewardRun | undefined) =>
   run
@@ -57,7 +60,8 @@ const runReceipt = (run: StewardRun | undefined) =>
 export class ConversationStewardTools {
   constructor(
     private readonly store: Pick<HostStore, "project" | "transaction">,
-    private readonly stewards: Pick<HostStewards, "list" | "save" | "runNow" | "stopRun">,
+    private readonly stewards: Pick<HostStewards, "list" | "save" | "runNow" | "stopRun" | "delete" | "decline">,
+    private readonly tasks?: Pick<HostTasks, "get">,
   ) {}
 
   async call(
@@ -114,6 +118,19 @@ export class ConversationStewardTools {
         };
       });
     const existing = current();
+    if (action === "stewards.delete") {
+      if (existing.run) throw new Error("Stop the steward run and wait for settlement before deleting it.");
+      await this.stewards.delete(id);
+      return { stewardId: id, deleted: true };
+    }
+    if (action === "stewards.decline") {
+      const task = this.tasks?.get(String(input.taskId));
+      if (!task || task.projectId !== principal.projectId || task.stewardId !== id || task.source !== "steward" || task.status !== "todo") throw new Error("Proposal is not an unstarted suggestion of this project's steward.");
+      if (task.updatedAt !== input.expectedTaskUpdatedAt) throw new Error("Proposal changed; read it before declining.");
+      if (task.sessionId === principal.sessionId || task.reviewer?.sessionId === principal.sessionId || task.branch || task.startedAt) throw new Error("Cannot decline active work or your own task.");
+      await this.stewards.decline(task.id);
+      return { stewardId: id, taskId: task.id, declined: true };
+    }
     if (
       action !== "stewards.pause" &&
       action !== "stewards.stopRun" &&

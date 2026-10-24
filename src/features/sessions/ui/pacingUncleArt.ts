@@ -8,7 +8,9 @@ import {
   fillRects,
   placeSprite,
   rimRects,
+  type PacingLook,
   type PacingPose,
+  type PacingWalker,
   type Rect,
 } from "./pacingSprite";
 /** Code-art pacing uncle. A pixel silhouette with a dark rim stays legible at 32 px on both themes. */
@@ -55,9 +57,10 @@ export function createPacingRoute(span: number): PacingLeg[] {
   return legs;
 }
 
-export function pacingPose(t: number, span = 844): PacingPose {
+let route: { span: number; legs: PacingLeg[]; cycle: number } | null = null;
+function routeFor(span: number) {
+  if (route?.span === span) return route;
   const legs = createPacingRoute(span);
-  if (!legs.length) return { x: 0, dir: 1, walk: false, phase: 0 };
   const cycle = legs.reduce(
     (sum, leg, i) =>
       sum +
@@ -67,6 +70,13 @@ export function pacingPose(t: number, span = 844): PacingPose {
       (leg.dir !== legs[(i + 1) % legs.length].dir ? TURN_SECONDS : 0),
     0,
   );
+  route = { span, legs, cycle };
+  return route;
+}
+
+export function pacingPose(t: number, span = 844): PacingPose {
+  const { legs, cycle } = routeFor(span);
+  if (!legs.length) return { x: 0, dir: 1, walk: false, phase: 0 };
   let moment = ((t % cycle) + cycle) % cycle;
   for (let i = 0; i < legs.length; i++) {
     const leg = legs[i];
@@ -184,8 +194,8 @@ function sprite(step: number, walk: boolean) {
   return { legs, body, arm, bob };
 }
 /** Facing the reader: arms apart, the right hand raised to flip the tespih. */
-function front(elapsed: number) {
-  const eyes = blinking(elapsed) ? C.skinShade : C.eye;
+function front(blink: boolean) {
+  const eyes = blink ? C.skinShade : C.eye;
   const body: Rect[] = [
     [9, 24, 2.5, 6, C.trousersFar],
     [12.5, 24, 2.5, 6, C.trousers],
@@ -284,19 +294,12 @@ function weave(ctx: CanvasRenderingContext2D, rects: Rect[]) {
     );
   ctx.restore();
 }
-function character(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  baseline: number,
-  scale: number,
-  p: PacingPose,
-  elapsed: number,
-) {
+const character: PacingWalker = (ctx, x, baseline, scale, p, look) => {
   const face = facing(p);
   ctx.save();
   placeSprite(ctx, x, baseline, scale, face.sx);
   if (face.front) {
-    const { body, arms, hand } = front(elapsed);
+    const { body, arms, hand } = front(look.blink);
     rimRects(ctx, [...body, ...arms]);
     fillRects(ctx, body);
     rimRects(ctx, arms, 0.5);
@@ -319,9 +322,9 @@ function character(
   // Amber tespih hangs from the clasped hands; idle hands keep counting beads.
   ctx.save();
   ctx.translate(6, 25 - bob);
-  ctx.rotate(p.walk ? Math.sin(p.phase - 0.6) * 0.32 : Math.sin(elapsed * 1.7) * 0.06);
+  ctx.rotate(p.walk ? Math.sin(p.phase - 0.6) * 0.32 : Math.sin((look.count / 6) * Math.PI) * 0.06);
   const beads = 12;
-  const counted = Math.floor(elapsed * 4) % beads;
+  const counted = look.count;
   for (let i = 0; i < beads; i++) {
     const angle = -Math.PI / 2 + (i / beads) * Math.PI * 2;
     const bx = Math.cos(angle) * 1.7 - 0.5;
@@ -335,21 +338,88 @@ function character(
   ctx.fillRect(-0.7, 5.6, 1, 2.2);
   ctx.restore();
   ctx.restore();
+};
+
+const WALKERS: Record<CrewTheme, PacingWalker> = {
+  classic: character,
+  lotr: drawPacingEnt,
+  "star-wars": drawPacingDroid,
+};
+
+/** Pixel art changes 12 times a second; every visible detail derives from the frame number. */
+export const PACING_FPS = 12;
+const PHASE_BINS = 8;
+/** Sprite cells are 48 x 34 units around the feet; gestures reach past the 24-unit grid. */
+const CELL_W = 48;
+const CELL_H = 34;
+/** Room for one theme's full set (the uncle needs about 100 frames) without churn. */
+const MAX_SPRITES = 128;
+type Cell = { image: CanvasImageSource; ctx: CanvasRenderingContext2D };
+const sprites = new Map<string, CanvasImageSource>();
+const painted = new WeakMap<CanvasRenderingContext2D, string>();
+
+function createCell(width: number, height: number): Cell | null {
+  if (typeof OffscreenCanvas !== "undefined") {
+    const image = new OffscreenCanvas(width, height);
+    const ctx = image.getContext("2d") as unknown as CanvasRenderingContext2D | null;
+    return ctx ? { image, ctx } : null;
+  }
+  if (typeof document === "undefined") return null;
+  const image = document.createElement("canvas");
+  image.width = width;
+  image.height = height;
+  const ctx = image.getContext("2d");
+  return ctx ? { image, ctx } : null;
 }
 
-const WALKERS: Record<
-  CrewTheme,
-  (
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    baseline: number,
-    scale: number,
-    p: PacingPose,
-    elapsed: number,
-  ) => void
-> = { classic: character, lotr: drawPacingEnt, "star-wars": drawPacingDroid };
+/** Each distinct frame is drawn once; the walk, pauses and gestures replay cached bitmaps. */
+function cachedSprite(
+  key: string,
+  scale: number,
+  dpr: number,
+  paint: (ctx: CanvasRenderingContext2D) => void,
+) {
+  const hit = sprites.get(key);
+  if (hit) {
+    sprites.delete(key);
+    sprites.set(key, hit);
+    return hit;
+  }
+  const cell = createCell(Math.ceil(CELL_W * scale * dpr), Math.ceil(CELL_H * scale * dpr));
+  if (!cell) return null;
+  cell.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  paint(cell.ctx);
+  sprites.set(key, cell.image);
+  if (sprites.size > MAX_SPRITES) sprites.delete(sprites.keys().next().value!);
+  return cell.image;
+}
 
-/** Draws the crew theme's walker: the tespih uncle, an Ent, or a protocol droid. */
+/** Snaps the pose and clock details to the frame grid so equal frames share one key. */
+function frameOf(p: PacingPose, t: number, theme: CrewTheme) {
+  const step = (Math.PI * 2) / PHASE_BINS;
+  const phase = p.walk ? Math.round(p.phase / step) % PHASE_BINS : 0;
+  const gesture = p.act === undefined ? -1 : Math.round(p.act * GESTURE_SECONDS * PACING_FPS);
+  const dir = Math.round(p.dir * 4) / 4;
+  // Only eyes that are on screen blink: front views, and the droid's side visor.
+  const blink = blinking(t) && (gesture >= 0 || theme === "star-wars");
+  // The idle uncle counts beads only while standing sideways, not mid-turn.
+  const counting = theme === "classic" && !p.walk && gesture < 0 && Math.abs(dir) === 1;
+  const count = counting ? Math.floor(t * 4) % 12 : 0;
+  const pose: PacingPose = {
+    x: p.x,
+    dir,
+    walk: p.walk,
+    phase: phase * step,
+    act: gesture < 0 ? undefined : gesture / (GESTURE_SECONDS * PACING_FPS),
+  };
+  const look: PacingLook = { blink, count, gesture: Math.max(0, gesture) / PACING_FPS };
+  return { pose, look, key: `${theme}|${+p.walk}|${phase}|${dir}|${gesture}|${+blink}|${count}` };
+}
+
+/**
+ * Draws the crew theme's walker: the tespih uncle, an Ent, or a protocol droid.
+ * Frames that match the canvas's current picture leave it untouched.
+ */
 export function drawPacingUncle(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -357,11 +427,32 @@ export function drawPacingUncle(
   elapsed: number,
   theme: CrewTheme = "classic",
 ): void {
-  ctx.clearRect(0, 0, width, height);
+  const t = Math.floor(elapsed * PACING_FPS) / PACING_FPS;
   const scale = height / 32;
   const span = Math.max(0, width - 36);
-  const p = pacingPose(elapsed, span);
-  // Snap to half pixels so the sprite stays crisp while it walks.
-  const x = Math.round(((width - span) / 2 + p.x * span) * 2) / 2;
-  (WALKERS[theme] ?? character)(ctx, x, height, scale, p, elapsed);
+  const { pose, look, key } = frameOf(pacingPose(t, span), t, theme);
+  const dpr = ctx.getTransform?.()?.a || 1;
+  // Snap to device pixels so the cached sprite copies without resampling.
+  const x = Math.round(((width - span) / 2 + pose.x * span) * dpr) / dpr;
+  const signature = `${key}|${x}|${width}|${height}|${dpr}`;
+  // Resizing a canvas resets its context, which turns smoothing back on.
+  if (!ctx.imageSmoothingEnabled && painted.get(ctx) === signature) return;
+  painted.set(ctx, signature);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, width, height);
+  const walker = WALKERS[theme] ?? character;
+  const sprite = cachedSprite(`${key}|${scale}|${dpr}`, scale, dpr, (cell) =>
+    walker(cell, (CELL_W / 2) * scale, CELL_H * scale, scale, pose, look),
+  );
+  if (!sprite) {
+    walker(ctx, x, height, scale, pose, look);
+    return;
+  }
+  ctx.drawImage(
+    sprite,
+    x - (CELL_W / 2) * scale,
+    height - CELL_H * scale,
+    CELL_W * scale,
+    CELL_H * scale,
+  );
 }

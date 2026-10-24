@@ -100,6 +100,15 @@ describe("ActivityDock", () => {
     expect(dock()).toBeNull();
   });
 
+  it("names the finished turn separately while a queued send has unknown delivery", () => {
+    render({ busy: true, deliveryUnconfirmed: true });
+    render({ busy: false, deliveryUnconfirmed: true });
+    expect(visibleSessionTestText(dock())).toContain("Turn activity: Finished");
+    expect(container.querySelector("[aria-live='polite']")?.textContent).toBe("Turn activity: Finished");
+    render({ busy: false, deliveryUnconfirmed: false });
+    expect(visibleSessionTestText(dock())).toContain("Done");
+  });
+
   it("announces the state in a polite live region", () => {
     render({ busy: true, pendingQuestion: true });
     const live = container.querySelector("[aria-live='polite']");

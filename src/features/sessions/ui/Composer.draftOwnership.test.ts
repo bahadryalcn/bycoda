@@ -108,7 +108,7 @@ it("waits for a pending picker and includes its file in the original Send", asyn
     }),
   );
   await draw();
-  await choose("Attach files or images");
+  await choose("Upload file");
   await click("Send");
   expect(submit).not.toHaveBeenCalled();
   await act(async () => finish([file]));
@@ -126,7 +126,7 @@ it("retires picker results and a waiting Send when the draft is reset", async ()
     }),
   );
   await draw();
-  await choose("Attach files or images");
+  await choose("Upload file");
   await click("Send");
   await draw({ initialDraft: "", draftResetToken: 1 });
   await act(async () => finish([file]));
@@ -143,7 +143,7 @@ it("retains text and cancels a waiting Send when file inspection fails", async (
     }),
   );
   await draw();
-  await choose("Attach files or images");
+  await choose("Upload file");
   await click("Send");
   await act(async () => fail(new Error("Selected file cannot be read")));
   expect(submit).not.toHaveBeenCalled();

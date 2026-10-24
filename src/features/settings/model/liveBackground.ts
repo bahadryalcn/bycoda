@@ -8,45 +8,40 @@ export const LIVE_BACKGROUND_CHANGE_EVENT = "bycoda:livebackgroundchange";
 
 export type LiveBackground =
   | "none"
-  | "gradient-ascii"
-  | "code-rain"
-  | "micro-slats"
-  | "web-threads"
-  | "scanner"
-  | "lightfall"
-  | "prism"
-  | "side-rays"
-  | "light-rays"
-  | "pixel-blast"
-  | "dot-grid"
-  | "hyperspeed"
-  | "orb"
-  | "world-tree"
-  | "letter-glitch";
+  | "neural-tree"
+  | "latent-face"
+  | "thought-weaver"
+  | "ascii-mask";
 
 export const LIVE_BACKGROUNDS: readonly LiveBackground[] = [
   "none",
-  "gradient-ascii",
-  "code-rain",
-  "micro-slats",
-  "web-threads",
-  "scanner",
-  "lightfall",
-  "prism",
-  "side-rays",
-  "light-rays",
-  "pixel-blast",
-  "dot-grid",
-  "hyperspeed",
-  "letter-glitch",
-  "orb",
-  "world-tree",
+  "neural-tree",
+  "latent-face",
+  "thought-weaver",
+  "ascii-mask",
 ];
 
-/** A fresh install starts still; an animated scene is the owner's choice. */
+/** New installations stay still until the owner chooses a scene. */
 export const LIVE_BACKGROUND_DEFAULT: LiveBackground = "none";
-/** What installs saw before the still default; kept for them below. */
-const LEGACY_LIVE_BACKGROUND_DEFAULT: LiveBackground = "gradient-ascii";
+// Keep the old stored ID reversible; reads resolve it into the new collection.
+const LEGACY_LIVE_BACKGROUND_DEFAULT = "gradient-ascii";
+const LEGACY_SCENES: Readonly<Record<string, LiveBackground>> = {
+  "world-tree": "neural-tree",
+  "gradient-ascii": "latent-face",
+  orb: "latent-face",
+  "code-rain": "thought-weaver",
+  "micro-slats": "thought-weaver",
+  "web-threads": "thought-weaver",
+  scanner: "thought-weaver",
+  lightfall: "thought-weaver",
+  prism: "thought-weaver",
+  "side-rays": "thought-weaver",
+  "light-rays": "thought-weaver",
+  "pixel-blast": "thought-weaver",
+  "dot-grid": "thought-weaver",
+  hyperspeed: "thought-weaver",
+  "letter-glitch": "thought-weaver",
+};
 
 export const LIVE_BACKGROUND_INTENSITY_MIN = 0.05;
 export const LIVE_BACKGROUND_INTENSITY_MAX = 0.8;
@@ -54,79 +49,31 @@ export const LIVE_BACKGROUND_INTENSITY_DEFAULT = 0.35;
 
 export function liveBackgroundLabel(value: LiveBackground): string {
   switch (value) {
-    case "orb":
-      return t("Orb");
-    case "world-tree":
-      return t("World tree");
     case "none":
       return t("None");
-    case "code-rain":
-      return t("Code rain");
-    case "gradient-ascii":
-      return t("Gradient ASCII");
-    case "micro-slats":
-      return t("Micro slats");
-    case "web-threads":
-      return t("Web threads");
-    case "scanner":
-      return t("Scanner");
-    case "lightfall":
-      return t("Lightfall");
-    case "prism":
-      return t("Prism");
-    case "side-rays":
-      return t("Side rays");
-    case "light-rays":
-      return t("Light rays");
-    case "pixel-blast":
-      return t("Pixel blast");
-    case "dot-grid":
-      return t("Dot grid");
-    case "hyperspeed":
-      return t("Hyperspeed");
-    case "letter-glitch":
-      return t("Letter glitch");
+    case "neural-tree":
+      return t("Neural tree");
+    case "latent-face":
+      return t("Latent face");
+    case "thought-weaver":
+      return t("Thought weaver");
+    case "ascii-mask":
+      return t("ASCII mask");
   }
 }
 
 export function liveBackgroundDescription(value: LiveBackground): string {
   switch (value) {
-    case "orb":
-      return t("A flowing ring of light that breathes and brightens while the AI replies.");
-    case "world-tree":
-      return t(
-        "A world tree woven from code. Light travels from its roots to its branches while the AI replies.",
-      );
     case "none":
       return t("No animated layer behind chat panes.");
-    case "gradient-ascii":
-      return t(
-        "A talking AI face formed in ASCII characters; its lips move while a reply streams.",
-      );
-    case "code-rain":
-      return t("Flickering characters drift down behind the conversation.");
-    case "micro-slats":
-      return t("Fine slats that tilt and shimmer while the AI replies.");
-    case "web-threads":
-      return t("A web of threads that tightens and pulses while the AI replies.");
-    case "scanner":
-      return t("A scan line sweeps the pane, quickening while the AI replies.");
-    case "lightfall":
-      return t("Streaks of light fall through the pane, brighter while the AI replies.");
-    case "prism":
-      return t("Refracted light bands that drift while the AI replies.");
-    case "side-rays":
-      return t("Rays fanning in from the side, pulsing while the AI replies.");
-    case "light-rays":
-      return t("Soft light rays radiating outward, strengthening while the AI replies.");
-    case "pixel-blast":
-      return t("Pixel bursts that bloom and scatter while the AI replies.");
-    case "dot-grid":
-      return t("A grid of dots that ripples outward while the AI replies.");
-    case "hyperspeed":
-      return t("Streaking stars rush past, faster while the AI replies.");
-    case "letter-glitch":
-      return t("Letters flicker and glitch in place, intensifying while the AI replies.");
+    case "neural-tree":
+      return t("A quiet neural tree. Light follows its branches while the AI replies.");
+    case "latent-face":
+      return t("An AI portrait in ASCII, with subtle changes while the AI replies.");
+    case "thought-weaver":
+      return t("A small digital loom weaves delicate threads while the AI replies.");
+    case "ascii-mask":
+      return t("A faint mask surfaces from an ASCII gradient while the AI replies.");
   }
 }
 
@@ -152,7 +99,11 @@ keepLegacyDefault();
 export function loadLiveBackground(): LiveBackground {
   try {
     const raw = localStorage.getItem(LIVE_BACKGROUND_KEY);
-    return isLiveBackground(raw) ? raw : LIVE_BACKGROUND_DEFAULT;
+    return isLiveBackground(raw)
+      ? raw
+      : raw !== null && Object.prototype.hasOwnProperty.call(LEGACY_SCENES, raw)
+        ? LEGACY_SCENES[raw]
+        : LIVE_BACKGROUND_DEFAULT;
   } catch {
     return LIVE_BACKGROUND_DEFAULT;
   }

@@ -405,6 +405,7 @@ async function syncRemoteSession(
   revision?: number,
   waitMs = 0,
   known?: HostSession,
+  digests = false,
 ): Promise<SessionSync> {
   const done = startPerformanceSpan("remote-sync");
   try {
@@ -415,11 +416,13 @@ async function syncRemoteSession(
       revision,
       known?.history?.before,
       loaded?.map((block) => block.id),
+      digests,
     ]);
     return sharedRead(pendingSessionSyncs, key, async () => {
       const response = await sessionAccessForMachine(machineId).sync(sessionId, {
         revision,
         waitMs,
+        ...(digests ? { digests: true } : {}),
         ...(known?.history
           ? {
               partial: true,
@@ -507,6 +510,8 @@ export async function loadRemoteSession(
     onHistory?: (snapshot: HostSession) => void;
     isCurrent?: () => boolean;
     onHistoryError?: (error: unknown) => void;
+    /** The host sends block digests and the transcript head (`sessions.digests`). */
+    digests?: boolean;
   } = {},
 ): Promise<HostSession> {
   if (known?.historyLoading) return known;
@@ -514,7 +519,13 @@ export async function loadRemoteSession(
   // sync. Refresh their bounded tail page instead of requesting a full history
   // snapshot (or sending ignored partial parameters).
   if (known?.history && !options.partialHistory) {
-    const tail = await readRemoteSessionPage(machineId, sessionId);
+    const tail = await readRemoteSessionPage(
+      machineId,
+      sessionId,
+      undefined,
+      undefined,
+      options.digests,
+    );
     if (tail.revision === known.revision) return known;
     return {
       ...tail.value,
@@ -526,7 +537,13 @@ export async function loadRemoteSession(
     };
   }
   if (!known && options.pages) {
-    const page = await readRemoteSessionPage(machineId, sessionId);
+    const page = await readRemoteSessionPage(
+      machineId,
+      sessionId,
+      undefined,
+      undefined,
+      options.digests,
+    );
     const snapshot = {
       ...page.value,
       history: {
@@ -555,6 +572,7 @@ export async function loadRemoteSession(
       revision,
       revision === undefined ? 0 : options.waitMs,
       options.partialHistory ? base : undefined,
+      options.digests,
     );
   const update = await sync(known?.revision, known);
   let snapshot: HostSession;
@@ -562,7 +580,13 @@ export async function loadRemoteSession(
     snapshot = applyRemoteSessionSync(known, update);
   } catch {
     if (known?.history) {
-      const tail = await readRemoteSessionPage(machineId, sessionId);
+      const tail = await readRemoteSessionPage(
+        machineId,
+        sessionId,
+        undefined,
+        undefined,
+        options.digests,
+      );
       snapshot = {
         ...tail.value,
         history: {
@@ -598,12 +622,18 @@ async function readRemoteSessionPage(
   sessionId: string,
   before?: number,
   revision?: number,
+  digests = false,
 ) {
-  const key = JSON.stringify([machineId, sessionId, before, revision]);
+  const key = JSON.stringify([machineId, sessionId, before, revision, digests]);
   return sharedRead(pendingSessionPages, key, async () => {
     const done = startPerformanceSpan(before === undefined ? "remote-tail" : "remote-history");
     try {
-      const page = await sessionAccessForMachine(machineId).page(sessionId, before, revision);
+      const page = await sessionAccessForMachine(machineId).page(
+        sessionId,
+        before,
+        revision,
+        digests,
+      );
       const raw = applyRemoteSessionSync(
         undefined,
         await assembleSessionSync(machineId, sessionId, page.sync),
@@ -1030,7 +1060,6 @@ export function useRemoteProjectSessions(project: string, enabled = true): Remot
     }
     setDataState({ phase: "refreshing", updatedAt: lastVerified.current });
     let disposed = false;
-    let timer: ReturnType<typeof setTimeout>;
     let failures = 0;
     let recovering = false;
     const fail = (reason: unknown) => {
@@ -1120,26 +1149,28 @@ export function useRemoteProjectSessions(project: string, enabled = true): Remot
       };
     }
     let firstRead = true;
-    const poll = async () => {
-      try {
-        const force = firstRead || failures > 0;
+    const stopFallback = startRailPoller({
+      targets: [remote.projectId],
+      foregroundMs: 3_000,
+      random: () => 0.5,
+      load: async (_target, wake) => {
+        const force = firstRead || failures > 0 || wake === true;
         firstRead = false;
-        const next = await sharedSessionLists.load(machine.id, remote.projectId, force);
-        if (disposed) return;
+        return sharedSessionLists.load(machine.id, remote.projectId, force);
+      },
+      onResult: (_target, next) => {
         failures = 0;
         saveList(next);
-      } catch (reason) {
+      },
+      onError: (_target, reason) => {
         // Keep the cached list and back off while SSH is unavailable.
         failures = Math.min(4, failures + 1);
         fail(reason);
-      }
-      if (!disposed)
-        timer = setTimeout(() => void poll(), failures ? remoteBackoffDelay(failures) : 3_000);
-    };
-    void poll();
+      },
+    });
     return () => {
       disposed = true;
-      clearTimeout(timer);
+      stopFallback();
     };
   }, [project, remote?.projectId, machine?.id, refresh, capabilityVersion]);
   // Effects run after render. Never expose the previous project's cards with
@@ -1238,7 +1269,8 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
       cleanups.push(
         startRailPoller({
           targets: fallback,
-          load: ({ machine, remote }) => sharedSessionLists.load(machine.id, remote.projectId),
+          load: ({ machine, remote }, force) =>
+            sharedSessionLists.load(machine.id, remote.projectId, force),
           onResult: ({ project }, next) => save(project, next),
         }),
       );

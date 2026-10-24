@@ -669,6 +669,29 @@ it("searches worktrees by branch and folder, and clears an empty result without 
   expect(onRemove).not.toHaveBeenCalled();
 });
 
+it("keeps full worktree identity available in details without revealing or deleting the folder", async () => {
+  const path = "/repo-worktrees/a-very-long-worktree-folder-name";
+  const branch = "feature/a-long-branch-name-for-the-worktree";
+  vi.mocked(listWorktrees).mockResolvedValue({
+    ...result(),
+    worktrees: [{ ...tree, path, branch }],
+  });
+  const onRemove = vi.fn();
+  await act(async () =>
+    root.render(createElement(WorktreesPage, { cwd: "/details-worktree", onRemove })),
+  );
+  const row = container.querySelector('[role="listitem"]')!;
+  const details = row.querySelector<HTMLDetailsElement>("details")!;
+  expect(details.open).toBe(false);
+  expect(details.textContent).toContain("a-very-long-worktree-folder-name");
+  expect(details.textContent).toContain(branch);
+  expect(details.textContent).toContain(path);
+  await act(async () => details.querySelector("summary")!.click());
+  expect(details.open).toBe(true);
+  expect(row.querySelector(`[aria-label="Delete ${branch}"]`)).not.toBeNull();
+  expect(onRemove).not.toHaveBeenCalled();
+});
+
 it("refetches after a Git mutation that arrived during an in-flight read", async () => {
   const request = deferred();
   vi.mocked(listWorktrees)

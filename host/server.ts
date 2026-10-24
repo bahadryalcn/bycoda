@@ -2,6 +2,7 @@ import { ModelCatalogCache } from "./model-catalog-cache";
 import { createVoiceClientSecret } from "./voice";
 import { LocalVoiceService } from "./voice-local";
 import { inspectVoiceRuntime } from "./voice-runtime";
+import { VoiceSetupService } from "./voice-setup";
 import { readSessionUsage } from "./usage-report";
 import { desktopActorId, desktopOperationId, desktopReviewSecret, openDesktopReview, sealDesktopReview, openDesktopResource, sealDesktopResource, type DesktopReviewScope } from "./reviewed-desktop-scope";
 import { readHostAccess } from "./access-center";
@@ -74,7 +75,11 @@ import { WebControl } from "./web-control";
 import type { GenericAcpConfig } from "../src/features/providers/model/genericAcp";
 import type { HandoffHistory } from "../src/features/sessions/model/handoffBudget";
 import { DesktopSessions } from "./desktopSessions";
+import { QueueDrainer, queueRowCommands } from "./queue-drainer";
 import { SessionQueues } from "./session-queue";
+import { RunLeases } from "./run-lease";
+import { LeaseHeldError, type RunLease } from "../src/features/sync/model/runLease";
+import { AdoptedChanges } from "./adoptedChanges";
 import { sameQueuedModelTarget } from "../src/features/sessions/model/messageQueue";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 import { DesktopDelete } from "./desktopDelete";
@@ -105,6 +110,7 @@ import {
   partialSessionSync,
   previewRewindHistory,
   previewSession,
+  withHead,
 } from "./transcriptPage";
 import { RemoteChanges } from "./remoteChanges";
 import { GitWatches } from "./git-watch";
@@ -249,6 +255,7 @@ export function createHostServer(
   const sharedBrowser = new SharedBrowser(browserRuntime.load, Date.now, { runtimeLogs });
   const devServers = new DevServersService({ runtimeLogs });
   const localVoice = new LocalVoiceService();
+  const voiceSetup = new VoiceSetupService();
   const devServerAccess = new DevServerAccess(
     async (params) => {
       engine.store.project(String(params.projectId ?? ""));
@@ -289,6 +296,12 @@ export function createHostServer(
   };
   const desktopDelete = new DesktopDelete();
   const sessionQueues = new SessionQueues(engine.store.db);
+  /** Which desktop window runs a turn of which conversation (the host's own are the engine's). */
+  const runLeases = new RunLeases();
+  const adoptedChanges = new AdoptedChanges(
+    () => engine.store.adopted(),
+    () => engine.store.changes.version,
+  );
   const attachmentOwnership = new AttachmentOwnership(engine.store);
   /** A desktop-only session on this machine, matched to a registered project. */
   const desktopSnapshot = (id: string) => {
@@ -407,8 +420,7 @@ export function createHostServer(
     if (!current.desktop) return;
     const stamp = known ?? desktop.stamp(id);
     if (!stamp) return;
-    if (stamp.running)
-      throw new Error("This session is running in bycoda on that computer. Wait for it to finish.");
+    if (stamp.running) throw new LeaseHeldError(runLeases.holder(id)?.holder ?? "desktop");
     if (stamp.updatedAt <= current.desktop.updatedAt) return;
     // Cheap guards first: a session the host is running or rewinding is left
     // alone anyway, and an unreadable copy stays unreadable until it changes.
@@ -444,6 +456,160 @@ export function createHostServer(
       running: stamp.running,
       revision: Math.max(stamp.updatedAt, overlay?.changedAt ?? 0),
     };
+  };
+  /** Who runs a turn of `id` outside the host: a desktop window holding the run
+   * lease, or an app that reports it busy without having asked for one. */
+  const desktopRunHolder = (id: string): string | undefined =>
+    runLeases.holder(id)?.holder ?? (desktopWatch(id)?.running ? "desktop" : undefined);
+  const hostRuns = (id: string) => {
+    try {
+      return engine.store.sessionStatus(id) === "running";
+    } catch {
+      return false;
+    }
+  };
+  /** The conversation may start a turn on this host, or `LEASE_HELD`: callers queue the message. */
+  const assertHostMayRun = (id: string) => {
+    const holder = desktopRunHolder(id);
+    if (holder) throw new LeaseHeldError(holder);
+  };
+  /** Whether a conversation waits for the owner to answer a usage limit, read again only when it moved. */
+  const usageLimits = new Map<string, { key: string; limited: boolean }>();
+  const usageLimited = (id: string): boolean => {
+    const key = `${engine.store.sessionRevision(id) ?? ""}\0${desktop.stamp(id)?.updatedAt ?? ""}`;
+    const known = usageLimits.get(id);
+    if (known?.key === key) return known.limited;
+    const limited = !!featureSession(id).session.usageLimit;
+    usageLimits.delete(id);
+    usageLimits.set(id, { key, limited });
+    while (usageLimits.size > 256) usageLimits.delete(usageLimits.keys().next().value!);
+    return limited;
+  };
+  /** Sends the head of a queue nobody holds the drain lease for. */
+  const queueDrainer = new QueueDrainer(sessionQueues, {
+    ready: (id) => {
+      try {
+        return (
+          !engine.busyReason(id) &&
+          // The host's own turn, including one in an adopted session the desktop
+          // copy does not know is running.
+          !hostRuns(id) &&
+          queueSessionStatus(id) !== "running" &&
+          !desktopRunHolder(id) &&
+          !usageLimited(id)
+        );
+      } catch {
+        return false;
+      }
+    },
+    send: (id, row) => {
+      adopt(id);
+      for (const command of queueRowCommands(id, row, engine.store.session(id).session))
+        engine.command(command);
+    },
+    transaction: (action) => engine.store.transaction(action),
+    wakeAt: () => {
+      const times = [runLeases.nextExpiry(), desktop.live.nextStoredExpiry()].filter(
+        (time): time is number => time !== undefined,
+      );
+      return times.length ? Math.min(...times) : undefined;
+    },
+    expired: () => {
+      runLeases.takeExpired();
+    },
+  });
+  engine.onSettled = (id, outcome) => queueDrainer.settled(id, outcome);
+  // A turn found running at startup was cut short: its queue waits for the owner.
+  for (const id of engine.recoveredInterrupted)
+    queueDrainer.settled(id, {
+      interrupted: true,
+      reason: "Host restarted. This turn was interrupted; inspect its work before continuing.",
+    });
+  engine.onUnblocked = () => queueDrainer.kickWaiting();
+  // A window's heartbeat keeps its lease alive while the conversation is busy
+  // there; the beat that reports it idle (or its silence) ends the lease.
+  /** When each window last reported a conversation busy: a lease granted after that is a newer turn's. */
+  const lastBusy = new Map<string, number>();
+  desktop.live.onBusy = (id, clientId) => {
+    const holder = `desktop:${clientId}`;
+    // A window running a turn holds the conversation whether or not it asked first
+    // (an older app, or a release that raced with its next turn).
+    if (!runLeases.renew(id, holder)) {
+      try {
+        runLeases.acquire(id, holder, () => (hostRuns(id) ? "host" : undefined));
+      } catch {
+        /* another side holds it: that one stays */
+      }
+    }
+    // After the grant, so the lease of this very turn counts as held by now.
+    const key = `${id}\0${clientId}`;
+    lastBusy.delete(key);
+    lastBusy.set(key, Date.now());
+    while (lastBusy.size > 1024) lastBusy.delete(lastBusy.keys().next().value!);
+  };
+  desktop.live.onIdle = (id, clientId, reason) => {
+    // A window that went quiet may be a hidden, throttled one that still writes:
+    // its lease runs out on its own (longer than the longest beat gap).
+    if (reason !== "gone")
+      runLeases.drop(id, `desktop:${clientId}`, lastBusy.get(`${id}\0${clientId}`) ?? 0);
+  };
+  /**
+   * The run leases a desktop window says it holds (for the conversations it runs
+   * a turn of), answered with the lease kept or `null` when it was lost: another
+   * side runs a turn now, so the window must stop writing to the conversation.
+   * A lease that merely ran out (a long gap, a host restart) is granted again
+   * when nobody took the conversation meanwhile.
+   */
+  const renewRunLeases = (params: Record<string, unknown>) => {
+    if (!Array.isArray(params.runLeases) || typeof params.clientId !== "string") return undefined;
+    const holder = `desktop:${params.clientId}`;
+    const answers: Record<string, RunLease | null> = {};
+    for (const entry of params.runLeases.slice(0, 256)) {
+      const { sessionId, epoch } = (entry ?? {}) as { sessionId?: unknown; epoch?: unknown };
+      if (typeof sessionId !== "string" || sessionId.length > 200 || !Number.isSafeInteger(epoch))
+        continue;
+      const current = runLeases.holder(sessionId);
+      if (current && current.holder !== holder) answers[sessionId] = null;
+      else if (current) answers[sessionId] = runLeases.renew(sessionId, holder) ?? null;
+      else {
+        try {
+          answers[sessionId] = runLeases.acquire(sessionId, holder, () => {
+            if (hostRuns(sessionId)) return "host";
+            const busy = desktop.live.busyClient(sessionId);
+            return busy && `desktop:${busy}` !== holder ? `desktop:${busy}` : undefined;
+          });
+        } catch {
+          answers[sessionId] = null;
+        }
+      }
+    }
+    return answers;
+  };
+  /** Renews the drain leases a desktop reports on its heartbeat. */
+  const renewQueueLeases = (params: Record<string, unknown>) => {
+    if (!Array.isArray(params.queueLeases) || typeof params.clientId !== "string") return undefined;
+    const holder = `desktop:${params.clientId}`;
+    const leases: Record<
+      string,
+      import("../src/features/connections/model/sharedQueue").DrainLease | null
+    > = {};
+    for (const entry of params.queueLeases.slice(0, 256)) {
+      const { sessionId, epoch, blocked } = (entry ?? {}) as {
+        sessionId?: unknown;
+        epoch?: unknown;
+        blocked?: unknown;
+      };
+      if (typeof sessionId !== "string" || !Number.isSafeInteger(epoch)) continue;
+      // A holder that cannot send for a reason of its own (a sync conflict on its
+      // copy) is neither stalled nor replaced by the host sending on its own copy.
+      queueDrainer.noteBlocked(sessionId, holder, blocked === true);
+      // A holder that could send but does not is not renewed: its lease ends
+      // and the host sends the row.
+      leases[sessionId] = queueDrainer.holderStalled(sessionId)
+        ? sessionQueues.release(sessionId, holder, Number(epoch))
+        : sessionQueues.renew(sessionId, holder, Number(epoch));
+    }
+    return leases;
   };
   /** The desktop copy with its live prompts; a running one carries a run id
    * so watchers can stop it and answer its prompts. */
@@ -492,7 +658,10 @@ export function createHostServer(
             },
           }
         : {}),
-      session: withOverlay(snapshot.session, overlay),
+      // The desktop's own bookkeeping about its host copy is not part of the view.
+      session: (({ adoptedBase: _base, ...session }) => session)(
+        withOverlay(snapshot.session, overlay),
+      ),
     };
   };
   /** Per-block change revisions of watched desktop copies, so a watcher
@@ -595,19 +764,17 @@ export function createHostServer(
   const signal = engine.store.changes;
   // Generations of inputs the project list reads besides the store: the desktop
   // heartbeat and watched checkouts. They key the cached list below.
-  let liveGeneration = 0;
-  let gitGeneration = 0;
   desktop.live.onChange = () => {
-    liveGeneration++;
     signal.notify();
+    queueDrainer.kickWaiting();
   };
   tasks.onChange = () => signal.notify();
   const revisionWaits = new RevisionWaits(64, signal);
   const transcriptPages = new TranscriptPages();
   const remoteChanges = new RemoteChanges(signal);
   const gitWatches = new GitWatches({
-    onChange: () => {
-      gitGeneration++;
+    onChange: (cwd, change) => {
+      if (!change || change.refs) branchCache.clear(cwd);
       signal.notify();
     },
   });
@@ -616,16 +783,55 @@ export function createHostServer(
     (projectId, action) => engine.withIdleProject(projectId, action),
     engine.checkpoints,
   );
-  const models = (projectId?: unknown, progressive = false) =>
+  const models = (projectId?: unknown, progressive = false, force = false) =>
     catalogs.read(
       typeof projectId === "string" ? engine.store.project(projectId).cwd : homedir(),
       progressive,
+      force,
     );
-  const conversationProject = new ConversationProjectTools(engine.store, goals, engine.checkpoints, providers, models, { stewards, automations });
-  const conversationGoals = new ConversationGoalTools(engine.store, goals, tasks);
+  const conversationProject = new ConversationProjectTools(
+    engine.store,
+    goals,
+    engine.checkpoints,
+    providers,
+    models,
+    {
+      stewards,
+      automations,
+      session: featureSession,
+      checkpoints: (sessionId, principal, authorized) =>
+        inHost(sessionId)
+          ? engine.checkpoints
+          : {
+              status: async (id, cwd) =>
+                (await conversationDesktop.call(
+                  "checkpoints.status",
+                  { sessionId: id },
+                  cwd,
+                  principal,
+                  authorized,
+                )) as Awaited<ReturnType<typeof engine.checkpoints.status>>,
+              fileDiff: async (id, cwd, relative) =>
+                (await conversationDesktop.call(
+                  "checkpoints.diff",
+                  { sessionId: id, relative },
+                  cwd,
+                  principal,
+                  authorized,
+                )) as Awaited<ReturnType<typeof engine.checkpoints.fileDiff>>,
+            },
+    },
+  );
+  const conversationGoals = new ConversationGoalTools(engine.store, goals, tasks, featureSession);
   const conversationTaskQueue = new ConversationTaskQueueTools(tasks);
-  const conversationStewards = new ConversationStewardTools(engine.store, stewards);
-  const conversationRuntimeReads = new ConversationRuntimeReadTools(engine.store, tasks.limits);
+  const conversationStewards = new ConversationStewardTools(engine.store, stewards, tasks);
+  const conversationRuntimeReads = new ConversationRuntimeReadTools(
+    engine.store,
+    tasks.limits,
+    undefined,
+    undefined,
+    featureSession,
+  );
   let imageCapability: { at: number; value: Promise<boolean> } | undefined;
   const crews = new HostCrews(
     engine.store,
@@ -647,11 +853,10 @@ export function createHostServer(
       return undefined;
     },
   );
-  const projectSessionList = async (projectId: string) => {
+  const buildProjectSessionList = async (projectId: string, local: HostSessionSummary[]) => {
     const project = engine.store.project(projectId);
-    const local = desktop.list(project.cwd, projectId, providers);
     const stamps = new Map(local.map((session) => [session.id, session]));
-    for (const adopted of engine.store.adopted()) {
+    for (const adopted of engine.store.adopted(projectId)) {
       const stamp = stamps.get(adopted.id);
       // Only a desktop copy newer than the one the host caught up with needs
       // the session loaded; a running one is not pulled yet.
@@ -689,9 +894,13 @@ export function createHostServer(
       worktreeCwd:
         session.cwd && !desktop.samePath(session.cwd, project.cwd) ? session.cwd : undefined,
     }));
+    const serialized = JSON.stringify(list);
     return {
       list,
-      etag: createHash("sha256").update(JSON.stringify(list)).digest("base64url"),
+      etag: createHash("sha256").update(serialized).digest("base64url"),
+      bytes: Buffer.byteLength(serialized),
+      paths,
+      branchKey: JSON.stringify(paths.map((cwd) => [cwd, branches.get(cwd)])),
     };
   };
   const projectChangeCache = new Map<
@@ -699,42 +908,62 @@ export function createHostServer(
     {
       key: string;
       refreshed: number;
-      value: { etag: string; sessions: HostSessionSummary[] };
+      paths: string[];
+      bytes: number;
+      promise: Promise<{ etag: string; list: HostSessionSummary[]; bytes: number }>;
     }
   >();
   /** A rebuild is only needed when an input moved; the safety TTL bounds what no
    * signal reports (an unwatched checkout switching branch). */
   const PROJECT_LIST_SAFETY_MS = 30_000;
   const taskChangeEtag = async () => tasks.changeEtag();
-  const projectChangeSnapshot = async (projectId: string) => {
+  const projectSessionList = async (projectId: string) => {
     const now = Date.now();
-    // Per project: another project's streaming must not rebuild this list.
-    // Desktop-side changes bypass the store; the desktop databases' fingerprint
-    // (two stats each) shows them without re-reading every row.
-    const key = [
-      engine.store.projectVersion(projectId),
-      desktop.fingerprint(),
-      liveGeneration,
-      gitGeneration,
-      branchCache.version,
-    ].join("\0");
+    const project = engine.store.project(projectId);
+    const local = desktop.listSnapshot(project.cwd, projectId, providers);
     const cached = projectChangeCache.get(projectId);
+    const paths = cached?.paths ?? [];
+    // Reuse the lightweight branch TTL/singleflight even when this checkout
+    // is not watched. Caching a full list must not extend branch staleness
+    // from the branch cache's 4s contract to the 30s safety fallback.
+    const branches = await Promise.all(paths.map((cwd) => branchCache.get(cwd)));
+    const prefix = [engine.store.projectVersion(projectId), project.cwd, project.name, local.fingerprint].join("\0");
+    // Desktop metadata/live state and watched Git revisions are scoped to the
+    // actual rows/paths of this project, not global activity on the machine.
+    const key = `${prefix}\0${JSON.stringify(paths.map((cwd, index) => [cwd, branches[index]]))}`;
+    const current = projectChangeCache.get(projectId);
     if (
-      cached &&
-      ((cached.key === key && now - cached.refreshed < PROJECT_LIST_SAFETY_MS) ||
-        now - cached.refreshed < 250)
+      current &&
+      current.key === key && now - current.refreshed < PROJECT_LIST_SAFETY_MS
     )
-      return cached.value;
-    const { list, etag } = await projectSessionList(projectId);
-    const value = { etag, sessions: list };
-    projectChangeCache.set(projectId, {
-      key,
-      refreshed: now,
-      value,
+      return current.promise;
+    const promise = buildProjectSessionList(projectId, local.sessions);
+    const entry = { key, refreshed: now, paths, bytes: 0, promise };
+    projectChangeCache.set(projectId, entry);
+    void promise.then(({ bytes, paths, branchKey }) => {
+      if (projectChangeCache.get(projectId) !== entry) return;
+      entry.paths = paths;
+      entry.key = `${prefix}\0${branchKey}`;
+      entry.bytes = bytes;
+      let total = 0;
+      for (const value of projectChangeCache.values()) total += value.bytes;
+      while (total > 16 * 1024 * 1024) {
+        const first = projectChangeCache.keys().next().value;
+        if (first === undefined) break;
+        total -= projectChangeCache.get(first)!.bytes;
+        projectChangeCache.delete(first);
+      }
+    }, () => {
+      // A failed read is never cached as an empty project.
+      if (projectChangeCache.get(projectId) === entry) projectChangeCache.delete(projectId);
     });
     while (projectChangeCache.size > 32)
       projectChangeCache.delete(projectChangeCache.keys().next().value!);
-    return value;
+    return promise;
+  };
+  const projectChangeSnapshot = async (projectId: string) => {
+    const { list, etag } = await projectSessionList(projectId);
+    return { etag, sessions: list };
   };
   const hostNotes = new HostNotes();
   const providerInbox = new ProviderInboxBridge(engine.store.db);
@@ -996,7 +1225,10 @@ export function createHostServer(
             const own = featureSession(conversationPrincipal.sessionId);
             if (own.projectId !== projectId) throw new Error("Conversation belongs to another project.");
             const root = await resolveHostWorktreeAsync(project.cwd, sessionWorkCwd(own.session));
-            result = await callFileConversationTool(root, action, args);
+            result = await callFileConversationTool(root, action, args, (command, input) => {
+              if (!conversationAccess.principalForToken(token)) throw new Error("Session authority revoked.");
+              return workspace.run(command, input);
+            });
             if (!conversationAccess.principalForToken(token)) throw new Error("Session authority revoked.");
           }
           else if (isWorkspaceConversationTool(action))
@@ -1092,6 +1324,7 @@ export function createHostServer(
                 title: String(args.title),
                 prompt: String(args.prompt),
                 harness: own.harness,
+                providerAccountId: own.providerAccountId,
                 model: own.model,
                 modelSettings: own.modelSettings,
                 runtimeMode: own.runtimeMode,
@@ -1139,7 +1372,28 @@ export function createHostServer(
                   task.reviewer?.sessionId === conversationPrincipal.sessionId)
               )
                 throw new Error("An agent cannot change its own active task.");
-              if (action === "tasks.get") result = task;
+              if (["tasks.delete", "tasks.transfer", "tasks.notes.resolve"].includes(action)) {
+                if (task.updatedAt !== args.expectedUpdatedAt) throw new Error("Task changed; read it before changing it.");
+                const destination = action === "tasks.transfer" ? engine.store.project(String(args.targetProjectId)) : undefined;
+                if (destination) tasks.validateTransfer(task.id, destination.id, task.updatedAt);
+                if (action === "tasks.notes.resolve" && !task.reviewNotes?.some((note) => note.id === args.noteId)) throw new Error("Review note not found.");
+                const approvedTaskHash = createHash("sha256").update(JSON.stringify(task)).digest("hex");
+                const approved = await conversationDesktop.call("tasks.write.authorize", {
+                  operation: { action, taskId: task.id, title: scrubRuntimeLogText(task.title, 1000),
+                    expectedUpdatedAt: task.updatedAt,
+                    ...(destination ? { targetProjectId: destination.id, targetProjectName: destination.name } : {}),
+                    ...(action === "tasks.notes.resolve" ? { noteId: args.noteId, resolved: args.resolved,
+                      note: scrubRuntimeLogText(JSON.stringify(task.reviewNotes?.find((note) => note.id === args.noteId) ?? null), 4000) } : {}),
+                  },
+                }, project.cwd, conversationPrincipal, () => !!conversationAccess.principalForToken(token)) as { approved?: boolean };
+                if (!approved.approved || !conversationAccess.principalForToken(token)) throw new Error("Native owner approval required.");
+                const latest = tasks.get(task.id);
+                if (!latest || latest.projectId !== projectId || latest.updatedAt !== args.expectedUpdatedAt || createHash("sha256").update(JSON.stringify(latest)).digest("hex") !== approvedTaskHash) throw new Error("Task changed during approval; read it again.");
+                if (action === "tasks.delete") { await tasks.delete(task.id, false, latest.updatedAt); result = { deleted: true }; }
+                else if (action === "tasks.transfer") result = tasks.transfer(task.id, String(args.targetProjectId), latest.updatedAt);
+                else result = tasks.resolveNote(task.id, args.noteId, args.resolved);
+              }
+              else if (action === "tasks.get") result = task;
               else if (Object.hasOwn(TASK_READ_TOOLS, action)) result = callConversationTaskRead(action, args, task, list);
               else if (action === "tasks.session.read") {
                 const sessionId =
@@ -1539,6 +1793,7 @@ export function createHostServer(
                 "sessions.longPoll",
                 "sessions.lazyHistory",
                 "sessions.block",
+                "sessions.digests",
                 "machine.changes",
                 "machine.changes.inlineSync",
                 "git.watch",
@@ -1594,11 +1849,14 @@ export function createHostServer(
                 "sessions.desktop",
                 "sessions.desktopLive",
                 "sessions.queue",
+                "sessions.queue.lease",
+                "sessions.runLease",
                 "sync",
                 "automations",
                 "tasks",
                 "tasks.todo",
                 "tasks.workspaces",
+                "tasks.provider-accounts",
                 "goals.direct-checkout",
                 "goals.settings",
                 "tasks.notes",
@@ -1647,6 +1905,7 @@ export function createHostServer(
                 "dev.servers.private-access",
                 "voice.realtime.v1",
                 "voice.local.v1",
+                "voice.local.setup.v1",
                 "social.v1",
                 "social.policy.reviewed.v1",
                 "social.programs.v2",
@@ -1660,6 +1919,14 @@ export function createHostServer(
           case "voice.local.inspect":
             result = await inspectVoiceRuntime(params.config);
             break;
+          case "voice.local.setup":
+          case "voice.local.setupStatus":
+            if (request.headers.origin || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.socket.remoteAddress ?? ""))
+              throw new Error("Voice installation is available only on this computer.");
+            if (input.method === "voice.local.setup" && localVoice.isActive)
+              throw new Error("Disconnect voice before installing.");
+            result = input.method === "voice.local.setup" ? voiceSetup.start(params.config) : voiceSetup.status();
+            break;
           case "voice.local.speak":
             result = localVoice.speak(params.lease, params.text);
             break;
@@ -1670,6 +1937,8 @@ export function createHostServer(
             result = localVoice.cancelSpeech(params.lease, params.id);
             break;
           case "voice.local.start":
+            if (voiceSetup.status().state === "installing")
+              throw new Error("Voice setup is still running.");
             result = await localVoice.start(params.config);
             break;
           case "voice.local.transcribe":
@@ -1852,7 +2121,7 @@ export function createHostServer(
             result = setReviewedProfile(params);
             break;
           case "models.list":
-            result = await models(params.projectId, params.progressive === true);
+            result = await models(params.projectId, params.progressive === true, params.refresh === true);
             break;
           case "sessions.list": {
             const projectId = String(params.projectId ?? "");
@@ -1865,6 +2134,10 @@ export function createHostServer(
             break;
           }
           case "machine.changes": {
+            const inlineSessionIds = params.inlineSessionIds;
+            if (inlineSessionIds !== undefined && (!Array.isArray(inlineSessionIds) || inlineSessionIds.length > 64 ||
+              inlineSessionIds.some((id) => typeof id !== "string" || id.length === 0 || id.length > 1024)))
+              throw new Error("Invalid inline session selection");
             result = await remoteChanges.read(
               {
                 inlineSync: params.inlineSync === true,
@@ -1910,6 +2183,7 @@ export function createHostServer(
             result = inlineSessionSync(
               {
                 inlineSync: params.inlineSync === true,
+                inlineSessionIds: inlineSessionIds as string[] | undefined,
                 sessions: params.sessions as { sessionId: string; revision: number }[],
                 projects: [],
               },
@@ -2028,6 +2302,7 @@ export function createHostServer(
               params.before === undefined ? undefined : Number(params.before),
               params.revision === undefined ? undefined : Number(params.revision),
               params.preview === true,
+              params.digests === true,
             );
             result = {
               ...page,
@@ -2094,7 +2369,12 @@ export function createHostServer(
               )
                 throw new Error("Invalid loaded block IDs");
               if (sync.kind !== "unchanged") {
-                const partial = partialSessionSync(sync, current!, rawIds as string[]);
+                const partial = partialSessionSync(
+                  sync,
+                  current!,
+                  rawIds as string[],
+                  params.digests === true,
+                );
                 if (partial) sync = partial;
                 else {
                   const page = transcriptPages.page(
@@ -2103,18 +2383,21 @@ export function createHostServer(
                     undefined,
                     undefined,
                     true,
+                    params.digests === true,
                   );
                   sync = { kind: "snapshot", value: page.value };
                 }
               }
             }
             if (sync.kind === "snapshot") {
-              sync = { ...sync, value: previewSession(sync.value) };
+              sync = { ...sync, value: previewSession(sync.value, params.digests === true) };
             } else if (sync.kind === "delta") {
               sync = {
                 ...sync,
                 value: {
                   ...sync.value,
+                  // A partial window already carries the head of the whole transcript.
+                  ...(params.digests === true && !sync.value.head ? withHead(current!) : {}),
                   session: {
                     ...sync.value.session,
                     ...previewRewindHistory(sync.value.session),
@@ -2145,69 +2428,100 @@ export function createHostServer(
                 params.inbox,
               ),
               notesRevision: hostNotes.revision,
+              // Lets the desktop re-read only the shared queues another computer
+              // changed, instead of polling every idle one on a timer.
+              queues: sessionQueues.changesSince(params.queueSeq),
+              // Likewise the adopted conversations whose host copy moved, so the
+              // desktop mirrors them at once instead of polling `sessions.adopted`.
+              adopted: adoptedChanges.changesSince(params.adoptedSeq),
+              // The same beat keeps this desktop's drain leases alive. A lease it
+              // no longer holds is `null`: the host drains that queue itself.
+              queueLeases: renewQueueLeases(params),
+              // And its run leases: `null` is a conversation it must stop writing to.
+              runLeases: renewRunLeases(params),
             };
             break;
           case "sessions.adopted":
             result = engine.store.adopted();
             break;
+          case "sessions.runLease": {
+            // A desktop window takes the conversation's run lease just before it
+            // starts a turn, and gives it back when the turn ends.
+            const id = String(params.sessionId ?? "");
+            const holder = params.clientId;
+            if (
+              !id ||
+              id.length > 200 ||
+              typeof holder !== "string" ||
+              !holder.startsWith("desktop:") ||
+              holder.length > 200
+            )
+              throw new Error("Invalid run lease request");
+            if (params.action === "release") {
+              const released = runLeases.release(
+                id,
+                holder,
+                Number.isSafeInteger(params.epoch) ? Number(params.epoch) : undefined,
+              );
+              if (released) queueDrainer.kickWaiting();
+              result = { released };
+              break;
+            }
+            if (params.action !== "acquire") throw new Error("Invalid run lease request");
+            queueSessionStatus(id); // The same authorized existence check as the queue calls.
+            result = {
+              lease: runLeases.acquire(id, holder, () => {
+                // The host's own turn, or another window's, keeps it from being granted.
+                if (hostRuns(id)) return "host";
+                const busy = desktop.live.busyClient(id);
+                return busy && `desktop:${busy}` !== holder ? `desktop:${busy}` : undefined;
+              }),
+            };
+            break;
+          }
           case "sessions.queue.get":
           case "sessions.queue.change":
           case "sessions.queue.claim":
-          case "sessions.queue.finish": {
+          case "sessions.queue.finish":
+          case "sessions.queue.release":
+          case "sessions.queue.lease": {
             const id = String(params.sessionId ?? "");
             attachmentOwnership.validateExposure(params);
             const queueStatus = queueSessionStatus(id); // Lightweight authorized session existence check.
             const clientId = params.clientId;
             if (typeof clientId !== "string" || !clientId || clientId.length > 200)
               throw new Error("Invalid queue client");
-            if (input.method === "sessions.queue.get") {
-              const queue = sessionQueues.get(id);
-              result = queue;
-            } else if (input.method === "sessions.queue.change") {
-              const normalize = (raw: unknown) => {
-                if (
-                  !raw ||
-                  typeof raw !== "object" ||
-                  !Array.isArray((raw as { messages?: unknown }).messages)
-                )
-                  throw new Error("Invalid queue");
-                const value =
-                  raw as import("../src/features/connections/model/remoteQueue").RemoteQueue;
-                return {
-                  ...value,
-                  messages: value.messages.map((message) => ({
-                    ...message,
-                    attachments: resolveAttachments(
-                      engine.store,
-                      parseRemoteAttachments(message.attachments),
-                    ).map((file) => ({
-                      ...file,
-                      hostEnvironmentId: engine.store.environmentId,
-                    })),
+            const action = input.method.slice("sessions.queue.".length) as
+              | "get"
+              | "change"
+              | "claim"
+              | "finish"
+              | "lease"
+              | "release";
+            const normalize = (raw: unknown) => {
+              if (
+                !raw ||
+                typeof raw !== "object" ||
+                !Array.isArray((raw as { messages?: unknown }).messages)
+              )
+                throw new Error("Invalid queue");
+              const value =
+                raw as import("../src/features/connections/model/remoteQueue").RemoteQueue;
+              return {
+                ...value,
+                messages: value.messages.map((message) => ({
+                  ...message,
+                  attachments: resolveAttachments(
+                    engine.store,
+                    parseRemoteAttachments(message.attachments),
+                  ).map((file) => ({
+                    ...file,
+                    hostEnvironmentId: engine.store.environmentId,
                   })),
-                };
+                })),
               };
-              result = engine.store.transaction(() =>
-                sessionQueues.change(
-                  id,
-                  normalize(params.before),
-                  normalize(params.after),
-                  params.takeOwnership === true ? clientId : undefined,
-                ),
-              );
-            } else if (input.method === "sessions.queue.claim") {
-              if (!clientId.startsWith("desktop:"))
-                throw new Error("Only the owning desktop claims local sends.");
-              result = engine.store.transaction(() =>
-                sessionQueues.claim(
-                  id,
-                  String(params.id ?? ""),
-                  clientId,
-                  Number(params.revision),
-                  params.steer === true,
-                ),
-              );
-            } else {
+            };
+            if (action === "finish") {
               const currentQueue = sessionQueues.get(id);
               if (
                 currentQueue.claim?.clientId !== clientId &&
@@ -2221,10 +2535,14 @@ export function createHostServer(
                 (desktopWatch(id)?.running || queueStatus === "running")
               )
                 throw new Error("Wait for the running turn before recovering its queued message.");
-              result = engine.store.transaction(() =>
-                sessionQueues.finish(id, String(params.token ?? ""), params.accepted as boolean),
-              );
             }
+            const change =
+              action === "change"
+                ? { before: normalize(params.before), after: normalize(params.after) }
+                : undefined;
+            result = engine.store.transaction(() =>
+              sessionQueues.serve(action, id, clientId, params, change),
+            );
             const exposed =
               result as import("../src/features/connections/model/sharedQueue").SharedQueue;
             attachmentOwnership.expose(
@@ -2465,10 +2783,13 @@ export function createHostServer(
               ["send", "steer", "compact", "configure", "plan", "rewind"].includes(
                 String(params.type),
               ) &&
-              sessionQueues.get(sessionId).claim &&
+              // A claim whose sender is gone is given up on here too: it must not
+              // make every send from this computer wait for good.
+              sessionQueues.reapStale(sessionId).claim &&
               !engine.store.receiptStatus(String(params.commandId ?? ""))
             )
-              throw new Error(
+              throw new LeaseHeldError(
+                String(sessionQueues.get(sessionId).claim?.clientId ?? "desktop"),
                 "The owning desktop is preparing a queued send. Wait for its acknowledgement.",
               );
             const queued = params.queued as
@@ -2483,14 +2804,20 @@ export function createHostServer(
                 !Number.isSafeInteger(queued.revision)
               )
                 throw new Error("Invalid queued send");
-              if (desktopWatch(sessionId)?.running)
-                throw new Error("The owning desktop is still running this session.");
+              assertHostMayRun(sessionId);
+              const aware = (queued as { leaseAware?: unknown }).leaseAware === true;
+              const queuedEpoch = (queued as { epoch?: unknown }).epoch;
+              if (!aware) sessionQueues.renew(sessionId, queued.clientId);
               const currentQueue = sessionQueues.assertSend(
                 sessionId,
                 queued.id,
                 queued.clientId,
                 Number(queued.revision),
                 params.type === "steer" || queued.selected === true,
+                {
+                  epoch: Number.isSafeInteger(queuedEpoch) ? Number(queuedEpoch) : undefined,
+                  legacy: !aware,
+                },
               );
               const row = currentQueue.messages.find((entry) => entry.id === queued.id)!;
               if (
@@ -2555,6 +2882,13 @@ export function createHostServer(
                 break;
               }
             }
+            // A turn starts only where the run lease allows it: a desktop window
+            // running one makes this a wait (`LEASE_HELD`), never a failure.
+            if (
+              ["send", "compact", "contextual"].includes(String(params.type)) &&
+              !engine.store.receiptStatus(String(params.commandId ?? ""))
+            )
+              assertHostMayRun(sessionId);
             if (params.type !== "create") adopt(sessionId);
             if (
               params.type === "send" &&
@@ -2582,6 +2916,8 @@ export function createHostServer(
               crews.ownerDirective(params);
               return receipt;
             });
+            // A usage limit that was dismissed lets a queue that waited on it go on.
+            if (params.type === "usageLimit") queueDrainer.kick(sessionId);
             break;
           }
           case "sync.pull": {
@@ -2761,7 +3097,7 @@ export function createHostServer(
             result = tasks.resolveNote(String(params.taskId ?? ""), params.noteId, params.resolved);
             break;
           case "tasks.delete":
-            await tasks.delete(String(params.taskId ?? ""), params.discard === true);
+            await tasks.delete(String(params.taskId ?? ""), params.discard === true, params.expectedUpdatedAt as number | undefined);
             result = { deleted: true };
             break;
           case "goals.list":
@@ -3069,7 +3405,9 @@ export function createHostServer(
     social.start();
   });
   server.on("close", () => {
+    queueDrainer.close();
     localVoice.close();
+    voiceSetup.close();
     crews.stop();
     attachmentOwnership.close();
     void terminals.close();

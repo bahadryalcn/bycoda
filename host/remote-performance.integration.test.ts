@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { HostEngine } from "./engine";
-import { HostStore } from "./store";
+import { HostStore, summary } from "./store";
 import { createHostServer } from "./server";
+import { DesktopSessions } from "./desktopSessions";
+import { branchCache } from "./git-actions";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
 import { applySessionSync, type HostSession } from "../src/features/connections/model/protocol";
@@ -28,7 +30,7 @@ async function openHost(directory: string, send: (input: SendTurnInput) => void)
       answer: () => {},
     },
   });
-  const server = createHostServer(engine, ["codex"] as RemoteProvider[]);
+  const server = createHostServer(engine, ["codex"] as RemoteProvider[], undefined, undefined, undefined, new DesktopSessions(() => []));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
@@ -90,6 +92,93 @@ async function setup() {
     finish: () => finish(),
   };
 }
+
+it("coalesces unchanged list materialization without invalidating another project's list", async () => {
+  const s = await setup();
+  const summaries = vi.spyOn(s.store, "summaries");
+  const original = DesktopSessions.prototype.listSnapshot;
+  let validation = 0;
+  const bypass = vi.spyOn(DesktopSessions.prototype, "listSnapshot").mockImplementation(function (...args) {
+    const value = original.apply(this, args);
+    return { ...value, fingerprint: `control:${++validation}:${value.fingerprint}` };
+  });
+  try {
+    // The bypass control retains the old per-request materialization workload.
+    await Promise.all(Array.from({ length: 10 }, () => s.call("sessions.list", { projectId: s.project.id })));
+    expect(summaries).toHaveBeenCalledTimes(10);
+    bypass.mockRestore();
+    summaries.mockClear();
+    await Promise.all(Array.from({ length: 10 }, () => s.call("sessions.list", { projectId: s.project.id })));
+    expect(summaries).toHaveBeenCalledTimes(1);
+    const other = s.store.addProject(join(s.directory, "other"), "Other");
+    s.engine.command({ type: "create", commandId: "other-project", projectId: other.id,
+      harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+    await s.call("sessions.list", { projectId: s.project.id });
+    expect(summaries).toHaveBeenCalledTimes(1);
+    const first = (await s.call("machine.changes", { projects: [{ projectId: s.project.id }] })).value.result;
+    await s.call("sessions.list", { projectId: s.project.id, known: first.projects[0].etag });
+    expect(summaries).toHaveBeenCalledTimes(1);
+  } finally {
+    bypass.mockRestore();
+    summaries.mockRestore();
+  }
+});
+
+it("refreshes branch labels without a session write or a global project invalidation", async () => {
+  const s = await setup();
+  const created = s.engine.command({ type: "create", commandId: "branch-label", projectId: s.project.id,
+    harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const lookup = vi.spyOn(branchCache, "get").mockResolvedValue("main");
+  try {
+    const first = await s.call("sessions.list", { projectId: s.project.id });
+    expect(first.value.result.find((row: { id: string }) => row.id === created.sessionId)?.branch).toBe("main");
+    lookup.mockResolvedValue("feature");
+    const second = await s.call("sessions.list", { projectId: s.project.id });
+    expect(second.value.result.find((row: { id: string }) => row.id === created.sessionId)?.branch).toBe("feature");
+  } finally { lookup.mockRestore(); }
+});
+
+it("shares unchanged known-list work for a ten-thousand-session project", async () => {
+  const s = await setup();
+  const created = s.engine.command({ type: "create", commandId: "large-list", projectId: s.project.id,
+    harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const base = s.store.session(created.sessionId!);
+  const insert = s.store.db.prepare("INSERT INTO sessions (id,project_id,snapshot,summary,has_desktop,revision,updated_at,status) VALUES (?,?,?,?,0,1,1,'idle')");
+  s.store.transaction(() => {
+    for (let index = 0; index < 10_000; index++) {
+      const id = `large-${index}`;
+      const value = { ...base, status: "idle" as const, updatedAt: 1,
+        session: { ...base.session, id, title: `Synthetic ${index}` } };
+      insert.run(id, s.project.id, JSON.stringify(value), JSON.stringify(summary(value)));
+    }
+  });
+  const original = DesktopSessions.prototype.listSnapshot;
+  let revision = 0;
+  const bypass = vi.spyOn(DesktopSessions.prototype, "listSnapshot").mockImplementation(function (...args) {
+    const value = original.apply(this, args);
+    return { ...value, fingerprint: `control:${++revision}:${value.fingerprint}` };
+  });
+  const lookup = vi.spyOn(branchCache, "get").mockResolvedValue("main");
+  const builds = vi.spyOn(s.store, "summaries");
+  try {
+    const initial = (await s.call("sessions.list", { projectId: s.project.id, known: "" })).value.result;
+    expect(initial.sessions).toHaveLength(10_001);
+    builds.mockClear();
+    const controlStart = performance.now();
+    const control = await Promise.all(Array.from({ length: 10 }, () => s.call("sessions.list", { projectId: s.project.id, known: initial.etag })));
+    const controlMs = performance.now() - controlStart;
+    expect(builds).toHaveBeenCalledTimes(10);
+    expect(control.every((result) => result.value.result.unchanged === true)).toBe(true);
+    bypass.mockRestore();
+    builds.mockClear();
+    const cachedStart = performance.now();
+    const cached = await Promise.all(Array.from({ length: 10 }, () => s.call("sessions.list", { projectId: s.project.id, known: initial.etag })));
+    const cachedMs = performance.now() - cachedStart;
+    expect(builds).toHaveBeenCalledTimes(1);
+    expect(cached.every((result) => result.value.result.unchanged === true)).toBe(true);
+    console.info("performance-large-session-list", JSON.stringify({ sessions: 10_001, requests: 10, controlBuilds: 10, cachedBuilds: 1, controlMs, cachedMs }));
+  } finally { bypass.mockRestore(); lookup.mockRestore(); builds.mockRestore(); }
+});
 
 it("shares bounded machine change cursors, detects restart, and requires device auth", async () => {
   const s = await setup();

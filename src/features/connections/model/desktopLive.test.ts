@@ -7,6 +7,7 @@ import {
   runDesktopLiveTick,
   supportsDesktopLive,
   type DesktopLiveCommand,
+  type DesktopLivePayload,
 } from "./desktopLive";
 
 it("dispatches review context and inline review batches through the finite native bridge", async () => {
@@ -171,6 +172,39 @@ describe("applyDesktopLiveCommand", () => {
 });
 
 describe("runDesktopLiveTick", () => {
+  it("omits acknowledged directory bytes, resends after reset and falls back for old hosts", async () => {
+    let directory = {
+      version: 1 as const, groups: [], excludedPaths: [] as string[], excludedGroupIds: [],
+      projects: Array.from({ length: 200 }, (_, index) => ({ cwd: `/p/${index}`, name: `Project ${index}`, appearance: { logo: `data:image/png;base64,${"a".repeat(1024)}` } })),
+    };
+    let mode: "new" | "reset" | "old" = "new";
+    const request = vi.fn(async (payload: DesktopLivePayload) => ({ commands: [],
+      ...(mode === "new" || (mode === "reset" && payload.projectDirectory)
+        ? { projectDirectoryRevision: payload.projectDirectoryRevision } : {}),
+    }));
+    const deps = { beat: {}, request, sessions: () => [session({ id: "busy", busy: true })],
+      projectDirectory: () => directory, handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(), handled: new Set<string>(), clientId: "window-a" };
+    await runDesktopLiveTick(deps);
+    await runDesktopLiveTick(deps);
+    expect(request.mock.calls[0][0].projectDirectory).toBe(directory);
+    expect(request.mock.calls[1][0].projectDirectory).toBeUndefined();
+    expect(JSON.stringify(request.mock.calls[1][0]).length).toBeLessThan(JSON.stringify(request.mock.calls[0][0]).length / 10);
+    directory = { ...directory, excludedPaths: ["/private"] };
+    await runDesktopLiveTick(deps);
+    expect(request.mock.lastCall![0].projectDirectory?.excludedPaths).toEqual(["/private"]);
+    mode = "reset";
+    await runDesktopLiveTick(deps);
+    expect(request.mock.lastCall![0].projectDirectory).toBeUndefined();
+    await runDesktopLiveTick(deps);
+    expect(request.mock.lastCall![0].projectDirectory).toBe(directory);
+    mode = "old";
+    await runDesktopLiveTick(deps);
+    await runDesktopLiveTick(deps);
+    await runDesktopLiveTick(deps);
+    expect(request.mock.calls.slice(-2).every(([payload]) => payload.projectDirectory === directory)).toBe(true);
+  });
+
   it("publishes session folder and manual-order changes during an otherwise idle heartbeat", async () => {
     let folderName = "Initial";
     const deps = {
@@ -217,6 +251,158 @@ describe("runDesktopLiveTick", () => {
     await runDesktopLiveTick(deps);
     expect(deps.request).toHaveBeenCalledTimes(2);
     expect(deps.request.mock.lastCall?.[0].projectDirectory.excludedPaths).toEqual(["/private"]);
+  });
+  it("hands the shared queues another computer changed to the desktop, starting after the first answer", async () => {
+    const onQueuesChanged = vi.fn();
+    const beat = {} as { queueSeq?: number };
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ queues: { seq: 4, ids: ["old"], reset: true } })
+      .mockResolvedValueOnce({ queues: { seq: 6, ids: ["chat"] } })
+      .mockResolvedValueOnce({ queues: { seq: 1, ids: [], reset: true } });
+    const deps = {
+      beat,
+      request,
+      onQueuesChanged,
+      sessions: () => [session({ id: "s", busy: true })],
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    };
+    await runDesktopLiveTick(deps);
+    // The first answer only sets the cursor: nothing was missed yet.
+    expect(onQueuesChanged).not.toHaveBeenCalled();
+    expect(request.mock.calls[0][0].queueSeq).toBeUndefined();
+    await runDesktopLiveTick(deps);
+    expect(request.mock.calls[1][0].queueSeq).toBe(4);
+    expect(onQueuesChanged).toHaveBeenLastCalledWith(["chat"]);
+    // A host that restarted cannot say what changed: any queue may have.
+    await runDesktopLiveTick(deps);
+    expect(request.mock.calls[2][0].queueSeq).toBe(6);
+    expect(onQueuesChanged).toHaveBeenLastCalledWith(undefined);
+    expect(beat.queueSeq).toBe(1);
+  });
+  it("wakes nothing for an answer that names no changed queue", async () => {
+    const onQueuesChanged = vi.fn();
+    const beat = { queueSeq: 3 } as { queueSeq?: number };
+    await runDesktopLiveTick({
+      beat,
+      request: vi.fn().mockResolvedValue({ queues: { seq: 3, ids: [] } }),
+      onQueuesChanged,
+      sessions: () => [session({ id: "s", busy: true })],
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    });
+    expect(onQueuesChanged).not.toHaveBeenCalled();
+  });
+  it("hands the adopted sessions that moved on the host to the desktop with every answer", async () => {
+    const onAdopted = vi.fn();
+    const beat = {} as { adoptedSeq?: number };
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ adopted: { seq: 0, ids: [], reset: true } })
+      .mockResolvedValueOnce({ adopted: { seq: 0, ids: [] } })
+      .mockResolvedValueOnce({ adopted: { seq: 2, ids: ["a", "b"] } })
+      .mockResolvedValueOnce({ adopted: { seq: 1, ids: [], reset: true } })
+      .mockResolvedValueOnce({}); // a host that does not report them
+    const deps = {
+      beat,
+      request,
+      onAdopted,
+      sessions: () => [session({ id: "s", busy: true })],
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    };
+    await runDesktopLiveTick(deps);
+    // The first answer is a reset: the desktop reads the list once to catch up.
+    expect(onAdopted).toHaveBeenLastCalledWith({ ids: [], reset: true });
+    expect(request.mock.calls[0][0].adoptedSeq).toBeUndefined();
+    await runDesktopLiveTick(deps);
+    expect(request.mock.calls[1][0].adoptedSeq).toBe(0);
+    expect(onAdopted).toHaveBeenLastCalledWith({ ids: [], reset: false });
+    await runDesktopLiveTick(deps);
+    expect(onAdopted).toHaveBeenLastCalledWith({ ids: ["a", "b"], reset: false });
+    // A host that restarted cannot say what moved.
+    await runDesktopLiveTick(deps);
+    expect(onAdopted).toHaveBeenLastCalledWith({ ids: [], reset: true });
+    expect(beat.adoptedSeq).toBe(1);
+    await runDesktopLiveTick(deps);
+    expect(onAdopted).toHaveBeenCalledTimes(4);
+  });
+  it("reports the drain leases this desktop holds on its beat and hands the host's answer back", async () => {
+    const answered = vi.fn();
+    const held = vi.fn(() => [{ sessionId: "chat", epoch: 3 }]);
+    const request = vi.fn().mockResolvedValue({
+      queueLeases: { chat: { holder: "desktop:w", epoch: 3, expiresAt: 99 }, gone: null },
+    });
+    await runDesktopLiveTick({
+      request,
+      clientId: "w",
+      queueLeases: { held, answered },
+      sessions: () => [session({ id: "s", busy: true })],
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    });
+    expect(request.mock.calls[0][0].queueLeases).toEqual([{ sessionId: "chat", epoch: 3 }]);
+    expect(answered).toHaveBeenCalledWith({
+      chat: { holder: "desktop:w", epoch: 3, expiresAt: 99 },
+      gone: null,
+    });
+    // Holding nothing adds nothing to the beat.
+    held.mockReturnValue([]);
+    await runDesktopLiveTick({
+      request,
+      queueLeases: { held, answered },
+      sessions: () => [session({ id: "s", busy: true })],
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    });
+    expect(request.mock.calls[1][0].queueLeases).toBeUndefined();
+  });
+  it("keeps its run leases alive on the beat and stops the conversations whose lease the host took back", async () => {
+    const held = vi.fn(() => [{ sessionId: "chat", epoch: 4 }]);
+    const answered = vi.fn(() => ["chat"]);
+    const stop = vi.fn();
+    const request = vi.fn().mockResolvedValue({ runLeases: { chat: null } });
+    await runDesktopLiveTick({
+      request,
+      clientId: "w",
+      runLeases: { held, answered },
+      sessions: () => [session({ id: "chat", busy: true })],
+      handlers: { stop, approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    });
+    expect(request.mock.calls[0][0].runLeases).toEqual([{ sessionId: "chat", epoch: 4 }]);
+    expect(answered).toHaveBeenCalledWith({ chat: null });
+    expect(stop).toHaveBeenCalledExactlyOnceWith("chat");
+    // A lease that was kept stops nothing, and holding nothing adds nothing to the beat.
+    stop.mockClear();
+    answered.mockReturnValue([]);
+    request.mockResolvedValue({ runLeases: { chat: { holder: "desktop:w", epoch: 5, expiresAt: 9 } } });
+    await runDesktopLiveTick({
+      request,
+      runLeases: { held, answered },
+      sessions: () => [session({ id: "chat", busy: true })],
+      handlers: { stop, approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    });
+    expect(stop).not.toHaveBeenCalled();
+    held.mockReturnValue([]);
+    await runDesktopLiveTick({
+      request,
+      runLeases: { held, answered },
+      sessions: () => [session({ id: "chat", busy: true })],
+      handlers: { stop, approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    });
+    expect(request.mock.calls[2][0].runLeases).toBeUndefined();
   });
   it("retries a command whose local handler throws without acknowledging it", async () => {
     const command: DesktopLiveCommand = {

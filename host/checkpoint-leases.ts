@@ -107,6 +107,17 @@ export class CheckpointLeases {
   async active(cwd: string) {
     return (await this.read()).some(([, l]) => overlap(cwd, l.cwd));
   }
+  /** Candidate discovery only: the manifest remains authoritative. Publish
+   * precedes capture and release follows settlement in both runtimes. */
+  async sessions(owner: Lease["owner"], cwd: string): Promise<string[]> {
+    return [
+      ...new Set(
+        (await this.read())
+          .filter(([, lease]) => lease.owner === owner && overlap(cwd, lease.cwd))
+          .map(([, lease]) => lease.sessionId),
+      ),
+    ];
+  }
   async release(session: string, turn: string) {
     await rm(join(this.root, this.name(session, turn)), { force: true });
   }

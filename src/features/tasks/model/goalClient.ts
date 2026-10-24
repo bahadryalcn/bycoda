@@ -18,6 +18,7 @@ import {
 } from "../../automations/model/machineResults";
 import { machineCapabilities, machineProjects } from "../../automations/model/machineSnapshot";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
+import { defaultProviderAccountId, supportsProviderAccounts } from "../../providers/model/providerAccounts";
 import { projectName } from "../../../shared/lib/paths";
 import {
   HOST_DIRECT_GOALS,
@@ -29,6 +30,7 @@ import {
 import {
   TASK_AGENT_ERROR,
   requireTaskContinuation,
+  requireTaskAccount,
   requireTaskWorkspaces,
   taskMachineFor,
 } from "./taskClient";
@@ -64,6 +66,7 @@ export type GoalDraft = {
   cwds: string[];
   leadCwd: string;
   harness: HarnessId;
+  providerAccountId?: string;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -88,6 +91,7 @@ export function newGoalDraft(cwd: string, harness: HarnessId, model: string): Go
     leadCwd: cwd,
     harness,
     model,
+    ...(!parseRemotePath(cwd) && supportsProviderAccounts(harness) && defaultProviderAccountId(harness) !== "default" ? { providerAccountId: defaultProviderAccountId(harness) } : {}),
     modelSettings: {},
     runtimeMode: "auto",
     maxRunMinutes: 0,
@@ -142,6 +146,7 @@ export function hostGoalFromDraft(
     projectIds,
     leadProjectId,
     harness: draft.harness,
+    ...(draft.providerAccountId === undefined ? {} : { providerAccountId: draft.providerAccountId }),
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
@@ -231,6 +236,7 @@ export async function createGoal(
   if (draft.cwds.some((cwd) => !sameGoalMachine(draft.cwds[0], cwd)))
     throw new Error(GOAL_MACHINE_ERROR);
   const machine = taskMachineFor(machines, draft.cwds[0], draft.machineId);
+  await requireTaskAccount(machine, draft.providerAccountId);
   if (draft.isolate === false && !(await machineCapabilities(machine)).includes(HOST_DIRECT_GOALS))
     throw new Error(
       "Update the selected host to run goal tasks directly in the selected checkout.",

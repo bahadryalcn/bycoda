@@ -21,7 +21,7 @@ vi.mock("../model/decorativeMotion", () => ({
   },
 }));
 vi.mock("./live-background", () => ({
-  CLOSED_SIGNAL: {},
+  CLOSED_SIGNAL: { presence: 0 },
   createLiveSignalDriver: () => ({ update: () => ({}) }),
   createLiveBackgroundScene: (...args: unknown[]) => {
     state.create(...args);
@@ -80,10 +80,33 @@ afterEach(() => {
 const render = (active = true) =>
   act(() =>
     root.render(
-      createElement(LiveBackgroundCanvas, { effect: "gradient-ascii", intensity: 0.4, active }),
+      createElement(LiveBackgroundCanvas, { effect: "latent-face", intensity: 0.4, active }),
     ),
   );
 const intersect = (value: boolean) => act(() => intersection([{ isIntersecting: value }]));
+
+it.each([false, true])(
+  "paints a frozen %s demo without starting a loop or changing rest",
+  (demoSpeech) => {
+    act(() =>
+      root.render(
+        createElement(LiveBackgroundCanvas, {
+          effect: "ascii-mask",
+          intensity: 0.4,
+          still: true,
+          demoSpeech,
+        }),
+      ),
+    );
+    expect(state.draw).toHaveBeenCalledOnce();
+    expect(state.draw.mock.calls[0][3]).toEqual({ presence: demoSpeech ? 1 : 0 });
+    expect(state.dispose).toHaveBeenCalledOnce();
+    expect(raf).not.toHaveBeenCalled();
+    expect(
+      container.querySelector<HTMLElement>("[data-live-background-scene]")?.style.opacity,
+    ).toBe("0.4");
+  },
+);
 
 it("runs only the visible active panel and retains its last frame and scene across pauses", () => {
   render();

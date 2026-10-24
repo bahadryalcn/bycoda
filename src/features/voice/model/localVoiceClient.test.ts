@@ -12,3 +12,22 @@ it("keeps microphone processing on the local machine instead of following remote
     { kind: "local" },
   );
 });
+
+it("requires setup support and targets only this computer for install and progress", async () => {
+  await localVoiceBackend.setup({ natural: false });
+  await localVoiceBackend.setupStatus();
+  expect(request).toHaveBeenCalledWith(
+    "",
+    "voice.local.setup.v1",
+    "voice.local.setup",
+    { config: { natural: false } },
+    { kind: "local" },
+  );
+  expect(request).toHaveBeenCalledWith(
+    "",
+    "voice.local.setup.v1",
+    "voice.local.setupStatus",
+    {},
+    { kind: "local" },
+  );
+});

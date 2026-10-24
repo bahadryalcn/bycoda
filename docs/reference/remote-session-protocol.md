@@ -2,6 +2,19 @@
 
 This contract extends the existing paired host RPC transport. There is no central server.
 
+## Desktop directory heartbeat revisions
+
+`sessions.desktopLive` may include a client-scoped `projectDirectoryRevision`
+alongside the full privacy-filtered `projectDirectory`. A supporting host echoes
+that revision only after accepting the contents. Subsequent beats may omit the
+contents and renew directory freshness with the exact acknowledged revision.
+Missing/mismatched revisions never renew an old projection or gain an acknowledgement.
+After a host reset the client resends the full projection on the next beat.
+Changed exclusions, ordering or appearance always receive a new revision and a
+full payload. Older hosts omit the acknowledgement, so clients continue sending
+full snapshots at the existing cadence. Client expiry and fail-closed multiwindow
+privacy rules still apply; a revision is not new authority to disclose a project.
+
 ## Identity and authority
 
 A session reference is `(environmentId, sessionId)`. The connection record's local
@@ -147,6 +160,33 @@ before returning the snapshot, so an offline cached queue edit remains protected
 if another device removes the original row. These attachment view claims are
 separate from the queue's scheduling consumer claim. A snapshot returned without
 ownership metadata conservatively protects any known managed files as legacy.
+
+Who sends a shared queue is a drain lease, capability `sessions.queue.lease`: the
+queue carries `drain: {holder, epoch, expiresAt}` (host clock; replies add `hostTime`
+and `leased: true` for a client that sends `leaseAware: true`). Only a desktop window
+(`desktop:<stable per-window id>`) holds one, taking it with `sessions.queue.lease`
+(`takeover: true` for an explicit Resume, which bumps `epoch`). The window renews it on
+its `sessions.desktopLive` beat (`queueLeases: [{sessionId, epoch}]`, answered per queue
+with the extended lease or `null` when lost), so it lives 20 s without a beat. A claim
+or finish with a stale holder or `epoch` is refused ("drain lease"); nothing was sent.
+With no live lease the home host sends the head itself: when the queue changes, when a
+turn settles, and once at the earliest lease expiry. A send whose sender is gone becomes
+an unconfirmed hold (`deliveryUnknown`, paused) and is never sent again on its own.
+Clients without `leaseAware` are served as before: they see the live holder as
+`consumer`, asking for ownership grants them a lease, and each of their calls renews it.
+Stored `consumer` and `restored` queue rows are migrated to unleased and paused.
+
+Who may start a turn of a conversation is a run lease, capability `sessions.runLease`.
+A desktop window (`desktop:<stable per-window id>`) takes it with `sessions.runLease`
+`{sessionId, clientId, action: "acquire"}` just before it starts a turn, and gives it back
+with `action: "release"` (plus the granted `epoch`; a lease that moved on answers
+`LEASE_LOST`). The `sessions.desktopLive` beat that reports the conversation busy renews it,
+the beat that reports it idle (or no beat for 20 s) ends it, and the host's own turns need
+none (a running host session is the proof). `commands.dispatch` of a `send`, `compact` or
+`contextual` command, and the host's queue drain, are refused while a window holds the
+lease or an older app reports the conversation busy. The refusal is typed: its text starts
+with `LEASE_HELD:`. It is a wait, not a failure: nothing was sent, so clients queue the
+message and never pause the queue, raise an error or fork the conversation.
 
 A completed upload's claim does not expire while its draft is offline. Clients
 release only after durable draft removal or a durable session/queue handoff, and

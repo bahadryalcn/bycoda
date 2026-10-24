@@ -3,6 +3,61 @@ import { test, expect, type Page } from "@playwright/test";
 const shots = "temp/verification/2026-10-21-crew-ux";
 const editor = (page: Page) => page.getByRole("dialog", { name: /New crew|Website Crew|Mobile/ });
 
+for (const theme of ["light", "dark"] as const) {
+  test(`bycoda defaults stay editable with independent library profiles in ${theme} theme`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: theme === "light" ? 390 : 1100, height: 844 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/crews.html?defaults&theme=${theme}`);
+    await page.getByRole("button", { name: "Crew settings page" }).click();
+    await expect(page.getByRole("button", { name: "Edit", exact: true })).toHaveCount(18);
+    await page.getByRole("button", { name: "Edit", exact: true }).first().click();
+    const team = page.getByRole("dialog", { name: "bycoda Product Team", exact: true });
+    await expect(team.getByRole("region", { name: "Coordinator", exact: true })).toContainText(
+      "Team Lead",
+    );
+    await expect(team.getByRole("region", { name: "Specialists", exact: true })).toContainText(
+      "Mobile Engineer",
+    );
+    await expect(team.getByRole("region", { name: "Advisors", exact: true })).toContainText(
+      "Project Manager",
+    );
+    await expect(team.getByRole("region", { name: "Specialists", exact: true })).toContainText(
+      "Database Administrator (DBA)",
+    );
+    await expect(team.getByRole("region", { name: "Specialists", exact: true })).toContainText(
+      "Data Engineer",
+    );
+    await team.getByRole("button", { name: /^Database Administrator \(DBA\) / }).click();
+    await expect(team.getByRole("textbox", { name: "Instructions", exact: true })).toHaveValue(
+      /EXPLAIN ANALYZE executes statements/,
+    );
+    await team.getByRole("button", { name: "Back to team", exact: true }).click();
+    await team.getByRole("button", { name: /^Mobile Engineer / }).click();
+    await expect(team.getByRole("textbox", { name: "Instructions", exact: true })).toHaveValue(
+      /intermittent connectivity/,
+    );
+    await team.getByRole("textbox", { name: "Role", exact: true }).fill("Our mobile engineer");
+    await team.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(team.getByRole("status")).toHaveText("Saved");
+    await page.keyboard.press("Escape");
+    await expect(team).not.toBeVisible();
+    // Team edits leave the reusable library profile independent.
+    const mobile = page.getByText("Mobile Engineer", { exact: true });
+    await expect(mobile).toBeVisible();
+    await page.screenshot({
+      path: `temp/verification/2026-10-24-crew-defaults/${theme}-${testInfo.project.name}.png`,
+    });
+    await page.getByRole("button", { name: "Edit", exact: true }).first().click();
+    const saved = page.getByRole("dialog", { name: "bycoda Product Team", exact: true });
+    await expect(saved.getByRole("region", { name: "Specialists", exact: true })).toContainText(
+      "Our mobile engineer",
+    );
+    await expect(page.getByLabel("Started work")).toHaveText("0");
+  });
+}
+
 test("creates a crew from the rail with chosen members without starting work", async ({
   page,
 }, testInfo) => {

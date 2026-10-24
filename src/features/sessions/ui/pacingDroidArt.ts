@@ -1,12 +1,12 @@
 import { themePalette } from "../../../shared/theme/palette";
 import {
-  blinking,
   facing,
   fillRects,
   limb,
   placeSprite,
   rimRects,
   shift,
+  type PacingLook,
   type PacingPose,
   type Rect,
 } from "./pacingSprite";
@@ -27,7 +27,7 @@ const D = {
 };
 
 /** Facing right on the 24 x 32 grid with stiff knees and short, shuffling steps. */
-function side(step: number, walk: boolean, elapsed: number) {
+function side(step: number, walk: boolean, blink: boolean) {
   const bob = walk ? (1 - Math.abs(step)) * 0.4 : 0;
   const reach = walk ? step * 1.8 : 0;
   const legs: Rect[] = [];
@@ -42,7 +42,7 @@ function side(step: number, walk: boolean, elapsed: number) {
   };
   leg(9.5, -reach, D.goldDeep, D.goldDeep);
   leg(12, reach, D.gold, D.silver);
-  const eye = blinking(elapsed, 4.3) ? D.eyeDim : D.eye;
+  const eye = blink ? D.eyeDim : D.eye;
   const body = shift(
     [
       [9.5, 3, 6.5, 6.5, D.gold],
@@ -81,10 +81,10 @@ function side(step: number, walk: boolean, elapsed: number) {
 }
 
 /** Facing the reader: the head tilts, the eyes brighten and the right hand waves. */
-function front(beat: number, elapsed: number) {
+function front(beat: number, look: PacingLook) {
   const raise = Math.min(1, 3 * Math.sin(beat * Math.PI));
   const tilt = Math.sin(beat * Math.PI) * 0.8;
-  const eye = blinking(elapsed, 4.3) ? D.eyeDim : D.eye;
+  const eye = look.blink ? D.eyeDim : D.eye;
   const body: Rect[] = [
     [9, 23.5, 2.8, 3.5, D.goldDeep],
     [9, 26.8, 2.8, 0.8, D.joint],
@@ -127,7 +127,7 @@ function front(beat: number, elapsed: number) {
   // Upper arm lifts outward, then the forearm swings side to side from the elbow.
   const shoulder = Math.PI / 2 - raise * ((Math.PI * 5) / 8);
   const upper = limb(17.3, 12.8, shoulder, 3.5, 2.2, D.gold);
-  const wave = Math.sin(elapsed * 9) * 0.5 * raise;
+  const wave = Math.sin(look.gesture * 9) * 0.5 * raise;
   const forearm = limb(upper.x, upper.y, Math.PI / 2 - raise * Math.PI + wave, 3.8, 2, D.gold);
   arms.push(...upper.rects, [upper.x - 1, upper.y - 0.5, 2, 1, D.joint], ...forearm.rects);
   arms.push([forearm.x - 1.2, forearm.y - 1.2, 2.4, 2.4, D.goldDeep]);
@@ -140,19 +140,19 @@ export function drawPacingDroid(
   baseline: number,
   scale: number,
   p: PacingPose,
-  elapsed: number,
+  look: PacingLook,
 ) {
   const face = facing(p);
   ctx.save();
   placeSprite(ctx, x, baseline, scale, face.sx);
   if (face.front) {
-    const { body, arms } = front(face.beat, elapsed);
+    const { body, arms } = front(face.beat, look);
     rimRects(ctx, [...body, ...arms]);
     fillRects(ctx, body);
     rimRects(ctx, arms, 0.5);
     fillRects(ctx, arms);
   } else {
-    const { legs, body, arm } = side(p.walk ? Math.sin(p.phase) : 0, p.walk, elapsed);
+    const { legs, body, arm } = side(p.walk ? Math.sin(p.phase) : 0, p.walk, look.blink);
     rimRects(ctx, [...legs, ...body, ...arm]);
     fillRects(ctx, legs);
     fillRects(ctx, body);

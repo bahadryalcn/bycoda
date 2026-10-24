@@ -34,6 +34,8 @@ type Props = {
   cwd: string;
   readBytes?: () => Promise<Uint8Array>;
   externalPath?: string | null;
+  /** Content-sized attachment previews; the editor keeps its full-height viewport. */
+  fitContent?: boolean;
 };
 
 type LoadState =
@@ -45,7 +47,7 @@ type LoadState =
  * Read-only surface for PDF, Word and Excel files. Reads the bytes the same way
  * the image viewer does, then hands them to a lazily loaded format viewer.
  */
-export function DocumentView({ path, cwd, readBytes, externalPath = path }: Props) {
+export function DocumentView({ path, cwd, readBytes, externalPath = path, fitContent = false }: Props) {
   useLocale();
   const kind = documentKind(path);
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -174,13 +176,13 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
   } else {
     body = (
       <Suspense fallback={<Loading name={name} />}>
-        <FormatViewer kind={kind as DocumentKind} bytes={state.bytes} trailing={openButton} />
+        <FormatViewer kind={kind as DocumentKind} bytes={state.bytes} trailing={openButton} fitContent={fitContent} />
       </Suspense>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className={`flex min-h-0 flex-col ${fitContent ? "" : "h-full"}`}>
       <SurfaceSelection
         className="min-h-0 flex-1"
         context={`@${displayPath(path, cwd)}`}
@@ -210,15 +212,17 @@ function FormatViewer({
   kind,
   bytes,
   trailing,
+  fitContent,
 }: {
   kind: DocumentKind;
   bytes: Uint8Array;
   trailing?: ReactNode;
+  fitContent?: boolean;
 }) {
   useLocale();
   if (kind === "pdf") return <PdfViewer bytes={bytes} trailing={trailing} />;
   if (kind === "docx") return <DocxViewer bytes={bytes} />;
-  return <SheetViewer bytes={bytes} format={kind === "csv" || kind === "tsv" ? kind : undefined} />;
+  return <SheetViewer bytes={bytes} format={kind === "csv" || kind === "tsv" ? kind : undefined} fitContent={fitContent} />;
 }
 
 function Loading({ name }: { name: string }) {

@@ -283,7 +283,7 @@ function CrewWorkRow({
             <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
               {run.definition.name}
             </span>
-            <span className="mt-1 flex min-w-0 items-center gap-2">
+            <span className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
               <Badge tone={statusTone} className="shrink-0">
                 {status}
               </Badge>
@@ -292,7 +292,7 @@ function CrewWorkRow({
                   <Progress compact value={done} max={run.tasks.length} aria-label={progress} />
                 </span>
               ) : null}
-              <span className="min-w-0 truncate text-ui-micro tabular-nums text-(--ui-text-secondary)">
+              <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
                 {progress}
               </span>
             </span>

@@ -22,7 +22,7 @@ import {
 } from "../../core/child";
 import { additionalDirsFor } from "../../core/additionalDirs";
 import { reportSessionCommands } from "../../core/reportedCommands";
-import { skillDisabled, skillPathKey, skillPolicyInstructions } from "../../core/skillPolicy";
+import { skillDisabled, skillPathKey } from "../../core/skillPolicy";
 import {
   asRecord,
   buildThreadStartParams,
@@ -820,7 +820,6 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
       [input.runtimeInstructions, input.text].filter(Boolean).join("\n\n").trim() || undefined,
     attachments: input.attachments,
     skills: live.skills,
-    skillInstructions: input.skillPolicy ? skillPolicyInstructions(input.skillPolicy) : undefined,
     model,
     effort,
     serviceTier,

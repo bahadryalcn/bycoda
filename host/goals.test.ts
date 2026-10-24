@@ -219,6 +219,16 @@ function setup() {
 }
 
 describe("editing goal settings", () => {
+  it("keeps the chosen account through planning and scheduled worker creation", async () => {
+    const f = setup();
+    const created = await f.create({ providerAccountId: "account-work", isolate: false });
+    expect(f.turns[0].input.providerAccountId).toBe("account-work");
+    expect(f.store.session(created.plannerSessionId!).session.providerAccountId).toBe("account-work");
+    await f.finish(created.plannerSessionId!, planReply([{ key: "build", project: f.lead.cwd }]));
+    const task = f.tasks.list()[0];
+    expect(task.providerAccountId).toBe("account-work");
+    expect(f.turnOf(task.sessionId!).input.providerAccountId).toBe("account-work");
+  });
   it("reuses the task index across goal polls and refreshes it after task writes", async () => {
     const { store, tasks, goals, input, lead } = setup();
     tasks.save({ ...input(), id: "waiting", projectId: lead.id, status: "todo" });
@@ -232,22 +242,24 @@ describe("editing goal settings", () => {
         updatedAt: 1,
       }),
     );
-    const list = vi.spyOn(tasks, "list");
+    const prepare = vi.spyOn(store.db, "prepare");
+    const pointReads = () => prepare.mock.calls.filter(([sql]) => sql === "SELECT value FROM tasks WHERE id=?").length;
     expect(goals.list()[0].status).toBe("running");
     expect(goals.list()[0].status).toBe("running");
-    expect(list).toHaveBeenCalledTimes(1);
+    expect(pointReads()).toBe(1);
     tasks.save({ ...input(), id: "waiting", projectId: lead.id, title: "Changed" });
     // save() independently reads current tasks to validate dependency cycles.
     // Count goal polling itself: one refresh after a write, then shared reads.
-    list.mockClear();
+    prepare.mockClear();
     goals.list();
     goals.list();
-    expect(list).toHaveBeenCalledTimes(1);
+    expect(pointReads()).toBe(1);
     await tasks.delete("waiting");
-    list.mockClear();
+    prepare.mockClear();
     expect(goals.list()[0].status).toBe("blocked");
     goals.list();
-    expect(list).toHaveBeenCalledTimes(1);
+    expect(pointReads()).toBe(1);
+    prepare.mockRestore();
   });
 
   function seeded() {
@@ -1018,7 +1030,9 @@ describe("goal tasks", () => {
     expect(goals.list()).toEqual([]);
     expect(tasks.list()).toHaveLength(1);
 
-    await plan(planReply([{ key: "b", project: lead.cwd }]), { id: "other" });
+    // Deleting tasks with unmerged isolated work is protected. Exercise the
+    // allowed direct-checkout case here; branch protection has its own checks.
+    await plan(planReply([{ key: "b", project: lead.cwd }]), { id: "other", isolate: false });
     const other = planned("other").b;
     await tasks.move(other.id, "blocked");
     await goals.delete("other", true);

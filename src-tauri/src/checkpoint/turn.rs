@@ -4,6 +4,104 @@ use std::sync::{Condvar, PoisonError};
 #[path = "leases.rs"]
 mod leases;
 
+/// File metadata is still checked for legacy/mixed-version peers that do not
+/// publish a lease. Only changed payloads need reopening and JSON parsing.
+#[derive(Default)]
+pub(super) struct ActiveTurnIndex {
+    fingerprints: LockMap<String, String>,
+    legacy: BTreeMap<String, String>,
+    #[cfg(test)]
+    pub(super) payload_reads: usize,
+    #[cfg(test)]
+    pub(super) metadata_checks: usize,
+}
+
+#[cfg(unix)]
+fn turn_fingerprint(path: &Path) -> Result<Option<String>, String> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = match std::fs::metadata(path) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Cannot read checkpoint metadata {}: {error}",
+                path.display()
+            ))
+        }
+    };
+    Ok(Some(format!(
+        "{}:{}:{}:{}:{}:{}:{}",
+        meta.dev(),
+        meta.ino(),
+        meta.mtime(),
+        meta.mtime_nsec(),
+        meta.ctime(),
+        meta.ctime_nsec(),
+        meta.len()
+    )))
+}
+
+#[cfg(windows)]
+fn turn_fingerprint(path: &Path) -> Result<Option<String>, String> {
+    use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FileBasicInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
+        BY_HANDLE_FILE_INFORMATION, FILE_BASIC_INFO, FILE_READ_ATTRIBUTES,
+    };
+    // Metadata-only access supplies the volume/file ID, not just size/mtime.
+    // A replacement retaining timestamps must still invalidate the cache.
+    let file = match std::fs::OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Cannot read checkpoint metadata {}: {error}",
+                path.display()
+            ))
+        }
+    };
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    if unsafe {
+        GetFileInformationByHandle(file.as_raw_handle() as _, std::ptr::addr_of_mut!(info))
+    } == 0
+    {
+        return Err(format!(
+            "Cannot read checkpoint metadata {}: {}",
+            path.display(),
+            std::io::Error::last_os_error()
+        ));
+    }
+    let mut basic = FILE_BASIC_INFO::default();
+    if unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle() as _,
+            FileBasicInfo,
+            std::ptr::addr_of_mut!(basic).cast(),
+            std::mem::size_of::<FILE_BASIC_INFO>() as u32,
+        )
+    } == 0
+        || basic.ChangeTime <= 0
+    {
+        // Filesystems without a reliable change stamp keep the original
+        // read/parse verification; a preserved mtime is not proof of no edit.
+        return Ok(Some(format!("uncached:{}", uuid::Uuid::new_v4())));
+    }
+    Ok(Some(format!(
+        "{}:{}:{}:{}:{}:{}:{}:{}",
+        info.dwVolumeSerialNumber,
+        info.nFileIndexHigh,
+        info.nFileIndexLow,
+        info.ftLastWriteTime.dwHighDateTime,
+        info.ftLastWriteTime.dwLowDateTime,
+        info.nFileSizeHigh,
+        info.nFileSizeLow,
+        basic.ChangeTime
+    )))
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Turn {
@@ -28,7 +126,10 @@ fn read_turn(dir: &Path) -> Result<Option<Turn>, String> {
             .map(Some)
             .map_err(|e| e.to_string()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.to_string()),
+        Err(error) => Err(format!(
+            "Cannot read checkpoint {}: {error}",
+            dir.join("turn.json").display()
+        )),
     }
 }
 pub(super) fn has_recorded_turn(dir: &Path) -> Result<bool, String> {
@@ -447,18 +548,92 @@ impl CheckpointStore {
     }
     fn active_turns(&self, session_id: &str, cwd: &str) -> Result<Vec<(PathBuf, Turn)>, String> {
         let mut turns = Vec::new();
-        if !self.root.exists() {
-            return Ok(turns);
-        }
-        for entry in std::fs::read_dir(&self.root).map_err(|e| e.to_string())? {
+        let entries = match std::fs::read_dir(&self.root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(turns),
+            Err(error) => return Err(error.to_string()),
+        };
+        let mut known = LockMap::new();
+        let mut existing = HashSet::new();
+        for entry in entries {
             let entry = entry.map_err(|e| e.to_string())?;
-            if entry.file_name().to_string_lossy() == session_id {
+            let session = entry.file_name().to_string_lossy().into_owned();
+            // Finder/Explorer metadata and scratch files are not session records.
+            // Do not follow symlinks into another checkpoint store either.
+            if validate_id(&session, "session").is_err()
+                || !entry.file_type().map_err(|e| e.to_string())?.is_dir()
+            {
                 continue;
             }
-            if let Some(turn) = read_turn(&entry.path())? {
-                if turn.active && overlap(cwd, &turn.cwd) {
-                    turns.push((entry.path(), turn));
+            existing.insert(session.clone());
+            #[cfg(test)]
+            {
+                self.active_turn_index.lock().unwrap().metadata_checks += 1;
+            }
+            let fingerprint = turn_fingerprint(&entry.path().join("turn.json"))?
+                .unwrap_or_else(|| "missing".into());
+            let unchanged = self
+                .active_turn_index
+                .lock()
+                .map_err(|_| "Checkpoint active index poisoned")?
+                .fingerprints
+                .get(&session)
+                == Some(&fingerprint);
+            if !unchanged {
+                let turn = read_turn(&entry.path())?;
+                let mut index = self
+                    .active_turn_index
+                    .lock()
+                    .map_err(|_| "Checkpoint active index poisoned")?;
+                #[cfg(test)]
+                {
+                    index.payload_reads += 1;
                 }
+                if let Some(turn) = turn.filter(|turn| turn.active) {
+                    index.legacy.insert(session.clone(), turn.cwd);
+                } else {
+                    index.legacy.remove(&session);
+                }
+            }
+            // Overflow is verified uncached instead of retaining unbounded names.
+            if known.len() < 32_768 {
+                known.insert(session, fingerprint);
+            }
+        }
+        let mut candidates: BTreeSet<String> = {
+            let mut index = self
+                .active_turn_index
+                .lock()
+                .map_err(|_| "Checkpoint active index poisoned")?;
+            index.legacy.retain(|session, _| existing.contains(session));
+            index.fingerprints = known;
+            index
+                .legacy
+                .iter()
+                .filter(|(_, root)| overlap(cwd, root))
+                .map(|(session, _)| session.clone())
+                .collect()
+        };
+        candidates.extend(leases::sessions(&self.leases, "native", cwd)?);
+        for session in candidates {
+            if session == session_id {
+                continue;
+            }
+            let dir = self.session_dir(&session);
+            #[cfg(test)]
+            {
+                self.active_turn_index.lock().unwrap().payload_reads += 1;
+            }
+            if let Some(turn) = read_turn(&dir)?.filter(|turn| turn.active) {
+                if overlap(cwd, &turn.cwd) {
+                    turns.push((dir, turn));
+                }
+            } else {
+                self.active_turn_index
+                    .lock()
+                    .map_err(|_| "Checkpoint active index poisoned")?
+                    .legacy
+                    .remove(&session);
             }
         }
         Ok(turns)
@@ -823,7 +998,9 @@ impl CheckpointStore {
         };
         for entry in entries.flatten() {
             let session = entry.file_name().to_string_lossy().into_owned();
-            if validate_id(&session, "session").is_err() {
+            if validate_id(&session, "session").is_err()
+                || !entry.file_type().is_ok_and(|kind| kind.is_dir())
+            {
                 continue;
             }
             match read_turn(&entry.path()) {
@@ -857,7 +1034,10 @@ impl CheckpointStore {
         let mut removed = 0;
         for entry in entries.flatten() {
             let session = entry.file_name().to_string_lossy().into_owned();
-            if validate_id(&session, "session").is_err() || known_sessions.contains(&session) {
+            if validate_id(&session, "session").is_err()
+                || known_sessions.contains(&session)
+                || !entry.file_type().is_ok_and(|kind| kind.is_dir())
+            {
                 continue;
             }
             let dir = entry.path();
@@ -893,6 +1073,90 @@ impl CheckpointStore {
             }
         }
         removed
+    }
+}
+
+#[cfg(test)]
+mod active_index_tests {
+    use super::*;
+
+    struct Scratch(PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    fn fixture() -> (Scratch, CheckpointStore) {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-checkpoint-index-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        (Scratch(root.clone()), CheckpointStore::new(root))
+    }
+    fn inactive() -> String {
+        r#"{"id":"old","cwd":"/project","before":null,"head":null,"active":false,"shared":false,"error":null}"#.into()
+    }
+
+    #[test]
+    fn checkpoint_active_index_checks_metadata_without_reparsing_archive_payloads() {
+        for count in [10, 1000, 10_000] {
+            let (_scratch, store) = fixture();
+            let bytes = inactive();
+            for index in 0..count {
+                let dir = store.root.join(format!("history-{index}"));
+                std::fs::create_dir(&dir).unwrap();
+                std::fs::write(dir.join("turn.json"), &bytes).unwrap();
+            }
+            assert!(store.active_turns("reader", "/project").unwrap().is_empty());
+            let before = {
+                let index = store.active_turn_index.lock().unwrap();
+                (index.payload_reads, index.metadata_checks)
+            };
+            assert_eq!(before.0, count);
+            assert!(store.active_turns("reader", "/project").unwrap().is_empty());
+            let index = store.active_turn_index.lock().unwrap();
+            assert_eq!(index.payload_reads - before.0, 0);
+            assert_eq!(index.metadata_checks - before.1, count);
+            eprintln!(
+                "checkpoint index history={count} warm payload reads=0 metadata checks={count}"
+            );
+        }
+    }
+
+    #[test]
+    fn checkpoint_active_index_detects_replaced_legacy_records_without_leases() {
+        let (_scratch, store) = fixture();
+        let dir = store.root.join("legacy");
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("turn.json");
+        let old = inactive();
+        std::fs::write(&path, &old).unwrap();
+        assert!(store.active_turns("reader", "/project").unwrap().is_empty());
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let next = old.replace("\"active\":false", "\"active\":true ");
+        assert_eq!(next.len(), old.len());
+        let replacement = dir.join("replacement.tmp");
+        std::fs::write(&replacement, next).unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&replacement)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        std::fs::rename(&replacement, &path).unwrap();
+        assert_eq!(store.active_turns("reader", "/project").unwrap().len(), 1);
+        std::fs::write(&path, &old).unwrap();
+        assert!(store.active_turns("reader", "/project").unwrap().is_empty());
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::fs::write(&path, old.replace("\"active\":false", "\"active\":true ")).unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        assert_eq!(store.active_turns("reader", "/project").unwrap().len(), 1);
+        std::fs::write(&path, "broken json").unwrap();
+        assert!(store.active_turns("reader", "/project").is_err());
     }
 }
 

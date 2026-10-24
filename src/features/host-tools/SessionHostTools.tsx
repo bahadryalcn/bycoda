@@ -30,6 +30,7 @@ import {
 } from "../../shared/ui/icons";
 import { Button } from "../../shared/ui/Button";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
+import { Select } from "../../shared/ui/Select";
 import type { OpenFileFn } from "../search/model/search";
 import "./host-tools.css";
 import { dockHostTools, openHostToolsWindow } from "./ToolsWorkspace";
@@ -264,6 +265,29 @@ function ConversationHostTools({
             <Alert tone="danger" role="alert">
               {presentationError}
             </Alert>
+          ) : null}
+          {!onlyTab ? (
+            <div className="host-tools-compact-selector">
+              <Select
+                label={t("Conversation tool selection")}
+                value={tab}
+                onValueChange={(value) => setTab(value as Tab)}
+                options={(["devices", "browser", "servers", "logs", "resources"] as const).map(
+                  (id) => ({
+                    value: id,
+                    label: t(
+                      {
+                        devices: "Devices",
+                        browser: "Host browser",
+                        servers: "Development servers",
+                        logs: "Logs",
+                        resources: "Resource usage",
+                      }[id],
+                    ),
+                  }),
+                )}
+              />
+            </div>
           ) : null}
           {!onlyTab ? (
             <nav

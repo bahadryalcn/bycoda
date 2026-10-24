@@ -222,14 +222,25 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   }
 }
 
-/* Text controls match :focus-visible on pointer focus too. Keep their focus
-   indicator on the existing border instead of drawing a second outer frame.
+/* Text controls match :focus-visible on pointer focus too. Use a quiet neutral
+   border, never the foreground or accent (which can be white in dark themes).
    Retain a real outline so forced-colors mode can still expose focus. */
+@media (hover: hover) and (pointer: fine) {
+  .bycoda-arc.bycoda-arc-field
+    :is(input, textarea):hover:not(:disabled, :focus-visible, [aria-invalid="true"]) {
+    border-color: var(--ui-field-border-hover);
+  }
+}
+
+.bycoda-arc.bycoda-arc-field :is(input, textarea):focus-visible:not([aria-invalid="true"]) {
+  border-color: var(--ui-field-border-focus);
+}
+
 .bycoda-arc.bycoda-arc-field :is(input, textarea):focus-visible,
 [data-ui-focus="input"]:focus-visible,
 .bycoda-arc [data-ui-focus="input"]:focus-visible,
 [data-ui-focus-group]:has([data-ui-focus="group"]:focus-visible) {
-  outline: 1px solid var(--foreground, var(--color-content));
+  outline: 1px solid var(--ui-field-border-focus);
   outline-offset: -1px;
   box-shadow: none;
 }

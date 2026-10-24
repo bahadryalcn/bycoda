@@ -95,7 +95,9 @@ export function ArchivePage({
           </p>
         ) : null}
         {archivedProjects.length === 0 ? (
-          <SettingsFeedback state="empty">{t("No archived projects.")}</SettingsFeedback>
+          <SettingsFeedback state="empty" presentation="inset">
+            {t("No archived projects.")}
+          </SettingsFeedback>
         ) : (
           archivedProjects.map((project) => (
             <div
@@ -162,11 +164,11 @@ export function ArchivePage({
           </Row>
         </AdvancedSettings>
         {!looksLikeProject(cwd) ? (
-          <SettingsFeedback state="empty">
+          <SettingsFeedback state="empty" presentation="inset">
             {t("Open a project to see its archived conversations.")}
           </SettingsFeedback>
         ) : archived.length === 0 ? (
-          <SettingsFeedback state="empty">
+          <SettingsFeedback state="empty" presentation="inset">
             {t("No archived conversations in this project.")}
           </SettingsFeedback>
         ) : (

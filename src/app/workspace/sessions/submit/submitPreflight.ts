@@ -12,6 +12,7 @@ import {
 } from "../../../../features/sessions/model/messageQueue";
 import { steerAppliesModelSettings } from "../../../../integrations/harness";
 import { saveRecentModelChoice } from "../../../../features/sessions/model/models";
+import { consumeDelegationCommand } from "../../../../features/sessions/model/delegationCommands";
 import { consumeOperatorCommand, operatorEnabledInThread } from "../../../../features/sessions/model/operatorCommand";
 import { approvedPlanForMessage, isBuildablePlan } from "../../../../features/sessions/model/plan";
 import { sessionWorkCwd } from "../../../../features/sessions/model/session";
@@ -211,11 +212,32 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
     return { settled: true, value: false };
   }
   const operatorAccess = operatorCommand.matched || operatorEnabledInThread(current.blocks);
+  const delegation =
+    !operatorCommand.matched &&
+    (intent === "default" || intent === "plan") &&
+    !options?.managed &&
+    !options?.ciRepair
+      ? consumeDelegationCommand(submittedText)
+      : null;
+  const delegationError = !delegation
+    ? undefined
+    : delegation.name === "task" && intent === "plan"
+      ? "Use /task outside Plan mode."
+      : !delegation.request
+        ? `Add a request after /${delegation.name}.`
+        : undefined;
+  if (delegationError) {
+    enqueueHarnessEvent(sessionId, { type: "status", text: delegationError });
+    flushHarnessEvents();
+    return { settled: true, value: false };
+  }
   const promptText = operatorCommand.matched
     ? operatorCommand.text.trim() || "Explain what you can do in bycoda with the app CLI."
-    : submittedText;
+    : (delegation?.prompt ?? submittedText);
   const rawCommand =
-    !operatorCommand.matched && isNativeCommandPrompt(submittedText, current.harness);
+    !operatorCommand.matched &&
+    !delegation &&
+    isNativeCommandPrompt(submittedText, current.harness);
   const ciContext = options?.ciRepair?.prompt ?? options?.ciContext;
   // The `!commands` run since the last message go with this one, to the
   // harness only; a native command has to arrive exactly as typed.

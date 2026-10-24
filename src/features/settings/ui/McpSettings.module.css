@@ -129,6 +129,11 @@
   margin-block-start: 4px;
   padding-block: 4px;
 }
+.disclosure > summary {
+  inline-size: fit-content;
+  cursor: pointer;
+  padding-block: 4px;
+}
 .path {
   font-family: var(--font-mono);
   overflow-wrap: anywhere;

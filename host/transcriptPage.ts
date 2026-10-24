@@ -2,6 +2,7 @@ import type { HostSession } from "../src/features/connections/model/protocol";
 import type { SessionSync } from "../src/features/connections/model/protocol";
 import type { Block, ConversationRewindEntry } from "../src/features/sessions/model/session";
 import { snapshotWeight } from "../src/features/connections/model/snapshotWeight";
+import { blockDigest, conversationHead } from "../src/features/sync/model/conversationDigest";
 export const TRANSCRIPT_BLOCK_PREVIEW_BYTES = 64 * 1024;
 export const REWIND_ARCHIVE_PREVIEW_BYTES = 128 * 1024;
 
@@ -24,15 +25,24 @@ function truncateJsonString(value: string, maxBytes: number): string {
   return prefix + "…";
 }
 
-/** Keeps a transcript block's shape while bounding every nested string. */
-export function previewBlock(block: Block, revision: number): Block {
+/** Keeps a transcript block's shape while bounding every nested string. With
+ * `digests`, a shrunk block carries the digest of the full block it was made
+ * from, so the receiver can compare it without the full content. */
+export function previewBlock(block: Block, revision: number, digests = false): Block {
   let cached = previewCache.get(block);
   if (!cached) {
     cached = buildBlockPreview(block);
     previewCache.set(block, cached);
   }
   return cached.remote
-    ? { ...cached.value, remoteContent: { revision, bytes: cached.bytes } }
+    ? {
+        ...cached.value,
+        remoteContent: {
+          revision,
+          bytes: cached.bytes,
+          ...(digests ? { digest: blockDigest(block) } : {}),
+        },
+      }
     : cached.value;
 }
 
@@ -180,15 +190,24 @@ function buildBlockPreview(block: Block): {
   return { value: result, bytes: fullBytes, remote: marker };
 }
 
-export function previewSession(value: HostSession): HostSession {
+export function previewSession(value: HostSession, digests = false): HostSession {
   return {
     ...value,
+    // A page already carries the head of the whole transcript it was cut from.
+    ...(digests && !value.head ? withHead(value) : {}),
     session: {
       ...value.session,
-      blocks: value.session.blocks.map((block) => previewBlock(block, value.revision)),
+      blocks: value.session.blocks.map((block) => previewBlock(block, value.revision, digests)),
       ...previewRewindHistory(value.session),
     },
   };
+}
+
+/** The head of the whole transcript. Always from the full blocks: a client holding
+ * only part of it, or only shrunk blocks, still learns where the conversation is. */
+export function withHead(value: HostSession): Pick<HostSession, "head"> {
+  const head = conversationHead(value.session.blocks);
+  return head ? { head } : {};
 }
 
 /** Projects the archive for transport only; the stored host transcript is unchanged. */
@@ -271,6 +290,7 @@ export function partialSessionSync(
   sync: SessionSync,
   current: HostSession,
   loadedBlockIds: string[],
+  digests = false,
 ): SessionSync | undefined {
   if (sync.kind === "unchanged") return sync;
   if (sync.kind !== "delta") return undefined;
@@ -285,6 +305,7 @@ export function partialSessionSync(
     partial: true,
     value: {
       ...metadata,
+      ...(digests ? withHead(current) : {}),
       history: {
         before: first > 0 ? first : undefined,
         revision: current.revision,
@@ -295,16 +316,23 @@ export function partialSessionSync(
     blockIds: blocks.map((block) => block.id),
     blocks: sync.blocks
       .filter((block) => ids.has(block.id))
-      .map((block) => previewBlock(block, current.revision)),
+      .map((block) => previewBlock(block, current.revision, digests)),
   };
 }
 export class TranscriptPages {
   private snapshots = new Map<string, { value: HostSession; expires: number; bytes: number }>();
-  page(read: () => HostSession, id: string, before?: number, revision?: number, preview = true) {
+  page(
+    read: () => HostSession,
+    id: string,
+    before?: number,
+    revision?: number,
+    preview = true,
+    digests = false,
+  ) {
     const key = `${id}:${revision}`;
     const captured = revision === undefined ? undefined : this.snapshots.get(key);
     const value = captured && captured.expires > Date.now() ? captured.value : read();
-    const page = transcriptPage(value, before, revision, preview);
+    const page = transcriptPage(value, before, revision, preview, digests);
     const captureKey = `${id}:${value.revision}`;
     this.snapshots.delete(captureKey);
     this.snapshots.set(captureKey, {
@@ -327,6 +355,7 @@ export function transcriptPage(
   before?: number,
   revision?: number,
   preview = true,
+  digests = false,
 ) {
   if (revision !== undefined && revision !== value.revision)
     throw new Error("Transcript changed; reload history");
@@ -354,7 +383,7 @@ export function transcriptPage(
   const blockBudget = preview ? 1024 * 1024 - pageOverhead : 1024 * 1024;
   while (start > 0 && end - start < 100) {
     const block = value.session.blocks[start - 1]!;
-    const bounded = preview ? previewBlock(block, value.revision) : block;
+    const bounded = preview ? previewBlock(block, value.revision, digests) : block;
     const size = Buffer.byteLength(JSON.stringify(bounded));
     if (preview && start === end && size > blockBudget)
       throw new Error("Transcript metadata leaves no room for a bounded page");
@@ -366,11 +395,12 @@ export function transcriptPage(
   return {
     value: {
       ...metadata,
+      ...(digests ? withHead(value) : {}),
       session: {
         ...boundedSession,
         blocks: value.session.blocks
           .slice(start, end)
-          .map((block) => (preview ? previewBlock(block, value.revision) : block)),
+          .map((block) => (preview ? previewBlock(block, value.revision, digests) : block)),
       },
       history: {
         before: beforeCursor,

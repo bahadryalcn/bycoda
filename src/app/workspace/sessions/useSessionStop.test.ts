@@ -6,7 +6,14 @@ import { newSession, type Session } from "../../../features/sessions/model/sessi
 import { useSessionStop, type SessionStopDeps } from "./useSessionStop";
 import { isSessionErrorBlock, sessionIssue } from "../../../features/sessions/model/sessionIssue";
 
-const { cancel, notify } = vi.hoisted(() => ({ cancel: vi.fn(), notify: vi.fn() }));
+const { cancel, notify, noteStop } = vi.hoisted(() => ({
+  cancel: vi.fn(),
+  notify: vi.fn(),
+  noteStop: vi.fn(),
+}));
+vi.mock("../../../features/connections/model/useSharedLocalQueues", () => ({
+  noteSharedLocalStop: noteStop,
+}));
 vi.mock("../../../integrations/harness", async (original) => ({
   ...(await original<typeof import("../../../integrations/harness")>()),
   cancelHarnessTurn: cancel,
@@ -28,6 +35,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   cancel.mockReset();
   notify.mockReset();
+  noteStop.mockReset();
   const session: Session = {
     ...newSession("claude", "/repo"),
     busy: true,
@@ -117,3 +125,9 @@ it.each(["success", "failure"])(
     expect(notify).not.toHaveBeenCalled();
   },
 );
+
+it("tells the shared queue about Stop so an unsettled send pauses it when it settles", () => {
+  const id = current().id;
+  stop(id);
+  expect(noteStop).toHaveBeenCalledExactlyOnceWith(id);
+});

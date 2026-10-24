@@ -5,9 +5,11 @@ import {
 } from "./conversation-steward-tools";
 import type { HostSteward } from "../src/features/tasks/model/hostStewards";
 import type { Session } from "../src/features/sessions/model/session";
+import type { HostTask } from "../src/features/tasks/model/hostTasks";
 
 function setup() {
   const records: HostSteward[] = [];
+  const proposals = new Map<string, HostTask>();
   const session = {
     harness: "codex",
     model: "test",
@@ -41,10 +43,13 @@ function setup() {
       requested: true as const,
       run: records.find((item) => item.id === id)?.run ?? { runId, startedAt: 1 },
     })),
+    delete: vi.fn(async (id: string) => { const at = records.findIndex((entry) => entry.id === id); if (at >= 0) records.splice(at, 1); }),
+    decline: vi.fn(async (_taskId: string) => {}),
   };
   const tools = new ConversationStewardTools(
     { project: vi.fn(), transaction: (fn: () => unknown) => fn() } as never,
     service,
+    { get: (id) => proposals.get(id) },
   );
   let authorized = true;
   const call = (action: StewardConversationTool, input: Record<string, unknown>) =>
@@ -59,6 +64,7 @@ function setup() {
     call,
     create,
     records,
+    proposals,
     service,
     revoke: () => {
       authorized = false;
@@ -67,6 +73,23 @@ function setup() {
 }
 
 describe("steward conversation lifecycle", () => {
+  it("deletes only settled stewards and declines only matching current proposals", async () => {
+    const { create, call, records, proposals, service } = setup();
+    await create();
+    const input = { stewardId: "steward", expectedUpdatedAt: 1 };
+    records[0].run = { runId: "active", sessionId: "worker", startedAt: 1 };
+    await expect(call("stewards.delete", input)).rejects.toThrow("settlement");
+    records[0].run = undefined;
+    proposals.set("proposal", { id: "proposal", projectId: "other", stewardId: "steward", source: "steward", status: "todo", updatedAt: 2 } as HostTask);
+    const decline = { ...input, taskId: "proposal", expectedTaskUpdatedAt: 2 };
+    await expect(call("stewards.decline", decline)).rejects.toThrow("this project");
+    proposals.get("proposal")!.projectId = "project";
+    await expect(call("stewards.decline", { ...decline, expectedTaskUpdatedAt: 0 })).rejects.toThrow("changed");
+    expect(await call("stewards.decline", decline)).toMatchObject({ declined: true });
+    expect(service.decline).toHaveBeenCalledWith("proposal");
+    expect(await call("stewards.delete", input)).toMatchObject({ deleted: true });
+    expect(records).toHaveLength(0);
+  });
   it("inherits execution identity and never auto-starts or auto-merges proposals", async () => {
     const { create, service } = setup();
     const result = await create();

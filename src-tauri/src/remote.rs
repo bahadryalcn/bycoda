@@ -1446,6 +1446,9 @@ fn supported_remote_method(method: &str) -> bool {
             | "sessions.queue.change"
             | "sessions.queue.claim"
             | "sessions.queue.finish"
+            | "sessions.queue.lease"
+            | "sessions.queue.release"
+            | "sessions.runLease"
             | "commands.dispatch"
             | "attachments.upload"
             | "attachments.status"
@@ -2112,6 +2115,9 @@ mod tests {
             "sessions.queue.change",
             "sessions.queue.claim",
             "sessions.queue.finish",
+            "sessions.queue.lease",
+            "sessions.queue.release",
+            "sessions.runLease",
         ] {
             assert!(super::supported_remote_method(method), "{method}");
         }

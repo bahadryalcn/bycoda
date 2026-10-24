@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import "./LiveBackgroundCanvas.css";
 import {
   decorativeMotionEnabled,
   subscribeDecorativeMotion,
@@ -22,11 +23,12 @@ const FRAME_INTERVAL = 1000 / 30;
 const MAX_PIXEL_RATIO = 1.5;
 /** A still frame for reduced motion still shows a populated scene. */
 const STILL_TIME = 12;
-/** Seconds an idle pane keeps animating after its turn ends: the face and lips fade out
- * (presence falls at 0.7/s, voice and energy decay at e^-2.6t), then the loop stops. */
+/** The calm activity envelope reaches rest before the loop stops. */
 const SETTLE_SECONDS = 2;
-/** Presence, open mouth and energy for a still thumbnail: the face and reaction both show. */
-const STILL_SIGNAL: LiveSignal = { presence: 1, open: 0.5, energy: 0.6 };
+/** Ordinary still frames retain the resting composition of a quiet conversation. */
+const STILL_SIGNAL: LiveSignal = CLOSED_SIGNAL;
+/** Picker demos show their identifying artwork without animating or changing chat rest. */
+const STILL_DEMO_SIGNAL: LiveSignal = { presence: 1 };
 
 /** Reads a token through a probe so color-mix() and var() arrive resolved. */
 function resolveColor(probe: HTMLElement, token: string): string {
@@ -34,32 +36,16 @@ function resolveColor(probe: HTMLElement, token: string): string {
   return getComputedStyle(probe).color;
 }
 
-function channels(color: string): readonly [number, number, number] {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1;
-  canvas.height = 1;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return [0, 0, 0];
-  ctx.fillStyle = color;
-  ctx.fillRect(0, 0, 1, 1);
-  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-  return [r, g, b];
-}
-
-/** Reuses the previous channels when the resolved tokens did not change. */
+/** Reuses the previous palette when the resolved tokens did not change. */
 function readPalette(probe: HTMLElement, previous?: LiveBackgroundPalette): LiveBackgroundPalette {
   const content = resolveColor(probe, "--color-content");
   const accent = resolveColor(probe, "--color-accent");
-  const signal = resolveColor(probe, "--live-background-signal");
-  const spectrum = resolveColor(probe, "--live-background-spectrum");
   probe.style.fontFamily = "var(--font-mono)";
   const monoFont = getComputedStyle(probe).fontFamily || "monospace";
   if (
     previous &&
     previous.content === content &&
     previous.accent === accent &&
-    previous.signal === signal &&
-    previous.spectrum === spectrum &&
     previous.monoFont === monoFont
   ) {
     return previous;
@@ -67,11 +53,6 @@ function readPalette(probe: HTMLElement, previous?: LiveBackgroundPalette): Live
   return {
     content,
     accent,
-    contentRgb: channels(content),
-    accentRgb: channels(accent),
-    signal,
-    spectrum,
-    spectrumRgb: channels(spectrum),
     monoFont,
   };
 }
@@ -79,9 +60,7 @@ function readPalette(probe: HTMLElement, previous?: LiveBackgroundPalette): Live
 /** Settings preview: talk for a few seconds, then pause, like a reply arriving. */
 function demoSpeechLength(time: number): number {
   const cycle = time % 6;
-  return cycle < 3.5
-    ? Math.floor((time - cycle) * 40 + cycle * 40 * (0.5 + 0.5 * Math.sin(cycle * 9)))
-    : -1;
+  return cycle < 3.5 ? Math.floor(time * 40) : -1;
 }
 
 /**
@@ -89,8 +68,8 @@ function demoSpeechLength(time: number): number {
  * when motion is off or the system asks for reduced motion it paints one
  * still frame instead of running a loop.
  *
- * `speech` is the length of the reply being streamed (-1 when idle); each new
- * burst of text moves the lips drawn into the scene. `activity` is everything the
+ * `speech` is the length of the reply being streamed (-1 when idle). Only its
+ * active state drives the calm envelope, never individual chunks. `activity` is everything the
  * running turn has streamed, including reasoning and tools (-1 when idle); it keeps
  * the scene awake between replies and defaults to `speech`.
  */
@@ -141,14 +120,14 @@ export function LiveBackgroundCanvas({
     let width = 0;
     let height = 0;
 
-    // Scenes may hold GL resources, so each still frame builds, paints and releases its scene.
+    // Each still frame builds, paints and releases its scene.
     const paintStill = () => {
       if (width === 0 || height === 0) return;
       const ratio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
       const scene = createLiveBackgroundScene(effect, palette);
       scene.resize(width, height);
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      scene.draw(ctx, STILL_TIME, 0, STILL_SIGNAL);
+      scene.draw(ctx, STILL_TIME, 0, demoSpeech ? STILL_DEMO_SIGNAL : STILL_SIGNAL);
       scene.dispose?.();
     };
 
@@ -186,7 +165,7 @@ export function LiveBackgroundCanvas({
       observer.disconnect();
       themeObserver.disconnect();
     };
-  }, [still, effect]);
+  }, [still, effect, demoSpeech]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -342,6 +321,7 @@ export function LiveBackgroundCanvas({
   return (
     <div
       aria-hidden
+      data-live-background-scene={effect}
       className={`pointer-events-none overflow-hidden ${className}`}
       style={{ opacity: intensity }}
     >
@@ -365,16 +345,24 @@ export function LiveBackgroundLayer({
 }) {
   const effect = useLiveBackground();
   const intensity = useLiveBackgroundIntensity();
+  // The owner chose the ASCII mask to sit centered behind the transcript, very faint.
+  const behindText = effect === "ascii-mask";
   // Only mounted split panes retain a still; hidden sessions release scene resources.
   if (!visible) return null;
   return (
-    <LiveBackgroundCanvas
-      effect={effect}
-      intensity={intensity}
-      active={active}
-      speech={speech}
-      activity={activity}
-      className="absolute inset-0 -z-1"
-    />
+    <div
+      data-live-background-rail
+      className={`live-background-rail ${behindText ? "live-background-rail-behind" : ""}`}
+      aria-hidden
+    >
+      <LiveBackgroundCanvas
+        effect={effect}
+        intensity={intensity}
+        active={active}
+        speech={speech}
+        activity={activity}
+        className="live-background-figure"
+      />
+    </div>
   );
 }

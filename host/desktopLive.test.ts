@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DesktopLive, DESKTOP_BEAT_STALE_MS, DESKTOP_COMMAND_RETAIN_MS } from "./desktopLive";
+import {
+  DesktopLive,
+  DESKTOP_BEAT_STALE_MS,
+  DESKTOP_COMMAND_RETAIN_MS,
+  DESKTOP_STORED_RUNNING_MS,
+} from "./desktopLive";
 import { ChangeSignal } from "./changeSignal";
 import { RemoteChanges } from "./remoteChanges";
 import type {
@@ -154,6 +159,24 @@ describe("desktop window ownership", () => {
 });
 
 describe("privacy-filtered project directory", () => {
+  it("renews only an acknowledged client's exact privacy revision and requires content after reset", () => {
+    let now = 0;
+    const live = new DesktopLive(() => now);
+    const projection = { version: 1 as const, groups: [], excludedPaths: [], excludedGroupIds: [], projects: [{ cwd: "/work", name: "Work" }] };
+    expect(live.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "1", projectDirectory: projection }).projectDirectoryRevision).toBe("1");
+    now = 15_000;
+    expect(live.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "1" }).projectDirectoryRevision).toBe("1");
+    now = 25_000;
+    expect(live.projectDirectory([], "host").privacyReady).toBe(true);
+    expect(live.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "wrong" }).projectDirectoryRevision).toBeUndefined();
+    now = 35_001;
+    expect(live.projectDirectory([], "host").privacyReady).toBe(false);
+    const restarted = new DesktopLive(() => now);
+    expect(restarted.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "1" }).projectDirectoryRevision).toBeUndefined();
+    expect(restarted.beat({ clientId: "b", sessions: [], projectDirectoryRevision: "1" }).projectDirectoryRevision).toBeUndefined();
+    expect(restarted.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "2", projectDirectory: { ...projection, excludedPaths: undefined } }).projectDirectoryRevision).toBeUndefined();
+  });
+
   it("carries saved identity through host IDs, replacements, and privacy exclusions", () => {
     const live = new DesktopLive(() => 0);
     const projection = {
@@ -325,5 +348,60 @@ describe("privacy-filtered project directory", () => {
       projectDirectory: { ...projection(), excludedPaths: undefined },
     });
     expect(live.projectDirectory([], "host").privacyReady).toBe(false);
+  });
+});
+
+describe("run leases and the in-flight mark", () => {
+  it("lets a quiet window keep its run lease (its own expiry decides) and ends it when the window reports idle", () => {
+    let now = 0;
+    const live = new DesktopLive(() => now);
+    const ended: Array<[string, string, string | undefined]> = [];
+    live.onIdle = (id, clientId, reason) => void ended.push([id, clientId, reason]);
+    live.beat({ clientId: "a", sessions: [{ id: "s", busy: true }] });
+    // Another window's beat finds `a` quiet for longer than the stale limit.
+    now = DESKTOP_BEAT_STALE_MS + 1;
+    live.beat({ clientId: "b", sessions: [] });
+    expect(ended).toEqual([["s", "a", "gone"]]);
+    // A window that reports the conversation idle is a plain end.
+    live.beat({ clientId: "c", sessions: [{ id: "t", busy: true }] });
+    live.beat({ clientId: "c", sessions: [] });
+    expect(ended.at(-1)).toEqual(["t", "c", undefined]);
+  });
+
+  it("stops believing the in-flight mark a crashed app left behind, after a while", () => {
+    let now = 0;
+    const live = new DesktopLive(() => now);
+    // An app without a heartbeat: believed for a while, so a long turn is not a free-for-all.
+    expect(live.running("s", true)).toBe(true);
+    now += DESKTOP_STORED_RUNNING_MS - 1;
+    expect(live.running("s", true)).toBe(true);
+    now += 2;
+    expect(live.running("s", true)).toBe(false);
+    // The mark going away starts the clock again.
+    expect(live.running("s", false)).toBe(false);
+    expect(live.running("s", true)).toBe(true);
+    // Once an app beats, its heartbeat decides and the stored mark is ignored.
+    live.beat({ clientId: "a", sessions: [] });
+    expect(live.running("s", true)).toBe(false);
+  });
+});
+
+describe("in-flight marks believed without a heartbeat", () => {
+  it("tells when the earliest mark stops counting, only while no app has beat", () => {
+    let now = 1_000;
+    const live = new DesktopLive(() => now);
+    expect(live.nextStoredExpiry()).toBeUndefined();
+    expect(live.running("chat", true)).toBe(true);
+    expect(live.nextStoredExpiry()).toBe(1_000 + DESKTOP_STORED_RUNNING_MS);
+    now += 10_000;
+    expect(live.running("other", true)).toBe(true);
+    expect(live.nextStoredExpiry()).toBe(1_000 + DESKTOP_STORED_RUNNING_MS);
+    // Past it the mark no longer counts and no timer is wanted for it.
+    now = 1_000 + DESKTOP_STORED_RUNNING_MS + 1;
+    expect(live.running("chat", true)).toBe(false);
+    expect(live.nextStoredExpiry()).toBe(11_000 + DESKTOP_STORED_RUNNING_MS);
+    // An app that beats makes the marks irrelevant.
+    live.beat({ clientId: "app", sessions: [] });
+    expect(live.nextStoredExpiry()).toBeUndefined();
   });
 });

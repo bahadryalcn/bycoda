@@ -20,6 +20,13 @@
   - `tasks.review.recheck` reruns checks and review on the existing work.
   - `tasks.retry` launches a new correction run.
 - You cannot merge, delete, mark done, or change your own running task.
+- `tasks.delete`, `tasks.transfer` and `tasks.notes.resolve` require a current
+  `expectedUpdatedAt` and native owner approval of the exact operation. Delete
+  preserves unmerged branches by refusing their deletion. Transfer accepts an
+  existing `targetProjectId` only for independent, unstarted to-do work; goal,
+  steward, crew, dependency and retained-work tasks cannot move. A task moved to
+  another project is no longer accessible through the old project's grant.
+  Note resolution changes one note's acknowledgement, not review/check results.
 
 ## Goals
 - A goal is a planned outcome that is split into tasks. `goals.create` makes a plan;
@@ -58,3 +65,7 @@
 - A steward is a scheduled project caretaker that proposes tasks. It never auto-starts
   or auto-merges them when created from a conversation. Use `stewards.*` with
   `expectedUpdatedAt`.
+- `stewards.delete` requires its active run to have settled and preserves board
+  tasks. `stewards.decline` takes `taskId`, the steward's revision and
+  `expectedTaskUpdatedAt`; it removes only a matching unstarted to-do proposal
+  and remembers its title to avoid proposing it again. Dependent work blocks it.

@@ -70,6 +70,19 @@
   white-space: nowrap;
   flex: none;
 }
+.host-tools-compact-selector {
+  display: none;
+  flex-basis: 100%;
+  min-inline-size: 0;
+}
+@container (max-width: 720px) {
+  .host-tools-compact-selector {
+    display: block;
+  }
+  .host-tools-tabs {
+    display: none;
+  }
+}
 .host-tools-content {
   min-block-size: 0;
   overflow: auto;

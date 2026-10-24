@@ -5,6 +5,7 @@ import {
   refreshWindowState,
   subscribeWindowState,
 } from "../../../platform/tauri/windowState";
+import { IS_MAC } from "../../../platform/tauri/platform";
 import { readFlag, writeFlag } from "./storageFlags";
 
 export const DECORATIVE_MOTION_KEY = "bycoda.decorativeMotion.v1";
@@ -58,14 +59,17 @@ export function decorativeMotionEnabled(): boolean {
 }
 
 /**
- * Whether this window has input focus. Native focus is authoritative while the
- * shared window state is live: WKWebView keeps document.hasFocus() true after the
- * window drops behind another application. DOM focus and blur are the fallback.
+ * Whether this window has input focus. Each platform trusts the signal that is
+ * right there: on macOS the native window state, because WKWebView keeps
+ * document.hasFocus() true after the window drops behind another application;
+ * elsewhere the page's own focus, because on Windows the native window reports
+ * itself unfocused as soon as its WebView2 child takes keyboard focus (tao tracks
+ * WM_KILLFOCUS on the top-level window), which is almost always.
  * Decorative CSS motion does not stop on blur; per-frame canvas loops and the
  * `data-window-focus` rules for status dots do.
  */
 export function windowHasFocus(): boolean {
-  return getWindowState()?.focused ?? domFocused;
+  return IS_MAC ? (getWindowState()?.focused ?? domFocused) : domFocused;
 }
 
 function syncDecorativeMotionAttribute(): void {
@@ -127,6 +131,13 @@ function installWindowLifecycle(): () => void {
   const onBlur = () => {
     domFocused = false;
     notify();
+    // Focus moving into an iframe (an HTML preview) blurs the window but keeps
+    // the document focused; settle on the document's own answer.
+    window.setTimeout(() => {
+      if (disposed || !document.hasFocus()) return;
+      domFocused = true;
+      notify();
+    }, 0);
   };
   domFocused = typeof document === "undefined" || document.hasFocus();
   window.addEventListener("focus", onFocus);

@@ -10,6 +10,8 @@ import { createHostServer } from "./server";
 import { DesktopSessions, desktopDatabasePaths, normalizeProjectPath } from "./desktopSessions";
 import { DesktopLive } from "./desktopLive";
 import { verifyRemoteProjectAlias } from "../src/features/connections/model/remoteProjects";
+import { blockDigest, conversationHead } from "../src/features/sync/model/conversationDigest";
+import type { Block } from "../src/features/sessions/model/session";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -104,6 +106,20 @@ async function setup() {
 }
 
 describe("desktop sessions on the host", () => {
+  it("never caches an unreadable desktop database as an empty project", async () => {
+    const s = await setup();
+    s.seed({ id: "recovered-metadata", cwd: s.projectDir });
+    const broken = join(s.projectDir, "broken-desktop.db");
+    writeFileSync(broken, "not a sqlite database");
+    const desktop = new DesktopSessions(() => [broken]);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(() => desktop.listSnapshot(s.projectDir, s.project.id, ["codex"])).toThrow("Desktop session metadata is temporarily unavailable");
+      writeFileSync(broken, readFileSync(s.dbPath));
+      expect(desktop.listSnapshot(s.projectDir, s.project.id, ["codex"]).sessions.map((row) => row.id)).toEqual(["recovered-metadata"]);
+    } finally { desktop.close(); errors.mockRestore(); }
+  });
+
   it("verifies legacy project aliases when listing and reading a running desktop session", async () => {
     const s = await setup();
     const cwd = s.project.cwd.replace(/\\/g, "/") + "/";
@@ -311,7 +327,11 @@ describe("desktop sessions on the host", () => {
     s.engine.adoptSession((await s.call("sessions.sync", { sessionId: "a" })).result.value);
     const adopted = (await s.call("sessions.adopted")).result;
     expect(adopted).toMatchObject([{ id: "a", projectId: s.project.id, status: "idle" }]);
-    expect(s.store.session("a").desktop).toEqual({ updatedAt: 100, revision: 100 });
+    expect(s.store.session("a").desktop).toEqual({
+      updatedAt: 100,
+      revision: 100,
+      base: conversationHead([{ id: "b1", role: "user", text: "hi" }]),
+    });
 
     // The desktop app on this machine ran another turn in the same session.
     const blocks = [
@@ -326,7 +346,11 @@ describe("desktop sessions on the host", () => {
     const sync = (await s.call("sessions.sync", { sessionId: "a" })).result;
     expect(sync.kind).toBe("snapshot");
     expect(sync.value.session.blocks).toEqual(blocks);
-    expect(sync.value.desktop).toEqual({ updatedAt: 300, revision: sync.value.revision });
+    expect(sync.value.desktop).toEqual({
+      updatedAt: 300,
+      revision: sync.value.revision,
+      base: conversationHead(blocks as Block[]),
+    });
     expect(s.bind).toHaveBeenLastCalledWith("a", "prov-a2", s.project.cwd, undefined);
     const revision = sync.value.revision;
 
@@ -345,6 +369,171 @@ describe("desktop sessions on the host", () => {
     });
     expect(busy.error).toMatch(/Wait for it to finish/);
     expect(s.send).not.toHaveBeenCalled();
+  });
+
+  describe("digests", () => {
+    const attached: Block = {
+      id: "b2",
+      role: "user",
+      text: "[file1]",
+      attachments: [
+        {
+          id: "f1",
+          name: "clip.mkv",
+          mimeType: "video/x-matroska",
+          kind: "file",
+          size: 9,
+          path: "C:/files/clip.mkv",
+        },
+      ],
+    };
+    const blocks: Block[] = [
+      { id: "b1", role: "user", text: "hi" },
+      attached,
+      { id: "b3", role: "assistant", text: "done" },
+    ];
+    /** What the host reads of the desktop copy, with the connection released. */
+    const desktopSnapshot = (s: { dbPath: string; project: { id: string } }) => {
+      const desktop = new DesktopSessions(() => [s.dbPath]);
+      try {
+        return desktop.snapshot("a", s.project.id)!;
+      } finally {
+        desktop.close();
+      }
+    };
+    const seedBlocks = async () => {
+      const s = await setup();
+      s.seed({ id: "a", cwd: s.project.cwd, updated: 100 });
+      s.desktopDb
+        .prepare("UPDATE sessions SET blocks_json=? WHERE id='a'")
+        .run(JSON.stringify(blocks));
+      return s;
+    };
+
+    it("advertises the capability", async () => {
+      const s = await setup();
+      expect((await s.call("environment.describe")).result.capabilities).toContain(
+        "sessions.digests",
+      );
+    });
+
+    it("sends the head and the full block's digest on a shrunk block only when asked", async () => {
+      const s = await seedBlocks();
+      const plain = (await s.call("sessions.sync", { sessionId: "a" })).result;
+      expect(plain.value).not.toHaveProperty("head");
+      expect(plain.value.session.blocks[1].remoteContent).not.toHaveProperty("digest");
+
+      const asked = (await s.call("sessions.sync", { sessionId: "a", digests: true })).result;
+      expect(asked.value.head).toEqual(conversationHead(blocks));
+      const shrunk = asked.value.session.blocks[1];
+      // The wire block lost its path; its digest is still that of the full block.
+      expect(shrunk.attachments[0]).not.toHaveProperty("path");
+      expect(shrunk.remoteContent.digest).toBe(blockDigest(attached));
+      expect(asked.value.session.blocks[0]).not.toHaveProperty("remoteContent");
+      expect(conversationHead(asked.value.session.blocks)).toEqual(asked.value.head);
+    });
+
+    it("sends them on a page as well", async () => {
+      const s = await seedBlocks();
+      const page = (await s.call("sessions.page", { sessionId: "a", preview: true, digests: true }))
+        .result;
+      expect(page.sync.value.head).toEqual(conversationHead(blocks));
+      expect(page.sync.value.session.blocks[1].remoteContent.digest).toBe(blockDigest(attached));
+      const plain = (await s.call("sessions.page", { sessionId: "a", preview: true })).result;
+      expect(plain.sync.value).not.toHaveProperty("head");
+    });
+
+    it("keeps the head of the whole transcript on a partial window", async () => {
+      const s = await seedBlocks();
+      const first = (await s.call("sessions.sync", { sessionId: "a", digests: true })).result;
+      s.desktopDb
+        .prepare("UPDATE sessions SET blocks_json=?, updated_at=200 WHERE id='a'")
+        .run(JSON.stringify([...blocks, { id: "b4", role: "user", text: "more" }]));
+      const partial = (
+        await s.call("sessions.sync", {
+          sessionId: "a",
+          revision: first.value.revision,
+          partial: true,
+          loadedBlockIds: ["b3"],
+          digests: true,
+        })
+      ).result;
+      expect(partial.value.head).toEqual(
+        conversationHead([...blocks, { id: "b4", role: "user", text: "more" }]),
+      );
+    });
+
+    it("reads the base the desktop saved, and an older desktop has none", async () => {
+      const s = await seedBlocks();
+      s.engine.adoptSession(desktopSnapshot(s));
+      expect(s.store.session("a").desktop?.base).toEqual(conversationHead(blocks));
+      s.desktopDb.exec("ALTER TABLE sessions ADD COLUMN adopted_base TEXT");
+      const base = { count: 1, chain: "0123456789abcdef0123456789abcdef" };
+      s.desktopDb
+        .prepare("UPDATE sessions SET adopted_base=?, updated_at=200 WHERE id='a'")
+        .run(JSON.stringify(base));
+      expect(desktopSnapshot(s).session.adoptedBase).toEqual(base);
+      s.desktopDb.prepare("UPDATE sessions SET adopted_base='not json' WHERE id='a'").run();
+      expect(desktopSnapshot(s).session).not.toHaveProperty("adoptedBase");
+    });
+
+    it("tells the desktop's heartbeat which adopted sessions moved on the host", async () => {
+      const s = await seedBlocks();
+      s.engine.adoptSession(desktopSnapshot(s));
+      const beat = async (adoptedSeq?: number) =>
+        (
+          await s.call("sessions.desktopLive", {
+            clientId: "window",
+            sessions: [],
+            ...(adoptedSeq === undefined ? {} : { adoptedSeq }),
+          })
+        ).result.adopted;
+      const first = await beat();
+      expect(first).toMatchObject({ ids: [], reset: true });
+      expect(await beat(first.seq)).toEqual({ seq: first.seq, ids: [], boot: first.boot });
+      // The host runs a turn for another computer: its revision moves.
+      const hosted = s.store.session("a");
+      s.store.save({ ...hosted, revision: hosted.revision + 1 }, { type: "test.remote" });
+      const moved = await beat(first.seq);
+      expect(moved.ids).toEqual(["a"]);
+      expect(moved.reset).toBeUndefined();
+      // Seen once, it is not reported again; a window that missed it still is.
+      expect(await beat(moved.seq)).toEqual({ seq: moved.seq, ids: [], boot: moved.boot });
+      expect((await beat(first.seq)).ids).toEqual(["a"]);
+    });
+
+    it("converges on the desktop's version when its saved base names the host transcript", async () => {
+      const s = await seedBlocks();
+      s.desktopDb.exec("ALTER TABLE sessions ADD COLUMN adopted_base TEXT");
+      s.engine.adoptSession(desktopSnapshot(s));
+      // The host ran a turn for another computer.
+      const hosted = s.store.session("a");
+      const withTurn = [...blocks, { id: "phone", role: "user" as const, text: "From the phone" }];
+      s.store.save(
+        {
+          ...hosted,
+          revision: hosted.revision + 1,
+          desktop: { ...hosted.desktop!, revision: 0 },
+          session: { ...hosted.session, blocks: withTurn },
+        },
+        { type: "test.remote" },
+      );
+      // The desktop wrote a different turn, then kept its version of the divergence.
+      const desktopBlocks = [...blocks, { id: "desk", role: "user", text: "From the desktop" }];
+      s.desktopDb
+        .prepare("UPDATE sessions SET blocks_json=?, updated_at=300, adopted_base=? WHERE id='a'")
+        .run(JSON.stringify(desktopBlocks), JSON.stringify(conversationHead(withTurn as Block[])));
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const sync = (await s.call("sessions.sync", { sessionId: "a" })).result;
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+      expect(sync.value.session.blocks.map((block: Block) => block.id)).toEqual([
+        "b1",
+        "b2",
+        "b3",
+        "desk",
+      ]);
+    });
   });
 
   it("follows the app's heartbeat: running, live prompts, remote control", async () => {
@@ -692,5 +881,122 @@ describe("finding the desktop app's session database", () => {
         rmSync(home, { recursive: true, force: true });
       }
     }
+  });
+});
+
+describe("the run lease of a conversation", () => {
+  const lease = (s: Awaited<ReturnType<typeof setup>>, action: string, extra: object = {}) =>
+    s.call("sessions.runLease", {
+      sessionId: "a",
+      clientId: "desktop:win",
+      action,
+      ...extra,
+    });
+  const mac = (s: Awaited<ReturnType<typeof setup>>, commandId: string) =>
+    s.call("commands.dispatch", { type: "send", commandId, sessionId: "a", text: "from the mac" });
+
+  it("makes a Mac send wait with LEASE_HELD while a desktop window runs a turn, and never adopts", async () => {
+    const s = await setup();
+    s.seed({ id: "a", cwd: s.project.cwd });
+    const granted = (await lease(s, "acquire")).result.lease;
+    expect(granted).toMatchObject({ holder: "desktop:win" });
+    const refused = await mac(s, "c1");
+    expect(refused.error).toMatch(/^LEASE_HELD: /);
+    expect(refused.error).toMatch(/Wait for it to finish/);
+    // Nothing started, nothing was copied to the host.
+    expect(s.send).not.toHaveBeenCalled();
+    expect(() => s.store.session("a")).toThrow();
+    // The turn ends: the window gives the lease back and the same send goes through.
+    expect((await lease(s, "release", { epoch: granted.epoch })).result).toEqual({ released: true });
+    expect((await mac(s, "c1")).error).toBeUndefined();
+    await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
+  });
+
+  it("refuses a queued send and a compact the same way", async () => {
+    const s = await setup();
+    s.seed({ id: "a", cwd: s.project.cwd });
+    await lease(s, "acquire");
+    const compact = await s.call("commands.dispatch", {
+      type: "compact",
+      commandId: "c2",
+      sessionId: "a",
+    });
+    expect(compact.error).toMatch(/^LEASE_HELD: /);
+  });
+
+  it("follows the heartbeat: busy keeps it, the beat that reports idle ends it", async () => {
+    const s = await setup();
+    s.seed({ id: "a", cwd: s.project.cwd });
+    await lease(s, "acquire");
+    const beat = (busy: boolean) =>
+      s.call("sessions.desktopLive", {
+        clientId: "win",
+        sessions: busy ? [{ id: "a", busy: true }] : [],
+      });
+    await beat(true);
+    expect((await mac(s, "c3")).error).toMatch(/^LEASE_HELD: /);
+    await beat(false);
+    expect((await mac(s, "c3")).error).toBeUndefined();
+  });
+
+  it("lets only one window take it, and refuses an older app that is busy without one", async () => {
+    const s = await setup();
+    s.seed({ id: "a", cwd: s.project.cwd });
+    expect((await lease(s, "acquire")).result.lease.holder).toBe("desktop:win");
+    expect((await lease(s, "acquire", { clientId: "desktop:other" })).error).toMatch(
+      /^LEASE_HELD: /,
+    );
+    expect((await lease(s, "acquire")).result.lease.holder).toBe("desktop:win");
+    // A bad request is not a lease.
+    expect((await lease(s, "acquire", { clientId: "remote:mac" })).error).toMatch(/Invalid/);
+    expect((await lease(s, "borrow")).error).toMatch(/Invalid/);
+    // A busy app that never asked (database mark only) still holds the conversation.
+    s.seed({ id: "legacy", cwd: s.project.cwd });
+    s.desktopDb.prepare("INSERT INTO in_flight_sessions VALUES ('legacy', ?, 0)").run(s.project.cwd);
+    const legacy = await s.call("commands.dispatch", {
+      type: "send",
+      commandId: "c4",
+      sessionId: "legacy",
+      text: "go",
+    });
+    expect(legacy.error).toMatch(/^LEASE_HELD: /);
+  });
+
+  it("is refused to a desktop while the host runs a turn (desktop types during a Mac turn)", async () => {
+    const s = await setup();
+    s.seed({ id: "a", cwd: s.project.cwd });
+    expect((await mac(s, "c5")).error).toBeUndefined();
+    await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
+    const held = await lease(s, "acquire");
+    expect(held.error).toMatch(/^LEASE_HELD: /);
+    // Fencing: a window that lost it is told so instead of writing.
+    expect((await lease(s, "release", { epoch: 7 })).result).toEqual({ released: false });
+  });
+
+  it("treats a window whose heartbeat reports the conversation busy as its holder, even if it never asked", async () => {
+    const s = await setup();
+    s.seed({ id: "a", cwd: s.project.cwd });
+    const beat = (busy: boolean) =>
+      s.call("sessions.desktopLive", {
+        clientId: "older-app",
+        sessions: busy ? [{ id: "a", busy: true }] : [],
+      });
+    await beat(true);
+    expect((await mac(s, "c6")).error).toMatch(/^LEASE_HELD: /);
+    // It cannot be taken by another window meanwhile.
+    expect((await lease(s, "acquire")).error).toMatch(/^LEASE_HELD: /);
+    await beat(false);
+    expect((await lease(s, "acquire")).result.lease.holder).toBe("desktop:win");
+  });
+
+  it("fences a window whose lease is not its own", async () => {
+    const s = await setup();
+    s.seed({ id: "a", cwd: s.project.cwd });
+    const first = (await lease(s, "acquire")).result.lease;
+    const stale = await lease(s, "release", { clientId: "desktop:other", epoch: first.epoch });
+    expect(stale.error).toMatch(/^LEASE_LOST: /);
+    // The holder keeps it.
+    expect((await lease(s, "release", { epoch: first.epoch + 1 })).error).toMatch(/LEASE_LOST/);
+    expect((await lease(s, "release", { epoch: first.epoch })).result).toEqual({ released: true });
   });
 });

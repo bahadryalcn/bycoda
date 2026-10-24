@@ -12,6 +12,7 @@ import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
 import { LAYER } from "../../../shared/lib/layers";
 import { Maximize2, X } from "../../../shared/ui/icons";
 import { useState } from "react";
+import styles from "./GitGraphLayout.module.css";
 
 type Props = {
   title: string;
@@ -102,15 +103,15 @@ export function GitGraphDialog({ title, toolbar, onClose, children, expandable =
           aria-labelledby={titleId}
           onMouseDown={(event) => event.stopPropagation()}
           onKeyDown={trapTab}
-          className={`relative isolate flex h-full flex-col overflow-hidden border border-[var(--color-stroke)] shadow-2xl ${maximized ? "" : "rounded-2xl"}`}
+          className={`${styles.dialog} relative isolate flex h-full flex-col overflow-hidden border border-[var(--color-stroke)] shadow-2xl ${maximized ? "" : "rounded-2xl"}`}
         >
           <GlassBackdrop className="bg-[var(--ui-surface)]/55" />
           <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
-            <header className="flex shrink-0 items-center gap-2 px-4 py-2.5">
-              <h2 id={titleId} className="text-[15px] leading-tight font-medium text-content">
+            <header className={styles.header}>
+              <h2 id={titleId} className={styles.title}>
                 {title}
               </h2>
-              <div className="ml-2 flex min-w-0 flex-1 items-center gap-1">{toolbar}</div>
+              <div className={styles.toolbar}>{toolbar}</div>
               {expandable ? (
                 <Button
                   iconOnly

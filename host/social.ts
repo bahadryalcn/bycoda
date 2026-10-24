@@ -179,6 +179,10 @@ export class SocialService {
   }
   private timer?: ReturnType<typeof setInterval>;
   private busy = false;
+  private backgroundEpoch = 0;
+  private generationPending?: Promise<boolean>;
+  private readonly pollingPending = new Map<string, Promise<{ ingested: number }>>();
+  private dueCursor?: { at: number; id: string };
   private readonly grants = new Map<string, Grant>();
   private readonly requests = new Map<string, Promise<unknown>>();
   private readonly credentialChanges = new Map<string, Promise<unknown>>();
@@ -200,6 +204,8 @@ export class SocialService {
       CREATE TABLE IF NOT EXISTS social_records (kind TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(kind,id));
       CREATE TABLE IF NOT EXISTS social_jobs (id TEXT PRIMARY KEY, dedupe_key TEXT NOT NULL UNIQUE, account_id TEXT NOT NULL, status TEXT NOT NULL, scheduled_at INTEGER NOT NULL, value TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS social_jobs_due ON social_jobs(status,scheduled_at);
+      CREATE INDEX IF NOT EXISTS social_jobs_due_page ON social_jobs(status,scheduled_at,id);
+      CREATE INDEX IF NOT EXISTS social_jobs_poll_lookup ON social_jobs(account_id,status,json_extract(value,'$.kind'));
       CREATE TABLE IF NOT EXISTS social_events (account_id TEXT NOT NULL, event_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(account_id,event_id));
       CREATE TABLE IF NOT EXISTS social_audit (operation_id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS social_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -650,8 +656,10 @@ export class SocialService {
     const token = randomBytes(32).toString("base64url");
     const expiresAt = this.now() + 12 * 60 * 60_000;
     for (const [key, grant] of this.grants)
-      if (grant.expiresAt <= this.now() || grant.principal.sessionId === sessionId)
-        this.grants.delete(key);
+      if (grant.expiresAt <= this.now()) this.grants.delete(key);
+    // Catalog/title helpers and the main provider can share one conversation.
+    // Issuing a sibling grant must not disconnect a running MCP server.
+    if (this.grants.size >= 4096) throw new Error("Social session grant capacity reached.");
     this.grants.set(hash(token), {
       principal: {
         kind: "session",
@@ -900,15 +908,18 @@ export class SocialService {
       case "policy.saveReviewed": {
         this.owner(p);
         exact(input, ["policies", "expectedPolicies", "confirm"]);
-        if (input.confirm !== "UPDATE_SOCIAL_POLICY") throw new Error("Confirm the reviewed social policy change.");
+        if (input.confirm !== "UPDATE_SOCIAL_POLICY")
+          throw new Error("Confirm the reviewed social policy change.");
         const policies = parseSocialPolicies(input.policies);
         const expected = parseSocialPolicies(input.expectedPolicies);
-        const key = (value: SocialPolicies) => JSON.stringify([
-          value.global,
-          ...SOCIAL_PLATFORMS.map((platform) => [platform, value.platforms[platform] ?? null]),
-        ]);
+        const key = (value: SocialPolicies) =>
+          JSON.stringify([
+            value.global,
+            ...SOCIAL_PLATFORMS.map((platform) => [platform, value.platforms[platform] ?? null]),
+          ]);
         return this.transaction(() => {
-          if (key(this.policies()) !== key(expected)) throw new Error("Social policy changed. Review the latest settings before saving.");
+          if (key(this.policies()) !== key(expected))
+            throw new Error("Social policy changed. Review the latest settings before saving.");
           this.setSetting("policies", JSON.stringify(policies));
           this.invalidatePublishingPlans("policy");
           return policies;
@@ -3154,7 +3165,7 @@ export class SocialService {
   }
 
   /** OAuth completion is host-only; a UI/tool cannot submit a token or forge scopes. */
-  private async generateQueuedDraft(): Promise<void> {
+  private async generateQueuedDraft(): Promise<boolean> {
     // Only the first queued draft is wanted; SQLite finds it without parsing the rest.
     const row = this.store.db
       .prepare(
@@ -3162,7 +3173,7 @@ export class SocialService {
       )
       .get();
     const draft = row ? (JSON.parse(String(row.value)) as SocialDraft) : undefined;
-    if (!draft?.generation) return;
+    if (!draft?.generation) return false;
     const generation = draft.generation;
     const controller = new AbortController();
     this.generationControllers.set(draft.id, controller);
@@ -3273,6 +3284,7 @@ export class SocialService {
     } finally {
       this.generationControllers.delete(draft.id);
     }
+    return true;
   }
   async connectAccount(
     accountId: string,
@@ -3490,6 +3502,7 @@ export class SocialService {
     void this.tick();
   }
   stop(): void {
+    this.backgroundEpoch++;
     this.programs.stop();
     for (const controller of this.generationControllers.values()) controller.abort();
     clearInterval(this.timer);
@@ -3513,31 +3526,46 @@ export class SocialService {
     if (this.isDelegated?.()) return;
     if (this.busy) return;
     this.busy = true;
+    const epoch = this.backgroundEpoch;
+    const background: Promise<unknown>[] = [];
+    let generation: Promise<boolean> | undefined;
     try {
       if (this.setting("stopped") === "true") return;
       // A host that never used social media has nothing to refresh, generate,
       // poll or send: skip the scans this 5 s tick would otherwise repeat.
       if (this.unused()) return;
-      if (this.refreshCredential)
-        await Promise.allSettled(
-          this.list<SocialAccount>("account")
-            .filter(
-              (account) =>
-                account.connected &&
-                !account.paused &&
-                account.connection !== "browser" &&
-                account.executorId === this.store.environmentId &&
-                account.expiresAt !== undefined &&
-                account.expiresAt <= this.now() + 60000 &&
-                ["x", "youtube"].includes(account.platform),
-            )
-            .map((account) => this.credentialFor(account.id)),
+      const accounts = this.list<SocialAccount>("account");
+      // Credential rotation remains a preflight barrier: dispatch must not race
+      // a refresh that can invalidate the currently stored access token.
+      if (this.refreshCredential) {
+        const due = accounts.filter(
+          (account) =>
+            account.connected &&
+            !account.paused &&
+            account.connection !== "browser" &&
+            account.executorId === this.store.environmentId &&
+            account.expiresAt !== undefined &&
+            account.expiresAt <= this.now() + 60000 &&
+            ["x", "youtube"].includes(account.platform),
         );
+        for (let offset = 0; offset < due.length; offset += 4)
+          await Promise.allSettled(
+            due.slice(offset, offset + 4).map((account) => this.credentialFor(account.id)),
+          );
+      }
       this.programs.tick();
       this.processPublishingPlans();
-      await this.generateQueuedDraft();
+      if (!this.generationPending) {
+        const pending = this.generateQueuedDraft().finally(() => {
+          if (this.generationPending === pending) this.generationPending = undefined;
+        });
+        this.generationPending = pending;
+        generation = pending;
+        background.push(pending);
+      }
       if (this.setting("polling") === "true")
-        for (const account of this.list<SocialAccount>("account")) {
+        for (const account of accounts) {
+          if (this.pollingPending.size >= 4) break;
           if (
             account.connected &&
             !account.paused &&
@@ -3546,42 +3574,65 @@ export class SocialService {
                 (item) => item.operation === "poll" && item.status === "available",
               )) &&
             account.executorId === this.store.environmentId &&
-            Number(this.setting(`pollRate:${account.id}`) ?? 0) <= this.now()
+            Number(this.setting(`pollRate:${account.id}`) ?? 0) <= this.now() &&
+            !this.pollingPending.has(account.id)
           ) {
-            try {
-              await this.pollAccount(account.id);
-            } catch {
-              this.setSetting(
-                `pollRate:${account.id}`,
-                String(
-                  Math.max(
-                    Number(this.setting(`pollRate:${account.id}`) ?? 0),
-                    this.now() + 60_000,
+            background.push(
+              this.pollAccount(account.id).catch(() => {
+                this.setSetting(
+                  `pollRate:${account.id}`,
+                  String(
+                    Math.max(
+                      Number(this.setting(`pollRate:${account.id}`) ?? 0),
+                      this.now() + 60_000,
+                    ),
                   ),
-                ),
-              );
-            }
+                );
+              }),
+            );
           }
         }
-      if (this.setting("sending") !== "true") return;
-      let attempts = 0;
-      for (const candidate of this.jobs().filter(
-        (job) => job.status === "queued" && job.scheduledAt <= this.now(),
-      )) {
-        if (
-          attempts >= 20 ||
-          this.setting("stopped") === "true" ||
-          this.setting("sending") !== "true"
-        )
-          break;
-        // Held work retains its place, but consumes no dispatch capacity. The
-        // execution owner checks eligibility and counts only claimed attempts.
-        if (await this.execute(candidate.id)) attempts++;
+      if (this.setting("sending") === "true") {
+        // Page only due metadata. Rotate a bounded candidate window so held work
+        // cannot force a history scan or permanently starve later eligible work.
+        const page = () =>
+          this.store.db
+            .prepare(
+              `SELECT id,scheduled_at FROM social_jobs WHERE status='queued' AND scheduled_at<=?
+           ${this.dueCursor ? "AND (scheduled_at,id)>(?,?)" : ""}
+           ORDER BY scheduled_at,id LIMIT 200`,
+            )
+            .all(this.now(), ...(this.dueCursor ? [this.dueCursor.at, this.dueCursor.id] : []));
+        let candidates = page();
+        if (!candidates.length && this.dueCursor) {
+          this.dueCursor = undefined;
+          candidates = page();
+        }
+        let attempts = 0,
+          examined = 0;
+        for (const candidate of candidates) {
+          if (
+            attempts >= 20 ||
+            this.setting("stopped") === "true" ||
+            this.setting("sending") !== "true"
+          )
+            break;
+          this.dueCursor = { at: Number(candidate.scheduled_at), id: String(candidate.id) };
+          examined++;
+          // Execution owns the transactional claim and every live permission check.
+          if (await this.execute(String(candidate.id))) attempts++;
+        }
+        if (examined === candidates.length && candidates.length < 200) this.dueCursor = undefined;
       }
       this.processPublishingPlans();
     } finally {
       this.busy = false;
     }
+    // Release dispatch ownership before waiting for unrelated provider/inbound
+    // work. The next timer tick can admit newly due jobs during those waits.
+    await Promise.allSettled(background);
+    const generated = generation && (await generation);
+    if (generated && epoch === this.backgroundEpoch && !this.isDelegated?.()) await this.tick(); // A completed draft may have queued an authorized reply.
   }
   private async execute(id: string): Promise<boolean> {
     let job = this.job(id);
@@ -3862,6 +3913,17 @@ export class SocialService {
     return true;
   }
   async pollAccount(accountId: string): Promise<{ ingested: number }> {
+    const existing = this.pollingPending.get(accountId);
+    if (existing) return existing;
+    const pending = this.pollAccountOwned(accountId);
+    this.pollingPending.set(accountId, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this.pollingPending.get(accountId) === pending) this.pollingPending.delete(accountId);
+    }
+  }
+  private async pollAccountOwned(accountId: string): Promise<{ ingested: number }> {
     const account = this.get<SocialAccount>("account", accountId);
     this.capability(account, "poll");
     if (account.paused || account.executorId !== this.store.environmentId)
@@ -3876,15 +3938,15 @@ export class SocialService {
       const result = await this.adapterFor(account).poll(
         account,
         credential.accessToken,
-        this.jobs()
-          .filter(
-            (job) =>
-              job.accountId === account.id &&
-              job.status === "succeeded" &&
-              job.kind === "publish" &&
-              job.platformId,
+        this.store.db
+          .prepare(
+            `SELECT json_extract(value,'$.platformId') AS platform_id FROM social_jobs
+           WHERE account_id=? AND status='succeeded' AND json_extract(value,'$.kind')='publish'
+             AND json_extract(value,'$.platformId') IS NOT NULL ORDER BY scheduled_at,id`,
           )
-          .map((job) => job.platformId!),
+          .all(account.id)
+          .map((row) => String(row.platform_id))
+          .filter(Boolean),
         this.setting(`cursor:${account.id}`),
       );
       const ingested = this.ingest(accountId, result.events);

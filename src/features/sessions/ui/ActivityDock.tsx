@@ -34,6 +34,8 @@ type Props = {
   blocks: Block[];
   busy: boolean;
   pendingQuestion: boolean;
+  /** The previous turn ended, but a queued send still has no delivery acknowledgement. */
+  deliveryUnconfirmed?: boolean;
   backgroundTasks?: string[];
   backgroundAgents?: number;
   /** False while another tab is in front; nothing counts as seen then. */
@@ -62,6 +64,7 @@ export const ActivityDock = memo(function ActivityDock({
   blocks,
   busy,
   pendingQuestion,
+  deliveryUnconfirmed = false,
   backgroundTasks,
   backgroundAgents,
   visible = true,
@@ -72,6 +75,7 @@ export const ActivityDock = memo(function ActivityDock({
   onStopAll,
 }: Props) {
   useLocale();
+  const t = useT();
   const stops = useStopRequests();
   const root = useRef<HTMLDivElement>(null);
   const [unseenDone, setUnseenDone] = useState(false);
@@ -106,13 +110,16 @@ export const ActivityDock = memo(function ActivityDock({
     backgroundAgents,
     unseenDone,
   });
+  const displayLabel = dock.state === "done" && deliveryUnconfirmed
+    ? `${t("Turn activity")}: ${t("Finished")}`
+    : label;
 
   return (
     <div ref={root}>
       {/* Always mounted, so a state change is announced rather than the dock
           appearing. The ticking clock stays out of it. */}
       <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {label}
+        {displayLabel}
       </span>
       {dock.state === "idle" ? null : (
         <DockBody
@@ -120,7 +127,7 @@ export const ActivityDock = memo(function ActivityDock({
           sessionId={sessionId}
           dock={dock}
           visible={visible}
-          label={label}
+          label={displayLabel}
           onOpenAgent={onOpenAgent}
           stop={{
             ...stops,
@@ -174,7 +181,7 @@ function DockBody({
     <section
       aria-label={t("Turn activity")}
       data-activity-dock={dock.state}
-      className={`mb-1.5 overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) font-sans text-xs ${
+      className={`activity-dock mb-1.5 overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) font-sans text-xs ${
         dock.state === "done" ? "activity-dock-done" : ""
       }`}
     >

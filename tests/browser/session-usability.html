@@ -1,10 +1,17 @@
 <!doctype html>
 <html>
-  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Integrated session usability</title></head>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Integrated session usability</title>
+  </head>
   <body>
     <div id="root"></div>
     <script>
-      localStorage.setItem("bycoda.language", "en");
+      localStorage.setItem(
+        "bycoda.language",
+        new URLSearchParams(location.search).get("lang") === "tr" ? "tr" : "en",
+      );
       window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
       window.__TAURI_INTERNALS__ = {
         metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },

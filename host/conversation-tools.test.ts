@@ -16,6 +16,32 @@ import {
 
 const principal = { kind: "session" as const, projectId: "p", sessionId: "s", provider: "codex" };
 describe("Conversation Tools boundary", () => {
+  it("scopes lifecycle writes without accepting owner approval or source identity overrides", () => {
+    for (const [action, input] of Object.entries({
+      "files.rename": { path: "a", name: "b", expectedHash: "a".repeat(64) },
+      "files.copy": { path: "a", destinationParent: "folder", expectedHash: "a".repeat(64) },
+      "files.delete": { path: "a", expectedHash: "a".repeat(64) },
+      "tasks.transfer": { taskId: "task", targetProjectId: "destination", expectedUpdatedAt: 1 },
+      "tasks.delete": { taskId: "task", expectedUpdatedAt: 1 },
+      "tasks.notes.resolve": { taskId: "task", noteId: "note", resolved: true, expectedUpdatedAt: 1 },
+      "stewards.delete": { stewardId: "steward", expectedUpdatedAt: 1 },
+      "stewards.decline": { stewardId: "steward", taskId: "task", expectedUpdatedAt: 1, expectedTaskUpdatedAt: 1 },
+    })) {
+      expect(() => validateConversationTool(action, input)).not.toThrow();
+      expect(conversationToolCatalog().find((tool) => tool.action === action)?.annotations.readOnlyHint).toBe(false);
+      for (const extra of [{ approved: true }, { projectId: "other" }, { discard: true }]) expect(() => validateConversationTool(action, { ...input, ...extra })).toThrow();
+    }
+  });
+  it("documents every catalog action without a generic fallback", () => {
+    const catalog = conversationToolCatalog();
+    expect(catalog.length).toBeGreaterThanOrEqual(160);
+    for (const tool of catalog) {
+      expect(tool.description, tool.action).not.toContain(
+        "Conversation Tools operation for this session",
+      );
+      expect(tool.description.length, tool.action).toBeGreaterThan(100);
+    }
+  });
   it("accepts schema-valid editor saves larger than the old stdio line cap", async () => {
     const input = new PassThrough(), output = new PassThrough();
     let raw = "";

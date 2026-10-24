@@ -78,6 +78,7 @@ it("keeps usable cached models during refresh and retries only the failed provid
   slow.reject(new Error("Login required"));
   expect((await complete).errors.pi).toBe("Login required");
   discover.mockResolvedValue([model("pi:v2")]);
+  await vi.advanceTimersByTimeAsync(30_000);
   expect((await cache.read("/project")).models.pi).toEqual([model("pi:v2")]);
   expect(discover.mock.calls.map(([provider]) => provider)).toEqual([
     "codex",
@@ -103,4 +104,57 @@ it("refreshes after the TTL and isolates project caches and explicit invalidatio
   cache.clear();
   await cache.read("/a");
   expect(discover).toHaveBeenCalledTimes(4);
+});
+
+it("backs off failed discovery between reads while explicit refresh and binary changes retry immediately", async () => {
+  vi.useFakeTimers();
+  let binary = "v1";
+  const discover = vi.fn(async () => {
+    throw new Error("Login required");
+  });
+  const cache = new ModelCatalogCache(["codex"], async () => binary, discover);
+  await cache.read("/project");
+  for (let index = 0; index < 20; index++) await cache.read("/project");
+  expect(discover).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(30_000);
+  await cache.read("/project");
+  expect(discover).toHaveBeenCalledTimes(2);
+  await cache.read("/project", false, true);
+  expect(discover).toHaveBeenCalledTimes(3);
+  binary = "v2";
+  await cache.read("/project");
+  expect(discover).toHaveBeenCalledTimes(4);
+});
+
+it("releases settled project catalogs while retaining recently used project results", async () => {
+  const discover = vi.fn(async (_provider: string, cwd: string) => [model(cwd)]);
+  const cache = new ModelCatalogCache(["codex"], async () => "v1", discover);
+  for (let index = 0; index < 40; index++) await cache.read(`/project-${index}`);
+  await cache.read("/project-39");
+  expect(discover).toHaveBeenCalledTimes(40);
+  await cache.read("/project-0");
+  expect(discover).toHaveBeenCalledTimes(41);
+});
+
+it("shares forced reads with in-flight catalogs even beyond the settled cache limit", async () => {
+  vi.useFakeTimers();
+  const waiting = Array.from({ length: 40 }, deferred);
+  const discover = vi.fn((_provider: string, cwd: string) => waiting[Number(cwd.slice(1))].promise);
+  const cache = new ModelCatalogCache(["codex"], async () => "v1", discover);
+  const previews = waiting.map((_, index) => cache.read(`/${index}`, true));
+  await vi.advanceTimersByTimeAsync(150);
+  await Promise.all(previews);
+  const forced = cache.read("/0", false, true);
+  expect(discover).toHaveBeenCalledTimes(40);
+  waiting.forEach((pending, index) => pending.resolve([model(String(index))]));
+  expect((await forced).models.codex).toEqual([model("0")]);
+  expect(discover).toHaveBeenCalledTimes(40);
+});
+
+it("does not retain an oversized settled catalog beyond the shared byte budget", async () => {
+  const discover = vi.fn(async () => [model("x".repeat(9 * 1024 * 1024))]);
+  const cache = new ModelCatalogCache(["codex"], async () => "v1", discover);
+  await cache.read("/large");
+  await cache.read("/large");
+  expect(discover).toHaveBeenCalledTimes(2);
 });

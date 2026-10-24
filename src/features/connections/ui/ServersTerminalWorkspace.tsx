@@ -30,6 +30,7 @@ import { requestSshStartupReviews } from "../model/sshRunbookQueue";
 import { ServerTerminalSession } from "./ServerTerminalSession";
 
 type TerminalActions = {
+  inventoryVisible: boolean;
   open: (server: ServerRecord) => void;
   forwardAgent: (server: ServerRecord, reviewId: string) => void;
   quick: (endpoint: SshEndpoint, name?: string) => void;
@@ -40,6 +41,8 @@ export const useOpenServerTerminal = () => useContext(TerminalContext)?.open;
 export const useOpenAgentServerTerminal = () => useContext(TerminalContext)?.forwardAgent;
 export const useGenerateSshKey = () => useContext(TerminalContext)?.generate;
 export const useOpenQuickServerTerminal = () => useContext(TerminalContext)?.quick;
+export const useServerInventoryVisible = () =>
+  useContext(TerminalContext)?.inventoryVisible ?? true;
 
 /** Window-lifetime tabs only: restoring inventory never starts a process or replays input. */
 export function ServersTerminalWorkspace({
@@ -235,6 +238,7 @@ export function ServersTerminalWorkspace({
   return (
     <TerminalContext.Provider
       value={{
+        inventoryVisible: visible && !active,
         open,
         forwardAgent: async (server, reviewId) => {
           const id = `ssh-agent:${crypto.randomUUID()}`;

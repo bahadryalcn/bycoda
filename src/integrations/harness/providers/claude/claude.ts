@@ -24,6 +24,7 @@ import {
   asRecord,
   assistantMessageId,
   assistantTextBlocks,
+  errorFromAssistant,
   assistantThinkingBlocks,
   assistantToolUses,
   contextFromResult,
@@ -1070,6 +1071,12 @@ function handleAssistant(live: Live, rec: Record<string, unknown>): void {
   if (used !== undefined) live.onEvent({ type: "context", used });
 
   const snapshot = assistantTextBlocks(rec).join("");
+  const failure = errorFromAssistant(rec);
+  if (failure && !live.cancelled) {
+    live.onEvent({ type: "session.error", message: failure });
+    live.turnFailed?.(new Error(failure));
+    return;
+  }
   if (snapshot) closePendingAssistantMessage(live);
   const extra = snapshotRemainder(live.emittedAssistant, snapshot);
   if (extra) {

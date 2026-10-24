@@ -1,5 +1,9 @@
 import { useCallback, useRef, type MutableRefObject } from "react";
-import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
+import {
+  sessionsRef,
+  setSessions,
+  subscribeShell,
+} from "../../../features/sessions/model/sessionsStore";
 import {
   useAdoptedSessions,
   type RefreshAdoptedSession,
@@ -33,18 +37,21 @@ export function useRemoteHostSync(): RemoteHostSync {
     loadRunningOnHostRef,
     refreshAdoptedSessionRef,
   );
-  const onRefreshAdoptedSession = useCallback<RefreshAdoptedSession>((sessionId, target) => {
-    const refresh = refreshAdoptedSessionRef.current;
-    if (!refresh) return Promise.reject(new Error("Host unavailable. Try again."));
-    return refresh(sessionId, target);
-  }, []);
+  const onRefreshAdoptedSession = useCallback<RefreshAdoptedSession>(
+    (sessionId, target, resolution) => {
+      const refresh = refreshAdoptedSessionRef.current;
+      if (!refresh) return Promise.reject(new Error("Host unavailable. Try again."));
+      return refresh(sessionId, target, resolution);
+    },
+    [],
+  );
   const desktopLiveHandlers = useRef<DesktopLiveHandlers>({
     stop: () => undefined,
     approve: () => undefined,
     answer: () => undefined,
   });
   useDesktopLive(sessionsRef, desktopLiveHandlers, localHostReachable);
-  useSharedLocalQueues(sessionsRef, setSessions, localHostReachable);
+  useSharedLocalQueues(sessionsRef, setSessions, localHostReachable, subscribeShell);
   const linkedSessionUpdatesRef = useRef<ReadonlyMap<string, LinkedSessionUpdate>>(new Map());
 
   const lastRemoteSnapshot = useRef(new Map<string, HostSession>());

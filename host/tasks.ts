@@ -461,9 +461,22 @@ export class HostTasks {
     store.db.exec(
       "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE INDEX IF NOT EXISTS tasks_project ON tasks(json_extract(value, '$.projectId'));",
     );
+    // Database-owned revisions also see recovery edits and another board's
+    // writes, without discarding every historical JSON object on every tick.
+    store.db.exec(`
+      CREATE TABLE IF NOT EXISTS task_cache_revision (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL);
+      INSERT OR IGNORE INTO task_cache_revision VALUES (1, 0);
+      CREATE TRIGGER IF NOT EXISTS task_cache_insert AFTER INSERT ON tasks BEGIN UPDATE task_cache_revision SET version=version+1 WHERE id=1; END;
+      CREATE TRIGGER IF NOT EXISTS task_cache_update AFTER UPDATE ON tasks BEGIN UPDATE task_cache_revision SET version=version+1 WHERE id=1; END;
+      CREATE TRIGGER IF NOT EXISTS task_cache_delete AFTER DELETE ON tasks BEGIN UPDATE task_cache_revision SET version=version+1 WHERE id=1; END;
+      CREATE INDEX IF NOT EXISTS tasks_scheduler_status ON tasks(json_extract(value, '$.status'));
+      CREATE INDEX IF NOT EXISTS tasks_scheduler_cleanup ON tasks(id)
+        WHERE json_extract(value, '$.status')='done' AND json_extract(value, '$.merged')=1
+          AND (json_extract(value, '$.worktreeCwd') IS NOT NULL OR json_array_length(value, '$.historyRecovery')>0);
+    `);
     this.limits = new HostLimits(store, now);
     this.limits.track(() =>
-      Array.from(this.taskIndex().values()).flatMap((task) =>
+      Array.from((this.schedulerTasks ?? this.schedulerSnapshot(false)).values()).flatMap((task) =>
         task.status === "running"
           ? [task.startedAt ?? task.createdAt]
           : task.status === "verifying" && task.reviewer
@@ -528,12 +541,8 @@ export class HostTasks {
   }
 
   /** Boards reopened over the same store must invalidate each other's caches. */
-  private static readonly revisions = new WeakMap<HostStore, number>();
   private get revisionCounter(): number {
-    return HostTasks.revisions.get(this.store) ?? 0;
-  }
-  private set revisionCounter(value: number) {
-    HostTasks.revisions.set(this.store, value);
+    return Number(this.store.db.prepare("SELECT version FROM task_cache_revision WHERE id=1").get()!.version);
   }
   onChange?: () => void;
   private etagCache?: { revision: number; etag: string };
@@ -541,6 +550,11 @@ export class HostTasks {
   private projectListCache = new Map<string, { revision: number; tasks: HostTask[] }>();
   /** Live task state for one scheduler pass, maintained by write/delete. */
   private schedulerTasks?: Map<string, HostTask>;
+  private pointIndex?: {
+    revision: number;
+    entries: Map<string, { value?: HostTask; bytes: number }>;
+    bytes: number;
+  };
 
   get revision(): number {
     return this.revisionCounter;
@@ -562,13 +576,14 @@ export class HostTasks {
     }));
     const etag = createHash("sha256").update(JSON.stringify(summaries)).digest("base64url");
     // list() may itself backfill review notes, which bumps the revision.
-    this.etagCache = { revision: this.revisionCounter, etag };
+    if (!this.store.transactionActive)
+      this.etagCache = { revision: this.revisionCounter, etag };
     return etag;
   }
 
   /** Oldest first. */
   list(projectId?: string): HostTask[] {
-    if (projectId !== undefined && !this.schedulerTasks) {
+    if (projectId !== undefined) {
       const cached = this.projectListCache.get(projectId);
       if (cached?.revision === this.revisionCounter) return cached.tasks.slice();
       const tasks = this.store.db
@@ -577,15 +592,12 @@ export class HostTasks {
         .map((row) => this.withReviewNotes(JSON.parse(String(row.value)) as HostTask))
         .sort((a, b) => a.createdAt - b.createdAt);
       if (this.projectListCache.size >= 32) this.projectListCache.clear();
-      this.projectListCache.set(projectId, { revision: this.revisionCounter, tasks });
+      if (!this.store.transactionActive)
+        this.projectListCache.set(projectId, { revision: this.revisionCounter, tasks });
       return tasks.slice();
     }
-    if (!this.schedulerTasks && this.listCache?.revision === this.revisionCounter)
+    if (this.listCache?.revision === this.revisionCounter)
       return this.listCache.tasks.slice();
-    if (this.schedulerTasks)
-      return Array.from(this.schedulerTasks.values())
-        .filter((task) => projectId === undefined || task.projectId === projectId)
-        .sort((a, b) => a.createdAt - b.createdAt);
     const tasks = this.store.db
       .prepare("SELECT value FROM tasks")
       .all()
@@ -594,13 +606,55 @@ export class HostTasks {
       .sort((a, b) => a.createdAt - b.createdAt);
     const byId = new Map(tasks.map((task) => [task.id, task]));
     // Review-note backfills above can themselves bump the revision.
-    this.listCache = { revision: this.revisionCounter, byId, tasks };
+    if (!this.store.transactionActive)
+      this.listCache = { revision: this.revisionCounter, byId, tasks };
     return tasks.slice();
   }
 
   /** Shared read-only index; task writes invalidate the revision cache. */
-  taskIndex(): ReadonlyMap<string, HostTask> {
+  taskIndex(ids?: readonly string[]): ReadonlyMap<string, HostTask> {
+    if (ids) {
+      const revision = this.revisionCounter;
+      if (!this.store.transactionActive && this.pointIndex?.revision !== revision)
+        this.pointIndex = { revision, entries: new Map(), bytes: 0 };
+      const cache = this.store.transactionActive
+        ? { revision, entries: new Map<string, { value?: HostTask; bytes: number }>(), bytes: 0 }
+        : this.pointIndex!;
+      const result = new Map<string, HostTask>();
+      for (const id of ids) {
+        let value = this.schedulerTasks?.get(id);
+        if (!value) {
+          let cached = cache.entries.get(id);
+          if (!cached) {
+            const row = this.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(id);
+            const raw = row ? String(row.value) : undefined;
+            value = raw === undefined ? undefined : this.withReviewNotes(JSON.parse(raw) as HostTask);
+            // A legacy review-note backfill can itself write a task.
+            const current = this.revisionCounter;
+            if (cache.revision !== current) {
+              cache.entries.clear();
+              cache.bytes = 0;
+              cache.revision = current;
+            }
+            cached = { value, bytes: raw === undefined ? 64 : Buffer.byteLength(raw) + 64 };
+            cache.entries.set(id, cached);
+            cache.bytes += cached.bytes;
+            while (cache.entries.size > 256 || cache.bytes > 16 * 1024 * 1024) {
+              const first = cache.entries.keys().next().value;
+              if (first === undefined) break;
+              cache.bytes -= cache.entries.get(first)!.bytes;
+              cache.entries.delete(first);
+            }
+          }
+          value = cached.value;
+        }
+        if (value) result.set(id, value);
+      }
+      return result;
+    }
     if (this.schedulerTasks) return this.schedulerTasks;
+    if (this.store.transactionActive)
+      return new Map(this.list().map((task) => [task.id, task]));
     if (this.listCache?.revision !== this.revisionCounter) this.list();
     return this.listCache!.byId;
   }
@@ -665,6 +719,7 @@ export class HostTasks {
       ? new Map(this.schedulerTasks)
       : new Map(this.list().map((task) => [task.id, task]));
     graph.set(input.id, input as HostTask);
+    this.hydrateDependencies(graph, [input as HostTask]);
     const cycle = this.dependencyCycle(input.id, graph);
     if (cycle)
       throw new Error(
@@ -1026,8 +1081,14 @@ export class HostTasks {
 
   /** A task whose branch was never merged is only deleted with `discard`,
    * which removes that branch and its worktree. */
-  async delete(id: string, discard = false): Promise<void> {
+  async delete(id: string, discard = false, expectedUpdatedAt?: number): Promise<void> {
     const task = this.find(id);
+    if (expectedUpdatedAt !== undefined && (!Number.isSafeInteger(expectedUpdatedAt) || expectedUpdatedAt < 0))
+      throw new Error("Invalid task revision.");
+    if (task && expectedUpdatedAt !== undefined && task.updatedAt !== expectedUpdatedAt)
+      throw new Error("This task changed. Refresh it before deleting.");
+    if (task && task.status !== "done" && this.list().some((other) => other.id !== id && other.status !== "done" && other.dependsOn?.includes(id)))
+      throw new Error("Other unfinished tasks depend on this task. Remove those tasks first.");
     if (this.jobs.has(id))
       throw new Error("The previous verification is still stopping. Retry after it finishes.");
     if (task?.status === "running" || task?.status === "verifying")
@@ -1041,11 +1102,29 @@ export class HostTasks {
       await this.discard(task);
     }
     this.store.db.prepare("DELETE FROM tasks WHERE id=?").run(id);
-    this.revisionCounter++;
     this.onChange?.();
     this.listCache = undefined;
     this.projectListCache.clear();
     this.schedulerTasks?.delete(id);
+  }
+
+  /** Transfer only unstarted independent work; never move branches or execution identity. */
+  validateTransfer(id: string, targetProjectId: string, expectedUpdatedAt: number): HostTask {
+      const task = this.get(id);
+      if (!task || task.updatedAt !== expectedUpdatedAt) throw new Error("Task changed; read it before transferring.");
+      if (task.projectId === targetProjectId) throw new Error("Choose a different project.");
+      this.store.project(targetProjectId);
+      if (task.status !== "todo" || task.startedAt || task.sessionId || task.branch || task.worktreeCwd || task.goalId || task.stewardId || task.crewDefinitionId || task.crewRunId || task.workspace || task.deliveryCwd || task.reviewer || task.dependsOn?.length || this.list().some((other) => other.dependsOn?.includes(id)))
+        throw new Error("Only an unstarted independent to-do task can move between projects.");
+      if (this.jobs.has(id)) throw new Error("Wait for task verification to stop.");
+      return task;
+  }
+
+  transfer(id: string, targetProjectId: string, expectedUpdatedAt: number): HostTask {
+    return this.transaction(() => {
+      const task = this.validateTransfer(id, targetProjectId, expectedUpdatedAt);
+      return this.write({ ...task, projectId: targetProjectId, updatedAt: this.now() });
+    });
   }
 
   get(id: string): HostTask | undefined {
@@ -1166,14 +1245,12 @@ export class HostTasks {
     const now = this.now();
     // Refresh once per tick, including persisted recovery edits made outside
     // this board. All later reads in this pass use the live index below.
-    this.listCache = undefined;
-    this.projectListCache.clear();
-    const initial = this.list();
-    const byId = this.listCache!.byId;
+    const byId = this.schedulerSnapshot();
+    const initial = [...byId.values()].sort((a, b) => a.createdAt - b.createdAt);
     this.schedulerTasks = byId;
     const hasUnfinishedDependencies = (task: HostTask) =>
       (task.dependsOn ?? []).some((id) => {
-        const dependency = byId.get(id);
+        const dependency = this.scheduledTask(id);
         return dependency !== undefined && dependency.status !== "done";
       });
     // A newly failed task remains visibly blocked until the next scheduler tick.
@@ -1284,6 +1361,62 @@ export class HostTasks {
   private find(id: string): HostTask | undefined {
     const row = this.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(id);
     return row ? this.withReviewNotes(JSON.parse(String(row.value)) as HostTask) : undefined;
+  }
+
+  /** A task can acquire a new dependency while a tick awaits another worker.
+   * Resolve only its required closure, including inactive/completed records. */
+  private hydrateDependencies(
+    graph: Map<string, HostTask>,
+    roots: Iterable<Pick<HostTask, "id" | "dependsOn">>,
+  ): void {
+    const queue = [...roots];
+    const visited = new Set<string>();
+    for (let index = 0; index < queue.length; index++) {
+      const task = queue[index];
+      if (visited.has(task.id)) continue;
+      visited.add(task.id);
+      for (const id of task.dependsOn ?? []) {
+        const dependency = graph.get(id) ?? this.find(id);
+        if (!dependency) continue;
+        graph.set(id, dependency);
+        queue.push(dependency);
+      }
+    }
+  }
+
+  private scheduledTask(id: string): HostTask | undefined {
+    const known = this.schedulerTasks?.get(id);
+    if (known) return known;
+    const value = this.find(id);
+    if (value && this.schedulerTasks) {
+      this.schedulerTasks.set(id, value);
+      this.hydrateDependencies(this.schedulerTasks, [value]);
+    }
+    return value;
+  }
+
+  /** Only schedulable/recovery work and its dependency closure need full JSON.
+   * Owner-facing list() remains a complete history even during an awaited tick. */
+  private schedulerSnapshot(dependencies = true): Map<string, HostTask> {
+    const rows = this.store.db.prepare(`
+      SELECT value FROM tasks WHERE json_extract(value, '$.status') IN ('queued','running','verifying','review','blocked')
+      UNION ALL SELECT value FROM tasks WHERE json_extract(value, '$.status')='done' AND json_extract(value, '$.merged')=1
+        AND (json_extract(value, '$.worktreeCwd') IS NOT NULL OR json_array_length(value, '$.historyRecovery')>0)
+    `).all();
+    const result = new Map<string, HostTask>();
+    const queue = rows.map((row) => this.withReviewNotes(JSON.parse(String(row.value)) as HostTask));
+    for (let index = 0; index < queue.length; index++) {
+      const task = queue[index];
+      if (result.has(task.id)) continue;
+      result.set(task.id, task);
+      if (!dependencies) continue;
+      for (const id of task.dependsOn ?? []) {
+        if (result.has(id)) continue;
+        const dependency = this.find(id);
+        if (dependency) queue.push(dependency);
+      }
+    }
+    return result;
   }
 
   /** Missing forward references are valid; only a closed dependency path blocks. */
@@ -1414,11 +1547,11 @@ export class HostTasks {
     this.store.db
       .prepare("INSERT INTO tasks VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value")
       .run(task.id, JSON.stringify(task));
-    this.revisionCounter++;
     this.onChange?.();
     this.listCache = undefined;
     this.projectListCache.clear();
     this.schedulerTasks?.set(task.id, task);
+    if (this.schedulerTasks) this.hydrateDependencies(this.schedulerTasks, [task]);
     return task;
   }
 
@@ -1592,7 +1725,7 @@ export class HostTasks {
     const target = task.workspace ? await taskWorkspace(project.cwd, task.workspace) : undefined;
     const targetCwd = target?.cwd ?? project.cwd;
     for (const id of task.dependsOn ?? []) {
-      const dependency = this.schedulerTasks ? this.schedulerTasks.get(id) : this.find(id);
+      const dependency = this.scheduledTask(id);
       if (dependency?.projectId === task.projectId && dependency.deliveredCommit) {
         try {
           await git(targetCwd, ["merge-base", "--is-ancestor", dependency.deliveredCommit, "HEAD"]);
@@ -1676,7 +1809,7 @@ export class HostTasks {
     if (ready.branch && !ready.dependencyArtifactsPrepared) {
       try {
         for (const id of ready.dependsOn ?? []) {
-          const dependency = this.schedulerTasks ? this.schedulerTasks.get(id) : this.find(id);
+          const dependency = this.scheduledTask(id);
           if (dependency?.projectId !== ready.projectId) continue;
           const source = dependency.deliveryCwd ?? this.store.project(ready.projectId).cwd;
           await transferTaskArtifacts(
@@ -1836,6 +1969,7 @@ export class HostTasks {
       if (
         session.cwd !== (task.worktreeCwd ?? this.store.project(task.projectId).cwd) ||
         session.harness !== task.harness ||
+        (session.providerAccountId ?? "default") !== (task.providerAccountId ?? "default") ||
         session.model !== task.model ||
         session.runtimeMode !== task.runtimeMode ||
         JSON.stringify(session.modelSettings) !== JSON.stringify(task.modelSettings)
@@ -2055,6 +2189,8 @@ export class HostTasks {
         ...(task.reviewerConfig
           ? {
               harness: task.reviewerConfig.harness,
+              // A profile belongs to one provider; never reuse it for a different reviewer.
+              providerAccountId: task.reviewerConfig.harness === task.harness ? task.providerAccountId : undefined,
               model: task.reviewerConfig.model,
               modelSettings: task.reviewerConfig.modelSettings,
             }
@@ -2718,15 +2854,18 @@ export class HostTasks {
     const project = this.store.project(task.projectId);
     const same = (a: string | undefined, b: string) => a != null && sameHostPath(a, b);
     const inUse = (path: string) =>
-      Array.from(this.taskIndex().values()).some(
-        (other) =>
-          other.id !== task.id &&
-          other.status !== "done" &&
-          (same(other.worktreeCwd, path) ||
-            same(other.deliveryCwd, path) ||
-            same(other.workspace?.checkoutCwd, path) ||
-            other.historyRecovery?.some((entry) => same(entry.worktreeCwd, path))),
-      ) ||
+      this.store.db.prepare(`SELECT
+        json_extract(value, '$.worktreeCwd') AS worktree,
+        json_extract(value, '$.deliveryCwd') AS delivery,
+        json_extract(value, '$.workspace.checkoutCwd') AS checkout,
+        (SELECT json_group_array(json_extract(peer.value, '$.worktreeCwd'))
+          FROM json_each(tasks.value, '$.historyRecovery') peer) AS recovery
+        FROM tasks WHERE id<>? AND json_extract(value, '$.status') IN ('todo','queued','running','verifying','review','blocked')`
+      ).all(task.id).some((row) => {
+        const paths: unknown[] = [row.worktree, row.delivery, row.checkout,
+          ...JSON.parse(String(row.recovery))];
+        return paths.some((candidate) => typeof candidate === "string" && same(candidate, path));
+      }) ||
       this.store.startupStates().some(
         (session) =>
           (session.running || session.shellRunning) &&

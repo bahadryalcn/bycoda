@@ -89,3 +89,23 @@ export function hasUnmergedBranch(task: Pick<HostTask, "branch" | "merged">): bo
 }
 
 export const NO_VERDICT = "Reviewer gave no verdict";
+
+/** Remove dependents before their prerequisites, within one host's explicit selection. */
+export function orderTasksForDeletion<T extends Pick<HostTask, "id" | "dependsOn">>(tasks: readonly T[]): T[] {
+  const dependents = new Map<string, T[]>();
+  for (const task of tasks) for (const id of task.dependsOn ?? []) {
+    const rows = dependents.get(id) ?? [];
+    rows.push(task);
+    dependents.set(id, rows);
+  }
+  const visited = new Set<string>();
+  const ordered: T[] = [];
+  const visit = (task: T) => {
+    if (visited.has(task.id)) return;
+    visited.add(task.id);
+    for (const dependent of dependents.get(task.id) ?? []) visit(dependent);
+    ordered.push(task);
+  };
+  for (const task of tasks) visit(task);
+  return ordered;
+}

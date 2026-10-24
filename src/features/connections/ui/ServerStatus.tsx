@@ -21,10 +21,13 @@ export function MachineStatus({
   machine,
   details = false,
   compact = false,
+  showDiagnostics = true,
 }: {
   machine: RemoteMachine;
   details?: boolean;
   compact?: boolean;
+  /** A detail surface can place the secondary host diagnostics in its own disclosure. */
+  showDiagnostics?: boolean;
 }) {
   useRemoteMachineOnline(machine.id);
   const state = useSyncExternalStore(
@@ -89,7 +92,7 @@ export function MachineStatus({
           <p className="mbs-1 break-words leading-relaxed">{state.error}</p>
         </details>
       ) : null}
-      <RemoteConnectionDetails environmentId={machine.environmentId} />
+      {showDiagnostics ? <RemoteConnectionDetails environmentId={machine.environmentId} /> : null}
     </div>
   );
 }

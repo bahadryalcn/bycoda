@@ -125,7 +125,10 @@ describe("Composer question focus", () => {
     registerHarness(codexAdapter);
   });
 
-  it("previews a selected draft translation, applies only on approval, and toggles with arrows", async () => {
+  it.each([
+    ["Translate to English", "Apply translation"],
+    ["Reprompt", "Apply prompt"],
+  ])("previews %s for a selected draft, applies only on approval, and toggles with arrows", async (action, applyLabel) => {
     const run = vi.fn(async () => "Hello");
     registerHarness({ ...codexAdapter, runTextPrompt: run });
     const original = "Before Merhaba after";
@@ -150,14 +153,14 @@ describe("Composer question focus", () => {
     });
     const translate = [
       ...document.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button'),
-    ].find((button) => button.textContent?.includes("Translate to English"))!;
+    ].find((button) => button.textContent?.includes(action))!;
     expect(translate).toBeDefined();
     expect(run).not.toHaveBeenCalled();
     await act(async () => translate.click());
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(textarea.value).toBe(original);
     const apply = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
-      (button) => button.textContent === "Apply translation",
+      (button) => button.textContent === applyLabel,
     )!;
     await act(async () => apply.click());
     expect(textarea.value).toBe("Before Hello after");
@@ -217,7 +220,10 @@ describe("Composer question focus", () => {
     expect(textarea.value).toBe("selam bugün nasılsın?");
   });
 
-  it("keeps an edited draft when translation finishes late", async () => {
+  it.each([
+    ["Translate to English", "Apply translation"],
+    ["Reprompt", "Apply prompt"],
+  ])("keeps an edited draft when %s finishes late", async (action, applyLabel) => {
     let resolve!: (value: string) => void;
     registerHarness({
       ...codexAdapter,
@@ -247,7 +253,7 @@ describe("Composer question focus", () => {
     });
     const translate = [
       ...document.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button'),
-    ].find((button) => button.textContent?.includes("Translate to English"))!;
+    ].find((button) => button.textContent?.includes(action))!;
     await act(async () => translate.click());
     await act(async () => {
       textarea.value = "Changed draft";
@@ -255,7 +261,7 @@ describe("Composer question focus", () => {
       resolve("Hello");
     });
     const apply = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
-      (button) => button.textContent === "Apply translation",
+      (button) => button.textContent === applyLabel,
     )!;
     await act(async () => vi.waitFor(() => expect(apply.disabled).toBe(false)));
     await act(async () => apply.click());

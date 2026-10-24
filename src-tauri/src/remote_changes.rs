@@ -2,7 +2,7 @@
 //! Content and commands never wait on this lane. Registrations expire after a
 //! crashed window; an empty subscription explicitly releases a healthy window.
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -193,6 +193,7 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
     let mut instances = Vec::new();
     let mut tasks: Option<String> = None;
     let mut inline_sync = false;
+    let mut inline_sessions = HashSet::<String>::new();
     let mut active_projects: HashMap<String, u64> = HashMap::new();
     let mut active_sessions: HashMap<String, u64> = HashMap::new();
     for request in requests {
@@ -214,7 +215,8 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
                 }
             }
         }
-        inline_sync |= request.get("inlineSync").and_then(Value::as_bool) == Some(true);
+        let wants_inline = request.get("inlineSync").and_then(Value::as_bool) == Some(true);
+        inline_sync |= wants_inline;
         if let Some(known) = request.get("tasksKnown").and_then(Value::as_str) {
             match &mut tasks {
                 Some(previous) if previous != known => *previous = String::new(),
@@ -236,6 +238,14 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
                 .get("revision")
                 .and_then(Value::as_u64)
                 .ok_or("Invalid session revision")?;
+            let selected = match request.get("inlineSessionIds") {
+                None => true, // Legacy opt-in covers only that window's own subscriptions.
+                Some(Value::Array(ids)) => ids.iter().any(|value| value.as_str() == Some(id)),
+                _ => false,
+            };
+            if wants_inline && selected {
+                inline_sessions.insert(id.to_owned());
+            }
             sessions
                 .entry(id.to_owned())
                 .and_modify(|known| *known = (*known).min(revision))
@@ -320,6 +330,9 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
     }
     if inline_sync {
         result["inlineSync"] = Value::Bool(true);
+        let mut ids: Vec<_> = inline_sessions.into_iter().collect();
+        ids.sort();
+        result["inlineSessionIds"] = json!(ids);
     }
     if !git.is_empty() {
         result["git"] = Value::Array(
@@ -401,6 +414,20 @@ fn scheduled_request(mut request: Value, generation: u64) -> Result<Value, Strin
     if overflow {
         request["waitMs"] = json!(1000);
     }
+    if let Some(ids) = request.get("inlineSessionIds").and_then(Value::as_array) {
+        let sessions: HashSet<&str> = request["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|session| session["sessionId"].as_str())
+            .collect();
+        let selected: Vec<_> = ids
+            .iter()
+            .filter(|id| id.as_str().is_some_and(|id| sessions.contains(id)))
+            .cloned()
+            .collect();
+        request["inlineSessionIds"] = Value::Array(selected);
+    }
     Ok(request)
 }
 
@@ -467,6 +494,47 @@ mod tests {
         assert_eq!(result["inlineSync"], true);
         assert_eq!(result["sessions"][0]["revision"], 1);
         assert!(union([&b].into_iter()).unwrap().get("inlineSync").is_none());
+    }
+    #[test]
+    fn inline_selection_keeps_visible_peers_and_legacy_windows_without_hidden_payloads() {
+        let visible = json!({"sessions":[{"sessionId":"visible","revision":2},{"sessionId":"hidden","revision":2}],
+            "projects":[],"inlineSync":true,"inlineSessionIds":["visible"]});
+        let hidden = json!({"sessions":[{"sessionId":"hidden","revision":1}],"projects":[]});
+        let legacy = json!({"sessions":[{"sessionId":"legacy","revision":3}],"projects":[],"inlineSync":true});
+        let result = union([&visible, &hidden, &legacy].into_iter()).unwrap();
+        assert_eq!(result["inlineSessionIds"], json!(["legacy", "visible"]));
+        assert_eq!(result["sessions"].as_array().unwrap().len(), 3);
+        let duplicate_hidden =
+            json!({"sessions":[{"sessionId":"visible","revision":1}],"projects":[]});
+        let result = union([&visible, &duplicate_hidden].into_iter()).unwrap();
+        assert_eq!(result["inlineSessionIds"], json!(["visible"]));
+        assert!(union([&hidden].into_iter())
+            .unwrap()
+            .get("inlineSync")
+            .is_none());
+    }
+
+    #[test]
+    fn inline_selection_is_bounded_to_each_rotating_session_batch() {
+        let request = json!({"sessions":(0..130).map(|i| json!({"sessionId":format!("s{i}"),"revision":1})).collect::<Vec<_>>(),
+            "projects":[],"inlineSync":true,"inlineSessionIds":(0..130).map(|i| format!("s{i}")).collect::<Vec<_>>()});
+        for generation in 0..3 {
+            let batch = scheduled_request(request.clone(), generation).unwrap();
+            let sessions: HashSet<_> = batch["sessions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value["sessionId"].as_str().unwrap())
+                .collect();
+            let selected: HashSet<_> = batch["inlineSessionIds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap())
+                .collect();
+            assert_eq!(sessions.len(), 64);
+            assert_eq!(selected, sessions);
+        }
     }
     #[test]
     fn stale_release_keeps_the_new_registration_and_tasks_only_is_a_demand() {

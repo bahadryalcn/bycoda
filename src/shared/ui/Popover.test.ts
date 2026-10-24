@@ -41,6 +41,8 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  document.documentElement.style.removeProperty("zoom");
+  document.body.style.removeProperty("zoom");
 });
 
 async function frame() {
@@ -102,4 +104,38 @@ it("keeps the frame but paints no backdrop glass when solid", async () => {
   );
   expect(document.body.querySelector(".popover-solid")).not.toBeNull();
   expect(document.body.querySelector(".popover-backdrop, .backdrop-blur-xl")).toBeNull();
+});
+
+it.each([
+  [1, 1],
+  [1.25, 1],
+  [1.25, 1.2],
+])(
+  "places in portal coordinates for document zoom %s and body zoom %s",
+  async (documentZoom, bodyZoom) => {
+    document.documentElement.style.setProperty("zoom", String(documentZoom));
+    document.body.style.setProperty("zoom", String(bodyZoom));
+    // A trigger can have a different local scale; the portal frame does not inherit it.
+    anchor.style.setProperty("zoom", "2");
+    const zoom = documentZoom * bodyZoom;
+    vi.spyOn(anchor, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(200 * zoom, 100 * zoom, 80 * zoom, 20 * zoom),
+    );
+    await act(async () => root.render(createElement(Popover, { anchor, bare: true }, "Menu")));
+    const surface = document.querySelector<HTMLElement>("[data-popover-side]")!;
+    expect(Number.parseFloat(surface.style.left)).toBeCloseTo(200);
+    expect(Number.parseFloat(surface.style.top)).toBeCloseTo(126);
+  },
+);
+
+it("clamps the full physical width inside the viewport at 125 percent zoom", async () => {
+  document.documentElement.style.setProperty("zoom", "1.25");
+  vi.stubGlobal("innerWidth", 1000);
+  vi.spyOn(anchor, "getBoundingClientRect").mockReturnValue(new DOMRect(950, 100, 40, 20));
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(200);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(100);
+  await act(async () => root.render(createElement(Popover, { anchor, bare: true }, "Menu")));
+  const surface = document.querySelector<HTMLElement>("[data-popover-side]")!;
+  expect(Number.parseFloat(surface.style.left)).toBe(592);
+  expect((Number.parseFloat(surface.style.left) + 200) * 1.25).toBe(990);
 });

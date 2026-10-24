@@ -2,6 +2,8 @@ import { Button } from "../../../shared/ui/Button";
 import { useLocale, useT } from "../../../shared/i18n";
 import {
   AiIdea,
+  Bot,
+  CheckList,
   CircleDashed,
   CursorMagicSelection,
   MessageSquare,
@@ -10,6 +12,7 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import { BTW_COMMAND } from "../model/btw";
+import { SUBAGENTS_COMMAND, TASK_COMMAND } from "../model/delegationCommands";
 import { DRAFT_COMMAND } from "../model/draftCommand";
 import { OPERATOR_COMMAND } from "../model/operatorCommand";
 import { ORCHESTRATOR_COMMAND } from "../model/orchestratorCommand";
@@ -55,6 +58,14 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
   [BTW_COMMAND.name]: {
     Icon: MessageSquare,
     className: "text-(--ui-tone-success-fg)",
+  },
+  [SUBAGENTS_COMMAND.name]: {
+    Icon: Bot,
+    className: "text-orchestration",
+  },
+  [TASK_COMMAND.name]: {
+    Icon: CheckList,
+    className: "text-(--ui-tone-info-fg)",
   },
 };
 

@@ -1,5 +1,5 @@
 import { useT } from "../../../shared/i18n";
-import { FilePlusCorner, MessageSquarePlus } from "../../../shared/ui/icons";
+import { FilePlusCorner, MessageSquarePlus, Sparkles } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { Popover } from "../../../shared/ui/Popover";
 import {
@@ -7,14 +7,18 @@ import {
   type FloatingButtonGroupAction,
 } from "../../../shared/ui/FloatingButtonGroup";
 import { type TranscriptSelection } from "../model/transcriptSelection";
-import { translationTargets, type TranslationTarget } from "../model/translation";
+import {
+  translationTargets,
+  type TranslationTarget,
+  type TextActionTarget,
+} from "../model/translation";
 
 type Props = {
   selection: TranscriptSelection | null;
   onAddToChat?: (text: string) => void;
   onAddToNotes?: (text: string) => void | Promise<void>;
   onDismiss: () => void;
-  onTranslate?: (target: TranslationTarget) => void;
+  onTranslate?: (target: TextActionTarget) => void;
 };
 
 export function TranscriptSelectionMenu({
@@ -115,6 +119,7 @@ export function TranscriptSelectionMenu({
   });
   const items: FloatingButtonGroupAction[] = [];
   if (onTranslate) {
+    items.push(action("reprompt", t("Reprompt"), <Sparkles />, () => onTranslate("reprompt")));
     for (const target of targets?.text === selection.text ? targets.values : []) {
       items.push(
         action(

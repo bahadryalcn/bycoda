@@ -25,53 +25,64 @@ afterEach(async () => {
   await setLanguagePreference("en");
 });
 const render = (active = true) => act(() => root.render(createElement(ComposerTips, { active })));
-const text = () => container.querySelector("p")!.getAttribute("aria-label");
+const icon = () => container.querySelector<HTMLButtonElement>("button")!;
+const open = () => act(() => icon().dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+const text = () => document.querySelector(".composer-tips-text")?.getAttribute("aria-label");
 const advance = () => act(() => vi.advanceTimersByTime(COMPOSER_TIP_INTERVAL));
 
-it("cycles through every tip without repeats and clears its timer on unmount", () => {
+it("only opens its tooltip on hover or focus and dismisses on Escape", () => {
   render();
-  const seen = new Set<string | null>();
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(vi.getTimerCount()).toBe(0);
+  open();
+  expect(text()).toBe(COMPOSER_TIPS[0]);
+  expect(icon().getAttribute("aria-describedby")).toBe(
+    document.querySelector('[role="tooltip"]')!.id,
+  );
+  act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  act(() => icon().focus());
+  expect(text()).toBe(COMPOSER_TIPS[0]);
+  act(() => icon().blur());
+  act(() => vi.advanceTimersByTime(150));
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+});
+
+it("cycles while visible, keeps inactive sessions still and clears timers", () => {
+  render();
+  open();
+  const seen = new Set<string | null | undefined>();
   for (let i = 0; i < COMPOSER_TIPS.length; i++) {
     seen.add(text());
     advance();
   }
   expect(seen.size).toBe(COMPOSER_TIPS.length);
   expect(text()).toBe(COMPOSER_TIPS[0]);
+  render(false);
+  advance();
+  expect(text()).toBe(COMPOSER_TIPS[0]);
   act(() => root.render(null));
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("keeps the full tip accessible from its label and keeps inactive sessions still", () => {
+it("advances manually by click and animates the complete new tip", () => {
   render();
-  expect(container.querySelector(".composer-tips-icon svg")).not.toBeNull();
-  expect(container.querySelector("aside")!.getAttribute("aria-label")).toBe("Chat tips");
-  expect(container.querySelector(".composer-tips-count")).toBeNull();
-  render(false);
-  advance();
-  expect(text()).toBe(COMPOSER_TIPS[0]);
-  render(true);
+  act(() => icon().click());
+  expect(text()).toBe(COMPOSER_TIPS[1]);
+  expect(document.querySelector("[data-tip-fold-animate]")).not.toBeNull();
+  expect(document.querySelector("[data-tip-fold]")!.textContent!.replaceAll("\u00a0", " ")).toBe(
+    COMPOSER_TIPS[1],
+  );
+  act(() => icon().focus());
   advance();
   expect(text()).toBe(COMPOSER_TIPS[1]);
+  act(() => icon().click());
+  expect(text()).toBe(COMPOSER_TIPS[2]);
 });
 
-it("shows a decorative hint icon without a button, tooltip or popup", () => {
+it("pauses while the document is hidden and does no cycling after closing", () => {
   render();
-  const icon = container.querySelector<HTMLElement>(".composer-tips-icon")!;
-  expect(icon.getAttribute("aria-hidden")).toBe("true");
-  expect(container.querySelector("button, [title], [aria-haspopup]")).toBeNull();
-  act(() => icon.click());
-  expect(document.querySelector('[role="dialog"][aria-label="Chat tips"]')).toBeNull();
-  advance();
-  expect(text()).toBe(COMPOSER_TIPS[1]);
-});
-
-it("holds the text while hovered or hidden and resumes afterwards", () => {
-  render();
-  const area = container.querySelector("aside")!;
-  act(() => area.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
-  advance();
-  expect(text()).toBe(COMPOSER_TIPS[0]);
-  act(() => area.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
+  open();
   const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
   act(() => document.dispatchEvent(new Event("visibilitychange")));
   advance();
@@ -80,56 +91,15 @@ it("holds the text while hovered or hidden and resumes afterwards", () => {
   act(() => document.dispatchEvent(new Event("visibilitychange")));
   advance();
   expect(text()).toBe(COMPOSER_TIPS[1]);
+  act(() => icon().dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
+  act(() => vi.advanceTimersByTime(150));
+  expect(text()).toBeUndefined();
+  expect(vi.getTimerCount()).toBe(0);
 });
 
-it("updates the tip and label when the app language changes", async () => {
+it("translates the tooltip and manual action in every supported language", async () => {
   render();
-  await act(async () => setLanguagePreference("tr"));
-  expect(text()).toBe(
-    "Mesaj kutusuna @ yazıp proje dosyasını seçin; ajan hangi dosyayı okuyacağını doğrudan görsün.",
-  );
-  expect(container.querySelector("aside")!.getAttribute("aria-label")).toBe("Sohbet ipuçları");
-});
-
-it("remounts the folded text when the tip changes", () => {
-  render();
-  const previous = container.querySelector("p");
-  advance();
-  expect(container.querySelector("p")).not.toBe(previous);
-});
-
-it("keeps the complete folded tip accessible and settles it when reading without replaying", () => {
-  render();
-  const folded = () =>
-    container.querySelector("[data-tip-fold]")!.textContent!.replaceAll("\u00a0", " ");
-  expect(folded()).toBe(COMPOSER_TIPS[0]);
-  expect(text()).toBe(COMPOSER_TIPS[0]);
-  expect(vi.getTimerCount()).toBe(1);
-  expect(container.querySelector("[data-tip-fold-animate]")).not.toBeNull();
-  act(() => container.querySelector("aside")!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
-  expect(folded()).toBe(COMPOSER_TIPS[0]);
-  expect(container.querySelector("[data-tip-fold-animate]")).toBeNull();
-  act(() => container.querySelector("aside")!.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
-  expect(container.querySelector("[data-tip-fold-animate]")).toBeNull();
-});
-
-it("shows complete text without typing timers for reduced motion", () => {
-  const matchMedia = window.matchMedia.bind(window);
-  vi.spyOn(window, "matchMedia").mockImplementation((query) => {
-    const result = matchMedia(query);
-    Object.defineProperty(result, "matches", { value: false });
-    return result;
-  });
-  render();
-  expect(container.querySelector("[data-tip-fold]")!.textContent!.replaceAll("\u00a0", " ")).toBe(
-    COMPOSER_TIPS[0],
-  );
-  expect(container.querySelector(".composer-tips-cursor")).toBeNull();
-  expect(vi.getTimerCount()).toBe(1);
-});
-
-it("translates every tip in every supported language", async () => {
-  render();
+  open();
   for (const { value } of LANGUAGES) {
     await act(async () => setLanguagePreference(value));
     for (let index = 0; index < COMPOSER_TIPS.length; index++) {

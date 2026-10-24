@@ -1,5 +1,7 @@
-import { memo, useEffect, useState, type CSSProperties } from "react";
+import { memo, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
+import { Popover } from "../../../shared/ui/Popover";
 import { AiIdea } from "../../../shared/ui/icons";
 import "./ComposerTips.css";
 
@@ -74,8 +76,20 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
   const t = useT();
   const locale = useLocale();
   const [index, setTip] = useState(() => Math.floor(Math.random() * COMPOSER_TIPS.length));
-  const [hovered, setHovered] = useState(false);
+  const [open, setOpen] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const tipId = useId();
+  const keepOpen = () => {
+    clearTimeout(closeTimer.current);
+    setOpen(true);
+  };
+  const closeSoon = () => {
+    clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpen(false), 150);
+  };
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
   const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);
   useEffect(() => {
     const update = () => setHidden(document.hidden);
@@ -83,36 +97,66 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
     return () => document.removeEventListener("visibilitychange", update);
   }, []);
   useEffect(() => {
-    if (!active || hovered || focusWithin || hidden) return;
+    if (!active || !open || focusWithin || hidden) return;
     const timer = window.setInterval(
       () => setTip((index) => (index + 1) % COMPOSER_TIPS.length),
       COMPOSER_TIP_INTERVAL,
     );
     return () => window.clearInterval(timer);
-  }, [active, hovered, focusWithin, hidden]);
+  }, [active, open, focusWithin, hidden]);
 
   return (
-    <aside
-      data-composer-tips
-      className="composer-tips"
-      aria-label={t("Chat tips")}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocus={() => setFocusWithin(true)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false);
-      }}
-    >
-      <span className="composer-tips-icon" aria-hidden="true">
+    <aside data-composer-tips className="composer-tips" aria-label={t("Chat tips")}>
+      <Button
+        ref={anchor}
+        variant="ghost"
+        iconOnly
+        motion="none"
+        label={t("Next tip")}
+        title=""
+        aria-describedby={open || focusWithin ? tipId : undefined}
+        className="composer-tips-icon"
+        onMouseEnter={keepOpen}
+        onMouseLeave={closeSoon}
+        onFocus={() => {
+          setFocusWithin(true);
+          keepOpen();
+        }}
+        onBlur={() => {
+          setFocusWithin(false);
+          closeSoon();
+        }}
+        onClick={() => {
+          keepOpen();
+          setTip((current) => (current + 1) % COMPOSER_TIPS.length);
+        }}
+      >
         <AiIdea size={14} />
-      </span>
-      <div className="composer-tips-copy">
-        <FoldTip
-          key={`${locale}-${index}`}
-          text={t(COMPOSER_TIPS[index])}
-          animate={active && !hovered && !focusWithin && !hidden}
-        />
-      </div>
+      </Button>
+      {open || focusWithin ? (
+        <Popover
+          anchor={anchor}
+          id={tipId}
+          role="tooltip"
+          side="top"
+          align="start"
+          width={320}
+          restoreFocus={false}
+          onDismiss={() => {
+            setOpen(false);
+            setFocusWithin(false);
+          }}
+          onMouseEnter={keepOpen}
+          onMouseLeave={closeSoon}
+          className="composer-tips-copy p-3"
+        >
+          <FoldTip
+            key={`${locale}-${index}`}
+            text={t(COMPOSER_TIPS[index])}
+            animate={active && !hidden}
+          />
+        </Popover>
+      ) : null}
     </aside>
   );
 });

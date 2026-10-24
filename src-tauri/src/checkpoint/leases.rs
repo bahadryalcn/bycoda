@@ -125,6 +125,16 @@ pub(super) fn active(root: &Path, cwd: &str) -> Result<bool, String> {
         .into_iter()
         .any(|(_, lease)| overlap(cwd, &lease.cwd)))
 }
+
+/// Candidate discovery; the turn record remains authoritative. Both runtimes
+/// publish before capture and release only after persisting settlement.
+pub(super) fn sessions(root: &Path, owner: &str, cwd: &str) -> Result<Vec<String>, String> {
+    Ok(read(root)?
+        .into_iter()
+        .filter(|(_, lease)| lease.owner == owner && overlap(cwd, &lease.cwd))
+        .map(|(_, lease)| lease.session_id)
+        .collect())
+}
 pub(super) fn release(root: &Path, session: &str, turn: &str) -> Result<(), String> {
     match std::fs::remove_file(root.join(name(session, turn))) {
         Ok(()) => Ok(()),

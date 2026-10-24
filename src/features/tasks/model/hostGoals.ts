@@ -1,4 +1,5 @@
 import { isRemoteProvider, type RemoteProvider } from "../../connections/model/protocol";
+import { parseProviderAccountId } from "../../providers/model/providerAccountId";
 import { RUNTIME_MODES, type RuntimeMode } from "../../sessions/model/session";
 import type { HostTask } from "./hostTasks";
 import { parseTaskWorkspace, type TaskWorkspace } from "./taskWorkspace";
@@ -50,6 +51,8 @@ export type HostGoalInput = {
   /** The project the planner runs in; one of `projectIds`. */
   leadProjectId: string;
   harness: RemoteProvider;
+  /** Local profile inherited by the planner and planned tasks. */
+  providerAccountId?: string;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -212,6 +215,7 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     projectIds,
     leadProjectId: v.leadProjectId,
     harness: v.harness,
+    ...(v.providerAccountId === undefined ? {} : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
     model: v.model,
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,

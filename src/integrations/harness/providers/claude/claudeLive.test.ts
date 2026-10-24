@@ -941,6 +941,14 @@ describe("claude model switching", () => {
 });
 
 describe("claude startup failures", () => {
+  it("rejects a typed OAuth failure even when the CLI follows it with a success result", async () => {
+    const { events, turn } = await startTurn("s1");
+    const failed = expect(turn).rejects.toThrow("OAuth session expired");
+    emit({ type: "assistant", error: "authentication_failed", message: { content: [{ type: "text", text: "Failed to authenticate: OAuth session expired and could not be refreshed" }] } });
+    emit({ type: "result", subtype: "success" });
+    await failed;
+    expect(events).toContainEqual({ type: "session.error", message: "Failed to authenticate: OAuth session expired and could not be refreshed" });
+  });
   function send(events: HarnessEvent[]) {
     return sendClaudeTurn({
       sessionId: "s1",

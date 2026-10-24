@@ -38,6 +38,7 @@ import { snapshotWeight } from "../model/snapshotWeight";
 import {
   deleteRemotePageCache,
   readRemotePageCache,
+  flushRemotePageCache,
   writeRemotePageCache,
 } from "../model/remotePageCache";
 import { canApplyRemotePreview } from "../model/remotePreviewBinding";
@@ -96,11 +97,18 @@ import {
   nextRemoteQueuedMessage,
   queueSessionFields,
   shouldQueueRemoteMessage,
+  leaseRetryDelay,
   type RemoteQueueDraft,
 } from "../model/remoteQueue";
+import { followUpRefusalEvent, type QueueEvent } from "../model/queueState";
+import { isLeaseHeld } from "../../sync/model/runLease";
 import { remoteTurnInterrupted } from "../model/remoteRecovery";
 import { forgetRemoteQueue, subscribePersistedRemoteQueues } from "../model/useRemoteQueue";
 import { useSharedRemoteQueue } from "../model/useSharedRemoteQueue";
+import {
+  registerDeliveryResolver,
+  requestDeliveryReview,
+} from "../../sessions/model/deliveryReview";
 import { useRemoteRecovery } from "../model/useRemoteRecovery";
 import { reportRemoteConnection, subscribeRemoteRecovered } from "../model/remoteHealth";
 import { useRemoteConnection } from "../model/useRemoteConnection";
@@ -179,8 +187,9 @@ function boundedSet<K, V>(cache: Map<K, V>, key: K, value: V, limit = 64) {
 const snapshotKey = (machineId: string, sessionId: string) => `${machineId}:${sessionId}`;
 const catalogKey = (machineId: string, projectId: string) => JSON.stringify([machineId, projectId]);
 function rememberSessionSnapshot(key: string, snapshot: HostSession, environmentId?: string) {
-  if (!canCacheRemoteSnapshot(snapshot)) return;
   const existing = cachedSessionSnapshots.get(key);
+  if (existing === snapshot) return;
+  if (!canCacheRemoteSnapshot(snapshot)) return;
   if (existing && existing.revision > snapshot.revision) return;
   cachedSessionSnapshots.delete(key);
   cachedSessionSnapshots.set(key, snapshot);
@@ -570,6 +579,22 @@ function ConnectedRemoteSession({
     machine.id,
     machine.environmentId,
     sharedQueueEnabled,
+    // A turn started or ended: the queue is read now, not on the next timer. Not the
+    // snapshot revision, which moves with every streamed flush.
+    snapshot?.status ?? "",
+  );
+  // The inline delivered / send again / keep / discard choice of an unconfirmed row
+  // decides through the shared queue of this host, not through a store that does not own it.
+  const resolveDeliveryRef = useRef(queue.resolveDelivery);
+  resolveDeliveryRef.current = queue.resolveDelivery;
+  useEffect(
+    () =>
+      sharedQueueEnabled && activeSessionId
+        ? registerDeliveryResolver(activeSessionId, (id, outcome) =>
+            resolveDeliveryRef.current(id, outcome),
+          )
+        : undefined,
+    [sharedQueueEnabled, activeSessionId],
   );
   useEffect(() => {
     if (!ownership || !online || !queue.loaded) return;
@@ -730,6 +755,8 @@ function ConnectedRemoteSession({
                 active: { projectId: project.projectId, sessionId, lastActiveAt },
                 sessions: [{ sessionId, revision: snapshotRef.current?.revision ?? 0 }],
                 inlineSync:
+                  visibleRef.current &&
+                  !document.hidden &&
                   host.capabilities.includes("machine.changes.inlineSync") &&
                   !!snapshotRef.current &&
                   !snapshotRef.current.history &&
@@ -773,6 +800,8 @@ function ConnectedRemoteSession({
                   !changes.reset &&
                   !recoveredControlChannel &&
                   failed === 0 &&
+                  visibleRef.current &&
+                  !document.hidden &&
                   hint?.sync?.kind === "delta" &&
                   current &&
                   !polling &&
@@ -1049,13 +1078,13 @@ function ConnectedRemoteSession({
     const onVisibility = () => {
       if (deletedHostBinding.current === bindingKey) return;
       clearTimeout(timer);
-      if (!document.hidden) beginOwnerVerification();
+      if (visibleRef.current && !document.hidden) beginOwnerVerification();
       if (polling) {
         ownerReadPending = true;
         return;
       }
       // The active channel stays subscribed; pending reads use current visibility.
-      if (!document.hidden) void poll();
+      if (visibleRef.current && !document.hidden) void poll();
       else
         timer = setTimeout(
           () => void poll(),
@@ -1077,6 +1106,7 @@ function ConnectedRemoteSession({
       if (contentRetryTimer) clearTimeout(contentRetryTimer);
       unsubscribeChannel?.();
       document.removeEventListener("visibilitychange", onVisibility);
+      if (sessionId) void flushRemotePageCache({ environmentId: machine.environmentId, sessionId });
     };
   }, [
     machine.id,
@@ -1193,6 +1223,8 @@ function ConnectedRemoteSession({
     turnModel: selectedTurnModel(),
   });
 
+  /** Why the last command did not reach the host, for what its queue should do next. */
+  const lastRunFailure = useRef<string>(undefined);
   const run = async (
     command: HostCommand,
     optimistic?: OptimisticTurn,
@@ -1215,6 +1247,7 @@ function ConnectedRemoteSession({
     sendingRef.current = true;
     setSending(true);
     setError("");
+    lastRunFailure.current = undefined;
     if (command.type === "send" || command.type === "compact")
       setUnseenSend((current) =>
         current?.commandId === command.commandId
@@ -1386,6 +1419,7 @@ function ConnectedRemoteSession({
       reportRemoteConnection(project.key, "session", reason);
       if (!alive.current || version !== bindingVersion.current) return undefined;
       const message = String(reason);
+      lastRunFailure.current = message;
       if (message.includes("Host rejected request:")) {
         if (command.type === "send" || command.type === "compact")
           setUnseenSend((current) =>
@@ -1396,7 +1430,9 @@ function ConnectedRemoteSession({
           pendingRemoteCommand(project.key, machine.environmentId, sessionId ?? null, shell.id),
         );
       }
-      setError(message.replace(/^Error: /, ""));
+      // Another computer runs a turn of this conversation: a wait, not an error.
+      // The message goes to the queue and is sent when that turn is over.
+      if (!isLeaseHeld(message)) setError(message.replace(/^Error: /, ""));
       return undefined;
     } finally {
       ownership?.finishJob(
@@ -1722,6 +1758,50 @@ function ConnectedRemoteSession({
           ...(planBlockId ? { planBlockId } : {}),
         };
 
+  // The desktop that owns this conversation is running a turn (`LEASE_HELD`):
+  // the message waits in the shared queue, never paused, and goes out afterwards.
+  // A row that came from the queue is still there; a new one is added.
+  const leaseRetries = useRef(0);
+  const leaseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** The queue does not offer its head again before this time (a refused `LEASE_HELD`). */
+  const leaseWait = useRef(0);
+  useEffect(() => () => clearTimeout(leaseTimer.current), []);
+  // The turn the other computer runs shows in the snapshot as running; when that
+  // changes, the queue looks again at once instead of waiting out the delay.
+  useEffect(() => {
+    leaseWait.current = 0;
+    leaseRetries.current = 0;
+    clearTimeout(leaseTimer.current);
+  }, [busy]);
+  // The snapshot normally shows that turn as running and the queue waits for it
+  // to end. If it has not yet, look again, each wait longer up to a cap; the
+  // queue keeps that pace instead of giving up and sitting there.
+  const retryAfterLease = () => {
+    const delay = leaseRetryDelay(leaseRetries.current++);
+    leaseWait.current = Date.now() + delay;
+    clearTimeout(leaseTimer.current);
+    leaseTimer.current = setTimeout(() => {
+      if (alive.current) setDrainRetry((value) => value + 1);
+    }, delay);
+  };
+  const queueForLease = (turn: OptimisticTurn): boolean => {
+    if (turn.queued) return true;
+    if (turn.draft || turn.draftBlockId || turn.planBlockId || !queue.loaded) return false;
+    return (
+      queue.enqueue({
+        id: crypto.randomUUID(),
+        text: turn.text,
+        attachments: turn.attachments,
+        intent: turn.intent,
+        modelTarget: {
+          harness: configuration.harness,
+          model: configuration.model,
+          modelSettings: { ...configuration.settings },
+        },
+      }) !== false
+    );
+  };
+
   // Starts a turn whose optimistic bubble is already in `starting`. Gives up,
   // clearing it, when the session cannot take a message now.
   const launch = (
@@ -1748,12 +1828,21 @@ function ConnectedRemoteSession({
     void dispatchTurn(hostSession.id, turn, undefined, generation)
       .then((receipt) => {
         onAcceptance?.(!!receipt);
+        if (receipt) {
+          leaseRetries.current = 0;
+          leaseWait.current = 0;
+        }
         if (
           alive.current &&
           version === bindingVersion.current &&
           generation === submissionGeneration.current
         )
-          if (!receipt) setStarting({ ...turn, failed: true });
+          if (!receipt) {
+            if (isLeaseHeld(lastRunFailure.current) && queueForLease(turn)) {
+              setStarting(undefined);
+              retryAfterLease();
+            } else setStarting({ ...turn, failed: true });
+          }
       })
       .catch((reason) => {
         onAcceptance?.(false);
@@ -1980,9 +2069,28 @@ function ConnectedRemoteSession({
       // Reserve recovery space while upload/steering is in flight. New queued
       // submissions cannot consume the slot needed if this follow-up is refused.
       reservedFollowUp.current = unsent;
-      const holdFollowUp = () => {
-        queue.enqueue(unsent);
-        queue.pause();
+      // A follow-up the host did not take is kept. An explicit refusal holds
+      // the queue for the owner; a coordination failure (a desktop-owned turn,
+      // an unreachable host) sent nothing, so it just goes out after the turn.
+      // The composer already let go of the text, so the queue must take it: it is
+      // tried again while the queue is busy, and if it still cannot be kept the
+      // message stays on screen with "Try again" instead of vanishing.
+      const holdFollowUp = async (
+        event: QueueEvent = followUpRefusalEvent(lastRunFailure.current),
+        reason?: string,
+      ): Promise<boolean> => {
+        if (await queue.keep(unsent, event !== "coordination")) return true;
+        if (alive.current) {
+          const intent =
+            unsent.intent === "plan" || unsent.intent === "build" ? unsent.intent : "default";
+          setStarting({ ...optimisticTurn(text, attachments, intent), failed: true });
+          setError(
+            reason
+              ? t("The follow-up could not be saved to the queue: {p0}", { p0: reason })
+              : t("The follow-up could not be saved to the queue. It is shown above."),
+          );
+        }
+        return false;
       };
       preparingRef.current = true;
       void (async () => {
@@ -2000,7 +2108,7 @@ function ConnectedRemoteSession({
             version !== bindingVersion.current ||
             generation !== followUpGeneration.current
           ) {
-            if (alive.current && version === bindingVersion.current) holdFollowUp();
+            if (alive.current && version === bindingVersion.current) await holdFollowUp("pause");
             return;
           }
           const receipt = await run({
@@ -2022,11 +2130,11 @@ function ConnectedRemoteSession({
             pendingRemoteCommand(project.key, machine.environmentId, targetSessionId, shell.id)
               ?.commandId !== commandId
           )
-            holdFollowUp();
+            await holdFollowUp();
         } catch (reason) {
           if (alive.current && version === bindingVersion.current) {
-            holdFollowUp();
-            setError(t("Could not deliver the follow-up: {p0}", { p0: String(reason) }));
+            if (await holdFollowUp(undefined, String(reason)))
+              setError(t("Could not deliver the follow-up: {p0}", { p0: String(reason) }));
           }
         } finally {
           onAcceptance?.(accepted);
@@ -2148,7 +2256,8 @@ function ConnectedRemoteSession({
         currentQueue.status === "paused" ||
         currentQueue.status === "restored" ||
         currentQueue.status === "resuming" ||
-        currentQueue.messages[0] !== nextQueued
+        currentQueue.messages[0] !== nextQueued ||
+        Date.now() < leaseWait.current
       )
         return;
       const accepted = submitRef.current(
@@ -2991,6 +3100,15 @@ function ConnectedRemoteSession({
         !connection.canSend
       )
         throw new Error(t("Reconnect to the host before resuming the queue."));
+      // The host never sends a row whose delivery nobody confirmed: Resume asks for the
+      // owner's choice (the inline review) instead of claiming to have resumed.
+      if (queue.current().messages.some((row) => row.deliveryUnknown)) {
+        if (activeSessionId) requestDeliveryReview(activeSessionId);
+        return {
+          kind: "waiting",
+          message: t("Choose what happened to the unconfirmed message first, then resume."),
+        };
+      }
       if (queue.current().editingId)
         throw new Error(t("Finish editing the queued message before resuming."));
       if (queue.current().messages[0]?.attachments.some((file) => file.missing))

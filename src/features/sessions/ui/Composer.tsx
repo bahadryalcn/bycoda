@@ -4,13 +4,19 @@ import {
   deliveryIsPending,
   useDeliveryProgress,
 } from "./DeliveryProgressNotice";
-import { Badge } from "../../../shared/ui/Badge";
+import { queueState } from "../../connections/model/queueState";
+import { useQueueHoldReason } from "../model/deliveryReview";
+import {
+  takeOverSharedLocalQueue,
+  useSharedQueueLeaseHeld,
+} from "../../connections/model/useSharedLocalQueues";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
 import {
   useComposerTranslationSelection,
   type ComposerTranslationSelection,
 } from "../hooks/useComposerTranslationSelection";
-import { canOfferTranslation, type TranslationTarget } from "../model/translation";
+import { canOfferTranslation, repromptReference, type TextActionTarget } from "../model/translation";
 import {
   translatedSelection,
   translationHistoryKey,
@@ -31,7 +37,6 @@ import {
   ArrowUp,
   AiIdea,
   Bot,
-  Check,
   CircleDashed,
   CornerDownRight,
   CursorMagicSelection,
@@ -207,7 +212,6 @@ import {
 import { resolveTabGroupLogo } from "../../workspace/model/tabGroups";
 import { useCliCommands } from "./useCliCommands";
 import { useComposerSkills } from "./useComposerSkills";
-import { Popover } from "../../../shared/ui/Popover";
 import { UsageLimitNotice } from "./UsageLimitNotice";
 import {
   supportsProviderAccounts,
@@ -217,6 +221,7 @@ import { consumePlanCommand, PLAN_COMMAND } from "../model/plan";
 import { consumeOperatorCommand, OPERATOR_COMMAND } from "../model/operatorCommand";
 import { consumeOrchestratorCommand, ORCHESTRATOR_COMMAND } from "../model/orchestratorCommand";
 import { consumeDraftCommand, DRAFT_COMMAND } from "../model/draftCommand";
+import { SUBAGENTS_COMMAND, TASK_COMMAND } from "../model/delegationCommands";
 import {
   leadingModeCommand,
   MODE_COMMAND_INDENT,
@@ -411,38 +416,6 @@ type Props = {
   children?: ReactNode;
 };
 
-function ToolButton({
-  active,
-  disabled,
-  label,
-  onClick,
-  children,
-}: {
-  active?: boolean;
-  disabled?: boolean;
-  label: string;
-  onClick?: () => void;
-  children: ReactNode;
-}) {
-  useLocale();
-  return (
-    <Button
-      className="shrink-0"
-      selected={active}
-      variant="ghost"
-      iconOnly
-      label={label}
-      type="button"
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {children}
-    </Button>
-  );
-}
-
 function MessageQueue({
   sessionId,
   messages,
@@ -484,6 +457,11 @@ function MessageQueue({
   const t = useT();
   const delivery = useDeliveryProgress(sessionId);
   const pendingDelivery = deliveryIsPending(delivery?.stage);
+  // Another window sends this queue: say so, and let this one take it over.
+  const heldByOtherWindow = useSharedQueueLeaseHeld(sessionId ?? "");
+  // The host says why it paused the queue: "stopped" after a Stop, else the provider's error.
+  const holdReason = useQueueHoldReason(sessionId ?? "");
+  const holdDetail = holdReason && holdReason !== "stopped" ? holdReason : undefined;
   const actionRef = useRef(false);
   const [pendingAction, setPendingAction] = useState<string>();
   const [feedback, setFeedback] = useState<{ error: boolean; text: string; actionId: string }>();
@@ -491,7 +469,9 @@ function MessageQueue({
     feedback?.error &&
     (feedback.actionId === "resume"
       ? status === "active"
-      : !messages.some((message) => message.id === feedback.actionId))
+      : feedback.actionId === "takeover"
+        ? !heldByOtherWindow
+        : !messages.some((message) => message.id === feedback.actionId))
       ? undefined
       : feedback;
   useEffect(() => {
@@ -589,6 +569,15 @@ function MessageQueue({
   );
   if (messages.length === 0 && !pendingAction && !activeFeedback) return null;
   const paused = (status === "paused" || status === "resuming") && messages.length > 0;
+  const hold = queueState({
+    status,
+    messages,
+    unknownDelivery: delivery?.stage === "unknown",
+    rejected:
+      (delivery?.stage === "rejected" && delivery.messageId === messages[0]?.id) || !!holdDetail,
+    leaseHeld: heldByOtherWindow,
+  });
+  const leaseHeld = !paused && hold.kind === "held" && hold.reason === "lease";
   const restored = status === "restored" && messages.length > 0;
   const canSend = (message: QueuedMessage) =>
     !pendingAction &&
@@ -617,19 +606,21 @@ function MessageQueue({
         {paused ? (
           <div className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-ui-caption">
             <Pause className="size-3.5" />
-            <span className="min-w-0 flex-1 truncate">
-              {t("Queue paused because you interrupted")}
+            <span className="min-w-0 flex-1 truncate" title={holdDetail}>
+              {hold.kind === "held" && hold.reason === "unknown"
+                ? t("Queue held: delivery is not confirmed")
+                : hold.kind === "held" && hold.reason === "rejected"
+                  ? t("Queue paused: the last message was not accepted")
+                  : t("Queue paused because you interrupted")}
+              {holdDetail && !(hold.kind === "held" && hold.reason === "unknown") ? (
+                <span className="text-(--ui-text-muted)"> {holdDetail}</span>
+              ) : null}
             </span>
             <Button
               variant="ghost"
               type="button"
               disabled={
-                !onResume ||
-                !!pendingAction ||
-                pendingDelivery ||
-                messages.some((message) => message.deliveryUnknown) ||
-                delivery?.stage === "unknown" ||
-                hasMissingAttachment(messages[0])
+                !onResume || !!pendingAction || pendingDelivery || hasMissingAttachment(messages[0])
               }
               loading={pendingAction === "resume"}
               loadingLabel={t("Resuming…")}
@@ -638,6 +629,28 @@ function MessageQueue({
             >
               <Play className="size-3.5" />
               {pendingAction === "resume" ? t("Resuming…") : t("Resume")}
+            </Button>
+          </div>
+        ) : null}
+        {leaseHeld && sessionId ? (
+          <div
+            className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-ui-caption"
+            data-queue-held-elsewhere
+          >
+            <Pause className="size-3.5" />
+            <span className="min-w-0 flex-1 truncate">
+              {t("Queue held by another window, which sends it")}
+            </span>
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={!!pendingAction || pendingDelivery}
+              loading={pendingAction === "takeover"}
+              loadingLabel={t("Taking over…")}
+              onClick={() => void perform("takeover", () => takeOverSharedLocalQueue(sessionId))}
+              className="shrink-0"
+            >
+              {pendingAction === "takeover" ? t("Taking over…") : t("Take over")}
             </Button>
           </div>
         ) : null}
@@ -975,7 +988,7 @@ export const Composer = memo(function Composer({
   );
   const [translationRequest, setTranslationRequest] = useState<{
     selection: ComposerTranslationSelection;
-    target: TranslationTarget;
+    target: TextActionTarget;
   } | null>(null);
   const translationHistoryRef = useRef<TranslationHistory | null>(null);
   useEffect(() => {
@@ -987,7 +1000,7 @@ export const Composer = memo(function Composer({
   const accountProvider = supportsProviderAccounts(harness) ? harness : undefined;
   useEffect(() => () => inputResize.cancel(), [inputResize]);
   const boxRef = useRef<HTMLDivElement>(null);
-  const plusRef = useRef<HTMLDivElement>(null);
+  const plusRef = useRef<HTMLButtonElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
   // A remount (or a restart) starts from the attachments the draft was saved with.
   const [attachments, setAttachments] = useState<Attachment[]>(() =>
@@ -1180,6 +1193,8 @@ export const Composer = memo(function Composer({
           DRAFT_COMMAND,
           BTW_COMMAND,
           RESUME_COMMAND,
+          SUBAGENTS_COMMAND,
+          TASK_COMMAND,
         ].map((command) => command.name),
         "mono",
         "bycoda",
@@ -1216,6 +1231,8 @@ export const Composer = memo(function Composer({
             OPERATOR_COMMAND,
             ...(hideTopBar ? [] : [ORCHESTRATOR_COMMAND]),
             PLAN_COMMAND,
+            SUBAGENTS_COMMAND,
+            TASK_COMMAND,
             ...(canSaveDraft && onSaveDraft ? [DRAFT_COMMAND] : []),
             COMPACT_COMMAND,
             ...(supportsBtwHarness(harness) ? [BTW_COMMAND] : []),
@@ -1242,7 +1259,9 @@ export const Composer = memo(function Composer({
                     skill.name !== ORCHESTRATOR_COMMAND.name &&
                     skill.name !== DRAFT_COMMAND.name &&
                     skill.name !== RESUME_COMMAND.name &&
-                    skill.name !== BTW_COMMAND.name)),
+                    skill.name !== BTW_COMMAND.name &&
+                    skill.name !== SUBAGENTS_COMMAND.name &&
+                    skill.name !== TASK_COMMAND.name)),
             ),
             ...cliCommands.slashCommands,
           ]),
@@ -2810,6 +2829,19 @@ export const Composer = memo(function Composer({
     ref.current?.focus({ preventScroll: true });
   };
 
+  const sessionDirectoryPicker =
+    showSessionDirs && sessionId ? (
+      <SessionDirsPicker
+        sessionId={sessionId}
+        project={cwd ?? executionCwd}
+        workingDirectory={executionCwd}
+        recents={recents}
+        onProjectChange={hideProjectPicker || hideTopBar ? undefined : onCwdChange}
+        enabled={enabled}
+        onClose={() => ref.current?.focus()}
+      />
+    ) : null;
+
   return (
     <div
       data-composer
@@ -2838,6 +2870,7 @@ export const Composer = memo(function Composer({
       {translationRequest ? (
         <TranslationResultDialog
           text={translationRequest.selection.text}
+          surroundingText={repromptReference(translationRequest.selection.value, translationRequest.selection.start, translationRequest.selection.end)}
           target={translationRequest.target}
           context={translationContext}
           onClose={() => setTranslationRequest(null)}
@@ -3240,251 +3273,194 @@ export const Composer = memo(function Composer({
                     onClose={() => ref.current?.focus()}
                   />
                 ) : null}
-                {showSessionDirs && sessionId ? (
-                  <SessionDirsPicker
-                    sessionId={sessionId}
-                    project={cwd ?? executionCwd}
-                    workingDirectory={executionCwd}
-                    recents={recents}
-                    onProjectChange={hideProjectPicker || hideTopBar ? undefined : onCwdChange}
-                    enabled={enabled}
-                    onClose={() => ref.current?.focus()}
-                  />
-                ) : null}
+                {hideTopBar || hideBranchPicker ? sessionDirectoryPicker : null}
               </div>
             </div>
-            <div ref={plusRef} className={compact ? "hidden" : "relative flex shrink-0"}>
-              <ToolButton
+            <div className={compact ? "hidden" : "relative flex shrink-0"}>
+              <Button
+                ref={plusRef}
+                variant="ghost"
+                iconOnly
                 label={t("Add files or choose a mode")}
-                active={plusOpen}
+                title={t("Add files or choose a mode")}
+                selected={plusOpen}
+                aria-haspopup="menu"
+                aria-expanded={plusOpen}
                 onClick={() => setPlusOpen((open) => !open)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setPlusOpen(true);
+                  }
+                }}
               >
                 <Plus className="size-3.5" strokeWidth={1.5} />
-              </ToolButton>
+              </Button>
               {plusOpen ? (
-                <Popover
+                <DropdownMenu
                   anchor={plusRef}
+                  returnFocusRef={plusRef}
+                  label={t("Add files or choose a mode")}
                   side="top"
                   align="start"
-                  width={250}
-                  onDismiss={() => setPlusOpen(false)}
+                  width={280}
+                  onClose={() => setPlusOpen(false)}
                   data-composer-plus
-                  className="p-1.5"
-                >
-                  <p className="px-2 pb-1 pt-0.5 text-ui-caption font-medium text-(--ui-text-secondary)">
-                    {t("Add to message")}
-                  </p>
-                  <Button
-                    fullWidth
-                    layout="stacked"
-                    variant="item"
-                    type="button"
-                    disabled={!attachmentsSupported}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      setPlusOpen(false);
+                  items={[
+                    {
+                      kind: "group",
+                      id: "add",
+                      label: t("Add to message"),
+                      items: [
+                        {
+                          kind: "item",
+                          id: "upload",
+                          label: t("Upload file"),
+                          icon: <FilePlus />,
+                          disabled: !attachmentsSupported,
+                          description: attachmentsSupported
+                            ? undefined
+                            : remote && !remoteFeatures?.attachments
+                              ? t("Update this machine’s host to attach files")
+                              : t("{p0} does not support attachments", {
+                                  p0: HARNESS_TITLE[harness],
+                                }),
+                        },
+                        ...(!remote
+                          ? [
+                              {
+                                kind: "item" as const,
+                                id: "skills",
+                                label: t("Skills"),
+                                icon: <CursorMagicSelection />,
+                                description:
+                                  harness === "codex"
+                                    ? t("Choose a skill or type $name")
+                                    : t("Choose a skill or type /name"),
+                              },
+                            ]
+                          : []),
+                      ],
+                    },
+                    {
+                      kind: "group",
+                      id: "mode",
+                      label: t("Mode"),
+                      items: [
+                        ...(!remote || remoteFeatures?.plan
+                          ? [
+                              {
+                                kind: "item" as const,
+                                id: "plan",
+                                label: t("Plan mode"),
+                                icon: <AiIdea />,
+                                checked: planActive,
+                                disabled: !!planUnavailableReason(harness),
+                                title: planUnavailableReason(harness),
+                                description: planUnavailableReason(harness)
+                                  ? t("Unavailable: {p0}", { p0: planUnavailableReason(harness) })
+                                  : t("Review a plan before building"),
+                              },
+                            ]
+                          : []),
+                        ...(!remote
+                          ? [
+                              {
+                                kind: "item" as const,
+                                id: "operator",
+                                label: t("Operator"),
+                                icon: <Bot />,
+                                checked: operatorActive,
+                                description:
+                                  t("Give this thread access to") +
+                                  " " +
+                                  PRODUCT_IDENTITY.displayName,
+                              },
+                            ]
+                          : []),
+                        ...(!remote && !hideTopBar
+                          ? [
+                              {
+                                kind: "item" as const,
+                                id: "orchestrator",
+                                label: t("Orchestrator"),
+                                icon: <Share />,
+                                badge: "v1",
+                                checked: orchestrationActive,
+                                description: t("Plan and coordinate agent work"),
+                              },
+                            ]
+                          : []),
+                        ...(canSaveDraft && onSaveDraft
+                          ? [
+                              {
+                                kind: "item" as const,
+                                id: "draft",
+                                label: t("Draft"),
+                                icon: <CircleDashed />,
+                                checked: draftActive,
+                                description: t("Save this message without starting the agent"),
+                              },
+                            ]
+                          : []),
+                      ],
+                    },
+                  ]}
+                  onPick={(id) => {
+                    if (id === "upload") {
                       attachFromPicker();
-                    }}
-                    className="w-full text-left"
-                  >
-                    <FilePlus className="mt-0.5 size-4 shrink-0" />
-                    <span className="min-w-0">
-                      <span className="block text-ui-secondary">{t("Upload file")}</span>
-                      <span className="block truncate whitespace-nowrap text-ui-micro leading-4 text-(--ui-text-secondary)">
-                        {attachmentsSupported
-                          ? t("Attach files or images")
-                          : remote && !remoteFeatures?.attachments
-                            ? t("Update this machine’s host to attach files")
-                            : t("{p0} does not support attachments", {
-                                p0: HARNESS_TITLE[harness],
-                              })}
-                      </span>
-                    </span>
-                  </Button>
-                  {!remote ? (
-                    <Button
-                      fullWidth
-                      layout="stacked"
-                      variant="item"
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        const el = ref.current;
-                        if (!el) return;
-                        const prefix = harness === "codex" ? "$" : "/";
-                        const lead = el.value && !/\s$/.test(el.value) ? " " : "";
-                        const start = el.value.length + lead.length;
-                        const next = `${el.value}${lead}${prefix}`;
-                        el.value = next;
-                        el.setSelectionRange(next.length, next.length);
-                        resizeComposer(el);
-                        setDraft(next);
-                        syncHasValue(next, attachmentsRef.current);
-                        setSlash({
-                          start,
-                          end: next.length,
-                          query: "",
-                          ...(prefix === "$" ? { trigger: "$" as const } : {}),
-                        });
-                        setSkillActive(0);
-                        setPlusOpen(false);
-                        el.focus();
-                      }}
-                      className="w-full text-left"
-                    >
-                      <CursorMagicSelection className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-ui-secondary">{t("Skills")}</span>
-                        <span className="block text-ui-micro leading-4 text-(--ui-text-secondary)">
-                          {harness === "codex"
-                            ? t("Choose a skill or type $name")
-                            : t("Choose a skill or type /name")}
-                        </span>
-                      </span>
-                    </Button>
-                  ) : null}
-                  <div role="separator" className="mx-1 my-1.5 h-px bg-(--color-stroke)" />
-                  <p className="px-2 pb-1 pt-0.5 text-ui-caption font-medium text-(--ui-text-secondary)">
-                    {t("Mode")}
-                  </p>
-                  {!remote || remoteFeatures?.plan ? (
-                    <Button
-                      fullWidth
-                      layout="stacked"
-                      variant="item"
-                      type="button"
-                      aria-pressed={planActive}
-                      disabled={!!planUnavailableReason(harness)}
-                      title={planUnavailableReason(harness)}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        setPlanSelected(!planActive);
-                        if (planActive) clearLeadingMode(PLAN_COMMAND.name);
-                        setOperatorSelected(false);
-                        setOrchestrationSelected(false);
-                        setDraftSelected(false);
-                        setPlusOpen(false);
-                        ref.current?.focus();
-                      }}
-                      className="w-full text-left"
-                    >
-                      <AiIdea className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-ui-secondary">{t("Plan mode")}</span>
-                        <span className="block truncate whitespace-nowrap text-ui-micro leading-4 text-(--ui-text-secondary)">
-                          {planUnavailableReason(harness)
-                            ? t("Unavailable: {p0}", { p0: planUnavailableReason(harness) })
-                            : t("Review a plan before building")}
-                        </span>
-                      </span>
-                      {planActive ? (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-accent-fg)" />
-                      ) : null}
-                    </Button>
-                  ) : null}
-                  {!remote ? (
-                    <Button
-                      fullWidth
-                      layout="stacked"
-                      variant="item"
-                      type="button"
-                      aria-pressed={operatorActive}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setOperatorSelected(!operatorActive);
-                        if (operatorActive) {
-                          clearLeadingMode(OPERATOR_COMMAND.name);
-                        }
-                        setPlanSelected(false);
-                        setOrchestrationSelected(false);
-                        setDraftSelected(false);
-                        setPlusOpen(false);
-                        ref.current?.focus();
-                      }}
-                      className="w-full text-left"
-                    >
-                      <Bot className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-ui-secondary">{t("Operator")}</span>
-                        <span className="block truncate whitespace-nowrap text-ui-micro leading-4 text-(--ui-text-secondary)">
-                          {t("Give this thread access to")} {PRODUCT_IDENTITY.displayName}
-                        </span>
-                      </span>
-                      {operatorActive ? (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-accent-fg)" />
-                      ) : null}
-                    </Button>
-                  ) : null}
-                  {!remote && !hideTopBar && (
-                    <Button
-                      fullWidth
-                      layout="stacked"
-                      variant="item"
-                      type="button"
-                      aria-pressed={orchestrationActive}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setOrchestrationSelected(!orchestrationActive);
-                        if (orchestrationActive) {
-                          clearLeadingMode(ORCHESTRATOR_COMMAND.name);
-                        }
-                        setPlanSelected(false);
-                        setOperatorSelected(false);
-                        setDraftSelected(false);
-                        setPlusOpen(false);
-                        ref.current?.focus();
-                      }}
-                      className="w-full text-left"
-                    >
-                      <Share className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5">
-                          <span className="text-ui-secondary">{t("Orchestrator")}</span>
-                          <Badge tone="neutral" className="mb-px">
-                            v1
-                          </Badge>
-                        </span>
-                        <span className="block truncate whitespace-nowrap text-ui-micro leading-4 text-(--ui-text-secondary)">
-                          {t("Plan and coordinate agent work")}
-                        </span>
-                      </span>
-                      {orchestrationActive && (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-accent-fg)" />
-                      )}
-                    </Button>
-                  )}
-                  {canSaveDraft && onSaveDraft ? (
-                    <Button
-                      fullWidth
-                      layout="stacked"
-                      variant="item"
-                      type="button"
-                      aria-pressed={draftActive}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setDraftSelected(!draftActive);
-                        if (draftActive) clearLeadingMode(DRAFT_COMMAND.name);
-                        setPlanSelected(false);
-                        setOperatorSelected(false);
-                        setOrchestrationSelected(false);
-                        setPlusOpen(false);
-                        ref.current?.focus();
-                      }}
-                      className="w-full text-left"
-                    >
-                      <CircleDashed className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-ui-secondary">{t("Draft")}</span>
-                        <span className="block truncate whitespace-nowrap text-ui-micro leading-4 text-(--ui-text-secondary)">
-                          {t("Save this message without starting the agent")}
-                        </span>
-                      </span>
-                      {draftActive ? (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-accent-fg)" />
-                      ) : null}
-                    </Button>
-                  ) : null}
-                </Popover>
+                      return;
+                    }
+                    if (id === "skills") {
+                      const el = ref.current;
+                      if (!el) return;
+                      const prefix = harness === "codex" ? "$" : "/";
+                      const lead = el.value && !/\s$/.test(el.value) ? " " : "";
+                      const start = el.value.length + lead.length;
+                      const next = el.value + lead + prefix;
+                      el.value = next;
+                      el.setSelectionRange(next.length, next.length);
+                      resizeComposer(el);
+                      setDraft(next);
+                      syncHasValue(next, attachmentsRef.current);
+                      setSlash({
+                        start,
+                        end: next.length,
+                        query: "",
+                        ...(prefix === "$" ? { trigger: "$" as const } : {}),
+                      });
+                      setSkillActive(0);
+                      el.focus();
+                      return;
+                    }
+                    if (id === "plan") {
+                      setPlanSelected(!planActive);
+                      if (planActive) clearLeadingMode(PLAN_COMMAND.name);
+                      setOperatorSelected(false);
+                      setOrchestrationSelected(false);
+                      setDraftSelected(false);
+                    } else if (id === "operator") {
+                      setOperatorSelected(!operatorActive);
+                      if (operatorActive) clearLeadingMode(OPERATOR_COMMAND.name);
+                      setPlanSelected(false);
+                      setOrchestrationSelected(false);
+                      setDraftSelected(false);
+                    } else if (id === "orchestrator") {
+                      setOrchestrationSelected(!orchestrationActive);
+                      if (orchestrationActive) clearLeadingMode(ORCHESTRATOR_COMMAND.name);
+                      setPlanSelected(false);
+                      setOperatorSelected(false);
+                      setDraftSelected(false);
+                    } else if (id === "draft") {
+                      setDraftSelected(!draftActive);
+                      if (draftActive) clearLeadingMode(DRAFT_COMMAND.name);
+                      setPlanSelected(false);
+                      setOperatorSelected(false);
+                      setOrchestrationSelected(false);
+                    }
+                    ref.current?.focus();
+                  }}
+                />
               ) : null}
             </div>
             {!compact && operatorActive ? (
@@ -3633,7 +3609,7 @@ export const Composer = memo(function Composer({
             onPointerDown={focusFromComposerSpace}
             role="group"
             aria-label={t("Chat workspace")}
-            className="flex min-w-0 items-center justify-between gap-2 rounded-b-xl border border-t-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 pb-1.5 pt-2"
+            className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-b-xl border border-t-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 pb-1.5 pt-2"
           >
             {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
               <>
@@ -3694,6 +3670,11 @@ export const Composer = memo(function Composer({
                 </div>
               </>
             )}
+            {sessionDirectoryPicker ? (
+              <div data-composer-directories className="ml-auto flex min-w-0 justify-end">
+                {sessionDirectoryPicker}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

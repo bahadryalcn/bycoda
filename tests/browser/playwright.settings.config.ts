@@ -13,6 +13,8 @@ export default defineConfig({
     "settings-skills.e2e.ts",
     "settings-notifications.e2e.ts",
     "settings-layout.e2e.ts",
+    "settings-ui-details.e2e.ts",
+    "voice-settings.e2e.ts",
   ],
   outputDir: "../../temp/test-results/settings",
   workers: 1,

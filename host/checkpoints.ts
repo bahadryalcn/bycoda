@@ -51,9 +51,10 @@ type Record = {
 const MAX_FILES = 2000;
 const MAX_BYTES = 8 * 1024 * 1024;
 /** Opaque identity of the authoritative captured delta, including its completed turn. */
-const checkpointToken = (record: Record) => createHash("sha256").update(JSON.stringify([
-  record.cwd, record.head, record.settledTurnId ?? null, record.files,
-])).digest("hex");
+const checkpointToken = (record: Record) =>
+  createHash("sha256")
+    .update(JSON.stringify([record.cwd, record.head, record.settledTurnId ?? null, record.files]))
+    .digest("hex");
 const id = (v: unknown) => {
   if (typeof v !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(v))
     throw new Error("Invalid checkpoint ID");
@@ -150,9 +151,15 @@ async function hasGit(cwd: string) {
   }
 }
 
-/** Persistent session-owned snapshots. A serialized gate covers capture/undo races. */
+/** Persistent session-owned snapshots. Session and overlapping checkout gates
+ * cover capture/undo races without holding independent repositories. */
 export class HostCheckpoints {
-  private tail: Promise<unknown> = Promise.resolve();
+  private sessionTails = new Map<string, Promise<unknown>>();
+  private operations = new Set<{ roots: string[]; settled: Promise<void> }>();
+  private canonicalRoots = new Map<string, Promise<string>>();
+  private discovery: Promise<unknown> = Promise.resolve();
+  private knownSessions = new Map<string, string>();
+  private legacyActive = new Map<string, string>();
   private leases: CheckpointLeases;
   constructor(
     private root: string,
@@ -160,9 +167,74 @@ export class HostCheckpoints {
   ) {
     this.leases = new CheckpointLeases(leaseRoot);
   }
-  private queue<T>(op: () => Promise<T>): Promise<T> {
-    const result = this.tail.then(op, op);
-    this.tail = result.catch(() => undefined);
+  private queue<T>(
+    session: string,
+    cwds: string[],
+    op: () => Promise<T>,
+    includePrevious = false,
+  ): Promise<T> {
+    const run = async () => {
+      id(session);
+      const previous = includePrevious ? await this.load(session) : undefined;
+      const paths = [...new Set([...cwds, ...(previous ? [previous.cwd] : [])])];
+      const roots = await Promise.all(
+        paths.map(async (cwd) => {
+          const canonical = await realpath(cwd).catch(() => resolve(cwd));
+          const cached = this.canonicalRoots.get(canonical);
+          if (cached) return cached;
+          const lookup = (async () => {
+            const top = (
+              (await hasGit(canonical))
+                ? await git(canonical, ["rev-parse", "--show-toplevel"]).catch(() => undefined)
+                : undefined
+            )
+              ?.toString()
+              .trim();
+            return { root: top ? await realpath(top) : canonical, cacheable: !!top };
+          })();
+          const root = lookup.then((value) => value.root);
+          this.canonicalRoots.set(canonical, root);
+          // Cold concurrent sessions share resolution; failures and unversioned
+          // folders must not retain an identity that could change after git init.
+          void lookup.then(
+            ({ cacheable }) => {
+              if (!cacheable && this.canonicalRoots.get(canonical) === root)
+                this.canonicalRoots.delete(canonical);
+            },
+            () => {
+              if (this.canonicalRoots.get(canonical) === root)
+                this.canonicalRoots.delete(canonical);
+            },
+          );
+          while (this.canonicalRoots.size > 64)
+            this.canonicalRoots.delete(this.canonicalRoots.keys().next().value!);
+          return root;
+        }),
+      );
+      let release!: () => void;
+      const settled = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const blockers = [...this.operations].filter((entry) =>
+        roots.some((root) => entry.roots.some((other) => overlap(root, other))),
+      );
+      const entry = { roots, settled };
+      this.operations.add(entry);
+      try {
+        await Promise.all(blockers.map((entry) => entry.settled));
+        return await op();
+      } finally {
+        this.operations.delete(entry);
+        release();
+      }
+    };
+    const previous = this.sessionTails.get(session) ?? Promise.resolve();
+    const result = previous.then(run, run);
+    const settled = result.catch(() => undefined);
+    this.sessionTails.set(session, settled);
+    void settled.then(() => {
+      if (this.sessionTails.get(session) === settled) this.sessionTails.delete(session);
+    });
     return result;
   }
   private dir(session: string) {
@@ -190,17 +262,68 @@ export class HostCheckpoints {
     const tmp = join(dir, "manifest.json.tmp");
     await writeFile(tmp, JSON.stringify(record));
     await rename(tmp, join(dir, "manifest.json"));
+    if (record.active) this.legacyActive.set(session, record.cwd);
+    else this.legacyActive.delete(session);
+  }
+  /** Current live candidates also have leases, but mixed-version writers can
+   * change old manifests without one. Validate file identity/metadata rather
+   * than repeatedly opening/parsing every archived payload. Unknown/changed
+   * records and all stat/read failures retain the original fail-closed path. */
+  private refreshActiveIndex(): Promise<void> {
+    const refresh = async () => {
+      const entries = await readdir(this.root, { withFileTypes: true }).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return [];
+          throw error;
+        },
+      );
+      const names = entries
+        .filter((entry) => entry.isDirectory() && /^[A-Za-z0-9_-]{1,128}$/.test(entry.name))
+        .map((entry) => entry.name);
+      const known = new Map<string, string>();
+      for (let offset = 0; offset < names.length; offset += 32) {
+        await Promise.all(
+          names.slice(offset, offset + 32).map(async (session) => {
+            const meta = await stat(join(this.dir(session), "manifest.json")).catch(
+              (error: NodeJS.ErrnoException) => {
+                if (error.code === "ENOENT") return undefined;
+                throw error;
+              },
+            );
+            const signature = meta
+              ? `${meta.dev}:${meta.ino}:${meta.mtimeMs}:${meta.ctimeMs}:${meta.size}`
+              : "missing";
+            if (this.knownSessions.get(session) !== signature) {
+              const record = meta ? await this.load(session) : undefined;
+              if (record?.active) this.legacyActive.set(session, record.cwd);
+              else this.legacyActive.delete(session);
+            }
+            // Names beyond the bound use uncached verification next time.
+            if (known.size < 32_768) known.set(session, signature);
+          }),
+        );
+      }
+      this.knownSessions = known;
+      const existing = new Set(names);
+      for (const session of this.legacyActive.keys())
+        if (!existing.has(session)) this.legacyActive.delete(session);
+    };
+    const result = this.discovery.then(refresh, refresh);
+    this.discovery = result.catch(() => undefined);
+    return result;
   }
   private async active(session: string, cwd: string) {
     const list: [string, Record][] = [];
-    const entries = await readdir(this.root).catch((e: NodeJS.ErrnoException) => {
-      if (e.code === "ENOENT") return [];
-      throw e;
-    });
-    for (const other of entries) {
-      if (other === session || !/^[A-Za-z0-9_-]{1,128}$/.test(other)) continue;
+    await this.refreshActiveIndex();
+    const candidates = new Set([
+      ...[...this.legacyActive].filter(([, root]) => overlap(cwd, root)).map(([id]) => id),
+      ...(await this.leases.sessions("host", cwd)),
+    ]);
+    for (const other of candidates) {
+      if (other === session) continue;
       const record = await this.load(other);
       if (record?.active && overlap(cwd, record.cwd)) list.push([other, record]);
+      if (!record?.active) this.legacyActive.delete(other);
     }
     return list;
   }
@@ -247,82 +370,88 @@ export class HostCheckpoints {
   begin(session: string, cwd: string, turn: string) {
     id(session);
     id(turn);
-    return this.queue(async () => {
-      cwd = await realpath(cwd);
-      const old = await this.load(session);
-      if (old?.active?.id === turn && old.cwd === cwd) {
-        if (old.error) throw new Error(old.error);
-        return;
-      }
-      if (old?.active)
-        await this.finishNow(session, old.cwd, old.active.id, true).catch(() => undefined);
-      const shared = await this.leases.publish(session, turn, cwd).catch((e) => {
-        throw new Error(`checkpoint-coordination: ${errorText(e)}`);
-      });
-      const previous = await this.load(session);
-      if (previous?.cwd === cwd) await this.retireResolved(session, previous);
-      const isGit = await hasGit(cwd);
-      const owned = previous?.cwd === cwd && Object.keys(previous.files).length > 0;
-      const record: Record = {
-        cwd,
-        head: owned ? previous.head : isGit ? await head(cwd) : null,
-        noGit: !isGit,
-        shared: shared || (owned ? previous.shared : false),
-        files: owned ? previous.files : Object.create(null),
-        active: { id: turn, tree: "", dirty: Object.create(null), modes: Object.create(null) },
-      };
-      await this.save(session, record);
-      if (!isGit) return;
-      try {
-        // Non-Git folders retain structured-edit review; do not manufacture a tree.
-        for (const [other, active] of await this.active(session, cwd)) {
-          record.shared = true;
-          active.shared = true;
-          await this.save(other, active);
+    return this.queue(
+      session,
+      [cwd],
+      async () => {
+        cwd = await realpath(cwd);
+        const old = await this.load(session);
+        if (old?.active?.id === turn && old.cwd === cwd) {
+          if (old.error) throw new Error(old.error);
+          return;
         }
-        const dirty = (
-          await git(cwd, ["diff", "--relative", "--name-only", "-z", "HEAD", "--", "."]).catch(() =>
-            Buffer.alloc(0),
-          )
-        )
-          .toString()
-          .split("\0")
-          .filter(Boolean);
-        const untracked = (await git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]))
-          .toString()
-          .split("\0")
-          .filter(Boolean);
-        const staged = (
-          await git(cwd, ["diff", "--cached", "--relative", "--name-only", "-z", "--", "."])
-        )
-          .toString()
-          .split("\0")
-          .filter(Boolean);
-        const paths = [...new Set([...dirty, ...untracked, ...staged])];
-        if (paths.length > MAX_FILES) throw new Error("Too many dirty files for checkpoint");
-        let bytes = 0;
-        for (const path of paths) {
-          const raw = await this.raw(cwd, path, true);
-          if (raw !== undefined) {
-            bytes += raw.length;
-            if (bytes > 64 * 1024 * 1024) throw new Error("Checkpoint baseline is too large");
-            record.active!.dirty[path] = raw;
-            record.active!.modes![path] = (await lstat(await safeGitPath(cwd, path))).mode & 0o777;
+        if (old?.active)
+          await this.finishNow(session, old.cwd, old.active.id, true).catch(() => undefined);
+        const shared = await this.leases.publish(session, turn, cwd).catch((e) => {
+          throw new Error(`checkpoint-coordination: ${errorText(e)}`);
+        });
+        const previous = await this.load(session);
+        if (previous?.cwd === cwd) await this.retireResolved(session, previous);
+        const isGit = await hasGit(cwd);
+        const owned = previous?.cwd === cwd && Object.keys(previous.files).length > 0;
+        const record: Record = {
+          cwd,
+          head: owned ? previous.head : isGit ? await head(cwd) : null,
+          noGit: !isGit,
+          shared: shared || (owned ? previous.shared : false),
+          files: owned ? previous.files : Object.create(null),
+          active: { id: turn, tree: "", dirty: Object.create(null), modes: Object.create(null) },
+        };
+        await this.save(session, record);
+        if (!isGit) return;
+        try {
+          // Non-Git folders retain structured-edit review; do not manufacture a tree.
+          for (const [other, active] of await this.active(session, cwd)) {
+            record.shared = true;
+            active.shared = true;
+            await this.save(other, active);
           }
+          const dirty = (
+            await git(cwd, ["diff", "--relative", "--name-only", "-z", "HEAD", "--", "."]).catch(
+              () => Buffer.alloc(0),
+            )
+          )
+            .toString()
+            .split("\0")
+            .filter(Boolean);
+          const untracked = (await git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]))
+            .toString()
+            .split("\0")
+            .filter(Boolean);
+          const staged = (
+            await git(cwd, ["diff", "--cached", "--relative", "--name-only", "-z", "--", "."])
+          )
+            .toString()
+            .split("\0")
+            .filter(Boolean);
+          const paths = [...new Set([...dirty, ...untracked, ...staged])];
+          if (paths.length > MAX_FILES) throw new Error("Too many dirty files for checkpoint");
+          let bytes = 0;
+          for (const path of paths) {
+            const raw = await this.raw(cwd, path, true);
+            if (raw !== undefined) {
+              bytes += raw.length;
+              if (bytes > 64 * 1024 * 1024) throw new Error("Checkpoint baseline is too large");
+              record.active!.dirty[path] = raw;
+              record.active!.modes![path] =
+                (await lstat(await safeGitPath(cwd, path))).mode & 0o777;
+            }
+          }
+          record.active!.tree = await this.snapshot(cwd, session, turn, "before");
+        } catch (e) {
+          record.error = errorText(e);
         }
-        record.active!.tree = await this.snapshot(cwd, session, turn, "before");
-      } catch (e) {
-        record.error = errorText(e);
-      }
-      await this.save(session, record);
-      if (record.error) throw new Error(record.error);
-    });
+        await this.save(session, record);
+        if (record.error) throw new Error(record.error);
+      },
+      true,
+    );
   }
   finish(session: string, cwd: string, turn: string, interrupted = false) {
-    return this.queue(() => this.finishNow(session, cwd, turn, interrupted));
+    return this.queue(session, [cwd], () => this.finishNow(session, cwd, turn, interrupted), true);
   }
   claim(session: string, cwd: string, turn: string, paths: string[]) {
-    return this.queue(async () => {
+    return this.queue(session, [cwd], async () => {
       const record = await this.load(session);
       if (!record?.active || record.active.id !== turn || record.cwd !== (await realpath(cwd)))
         return;
@@ -501,8 +630,11 @@ export class HostCheckpoints {
       return false;
     }
   }
-  status(session: string, cwd: string): Promise<CheckpointStatus & { expectedCheckpoint?: string }> {
-    return this.queue(async () => {
+  status(
+    session: string,
+    cwd: string,
+  ): Promise<CheckpointStatus & { expectedCheckpoint?: string }> {
+    return this.queue(session, [cwd], async () => {
       const record = await this.matching(session, cwd);
       if (!record) return { files: [] };
       const safe =
@@ -584,8 +716,12 @@ export class HostCheckpoints {
       },
     };
   }
-  fileDiff(session: string, cwd: string, path: string): Promise<CheckpointFileDiff & { expectedCheckpoint: string }> {
-    return this.queue(async () => {
+  fileDiff(
+    session: string,
+    cwd: string,
+    path: string,
+  ): Promise<CheckpointFileDiff & { expectedCheckpoint: string }> {
+    return this.queue(session, [cwd], async () => {
       const record = await this.matching(session, cwd);
       const pair = record?.files[path];
       if (!record || !pair) throw new Error("File has no session checkpoint");
@@ -607,12 +743,24 @@ export class HostCheckpoints {
       };
     });
   }
-  change(session: string, cwd: string, path: string | undefined, undo: boolean, expectedCheckpoint?: string) {
-    return this.queue(async () => {
+  change(
+    session: string,
+    cwd: string,
+    path: string | undefined,
+    undo: boolean,
+    expectedCheckpoint?: string,
+  ) {
+    return this.queue(session, [cwd], async () => {
       const record = await this.matching(session, cwd);
-      if (expectedCheckpoint !== undefined &&
-          (!/^[a-f0-9]{64}$/.test(expectedCheckpoint) || !record || checkpointToken(record) !== expectedCheckpoint))
-        throw new Error("The session checkpoint changed; review it again before keeping or undoing files");
+      if (
+        expectedCheckpoint !== undefined &&
+        (!/^[a-f0-9]{64}$/.test(expectedCheckpoint) ||
+          !record ||
+          checkpointToken(record) !== expectedCheckpoint)
+      )
+        throw new Error(
+          "The session checkpoint changed; review it again before keeping or undoing files",
+        );
       if (!record) return;
       const paths = path === undefined ? Object.keys(record.files) : [path];
       if (
@@ -659,11 +807,16 @@ export class HostCheckpoints {
     }).then(() => this.status(session, cwd));
   }
   recover(session: string, cwd: string) {
-    return this.queue(async () => {
-      const record = await this.load(session);
-      if (record?.active) await this.finishNow(session, cwd, record.active.id, true);
-      else if (record?.settledTurnId && record.cwd === (await realpath(cwd)))
-        await this.leases.release(session, record.settledTurnId);
-    });
+    return this.queue(
+      session,
+      [cwd],
+      async () => {
+        const record = await this.load(session);
+        if (record?.active) await this.finishNow(session, cwd, record.active.id, true);
+        else if (record?.settledTurnId && record.cwd === (await realpath(cwd)))
+          await this.leases.release(session, record.settledTurnId);
+      },
+      true,
+    );
   }
 }

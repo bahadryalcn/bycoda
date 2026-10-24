@@ -9,6 +9,8 @@ import {
   loadDefaultTranslationChoice,
   parseTranslationChoice,
   saveDefaultTranslationChoice,
+  loadDefaultRepromptChoice,
+  saveDefaultRepromptChoice,
   type TranslationChoice,
 } from "../model/translationPreferences";
 
@@ -55,12 +57,12 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
 });
-async function open() {
+async function open(target: "en" | "reprompt" = "en") {
   await act(async () =>
     root.render(
       createElement(TranslationResultDialog, {
         text: "selam",
-        target: "en",
+        target,
         context,
         onApply: vi.fn(),
         onClose: vi.fn(),
@@ -68,6 +70,47 @@ async function open() {
     ),
   );
 }
+
+it("uses the independent reprompt default and leaves it unchanged by dialog model changes", async () => {
+  saveDefaultTranslationChoice({ ...choice, providerAccountId: "translator" });
+  saveDefaultRepromptChoice({ ...choice, providerAccountId: "rewriter" });
+  await open("reprompt");
+  expect(translateSelection).toHaveBeenCalledWith(
+    "selam",
+    "reprompt",
+    { ...context, ...choice, providerAccountId: "rewriter" },
+    expect.any(AbortSignal),
+    undefined,
+  );
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Rewritten prompt");
+  const change = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Change model",
+  )!;
+  await act(async () => change.click());
+  expect(loadDefaultRepromptChoice()?.providerAccountId).toBe("rewriter");
+  expect(loadDefaultTranslationChoice()?.providerAccountId).toBe("translator");
+});
+
+it("saves and resets reprompt settings without changing translation settings", async () => {
+  saveDefaultTranslationChoice(choice);
+  await act(async () => root.render(createElement(TranslationSettings, { action: "reprompt" })));
+  const change = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Change model",
+  )!;
+  await act(async () => change.click());
+  expect(loadDefaultRepromptChoice()).toMatchObject({
+    harness: "claude",
+    model: "claude:sonnet-5",
+    providerAccountId: "temporary",
+  });
+  expect(loadDefaultTranslationChoice()).toEqual(choice);
+  const reset = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Use conversation model",
+  )!;
+  await act(async () => reset.click());
+  expect(loadDefaultRepromptChoice()).toBeUndefined();
+  expect(loadDefaultTranslationChoice()).toEqual(choice);
+});
 
 it("starts with the persisted translation account and model while keeping the caller project", async () => {
   saveDefaultTranslationChoice(choice);

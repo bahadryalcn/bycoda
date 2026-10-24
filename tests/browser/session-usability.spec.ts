@@ -1,6 +1,100 @@
 import { expect, test } from "@playwright/test";
 
 for (const light of [false, true]) {
+  test(`composer action menu stays compact and keeps keyboard selection stable in ${light ? "light" : "dark"}`, async ({
+    page,
+  }, info) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/session-usability.html${light ? "?light" : ""}`);
+    const input = page.getByRole("textbox");
+    const trigger = page.getByRole("button", { name: "Add files or choose a mode", exact: true });
+    const menu = page.getByRole("menu", { name: "Add files or choose a mode", exact: true });
+    for (const width of [390, 1000]) {
+      await page.setViewportSize({ width, height: 800 });
+      await trigger.focus();
+      await trigger.press("ArrowDown");
+      await expect(menu.getByRole("menuitem", { name: "Upload file", exact: true })).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await expect(menu.getByRole("menuitem", { name: "Skills", exact: true })).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      const plan = menu.getByRole("menuitemcheckbox", { name: "Plan mode", exact: true });
+      await expect(plan).toBeFocused();
+      const initialHeight = (await plan.boundingBox())!.height;
+      await plan.press("Enter");
+      await expect(menu).toHaveCount(0);
+      await expect(input).toBeFocused();
+      await expect(input).toHaveValue("Keep this integrated draft");
+      await trigger.click();
+      await expect(plan).toHaveAttribute("aria-checked", "true");
+      expect(Math.abs((await plan.boundingBox())!.height - initialHeight)).toBeLessThan(1);
+      const geometry = await menu.evaluate((node) => {
+        const bounds = node.getBoundingClientRect();
+        return {
+          inside:
+            bounds.left >= 0 &&
+            bounds.right <= innerWidth &&
+            bounds.top >= 0 &&
+            bounds.bottom <= innerHeight,
+          rows: [...node.querySelectorAll("button")].map((row) => {
+            const icon = row.children[0].getBoundingClientRect();
+            const copy = row.children[1].getBoundingClientRect();
+            return {
+              aligned: icon.right <= copy.left,
+              fits: row.scrollWidth <= row.clientWidth + 1,
+            };
+          }),
+        };
+      });
+      expect(geometry.inside).toBe(true);
+      expect(geometry.rows).toHaveLength(6);
+      expect(geometry.rows.every((row) => row.aligned && row.fits)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`composer-menu-${width}.png`) });
+      await plan.click();
+      await trigger.click();
+      await expect(plan).toHaveAttribute("aria-checked", "false");
+      await page.keyboard.press("Escape");
+      await expect(trigger).toBeFocused();
+      await expect(input).toHaveValue("Keep this integrated draft");
+    }
+    expect(await page.evaluate(() => window.sessionUsability.events.sends)).toBe(0);
+  });
+
+  test(`translated composer menu keeps long descriptions readable in ${light ? "light" : "dark"}`, async ({
+    page,
+  }, info) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto(`/tests/browser/session-usability.html?lang=tr${light ? "&light" : ""}`);
+    const trigger = page.getByRole("button", {
+      name: "Dosya ekleyin veya bir mod seçin",
+      exact: true,
+    });
+    await trigger.click();
+    const menu = page.getByRole("menu", { name: "Dosya ekleyin veya bir mod seçin", exact: true });
+    await expect(menu.getByRole("menuitem", { name: "Dosya yükle", exact: true })).toBeFocused();
+    const fits = await menu.evaluate((node) => {
+      const bounds = node.getBoundingClientRect();
+      return (
+        bounds.left >= 0 &&
+        bounds.right <= innerWidth &&
+        bounds.top >= 0 &&
+        bounds.bottom <= innerHeight &&
+        [...node.querySelectorAll("button[aria-description]")].every((row) => {
+          const description = row.children[1].lastElementChild!;
+          return (
+            description.scrollWidth <= description.clientWidth + 1 &&
+            description.scrollHeight <= description.clientHeight + 1
+          );
+        })
+      );
+    });
+    expect(fits).toBe(true);
+    await page.screenshot({ path: info.outputPath("composer-menu-tr-390.png") });
+    await menu.getByRole("menuitemcheckbox", { name: "Plan modu", exact: true }).click();
+    await expect(page.getByRole("textbox")).toHaveValue("Keep this integrated draft");
+    await expect(page.getByRole("textbox")).toBeFocused();
+  });
+
   test(`integrated session keeps writing and recovery available in ${light ? "light" : "dark"}`, async ({
     page,
   }, info) => {

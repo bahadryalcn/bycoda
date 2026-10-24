@@ -1,12 +1,12 @@
 import { themePalette } from "../../../shared/theme/palette";
 import {
-  blinking,
   facing,
   fillRects,
   limb,
   placeSprite,
   rimRects,
   shift,
+  type PacingLook,
   type PacingPose,
   type Rect,
 } from "./pacingSprite";
@@ -87,10 +87,10 @@ function side(step: number, walk: boolean) {
 }
 
 /** Facing the reader: both branches rise, the crown shakes and a few leaves drift down. */
-function front(beat: number, elapsed: number) {
+function front(beat: number, look: PacingLook) {
   const raise = Math.min(1, 1.6 * Math.sin(beat * Math.PI));
-  const shake = raise > 0.85 ? Math.sin(elapsed * 34) * 0.5 : 0;
-  const eyes = blinking(elapsed, 2.6) ? E.barkDeep : E.eye;
+  const shake = raise > 0.85 ? Math.sin(look.gesture * 34) * 0.5 : 0;
+  const eyes = look.blink ? E.barkDeep : E.eye;
   const body: Rect[] = [
     [8.5, 24, 3.5, 6.5, E.barkDark],
     [12.5, 24, 3.5, 6.5, E.bark],
@@ -162,13 +162,13 @@ export function drawPacingEnt(
   baseline: number,
   scale: number,
   p: PacingPose,
-  elapsed: number,
+  look: PacingLook,
 ) {
   const face = facing(p);
   ctx.save();
   placeSprite(ctx, x, baseline, scale, face.sx, 7.5);
   if (face.front) {
-    const { body, arms, leaves } = front(face.beat, elapsed);
+    const { body, arms, leaves } = front(face.beat, look);
     rimRects(ctx, [...body, ...arms]);
     fillRects(ctx, body);
     fillRects(ctx, arms);

@@ -19,6 +19,10 @@ under a new ID. If the PR head changed, read it again and ask for approval again
 Write reviews in the owner's language.
 
 ## Social (`bycoda-social`)
+- A skill/tool hint is not connection proof. If Social MCP tools are absent, use
+  the session's `social` CLI fallback for a read such as `accounts.list`. If that
+  reports missing session access, report the unavailable bridge; never borrow
+  another session's credentials or change owner permissions to work around it.
 - Call `social_policy_get` for the target account before writing any post, reply or
   message, and apply its limits.
 - Draft first (`*_draft`, `campaigns.preview`). Sends need exact-content owner approval

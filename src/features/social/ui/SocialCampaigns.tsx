@@ -115,6 +115,7 @@ export function Campaigns({
         (!statusFilter ||
           campaignState(campaign, snapshot.jobs, snapshot.campaignStates) === statusFilter)),
   );
+  const showCampaignPreview = snapshot.campaigns.length > 0 || Boolean(search || statusFilter);
   const publicFacts = snapshot.profiles
     .filter((profile) => selectedProjects.includes(profile.projectId))
     .flatMap((profile) => profile.facts);
@@ -812,225 +813,234 @@ export function Campaigns({
               </Empty>
             ) : null}
           </section>
-          <section>
-            {selected ? (
-              <>
-                <header className="social-record-heading">
-                  <div>
-                    <h2>{selected.name}</h2>
-                    <span className="social-muted">
-                      {selected.projectIds
-                        .map(
-                          (id) =>
-                            projects.find((project) => project.id === id)?.name || t("Project"),
-                        )
-                        .join(", ")}
-                    </span>
-                  </div>
-                  <StatusBadge
-                    status={campaignState(selected, snapshot.jobs, snapshot.campaignStates)}
-                    label={stateLabel(selected)}
-                  />
-                </header>
-                <div className="social-campaign-content">
-                  <div className="social-campaign-previews">
-                    {selected.variants.map((variant) => (
-                      <article className="social-preview" key={variant.accountId}>
-                        <h3>
-                          {snapshot.accounts.find((account) => account.id === variant.accountId)
-                            ?.name ?? t("Removed account")}
-                        </h3>
-                        {variant.youtube ? (
-                          <p>
-                            {variant.youtube.title} · {t("Visibility")}:{" "}
-                            {variant.youtube.privacy === "private"
-                              ? t("Private")
-                              : variant.youtube.privacy === "unlisted"
-                                ? t("Unlisted")
-                                : t("Public")}{" "}
-                            · {t("Made for kids")}:{" "}
-                            {variant.youtube.madeForKids ? t("Yes") : t("No")} ·{" "}
-                            {t("Synthetic content")}:{" "}
-                            {variant.youtube.containsSyntheticMedia ? t("Yes") : t("No")}
-                          </p>
-                        ) : null}
-                        <p className="social-message">{variant.text}</p>
-                        {variant.media.map((media, index) => (
-                          <p key={index}>
-                            {media.kind === "video" ? t("Video") : t("Image")}:{" "}
-                            {media.url ?? t("File uploaded to the host")}
-                          </p>
-                        ))}
-                        {variant.link ? <p className="social-message">{variant.link}</p> : null}
-                        <small>{t("One-time post: {p0}", { p0: time(variant.scheduledAt) })}</small>
-                        {currentPreview?.targets
-                          .filter((target) => target.accountId === variant.accountId)
-                          .map((target) => (
-                            <div key={target.accountId} className="social-inline-meta">
-                              <StatusBadge
-                                status={target.contentError ? "failed" : target.capability.status}
-                                label={target.contentError ? t("Content issue") : undefined}
-                              />
-                              <StatusBadge
-                                status={target.approved ? "approved" : "draft"}
-                                label={
-                                  target.approved ? t("Content approved") : t("Awaiting approval")
-                                }
-                              />
-                              {target.contentError || target.capability.status !== "available" ? (
-                                <Notice kind="warning">
-                                  {target.contentError || target.capability.reason}
-                                </Notice>
-                              ) : null}
-                            </div>
+          {showCampaignPreview ? (
+            <section>
+              {selected ? (
+                <>
+                  <header className="social-record-heading">
+                    <div>
+                      <h2>{selected.name}</h2>
+                      <span className="social-muted">
+                        {selected.projectIds
+                          .map(
+                            (id) =>
+                              projects.find((project) => project.id === id)?.name || t("Project"),
+                          )
+                          .join(", ")}
+                      </span>
+                    </div>
+                    <StatusBadge
+                      status={campaignState(selected, snapshot.jobs, snapshot.campaignStates)}
+                      label={stateLabel(selected)}
+                    />
+                  </header>
+                  <div className="social-campaign-content">
+                    <div className="social-campaign-previews">
+                      {selected.variants.map((variant) => (
+                        <article className="social-preview" key={variant.accountId}>
+                          <h3>
+                            {snapshot.accounts.find((account) => account.id === variant.accountId)
+                              ?.name ?? t("Removed account")}
+                          </h3>
+                          {variant.youtube ? (
+                            <p>
+                              {variant.youtube.title} · {t("Visibility")}:{" "}
+                              {variant.youtube.privacy === "private"
+                                ? t("Private")
+                                : variant.youtube.privacy === "unlisted"
+                                  ? t("Unlisted")
+                                  : t("Public")}{" "}
+                              · {t("Made for kids")}:{" "}
+                              {variant.youtube.madeForKids ? t("Yes") : t("No")} ·{" "}
+                              {t("Synthetic content")}:{" "}
+                              {variant.youtube.containsSyntheticMedia ? t("Yes") : t("No")}
+                            </p>
+                          ) : null}
+                          <p className="social-message">{variant.text}</p>
+                          {variant.media.map((media, index) => (
+                            <p key={index}>
+                              {media.kind === "video" ? t("Video") : t("Image")}:{" "}
+                              {media.url ?? t("File uploaded to the host")}
+                            </p>
                           ))}
-                      </article>
-                    ))}
-                  </div>
-                  <aside className="social-campaign-controls">
-                    <section
-                      className="social-workflow-steps"
-                      aria-label={t("Publish approval and scheduling")}
-                    >
-                      <h3>{t("Review and publish")}</h3>
-                      {currentPreview && canApprove ? (
-                        <label className="social-check">
-                          <Checkbox
-                            checked={approvalConfirmed}
-                            onChange={(event) => setApprovalConfirmed(event.target.checked)}
-                          />
-                          {t(
-                            "I have read the content for all accounts of this campaign and approve it for publishing.",
-                          )}
-                        </label>
-                      ) : null}
-                      <div className="social-inline-meta">
-                        <small>{t("Publishes to")}</small>
-                        {targetAccounts.map((target) => (
-                          <Badge key={target.id} appearance="subtle">
-                            {target.label}
-                          </Badge>
-                        ))}
-                      </div>
-                      {scheduleReason ? (
-                        <Notice kind={currentPreview && !canApprove ? "warning" : "info"}>
-                          {scheduleReason}
-                        </Notice>
-                      ) : null}
+                          {variant.link ? <p className="social-message">{variant.link}</p> : null}
+                          <small>
+                            {t("One-time post: {p0}", { p0: time(variant.scheduledAt) })}
+                          </small>
+                          {currentPreview?.targets
+                            .filter((target) => target.accountId === variant.accountId)
+                            .map((target) => (
+                              <div key={target.accountId} className="social-inline-meta">
+                                <StatusBadge
+                                  status={target.contentError ? "failed" : target.capability.status}
+                                  label={target.contentError ? t("Content issue") : undefined}
+                                />
+                                <StatusBadge
+                                  status={target.approved ? "approved" : "draft"}
+                                  label={
+                                    target.approved ? t("Content approved") : t("Awaiting approval")
+                                  }
+                                />
+                                {target.contentError || target.capability.status !== "available" ? (
+                                  <Notice kind="warning">
+                                    {target.contentError || target.capability.reason}
+                                  </Notice>
+                                ) : null}
+                              </div>
+                            ))}
+                        </article>
+                      ))}
+                    </div>
+                    <aside className="social-campaign-controls">
+                      <section
+                        className="social-workflow-steps"
+                        aria-label={t("Publish approval and scheduling")}
+                      >
+                        <h3>{t("Review and publish")}</h3>
+                        {currentPreview && canApprove ? (
+                          <label className="social-check">
+                            <Checkbox
+                              checked={approvalConfirmed}
+                              onChange={(event) => setApprovalConfirmed(event.target.checked)}
+                            />
+                            {t(
+                              "I have read the content for all accounts of this campaign and approve it for publishing.",
+                            )}
+                          </label>
+                        ) : null}
+                        <div className="social-inline-meta">
+                          <small>{t("Publishes to")}</small>
+                          {targetAccounts.map((target) => (
+                            <Badge key={target.id} appearance="subtle">
+                              {target.label}
+                            </Badge>
+                          ))}
+                        </div>
+                        {scheduleReason ? (
+                          <Notice kind={currentPreview && !canApprove ? "warning" : "info"}>
+                            {scheduleReason}
+                          </Notice>
+                        ) : null}
+                        <div className="social-actions">
+                          <Button
+                            type="button"
+                            variant={currentPreview ? "secondary" : "primary"}
+                            onClick={() =>
+                              void run(async () => {
+                                setPreview(
+                                  await client.request("campaigns.preview", {
+                                    id: selected.id,
+                                  }),
+                                );
+                                setApprovalConfirmed(false);
+                              }, t("Account and content check finished."))
+                            }
+                          >
+                            {t("Check account and content")}
+                          </Button>
+
+                          <Button
+                            type="button"
+                            variant={canApprove && !approved ? "primary" : "secondary"}
+                            disabled={!canApprove || !approvalConfirmed || approved}
+                            onClick={() =>
+                              void run(async () => {
+                                await client.request("campaigns.approve", { id: selected.id });
+                                setPreview(
+                                  await client.request("campaigns.preview", { id: selected.id }),
+                                );
+                              }, t("Content approved. You can schedule it once or add it to an automatic publishing plan."))
+                            }
+                          >
+                            {approved ? t("Content approved") : t("Give publishing approval")}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={approved ? "primary" : "secondary"}
+                            disabled={!canSchedule}
+                            onClick={() =>
+                              void run(async () => {
+                                await client.request("campaigns.schedule", {
+                                  id: selected.id,
+                                });
+                              }, t("One-time posts scheduled. Follow the results below or in the Operation history."))
+                            }
+                          >
+                            {t("Schedule posts")}
+                          </Button>
+                        </div>
+                      </section>
                       <div className="social-actions">
                         <Button
                           type="button"
-                          variant={currentPreview ? "secondary" : "primary"}
+                          variant="secondary"
                           onClick={() =>
-                            void run(async () => {
-                              setPreview(
-                                await client.request("campaigns.preview", {
+                            void run(
+                              () =>
+                                client.request("campaigns.pause", {
                                   id: selected.id,
+                                  paused: !snapshot.campaigns.find(
+                                    (campaign) => campaign.id === selected.id,
+                                  )?.paused,
                                 }),
-                              );
-                              setApprovalConfirmed(false);
-                            }, t("Account and content check finished."))
+                              selected.paused ? t("Campaign resumed.") : t("Campaign paused."),
+                            )
                           }
                         >
-                          {t("Check account and content")}
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant={canApprove && !approved ? "primary" : "secondary"}
-                          disabled={!canApprove || !approvalConfirmed || approved}
-                          onClick={() =>
-                            void run(async () => {
-                              await client.request("campaigns.approve", { id: selected.id });
-                              setPreview(
-                                await client.request("campaigns.preview", { id: selected.id }),
-                              );
-                            }, t("Content approved. You can schedule it once or add it to an automatic publishing plan."))
-                          }
-                        >
-                          {approved ? t("Content approved") : t("Give publishing approval")}
+                          {selected.paused ? t("Resume campaign") : t("Pause campaign")}
                         </Button>
                         <Button
                           type="button"
-                          variant={approved ? "primary" : "secondary"}
-                          disabled={!canSchedule}
-                          onClick={() =>
-                            void run(async () => {
-                              await client.request("campaigns.schedule", {
-                                id: selected.id,
-                              });
-                            }, t("One-time posts scheduled. Follow the results below or in the Operation history."))
-                          }
+                          variant="secondary"
+                          disabled={editBlocked}
+                          onClick={() => {
+                            setEditVersion((value) => value + 1);
+                            setEditingId(selected.id);
+                            setEditingRevision(selected.revision);
+                            setName(selected.name);
+                            setSelectedProjects(selected.projectIds);
+                            setVariants(
+                              selected.variants.map((variant) => ({
+                                ...variant,
+                                media: [...variant.media],
+                                factIds: [...variant.factIds],
+                              })),
+                            );
+                          }}
                         >
-                          {t("Schedule posts")}
+                          {t("Edit draft")}
                         </Button>
                       </div>
-                    </section>
-                    <div className="social-actions">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() =>
-                          void run(
-                            () =>
-                              client.request("campaigns.pause", {
-                                id: selected.id,
-                                paused: !snapshot.campaigns.find(
-                                  (campaign) => campaign.id === selected.id,
-                                )?.paused,
-                              }),
-                            selected.paused ? t("Campaign resumed.") : t("Campaign paused."),
-                          )
-                        }
-                      >
-                        {selected.paused ? t("Resume campaign") : t("Pause campaign")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={editBlocked}
-                        onClick={() => {
-                          setEditVersion((value) => value + 1);
-                          setEditingId(selected.id);
-                          setEditingRevision(selected.revision);
-                          setName(selected.name);
-                          setSelectedProjects(selected.projectIds);
-                          setVariants(
-                            selected.variants.map((variant) => ({
-                              ...variant,
-                              media: [...variant.media],
-                              factIds: [...variant.factIds],
-                            })),
-                          );
-                        }}
-                      >
-                        {t("Edit draft")}
-                      </Button>
-                    </div>
-                    {editBlocked ? (
-                      <small className="social-muted">
-                        {t(
-                          "Scheduled, sent or in-review posts prevent editing this draft. Create a new campaign for new content.",
-                        )}
-                      </small>
-                    ) : null}
-                  </aside>
-                </div>
-                <details className="social-campaign-results">
-                  <summary>
-                    {t("Post results")} <small>{selectedJobs.length}</small>
-                  </summary>
-                  <JobList snapshot={snapshot} campaignId={selected.id} client={client} run={run} />
-                </details>
-              </>
-            ) : (
-              <Empty title={t("Campaign preview")}>
-                {t(
-                  "Select a campaign to see its content, publish time and the result for each account.",
-                )}
-              </Empty>
-            )}
-          </section>
+                      {editBlocked ? (
+                        <small className="social-muted">
+                          {t(
+                            "Scheduled, sent or in-review posts prevent editing this draft. Create a new campaign for new content.",
+                          )}
+                        </small>
+                      ) : null}
+                    </aside>
+                  </div>
+                  <details className="social-campaign-results">
+                    <summary>
+                      {t("Post results")} <small>{selectedJobs.length}</small>
+                    </summary>
+                    <JobList
+                      snapshot={snapshot}
+                      campaignId={selected.id}
+                      client={client}
+                      run={run}
+                    />
+                  </details>
+                </>
+              ) : (
+                <Empty title={t("Campaign preview")}>
+                  {t(
+                    "Select a campaign to see its content, publish time and the result for each account.",
+                  )}
+                </Empty>
+              )}
+            </section>
+          ) : null}
         </div>
       </div>
       <section className="social-page-secondary">

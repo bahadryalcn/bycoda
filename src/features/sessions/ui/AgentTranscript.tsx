@@ -4,7 +4,7 @@ import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { shallowArrayEqual } from "../model/stableBlocks";
 import { useFollowBottom } from "../hooks/useFollowBottom";
-import { canOfferTranslation, type TranslationTarget } from "../model/translation";
+import { canOfferTranslation, repromptReference, type TextActionTarget } from "../model/translation";
 import {
   selectedTextOffset,
   translatedSelection,
@@ -336,7 +336,7 @@ function AgentTranscriptComponent({
   );
   const [translationRequest, setTranslationRequest] = useState<{
     selection: TranscriptSelection;
-    target: TranslationTarget;
+    target: TextActionTarget;
     source: string;
     displayed: string;
   } | null>(null);
@@ -1213,6 +1213,11 @@ function AgentTranscriptComponent({
         {translationRequest && translationContext ? (
           <TranslationResultDialog
             text={translationRequest.selection.text}
+            surroundingText={(() => {
+              const { displayed, selection } = translationRequest;
+              const start = selectedTextOffset(displayed, selection.text, selection.occurrence);
+              return start < 0 ? undefined : repromptReference(displayed, start, start + selection.text.length);
+            })()}
             target={translationRequest.target}
             context={translationContext}
             onClose={() => setTranslationRequest(null)}
@@ -3085,18 +3090,41 @@ function useTurnScrollAnchor(
     const inner = el?.querySelector("[data-transcript-content]");
     if (!enabled || !el || !inner) return;
     const heights = new WeakMap<Element, number>();
+    const widths = new WeakMap<Element, number>();
+    const resetTurn = (turn: Element) => {
+      const node = turn as HTMLElement;
+      node.style.removeProperty("content-visibility");
+      node.style.removeProperty("contain-intrinsic-block-size");
+      // A new observation reports the real content even when the old placeholder
+      // happened to have the same height. Never invent a height for loaded history.
+      resize.unobserve?.(turn);
+      resize.observe(turn);
+    };
     const resize = new ResizeObserver((entries) => {
       // A parked transcript's scroller is detached and measures zero.
       if (!el.isConnected) return;
       const viewportTop = el.getBoundingClientRect().top;
       let shift = 0;
       let precedingDelta = 0;
+      const remeasure = new Set<Element>();
       // ResizeObserver order is not DOM order. Only sort changed turns so
       // preceding height corrections retain the same anchoring semantics.
       const ordered = [...entries].sort((a, b) =>
         a.target.compareDocumentPosition(b.target) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
       );
       for (const entry of ordered) {
+        const width = entry.contentRect.width;
+        const previousWidth = widths.get(entry.target);
+        widths.set(entry.target, width);
+        if (
+          previousWidth !== undefined &&
+          previousWidth !== width &&
+          (entry.target as HTMLElement).style.contentVisibility === "auto"
+        ) {
+          remeasure.add(entry.target);
+          resetTurn(entry.target);
+          continue;
+        }
         const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
         const previous = heights.get(entry.target);
         heights.set(entry.target, height);
@@ -3111,6 +3139,23 @@ function useTurnScrollAnchor(
         el.scrollTop += shift;
         onAdjust(el);
       }
+      // All reads/anchor corrections finish before applying containment. Actual
+      // measured content heights preserve the scroll range during upward gestures;
+      // estimated `auto 200px` fallbacks previously caused that range to jump.
+      for (const entry of ordered) {
+        const turn = entry.target as HTMLElement;
+        if (
+          remeasure.has(turn) ||
+          entry.contentRect.height <= 0 ||
+          turn.classList.contains("transcript-turn-live") ||
+          turn.classList.contains("transcript-turn-anchor")
+        )
+          continue;
+        const width = widths.get(turn);
+        if (width !== entry.contentRect.width || !heights.has(turn)) continue;
+        turn.style.containIntrinsicBlockSize = `${entry.contentRect.height}px`;
+        turn.style.contentVisibility = "auto";
+      }
     });
     let observed = new WeakSet<Element>();
     const observeTurns = () => {
@@ -3121,19 +3166,90 @@ function useTurnScrollAnchor(
       }
     };
     const mutations = new MutationObserver((records) => {
+      const listChanged = records.some(
+        (record) => record.target === inner && record.type === "childList",
+      );
       // Removal is rare (a rewind or edit), so start over rather than hold
       // detached turns. Re-observed turns report the height already stored.
-      if (records.some((record) => record.removedNodes.length > 0)) {
+      if (records.some((record) => record.target === inner && record.removedNodes.length > 0)) {
         resize.disconnect();
         observed = new WeakSet();
       }
-      observeTurns();
+      const changed = new Set<Element>();
+      for (const record of records) {
+        const target =
+          record.target instanceof Element ? record.target : record.target.parentElement;
+        const turn = target?.closest(".transcript-turn");
+        if (turn && observed.has(turn) && !turn.classList.contains("transcript-turn-live"))
+          changed.add(turn);
+      }
+      for (const turn of changed) resetTurn(turn);
+      // Tail text/word-fade mutations must not enumerate every retained turn.
+      if (listChanged) observeTurns();
     });
-    mutations.observe(inner, { childList: true });
+    mutations.observe(inner, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: [
+        "class",
+        "data-collapsed",
+        "data-fold-state",
+        "src",
+        "width",
+        "height",
+        "open",
+      ],
+    });
+    const resourceChanged = (event: Event) => {
+      const turn =
+        event.target instanceof Element ? event.target.closest(".transcript-turn") : null;
+      if (turn && observed.has(turn) && !turn.classList.contains("transcript-turn-live"))
+        resetTurn(turn);
+    };
+    inner.addEventListener("load", resourceChanged, true);
+    inner.addEventListener("error", resourceChanged, true);
+    const fontSignature = () => {
+      const turn = inner.querySelector(".transcript-turn");
+      if (!turn) return "";
+      const style = getComputedStyle(turn);
+      return [
+        style.fontFamily,
+        style.fontSize,
+        style.fontWeight,
+        style.lineHeight,
+        style.letterSpacing,
+      ].join("|");
+    };
+    let font = fontSignature();
+    const refreshHeights = () => {
+      for (const turn of inner.children) if (observed.has(turn)) resetTurn(turn);
+    };
+    const appearance = new MutationObserver(() => {
+      const next = fontSignature();
+      if (next === font) return;
+      font = next;
+      refreshHeights();
+    });
+    appearance.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "style"],
+    });
+    appearance.observe(document.body, { attributes: true, attributeFilter: ["class", "style"] });
+    document.fonts?.addEventListener("loadingdone", refreshHeights);
     observeTurns();
     return () => {
       mutations.disconnect();
+      appearance.disconnect();
+      document.fonts?.removeEventListener("loadingdone", refreshHeights);
       resize.disconnect();
+      inner.removeEventListener("load", resourceChanged, true);
+      inner.removeEventListener("error", resourceChanged, true);
+      for (const turn of inner.children) {
+        (turn as HTMLElement).style.removeProperty("content-visibility");
+        (turn as HTMLElement).style.removeProperty("contain-intrinsic-block-size");
+      }
     };
   }, [el, enabled, stickToBottom, onAdjust]);
 }
@@ -3186,6 +3302,16 @@ function ActivityPhaseGroup({
   const turnFor = useStepQueue(phase.steps);
   const title = activityPhaseTitle(phase, active);
   const bycodaPhase = !!bycodaWorkSummary(phase.steps, active);
+  let compactCommand: Block | undefined;
+  if (active && override !== true && !needsAttention) {
+    for (let index = phase.steps.length - 1; index >= 0; index -= 1) {
+      const step = phase.steps[index];
+      if (step.role === "tool" && step.tool?.kind === "shell") {
+        compactCommand = step;
+        break;
+      }
+    }
+  }
   // Opening a group on purpose is also how you read the line that titled it,
   // whole. The auto-open while it runs is a live view, not a reading one, and
   // a one-line note the header already shows in full has nothing to add.
@@ -3274,6 +3400,15 @@ function ActivityPhaseGroup({
       </Button>
       <div className="zen-phase-body" data-open={open}>
         {open ? (
+          <>
+          {compactCommand ? (
+            <div className="flex min-w-0 items-start gap-1.5 px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
+              <Terminal className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+              <span className="line-clamp-2 break-all font-mono" title={toolCallLabel(compactCommand, cwd)}>
+                {toolCallLabel(compactCommand, cwd)}
+              </span>
+            </div>
+          ) : null}
           <div
             ref={setLiveScroller}
             className={
@@ -3314,6 +3449,7 @@ function ActivityPhaseGroup({
               })}
             </div>
           </div>
+          </>
         ) : null}
       </div>
       {open && active && override !== true && !needsAttention && phase.steps.length > 3 ? (
@@ -4839,7 +4975,7 @@ const TranscriptSelectionActions = memo(function TranscriptSelectionActions({
   enabled: boolean;
   onAddToChat?: (text: string) => void;
   onAddToNotes?: (text: string) => void | Promise<void>;
-  onTranslate?: (selection: TranscriptSelection, target: TranslationTarget) => void;
+  onTranslate?: (selection: TranscriptSelection, target: TextActionTarget) => void;
 }) {
   const { selection, dismissSelection } = useTranscriptSelection(root, enabled);
   return (

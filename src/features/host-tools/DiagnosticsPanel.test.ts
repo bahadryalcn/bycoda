@@ -33,6 +33,9 @@ afterEach(async () => {
 it("samples only on request and offers retry after a failed read", async () => {
   await act(async () => root.render(createElement(DiagnosticsPanel, { cwd: "/repo" })));
   expect(hostFeatureRequest).not.toHaveBeenCalled();
+  expect(container.querySelector(".resource-cards")).toBeNull();
+  expect(container.querySelector(".resource-system-memory")).toBeNull();
+  expect(container.textContent).toContain("Take a sample to start the charts.");
   vi.mocked(hostFeatureRequest)
     .mockRejectedValueOnce(new Error("Host offline"))
     .mockResolvedValueOnce({ samples: [sample] })
@@ -47,6 +50,7 @@ it("samples only on request and offers retry after a failed read", async () => {
   expect(container.textContent).toContain("Measuring…");
   await act(async () => vi.advanceTimersByTimeAsync(1100));
   expect(container.textContent).toContain("2.5%");
+  expect(container.querySelectorAll(".resource-chart")).toHaveLength(2);
   expect(container.querySelector("button")!.disabled).toBe(false);
   expect(hostFeatureRequest).toHaveBeenCalledTimes(3);
 });

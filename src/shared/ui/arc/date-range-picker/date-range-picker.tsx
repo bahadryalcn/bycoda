@@ -32,6 +32,7 @@ import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from "lucide-rea
 import { motionTokens } from "../lib/motion-tokens";
 import { useToday } from "../lib/use-today";
 import { useOverlay } from "../../overlay";
+import { cumulativeCssZoom } from "../../../lib/cssZoom";
 import styles from "./date-range-picker.module.css";
 
 /** An inclusive range of whole days. */
@@ -73,6 +74,8 @@ export interface DateRangePickerProps {
   months?: "auto" | 1 | 2;
   /** The element the panel should stay inside. Defaults to the viewport. */
   boundary?: () => HTMLElement | null;
+  /** Reserve the expanded panel's height inside a scrolling form or popover. */
+  expandInFlow?: boolean;
   className?: string;
 }
 
@@ -555,6 +558,7 @@ export function DateRangePicker({
   locale = "en-US",
   months = "auto",
   boundary,
+  expandInFlow = false,
   className,
 }: DateRangePickerProps) {
   const t = useT();
@@ -647,12 +651,13 @@ export function DateRangePicker({
 
   const bounds = useCallback(() => {
     const element = boundaryRef.current?.();
-    const viewport = { left: 0, right: document.documentElement.clientWidth };
+    const zoom = cumulativeCssZoom(rootRef.current);
+    const viewport = { left: 0, right: document.documentElement.clientWidth / zoom };
     if (!element) return viewport;
     const rect = element.getBoundingClientRect();
     return {
-      left: Math.max(viewport.left, rect.left),
-      right: Math.min(viewport.right, rect.right),
+      left: Math.max(viewport.left, rect.left / zoom),
+      right: Math.min(viewport.right, rect.right / zoom),
     };
   }, []);
 
@@ -667,8 +672,9 @@ export function DateRangePicker({
     if (openPanel && rootRef.current) {
       const rect = rootRef.current.getBoundingClientRect(),
         box = bounds();
-      offset = Math.min(0, box.right - EDGE - (rect.left + openPanel.w));
-      offset = Math.max(offset, box.left + EDGE - rect.left);
+      const left = rect.left / cumulativeCssZoom(rootRef.current);
+      offset = Math.min(0, box.right - EDGE - (left + openPanel.w));
+      offset = Math.max(offset, box.left + EDGE - left);
     }
     const r = openPanel ? PANEL_RADIUS : TRIGGER_RADIUS;
     if (!state.ready || state.reduced) {
@@ -733,7 +739,7 @@ export function DateRangePicker({
   // Once it has its size, scroll just enough to bring its bottom into view, never past its top. After closing, the
   // trigger comes back into view if that scroll left it off screen.
   useEffect(() => {
-    if (!open) return;
+    if (!open || expandInFlow) return;
     const frame = requestAnimationFrame(() => {
       const node = panelRef.current;
       if (!node) return;
@@ -746,7 +752,7 @@ export function DateRangePicker({
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [open, reduced]);
+  }, [expandInFlow, open, reduced]);
   useEffect(() => {
     if (open) return;
     const trigger = triggerRef.current;
@@ -1002,7 +1008,7 @@ export function DateRangePicker({
     <motion.div
       ref={rootRef}
       className={[styles.root, className].filter(Boolean).join(" ")}
-      style={{ width: rootWidth }}
+      style={{ width: rootWidth, height: expandInFlow ? height : undefined }}
       data-open={open || undefined}
       onKeyDown={onRootKey}
       onBlur={onRootBlur}

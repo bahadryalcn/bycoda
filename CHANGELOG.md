@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.75]
+
+### Remote sessions and coordination
+
+- Improve remote session discovery, transcript paging, previews and synchronization across machines.
+- Strengthen shared queues, run leases, checkpoint coordination and recovery from interrupted work.
+- Refine task, goal, steward and crew workflows, including shared default instructions.
+
+### Host tools and workspace
+
+- Expand reviewed file operations and improve host tool concurrency, caching and device discovery.
+- Improve document and spreadsheet previews, including background processing for Word documents.
+- Refine local voice setup, runtime discovery and settings.
+- Improve translation defaults, result workflows and ambient backgrounds.
+- Improve server controls, shared interface components and workspace presentation.
+- Expand regression and performance coverage across native, host and desktop workflows.
+
 ## [0.6.70]
 
 ### Idle performance

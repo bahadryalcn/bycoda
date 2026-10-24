@@ -128,6 +128,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     anchor: HTMLElement;
   } | null>(null);
   const [adding, setAdding] = useState(false);
+  // Keep one mounted creation form when switching to an existing skill. Its
+  // name/scope draft survives selection and responsive layout changes.
+  const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -195,6 +198,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     machine: Machine | null = null,
   ): void => {
     if (savePending.current) return;
+    setShowCreate(false);
     setActionsMenu(null);
     setEditing(trigger === "name" && !machine && canDeleteSkill(skill));
     previewOpener.current = `${trigger}:${skill.path}`;
@@ -730,13 +734,14 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               ref={addSkillButton}
               variant="secondary"
               disabled={busy}
-              aria-label={adding ? t("Close skill form") : t("Add skill")}
+              aria-label={showCreate ? t("Close skill form") : t("Add skill")}
               onClick={() => {
-                setAdding((value) => !value);
+                setAdding(!showCreate);
+                setShowCreate(!showCreate);
                 setCreateError(null);
               }}
             >
-              {adding ? t("Close") : t("Add skill")}
+              {showCreate ? t("Close") : t("Add skill")}
             </Button>
           </div>
           <div className={styles.count}>
@@ -757,23 +762,6 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         </header>
         {!previewSkill ? actionFeedback : null}
         <div ref={lockOverscroll} className={styles.list}>
-          {adding ? (
-            <CreateSkillForm
-              key={cwd}
-              query={query}
-              cwd={cwd}
-              monospace={false}
-              showScopeHelp
-              error={createError}
-              busy={busy}
-              onCancel={() => {
-                setAdding(false);
-                setCreateError(null);
-                addSkillButton.current?.focus();
-              }}
-              onCreate={onCreate}
-            />
-          ) : null}
           <details open className={styles.machine}>
             <summary>
               {t("This computer")} <span>{filtered.length}</span>
@@ -824,9 +812,35 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         </footer>
       </section>
       <div className={styles.workspace}>
+        {adding ? (
+          <section className={styles.creation} hidden={!showCreate} aria-label={t("Add skill")}>
+            <h2 className="text-ui-heading font-medium">{t("Add skill")}</h2>
+            <CreateSkillForm
+              key={cwd}
+              query={query}
+              cwd={cwd}
+              monospace={false}
+              showScopeHelp
+              error={createError}
+              busy={busy}
+              onCancel={() => {
+                setAdding(false);
+                setShowCreate(false);
+                setCreateError(null);
+                addSkillButton.current?.focus();
+              }}
+              onCreate={onCreate}
+            />
+          </section>
+        ) : null}
         {previewSkill ? actionFeedback : null}
         {previewSkill ? (
-          <aside id={previewId} aria-label={t("Skill preview")} className={styles.detail}>
+          <aside
+            id={previewId}
+            aria-label={t("Skill preview")}
+            className={styles.detail}
+            hidden={showCreate}
+          >
             <header className={styles.detailHeader}>
               <div className={styles.headingRow}>
                 <h2>{previewSkill.name}</h2>
@@ -937,7 +951,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               <span>{editing ? t("Ctrl/Cmd+S to save") : t("Markdown")}</span>
             </footer>
           </aside>
-        ) : (
+        ) : showCreate ? null : (
           <EmptyState
             title={t("Select a skill")}
             description={t("Choose a skill to view or edit its instructions.")}

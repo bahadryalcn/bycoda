@@ -137,6 +137,14 @@ if (query.has("boardControls")) {
       updatedAt: 4,
     });
 }
+if (query.has("bulk")) {
+  const base = tasks["machine-local"][0];
+  tasks["machine-local"] = Array.from({ length: 100 }, (_, index) => ({ ...base, id: `bulk-${index}`, title: `Cleanup task ${index}`, status: "done", goalId: undefined, createdAt: index + 1, updatedAt: index + 1 }));
+  tasks["machine-local"].push(
+    { ...base, id: "protected", title: "Protected unmerged work", status: "review", goalId: undefined, branch: "mc/protected", merged: false, createdAt: 101, updatedAt: 101 },
+    { ...base, id: "active", title: "Active work", status: "running", goalId: undefined, createdAt: 102, updatedAt: 102 },
+  );
+}
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 const openedSessions: BackgroundSessionTarget[] = [];
 let projectFailure = query.has("projectError");
@@ -362,6 +370,10 @@ Object.assign(window, {
           return new Promise(() => {});
         }
         case "tasks.delete": {
+          if (query.has("bulkFailure") && params.taskId === "bulk-42") {
+            query.delete("bulkFailure");
+            throw new Error("The machine disconnected during deletion.");
+          }
           tasks[machineId] = tasks[machineId].filter((task) => task.id !== params.taskId);
           return null;
         }

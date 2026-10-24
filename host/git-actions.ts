@@ -2,6 +2,7 @@ import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { gitMutationScope, isHostGitMutation, withHostGitMutation } from "./git-mutations";
 import { relative, sep } from "node:path";
 import { realpath } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   hostConflictStages,
@@ -396,6 +397,14 @@ function historyLimit(input: unknown): string {
  * folder per TTL, shared by concurrent callers. */
 export class BranchCache {
   private entries = new Map<string, { promise: Promise<string>; settledAt?: number }>();
+  private aliases = new Map<
+    string,
+    {
+      key: string;
+      entry: { promise: Promise<string>; settledAt?: number };
+    }
+  >();
+  private resolving = new Map<string, { version: number; promise: Promise<string> }>();
 
   constructor(
     private readonly lookup: (cwd: string) => Promise<string>,
@@ -405,20 +414,80 @@ export class BranchCache {
   ) {}
 
   get(cwd: string): Promise<string> {
-    const found = this.entries.get(cwd);
-    if (found && (found.settledAt === undefined || this.now() - found.settledAt < this.ttlMs))
+    // A binding belongs to a specific lookup, not just a canonical string: a
+    // refreshed entry for real A must not refresh an alias that now points at B.
+    const input = this.pathKey(cwd);
+    const binding = this.aliases.get(input);
+    const found = binding?.entry;
+    if (
+      binding &&
+      found &&
+      this.entries.get(binding.key) === found &&
+      (found.settledAt === undefined || this.now() - found.settledAt < this.ttlMs)
+    )
       return found.promise;
-    this.entries.delete(cwd);
+    const previous = this.resolving.get(input);
+    if (previous?.version === this.version) return previous.promise;
+    const pending = { version: this.version, promise: this.resolve(cwd, input, this.version) };
+    this.resolving.set(input, pending);
+    while (this.resolving.size > this.maxEntries)
+      this.resolving.delete(this.resolving.keys().next().value!);
+    const release = () => {
+      if (this.resolving.get(input) === pending) this.resolving.delete(input);
+    };
+    void pending.promise.then(release, release);
+    return pending.promise;
+  }
+
+  private pathKey(path: string): string {
+    const value = path.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
+    return process.platform === "win32" ? value.toLowerCase() : value;
+  }
+
+  private rememberAlias(
+    input: string,
+    key: string,
+    entry: { promise: Promise<string>; settledAt?: number },
+  ) {
+    this.aliases.delete(input);
+    this.aliases.set(input, { key, entry });
+    while (this.aliases.size > this.maxEntries)
+      this.aliases.delete(this.aliases.keys().next().value!);
+  }
+
+  private async resolve(cwd: string, input: string, version: number): Promise<string> {
+    let physical = cwd;
+    try {
+      physical = await realpath(cwd);
+    } catch {
+      // A missing/unreadable folder keeps the existing empty-branch behavior.
+      // Its raw path is not allowed to poison a previously resolved identity.
+    }
+    const key = this.pathKey(physical);
+    const read = () =>
+      Promise.resolve()
+        .then(() => this.lookup(physical))
+        .catch(() => "");
+    // clear() can run while realpath is pending. The earlier caller may finish,
+    // but it cannot repopulate the cache after that invalidation.
+    if (version !== this.version) return read();
+    const found = this.entries.get(key);
+    if (found && (found.settledAt === undefined || this.now() - found.settledAt < this.ttlMs)) {
+      this.rememberAlias(input, key, found);
+      return found.promise;
+    }
+    this.entries.delete(key);
     this.prune();
     const entry: { promise: Promise<string>; settledAt?: number } = {
-      promise: this.lookup(cwd).catch(() => ""),
+      promise: read(),
     };
     // Counted from when the answer arrived, so a slow spawn is not born stale.
     // A cleared entry is detached from the map and just dies.
     void entry.promise.then(() => {
       entry.settledAt = this.now();
     });
-    this.entries.set(cwd, entry);
+    this.entries.set(key, entry);
+    this.rememberAlias(input, key, entry);
     return entry.promise;
   }
 
@@ -426,9 +495,26 @@ export class BranchCache {
   version = 0;
 
   /** A branch change this host just made must show on the next list. */
-  clear(): void {
+  clear(cwd?: string): void {
     this.version++;
-    this.entries.clear();
+    if (cwd === undefined) {
+      this.entries.clear();
+      this.aliases.clear();
+      this.resolving.clear();
+    } else {
+      const input = this.pathKey(cwd);
+      const previous = this.aliases.get(input);
+      if (previous) this.entries.delete(previous.key);
+      this.aliases.delete(input);
+      this.entries.delete(input);
+      try {
+        // Mutations must invalidate the alias's current target as well as its
+        // possibly stale path hint. This is deliberately fresh and synchronous.
+        this.entries.delete(this.pathKey(realpathSync.native(cwd)));
+      } catch {
+        /* absent folder: the hint/raw entries above are still invalidated */
+      }
+    }
   }
 
   private prune(): void {
@@ -491,8 +577,10 @@ async function runGitActionSerialized(
     return await runGitActionUncached(command, root, input);
   } finally {
     if (isHostGitMutation(command)) invalidateHostGitIndex(root);
-    // Checkout, commit, reset, rebase... may have moved any checkout's HEAD.
-    if (!HEAD_PRESERVING.has(command)) branchCache.clear();
+    // A rename can change the label of another checked-out worktree. Ordinary
+    // checkout/commit/reset work only invalidates this checkout's label input.
+    if (!HEAD_PRESERVING.has(command))
+      branchCache.clear(command === "git_rename_branch" ? undefined : root);
   }
 }
 
