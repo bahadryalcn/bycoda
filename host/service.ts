@@ -148,6 +148,21 @@ const missingLaunchAgent = (error: unknown): boolean => {
   );
 };
 
+// bootout can return before launchd removes the job. Poll only a still-loaded
+// job; permission, domain and transport failures must remain visible.
+async function waitForLaunchAgentRemoval(target: string, run: Run): Promise<boolean> {
+  for (let attempt = 0; attempt < 21; attempt++) {
+    try {
+      await run("launchctl", ["print", target]);
+    } catch (error) {
+      if (missingLaunchAgent(error)) return true;
+      throw error;
+    }
+    if (attempt < 20) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
+}
+
 /** The callback resolves after graceful work drain, before unloading launchd. */
 export async function stopHostWithServicePolicy(
   pid: number,
@@ -184,12 +199,7 @@ export async function stopHostWithServicePolicy(
   } catch (error) {
     bootoutError = error;
   }
-  try {
-    await run("launchctl", ["print", target]);
-  } catch (error) {
-    if (missingLaunchAgent(error)) return;
-    throw error;
-  }
+  if (await waitForLaunchAgentRemoval(target, run)) return;
   throw bootoutError ?? new Error("launchd still has the stopped host registered; retry stop");
 }
 
@@ -223,10 +233,7 @@ export async function uninstallService(
       } catch (error) {
         bootoutError = error;
       }
-      try {
-        await run("launchctl", ["print", target]);
-      } catch (error) {
-        if (!missingLaunchAgent(error)) throw error;
+      if (await waitForLaunchAgentRemoval(target, run)) {
         // A failed bootout is safe only once launchd confirms this job is absent.
         await rm(join(home, "Library/LaunchAgents", `${LABEL}.plist`), {
           force: true,

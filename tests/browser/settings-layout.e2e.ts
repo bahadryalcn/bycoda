@@ -90,10 +90,16 @@ for (const [theme, width] of [
     await expect(page.getByRole("heading", { name: "Usage budgets", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Add budget", exact: true })).toBeVisible();
     await expect(page.getByRole("radiogroup", { name: "Usage views" })).toHaveCount(0);
-    await page
-      .locator(".bycoda-settings-categories")
-      .getByRole("tab", { name: "Usage", exact: true })
-      .click();
+    const categoryPicker = page.locator(".bycoda-settings-category-picker");
+    if (await categoryPicker.isVisible()) {
+      await categoryPicker.getByRole("button").click();
+      await page.getByRole("option", { name: "Usage", exact: true }).click();
+    } else {
+      await page
+        .locator(".bycoda-settings-categories")
+        .getByRole("tab", { name: "Usage", exact: true })
+        .click();
+    }
     await page.getByRole("radio", { name: "Limits", exact: true }).click();
     await expect(page.getByRole("button", { name: "Add budget", exact: true })).toBeVisible();
     expect(errors).toEqual([]);
@@ -109,10 +115,16 @@ test("Turkish policies and limits remain usable at intermediate widths", async (
         .locator(".policy-navigation")
         .getByRole("tab", { name: "Gizlilik politikası", exact: true }),
     ).toHaveAttribute("aria-selected", "true");
-    await page
-      .locator(".bycoda-settings-categories")
-      .getByRole("tab", { name: "Sınırlar ve bütçeler", exact: true })
-      .click();
+    const categoryPicker = page.locator(".bycoda-settings-category-picker");
+    if (await categoryPicker.isVisible()) {
+      await categoryPicker.getByRole("button").click();
+      await page.getByRole("option", { name: "Sınırlar ve bütçeler", exact: true }).click();
+    } else {
+      await page
+        .locator(".bycoda-settings-categories")
+        .getByRole("tab", { name: "Sınırlar ve bütçeler", exact: true })
+        .click();
+    }
     await expect(page.getByRole("button", { name: "Bütçe ekle", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,

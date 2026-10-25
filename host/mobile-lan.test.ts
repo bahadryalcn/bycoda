@@ -105,7 +105,7 @@ describe("encrypted mobile LAN access", () => {
       hasDeviceHash: () => true,
       issueDevice: () => ({ id: "phone", token: device }),
     });
-    const ticket = pairing.create(owner);
+    const ticket = await pairing.create(owner);
     let calls = 0;
     const upstream = createServer(async (request, response) => {
       if (await pairing.handle(request, response)) return;
@@ -141,7 +141,7 @@ describe("encrypted mobile LAN access", () => {
     });
     expect((await redeemed.json()).result.token).toBe(device);
     expect(String(captured?.body)).not.toContain(ticket.ticket);
-    expect(pairing.status(owner, ticket.pairingId).state).toBe("paired");
+    expect((await pairing.status(owner, ticket.pairingId)).state).toBe("paired");
     const reply = await encrypted(`${endpoint}/rpc`, {
       method: "POST",
       headers: { Authorization: `Bearer ${device}` },
@@ -166,7 +166,7 @@ describe("encrypted mobile LAN access", () => {
     const restartedEndpoint = `http://127.0.0.1:${await listen(restarted)}`;
     expect((await fetch(`${restartedEndpoint}/mobile/lan`, captured)).status).toBe(403);
     expect(calls).toBe(1);
-    pairing.close();
+    await pairing.close();
   });
   it("rejects raw bearer RPC, browser origins, wrong pins and modified replies", async () => {
     let calls = 0;

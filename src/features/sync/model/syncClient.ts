@@ -14,6 +14,7 @@ import {
 import { canonicalJson } from "./canonicalJson";
 import {
   applyPushResult,
+  batchLocalChanges,
   hasPulled,
   markPullCompleted,
   markPulled,
@@ -276,13 +277,15 @@ async function pullAndApply(machineId: string, request: SyncRequest): Promise<vo
 async function runSyncCycleInner(machineId: string, request: SyncRequest): Promise<void> {
   if (!hasPulled(machineId)) await pullAndApply(machineId, request);
 
-  duringSyncWrite(() => {
-    captureLocalProjectChanges(machineId);
-    const projectIds = localProjectIdsByPath();
-    captureLocalGroupChanges(machineId, projectIds);
-    captureLocalAppearanceChanges(machineId, projectIds);
-    captureLocalLockChanges(machineId);
-  });
+  duringSyncWrite(() =>
+    batchLocalChanges(machineId, () => {
+      captureLocalProjectChanges(machineId);
+      const projectIds = localProjectIdsByPath();
+      captureLocalGroupChanges(machineId, projectIds);
+      captureLocalAppearanceChanges(machineId, projectIds);
+      captureLocalLockChanges(machineId);
+    }),
+  );
 
   const outbox = takeOutbox(machineId);
   const { batches, invalid } = syncPushBatches(outbox);
@@ -373,6 +376,8 @@ export function startSyncLoop(
   listMachineIds: () => readonly string[],
   requestFor: (machineId: string) => SyncRequest,
   environmentFor?: (machineId: string) => string | undefined,
+  shouldRunAutomatically: () => boolean = () => true,
+  beforeExplicitSync?: () => Promise<void>,
 ): { stop: () => void; nudge: () => void; recover: (machineId: string) => void } {
   let stopped = false;
   let lastRoundAt = Number.NEGATIVE_INFINITY;
@@ -494,12 +499,14 @@ export function startSyncLoop(
     }, wait);
   };
   const requestRun = (): void => {
-    if (stopped) return;
+    if (stopped || !shouldRunAutomatically()) return;
     if (Date.now() - Math.max(lastRoundAt, lastEndedAt) < MIN_CYCLE_SPACING_MS) schedule();
     else round();
   };
-  const runNow = (only?: string): Promise<void> => {
-    if (stopped) return Promise.resolve();
+  const runNow = async (only?: string): Promise<void> => {
+    if (stopped) return;
+    await beforeExplicitSync?.();
+    if (stopped) return;
     if (!only && trailing !== undefined) {
       clearTimeout(trailing);
       trailing = undefined;

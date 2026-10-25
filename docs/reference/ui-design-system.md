@@ -12,6 +12,13 @@ specification, not a claim that the props or components already exist.
 
 ## Design direction
 
+The owner's direction is Apple-inspired clarity, simplicity and craft: familiar
+controls, readable type, quiet neutral surfaces and precise alignment. Keep every
+capability discoverable. Simplification removes repetition and competing emphasis,
+not functionality, necessary labels, drafts or recovery actions. Preserve bycoda's
+cross-platform behavior and existing theme preferences; decorative glass, blur and
+motion are not substitutes for a clear task hierarchy.
+
 The workbench is compact, neutral and quiet. Hierarchy comes from alignment,
 spacing, type and contrast. Color identifies an action's meaning or an actual state.
 Each surface has one purpose, a clear heading and at most one primary action per
@@ -201,6 +208,28 @@ Preserve native props and refs, `type="button"` by default, `form`/submit behavi
 drag/animation native event fallbacks and translated names. Loading keeps focus,
 announces progress and prevents click, keyboard and form activation duplicates.
 Features continue to own asynchronous operations; no new implicit persistence.
+
+### Quiet, complete operation feedback
+
+Every asynchronous action exposes pending state on its initiating Button (`loading`)
+or on the affected row/card. Track the actual action and target, not a shared busy
+flag that makes unrelated actions appear to run. Acquire duplicate-operation guards
+before the first await and clear pending on success and failure.
+
+Keep feedback local and stable: do not replace a populated screen with a spinner
+during refresh, move controls when progress appears, or repeat the same progress in
+a button, footer and toast. Quiet actions retain their visual hierarchy while busy.
+Text actions keep their label and contextual data visible beside the shared spinner;
+icon-only actions replace their icon. Pass `loading={pending}` in both idle and
+pending renders so the shared progress slot keeps the control's width stable.
+Keep cancellation available where the operation supports it. Use determinate
+progress only when the operation supplies a real total.
+
+Success should be evident in the updated content or a concise local confirmation.
+Errors stay beside the failed operation with a useful recovery action and preserve
+the user's input. Loading, empty, unavailable, disconnected and failed are distinct
+states. Do not present a failed refresh as a successful empty result, or use a
+global notification as the only feedback for a foreground action.
 
 ## Fields and choices
 
@@ -515,6 +544,9 @@ installed macOS and release acceptance remain separate evidence.
 
 ## Official references
 
+- [Apple design principles](https://developer.apple.com/design/human-interface-guidelines/design-principles)
+- [Apple buttons and activity feedback](https://developer.apple.com/design/human-interface-guidelines/buttons)
+- [Apple loading guidance](https://developer.apple.com/design/human-interface-guidelines/loading)
 - [Arc AI tools and MCP](https://uiarc.dev/docs/ai)
 - [Arc component catalog](https://uiarc.dev/r/catalog.json)
 - [Arc theming](https://uiarc.dev/docs/theming)

@@ -14,7 +14,7 @@ describe("stdio HTTP MCP proxy", () => {
   it("forwards all groups with external and session tokens through both packaged entry points", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bycoda-mcp-proxy-"));
     const store = new HostStore(join(dir, "host.db"));
-    const project = store.addProject(dir, "Proxy proof");
+    const project = await store.addProject(dir, "Proxy proof");
     const engine = new HostEngine(store, {
       codex: {
         send: async () => {},
@@ -25,17 +25,18 @@ describe("stdio HTTP MCP proxy", () => {
         answer: () => {},
       },
     });
-    const server = createHostServer(engine, []);
+    await engine.ready;
+    const server = await createHostServer(engine, []);
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     const endpoint = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
     const tokens = new McpTokens(store);
-    const grant = tokens.create({
+    const grant = await tokens.create({
       name: "Proxy test",
       projectId: project.id,
       scopes: { conversation: ["read"], "runtime-logs": ["read"], social: ["read"] },
       expiresAt: Date.now() + 60_000,
     });
-    const session = engine.command({
+    const session = await engine.command({
       type: "create",
       commandId: "proxy-proof",
       projectId: project.id,
@@ -44,9 +45,9 @@ describe("stdio HTTP MCP proxy", () => {
       runtimeMode: "supervised",
     });
     const sessionTokens = {
-      conversation: server.conversationAccess.issueSessionGrant(session.sessionId).token,
-      "runtime-logs": server.runtimeLogAccess.issueSessionGrant(session.sessionId).token,
-      social: server.social.issueSessionGrant(session.sessionId).token,
+      conversation: (await server.conversationAccess.issueSessionGrant(session.sessionId)).token,
+      "runtime-logs": (await server.runtimeLogAccess.issueSessionGrant(session.sessionId)).token,
+      social: (await server.social.issueSessionGrant(session.sessionId)).token,
     };
     try {
       for (const entry of ["host.mjs", "bycoda-host.mjs"]) {
@@ -133,13 +134,14 @@ describe("stdio HTTP MCP proxy", () => {
         }
       }
     } finally {
-      tokens.revoke(grant.id);
+      await tokens.revoke(grant.id);
       await new Promise<void>((r) => {
         server.close(() => r());
         server.closeAllConnections();
       });
+      await server.closeResources();
       await engine.close();
-      store.close();
+      await store.close();
       rmSync(dir, { recursive: true, force: true });
     }
   });

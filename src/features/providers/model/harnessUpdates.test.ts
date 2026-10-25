@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import type { HarnessId } from "../../sessions/model/session";
 import {
   announceHarnessUpdated,
   checkHarnessVersions,
+  fetchLatestHarnessVersion,
   findHarnessUpdates,
   isHarnessVersionBehind,
   onHarnessUpdated,
@@ -25,6 +27,7 @@ const events = vi.hoisted(() => {
   };
 });
 vi.mock("@tauri-apps/api/event", () => events);
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 const INSTALLED: Partial<Record<HarnessId, string>> = {
   claude: "2.1.284 (Claude Code)",
@@ -52,20 +55,46 @@ function find(harnesses: HarnessId[]) {
 }
 
 describe("harness update check", () => {
-  it.each(["1.19.0", "opencode v2.0.18"])(
-    "offers the V2 release when OpenCode reports %s",
-    async (installed) => {
-      expect(
-        await findHarnessUpdates({
-          harnesses: ["opencode"],
-          installedVersion: async () => installed,
-          latestVersion: async () => "2.0.26",
-        }),
-      ).toEqual([
-        { harness: "opencode", installed: installed.replace("opencode v", ""), latest: "2.0.26" },
-      ]);
-    },
-  );
+  it.each([
+    ["1.18.33", "1.19.0"],
+    ["opencode v2.0.18", "2.0.26"],
+  ])("checks the installed channel when OpenCode reports %s", async (installed, latest) => {
+    const latestVersion = vi.fn(async () => latest);
+    expect(
+      await findHarnessUpdates({
+        harnesses: ["opencode"],
+        installedVersion: async () => installed,
+        latestVersion,
+      }),
+    ).toEqual([{ harness: "opencode", installed: installed.replace("opencode v", ""), latest }]);
+    expect(latestVersion).toHaveBeenCalledExactlyOnceWith(
+      "opencode",
+      installed.replace("opencode v", ""),
+    );
+  });
+
+  it("passes the installed version to the native release-feed lookup", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce("1.19.0");
+    await expect(fetchLatestHarnessVersion("opencode", "1.18.33")).resolves.toBe("1.19.0");
+    expect(invoke).toHaveBeenCalledWith("harness_latest_version", {
+      provider: "opencode",
+      installedVersion: "1.18.33",
+    });
+  });
+
+  it("does not guess a release channel when the installed version is invalid", async () => {
+    const latestVersion = vi.fn(async () => "2.1.4");
+    await expect(
+      checkHarnessVersions({
+        harnesses: ["opencode"],
+        installedVersion: async () => "invalid",
+        latestVersion,
+      }),
+    ).resolves.toEqual([
+      { harness: "opencode", status: "unknown", error: "The CLI reported no version." },
+    ]);
+    expect(latestVersion).not.toHaveBeenCalled();
+  });
 
   it("reports only harnesses behind the published release", async () => {
     expect(await find(["claude", "codex", "opencode"])).toEqual([

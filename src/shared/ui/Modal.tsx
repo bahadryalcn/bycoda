@@ -37,6 +37,8 @@ type Props = {
   fitViewport?: boolean;
   /** Side detail surface with the same overlay, focus and native popup owner. */
   placement?: "center" | "end";
+  /** Frequent keyboard surfaces open immediately without frame/backdrop motion. */
+  motion?: "auto" | "none";
   /** Actions kept visible below the scrolling content. */
   footer?: ReactNode;
   children: ReactNode;
@@ -52,6 +54,7 @@ export function ModalPanel({
   className,
   fitViewport = true,
   placement = "center",
+  motion = "auto",
   footer,
   children,
 }: Props) {
@@ -91,6 +94,7 @@ export function ModalPanel({
             tabIndex={-1}
             role="dialog"
             data-modal-placement={placement}
+            style={motion === "none" ? { animation: "none" } : undefined}
             aria-modal="true"
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
@@ -163,7 +167,10 @@ export function Modal(props: Props) {
         props.onClose();
       }}
     >
-      <div className="modal-backdrop pointer-events-none absolute inset-0 bg-(--ui-overlay-backdrop)" />
+      <div
+        className="modal-backdrop pointer-events-none absolute inset-0 bg-(--ui-overlay-backdrop)"
+        style={props.motion === "none" ? { animation: "none" } : undefined}
+      />
       <ModalPanel {...props} />
     </div>,
     document.body,

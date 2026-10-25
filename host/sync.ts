@@ -1,3 +1,5 @@
+import { StoreDatabase } from "./store-db";
+type SyncDatabase = DatabaseSync | StoreDatabase;
 import type { DatabaseSync } from "node:sqlite";
 import { canonicalJson } from "../src/features/sync/model/canonicalJson";
 import { SYNC_TABLES } from "../src/features/sync/model/syncProtocol";
@@ -10,18 +12,20 @@ import type {
   SyncTable,
 } from "../src/features/sync/model/syncProtocol";
 
-function currentRev(db: DatabaseSync): number {
-  const row = db.prepare("SELECT value FROM metadata WHERE key='syncRev'").get();
+async function currentRev(db: SyncDatabase): Promise<number> {
+  const row = await db.prepare("SELECT value FROM metadata WHERE key='syncRev'").get();
   return row ? Number(row.value) : 0;
 }
 
 /** Bumps and returns the store's global revision counter. Every accepted
  * write gets a fresh one, so a pull can ask for "everything after N". */
-function bumpRev(db: DatabaseSync): number {
-  db.prepare(
-    "INSERT INTO metadata VALUES ('syncRev', '1') ON CONFLICT(key) DO UPDATE SET value = CAST((CAST(value AS INTEGER) + 1) AS TEXT)",
-  ).run();
-  return currentRev(db);
+async function bumpRev(db: SyncDatabase): Promise<number> {
+  await db
+    .prepare(
+      "INSERT INTO metadata VALUES ('syncRev', '1') ON CONFLICT(key) DO UPDATE SET value = CAST((CAST(value AS INTEGER) + 1) AS TEXT)",
+    )
+    .run();
+  return await currentRev(db);
 }
 
 type SyncRow = Record<string, unknown>;
@@ -48,8 +52,12 @@ function rowToRecord(row: SyncRow): SyncRecord & { corrupt: boolean } {
   };
 }
 
-function readRecord(db: DatabaseSync, table: SyncTable, id: string): SyncRecord | undefined {
-  const row = db
+async function readRecord(
+  db: SyncDatabase,
+  table: SyncTable,
+  id: string,
+): Promise<SyncRecord | undefined> {
+  const row = await db
     .prepare("SELECT table_name, id, value, rev FROM sync_records WHERE table_name=? AND id=?")
     .get(table, id);
   if (!row) return undefined;
@@ -58,35 +66,38 @@ function readRecord(db: DatabaseSync, table: SyncTable, id: string): SyncRecord 
 }
 
 /** Every record the host has accepted since `sinceRev`, oldest first. */
-export function syncPull(
-  db: DatabaseSync,
+export async function syncPull(
+  db: SyncDatabase,
   sinceRev: number,
   page?: { untilRev?: number; maxBytes?: number },
-): SyncPullResult {
-  const untilRev = Math.min(page?.untilRev ?? currentRev(db), currentRev(db));
-  const maxBytes = Math.max(128 * 1024, Math.min(page?.maxBytes ?? 1024 * 1024, 8 * 1024 * 1024));
-  const rows = db
-    .prepare(
-      "SELECT table_name, id, value, rev FROM sync_records WHERE rev > ? AND rev <= ? ORDER BY rev",
-    )
-    .iterate(sinceRev, untilRev);
-  const records: SyncRecord[] = [];
-  let bytes = 256;
-  let cursor = sinceRev;
-  for (const row of rows) {
-    const { corrupt, ...record } = rowToRecord(row);
-    if (!corrupt) {
-      const size = Buffer.byteLength(JSON.stringify(record), "utf8") + 1;
-      if (page && size + 256 > 8 * 1024 * 1024)
-        throw new Error("Sync record exceeds the transfer limit");
-      if (page && records.length && bytes + size > maxBytes)
-        return { rev: cursor, records, more: true, untilRev };
-      records.push(record);
-      bytes += size;
+): Promise<SyncPullResult> {
+  const work = async () => {
+    const untilRev = Math.min(page?.untilRev ?? (await currentRev(db)), await currentRev(db));
+    const maxBytes = Math.max(128 * 1024, Math.min(page?.maxBytes ?? 1024 * 1024, 8 * 1024 * 1024));
+    const rows = db
+      .prepare(
+        "SELECT table_name, id, value, rev FROM sync_records WHERE rev > ? AND rev <= ? ORDER BY rev",
+      )
+      .iterate(sinceRev, untilRev);
+    const records: SyncRecord[] = [];
+    let bytes = 256;
+    let cursor = sinceRev;
+    for await (const row of rows) {
+      const { corrupt, ...record } = rowToRecord(row);
+      if (!corrupt) {
+        const size = Buffer.byteLength(JSON.stringify(record), "utf8") + 1;
+        if (page && size + 256 > 8 * 1024 * 1024)
+          throw new Error("Sync record exceeds the transfer limit");
+        if (page && records.length && bytes + size > maxBytes)
+          return { rev: cursor, records, more: true, untilRev };
+        records.push(record);
+        bytes += size;
+      }
+      cursor = record.rev;
     }
-    cursor = record.rev;
-  }
-  return page ? { rev: untilRev, records, more: false, untilRev } : { rev: untilRev, records };
+    return page ? { rev: untilRev, records, more: false, untilRev } : { rev: untilRev, records };
+  };
+  return db instanceof StoreDatabase ? db.scope(work) : work();
 }
 
 const MAX_VALUE_BYTES = 64 * 1024;
@@ -116,54 +127,59 @@ function isValidOp(op: unknown): op is SyncOp {
  * Malformed ops are skipped and never throw; identifiable ones are reported
  * as invalid so the desktop can retain them and show a useful sync error.
  */
-export function syncPush(db: DatabaseSync, ops: SyncOp[]): SyncPushResult {
-  const applied: SyncPushResult["applied"] = [];
-  const rejected: SyncPushResult["rejected"] = [];
-  const invalid: NonNullable<SyncPushResult["invalid"]> = [];
-  for (const op of ops) {
-    if (!isValidOp(op)) {
-      const raw = op as unknown as Record<string, unknown> | null;
-      if (raw && typeof raw.table === "string" && typeof raw.id === "string")
-        invalid.push({
-          table: raw.table,
-          id: raw.id,
-          error: "Invalid sync value or value exceeds 64 KiB",
-        });
-      continue;
-    }
-    const existing = readRecord(db, op.table, op.id);
-    if ((existing?.rev ?? 0) !== op.baseRev) {
-      rejected.push({
-        table: op.table,
-        id: op.id,
-        current: existing ?? {
+export async function syncPush(db: SyncDatabase, ops: SyncOp[]): Promise<SyncPushResult> {
+  const work = async () => {
+    const applied: SyncPushResult["applied"] = [];
+    const rejected: SyncPushResult["rejected"] = [];
+    const invalid: NonNullable<SyncPushResult["invalid"]> = [];
+    for (const op of ops) {
+      if (!isValidOp(op)) {
+        const raw = op as unknown as Record<string, unknown> | null;
+        if (raw && typeof raw.table === "string" && typeof raw.id === "string")
+          invalid.push({
+            table: raw.table,
+            id: raw.id,
+            error: "Invalid sync value or value exceeds 64 KiB",
+          });
+        continue;
+      }
+      const existing = await readRecord(db, op.table, op.id);
+      if ((existing?.rev ?? 0) !== op.baseRev) {
+        rejected.push({
           table: op.table,
           id: op.id,
-          rev: 0,
-          value: null,
-        },
-      });
-      continue;
+          current: existing ?? {
+            table: op.table,
+            id: op.id,
+            rev: 0,
+            value: null,
+          },
+        });
+        continue;
+      }
+      // Compared key-order-insensitively: the desktop transport re-sorts object keys.
+      if (existing && canonicalJson(existing.value) === canonicalJson(op.value)) {
+        applied.push({ table: op.table, id: op.id, rev: existing.rev });
+        continue;
+      }
+      if (!existing && op.value === null) {
+        applied.push({ table: op.table, id: op.id, rev: 0 });
+        continue;
+      }
+      const rev = await bumpRev(db);
+      await db
+        .prepare(
+          "INSERT INTO sync_records (table_name, id, value, rev, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(table_name, id) DO UPDATE SET value=excluded.value, rev=excluded.rev, updated_at=excluded.updated_at",
+        )
+        .run(op.table, op.id, op.value === null ? null : JSON.stringify(op.value), rev, Date.now());
+      applied.push({ table: op.table, id: op.id, rev });
     }
-    // Compared key-order-insensitively: the desktop transport re-sorts object keys.
-    if (existing && canonicalJson(existing.value) === canonicalJson(op.value)) {
-      applied.push({ table: op.table, id: op.id, rev: existing.rev });
-      continue;
-    }
-    if (!existing && op.value === null) {
-      applied.push({ table: op.table, id: op.id, rev: 0 });
-      continue;
-    }
-    const rev = bumpRev(db);
-    db.prepare(
-      "INSERT INTO sync_records (table_name, id, value, rev, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(table_name, id) DO UPDATE SET value=excluded.value, rev=excluded.rev, updated_at=excluded.updated_at",
-    ).run(op.table, op.id, op.value === null ? null : JSON.stringify(op.value), rev, Date.now());
-    applied.push({ table: op.table, id: op.id, rev });
-  }
-  return {
-    rev: currentRev(db),
-    applied,
-    rejected,
-    ...(invalid.length ? { invalid } : {}),
+    return {
+      rev: await currentRev(db),
+      applied,
+      rejected,
+      ...(invalid.length ? { invalid } : {}),
+    };
   };
+  return db instanceof StoreDatabase ? db.scope(work) : work();
 }

@@ -75,7 +75,8 @@ export class SocialOAuth {
     private readonly fetcher: typeof fetch = fetch,
     private readonly now = Date.now,
   ) {
-    social.refreshCredential ??= (account, credential) => this.refresh(account, credential);
+    social.refreshCredential ??= async (account, credential) =>
+      await this.refresh(account, credential);
   }
   async refresh(account: SocialAccount, credential: SocialCredential): Promise<SocialCredential> {
     const config = this.configs[account.platform];
@@ -157,13 +158,13 @@ export class SocialOAuth {
       }),
     );
   }
-  begin(
+  async begin(
     p: SocialPrincipal,
     accountId: string,
     resourceId?: string,
     operations: SocialOperation[] = ["publish"],
-  ): { url: string; expiresAt: number } {
-    const account = this.social.accountForOAuth(p, accountId);
+  ): Promise<{ url: string; expiresAt: number }> {
+    const account = await this.social.accountForOAuth(p, accountId);
     if (TOKEN_PLATFORMS.includes(account.platform))
       throw new Error("Use the host token connection for this account.");
     const profileOnly = PROFILE_ONLY_PLATFORMS.includes(account.platform);
@@ -260,8 +261,8 @@ export class SocialOAuth {
     }).toString();
     return { url: auth.toString(), expiresAt: flow.expiresAt };
   }
-  status(p: SocialPrincipal, accountId: string) {
-    this.social.accountForOAuth(p, accountId);
+  async status(p: SocialPrincipal, accountId: string) {
+    await this.social.accountForOAuth(p, accountId);
     const flow = [...this.flows.values()].find(
       (item) =>
         item.accountId === accountId && item.actorId === p.actorId && item.expiresAt > this.now(),
@@ -278,7 +279,7 @@ export class SocialOAuth {
       : { status: "idle", candidates: [] };
   }
   async select(p: SocialPrincipal, accountId: string, candidateId: string) {
-    this.social.accountForOAuth(p, accountId);
+    await this.social.accountForOAuth(p, accountId);
     const flow = [...this.flows.values()].find(
       (item) =>
         item.accountId === accountId &&
@@ -534,7 +535,7 @@ export class SocialOAuth {
       actorId: flow.actorId,
       provider: "owner",
     };
-    const old = this.social.accountForOAuth(p, flow.accountId);
+    const old = await this.social.accountForOAuth(p, flow.accountId);
     if (old.platformId && old.platformId !== candidate.id)
       throw new Error(
         "Reconnect must preserve account identity. Create another account for a different identity.",

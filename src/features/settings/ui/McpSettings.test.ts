@@ -68,6 +68,68 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it("keeps MCP progress on the exact action and server even when providers share a name", async () => {
+  let finishLogin!: () => void;
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "mcp_discover")
+      return [
+        {
+          provider: "claude",
+          name: "shared-name",
+          scope: "user",
+          configPath: "/home/.claude.json",
+          transport: "http",
+        },
+        {
+          provider: "codex",
+          name: "shared-name",
+          scope: "user",
+          configPath: "/home/.codex/config.toml",
+          transport: "http",
+        },
+      ];
+    if (command === "claude_mcp_list")
+      return "shared-name: https://mcp.example.com - ! Needs authentication";
+    if (command === "mcp_provider_login")
+      return new Promise((resolve) => {
+        finishLogin = () => resolve(undefined);
+      });
+    return undefined;
+  });
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/local-project" })));
+  const signIns = [...container.querySelectorAll<HTMLButtonElement>("button")].filter(
+    (button) => button.textContent === "Sign in",
+  );
+  expect(signIns).toHaveLength(2);
+  await act(async () => signIns[0].click());
+  expect(signIns[0].getAttribute("aria-busy")).toBe("true");
+  expect(signIns[1].getAttribute("aria-busy")).not.toBe("true");
+  await act(async () => signIns[0].click());
+  expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(1);
+  await act(async () => finishLogin());
+
+  let finishConfirm!: (confirmed: boolean) => void;
+  ask.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishConfirm = resolve;
+      }),
+  );
+  const remove = container.querySelector<HTMLButtonElement>('button[aria-label="Remove"]')!;
+  await act(async () => {
+    remove.click();
+    remove.click();
+  });
+  expect(remove.getAttribute("aria-busy")).toBe("true");
+  expect([...container.querySelectorAll<HTMLButtonElement>('button[aria-busy="true"]')]).toEqual([
+    remove,
+  ]);
+  expect(ask).toHaveBeenCalledTimes(1);
+  await act(async () => finishConfirm(false));
+  expect(remove.getAttribute("aria-busy")).not.toBe("true");
+  expect(invoke.mock.calls.some(([command]) => command === "claude_mcp_remove")).toBe(false);
+});
+
 it("shows unsupported remote targets without local discovery or Add and permits choosing a local project", async () => {
   await act(async () =>
     root.render(

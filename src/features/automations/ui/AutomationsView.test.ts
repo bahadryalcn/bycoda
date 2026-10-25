@@ -471,7 +471,8 @@ it("blocks duplicate run actions and deletion while a manual run is pending", as
     (node) => node.textContent?.trim() === "Run now",
   )!;
   await act(async () => run.click());
-  expect(run.disabled).toBe(true);
+  expect(run.getAttribute("aria-busy")).toBe("true");
+  expect(run.getAttribute("aria-disabled")).toBe("true");
   await act(async () => run.click());
   expect(invoke.mock.calls.filter(([command]) => command === "automation_run_now")).toHaveLength(1);
   await act(async () =>
@@ -482,6 +483,35 @@ it("blocks duplicate run actions and deletion while a manual run is pending", as
     finish({ id: "run", automationId: "controls-automation", status: "running", createdAt: 1 }),
   );
   expect(run.disabled).toBe(false);
+});
+
+it("keeps toggle progress on its automation and allows retry after a failed change", async () => {
+  await renderControlEditor();
+  const previous = invoke.getMockImplementation()!;
+  let fail!: (reason: Error) => void;
+  const pending = new Promise((_resolve, reject) => {
+    fail = reject;
+  });
+  invoke.mockImplementation((command: string, args?: unknown) =>
+    command === "automations_upsert" ? pending : previous(command, args),
+  );
+  const toggle = container.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Pause Controls review"]',
+  )!;
+  toggle.focus();
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-busy")).toBe("true");
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  expect(document.activeElement).toBe(toggle);
+  await act(async () => toggle.click());
+  expect(invoke.mock.calls.filter(([command]) => command === "automations_upsert")).toHaveLength(1);
+  await act(async () => fail(new Error("Automation unavailable")));
+  expect(toggle.hasAttribute("aria-busy")).toBe(false);
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  expect(container.textContent).toContain("Automation unavailable");
+  invoke.mockImplementation(previous);
+  await act(async () => toggle.click());
+  expect(invoke.mock.calls.filter(([command]) => command === "automations_upsert")).toHaveLength(2);
 });
 
 it("keeps the twenty-trigger limit visible and unavailable", async () => {
@@ -495,7 +525,7 @@ it("keeps the twenty-trigger limit visible and unavailable", async () => {
 });
 
 it.each([false, true])(
-  "locks the entire editor and pending portal callbacks during a save (background=%s)",
+  "locks editable fields and portal callbacks while keeping save feedback focusable (background=%s)",
   async (background) => {
     await renderControlEditor({
       host: background
@@ -522,13 +552,19 @@ it.each([false, true])(
       const option = Array.from(
         document.querySelectorAll<HTMLButtonElement>('[role="option"]'),
       ).find((node) => !node.disabled && node.textContent?.includes("Daily"))!;
+      const save = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+      save.focus();
       await act(async () =>
         form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
       );
-      expect(form.hasAttribute("inert")).toBe(true);
+      expect(form.hasAttribute("inert")).toBe(false);
+      expect(form.querySelector('[role="tabpanel"]')?.hasAttribute("inert")).toBe(true);
+      expect(save.closest("[inert]")).toBeNull();
+      expect(save.getAttribute("aria-busy")).toBe("true");
+      expect(document.activeElement).toBe(save);
       expect(form.getAttribute("aria-busy")).toBe("true");
       expect(name.disabled).toBe(true);
-      // A portal already open before submission is outside the inert form.
+      // A portal already open before submission is outside the inert fields.
       await act(async () => option.click());
       expect(container.querySelectorAll('[aria-label="Remove trigger"]')).toHaveLength(triggers);
       const reset = Array.from(form.querySelectorAll<HTMLButtonElement>("button")).find(
@@ -578,7 +614,9 @@ it("locks new automation creation until its submitted snapshot finishes saving",
   );
   await act(async () => findButton("Create").click());
   const form = name.closest("form")!;
-  expect(form.hasAttribute("inert")).toBe(true);
+  expect(form.hasAttribute("inert")).toBe(false);
+  expect(findButton("Create").getAttribute("aria-busy")).toBe("true");
+  expect(findButton("Create").closest("[inert]")).toBeNull();
   expect(name.disabled).toBe(true);
   await act(async () => findButton("New automation").click());
   expect(container.querySelector('[aria-label="Automation name"]')).toBe(name);

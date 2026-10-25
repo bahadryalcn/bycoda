@@ -1,3 +1,4 @@
+import { mapAsync } from "./async-collections";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,7 +29,6 @@ import type {
 } from "../src/features/social/model/social";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
 import { SOCIAL_ACCOUNT_TYPES, SOCIAL_PLATFORMS } from "../src/features/social/model/social";
-
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -38,11 +38,10 @@ const owner: SocialPrincipal = {
   actorId: "owner-device",
   provider: "owner",
 };
-function seedThreadCopies(store: HostStore, source: SocialThread, count: number, offset = 0) {
+async function seedThreadCopies(store: HostStore, source: SocialThread, count: number, offset = 0) {
   const insert = store.db.prepare("INSERT INTO social_records VALUES ('thread',?,?)");
   // Seed history together so the query-count regression does not measure disk flushes.
-  store.db.exec("BEGIN");
-  try {
+  await store.transaction(async () => {
     for (let index = offset; index < offset + count; index++) {
       const thread = {
         ...source,
@@ -50,21 +49,17 @@ function seedThreadCopies(store: HostStore, source: SocialThread, count: number,
         platformThreadId: `remote-${index}`,
         lastInboundAt: index + 1,
       };
-      insert.run(thread.id, JSON.stringify(thread));
+      await insert.run(thread.id, JSON.stringify(thread));
     }
-    store.db.exec("COMMIT");
-  } catch (error) {
-    store.db.exec("ROLLBACK");
-    throw error;
-  }
+  });
 }
-function fixture(generateText?: import("./social-generation").SocialTextGenerator) {
+async function fixture(generateText?: import("./social-generation").SocialTextGenerator) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-social-"));
   const database = join(directory, "host.db");
   let store = new HostStore(database);
-  const a = store.addProject(directory, "A");
+  const a = await store.addProject(directory, "A");
   mkdirSync(join(directory, "b"));
-  const b = store.addProject(join(directory, "b"), "B");
+  const b = await store.addProject(join(directory, "b"), "B");
   const provider = {
     send: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
@@ -73,7 +68,7 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
     approve: vi.fn(),
     answer: vi.fn(),
   };
-  const engine = new HostEngine(
+  let engine = new HostEngine(
     store,
     Object.fromEntries(REMOTE_PROVIDERS.map((id) => [id, provider])),
   );
@@ -106,19 +101,22 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
     generateText,
   );
   cleanups.push(async () => {
-    social.stop();
+    await social.dispose();
     await engine.close();
-    store.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  const call = <T>(
+  const call = async <T>(
     action: string,
     input: Record<string, unknown> = {},
     p = owner,
     requestId?: string,
-  ) => social.call(p, action, input, requestId) as Promise<T>;
-  const session = (projectId = a.id, harness: (typeof REMOTE_PROVIDERS)[number] = "codex") => {
-    const result = engine.command({
+  ) => (await social.call(p, action, input, requestId)) as Promise<T>;
+  const session = async (
+    projectId = a.id,
+    harness: (typeof REMOTE_PROVIDERS)[number] = "codex",
+  ) => {
+    const result = await engine.command({
       type: "create",
       commandId: crypto.randomUUID(),
       projectId,
@@ -126,11 +124,11 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
       model: `${harness}:test`,
       runtimeMode: "supervised",
     });
-    const grant = social.issueSessionGrant(result.sessionId);
+    const grant = await social.issueSessionGrant(result.sessionId);
     return {
       id: result.sessionId,
       token: grant.token,
-      principal: social.principalForToken(grant.token)!,
+      principal: (await social.principalForToken(grant.token))!,
     };
   };
   const account = async (
@@ -161,7 +159,7 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
       },
       {
         accessToken: "synthetic-private-token",
-        expiresAt: clock.value + 3_600_000,
+        expiresAt: clock.value + 3600000,
       },
     );
     for (const projectId of projectIds)
@@ -193,7 +191,7 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
     text = "hello",
     kind: "message" | "comment" = "message",
   ) => {
-    social.ingest(account.id, [
+    await social.ingest(account.id, [
       {
         eventId,
         threadId: "conversation-1",
@@ -202,18 +200,20 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
         kind,
         text,
         at: clock.value,
-        replyUntil: clock.value + 3_600_000,
+        replyUntil: clock.value + 3600000,
       },
     ]);
     return (await call<SocialThread[]>("inbox.list"))[0];
   };
-  const enable = () => call("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
+  const enable = async () => await call("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
   return {
     directory,
     database,
     a,
     b,
-    engine,
+    get engine() {
+      return engine;
+    },
     credentials,
     tokens,
     clock,
@@ -223,10 +223,10 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
     call,
     session,
     account,
-    approveDraft: (id: string) =>
-      call("drafts.approve", {
+    approveDraft: async (id: string) =>
+      await call("drafts.approve", {
         id,
-        reviewedDraft: social.snapshot(owner).drafts.find((draft) => draft.id === id),
+        reviewedDraft: (await social.snapshot(owner)).drafts.find((draft) => draft.id === id),
       }),
     campaign,
     thread,
@@ -237,10 +237,15 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
     get store() {
       return store;
     },
-    restart: () => {
-      social.stop();
-      store.close();
+    restart: async () => {
+      await social.stop();
+      await engine.close();
+      await store.close();
       store = new HostStore(database);
+      engine = new HostEngine(
+        store,
+        Object.fromEntries(REMOTE_PROVIDERS.map((id) => [id, provider])),
+      );
       social = new SocialService(
         store,
         credentials,
@@ -250,31 +255,246 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
         () => clock.value,
         generateText,
       );
-      social.start();
+      const initialTick = vi.spyOn(social, "tick");
+      try {
+        await social.start();
+        await Promise.all(initialTick.mock.results.map((result) => result.value));
+      } finally {
+        initialTick.mockRestore();
+      }
     },
   };
 }
-
 describe("campaign dispatch fairness", () => {
+  it("rechecks native request authority after account lookup before a credential write", async () => {
+    const f = await fixture();
+    const account = await f.account();
+    vi.mocked(f.credentials.set).mockClear();
+    let authorize = true;
+    let entered!: () => void;
+    let release!: () => void;
+    const lookupEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const service = f.social as unknown as { list(kind: string): Promise<unknown[]> };
+    const original = service.list.bind(service);
+    const lookup = vi.spyOn(service, "list").mockImplementation(async (kind) => {
+      const result = await original(kind);
+      if (kind === "account") {
+        entered();
+        await held;
+      }
+      return result;
+    });
+    const connecting = f.store.db.withAuthorization(
+      () => authorize,
+      () =>
+        f.social.connectAccount(
+          account.id,
+          {
+            platformId: `${account.platform}-${account.id}`,
+            name: account.name,
+            scopes: account.scopes,
+            accessApproved: true,
+          },
+          { accessToken: "synthetic-replacement-token" },
+        ),
+    );
+    try {
+      await lookupEntered;
+      authorize = false;
+      release();
+      await expect(connecting).rejects.toThrow("authorization was revoked");
+      expect(f.credentials.set).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await connecting.catch(() => {});
+      lookup.mockRestore();
+    }
+  });
+  it("refreshes four expiring accounts concurrently and holds the fifth until that bounded batch completes", async () => {
+    const s = await fixture();
+    const accounts: SocialAccount[] = [];
+    for (let index = 0; index < 5; index++) {
+      const account = await s.account("x", [s.a.id], `Refresh ${index}`);
+      accounts.push(account);
+      s.tokens.set(account.id, {
+        accessToken: "synthetic-old",
+        refreshToken: "synthetic-refresh",
+        expiresAt: s.clock.value + 500,
+      });
+      await s.store.db
+        .prepare(
+          "UPDATE social_records SET value=json_set(value,'$.expiresAt',?) WHERE kind='account' AND id=?",
+        )
+        .run(s.clock.value + 500, account.id);
+    }
+    const holds = accounts.map(() => {
+      let release!: () => void;
+      const promise = new Promise<void>((done) => {
+        release = done;
+      });
+      return { promise, release };
+    });
+    let active = 0,
+      maximum = 0,
+      calls = 0;
+    s.social.refreshCredential = vi.fn(async (account) => {
+      active++;
+      maximum = Math.max(maximum, active);
+      calls++;
+      await holds[accounts.findIndex((entry) => entry.id === account.id)].promise;
+      active--;
+      return {
+        accessToken: "synthetic-renewed",
+        refreshToken: "synthetic-refresh",
+        expiresAt: s.clock.value + 3600000,
+      };
+    });
+    await s.enable();
+    const ticking = s.social.tick();
+    try {
+      await vi.waitFor(() => expect(calls).toBe(4));
+      expect(calls).toBe(4);
+      expect(active).toBe(4);
+    } finally {
+      for (const hold of holds) hold.release();
+      await ticking;
+    }
+    expect(calls).toBe(5);
+    expect(maximum).toBe(4);
+    expect(active).toBe(0);
+  });
+
+  it.each(["credential", "tick"] as const)(
+    "terminal disposal drains an accepted held %s operation and refuses new work",
+    async (kind) => {
+      const s = await fixture();
+      const account = await s.account();
+      let entered!: () => void, release!: () => void;
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let pending: Promise<unknown>;
+      if (kind === "credential") {
+        vi.mocked(s.credentials.set).mockImplementationOnce(async () => {
+          entered();
+          await held;
+        });
+        pending = s.social.connectAccount(
+          account.id,
+          {
+            platformId: `x-${account.id}`,
+            name: "Accepted fixture",
+            scopes: ["tweet.read"],
+            accessApproved: true,
+          },
+          { accessToken: "synthetic-held-token" },
+        );
+      } else {
+        await s.enable();
+        await s.call("inbox.polling", { enabled: true });
+        s.poll.mockImplementationOnce(async () => {
+          entered();
+          await held;
+          return { events: [] };
+        });
+        pending = s.social.tick();
+      }
+      await started;
+      let disposed = false;
+      const closing = s.social.dispose().then(() => {
+        disposed = true;
+      });
+      const interval = vi.spyOn(globalThis, "setInterval");
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(disposed).toBe(false);
+        await expect(s.call("accounts.list")).rejects.toThrow("stopping");
+        await expect(
+          s.social.connectAccount(
+            account.id,
+            {
+              platformId: `x-${account.id}`,
+              name: "Rejected fixture",
+              scopes: ["tweet.read"],
+              accessApproved: true,
+            },
+            { accessToken: "synthetic-rejected-token" },
+          ),
+        ).rejects.toThrow("stopping");
+        await s.social.start();
+        await s.social.tick();
+        expect(interval).not.toHaveBeenCalled();
+        expect(s.send).not.toHaveBeenCalled();
+      } finally {
+        release();
+        await Promise.allSettled([pending, closing]);
+        interval.mockRestore();
+      }
+      expect(disposed).toBe(true);
+    },
+  );
+
+  it("does not install a timer or kick work after Stop overtakes asynchronous startup", async () => {
+    const s = await fixture();
+    await s.social.ready;
+    let release!: () => void, entered!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const start = vi.spyOn(s.social.programs, "start").mockImplementation(async () => {
+      entered();
+      await held;
+    });
+    const tick = vi.spyOn(s.social, "tick").mockResolvedValue();
+    const interval = vi.spyOn(globalThis, "setInterval");
+    const opening = s.social.start();
+    try {
+      await started;
+      await s.social.stop();
+      release();
+      await opening;
+      expect(interval).not.toHaveBeenCalled();
+      expect(tick).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await opening;
+      start.mockRestore();
+      tick.mockRestore();
+      interval.mockRestore();
+    }
+  });
   it("rotates bounded candidate pages so held work cannot starve later eligible jobs", async () => {
-    const s = fixture();
+    const s = await fixture();
     const blocked = await s.account(),
       active = await s.account();
     const campaign = await s.campaign([blocked]);
     const [held] = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
     await s.call("accounts.pause", { accountId: blocked.id, paused: true });
     const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
-    s.store.db.exec("BEGIN");
-    try {
+    await s.store.transaction(async () => {
       for (let index = 0; index < 400; index++) {
-        const job = { ...held, id: `held-page-${index}`, scheduledAt: s.clock.value - 1_000 };
-        insert.run(job.id, job.id, blocked.id, "queued", job.scheduledAt, JSON.stringify(job));
+        const job = { ...held, id: `held-page-${index}`, scheduledAt: s.clock.value - 1000 };
+        await insert.run(
+          job.id,
+          job.id,
+          blocked.id,
+          "queued",
+          job.scheduledAt,
+          JSON.stringify(job),
+        );
       }
-      s.store.db.exec("COMMIT");
-    } catch (error) {
-      s.store.db.exec("ROLLBACK");
-      throw error;
-    }
+    });
     s.clock.value++;
     const eligible = await s.campaign([active]);
     await s.call("campaigns.schedule", { id: eligible.id });
@@ -287,28 +507,28 @@ describe("campaign dispatch fairness", () => {
     expect(s.send).toHaveBeenCalledOnce();
     expect(s.send.mock.calls[0][0].id).toBe(active.id);
     expect(
-      s.store.db
-        .prepare("SELECT count(*) AS n FROM social_jobs WHERE account_id=? AND status='queued'")
-        .get(blocked.id)?.n,
+      (
+        await s.store.db
+          .prepare("SELECT count(*) AS n FROM social_jobs WHERE account_id=? AND status='queued'")
+          .get(blocked.id)
+      )?.n,
     ).toBe(401);
   });
-
   it("schedules due work without parsing terminal job history", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     const [job] = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
     const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
-    s.store.db.exec("BEGIN");
-    try {
-      for (let index = 0; index < 5_000; index++) {
+    await s.store.transaction(async () => {
+      for (let index = 0; index < 5000; index++) {
         const historical = {
           ...job,
           id: `history-${index}`,
           status: "cancelled",
           historyOnly: true,
         };
-        insert.run(
+        await insert.run(
           historical.id,
           historical.id,
           account.id,
@@ -317,11 +537,7 @@ describe("campaign dispatch fairness", () => {
           JSON.stringify(historical),
         );
       }
-      s.store.db.exec("COMMIT");
-    } catch (error) {
-      s.store.db.exec("ROLLBACK");
-      throw error;
-    }
+    });
     await s.enable();
     const parse = JSON.parse;
     let historyParses = 0;
@@ -340,16 +556,17 @@ describe("campaign dispatch fairness", () => {
       spy.mockRestore();
     }
   });
-
   it("admits newly due work on another tick while generation is waiting", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     await s.enable();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const internal = s.social as unknown as { generateQueuedDraft: () => Promise<boolean> };
+    const internal = s.social as unknown as {
+      generateQueuedDraft: () => Promise<boolean>;
+    };
     const generate = vi
       .spyOn(internal, "generateQueuedDraft")
       .mockResolvedValue(false)
@@ -364,7 +581,7 @@ describe("campaign dispatch fairness", () => {
       const campaign = await s.campaign([account]);
       await s.call("campaigns.schedule", { id: campaign.id });
       second = s.social.tick();
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await second;
       expect(s.send).toHaveBeenCalledOnce();
     } finally {
       release();
@@ -372,9 +589,8 @@ describe("campaign dispatch fairness", () => {
       generate.mockRestore();
     }
   });
-
   it("admits due work while another account's poll remains pending", async () => {
-    const s = fixture();
+    const s = await fixture();
     const slow = await s.account(),
       active = await s.account();
     await s.enable();
@@ -400,7 +616,7 @@ describe("campaign dispatch fairness", () => {
       const campaign = await s.campaign([active]);
       await s.call("campaigns.schedule", { id: campaign.id });
       second = s.social.tick();
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await second;
       expect(s.send).toHaveBeenCalledOnce();
       expect(s.send.mock.calls[0][0].id).toBe(active.id);
     } finally {
@@ -408,9 +624,8 @@ describe("campaign dispatch fairness", () => {
       await Promise.all([first, second]);
     }
   });
-
   it("preserves the credential rotation preflight before dispatch", async () => {
-    const s = fixture();
+    const s = await fixture();
     const slow = await s.account(),
       active = await s.account();
     s.tokens.set(slow.id, {
@@ -418,7 +633,7 @@ describe("campaign dispatch fairness", () => {
       refreshToken: "synthetic-refresh",
       expiresAt: s.clock.value + 500,
     });
-    s.store.db
+    await s.store.db
       .prepare(
         "UPDATE social_records SET value=json_set(value,'$.expiresAt',?) WHERE kind='account' AND id=?",
       )
@@ -438,7 +653,7 @@ describe("campaign dispatch fairness", () => {
       return {
         accessToken: "rotated-synthetic",
         refreshToken: "synthetic-refresh",
-        expiresAt: s.clock.value + 3_600_000,
+        expiresAt: s.clock.value + 3600000,
       };
     });
     const ticking = s.social.tick();
@@ -453,11 +668,10 @@ describe("campaign dispatch fairness", () => {
       "rotated-synthetic",
     );
   });
-
   it.each(["account", "campaign", "executor", "cooldown"] as const)(
     "skips twenty held %s jobs and resumes them without duplicate dispatches",
     async (heldBy) => {
-      const s = fixture();
+      const s = await fixture();
       const blocked = await s.account();
       const campaigns: SocialCampaign[] = [];
       const jobs: SocialJob[] = [];
@@ -477,9 +691,9 @@ describe("campaign dispatch fairness", () => {
         await s.call("accounts.pause", { accountId: blocked.id, paused: false });
       }
       if (heldBy === "cooldown")
-        s.store.db
+        await s.store.db
           .prepare("INSERT INTO social_settings VALUES (?,?)")
-          .run(`rate:${blocked.id}`, String(s.clock.value + 60_000));
+          .run(`rate:${blocked.id}`, String(s.clock.value + 60000));
       const active = await s.account();
       const campaign = await s.campaign([active]);
       const [runnable] = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
@@ -488,13 +702,14 @@ describe("campaign dispatch fairness", () => {
       expect(s.send).toHaveBeenCalledTimes(1);
       expect(s.send.mock.calls[0][1].id).toBe(runnable.id);
       expect(
-        s.social.snapshot(owner).jobs.filter((job) => jobs.some((held) => held.id === job.id)),
+        (await s.social.snapshot(owner)).jobs.filter((job) =>
+          jobs.some((held) => held.id === job.id),
+        ),
       ).toEqual(
         expect.arrayContaining(
           jobs.map((job) => expect.objectContaining({ id: job.id, status: "queued", attempts: 0 })),
         ),
       );
-
       if (heldBy === "campaign")
         for (const held of campaigns)
           await s.call("campaigns.pause", { id: held.id, paused: false });
@@ -504,24 +719,22 @@ describe("campaign dispatch fairness", () => {
           executorId: s.store.environmentId,
         });
       await s.call("accounts.pause", { accountId: blocked.id, paused: false });
-      s.clock.value += 60_001;
+      s.clock.value += 60001;
       for (let index = 0; index < 21; index++) {
         await s.social.tick();
-        s.clock.value += 2_001;
+        s.clock.value += 2001;
       }
       expect(s.send).toHaveBeenCalledTimes(21);
       expect(new Set(s.send.mock.calls.map(([, job]) => job.id)).size).toBe(21);
       expect(
-        s.social
-          .snapshot(owner)
-          .jobs.filter((job) => [...jobs, runnable].some((sent) => sent.id === job.id))
+        (await s.social.snapshot(owner)).jobs
+          .filter((job) => [...jobs, runnable].some((sent) => sent.id === job.id))
           .every((job) => job.status === "succeeded" && job.attempts === 1),
       ).toBe(true);
     },
   );
-
   it("bounds claimed dispatch attempts to twenty while retaining later runnable work", async () => {
-    const s = fixture();
+    const s = await fixture();
     const accounts = [];
     for (let index = 0; index < 23; index++) accounts.push(await s.account());
     const campaign = await s.campaign(accounts);
@@ -529,13 +742,14 @@ describe("campaign dispatch fairness", () => {
     await s.call("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(20);
-    expect(s.social.snapshot(owner).jobs.filter((job) => job.status === "queued")).toHaveLength(3);
+    expect(
+      (await s.social.snapshot(owner)).jobs.filter((job) => job.status === "queued"),
+    ).toHaveLength(3);
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(23);
     expect(new Set(s.send.mock.calls.map(([, job]) => job.id)).size).toBe(jobs.length);
   });
 });
-
 describe("campaign dispatch publication grants", () => {
   it.each([
     ["owner", "primary", false],
@@ -549,16 +763,16 @@ describe("campaign dispatch publication grants", () => {
   ] as const)(
     "rejects %s jobs when the %s grant is revoked (during credentials: %s)",
     async (actor, project, duringLookup) => {
-      const s = fixture();
+      const s = await fixture();
       const account = await s.account("x", [s.a.id, s.b.id]);
       const campaign = await s.campaign([account], [s.a.id, s.b.id]);
       await s.call(
         "campaigns.schedule",
         { id: campaign.id },
-        actor === "owner" ? owner : s.session().principal,
+        actor === "owner" ? owner : (await s.session()).principal,
       );
-      const revoke = () =>
-        s.call("accounts.grants", {
+      const revoke = async () =>
+        await s.call("accounts.grants", {
           accountId: account.id,
           projectId: project === "primary" ? s.a.id : s.b.id,
           permissions: ["read", "draft"],
@@ -573,51 +787,222 @@ describe("campaign dispatch publication grants", () => {
       await s.enable();
       await s.social.tick();
       expect(s.send).not.toHaveBeenCalled();
-      expect(s.social.snapshot(owner).jobs[0]).toMatchObject({ status: "cancelled" });
+      expect((await s.social.snapshot(owner)).jobs[0]).toMatchObject({ status: "cancelled" });
     },
   );
   it.each(["owner", "session"] as const)(
     "dispatches an unchanged %s campaign with all grants",
     async (actor) => {
-      const s = fixture();
+      const s = await fixture();
       const account = await s.account("x", [s.a.id, s.b.id]);
       const campaign = await s.campaign([account], [s.a.id, s.b.id]);
       await s.call(
         "campaigns.schedule",
         { id: campaign.id },
-        actor === "owner" ? owner : s.session().principal,
+        actor === "owner" ? owner : (await s.session()).principal,
       );
       await s.enable();
       await s.social.tick();
       expect(s.send).toHaveBeenCalledTimes(1);
-      expect(s.social.snapshot(owner).jobs[0].status).toBe("succeeded");
+      expect((await s.social.snapshot(owner)).jobs[0].status).toBe("succeeded");
     },
   );
 });
-
+describe("reviewed campaign approval", () => {
+  async function draft(s: Awaited<ReturnType<typeof fixture>>) {
+    const account = await s.account();
+    return await s.call<SocialCampaign>("campaigns.create", {
+      name: "Reviewed announcement",
+      projectIds: [s.a.id],
+      variants: [
+        {
+          accountId: account.id,
+          text: "Visible preview A",
+          scheduledAt: s.clock.value,
+          media: [],
+          factIds: [],
+        },
+      ],
+    });
+  }
+  it("approves the exact reviewed revision and keeps scheduling bound to its signature", async () => {
+    const s = await fixture(),
+      campaign = await draft(s);
+    const approved = await s.call<SocialCampaign>("campaigns.approveReviewed", {
+      id: campaign.id,
+      expectedRevision: campaign.revision,
+    });
+    expect(approved).toEqual(campaign);
+    const preview = await s.call<{
+      targets: {
+        approved: boolean;
+      }[];
+    }>("campaigns.preview", { id: campaign.id });
+    expect(preview.targets.every((target) => target.approved)).toBe(true);
+    await s.call("campaigns.create", {
+      id: campaign.id,
+      expectedRevision: campaign.revision,
+      name: campaign.name,
+      projectIds: campaign.projectIds,
+      variants: campaign.variants.map((variant) => ({
+        ...variant,
+        text: "Unreviewed replacement B",
+      })),
+    });
+    await expect(s.call("campaigns.schedule", { id: campaign.id })).rejects.toThrow(
+      "exact campaign preview",
+    );
+    expect((await s.social.snapshot(owner)).jobs).toEqual([]);
+    expect(s.send).not.toHaveBeenCalled();
+  });
+  it("rejects a replacement while a reviewing client awaits policy lookup", async () => {
+    const s = await fixture(),
+      campaign = await draft(s);
+    let releasePolicy!: () => void;
+    let policyEntered!: () => void;
+    const heldPolicy = new Promise<void>((resolve) => {
+      releasePolicy = resolve;
+    });
+    const enteredPolicy = new Promise<void>((resolve) => {
+      policyEntered = resolve;
+    });
+    const originalCall = s.social.call.bind(s.social);
+    const read = vi.spyOn(s.social, "call").mockImplementation(async (...args) => {
+      const result = await originalCall(...args);
+      if (args[1] === "policy.get") {
+        policyEntered();
+        await heldPolicy;
+      }
+      return result;
+    });
+    const approving = (async () => {
+      await s.call("policy.get", { accountId: campaign.variants[0].accountId });
+      return await s.call("campaigns.approveReviewed", {
+        id: campaign.id,
+        expectedRevision: campaign.revision,
+      });
+    })();
+    await enteredPolicy;
+    await s.call("campaigns.create", {
+      id: campaign.id,
+      expectedRevision: campaign.revision,
+      name: campaign.name,
+      projectIds: campaign.projectIds,
+      variants: campaign.variants.map((variant) => ({ ...variant, text: "Unseen replacement" })),
+    });
+    releasePolicy();
+    read.mockRestore();
+    await expect(approving).rejects.toThrow(
+      "Campaign preview changed. Review the current campaign before approving.",
+    );
+    await expect(s.call("campaigns.schedule", { id: campaign.id })).rejects.toThrow(
+      "exact campaign preview",
+    );
+    expect(
+      await s.store.db.prepare("SELECT * FROM social_approvals WHERE entity_id=?").get(campaign.id),
+    ).toBeUndefined();
+  });
+  it("requires a strict positive revision and rejects extra fields without authorizing anything", async () => {
+    const s = await fixture(),
+      campaign = await draft(s);
+    for (const expectedRevision of [
+      undefined,
+      null,
+      "1",
+      0,
+      -1,
+      1.5,
+      NaN,
+      Infinity,
+      Number.MAX_SAFE_INTEGER + 1,
+    ])
+      await expect(
+        s.call("campaigns.approveReviewed", { id: campaign.id, expectedRevision }),
+      ).rejects.toThrow("Invalid expected campaign revision.");
+    await expect(
+      s.call("campaigns.approveReviewed", {
+        id: campaign.id,
+        expectedRevision: campaign.revision,
+        confirm: true,
+      }),
+    ).rejects.toThrow("Unknown or protected social field");
+    await expect(
+      s.call("campaigns.approveReviewed", { expectedRevision: campaign.revision }),
+    ).rejects.toThrow("Invalid campaign");
+    expect(
+      await s.store.db.prepare("SELECT * FROM social_approvals WHERE entity_id=?").get(campaign.id),
+    ).toBeUndefined();
+  });
+  it("requires the owner and rechecks access to every campaign target before signing", async () => {
+    const s = await fixture(),
+      campaign = await draft(s);
+    await expect(
+      s.call(
+        "campaigns.approveReviewed",
+        { id: campaign.id, expectedRevision: campaign.revision },
+        (await s.session()).principal,
+      ),
+    ).rejects.toThrow("owner");
+    const inaccessible = {
+      ...campaign,
+      variants: campaign.variants.map((variant) => ({ ...variant, accountId: "missing-account" })),
+    };
+    await s.store.db
+      .prepare("UPDATE social_records SET value=? WHERE kind='campaign' AND id=?")
+      .run(JSON.stringify(inaccessible), campaign.id);
+    await expect(
+      s.call("campaigns.approveReviewed", { id: campaign.id, expectedRevision: campaign.revision }),
+    ).rejects.toThrow();
+    expect(
+      await s.store.db.prepare("SELECT * FROM social_approvals WHERE entity_id=?").get(campaign.id),
+    ).toBeUndefined();
+  });
+});
 describe("reviewed draft approval", () => {
   it("rejects replacement while a reviewing client awaits policy lookup", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const thread = await s.thread(account);
     const reviewedDraft = await s.call<SocialDraft>("replies.draft", {
       threadId: thread.id,
       text: "Visible preview A",
     });
+    let releasePolicy!: () => void, policyEntered!: () => void;
+    const heldPolicy = new Promise<void>((resolve) => {
+      releasePolicy = resolve;
+    });
+    const enteredPolicy = new Promise<void>((resolve) => {
+      policyEntered = resolve;
+    });
+    const originalCall = s.social.call.bind(s.social);
+    const read = vi.spyOn(s.social, "call").mockImplementation(async (...args) => {
+      const result = await originalCall(...args);
+      if (args[1] === "policy.get") {
+        policyEntered();
+        await heldPolicy;
+      }
+      return result;
+    });
     const approving = (async () => {
       await s.call("policy.get", { accountId: account.id });
       await s.call("drafts.approve", { id: reviewedDraft.id, reviewedDraft });
       await s.call("replies.send", { id: reviewedDraft.id });
     })();
-    await s.call("drafts.update", { id: reviewedDraft.id, text: "Unseen replacement B" });
+    await enteredPolicy;
+    try {
+      await s.call("drafts.update", { id: reviewedDraft.id, text: "Unseen replacement B" });
+    } finally {
+      releasePolicy();
+      read.mockRestore();
+    }
     await expect(approving).rejects.toThrow("preview changed");
     await s.enable();
     await s.social.tick();
     expect(s.send).not.toHaveBeenCalled();
-    expect(s.social.snapshot(owner).jobs).toEqual([]);
+    expect((await s.social.snapshot(owner)).jobs).toEqual([]);
   });
   it("rejects ID-only legacy approvals and a stale second client's preview", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const thread = await s.thread(account);
     const reviewedDraft = await s.call<SocialDraft>("replies.draft", {
@@ -650,7 +1035,7 @@ describe("reviewed draft approval", () => {
     "inboundEventId",
     "factIds",
   ] as const)("binds approval to reviewed %s context", async (field) => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const thread = await s.thread(account);
     const draft = await s.call<SocialDraft>("replies.draft", {
@@ -668,10 +1053,9 @@ describe("reviewed draft approval", () => {
     expect(s.send).not.toHaveBeenCalled();
   });
 });
-
 describe("durable owner-approved publishing plans", () => {
   const createPlan = async (
-    s: ReturnType<typeof fixture>,
+    s: Awaited<ReturnType<typeof fixture>>,
     account: SocialAccount,
     campaigns: SocialCampaign[],
     schedule = {},
@@ -692,7 +1076,7 @@ describe("durable owner-approved publishing plans", () => {
       },
       { accessToken: s.tokens.get(account.id)!.accessToken },
     );
-    return s.call<SocialPublishingPlan>("publishing-plans.create", {
+    return await s.call<SocialPublishingPlan>("publishing-plans.create", {
       name: "Daily announcements",
       accountId: account.id,
       projectId: s.a.id,
@@ -707,17 +1091,16 @@ describe("durable owner-approved publishing plans", () => {
       },
     });
   };
-  const activate = (s: ReturnType<typeof fixture>, plan: SocialPublishingPlan) =>
-    s.call<SocialPublishingPlan>("publishing-plans.activate", {
+  const activate = async (s: Awaited<ReturnType<typeof fixture>>, plan: SocialPublishingPlan) =>
+    await s.call<SocialPublishingPlan>("publishing-plans.activate", {
       id: plan.id,
       revision: plan.revision,
       confirm: "ACTIVATE_PUBLISHING_PLAN",
     });
-  const current = async (s: ReturnType<typeof fixture>, id: string) =>
+  const current = async (s: Awaited<ReturnType<typeof fixture>>, id: string) =>
     (await s.call<SocialPublishingPlan[]>("publishing-plans.list")).find((plan) => plan.id === id)!;
-
   it("saves paused; only the owner can activate the exact reviewed revision and approved content", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     const plan = await createPlan(s, account, [campaign]);
@@ -729,7 +1112,7 @@ describe("durable owner-approved publishing plans", () => {
       s.call(
         "publishing-plans.activate",
         { id: plan.id, revision: plan.revision, confirm: "ACTIVATE_PUBLISHING_PLAN" },
-        s.session().principal,
+        (await s.session()).principal,
       ),
     ).rejects.toThrow("owner");
     await expect(
@@ -749,9 +1132,8 @@ describe("durable owner-approved publishing plans", () => {
     await expect(activate(s, plan)).rejects.toThrow("approval changed");
     expect(s.send).not.toHaveBeenCalled();
   });
-
   it("publishes each approved variant once, spaces from actual dispatch and completes the finite pool", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaigns = [
       await s.campaign([account]),
@@ -765,18 +1147,18 @@ describe("durable owner-approved publishing plans", () => {
     expect(s.send).toHaveBeenCalledTimes(1);
     expect(await current(s, plan.id)).toMatchObject({
       nextIndex: 1,
-      nextRunAt: s.clock.value + 120 * 60_000,
+      nextRunAt: s.clock.value + 120 * 60000,
       lastRunAt: s.clock.value,
       enabled: true,
     });
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(1);
     // After downtime, send one item and restart the interval from that real send.
-    s.clock.value += 4 * 60 * 60_000;
+    s.clock.value += 4 * 60 * 60000;
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(2);
     expect((await current(s, plan.id)).nextRunAt).toBe(Date.parse("2026-10-11T06:00:00Z"));
-    s.clock.value += 2 * 60 * 60_000;
+    s.clock.value += 2 * 60 * 60000;
     // This falls exactly at 18:00 Istanbul, so the third item waits until tomorrow.
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(2);
@@ -793,9 +1175,8 @@ describe("durable owner-approved publishing plans", () => {
     expect(s.send).toHaveBeenCalledTimes(3);
     expect((await s.call<SocialSnapshot>("snapshot")).jobs).toHaveLength(3);
   });
-
   it("durably preserves an active plan across restart without duplicating the published slot", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const plan = await createPlan(s, account, [
       await s.campaign([account]),
@@ -805,7 +1186,7 @@ describe("durable owner-approved publishing plans", () => {
     await activate(s, plan);
     await s.social.tick();
     const nextAt = (await current(s, plan.id)).nextRunAt!;
-    s.restart();
+    await s.restart();
     await vi.waitFor(async () =>
       expect(await current(s, plan.id)).toMatchObject({ nextIndex: 1, nextRunAt: nextAt }),
     );
@@ -816,9 +1197,8 @@ describe("durable owner-approved publishing plans", () => {
     expect(s.send).toHaveBeenCalledTimes(2);
     expect((await s.call<SocialSnapshot>("snapshot")).jobs).toHaveLength(2);
   });
-
   it("prevents conflicts with one-off scheduling and other active plans using global campaign dedupe", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     const first = await createPlan(s, account, [campaign]);
@@ -836,17 +1216,16 @@ describe("durable owner-approved publishing plans", () => {
     expect(s.send).toHaveBeenCalledTimes(1);
     await expect(activate(s, first)).rejects.toThrow("already scheduled or dispatched");
   });
-
   it("keeps a crash-interrupted plan slot in review across restart instead of sending it again", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const plan = await createPlan(s, account, [
       await s.campaign([account]),
       await s.campaign([account]),
     ]);
-    s.store.db
+    await s.store.db
       .prepare("INSERT INTO social_settings VALUES (?,?)")
-      .run(`rate:${account.id}`, String(s.clock.value + 60_000));
+      .run(`rate:${account.id}`, String(s.clock.value + 60000));
     await s.enable();
     await activate(s, plan);
     await s.social.tick();
@@ -854,10 +1233,10 @@ describe("durable owner-approved publishing plans", () => {
     expect(job.status).toBe("queued");
     job.status = "running";
     job.dispatchedAt = s.clock.value;
-    s.store.db
+    await s.store.db
       .prepare("UPDATE social_jobs SET status='running',value=? WHERE id=?")
       .run(JSON.stringify(job), job.id);
-    s.restart();
+    await s.restart();
     await vi.waitFor(async () =>
       expect(await current(s, plan.id)).toMatchObject({
         enabled: false,
@@ -869,9 +1248,8 @@ describe("durable owner-approved publishing plans", () => {
     await expect(activate(s, plan)).rejects.toThrow("Resolve the existing publication outcome");
     expect(s.send).not.toHaveBeenCalled();
   });
-
   it("pauses when effective policy or project grants change and preserves exact reactivation requirements", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const plan = await createPlan(s, account, [await s.campaign([account])]);
     await activate(s, plan);
@@ -891,9 +1269,8 @@ describe("durable owner-approved publishing plans", () => {
     await s.social.tick();
     expect(s.send).not.toHaveBeenCalled();
   });
-
   it("revalidates owner authorization after an asynchronous credential lookup", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const plan = await createPlan(s, account, [await s.campaign([account])]);
     await s.enable();
@@ -922,9 +1299,8 @@ describe("durable owner-approved publishing plans", () => {
     expect(await current(s, plan.id)).toMatchObject({ enabled: false });
     expect((await s.call<SocialSnapshot>("snapshot")).jobs[0].status).toBe("cancelled");
   });
-
   it("stops on uncertain outcomes and never blindly retries or advances the pool", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const plan = await createPlan(s, account, [
       await s.campaign([account]),
@@ -936,14 +1312,13 @@ describe("durable owner-approved publishing plans", () => {
     await s.social.tick();
     expect(await current(s, plan.id)).toMatchObject({ enabled: false, nextIndex: 0 });
     expect((await s.call<SocialSnapshot>("snapshot")).jobs[0].status).toBe("review");
-    s.clock.value += 3 * 60 * 60_000;
+    s.clock.value += 3 * 60 * 60000;
     await s.social.tick();
     await expect(activate(s, plan)).rejects.toThrow("Resolve the existing publication outcome");
     expect(s.send).toHaveBeenCalledTimes(1);
   });
-
   it("rejects stale or missing campaign revisions without replacing newer owner content", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const original = await s.campaign([account]);
     const input = {
@@ -967,14 +1342,13 @@ describe("durable owner-approved publishing plans", () => {
     await expect(s.call("campaigns.create", input)).rejects.toThrow(
       "Campaign changed in another client",
     );
-    expect(s.social.snapshot(owner).campaigns.find((entry) => entry.id === original.id)).toEqual(
-      updated,
-    );
+    expect(
+      (await s.social.snapshot(owner)).campaigns.find((entry) => entry.id === original.id),
+    ).toEqual(updated);
     expect(s.send).not.toHaveBeenCalled();
   });
-
   it("rejects stale or missing publishing-plan revisions and keeps the newer paused configuration", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     const original = await createPlan(s, account, [campaign]);
@@ -1004,9 +1378,8 @@ describe("durable owner-approved publishing plans", () => {
     expect(await current(s, original.id)).toEqual(updated);
     expect(s.send).not.toHaveBeenCalled();
   });
-
   it("schedule edits save paused and preserve already confirmed progress for an unchanged pool", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaigns = [await s.campaign([account]), await s.campaign([account])];
     const plan = await createPlan(s, account, campaigns);
@@ -1030,12 +1403,11 @@ describe("durable owner-approved publishing plans", () => {
     });
     await expect(activate(s, plan)).rejects.toThrow("exact reviewed");
     await activate(s, updated);
-    expect((await current(s, plan.id)).nextRunAt).toBe(s.clock.value + 180 * 60_000);
+    expect((await current(s, plan.id)).nextRunAt).toBe(s.clock.value + 180 * 60000);
     expect(s.send).toHaveBeenCalledTimes(1);
   });
-
   it("appending new content preserves the consumed prefix and never republishes it", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaigns = [await s.campaign([account])];
     const plan = await createPlan(s, account, campaigns);
@@ -1054,7 +1426,7 @@ describe("durable owner-approved publishing plans", () => {
     });
     expect(updated.nextIndex).toBe(1);
     await activate(s, updated);
-    s.clock.value += 120 * 60_000;
+    s.clock.value += 120 * 60000;
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(2);
     expect((await s.call<SocialSnapshot>("snapshot")).jobs.map((job) => job.campaignId)).toEqual(
@@ -1062,10 +1434,9 @@ describe("durable owner-approved publishing plans", () => {
     );
   });
 });
-
 describe("social workspace performance and authorization", () => {
   it("bounds nested histories and previews while selected detail preserves complete messages", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const source = await s.thread(account);
     source.events = Array.from({ length: 500 }, (_, index) => ({
@@ -1073,22 +1444,22 @@ describe("social workspace performance and authorization", () => {
       platformId: `large-event-${index}`,
       direction: "inbound" as const,
       at: index + 1,
-      text: "x".repeat(20_000),
+      text: "x".repeat(20000),
     }));
-    s.store.db
+    await s.store.db
       .prepare("UPDATE social_records SET value=? WHERE kind='thread' AND id=?")
       .run(JSON.stringify(source), source.id);
-    seedThreadCopies(s.store, source, 2);
-    const contact = s.social.snapshot(owner).contacts[0];
+    await seedThreadCopies(s.store, source, 2);
+    const contact = (await s.social.snapshot(owner)).contacts[0];
     contact.history = Array.from({ length: 1000 }, (_, index) => ({
       operationId: `history-${index}`,
       kind: "inbound:message",
       at: index + 1,
     }));
-    s.store.db
+    await s.store.db
       .prepare("UPDATE social_records SET value=? WHERE kind='contact' AND id=?")
       .run(JSON.stringify(contact), contact.id);
-    const response = s.social.workspaceSnapshot(owner, { section: "inbox" });
+    const response = await s.social.workspaceSnapshot(owner, { section: "inbox" });
     expect(response.snapshot!.threads).toHaveLength(3);
     for (const thread of response.snapshot!.threads) {
       expect(thread.events).toHaveLength(1);
@@ -1099,14 +1470,14 @@ describe("social workspace performance and authorization", () => {
     }
     expect(response.snapshot!.contacts[0].history).toHaveLength(5);
     expect(response.snapshot!.related!.contacts[0].history).toHaveLength(5);
-    expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThan(30_000);
+    expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThan(30000);
     const detail = await s.call<SocialThread>("thread.page", { id: source.id });
     expect(detail.events).toHaveLength(20);
     expect(detail.events[0].id).toBe("large-event-480");
-    expect(detail.events.every((event) => event.text.length === 20_000)).toBe(true);
+    expect(detail.events.every((event) => event.text.length === 20000)).toBe(true);
     expect(detail.eventsPage).toEqual({ offset: 480, limit: 20, total: 500 });
     expect(detail.eventsPreview).toBe(false);
-    expect(Buffer.byteLength(JSON.stringify(detail))).toBeLessThan(500_000);
+    expect(Buffer.byteLength(JSON.stringify(detail))).toBeLessThan(500000);
     const older = await s.call<SocialThread>("thread.page", { id: source.id, offset: 0 });
     expect(older.events[0].id).toBe("large-event-0");
     const history = await s.call<SocialContact>("contacts.history", { id: contact.id });
@@ -1118,21 +1489,21 @@ describe("social workspace performance and authorization", () => {
     );
   });
   it("account/approval queries remain constant as session thread history grows", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const thread = await s.thread(account);
     const campaign = await s.campaign([account]);
-    const principal = s.session().principal;
-    seedThreadCopies(s.store, thread, 100);
+    const principal = (await s.session()).principal;
+    await seedThreadCopies(s.store, thread, 100);
     const prepare = vi.spyOn(s.store.db, "prepare");
-    const first = s.social.snapshot(principal);
+    const first = await s.social.snapshot(principal);
     const firstQueries = prepare.mock.calls.length;
     expect(first.threads).toHaveLength(101);
     expect(first.approvedCampaignIds).toEqual([campaign.id]);
     prepare.mockRestore();
-    seedThreadCopies(s.store, thread, 900, 100);
+    await seedThreadCopies(s.store, thread, 900, 100);
     const nextPrepare = vi.spyOn(s.store.db, "prepare");
-    const next = s.social.snapshot(principal);
+    const next = await s.social.snapshot(principal);
     expect(next.threads).toHaveLength(1001);
     expect(nextPrepare.mock.calls.length).toBe(firstQueries);
     expect(
@@ -1142,29 +1513,31 @@ describe("social workspace performance and authorization", () => {
     ).toBe(false);
     nextPrepare.mockRestore();
     expect(next.accounts[0].grants).toEqual({ [s.a.id]: expect.any(Array) });
-    expect(s.social.snapshot(owner).threads).toEqual(next.threads);
+    expect((await s.social.snapshot(owner)).threads).toEqual(next.threads);
   });
-
   it("unchanged cursors skip all historical reads; pages and related rows stay bounded", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const source = await s.thread(account);
-    seedThreadCopies(s.store, source, 185);
-    const principal = s.session().principal;
+    await seedThreadCopies(s.store, source, 185);
+    const principal = (await s.session()).principal;
     const query = { section: "inbox", limit: 20 };
-    const first = s.social.workspaceSnapshot(principal, query);
+    const first = await s.social.workspaceSnapshot(principal, query);
     expect(first.snapshot!.threads).toHaveLength(20);
     expect(first.snapshot!.pages!.threads).toEqual({ offset: 0, limit: 20, total: 186 });
     expect(first.snapshot!.related!.contacts).toHaveLength(1);
     const prepare = vi.spyOn(s.store.db, "prepare");
-    const unchanged = s.social.workspaceSnapshot(principal, { ...query, cursor: first.cursor });
+    const unchanged = await s.social.workspaceSnapshot(principal, {
+      ...query,
+      cursor: first.cursor,
+    });
     expect(unchanged).toEqual({ cursor: first.cursor, unchanged: true });
     expect(JSON.stringify(unchanged).length).toBeLessThan(120);
     expect(prepare.mock.calls.some(([sql]) => /FROM social_(records|jobs) r/.test(sql))).toBe(
       false,
     );
     prepare.mockRestore();
-    const next = s.social.workspaceSnapshot(principal, {
+    const next = await s.social.workspaceSnapshot(principal, {
       ...query,
       offsets: { threads: 20 },
       cursor: first.cursor,
@@ -1176,51 +1549,51 @@ describe("social workspace performance and authorization", () => {
         .snapshot!.threads.map((thread) => thread.id)
         .some((id) => first.snapshot!.threads.some((thread) => thread.id === id)),
     ).toBe(false);
-    const accounts = s.social.workspaceSnapshot(owner, { section: "accounts" }).snapshot!;
+    const accounts = (await s.social.workspaceSnapshot(owner, { section: "accounts" })).snapshot!;
     expect(accounts.threads).toEqual([]);
     expect(accounts.contacts).toEqual([]);
     expect(accounts.pages!.threads!.total).toBe(186);
   });
-
   it("binds cursors to current principal/grants and preserves LinkedIn redaction", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("linkedin");
     await s.thread(account, "private-event", "Private LinkedIn inbound", "comment");
-    const principal = s.session().principal;
+    const principal = (await s.session()).principal;
     const query = { section: "inbox" };
-    const first = s.social.workspaceSnapshot(principal, query);
+    const first = await s.social.workspaceSnapshot(principal, query);
     expect(first.snapshot!.threads[0].events).toEqual([]);
-    const other = s.session(s.b.id).principal;
-    const otherRead = s.social.workspaceSnapshot(other, { ...query, cursor: first.cursor });
+    const other = (await s.session(s.b.id)).principal;
+    const otherRead = await s.social.workspaceSnapshot(other, { ...query, cursor: first.cursor });
     expect(otherRead.unchanged).toBe(false);
     expect(otherRead.snapshot!.threads).toEqual([]);
-    const ownerRead = s.social.workspaceSnapshot(owner, { ...query, cursor: first.cursor });
+    const ownerRead = await s.social.workspaceSnapshot(owner, { ...query, cursor: first.cursor });
     expect(ownerRead.snapshot!.threads[0].events[0].text).toBe("Private LinkedIn inbound");
-    const hiddenSearch = s.social.workspaceSnapshot(principal, {
+    const hiddenSearch = await s.social.workspaceSnapshot(principal, {
       ...query,
       filters: { threads: { query: "Private LinkedIn inbound" } },
     });
     expect(hiddenSearch.snapshot!.pages!.threads!.total).toBe(0);
     expect(hiddenSearch.snapshot!.threads).toEqual([]);
     expect(
-      s.social.workspaceSnapshot(owner, {
-        ...query,
-        filters: { threads: { query: "Private LinkedIn inbound" } },
-      }).snapshot!.pages!.threads!.total,
+      (
+        await s.social.workspaceSnapshot(owner, {
+          ...query,
+          filters: { threads: { query: "Private LinkedIn inbound" } },
+        })
+      ).snapshot!.pages!.threads!.total,
     ).toBe(1);
     await expect(
       s.call("thread.page", { id: first.snapshot!.threads[0].id }, principal),
     ).rejects.toThrow("LinkedIn");
     await s.call("accounts.grants", { accountId: account.id, projectId: s.a.id, permissions: [] });
-    const revoked = s.social.workspaceSnapshot(principal, { ...query, cursor: first.cursor });
+    const revoked = await s.social.workspaceSnapshot(principal, { ...query, cursor: first.cursor });
     expect(revoked.unchanged).toBe(false);
     expect(revoked.snapshot!.accounts).toEqual([]);
     expect(revoked.snapshot!.threads).toEqual([]);
     expect(revoked.snapshot!.related!.contacts).toEqual([]);
   });
-
   it("filters the full authorized dataset before pagination and keeps related records outside list filters", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const source = await s.thread(
       account,
@@ -1229,7 +1602,7 @@ describe("social workspace performance and authorization", () => {
       "comment",
     );
     source.lastInboundAt = 0;
-    seedThreadCopies(
+    await seedThreadCopies(
       s.store,
       {
         ...source,
@@ -1238,15 +1611,15 @@ describe("social workspace performance and authorization", () => {
       },
       105,
     );
-    const contact = s.social.snapshot(owner).contacts[0];
+    const contact = (await s.social.snapshot(owner)).contacts[0];
     contact.name = "Historical needle person";
     contact.tags = ["selected"];
     contact.language = "tr";
     const record = s.store.db.prepare(
       "INSERT INTO social_records VALUES (?,?,?) ON CONFLICT(kind,id) DO UPDATE SET value=excluded.value",
     );
-    record.run("thread", source.id, JSON.stringify(source));
-    record.run("contact", contact.id, JSON.stringify(contact));
+    await record.run("thread", source.id, JSON.stringify(source));
+    await record.run("contact", contact.id, JSON.stringify(contact));
     for (let index = 0; index < 105; index++) {
       const copy = {
         ...contact,
@@ -1255,14 +1628,14 @@ describe("social workspace performance and authorization", () => {
         tags: [],
         language: "en",
       };
-      record.run("contact", copy.id, JSON.stringify(copy));
+      await record.run("contact", copy.id, JSON.stringify(copy));
     }
     const campaign = await s.campaign([account]);
     campaign.name = "ARŞİVDE İÇERİK";
-    record.run("campaign", campaign.id, JSON.stringify(campaign));
+    await record.run("campaign", campaign.id, JSON.stringify(campaign));
     for (let index = 0; index < 105; index++) {
       const copy = { ...campaign, id: `search-campaign-${index}`, name: `Other campaign ${index}` };
-      record.run("campaign", copy.id, JSON.stringify(copy));
+      await record.run("campaign", copy.id, JSON.stringify(copy));
     }
     const insertJob = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
     for (let index = 0; index < 105; index++) {
@@ -1283,7 +1656,7 @@ describe("social workspace performance and authorization", () => {
         createdAt: index + 1,
         attempts: 1,
       };
-      insertJob.run(
+      await insertJob.run(
         job.id,
         job.dedupeKey,
         account.id,
@@ -1292,10 +1665,10 @@ describe("social workspace performance and authorization", () => {
         JSON.stringify(job),
       );
     }
-    const principal = s.session().principal;
-    const first = s.social.workspaceSnapshot(principal, { section: "inbox", limit: 20 });
+    const principal = (await s.session()).principal;
+    const first = await s.social.workspaceSnapshot(principal, { section: "inbox", limit: 20 });
     expect(first.snapshot!.threads.some((thread) => thread.id === source.id)).toBe(false);
-    const searched = s.social.workspaceSnapshot(principal, {
+    const searched = await s.social.workspaceSnapshot(principal, {
       section: "inbox",
       limit: 20,
       offsets: { threads: 100 },
@@ -1311,24 +1684,26 @@ describe("social workspace performance and authorization", () => {
     expect(searched.snapshot!.threads[0].events[0].text).not.toContain("Historical needle");
     expect(searched.snapshot!.contacts).toEqual([]);
     expect(searched.snapshot!.related!.contacts.map((row) => row.id)).toContain(contact.id);
-    const segment = await s.call<{ id: string }>("segments.create", {
+    const segment = await s.call<{
+      id: string;
+    }>("segments.create", {
       name: "Selected",
       projectIds: [s.a.id],
       tags: ["selected"],
       language: "tr",
     });
-    const audience = s.social.workspaceSnapshot(principal, {
+    const audience = await s.social.workspaceSnapshot(principal, {
       section: "audience",
       filters: { contacts: { query: "historical", segmentId: segment.id } },
     });
     expect(audience.snapshot!.contacts.map((row) => row.id)).toEqual([contact.id]);
-    const campaigns = s.social.workspaceSnapshot(principal, {
+    const campaigns = await s.social.workspaceSnapshot(principal, {
       section: "campaigns",
       filters: { campaigns: { query: "arşivde içerik", status: "failed" } },
     });
     expect(campaigns.snapshot!.campaigns.map((row) => row.id)).toEqual([campaign.id]);
     expect(campaigns.snapshot!.campaignStates![campaign.id]).toBe("failed");
-    const history = s.social.workspaceSnapshot(principal, {
+    const history = await s.social.workspaceSnapshot(principal, {
       section: "history",
       filters: {
         jobs: {
@@ -1350,31 +1725,32 @@ describe("social workspace performance and authorization", () => {
       cancelled: 0,
     });
     expect(
-      s.social.workspaceSnapshot(s.session(s.b.id).principal, {
-        section: "history",
-        filters: { jobs: { query: "Historical needle" } },
-      }).snapshot!.pages!.jobs!.total,
+      (
+        await s.social.workspaceSnapshot((await s.session(s.b.id)).principal, {
+          section: "history",
+          filters: { jobs: { query: "Historical needle" } },
+        })
+      ).snapshot!.pages!.jobs!.total,
     ).toBe(0);
   });
-
   it("invalidates on approval, policy and credential expiry and rejects invalid pages", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     const query = { section: "campaigns" };
-    const first = s.social.workspaceSnapshot(owner, query);
-    s.store.db.prepare("DELETE FROM social_approvals WHERE entity_id=?").run(campaign.id);
-    const removed = s.social.workspaceSnapshot(owner, { ...query, cursor: first.cursor });
+    const first = await s.social.workspaceSnapshot(owner, query);
+    await s.store.db.prepare("DELETE FROM social_approvals WHERE entity_id=?").run(campaign.id);
+    const removed = await s.social.workspaceSnapshot(owner, { ...query, cursor: first.cursor });
     expect(removed.snapshot!.approvedCampaignIds).toEqual([]);
     await s.call("policy.save", {
       policies: { global: { maxMessageCharacters: 50 }, platforms: {} },
     });
-    const policy = s.social.workspaceSnapshot(owner, { ...query, cursor: removed.cursor });
+    const policy = await s.social.workspaceSnapshot(owner, { ...query, cursor: removed.cursor });
     expect(policy.snapshot!.policies!.global.maxMessageCharacters).toBe(50);
-    s.clock.value += 3_600_001;
-    expect(s.social.workspaceSnapshot(owner, { ...query, cursor: policy.cursor }).unchanged).toBe(
-      false,
-    );
+    s.clock.value += 3600001;
+    expect(
+      (await s.social.workspaceSnapshot(owner, { ...query, cursor: policy.cursor })).unchanged,
+    ).toBe(false);
     for (const bad of [
       { limit: 101 },
       { limit: 1.5 },
@@ -1382,19 +1758,18 @@ describe("social workspace performance and authorization", () => {
       { offsets: { accounts: 5 } },
       { section: "invalid" },
     ]) {
-      expect(() => s.social.workspaceSnapshot(owner, bad)).toThrow();
+      await expect((async () => await s.social.workspaceSnapshot(owner, bad))()).rejects.toThrow();
     }
     await expect(
       s.call<SocialWorkspaceResponse>("workspace.snapshot", { ...query, provider: "forged" }),
     ).rejects.toThrow("identity");
   });
 });
-
 describe("Merkezi sosyal servis", () => {
   it("disconnecting during credential writes prevents a late connection from restoring the account", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
-    const identity = s.social.snapshot(owner).accounts[0];
+    const identity = (await s.social.snapshot(owner)).accounts[0];
     let finish!: () => void;
     vi.mocked(s.credentials.set).mockImplementationOnce(async (id, value) => {
       await new Promise<void>((resolve) => {
@@ -1414,17 +1789,19 @@ describe("Merkezi sosyal servis", () => {
     );
     const rejected = expect(reconnect).rejects.toThrow("cancelled by a disconnect");
     const disconnect = s.call("accounts.disconnect", { accountId: account.id });
-    await vi.waitFor(() => expect(s.social.snapshot(owner).accounts[0].connected).toBe(false));
+    await vi.waitFor(async () =>
+      expect((await s.social.snapshot(owner)).accounts[0].connected).toBe(false),
+    );
     finish();
     await Promise.all([rejected, disconnect]);
-    expect(s.social.snapshot(owner).accounts[0]).toMatchObject({
+    expect((await s.social.snapshot(owner)).accounts[0]).toMatchObject({
       connected: false,
       paused: true,
     });
     expect(s.tokens.has(account.id)).toBe(false);
   });
   it("concurrent connections cannot register one platform identity under two accounts", async () => {
-    const s = fixture();
+    const s = await fixture();
     const input = {
       platform: "x",
       accountType: "member",
@@ -1454,13 +1831,13 @@ describe("Merkezi sosyal servis", () => {
     ]);
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
-    expect(s.social.snapshot(owner).accounts.filter((account) => account.connected)).toHaveLength(
-      1,
-    );
+    expect(
+      (await s.social.snapshot(owner)).accounts.filter((account) => account.connected),
+    ).toHaveLength(1);
     expect(s.tokens.size).toBe(1);
   });
   it("concurrent retries with one request ID create one durable campaign", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const input = {
       name: "One announcement",
@@ -1473,15 +1850,15 @@ describe("Merkezi sosyal servis", () => {
       s.call<SocialCampaign>("campaigns.create", input, owner, "concurrent-campaign"),
     ]);
     expect(new Set(campaigns.map((campaign) => campaign.id)).size).toBe(1);
-    expect(s.social.snapshot(owner).campaigns).toHaveLength(1);
+    expect((await s.social.snapshot(owner)).campaigns).toHaveLength(1);
     await expect(
       s.call("campaigns.create", { ...input, name: "Another" }, owner, "concurrent-campaign"),
     ).rejects.toThrow("another operation");
   });
   it("policy reads with repeated request IDs reflect current limits and revoked account access", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
-    const session = s.session();
+    const session = await s.session();
     await s.call("policy.get", { accountId: account.id }, session.principal, "policy-read");
     await s.call("policy.save", {
       policies: { global: { maxMessageCharacters: 12 }, platforms: {} },
@@ -1499,7 +1876,7 @@ describe("Merkezi sosyal servis", () => {
     ).rejects.toThrow("permission");
   });
   it("pausing and resuming a campaign preserves exact content approval and publishes once", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     await s.call("campaigns.schedule", { id: campaign.id });
@@ -1507,14 +1884,14 @@ describe("Merkezi sosyal servis", () => {
     await s.call("campaigns.pause", { id: campaign.id, paused: true });
     await s.social.tick();
     expect(s.send).not.toHaveBeenCalled();
-    expect(s.social.snapshot(owner).jobs[0].status).toBe("queued");
+    expect((await s.social.snapshot(owner)).jobs[0].status).toBe("queued");
     await s.call("campaigns.pause", { id: campaign.id, paused: false });
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(1);
-    expect(s.social.snapshot(owner).jobs[0].status).toBe("succeeded");
+    expect((await s.social.snapshot(owner)).jobs[0].status).toBe("succeeded");
   });
   it("a cancelled undispatched reply can be replaced without losing history or duplicating a send", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const thread = await s.thread(account);
     const first = await s.call<SocialDraft>("replies.draft", {
@@ -1536,7 +1913,7 @@ describe("Merkezi sosyal servis", () => {
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(1);
     expect(s.send.mock.calls[0][1].payload.text).toBe("Reviewed replacement.");
-    expect(s.social.snapshot(owner).jobs).toEqual(
+    expect((await s.social.snapshot(owner)).jobs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: oldJob.id, status: "cancelled" }),
         expect.objectContaining({ id: job.id, status: "succeeded" }),
@@ -1545,7 +1922,7 @@ describe("Merkezi sosyal servis", () => {
     expect((await s.call<SocialJob>("replies.send", { id: replacement.id })).id).toBe(job.id);
   });
   it("rejects a stale draft editor baseline without losing the newer draft", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const thread = await s.thread(account);
     const original = await s.call<SocialDraft>("replies.draft", {
@@ -1565,9 +1942,9 @@ describe("Merkezi sosyal servis", () => {
         expectedDraft: original,
       }),
     ).rejects.toThrow("Draft changed in another client");
-    expect(s.social.snapshot(owner).drafts.find((draft) => draft.id === original.id)).toEqual(
-      newer,
-    );
+    expect(
+      (await s.social.snapshot(owner)).drafts.find((draft) => draft.id === original.id),
+    ).toEqual(newer);
     await expect(
       s.call("drafts.update", {
         id: original.id,
@@ -1579,7 +1956,7 @@ describe("Merkezi sosyal servis", () => {
     expect(s.send).not.toHaveBeenCalled();
   });
   it("owner draft edits enforce limits, invalidate approval, and protect queued or dispatched content", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const thread = await s.thread(account);
     const draft = await s.call<SocialDraft>("replies.draft", {
@@ -1590,7 +1967,7 @@ describe("Merkezi sosyal servis", () => {
       approvedAt: s.clock.value,
     });
     await expect(
-      s.call("drafts.update", { id: draft.id, text: "Updated." }, s.session().principal),
+      s.call("drafts.update", { id: draft.id, text: "Updated." }, (await s.session()).principal),
     ).rejects.toThrow("owner");
     await s.call("policy.save", {
       policies: { global: { maxMessageCharacters: 20 }, platforms: {} },
@@ -1622,7 +1999,7 @@ describe("Merkezi sosyal servis", () => {
     ).rejects.toThrow("dispatched");
   });
   it("draft attachment changes revoke exact approval and reach the authorized queued send", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("x");
     const thread = await s.thread(account);
     const draft = await s.call<SocialDraft>("replies.draft", {
@@ -1647,7 +2024,7 @@ describe("Merkezi sosyal servis", () => {
     expect(s.send.mock.calls[0][1].payload.media).toEqual(media);
   });
   it("a manual edit retains conversation review and newer inbound guards", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const thread = await s.thread(account);
     const draft = await s.call<SocialDraft>("replies.draft", {
@@ -1659,7 +2036,7 @@ describe("Merkezi sosyal servis", () => {
     await s.call("drafts.update", { id: draft.id, text: "Manual review." });
     await s.approveDraft(draft.id);
     await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("newer inbound");
-    s.social.ingest(account.id, [
+    await s.social.ingest(account.id, [
       {
         eventId: "other-recipient",
         threadId: "conversation-1",
@@ -1674,7 +2051,7 @@ describe("Merkezi sosyal servis", () => {
     ).rejects.toThrow("assignment changed");
   });
   it("session snapshots redact LinkedIn inbound content consistently with inbox tools", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("linkedin");
     const thread = await s.thread(
       account,
@@ -1682,17 +2059,19 @@ describe("Merkezi sosyal servis", () => {
       "Private LinkedIn API comment",
       "comment",
     );
-    const session = s.session();
+    const session = await s.session();
     const snapshot = await s.call<SocialSnapshot>("snapshot", {}, session.principal);
     expect(snapshot.threads[0].events).toEqual([]);
     expect(snapshot.threads[0].reviewReason).toContain("owner review only");
-    expect(s.social.snapshot(owner).threads[0].events[0].text).toBe("Private LinkedIn API comment");
+    expect((await s.social.snapshot(owner)).threads[0].events[0].text).toBe(
+      "Private LinkedIn API comment",
+    );
     await expect(s.call("thread.read", { id: thread.id }, session.principal)).rejects.toThrow(
       "LinkedIn",
     );
   });
   it("unchanged facts preserve their verification date through profile edits", async () => {
-    const s = fixture();
+    const s = await fixture();
     const input = {
       projectId: s.a.id,
       productName: "Product",
@@ -1720,7 +2099,7 @@ describe("Merkezi sosyal servis", () => {
     expect(changed.facts[0].verifiedAt).toBe(s.clock.value);
   });
   it("removed rule facts retain the incoming event and pause the broken rule for review", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const profile = {
       projectId: s.a.id,
@@ -1754,7 +2133,7 @@ describe("Merkezi sosyal servis", () => {
     });
     await s.call("profiles.save", { ...profile, facts: [] });
     await expect(s.thread(account, "missing-fact", "release")).resolves.toBeTruthy();
-    const snapshot = s.social.snapshot(owner);
+    const snapshot = await s.social.snapshot(owner);
     expect(snapshot.threads[0].events[0].id).toBe("missing-fact");
     expect(snapshot.rules[0]).toMatchObject({
       enabled: false,
@@ -1770,7 +2149,7 @@ describe("Merkezi sosyal servis", () => {
     ).rejects.toThrow("owner-verified");
   });
   it("a draft recipient must belong to its project before creation and dispatch", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("x", [s.a.id, s.b.id]);
     const contact = await s.call<SocialContact>("contacts.upsert", {
       accountId: account.id,
@@ -1805,13 +2184,13 @@ describe("Merkezi sosyal servis", () => {
     await s.enable();
     await s.social.tick();
     expect(s.send).not.toHaveBeenCalled();
-    expect(s.social.snapshot(owner).jobs[0]).toMatchObject({
+    expect((await s.social.snapshot(owner)).jobs[0]).toMatchObject({
       status: "cancelled",
       error: expect.stringContaining("no longer shared"),
     });
   });
   it("compares reviewed social policies atomically and requires an explicit owner change", async () => {
-    const s = fixture();
+    const s = await fixture();
     const expectedPolicies = await s.call("policy.get", {});
     const policies = {
       global: { maxContentCharacters: 400 },
@@ -1821,21 +2200,21 @@ describe("Merkezi sosyal servis", () => {
     await expect(s.call("policy.saveReviewed", { ...input, confirm: "SEND" })).rejects.toThrow(
       "Confirm",
     );
-    await expect(s.call("policy.saveReviewed", input, s.session().principal)).rejects.toThrow(
-      "owner",
-    );
+    await expect(
+      s.call("policy.saveReviewed", input, (await s.session()).principal),
+    ).rejects.toThrow("owner");
     expect(await s.call("policy.saveReviewed", input)).toEqual(policies);
     await expect(
       s.call("policy.saveReviewed", { ...input, policies: { global: {}, platforms: {} } }),
     ).rejects.toThrow("changed");
     expect(await s.call("policy.get", {})).toEqual(policies);
-    expect(s.social.snapshot(owner).sendingEnabled).toBe(false);
-    expect(s.social.snapshot(owner).jobs).toEqual([]);
+    expect((await s.social.snapshot(owner)).sendingEnabled).toBe(false);
+    expect((await s.social.snapshot(owner)).jobs).toEqual([]);
   });
   it("owner policies persist; scoped sessions read effective platform overrides but cannot write settings", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
-    const session = s.session();
+    const session = await s.session();
     const policies = {
       global: {
         agent: { provider: "antigravity", model: "chosen-gemini" },
@@ -1855,13 +2234,13 @@ describe("Merkezi sosyal servis", () => {
     });
     await expect(s.call("policy.save", { policies }, session.principal)).rejects.toThrow("owner");
     await expect(
-      s.call("policy.get", { accountId: account.id }, s.session(s.b.id).principal),
+      s.call("policy.get", { accountId: account.id }, (await s.session(s.b.id)).principal),
     ).rejects.toThrow();
-    s.restart();
-    expect(s.social.snapshot(owner).policies).toEqual(policies);
+    await s.restart();
+    expect((await s.social.snapshot(owner)).policies).toEqual(policies);
   });
   it("host enforces content/comment/message limits and rechecks changed limits before queued sends", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     await s.call("campaigns.schedule", { id: campaign.id });
@@ -1898,13 +2277,13 @@ describe("Merkezi sosyal servis", () => {
     await s.enable();
     await s.social.tick();
     expect(s.send).not.toHaveBeenCalled();
-    expect(s.social.snapshot(owner).jobs[0].status).toBe("cancelled");
+    expect((await s.social.snapshot(owner)).jobs[0].status).toBe("cancelled");
   });
   it("the platform Gemini agent/model overrides rule and global agents and applies its message limit", async () => {
     const generator = vi.fn<import("./social-generation").SocialTextGenerator>(async () =>
       JSON.stringify({ text: "Verified public answer." }),
     );
-    const s = fixture(generator);
+    const s = await fixture(generator);
     const account = await s.account();
     await s.call("policy.save", {
       policies: {
@@ -1949,7 +2328,7 @@ describe("Merkezi sosyal servis", () => {
       confirm: "ENABLE_AUTOMATIC_REPLIES",
     });
     await s.thread(account, "event", "release");
-    expect(s.social.snapshot(owner).drafts[0].generation?.status).toBe("queued");
+    expect((await s.social.snapshot(owner)).drafts[0].generation?.status).toBe("queued");
     expect(generator).not.toHaveBeenCalled();
     await s.enable();
     await s.social.tick();
@@ -1959,8 +2338,8 @@ describe("Merkezi sosyal servis", () => {
     });
     expect(generator.mock.calls[0][1]).toContain('"maxCharacters":50');
     expect(generator.mock.calls[0][1]).not.toContain("synthetic-private-token");
-    expect(s.social.snapshot(owner).drafts[0].generation?.status).toBe("completed");
-    expect(s.social.snapshot(owner).jobs[0]).toMatchObject({
+    expect((await s.social.snapshot(owner)).drafts[0].generation?.status).toBe("completed");
+    expect((await s.social.snapshot(owner)).jobs[0]).toMatchObject({
       provider: "antigravity",
       status: "succeeded",
     });
@@ -1975,7 +2354,7 @@ describe("Merkezi sosyal servis", () => {
           text: failure === "long" ? "x".repeat(101) : "Invented price is $10.",
         });
       });
-      const s = fixture(generator);
+      const s = await fixture(generator);
       const account = await s.account();
       await s.call("policy.save", {
         policies: {
@@ -2013,13 +2392,13 @@ describe("Merkezi sosyal servis", () => {
       await s.thread(account, "event", "release");
       await s.enable();
       await s.social.tick();
-      const draft = s.social.snapshot(owner).drafts[0];
+      const draft = (await s.social.snapshot(owner)).drafts[0];
       expect(draft.generation?.status).toBe("review");
       expect(draft.ruleId).toBeUndefined();
       expect(draft.reviewReason).toBeTruthy();
       expect(generator).toHaveBeenCalledTimes(1);
       expect(s.send).not.toHaveBeenCalled();
-      expect(JSON.stringify(s.social.snapshot(owner))).not.toContain("secret-provider-token");
+      expect(JSON.stringify(await s.social.snapshot(owner))).not.toContain("secret-provider-token");
     },
   );
   it("pausing a rule during AI generation blocks delivery after the await", async () => {
@@ -2030,7 +2409,7 @@ describe("Merkezi sosyal servis", () => {
           finish = resolve;
         }),
     );
-    const s = fixture(generator);
+    const s = await fixture(generator);
     const account = await s.account();
     await s.call("profiles.save", {
       projectId: s.a.id,
@@ -2064,7 +2443,7 @@ describe("Merkezi sosyal servis", () => {
     await s.enable();
     const tick = s.social.tick();
     await vi.waitFor(() => expect(generator).toHaveBeenCalledTimes(1));
-    const draftId = s.social.snapshot(owner).drafts[0].id;
+    const draftId = (await s.social.snapshot(owner)).drafts[0].id;
     await expect(
       s.call("drafts.update", {
         id: draftId,
@@ -2075,7 +2454,7 @@ describe("Merkezi sosyal servis", () => {
     finish(JSON.stringify({ text: "Verified answer." }));
     await tick;
     expect(s.send).not.toHaveBeenCalled();
-    expect(s.social.snapshot(owner).drafts[0].generation?.status).toBe("review");
+    expect((await s.social.snapshot(owner)).drafts[0].generation?.status).toBe("review");
     const edited = await s.call<SocialDraft>("drafts.update", {
       id: draftId,
       text: "Owner reviewed answer.",
@@ -2094,7 +2473,7 @@ describe("Merkezi sosyal servis", () => {
     const generator = vi.fn<import("./social-generation").SocialTextGenerator>(async () =>
       JSON.stringify({ text: "A warm verified answer." }),
     );
-    const s = fixture(generator);
+    const s = await fixture(generator);
     const account = await s.account();
     await s.call("policy.save", {
       policies: {
@@ -2128,24 +2507,24 @@ describe("Merkezi sosyal servis", () => {
     });
     await s.call("automations.activate", { id: rule.id });
     await s.thread(account, "event", "release unique-incoming-text");
-    s.restart();
-    await vi.waitFor(() =>
-      expect(s.social.snapshot(owner).drafts[0].generation?.status).toBe("completed"),
+    await s.restart();
+    await vi.waitFor(async () =>
+      expect((await s.social.snapshot(owner)).drafts[0].generation?.status).toBe("completed"),
     );
     expect(generator.mock.calls[0][0]).toEqual({
       provider: "antigravity",
       model: "rule-model",
     });
     expect(generator.mock.calls[0][1]).not.toContain("unique-incoming-text");
-    expect(s.social.snapshot(owner).drafts[0].text).toBe("A warm verified answer.");
-    expect(s.social.snapshot(owner).jobs).toHaveLength(0);
+    expect((await s.social.snapshot(owner)).drafts[0].text).toBe("A warm verified answer.");
+    expect((await s.social.snapshot(owner)).jobs).toHaveLength(0);
     expect(s.send).not.toHaveBeenCalled();
   });
   it("incoming instructions cannot select an agent or expand permissions; duplicate events queue one generation", async () => {
     const generator = vi.fn<import("./social-generation").SocialTextGenerator>(async () =>
       JSON.stringify({ text: "Verified answer." }),
     );
-    const s = fixture(generator);
+    const s = await fixture(generator);
     const account = await s.account();
     await s.call("policy.save", {
       policies: { global: { agent: { provider: "antigravity" } }, platforms: {} },
@@ -2184,9 +2563,9 @@ describe("Merkezi sosyal servis", () => {
     await s.social.tick();
     // The newer inbound event invalidates the pending draft, while the injection requires review.
     expect(generator).not.toHaveBeenCalled();
-    expect(s.social.snapshot(owner).drafts).toHaveLength(2);
-    expect(s.social.snapshot(owner).policies?.global.agent?.provider).toBe("antigravity");
-    expect(s.social.snapshot(owner).sendingEnabled).toBe(false);
+    expect((await s.social.snapshot(owner)).drafts).toHaveLength(2);
+    expect((await s.social.snapshot(owner)).policies?.global.agent?.provider).toBe("antigravity");
+    expect((await s.social.snapshot(owner)).sendingEnabled).toBe(false);
     expect(s.send).not.toHaveBeenCalled();
   });
   it("policy changes while an agent is running require a fresh reviewed draft", async () => {
@@ -2197,7 +2576,7 @@ describe("Merkezi sosyal servis", () => {
           finish = resolve;
         }),
     );
-    const s = fixture(generator);
+    const s = await fixture(generator);
     const account = await s.account();
     await s.call("policy.save", {
       policies: {
@@ -2244,11 +2623,11 @@ describe("Merkezi sosyal servis", () => {
     });
     finish(JSON.stringify({ text: "Verified answer." }));
     await tick;
-    expect(s.social.snapshot(owner).drafts[0].generation?.status).toBe("review");
+    expect((await s.social.snapshot(owner)).drafts[0].generation?.status).toBe("review");
     expect(s.send).not.toHaveBeenCalled();
   });
   it("YouTube comments bind the selected contact's platform channel identity in the durable job", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("youtube");
     const contact = await s.call<SocialContact>("contacts.upsert", {
       accountId: account.id,
@@ -2273,10 +2652,10 @@ describe("Merkezi sosyal servis", () => {
     expect(s.send).not.toHaveBeenCalled();
   });
   it("YouTube video metadata and visibility persist through the same provider-independent queue", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("youtube");
-    const codex = s.session(s.a.id, "codex"),
-      claude = s.session(s.a.id, "claude");
+    const codex = await s.session(s.a.id, "codex"),
+      claude = await s.session(s.a.id, "claude");
     await expect(
       s.social.uploadVideo(codex.principal, { mode: "begin", size: 16 }),
     ).rejects.toThrow("owner");
@@ -2314,14 +2693,12 @@ describe("Merkezi sosyal servis", () => {
       },
       codex.principal,
     );
-    const shared = await s.call<{ campaign: SocialCampaign }>(
-      "campaigns.status",
-      { id: campaign.id },
-      claude.principal,
-    );
+    const shared = await s.call<{
+      campaign: SocialCampaign;
+    }>("campaigns.status", { id: campaign.id }, claude.principal);
     expect(shared.campaign.variants[0].youtube?.title).toBe("Launch");
     await expect(
-      s.call("campaigns.status", { id: campaign.id }, s.session(s.b.id).principal),
+      s.call("campaigns.status", { id: campaign.id }, (await s.session(s.b.id)).principal),
     ).rejects.toThrow();
     await s.call("campaigns.approve", { id: campaign.id });
     await s.call("campaigns.schedule", { id: campaign.id }, claude.principal);
@@ -2340,17 +2717,17 @@ describe("Merkezi sosyal servis", () => {
       visibility: "private",
       payload: { youtube: { title: "Launch", containsSyntheticMedia: true } },
     });
-    s.restart();
+    await s.restart();
     await s.social.tick();
     expect((await s.call<SocialJob[]>("jobs.status"))[0].visibility).toBe("private");
     expect(s.send).toHaveBeenCalledTimes(1);
   });
   it("YouTube canReply restrictions and missing video metadata cannot be bypassed by tools", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("youtube");
     const campaign = await s.campaign([account]);
     await expect(s.call("campaigns.schedule", { id: campaign.id })).rejects.toThrow("YouTube");
-    s.social.ingest(account.id, [
+    await s.social.ingest(account.id, [
       {
         eventId: "disabled-comment",
         threadId: "root-comment",
@@ -2373,19 +2750,18 @@ describe("Merkezi sosyal servis", () => {
     expect(s.send).not.toHaveBeenCalled();
   });
   it("kimlik sahteciliği ve idempotent tekrarlar doğrulanmış hedeflerle ayrı denetim kaydı oluşturur", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
-    const session = s.session();
+    const session = await s.session();
     await expect(
       s.call("capabilities.get", { accountId: account.id, provider: "forged" }, session.principal),
     ).rejects.toThrow("assigned by the host");
     const campaign = await s.campaign([account]);
     await s.call("campaigns.schedule", { id: campaign.id }, owner, "schedule-once");
     await s.call("campaigns.schedule", { id: campaign.id }, owner, "schedule-once");
-    const logs = s.store.db
-      .prepare("SELECT value FROM social_audit")
-      .all()
-      .map((row) => JSON.parse(String(row.value)));
+    const logs = (await s.store.db.prepare("SELECT value FROM social_audit").all()).map((row) =>
+      JSON.parse(String(row.value)),
+    );
     expect(logs.find((log) => log.outcome === "denied")).toMatchObject({
       provider: "codex",
       sessionId: session.principal.sessionId,
@@ -2398,7 +2774,7 @@ describe("Merkezi sosyal servis", () => {
     expect(schedules.every((log) => log.socialAccountIds.includes(account.id))).toBe(true);
   });
   it("OAuth credential yazımı sürerken iptal edilen proje yetkisini geri yüklemez", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     let finish!: () => void;
     vi.mocked(s.credentials.set).mockImplementationOnce(
@@ -2427,9 +2803,9 @@ describe("Merkezi sosyal servis", () => {
     expect((await s.call<SocialAccount[]>("accounts.list"))[0].grants[s.a.id]).toEqual([]);
   });
   it("önbelleğe alınmış işlem sonucu ve eski session tokenı yetki iptalini aşamaz", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
-    const session = s.session();
+    const session = await s.session();
     await s.call("accounts.list", {}, session.principal, "cached-read");
     const draft = await s.call<SocialContact>(
       "contacts.upsert",
@@ -2452,21 +2828,21 @@ describe("Merkezi sosyal servis", () => {
         "cached-write",
       ),
     ).rejects.toThrow("permission");
-    const device = s.store.issueDevice("Desktop");
+    const device = await s.store.issueDevice("Desktop");
     const { createHash } = await import("node:crypto");
-    const grant = s.social.issueSessionGrant(
+    const grant = await s.social.issueSessionGrant(
       session.id,
       createHash("sha256").update(device.token).digest("hex"),
     );
-    expect(s.social.principalForToken(grant.token)).toBeTruthy();
-    const sibling = s.social.issueSessionGrant(session.id);
-    expect(s.social.principalForToken(grant.token)).toBeTruthy();
-    expect(s.social.principalForToken(sibling.token)).toBeTruthy();
-    s.store.revokeDevice(device.id);
-    expect(s.social.principalForToken(grant.token)).toBeUndefined();
+    expect(await s.social.principalForToken(grant.token)).toBeTruthy();
+    const sibling = await s.social.issueSessionGrant(session.id);
+    expect(await s.social.principalForToken(grant.token)).toBeTruthy();
+    expect(await s.social.principalForToken(sibling.token)).toBeTruthy();
+    await s.store.revokeDevice(device.id);
+    expect(await s.social.principalForToken(grant.token)).toBeUndefined();
   });
   it("yeni gelen mesaj eski onaylı yanıtın alıcısını veya kapsamını değiştiremez", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const thread = await s.thread(account);
     const draft = await s.call<SocialDraft>("replies.draft", {
@@ -2486,7 +2862,7 @@ describe("Merkezi sosyal servis", () => {
     });
   });
   it("başarılı veya sonucu belirsiz hedef elle yeniden deneme yoluyla yayınlanamaz", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     const [job] = await s.call<SocialJob[]>("campaigns.schedule", {
@@ -2498,27 +2874,25 @@ describe("Merkezi sosyal servis", () => {
     expect(s.send).toHaveBeenCalledTimes(1);
   });
   it("farklı provider ve projelerin session araçları aynı onaylı kampanyaya erişir", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("x", [s.a.id, s.b.id]);
     const campaign = await s.campaign([account], [s.a.id, s.b.id]);
     for (const provider of REMOTE_PROVIDERS) {
-      const session = s.session(provider === "claude" ? s.b.id : s.a.id, provider);
-      const status = await s.call<{ campaign: SocialCampaign }>(
-        "campaigns.status",
-        { id: campaign.id },
-        session.principal,
-      );
+      const session = await s.session(provider === "claude" ? s.b.id : s.a.id, provider);
+      const status = await s.call<{
+        campaign: SocialCampaign;
+      }>("campaigns.status", { id: campaign.id }, session.principal);
       expect(status.campaign.id).toBe(campaign.id);
     }
     expect(s.send).not.toHaveBeenCalled();
   });
   it("hesabı okuyabilen başka proje özel konuşmayı okuyamaz veya yanıt gönderemez", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("x", [s.a.id, s.b.id]);
     const thread = await s.thread(account);
     expect(thread.reviewReason).toBeTruthy();
     await s.call("thread.assign", { id: thread.id, projectId: s.a.id });
-    const foreign = s.session(s.b.id, "claude");
+    const foreign = await s.session(s.b.id, "claude");
     expect(await s.call("inbox.list", {}, foreign.principal)).toEqual([]);
     await expect(s.call("thread.read", { id: thread.id }, foreign.principal)).rejects.toThrow(
       "another project",
@@ -2528,9 +2902,9 @@ describe("Merkezi sosyal servis", () => {
     ).rejects.toThrow("another project");
   });
   it("araç kimliği, consent ve sahip rolü araç JSON içeriğiyle değiştirilemez", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
-    const session = s.session();
+    const session = await s.session();
     await expect(
       s.call("accounts.list", { provider: "owner", sessionId: session.id }, session.principal),
     ).rejects.toThrow("assigned by the host");
@@ -2561,23 +2935,25 @@ describe("Merkezi sosyal servis", () => {
     ).rejects.toThrow("identity changed");
   });
   it("iki session aynı gelen olaya eşzamanlı yanıt verdiğinde tek iş oluşur", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const thread = await s.thread(account);
-    const sessions = [s.session(), s.session(s.a.id, "claude")];
+    const sessions = [await s.session(), await s.session(s.a.id, "claude")];
     const drafts = await Promise.all(
-      sessions.map((session) =>
-        s.call<SocialDraft>(
-          "replies.draft",
-          { threadId: thread.id, text: "Approved answer" },
-          session.principal,
-        ),
+      sessions.map(
+        async (session) =>
+          await s.call<SocialDraft>(
+            "replies.draft",
+            { threadId: thread.id, text: "Approved answer" },
+            session.principal,
+          ),
       ),
     );
     for (const draft of drafts) await s.approveDraft(draft.id);
     const jobs = await Promise.all(
-      drafts.map((draft, index) =>
-        s.call<SocialJob>("replies.send", { id: draft.id }, sessions[index].principal),
+      drafts.map(
+        async (draft, index) =>
+          await s.call<SocialJob>("replies.send", { id: draft.id }, sessions[index].principal),
       ),
     );
     expect(jobs[0].id).toBe(jobs[1].id);
@@ -2586,7 +2962,7 @@ describe("Merkezi sosyal servis", () => {
     expect(s.send).toHaveBeenCalledTimes(1);
   });
   it("tracks accepted TikTok processing durably without allowing cancellation and duplicate publication", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("tiktok");
     const campaign = await s.call<SocialCampaign>("campaigns.create", {
       name: "Video",
@@ -2620,32 +2996,32 @@ describe("Merkezi sosyal servis", () => {
       if (!job.preparation?.tiktokPublishId) {
         initializations++;
         checkpoint?.({ tiktokPublishId: "publish-1" });
-        throw new SocialPlatformError("processing", s.clock.value + 30_000);
+        throw new SocialPlatformError("processing", s.clock.value + 30000);
       }
       return { platformId: "publish-1", visibility: "private" };
     });
     await s.enable();
     await s.social.tick();
-    let pending = s.social.snapshot(owner).jobs[0];
+    let pending = (await s.social.snapshot(owner)).jobs[0];
     expect(pending).toMatchObject({
       status: "queued",
       preparation: { tiktokPublishId: "publish-1" },
       dispatchedAt: s.clock.value,
     });
     await expect(s.call("jobs.cancel", { id: pending.id })).rejects.toThrow("cannot be recalled");
-    s.clock.value += 31_000;
+    s.clock.value += 31000;
     await s.social.tick();
-    pending = s.social.snapshot(owner).jobs[0];
+    pending = (await s.social.snapshot(owner)).jobs[0];
     expect(pending).toMatchObject({ status: "succeeded", platformId: "publish-1" });
     expect(initializations).toBe(1);
   });
   it("WhatsApp signed messages deduplicate and an expired response window blocks queued dispatch", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("whatsapp");
     const current = (await s.call<SocialAccount[]>("accounts.list"))[0];
     await s.social.connectAccount(current.id, current, {
       accessToken: "synthetic-private-token",
-      expiresAt: s.clock.value + 48 * 60 * 60_000,
+      expiresAt: s.clock.value + 48 * 60 * 60000,
     });
     const raw = Buffer.from(
       JSON.stringify({
@@ -2677,14 +3053,14 @@ describe("Merkezi sosyal servis", () => {
     );
     const secret = "synthetic-app-secret";
     const signature = `sha256=${createHmac("sha256", secret).update(raw).digest("hex")}`;
-    expect(() => s.social.webhook("whatsapp", raw, `sha256=${"0".repeat(64)}`, secret)).toThrow(
-      "signature",
-    );
-    expect(s.social.webhook("whatsapp", raw, signature, secret).ingested).toBe(1);
-    expect(s.social.webhook("whatsapp", raw, signature, secret).ingested).toBe(0);
+    await expect(
+      (async () => await s.social.webhook("whatsapp", raw, `sha256=${"0".repeat(64)}`, secret))(),
+    ).rejects.toThrow("signature");
+    expect((await s.social.webhook("whatsapp", raw, signature, secret)).ingested).toBe(1);
+    expect((await s.social.webhook("whatsapp", raw, signature, secret)).ingested).toBe(0);
     const thread = (await s.call<SocialThread[]>("inbox.list"))[0];
     expect(thread).toMatchObject({
-      replyUntil: s.clock.value + 24 * 60 * 60_000,
+      replyUntil: s.clock.value + 24 * 60 * 60000,
       contactId: expect.any(String),
     });
     await s.call("thread.assign", { id: thread.id, projectId: s.a.id });
@@ -2698,17 +3074,17 @@ describe("Merkezi sosyal servis", () => {
     await s.approveDraft(draft.id);
     await s.call("replies.send", { id: draft.id });
     await s.enable();
-    s.clock.value += 24 * 60 * 60_000 + 1;
+    s.clock.value += 24 * 60 * 60000 + 1;
     await s.social.tick();
     expect(s.send).not.toHaveBeenCalled();
-    expect(s.social.snapshot(owner).jobs[0]).toMatchObject({
+    expect((await s.social.snapshot(owner)).jobs[0]).toMatchObject({
       status: "cancelled",
       error: "Platform response window expired.",
     });
-    expect(s.social.snapshot(owner).accounts.find((a) => a.id === account.id)).toBeTruthy();
+    expect((await s.social.snapshot(owner)).accounts.find((a) => a.id === account.id)).toBeTruthy();
   });
   it("imzası doğrulanan tekrar webhook tek olay oluşturur; bozuk imza reddedilir", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("facebook");
     const current = (await s.call<SocialAccount[]>("accounts.list"))[0];
     const raw = Buffer.from(
@@ -2730,22 +3106,32 @@ describe("Merkezi sosyal servis", () => {
       }),
     );
     const signature = `sha256=${createHmac("sha256", "synthetic-app-secret").update(raw).digest("hex")}`;
-    expect(s.social.webhook("facebook", raw, signature, "synthetic-app-secret").ingested).toBe(1);
-    expect(s.social.webhook("facebook", raw, signature, "synthetic-app-secret").ingested).toBe(0);
+    expect(
+      (await s.social.webhook("facebook", raw, signature, "synthetic-app-secret")).ingested,
+    ).toBe(1);
+    expect(
+      (await s.social.webhook("facebook", raw, signature, "synthetic-app-secret")).ingested,
+    ).toBe(0);
     await expect(s.call("capabilities.get", { accountId: account.id })).resolves.toBeTruthy();
-    expect(() =>
-      s.social.webhook("facebook", raw, `sha256=${"0".repeat(64)}`, "synthetic-app-secret"),
-    ).toThrow("signature");
+    await expect(
+      (async () =>
+        await s.social.webhook(
+          "facebook",
+          raw,
+          `sha256=${"0".repeat(64)}`,
+          "synthetic-app-secret",
+        ))(),
+    ).rejects.toThrow("signature");
     expect((await s.call<SocialThread[]>("inbox.list"))[0].events).toHaveLength(1);
   });
   it("restart sonrası kuyruk korunur; dispatch sırasında kesilen iş incelemeye geçer", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     const jobs = await s.call<SocialJob[]>("campaigns.schedule", {
       id: campaign.id,
     });
-    s.restart();
+    await s.restart();
     expect(await s.call<SocialJob>("jobs.status", { id: jobs[0].id })).toMatchObject({
       status: "queued",
       campaignId: campaign.id,
@@ -2753,17 +3139,17 @@ describe("Merkezi sosyal servis", () => {
     const job = await s.call<SocialJob>("jobs.status", { id: jobs[0].id });
     job.status = "running";
     job.dispatchedAt = s.clock.value;
-    s.store.db
+    await s.store.db
       .prepare("UPDATE social_jobs SET status='running',value=? WHERE id=?")
       .run(JSON.stringify(job), job.id);
-    s.restart();
+    await s.restart();
     expect(await s.call<SocialJob>("jobs.status", { id: job.id })).toMatchObject({
       status: "review",
     });
     expect(s.send).not.toHaveBeenCalled();
   });
   it("kısmi yayın hatasında başarılı hedef planlamayla yeniden yayınlanmaz", async () => {
-    const s = fixture();
+    const s = await fixture();
     const accounts = [await s.account("x", [s.a.id], "One"), await s.account("x", [s.a.id], "Two")];
     s.send.mockImplementation(async (account, job) => {
       if (account.id === accounts[1].id) throw new SocialPlatformError("rejected");
@@ -2781,38 +3167,43 @@ describe("Merkezi sosyal servis", () => {
     expect(s.send).toHaveBeenCalledTimes(2);
   });
   it("belirsiz timeout ve 5xx sonucunu körlemesine tekrar göndermez", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     await s.call("campaigns.schedule", { id: campaign.id });
     s.send.mockRejectedValue(new SocialPlatformError("unknown"));
     await s.enable();
     await s.social.tick();
-    s.clock.value += 100_000;
+    s.clock.value += 100000;
     await s.social.tick();
     expect((await s.call<SocialJob[]>("jobs.status"))[0].status).toBe("review");
     expect(s.send).toHaveBeenCalledTimes(1);
   });
   it("Retry-After dolmadan kuyrukta tekrar deneme yapmaz", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     await s.call("campaigns.schedule", { id: campaign.id });
-    s.send.mockRejectedValueOnce(new SocialPlatformError("rate_limit", s.clock.value + 90_000));
+    s.send.mockRejectedValueOnce(new SocialPlatformError("rate_limit", s.clock.value + 90000));
     await s.enable();
     await s.social.tick();
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(1);
-    s.clock.value += 90_001;
+    s.clock.value += 90001;
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(2);
     expect((await s.call<SocialJob[]>("jobs.status"))[0].status).toBe("succeeded");
   });
   it("süresi dolan token ve desteklenmeyen mesaj başlatma doğru gösterilir", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account("instagram");
-    s.clock.value += 3_600_001;
-    const capabilities = await s.call<{ operation: string; status: string }[]>("capabilities.get", {
+    s.clock.value += 3600001;
+    const capabilities = await s.call<
+      {
+        operation: string;
+        status: string;
+      }[]
+    >("capabilities.get", {
       accountId: account.id,
     });
     expect(capabilities.find((item) => item.operation === "publish")?.status).toBe("expired");
@@ -2821,7 +3212,7 @@ describe("Merkezi sosyal servis", () => {
     );
   });
   it("opt-out bekleyen mesajı iptal eder ve alıcı kaydı tek başına izin vermez", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     let contact = await s.call<SocialContact>("contacts.upsert", {
       accountId: account.id,
@@ -2859,7 +3250,7 @@ describe("Merkezi sosyal servis", () => {
     expect((await s.call<SocialJob[]>("jobs.status"))[0].status).toBe("cancelled");
   });
   it("credential okuması sırasında gelen opt-out gönderimden önce yeniden denetlenir", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const thread = await s.thread(account);
     const draft = await s.call<SocialDraft>("replies.draft", {
@@ -2879,7 +3270,7 @@ describe("Merkezi sosyal servis", () => {
     expect((await s.call<SocialJob[]>("jobs.status"))[0].status).toBe("cancelled");
   });
   it("gelen prompt injection yetki veya alıcı değiştiremez ve otomatik yanıtı incelemeye bırakır", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     await s.call("profiles.save", {
       projectId: s.a.id,
@@ -2917,13 +3308,13 @@ describe("Merkezi sosyal servis", () => {
     await s.enable();
     await s.social.tick();
     expect(s.send).not.toHaveBeenCalled();
-    const drafts = s.social.snapshot(owner).drafts;
+    const drafts = (await s.social.snapshot(owner)).drafts;
     expect(drafts[0].reviewReason).toBeTruthy();
     expect(drafts[0].ruleId).toBeUndefined();
-    expect(JSON.stringify(s.social.snapshot(owner))).not.toContain("synthetic-private-token");
+    expect(JSON.stringify(await s.social.snapshot(owner))).not.toContain("synthetic-private-token");
   });
   it("otomatik yanıt yalnızca etkin kuralın doğrulanmış bilgisini kullanır; durdurma kuyruğu engeller", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     await s.call("profiles.save", {
       projectId: s.a.id,
@@ -2953,14 +3344,16 @@ describe("Merkezi sosyal servis", () => {
       confirm: "ENABLE_AUTOMATIC_REPLIES",
     });
     await s.thread(account, "automatic", "release");
-    expect(s.social.snapshot(owner).jobs[0].payload.text).toBe("Verified release information.");
+    expect((await s.social.snapshot(owner)).jobs[0].payload.text).toBe(
+      "Verified release information.",
+    );
     await s.call("automations.pause", { id: rule.id });
     await s.enable();
     await s.social.tick();
     expect(s.send).not.toHaveBeenCalled();
   });
   it("yürütücü sahipliği ve hesap/kampanya durdurma kontrolleri korunur", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const campaign = await s.campaign([account]);
     await s.call("campaigns.schedule", { id: campaign.id });
@@ -2982,7 +3375,7 @@ describe("Merkezi sosyal servis", () => {
     expect(s.send).not.toHaveBeenCalled();
   });
   it("aynı request ID aynı sonucu döndürür, değişen içerikte reddeder", async () => {
-    const s = fixture();
+    const s = await fixture();
     const account = await s.account();
     const args = {
       accountId: account.id,

@@ -67,10 +67,10 @@ test("finds existing accounts, links another profile and lets the user choose a 
   await page.getByRole("button", { name: /3\s*Agents/ }).click();
   const claude = page
     .locator(".onboarding-agent")
-    .filter({ has: page.getByRole("checkbox", { name: "Use Claude Code", exact: true }) });
+    .filter({ has: page.getByRole("switch", { name: "Use Claude Code", exact: true }) });
   const codex = page
     .locator(".onboarding-agent")
-    .filter({ has: page.getByRole("checkbox", { name: "Use Codex", exact: true }) });
+    .filter({ has: page.getByRole("switch", { name: "Use Codex", exact: true }) });
   await expect(claude.getByRole("status")).toHaveText("Signed in");
   await expect(
     claude.getByRole("button", { name: "Sign in to Claude Code", exact: true }),
@@ -172,7 +172,7 @@ test("adds only the chosen missing provider after validation and keeps it on res
   await expect(add).toHaveCount(0);
   const cursor = page
     .locator(".onboarding-agent")
-    .filter({ has: page.getByRole("checkbox", { name: "Use Cursor", exact: true }) });
+    .filter({ has: page.getByRole("switch", { name: "Use Cursor", exact: true }) });
   await expect(cursor.getByRole("status")).toHaveText("CLI path saved · restart required");
   await expect(cursor.getByRole("button", { name: "Sign in to Cursor", exact: true })).toHaveCount(
     0,

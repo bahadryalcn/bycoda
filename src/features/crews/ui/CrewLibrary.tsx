@@ -219,14 +219,15 @@ function LibraryMemberDialog({
   const [scope, setScope] = useState<"project" | "global">(
     saved ? (saved.projectId ? "project" : "global") : "project",
   );
-  const [pending, setPending] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"save" | "copy" | "delete" | null>(null);
+  const pending = pendingAction !== null;
   const [error, setError] = useState("");
   const [showIssues, setShowIssues] = useState(false);
   const gate = useRef(false);
-  const run = async (operation: () => Promise<unknown>) => {
+  const run = async (action: "save" | "copy", operation: () => Promise<unknown>) => {
     if (gate.current) return;
     gate.current = true;
-    setPending(true);
+    setPendingAction(action);
     setError("");
     try {
       await operation();
@@ -235,7 +236,7 @@ function LibraryMemberDialog({
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       gate.current = false;
-      setPending(false);
+      setPendingAction(null);
     }
   };
   const valid = !!agent.name.trim() && !!agent.candidates.length;
@@ -245,7 +246,7 @@ function LibraryMemberDialog({
       return;
     }
     const projectId = (copy ? "global" : scope) === "project" ? data.project.id : undefined;
-    void run(() =>
+    void run(copy ? "copy" : "save", () =>
       state.call("crews.agent.save", {
         agent: {
           ...agent,
@@ -272,7 +273,11 @@ function LibraryMemberDialog({
               icon={<Trash2 aria-hidden className="icon-sm" />}
               tone="danger"
               confirmMode="press"
+              disabled={pending}
               onConfirm={async () => {
+                if (gate.current) return;
+                gate.current = true;
+                setPendingAction("delete");
                 setError("");
                 try {
                   await state.call("crews.agent.delete", { agentId: saved.id });
@@ -280,19 +285,27 @@ function LibraryMemberDialog({
                 } catch (reason) {
                   setError(reason instanceof Error ? reason.message : String(reason));
                   throw reason;
+                } finally {
+                  gate.current = false;
+                  setPendingAction(null);
                 }
               }}
             />
           ) : null}
           <span className="min-w-0 flex-1" />
           {saved?.projectId ? (
-            <Button variant="ghost" disabled={pending} onClick={() => save(true)}>
+            <Button
+              variant="ghost"
+              loading={pendingAction === "copy"}
+              disabled={pending}
+              onClick={() => save(true)}
+            >
               {t("Copy to all projects")}
             </Button>
           ) : null}
           <Button
             variant="primary"
-            loading={pending}
+            loading={pendingAction === "save"}
             disabled={pending}
             onClick={() => save(false)}
           >

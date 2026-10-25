@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -33,6 +34,25 @@ const HIDDEN_FLUSH_BYTES: usize = 1024 * 1024;
 struct PtyData {
     id: String,
     data: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flow: Option<PtyFlow>,
+}
+
+#[derive(Serialize, Clone)]
+struct PtyFlow {
+    generation: u64,
+    sequence: u64,
+}
+static OUTPUT_GENERATION: AtomicU64 = AtomicU64::new(1);
+const OUTPUT_WINDOW_BYTES: usize = 1024 * 1024;
+
+#[derive(Default)]
+struct OutputFlow {
+    enabled: bool,
+    generation: u64,
+    sequence: u64,
+    pending: VecDeque<(u64, usize)>,
+    last_emit: Option<Instant>,
 }
 
 #[derive(Serialize, Clone)]
@@ -49,6 +69,8 @@ struct PtyExit {
 #[derive(Default)]
 struct OutputGate {
     hold: Mutex<OutputHold>,
+    flow: Mutex<OutputFlow>,
+    available: Condvar,
 }
 
 #[derive(Default)]
@@ -78,6 +100,84 @@ impl OutputHold {
 impl OutputGate {
     fn lock(&self) -> std::sync::MutexGuard<'_, OutputHold> {
         self.hold.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn for_desktop(enabled: bool) -> Self {
+        let gate = Self::default();
+        gate.set_enabled(enabled);
+        gate
+    }
+
+    fn set_enabled(&self, enabled: bool) {
+        let mut flow = self.flow.lock().unwrap_or_else(|e| e.into_inner());
+        if flow.enabled == enabled {
+            return;
+        }
+        flow.enabled = enabled;
+        flow.generation = OUTPUT_GENERATION.fetch_add(1, Ordering::Relaxed);
+        flow.pending.clear();
+        flow.last_emit = None;
+        self.available.notify_all();
+    }
+
+    fn reset(&self) {
+        let mut flow = self.flow.lock().unwrap_or_else(|e| e.into_inner());
+        flow.generation = OUTPUT_GENERATION.fetch_add(1, Ordering::Relaxed);
+        flow.pending.clear();
+        flow.last_emit = None;
+        self.available.notify_all();
+    }
+
+    fn reserve(&self, bytes: usize) -> Option<PtyFlow> {
+        let mut flow = self.flow.lock().unwrap_or_else(|e| e.into_inner());
+        loop {
+            if !flow.enabled {
+                return None;
+            }
+            let full = !flow.pending.is_empty()
+                && flow.pending.iter().map(|(_, bytes)| bytes).sum::<usize>() + bytes
+                    > OUTPUT_WINDOW_BYTES;
+            let delay = flow
+                .last_emit
+                .map(|at| (at + PTY_COALESCE).saturating_duration_since(Instant::now()))
+                .unwrap_or_default();
+            if !full && delay.is_zero() {
+                break;
+            }
+            let wait = if full {
+                Duration::from_millis(100)
+            } else {
+                delay
+            };
+            flow = self
+                .available
+                .wait_timeout(flow, wait)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+        flow.sequence += 1;
+        let sequence = flow.sequence;
+        flow.pending.push_back((sequence, bytes));
+        flow.last_emit = Some(Instant::now());
+        Some(PtyFlow {
+            generation: flow.generation,
+            sequence,
+        })
+    }
+
+    fn acknowledge(&self, generation: u64, sequence: u64) {
+        let mut flow = self.flow.lock().unwrap_or_else(|e| e.into_inner());
+        if generation != flow.generation {
+            return;
+        }
+        if let Some(index) = flow
+            .pending
+            .iter()
+            .position(|(pending, _)| *pending == sequence)
+        {
+            flow.pending.remove(index);
+            self.available.notify_all();
+        }
     }
 }
 
@@ -180,6 +280,7 @@ impl PtyHost {
         let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         let live = sessions.get(id)?;
         live.set_owner(owner);
+        live.output.reset();
         Some(reattach(live, cols, rows))
     }
 
@@ -202,7 +303,11 @@ impl PtyHost {
         if let Some(live) = sessions.get(id) {
             ensure_window(live, owner)?;
         }
-        Ok(sessions.remove(id))
+        let removed = sessions.remove(id);
+        if let Some(live) = &removed {
+            live.output.set_enabled(false);
+        }
+        Ok(removed)
     }
 
     fn kill_for_window(&self, owner: &str) {
@@ -289,6 +394,7 @@ impl LivePty {
                 self.owner_label(),
                 &batch,
                 self.ssh_identity.is_some(),
+                &self.output,
             );
         }
     }
@@ -309,6 +415,7 @@ impl LivePty {
 fn reap(kids: Vec<Arc<LivePty>>) {
     let pids: Vec<u32> = kids.iter().map(|live| live.pid).collect();
     for live in kids {
+        live.output.set_enabled(false);
         #[cfg(unix)]
         {
             hangup(live.pid);
@@ -844,6 +951,7 @@ pub fn pty_status(
 /// A hidden terminal that exits still delivers what it held before the exit notice.
 fn release_held_output(host: &PtyHost, app: &AppHandle, id: &str, pid: u32) {
     if let Some(live) = host.get(id).filter(|live| live.pid == pid) {
+        live.output.set_enabled(false);
         live.set_output_visible(app, id, true);
     }
 }
@@ -851,7 +959,7 @@ fn release_held_output(host: &PtyHost, app: &AppHandle, id: &str, pid: u32) {
 /// The view reports whether the terminal is on screen. Hidden output is held
 /// (see `OutputGate`) and released in order once it is shown again.
 #[tauri::command]
-pub fn pty_set_visible(
+pub async fn pty_set_visible(
     app: AppHandle,
     window: tauri::Window,
     host: State<'_, PtyHost>,
@@ -859,7 +967,35 @@ pub fn pty_set_visible(
     visible: bool,
 ) -> Result<(), String> {
     let live = host.get_for_window(&id, window.label())?;
-    live.set_output_visible(&app, &id, visible);
+    tauri::async_runtime::spawn_blocking(move || live.set_output_visible(&app, &id, visible))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn pty_output_ack(
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    generation: u64,
+    sequence: u64,
+) -> Result<(), String> {
+    host.get_for_window(&id, window.label())?
+        .output
+        .acknowledge(generation, sequence);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pty_output_flow(
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    host.get_for_window(&id, window.label())?
+        .output
+        .set_enabled(enabled);
     Ok(())
 }
 
@@ -993,7 +1129,9 @@ fn spawn_unix(
         master_fd: master,
         pid,
         owner: Arc::new(Mutex::new(owner.to_string())),
-        output: Arc::default(),
+        output: Arc::new(OutputGate::for_desktop(!crate::mobile_pty::registered(
+            &app, &id,
+        ))),
     });
     let data_owner = live.owner.clone();
     let data_output = live.output.clone();
@@ -1173,7 +1311,9 @@ fn spawn_windows(
         master: Mutex::new(pair.master),
         pid,
         owner: Arc::new(Mutex::new(owner.to_string())),
-        output: Arc::default(),
+        output: Arc::new(OutputGate::for_desktop(!crate::mobile_pty::registered(
+            &app, &id,
+        ))),
     });
     let data_owner = live.owner.clone();
     let data_output = live.output.clone();
@@ -1520,11 +1660,19 @@ fn emit_pty_data(
     // Emitting under the gate keeps a release on show ahead of newer output.
     let mut hold = output.lock();
     if let Some(batch) = hold.pass(bytes) {
-        send_pty_data(app, id, owner, &batch, private);
+        send_pty_data(app, id, owner, &batch, private, output);
     }
 }
 
-fn send_pty_data(app: &AppHandle, id: &str, owner: String, bytes: &[u8], private: bool) {
+fn send_pty_data(
+    app: &AppHandle,
+    id: &str,
+    owner: String,
+    bytes: &[u8],
+    private: bool,
+    output: &OutputGate,
+) {
+    let flow = output.reserve(bytes.len());
     let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
     emit_to_owner(
         app,
@@ -1533,6 +1681,7 @@ fn send_pty_data(app: &AppHandle, id: &str, owner: String, bytes: &[u8], private
         PtyData {
             id: id.to_string(),
             data,
+            flow,
         },
         private,
     );
@@ -2106,6 +2255,48 @@ mod tests {
 mod coalesce_tests {
     use super::*;
     use std::sync::mpsc::{channel, sync_channel};
+
+    #[test]
+    fn output_flow_waits_for_matching_ack_and_ignores_old_generations() {
+        let output = Arc::new(OutputGate::for_desktop(true));
+        let first = output.reserve(OUTPUT_WINDOW_BYTES).unwrap();
+        let waiting = output.clone();
+        let (tx, rx) = channel();
+        let worker = thread::spawn(move || {
+            tx.send(waiting.reserve(1)).unwrap();
+        });
+        thread::sleep(Duration::from_millis(20));
+        assert!(rx.try_recv().is_err());
+        output.acknowledge(first.generation + 1, first.sequence);
+        assert!(rx.try_recv().is_err());
+        output.acknowledge(first.generation, first.sequence);
+        let second = rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap();
+        assert!(second.sequence > first.sequence);
+        worker.join().unwrap();
+        output.reset();
+        let current = output.reserve(OUTPUT_WINDOW_BYTES).unwrap();
+        assert_ne!(current.generation, first.generation);
+        output.acknowledge(first.generation, current.sequence);
+        assert_eq!(output.flow.lock().unwrap().pending.len(), 1);
+        output.acknowledge(current.generation, current.sequence);
+        assert!(output.flow.lock().unwrap().pending.is_empty());
+    }
+
+    #[test]
+    fn output_flow_consumer_release_unblocks_a_full_producer() {
+        let output = Arc::new(OutputGate::for_desktop(true));
+        output.reserve(OUTPUT_WINDOW_BYTES).unwrap();
+        let waiting = output.clone();
+        let (tx, rx) = channel();
+        let worker = thread::spawn(move || {
+            tx.send(waiting.reserve(1)).unwrap();
+        });
+        thread::sleep(Duration::from_millis(20));
+        assert!(rx.try_recv().is_err());
+        output.set_enabled(false);
+        assert!(rx.recv_timeout(Duration::from_secs(2)).unwrap().is_none());
+        worker.join().unwrap();
+    }
 
     fn run(rx: std::sync::mpsc::Receiver<Vec<u8>>, cap: usize) -> Vec<Vec<u8>> {
         let mut emits = Vec::new();

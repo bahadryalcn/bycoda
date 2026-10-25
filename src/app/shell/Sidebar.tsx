@@ -24,6 +24,7 @@ import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { prefetchGithubWorkItem } from "../../features/inbox/model/githubTasks";
 import { NO_BRANCH_LABEL } from "../../features/source-control/model/worktrees";
 import { confirmSessionDelete } from "../../features/sessions/model/confirmSessionDelete";
+import { SessionDeletionNotice } from "../../features/sessions/ui/SessionDeletionNotice";
 import {
   type WorktreeFocus,
   inWorktreeFocus,
@@ -194,6 +195,7 @@ import {
   type SessionListEntry,
 } from "../../features/sessions/model/sessionFolders";
 import { LIST_PAGE_SIZE, listWindowSize } from "../../shared/lib/listWindow";
+import { folderSessionWindow } from "../../features/sessions/model/folderWindow";
 import {
   filterSessionsByHarness,
   filterSessionsByStatus,
@@ -812,6 +814,7 @@ function SidebarComponent({
   const [filterMenu, setFilterMenu] = useState<{ x: number; y: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sessionListLimit, setSessionListLimit] = useState(LIST_PAGE_SIZE);
+  const [folderListLimits, setFolderListLimits] = useState<Record<string, number>>({});
   const [loadMoreElement, setLoadMoreElement] = useState<HTMLLIElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pendingFolderSessionIds = useRef(new Set<string>());
@@ -1146,6 +1149,7 @@ function SidebarComponent({
 
   useEffect(() => {
     setSessionListLimit(LIST_PAGE_SIZE);
+    setFolderListLimits({});
     const scroller = sessionsScrollRef.current;
     if (scroller) scroller.scrollTop = 0;
   }, [sessionListKey]);
@@ -2341,6 +2345,26 @@ function SidebarComponent({
   };
 
   // Folders draw recursively: subfolders first, then the folder's sessions.
+  const folderRows = <T extends { id: string }>(sessions: readonly T[], key: string) =>
+    folderSessionWindow(sessions, folderListLimits[key] ?? LIST_PAGE_SIZE, activeListedSessionId);
+  const moreFolderRows = (sessions: readonly { id: string }[], key: string) =>
+    folderRows(sessions, key).length < sessions.length ? (
+      <li>
+        <Button
+          variant="ghost"
+          size="sm"
+          motion="none"
+          onClick={() =>
+            setFolderListLimits((previous) => ({
+              ...previous,
+              [key]: (previous[key] ?? LIST_PAGE_SIZE) + LIST_PAGE_SIZE,
+            }))
+          }
+        >
+          {t("Show more")}
+        </Button>
+      </li>
+    ) : null;
   const renderFolderEntry = (
     entry: FolderEntry,
     depth: number,
@@ -2412,7 +2436,7 @@ function SidebarComponent({
                 </ul>
               ) : null}
               <ul className={`flex flex-col gap-px p-1 ${entry.sessions.length ? "" : "hidden"}`}>
-                {entry.sessions.map((session) => (
+                {folderRows(entry.sessions, entry.folder.id).map((session) => (
                   <SessionListItem
                     key={session.id}
                     session={session}
@@ -2422,6 +2446,7 @@ function SidebarComponent({
                     {renderSessionCard(session)}
                   </SessionListItem>
                 ))}
+                {moreFolderRows(entry.sessions, entry.folder.id)}
               </ul>
               {onNew ? (
                 <div className="border-t border-stroke p-1">
@@ -2846,6 +2871,7 @@ function SidebarComponent({
             ) : null}
           </div>
         ) : null}
+        <SessionDeletionNotice cwd={cwd} />
         {tab === "sessions" &&
         (deleteProgress?.cwd === cwd || (bulkNotice && deleteNoticeCwd === cwd)) ? (
           <div
@@ -3070,7 +3096,7 @@ function SidebarComponent({
                             ) : null}
                             {expanded && entry.sessions.length > 0 ? (
                               <ul className="flex flex-col gap-px p-1">
-                                {entry.sessions.map((session) => (
+                                {folderRows(entry.sessions, entry.kind).map((session) => (
                                   <SessionListItem
                                     key={session.id}
                                     session={session}
@@ -3080,6 +3106,7 @@ function SidebarComponent({
                                     {renderSessionCard(session)}
                                   </SessionListItem>
                                 ))}
+                                {moreFolderRows(entry.sessions, entry.kind)}
                               </ul>
                             ) : null}
                           </div>

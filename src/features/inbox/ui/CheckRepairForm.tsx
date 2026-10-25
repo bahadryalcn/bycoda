@@ -10,16 +10,7 @@ import {
   type CiRepairRequest,
 } from "../model/ciRepair";
 import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
-import {
-  Check,
-  ChevronRight,
-  LoaderCircle,
-  MessageSquare,
-  Plus,
-  Search,
-  Sparkles,
-  X,
-} from "../../../shared/ui/icons";
+import { Check, MessageSquare, Plus, Search, Sparkles, X } from "../../../shared/ui/icons";
 import { useEffect, useId, useRef, useState } from "react";
 import { type GithubPrCheck } from "../model/githubPrChecks";
 
@@ -301,13 +292,13 @@ export function CheckRepairForm({
         <Button
           variant="ghost"
           type="button"
-          disabled={busy || blocked}
+          disabled={blocked}
+          loading={busy}
+          loadingLabel={t("Preparing...")}
           onClick={() => void start()}
           className="shrink-0"
         >
-          {busy ? <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} /> : null}
-          {busy ? t("Preparing...") : t("Start fix")}
-          {!busy ? <ChevronRight className="icon-xs" strokeWidth={1.75} /> : null}
+          {t("Start fix")}
         </Button>
       </div>
     </Popover>

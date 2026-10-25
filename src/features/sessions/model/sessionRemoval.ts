@@ -22,6 +22,7 @@ import {
   type SessionWorkspaceRemoval,
 } from "./sessionWorkspaceLifecycle";
 import type { WorkspaceTabCloseScope } from "../../workspace/model/workspaceTabGroups";
+import type { SessionDeletionStage } from "./sessionDeletionStatus";
 
 type Workspace = {
   tabs: WorkspaceTab[];
@@ -67,6 +68,7 @@ type SessionRemovalOptions = {
   };
   confirm(tabs: WorkspaceTab[], mode: SessionRemovalMode): Promise<boolean>;
   stop(sessionId: string): Promise<unknown>;
+  onProgress?: (stage: SessionDeletionStage) => void;
 };
 
 /**
@@ -113,6 +115,7 @@ async function removeSession(
   });
   if (!(await options.confirm(plan.closedTabs, options.mode))) return false;
 
+  options.onProgress?.("stopping");
   if (options.mode === "delete") {
     const run = orchestrator.forSession(sessionId);
     if (run && (run.status === "active" || run.status === "paused")) {
@@ -140,12 +143,17 @@ async function removeSession(
   if (options.mode === "delete") {
     // Release native processes before deleting the record, so a following
     // worktree removal cannot race fire-and-forget cleanup.
+    options.onProgress?.("provider");
     await Promise.all(harnesses.map((harness) => forgetHarnessSession(harness, sessionId)));
   }
 
-  if (stopped) await flushSessionCheckpoint(sessionId);
+  if (stopped) {
+    options.onProgress?.("checkpoint");
+    await flushSessionCheckpoint(sessionId);
+  }
   let savedSummary: SessionSummary | undefined;
   if (options.mode === "delete") {
+    options.onProgress?.("deleting");
     const imagePaths =
       stopped?.blocks.flatMap((block) =>
         block.role === "image" && block.image ? [block.image.path] : [],

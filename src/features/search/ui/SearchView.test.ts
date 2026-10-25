@@ -267,3 +267,18 @@ it("dismisses the filters before the search dialog with Escape", async () => {
   act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(onClose).toHaveBeenCalledTimes(1);
 });
+
+it("keeps file index failures scoped to All and Files", async () => {
+  index.load.mockRejectedValue(new Error("File index offline"));
+  await render();
+  await typeQuery("needle");
+  expect(host.textContent).toContain("File index offline");
+  for (const scope of ["Projects", "Conversations", "Files", "All"]) {
+    await act(async () =>
+      [...host.querySelectorAll("button")].find((node) => node.textContent === scope)!.click(),
+    );
+    if (scope === "Projects" || scope === "Conversations")
+      expect(host.textContent).not.toContain("File index offline");
+    else expect(host.textContent).toContain("File index offline");
+  }
+});

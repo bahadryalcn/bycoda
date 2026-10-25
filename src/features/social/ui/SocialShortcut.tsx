@@ -1,3 +1,5 @@
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { t, useLocale } from "../../../shared/i18n";
 import { Globe } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
@@ -20,16 +22,16 @@ export function SocialShortcut({
   /** Follows the resizable project rail's icon-only container breakpoint. */
   responsiveRail?: boolean;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const visible = useWorkspaceFeature("social");
   if (!visible && !active) return null;
   return (
     <Button
+      disabled={socialLocked}
       variant={responsiveRail ? "item" : "ghost"}
       motion="none"
-      {...(compact || rail
-        ? { iconOnly: true, label: t("Social Media") }
-        : { iconOnly: false })}
+      {...(compact || rail ? { iconOnly: true, label: t("Social Media") } : { iconOnly: false })}
       title={t("Social Media")}
       aria-pressed={active}
       aria-label={t("Social Media")}

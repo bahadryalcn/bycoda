@@ -64,7 +64,10 @@ import type {
 
 import { HARNESSES, RUNTIME_MODES } from "../model/session";
 
-import { recoverTaggedOrchestrationProposals, restoreOrchestrationProposal } from "../../orchestration/model/orchestrationPlan";
+import {
+  recoverTaggedOrchestrationProposals,
+  restoreOrchestrationProposal,
+} from "../../orchestration/model/orchestrationPlan";
 
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
 
@@ -693,6 +696,8 @@ export type SessionContentResult = {
   truncated: boolean;
   /** Sessions whose text is not indexed yet; searching again later finds more. */
   pending: number;
+  /** Retained index failure; committed results remain usable, automatic polls stop. */
+  indexError?: string;
 };
 
 /** Full-text search over the messages of every stored session. */
@@ -704,6 +709,7 @@ export async function searchSessionContent(options: {
   includeArchived?: boolean;
   since?: number;
   until?: number;
+  retryIndex?: boolean;
 }): Promise<SessionContentResult> {
   const query = options.query.trim();
   if (!query) return { sessions: [], truncated: false, pending: 0 };
@@ -711,6 +717,7 @@ export async function searchSessionContent(options: {
     options: {
       query,
       searchOwner: options.searchOwner,
+      ...(options.retryIndex ? { retryIndex: true } : {}),
       ...(options.cwds?.length ? { cwds: options.cwds.map(normalizeProjectPath) } : {}),
       ...(options.harness ? { harness: options.harness } : {}),
       ...(options.includeArchived ? { includeArchived: true } : {}),
@@ -722,6 +729,7 @@ export async function searchSessionContent(options: {
     sessions: Array.isArray(result?.sessions) ? result.sessions : [],
     truncated: !!result?.truncated,
     pending: typeof result?.pending === "number" ? result.pending : 0,
+    ...(typeof result?.indexError === "string" ? { indexError: result.indexError } : {}),
   };
 }
 
@@ -803,13 +811,15 @@ export async function getSession(
         pages.push(recordToSession(previous.session).blocks);
         before = previous.before;
       }
-      const complete = recoverTaggedOrchestrationProposals(session.historyLoading
-        ? {
-            ...session,
-            blocks: pages.reverse().flat(),
-            historyLoading: false,
-          }
-        : session);
+      const complete = recoverTaggedOrchestrationProposals(
+        session.historyLoading
+          ? {
+              ...session,
+              blocks: pages.reverse().flat(),
+              historyLoading: false,
+            }
+          : session,
+      );
       if (deletedSessionIds.has(sessionId)) return;
       // A tail snapshot never becomes a persistence baseline. Only the complete
       // logical transcript may be checkpointed or used for provider resume.

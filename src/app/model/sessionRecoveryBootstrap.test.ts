@@ -1,5 +1,15 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from "vitest";
+import { newSession } from "../../features/sessions/model/session";
+import { newTab } from "../../features/workspace/model/layout";
+import { collectWorkspaceSnapshot } from "../../features/workspace/model/workspaceSnapshot";
+import {
+  captureSessionRecovery,
+  getSessionRecovery,
+} from "../../features/workspace/model/sessionRecovery";
+import * as store from "../../features/sessions/data/sessionStore";
+import { invoke } from "@tauri-apps/api/core";
+import { loadResumedWorkspace } from "./appLifecycle";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../../features/sessions/data/sessionStore", async (original) => ({
@@ -10,20 +20,11 @@ vi.mock("../../features/sessions/data/sessionStore", async (original) => ({
 }));
 
 beforeEach(() => {
-  vi.resetModules();
   localStorage.clear();
   vi.clearAllMocks();
 });
 
 it("captures all restored projects before first paint and retains an earlier closed conversation", async () => {
-  const { newSession } = await import("../../features/sessions/model/session");
-  const { newTab } = await import("../../features/workspace/model/layout");
-  const { collectWorkspaceSnapshot } =
-    await import("../../features/workspace/model/workspaceSnapshot");
-  const { captureSessionRecovery, getSessionRecovery } =
-    await import("../../features/workspace/model/sessionRecovery");
-  const store = await import("../../features/sessions/data/sessionStore");
-  const { invoke } = await import("@tauri-apps/api/core");
   const chats = ["alpha", "beta"].map((id) => ({
     ...newSession("codex", `/${id}`),
     id,
@@ -46,7 +47,6 @@ it("captures all restored projects before first paint and retains an earlier clo
   vi.mocked(store.getSession).mockImplementation(
     async (id) => chats.find((s) => s.id === id) ?? null,
   );
-  const { loadResumedWorkspace } = await import("./appLifecycle");
   const resumed = await loadResumedWorkspace();
   expect(resumed?.sessions.map((s) => s.id)).toEqual(["beta"]);
   expect(getSessionRecovery()?.workspace.sessions.map((s) => s.id)).toEqual(["alpha", "beta"]);

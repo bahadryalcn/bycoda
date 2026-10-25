@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyPushResult,
+  batchLocalChanges,
   hasPendingOp,
   hasPulled,
   knownRecordIds,
@@ -33,6 +34,58 @@ describe("syncPeerState", () => {
   it("starts at revision 0 with an empty outbox", () => {
     expect(peerRev(MACHINE)).toBe(0);
     expect(takeOutbox(MACHINE)).toEqual([]);
+  });
+
+  it("captures a library from one snapshot without writing unchanged records", () => {
+    const records = Array.from({ length: 100 }, (_, index) => ({
+      table: "group" as const,
+      id: `g-${index}`,
+      rev: index + 1,
+      value: { id: `g-${index}`, name: `Group ${index}` },
+    }));
+    markPulled(MACHINE, records);
+    const read = vi.spyOn(localStorage, "getItem");
+    const write = vi.spyOn(localStorage, "setItem");
+    try {
+      batchLocalChanges(MACHINE, () => {
+        for (const record of records)
+          queueLocalChange(MACHINE, record.table, record.id, record.value);
+      });
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(write).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+      write.mockRestore();
+    }
+  });
+
+  it("persists one captured batch and reads another window's revision on the next capture", () => {
+    const write = vi.spyOn(localStorage, "setItem");
+    batchLocalChanges(MACHINE, () => {
+      queueLocalChange(MACHINE, "group", "a", { id: "a", name: "First" });
+      batchLocalChanges(MACHINE, () =>
+        queueLocalChange(MACHINE, "group", "b", { id: "b", name: "Second" }),
+      );
+    });
+    expect(write).toHaveBeenCalledTimes(1);
+    write.mockRestore();
+    expect(takeOutbox(MACHINE).map((op) => op.id)).toEqual(["a", "b"]);
+    localStorage.setItem(
+      "bycoda.sync.peer.v2:host-1",
+      JSON.stringify({
+        rev: 20,
+        pulled: true,
+        recordRevs: { "group:c": 20 },
+        recordValues: { "group:c": JSON.stringify({ id: "c", name: "Remote" }) },
+        outbox: [],
+      }),
+    );
+    batchLocalChanges(MACHINE, () =>
+      queueLocalChange(MACHINE, "group", "c", { id: "c", name: "Local" }),
+    );
+    expect(takeOutbox(MACHINE)).toEqual([
+      { table: "group", id: "c", baseRev: 20, value: { id: "c", name: "Local" } },
+    ]);
   });
 
   it("does not rewrite durable state on unchanged polls but persists cursor advances", () => {

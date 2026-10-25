@@ -1,5 +1,34 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test("image picker keeps progress on its button and note content readable", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/tests/browser/notes.html");
+  const image = page.getByRole("button", { name: "Insert image", exact: true });
+  await image.focus();
+  await image.press("Enter");
+  await expect(image).toHaveAttribute("aria-busy", "true");
+  await expect(image).toBeFocused();
+  await expect(page.getByText("Adding images…", { exact: true })).toHaveCount(0);
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await page.screenshot({ path: testInfo.outputPath(`image-picker-390-${theme}.png`) });
+  }
+  await page.evaluate(() => (window as any).imagePickerControl.finish());
+  await expect(image).not.toHaveAttribute("aria-busy", "true");
+  expect(
+    await page.evaluate(() =>
+      (window as any).notesFixtureCalls.filter(
+        (call: { command: string }) => call.command === "notes_upsert",
+      ),
+    ),
+  ).toHaveLength(0);
+});
+
 test("fills the note workspace and exposes each pane's remaining content", async ({
   page,
 }, testInfo) => {
@@ -36,7 +65,12 @@ test("fills the note workspace and exposes each pane's remaining content", async
   await preview.locator(".note-pane-scroll").evaluate((node) => {
     node.scrollTop = node.scrollHeight;
   });
-  await expect(preview.locator(".note-pane-footer")).toHaveText("End of note");
+  await expect(preview.getByRole("button", { name: "More below", exact: true })).toHaveCount(0);
+  expect(
+    await preview
+      .locator(".note-pane-scroll")
+      .evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
+  ).toBeLessThanOrEqual(2);
   await expect(preview.getByRole("button", { name: "Add text", exact: true })).toBeInViewport();
   await page.getByRole("tab", { name: "Source", exact: true }).click();
   await expect(panes).toHaveCount(1);

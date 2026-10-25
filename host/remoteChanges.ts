@@ -26,6 +26,7 @@ export type RemoteChangesInput = {
   tasksKnown?: string;
   git?: { cwd: string; known?: string }[];
   waitMs?: number;
+  demandChanged?: boolean;
 };
 export type GitRef = {
   cwd: string;
@@ -60,15 +61,61 @@ export class RemoteChanges {
     string,
     Promise<{ etag: string; sessions: HostSessionSummary[] }>
   >();
+  private owners = new Map<string, { signal: ChangeSignal; readers: number; seenAt: number }>();
 
   async read(
     input: RemoteChangesInput,
-    readSession: (id: string) => number | undefined,
+    readSession: (id: string) => number | undefined | Promise<number | undefined>,
     readProject: (id: string) => Promise<{ etag: string; sessions: HostSessionSummary[] }>,
-    cancelled: () => boolean = () => false,
+    cancelled: () => boolean | Promise<boolean> = () => false,
     readTasks?: () => Promise<string>,
     readGit?: (cwd: string) => Promise<{ etag: string; watching: boolean }>,
-    recheckMs: () => number = () => 1000,
+    recheckMs: () => number | Promise<number> = () => 1000,
+    owner?: string,
+  ): Promise<RemoteChangesValue> {
+    let state: { signal: ChangeSignal; readers: number; seenAt: number } | undefined;
+    if (owner !== undefined) {
+      state = this.owners.get(owner);
+      if (!state) {
+        const now = Date.now();
+        for (const [key, value] of this.owners)
+          if (!value.readers && (now - value.seenAt > 60_000 || this.owners.size >= 256))
+            this.owners.delete(key);
+        if (this.owners.size >= 256) throw new Error("Too many change-poll owners");
+        state = { signal: new ChangeSignal(), readers: 0, seenAt: now };
+        this.owners.set(owner, state);
+      }
+      state.readers++;
+      state.seenAt = Date.now();
+    }
+    try {
+      return await this.readOwned(
+        input,
+        readSession,
+        readProject,
+        cancelled,
+        readTasks,
+        readGit,
+        recheckMs,
+        state,
+      );
+    } finally {
+      if (state) {
+        state.readers--;
+        state.seenAt = Date.now();
+      }
+    }
+  }
+
+  private async readOwned(
+    input: RemoteChangesInput,
+    readSession: (id: string) => number | undefined | Promise<number | undefined>,
+    readProject: (id: string) => Promise<{ etag: string; sessions: HostSessionSummary[] }>,
+    cancelled: () => boolean | Promise<boolean>,
+    readTasks: (() => Promise<string>) | undefined,
+    readGit: ((cwd: string) => Promise<{ etag: string; watching: boolean }>) | undefined,
+    recheckMs: () => number | Promise<number>,
+    owner: { signal: ChangeSignal } | undefined,
   ): Promise<RemoteChangesValue> {
     if (!Array.isArray(input.sessions) || input.sessions.length > 64)
       throw new Error("At most 64 session subscriptions are allowed");
@@ -108,38 +155,45 @@ export class RemoteChanges {
         throw new Error("Invalid git subscription");
       return entry;
     });
+    if (input.demandChanged === true) owner?.signal.notify();
+    const ownerVersion = owner?.signal.version;
     const reset = input.instanceId !== this.instanceId;
     if (this.cacheVersion !== this.signal.version) {
       this.sessionCache.clear();
       this.cacheVersion = this.signal.version;
     }
-    const readCachedSession = (id: string) => {
+    const readCachedSession = async (id: string) => {
       const now = Date.now();
       const cached = this.sessionCache.get(id);
       if (cached && now - cached.at < 200) return cached.revision;
-      const revision = readSession(id);
-      this.sessionCache.set(id, { at: now, revision });
+      const version = this.signal.version;
+      const revision = await readSession(id);
+      if (version === this.signal.version) this.sessionCache.set(id, { at: now, revision });
       while (this.sessionCache.size > 4096)
         this.sessionCache.delete(this.sessionCache.keys().next().value!);
       return revision;
     };
     const changed = async (): Promise<RemoteChangesValue> => {
-      const sessionValues = sessions.flatMap(({ sessionId, revision }) => {
-        const current = readCachedSession(sessionId);
-        if (current === undefined) {
-          if (reset) return [{ sessionId, revision: 0, deleted: true }];
-          const key = `${sessionId}\0${revision}`;
-          const now = Date.now();
-          const reported = this.deletedReported.get(key);
-          if (reported !== undefined && now - reported < DELETED_REPEAT_MS) return [];
-          this.deletedReported.delete(key);
-          this.deletedReported.set(key, now);
-          while (this.deletedReported.size > 4096)
-            this.deletedReported.delete(this.deletedReported.keys().next().value!);
-          return [{ sessionId, revision, deleted: true }];
-        }
-        return reset || current !== revision ? [{ sessionId, revision: current }] : [];
-      });
+      const sessionValues = (
+        await Promise.all(
+          sessions.map(async ({ sessionId, revision }) => {
+            const current = await readCachedSession(sessionId);
+            if (current === undefined) {
+              if (reset) return [{ sessionId, revision: 0, deleted: true }];
+              const key = `${sessionId}\0${revision}`;
+              const now = Date.now();
+              const reported = this.deletedReported.get(key);
+              if (reported !== undefined && now - reported < DELETED_REPEAT_MS) return [];
+              this.deletedReported.delete(key);
+              this.deletedReported.set(key, now);
+              while (this.deletedReported.size > 4096)
+                this.deletedReported.delete(this.deletedReported.keys().next().value!);
+              return [{ sessionId, revision, deleted: true }];
+            }
+            return reset || current !== revision ? [{ sessionId, revision: current }] : [];
+          }),
+        )
+      ).flat();
       const projectValues: ProjectRef[] = [];
       // Independent project reads may touch transcripts. Bound IO concurrency
       // while keeping the response in subscription order.
@@ -256,7 +310,7 @@ export class RemoteChanges {
       first.projects.length ||
       first.tasks ||
       first.git ||
-      cancelled()
+      (await cancelled())
     )
       return first;
     if (this.active >= 64 || !(Number(input.waitMs) > 0)) return first;
@@ -264,8 +318,22 @@ export class RemoteChanges {
     const deadline = Date.now() + Math.min(10_000, Math.max(0, Number(input.waitMs) || 0));
     let latest = first;
     try {
-      while (!cancelled() && Date.now() < deadline) {
-        await this.signal.wait(Math.min(deadline, Date.now() + recheckMs()), cancelled, version);
+      while (!(await cancelled()) && Date.now() < deadline) {
+        const waitUntil = Math.min(deadline, Date.now() + (await recheckMs()));
+        if (owner) {
+          const pending = new AbortController();
+          try {
+            await Promise.race([
+              this.signal.wait(waitUntil, cancelled, version, pending.signal),
+              owner.signal.wait(waitUntil, cancelled, ownerVersion, pending.signal),
+            ]);
+          } finally {
+            pending.abort();
+          }
+          // Complete only this owner's old subscription; its next held request
+          // immediately contains the newly registered native demand.
+          if (owner.signal.version !== ownerVersion) return latest;
+        } else await this.signal.wait(waitUntil, cancelled, version);
         version = this.signal.version;
         this.sessionCache.clear();
         latest = await changed();

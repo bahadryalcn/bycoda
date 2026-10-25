@@ -88,6 +88,32 @@ it("keeps locations behind a dialog, saves a picked folder and discards stale de
   });
   expect(backend.setup).not.toHaveBeenCalled();
 });
+
+it("keeps folder selection progress on one Browse action and suppresses duplicate dialogs", async () => {
+  await setup();
+  await advance();
+  await click("Locate existing");
+  let finish!: (path: string) => void;
+  backend.browse.mockImplementationOnce(
+    () =>
+      new Promise<string>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const actions = [
+    ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+  ].filter((button) => button.textContent?.trim() === "Browse");
+  actions[1].focus();
+  act(() => {
+    actions[1].click();
+    actions[1].click();
+  });
+  expect(backend.browse).toHaveBeenCalledOnce();
+  expect(actions.filter((button) => button.getAttribute("aria-busy") === "true")).toHaveLength(1);
+  expect(document.activeElement).toBe(actions[1]);
+  await act(async () => finish("G:/Models/Whisper"));
+  expect(loadVoiceSettings().whisperPath).toBe("G:/Models/Whisper");
+});
 it("installs once, polls progress, saves managed locations and verifies readiness", async () => {
   await setup();
   await advance();

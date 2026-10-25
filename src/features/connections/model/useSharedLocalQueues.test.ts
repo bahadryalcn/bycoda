@@ -14,7 +14,10 @@ import { notifyLocalHostReachable } from "./hostWake";
 import { DeliveryUnknownError, type DeliverySettlement } from "../../../shared/lib/deliveryUnknown";
 import { resetLateSettlementsForTests } from "../../sessions/model/deliveryReview";
 import { readDeliveryProgress } from "../../sessions/model/deliveryProgress";
-import { DatabaseSync } from "node:sqlite";
+import { StoreDatabase } from "../../../../host/store-db";
+import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
+import { setImmediate as nextWorkerTurn } from "node:timers/promises";
 import { SessionQueues } from "../../../../host/session-queue";
 import {
   heldSharedQueueLeases,
@@ -41,6 +44,12 @@ vi.mock("./remoteAttachments", () => ({
   uploadRemoteAttachments: async (_machine: string, attachments: unknown[]) => attachments,
 }));
 
+const databases: StoreDatabase[] = [];
+async function flushTurn() {
+  if (!databases.length) return Promise.resolve();
+  await nextWorkerTurn();
+  for (const db of databases) await db.scope(() => undefined);
+}
 let root: Root;
 let queue: SharedQueue;
 let sessionsRef: { current: Session[] };
@@ -120,24 +129,26 @@ beforeEach(() => {
   });
   root = createRoot(document.createElement("div"));
 });
-afterEach(() => {
+afterEach(async () => {
   resetLateSettlementsForTests();
   act(() => root.unmount());
   vi.useRealTimers();
+  for (const db of databases.splice(0)) await db.close();
   vi.unstubAllGlobals();
 });
 async function mount() {
   await act(async () => {
+    for (const db of databases) await db.ready;
     root.render(createElement(Probe));
   });
   await act(async () => {
-    for (let i = 0; i < 40; i++) await Promise.resolve();
+    for (let i = 0; i < 40; i++) await flushTurn();
   });
 }
 async function tick() {
   await act(async () => {
     vi.advanceTimersByTime(1500);
-    for (let i = 0; i < 40; i++) await Promise.resolve();
+    for (let i = 0; i < 40; i++) await flushTurn();
   });
 }
 
@@ -145,7 +156,7 @@ async function tick() {
 async function wake(ids = ["chat"]) {
   await act(async () => {
     wakeSharedLocalQueues(ids);
-    for (let i = 0; i < 40; i++) await Promise.resolve();
+    for (let i = 0; i < 40; i++) await flushTurn();
   });
 }
 
@@ -201,7 +212,7 @@ it("reserves a local queued send until acceptance and prevents a second sender",
   );
   const first = submitSharedLocalQueue("chat", "a", false, send);
   await act(async () => {
-    for (let i = 0; i < 20; i++) await Promise.resolve();
+    for (let i = 0; i < 20; i++) await flushTurn();
   });
   expect(send).toHaveBeenCalledOnce();
   expect(await submitSharedLocalQueue("chat", "a", false, send)).toBe(false);
@@ -272,7 +283,7 @@ it("polls empty idle queues less frequently but still discovers remotely added m
   // Idle queues are re-read on a one-minute safety cadence.
   await act(async () => {
     vi.advanceTimersByTime(60_000);
-    for (let i = 0; i < 60; i++) await Promise.resolve();
+    for (let i = 0; i < 60; i++) await flushTurn();
   });
   expect(sessionsRef.current[0].queuedMessages?.map((message) => message.id)).toEqual(["remote"]);
 });
@@ -306,7 +317,7 @@ it("prioritizes the active queue and bounds idle initialization across many sess
   });
   await mount();
   await act(async () => {
-    for (let i = 0; i < 300; i++) await Promise.resolve();
+    for (let i = 0; i < 300; i++) await flushTurn();
   });
   const firstIds = [...new Set(mocks.request.mock.calls.map((call) => call[2].sessionId))];
   expect(firstIds[0]).toBe("chat");
@@ -314,7 +325,7 @@ it("prioritizes the active queue and bounds idle initialization across many sess
   expect(sharedLocalQueueReady("chat")).toBe(true);
   await tick();
   await act(async () => {
-    for (let i = 0; i < 300; i++) await Promise.resolve();
+    for (let i = 0; i < 300; i++) await flushTurn();
   });
   const nextIds = [...new Set(mocks.request.mock.calls.map((call) => call[2].sessionId))];
   expect(nextIds).toHaveLength(17);
@@ -337,7 +348,7 @@ it("reconciles a late provider acknowledgement without sending the row twice", a
   expect(readDeliveryProgress("chat")?.stage).toBe("unknown");
   await act(async () => {
     settle("accepted");
-    for (let i = 0; i < 100; i++) await Promise.resolve();
+    for (let i = 0; i < 100; i++) await flushTurn();
   });
   expect(send).toHaveBeenCalledOnce();
   expect(queue.messages).toEqual([]);
@@ -361,7 +372,7 @@ it("does not rewrite an already reviewed claim journal when a late acknowledgeme
   expect(queue.claim).toBeUndefined();
   await act(async () => {
     settle("accepted");
-    for (let i = 0; i < 100; i++) await Promise.resolve();
+    for (let i = 0; i < 100; i++) await flushTurn();
   });
   await expect(localClient!.sync()).resolves.toBeUndefined();
   expect(localClient?.snapshot().error).toBeUndefined();
@@ -382,8 +393,8 @@ it("does not pause the queue when Send now is refused because another computer r
   });
   expect(await submitSharedLocalQueue("chat", "a", true, send)).toBe(false);
   await tick();
-  expect(host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "active" });
-  expect(host.queues.get("chat").claim).toBeUndefined();
+  expect(await host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "active" });
+  expect((await host.queues.get("chat")).claim).toBeUndefined();
   expect(sessionsRef.current[0].queueStatus).toBe("active");
   // The coordination failure is reported inline, not as a refusal of the message.
   expect(readDeliveryProgress("chat")).toMatchObject({
@@ -398,7 +409,7 @@ it("still pauses the queue when the running turn itself refuses a Send now", asy
   await mount();
   expect(await submitSharedLocalQueue("chat", "a", true, () => false)).toBe(false);
   await tick();
-  expect(host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "paused" });
+  expect(await host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "paused" });
 });
 
 it("stops renewing the lease of a conversation that left this window", async () => {
@@ -415,11 +426,11 @@ it("stops renewing the lease of a conversation that left this window", async () 
   // Nobody renews it: it runs out and the window that shows it now takes the queue.
   await act(async () => {
     vi.advanceTimersByTime(QUEUE_LEASE_TTL_MS + 1_000);
-    for (let i = 0; i < 40; i++) await Promise.resolve();
+    for (let i = 0; i < 40; i++) await flushTurn();
   });
-  expect(host.queues.live(host.queues.get("chat"))).toBe(false);
-  host.queues.acquire("chat", "desktop:new-window");
-  expect(host.queues.get("chat").drain).toMatchObject({ holder: "desktop:new-window" });
+  expect(host.queues.live(await host.queues.get("chat"))).toBe(false);
+  await host.queues.acquire("chat", "desktop:new-window");
+  expect((await host.queues.get("chat")).drain).toMatchObject({ holder: "desktop:new-window" });
 });
 
 it("keeps a Resume in flight local: the host never sees it and a read does not cancel it", async () => {
@@ -433,13 +444,20 @@ it("keeps a Resume in flight local: the host never sees it and a read does not c
 });
 
 /** The host's durable queue behind the same RPC surface the desktop calls. */
-function useRealHostQueue(onCall?: (method: string, params: Record<string, unknown>) => void) {
-  const queues = new SessionQueues(new DatabaseSync(":memory:"));
+function useRealHostQueue(
+  onCall?: (method: string, params: Record<string, unknown>) => void | Promise<void>,
+) {
+  const db = new StoreDatabase(
+    ":memory:",
+    pathToFileURL(resolve(__dirname, "../../../../host/store-worker.mjs")),
+  );
+  databases.push(db);
+  const queues = new SessionQueues(db);
   mocks.request.mockImplementation(async (_machine, method, params) => {
-    onCall?.(method, params);
+    await onCall?.(method, params);
     const action = method.split(".").pop() as "get" | "change" | "claim" | "finish" | "lease";
     return structuredClone(
-      queues.serve(
+      await queues.serve(
         action,
         String(params.sessionId),
         String(params.clientId),
@@ -449,9 +467,9 @@ function useRealHostQueue(onCall?: (method: string, params: Record<string, unkno
     );
   });
   /** What another computer does: append a row to the shared queue. */
-  const remoteAppend = (rowId: string) => {
-    const current = queues.get("chat");
-    queues.change("chat", current, {
+  const remoteAppend = async (rowId: string) => {
+    const current = await queues.get("chat");
+    await queues.change("chat", current, {
       ...current,
       messages: [...current.messages, row(rowId)],
       status: current.status ?? "active",
@@ -462,23 +480,23 @@ function useRealHostQueue(onCall?: (method: string, params: Record<string, unkno
 
 it("retries the claim when another computer appends a row between the desktop's read and its claim", async () => {
   let injected = false;
-  const host = useRealHostQueue((method) => {
+  const host = useRealHostQueue(async (method) => {
     if (method.endsWith(".claim") && !injected) {
       injected = true;
-      host.remoteAppend("b");
+      await host.remoteAppend("b");
     }
   });
   await mount();
   const send = vi.fn(() => true);
   expect(await submitSharedLocalQueue("chat", "a", false, send)).toBe(true);
   expect(send).toHaveBeenCalledOnce();
-  expect(host.queues.get("chat").messages.map((message) => message.id)).toEqual(["b"]);
-  expect(host.queues.get("chat").claim).toBeUndefined();
+  expect((await host.queues.get("chat")).messages.map((message) => message.id)).toEqual(["b"]);
+  expect((await host.queues.get("chat")).claim).toBeUndefined();
 });
 
 it("leaves the queue untouched when the host cannot be asked before anything is sent", async () => {
   let down = false;
-  const host = useRealHostQueue((method) => {
+  const host = useRealHostQueue(async (method) => {
     if (down && !method.endsWith(".change")) throw new Error("Host unreachable");
   });
   await mount();
@@ -490,7 +508,7 @@ it("leaves the queue untouched when the host cannot be asked before anything is 
   expect(send).not.toHaveBeenCalled();
   down = false;
   await tick();
-  expect(host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "active" });
+  expect(await host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "active" });
   expect(sessionsRef.current[0].queueStatus).toBe("active");
 });
 
@@ -505,8 +523,8 @@ it("does not pause the queue when the host starts running the conversation while
   });
   expect(await submitSharedLocalQueue("chat", "a", false, send)).toBe(false);
   await tick();
-  expect(host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "active" });
-  expect(host.queues.get("chat").claim).toBeUndefined();
+  expect(await host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "active" });
+  expect((await host.queues.get("chat")).claim).toBeUndefined();
   expect(sessionsRef.current[0].queueStatus).toBe("active");
 });
 
@@ -515,7 +533,7 @@ it("still pauses the queue when a refused send has no waiting state to explain i
   await mount();
   expect(await submitSharedLocalQueue("chat", "a", false, () => false)).toBe(false);
   await tick();
-  expect(host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "paused" });
+  expect(await host.queues.get("chat")).toMatchObject({ messages: [row("a")], status: "paused" });
 });
 
 it("picks up a row another computer queued on an idle conversation as soon as the host reports it, even while the window is hidden", async () => {
@@ -526,17 +544,17 @@ it("picks up a row another computer queued on an idle conversation as soon as th
     { ...sessionsRef.current[0], queuedMessages: undefined, queueStatus: undefined },
   ];
   await tick();
-  expect(host.queues.get("chat").messages).toEqual([]);
+  expect((await host.queues.get("chat")).messages).toEqual([]);
   const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
   try {
-    host.remoteAppend("from-phone");
+    await host.remoteAppend("from-phone");
     // Idle queues are only re-read on the slow safety cadence, never while hidden.
     await tick();
     expect(sessionsRef.current[0].queuedMessages).toBeUndefined();
     // The host's heartbeat answer names the changed queue: it is read at once.
     await act(async () => {
       wakeSharedLocalQueues(["chat"]);
-      for (let i = 0; i < 60; i++) await Promise.resolve();
+      for (let i = 0; i < 60; i++) await flushTurn();
     });
     expect(sessionsRef.current[0].queuedMessages?.map((message) => message.id)).toEqual([
       "from-phone",
@@ -553,7 +571,7 @@ const hostCalls = (method: string) =>
   mocks.request.mock.calls.filter((call) => String(call[1]).endsWith(method)).length;
 const flush = () =>
   act(async () => {
-    for (let i = 0; i < 60; i++) await Promise.resolve();
+    for (let i = 0; i < 60; i++) await flushTurn();
   });
 
 it("publishes a local queue edit at once, without waiting for a timer", async () => {
@@ -568,7 +586,7 @@ it("reads a busy conversation's queue when its turn settles, and not before", as
   await mount();
   await act(async () => {
     vi.advanceTimersByTime(30_000);
-    for (let i = 0; i < 40; i++) await Promise.resolve();
+    for (let i = 0; i < 40; i++) await flushTurn();
   });
   const before = hostCalls(".get");
   // A turn running for thirty seconds read nothing: no interactive queue is polled.
@@ -606,25 +624,25 @@ it("looks again as soon as the local host is reachable", async () => {
 
 it("takes the queue over when another window's lease runs out, with one timer and no tick", async () => {
   const host = useRealHostQueue();
-  host.queues.change(
+  await host.queues.change(
     "chat",
     { messages: [], revision: 0 },
     { messages: [row("a")], status: "active" },
   );
-  host.queues.serve("lease", "chat", "desktop:other-window", { leaseAware: true }, undefined);
+  await host.queues.serve("lease", "chat", "desktop:other-window", { leaseAware: true }, undefined);
   await mount();
-  expect(host.queues.get("chat").drain?.holder).toBe("desktop:other-window");
+  expect((await host.queues.get("chat")).drain?.holder).toBe("desktop:other-window");
   expect(sharedLocalQueueReady("chat")).toBe(false);
   await act(async () => {
     vi.advanceTimersByTime(QUEUE_LEASE_TTL_MS - 5_000);
-    for (let i = 0; i < 40; i++) await Promise.resolve();
+    for (let i = 0; i < 40; i++) await flushTurn();
   });
-  expect(host.queues.get("chat").drain?.holder).toBe("desktop:other-window");
+  expect((await host.queues.get("chat")).drain?.holder).toBe("desktop:other-window");
   await act(async () => {
     vi.advanceTimersByTime(6_000);
-    for (let i = 0; i < 60; i++) await Promise.resolve();
+    for (let i = 0; i < 60; i++) await flushTurn();
   });
-  expect(host.queues.get("chat").drain?.holder).toBe(desktopQueueClientId);
+  expect((await host.queues.get("chat")).drain?.holder).toBe(desktopQueueClientId);
   expect(sharedLocalQueueReady("chat")).toBe(true);
 });
 
@@ -636,7 +654,7 @@ it("backs off while the host answers with errors instead of retrying every tick"
   await act(async () => {
     for (let elapsed = 0; elapsed < 60_000; elapsed += 500) {
       vi.advanceTimersByTime(500);
-      for (let i = 0; i < 20; i++) await Promise.resolve();
+      for (let i = 0; i < 20; i++) await flushTurn();
     }
   });
   // The old 1.5 s tick retried about forty times a minute.
@@ -663,7 +681,7 @@ it("does not resume while a given-up send may still be answered, and resumes onc
   expect(queue.status).not.toBe("active");
   await act(async () => {
     settle("rejected");
-    for (let i = 0; i < 100; i++) await Promise.resolve();
+    for (let i = 0; i < 100; i++) await flushTurn();
   });
   expect(await resumeSharedLocalQueue("chat")).toBe("resumed");
   expect(queue.status).toBe("active");
@@ -699,10 +717,10 @@ function releasing() {
 it("gives the lease back when the window closes", async () => {
   const { host, released } = releasing();
   await mount();
-  expect(host.queues.live(host.queues.get("chat"))).toBe(true);
+  expect(host.queues.live(await host.queues.get("chat"))).toBe(true);
   await act(async () => {
     window.dispatchEvent(new Event("pagehide"));
-    for (let i = 0; i < 20; i++) await Promise.resolve();
+    for (let i = 0; i < 20; i++) await flushTurn();
   });
   expect(released).toEqual([1]);
 });
@@ -712,7 +730,7 @@ it("gives the lease back when the conversation leaves the window", async () => {
   await mount();
   await act(async () => {
     sessionsRef.current = [];
-    for (let i = 0; i < 20; i++) await Promise.resolve();
+    for (let i = 0; i < 20; i++) await flushTurn();
   });
   expect(released).toEqual([1]);
 });

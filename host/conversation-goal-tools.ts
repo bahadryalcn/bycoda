@@ -65,26 +65,26 @@ export class ConversationGoalTools {
     >,
     private readonly tasks: Pick<HostTasks, "list">,
     // Desktop conversations need not have an adopted row in the host store.
-    private readonly session: HostStore["session"] = (id) => store.session(id),
+    private readonly session: HostStore["session"] = async (id) => await store.session(id),
   ) {}
 
   async call(
     action: GoalWriteTool,
     input: Record<string, unknown>,
     principal: RuntimeLogPrincipal,
-    authorized: () => boolean,
+    authorized: () => boolean | Promise<boolean>,
   ): Promise<unknown> {
-    const check = () => {
-      if (!authorized()) throw new Error("Session authority revoked.");
+    const check = async () => {
+      if (!(await authorized())) throw new Error("Session authority revoked.");
     };
-    check();
-    this.store.project(principal.projectId);
-    const caller = this.session(principal.sessionId);
+    await check();
+    await this.store.project(principal.projectId);
+    const caller = await this.session(principal.sessionId);
     if (caller.projectId !== principal.projectId)
       throw new Error("Session belongs to another project.");
     if (action === "goals.create") {
-      check();
-      return this.goals.create({
+      await check();
+      return await this.goals.create({
         id: input.goalId,
         title: input.title,
         prompt: input.prompt,
@@ -100,18 +100,17 @@ export class ConversationGoalTools {
         autoMerge: false,
         continueUntilDone: false,
         approvePlan: true,
+        finalReview: true,
         manualStart: true,
         verifyDefaults: { review: true },
       });
     }
-    const goal = this.goals
-      .list()
-      .find(
-        (entry) =>
-          entry.id === input.goalId &&
-          entry.projectIds.length === 1 &&
-          entry.projectIds[0] === principal.projectId,
-      );
+    const goal = (await this.goals.list()).find(
+      (entry) =>
+        entry.id === input.goalId &&
+        entry.projectIds.length === 1 &&
+        entry.projectIds[0] === principal.projectId,
+    );
     if (!goal) throw new Error("Goal is not wholly in this project.");
     if (
       !Number.isSafeInteger(input.expectedUpdatedAt) ||
@@ -120,18 +119,16 @@ export class ConversationGoalTools {
       throw new Error("Goal changed. Read it before changing it.");
     if (
       goal.plannerSessionId === principal.sessionId ||
-      this.tasks
-        .list(principal.projectId)
-        .some(
-          (task) =>
-            task.projectId === principal.projectId &&
-            (task.goalId === goal.id || goal.taskIds.includes(task.id)) &&
-            (task.sessionId === principal.sessionId ||
-              task.reviewer?.sessionId === principal.sessionId),
-        )
+      (await this.tasks.list(principal.projectId)).some(
+        (task) =>
+          task.projectId === principal.projectId &&
+          (task.goalId === goal.id || goal.taskIds.includes(task.id)) &&
+          (task.sessionId === principal.sessionId ||
+            task.reviewer?.sessionId === principal.sessionId),
+      )
     )
       throw new Error("An agent cannot change its own goal.");
-    check();
+    await check();
     if (action === "goals.replan" || action === "goals.update") {
       const settings = caller.session.modelSettings ?? {};
       const goalSettings = goal.modelSettings ?? {};
@@ -165,23 +162,23 @@ export class ConversationGoalTools {
           Number(maxRunMinutes) > 10080
         )
           throw new Error("Provide bounded goal limits.");
-        return this.goals.update(
+        return await this.goals.update(
           goal.id,
           { maxRunningTasks, maxRunMinutes, autoMerge: false, continueUntilDone: false },
           goal.updatedAt,
         );
       }
-      return this.goals.replan(goal.id, input.feedback);
+      return await this.goals.replan(goal.id, input.feedback);
     }
-    if (action === "goals.cancel") return this.goals.cancel(goal.id);
+    if (action === "goals.cancel") return await this.goals.cancel(goal.id);
     if (action === "goals.delete") {
       const terminal = goal.status === "done" || goal.status === "cancelled";
       const neverExecuted =
         (goal.status === "awaiting-approval" || goal.status === "blocked") &&
         !goal.taskIds.length &&
-        !this.tasks.list(principal.projectId).some((task) => task.goalId === goal.id);
+        !(await this.tasks.list(principal.projectId)).some((task) => task.goalId === goal.id);
       const planner = goal.plannerSessionId
-        ? this.store.sessionStateMetadata(goal.plannerSessionId)
+        ? await this.store.sessionStateMetadata(goal.plannerSessionId)
         : undefined;
       if (
         (!terminal && !neverExecuted) ||
@@ -191,7 +188,7 @@ export class ConversationGoalTools {
         throw new Error(
           "Only an inactive terminal goal or never-executed plan can be deleted; cancel it first.",
         );
-      check();
+      await check();
       await this.goals.delete(goal.id, false);
       return { deleted: true, goalId: goal.id, tasksPreserved: true };
     }

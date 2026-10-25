@@ -4,10 +4,11 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { TextField } from "../../../shared/ui/TextField";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   useContext,
+  useId,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -56,6 +57,11 @@ function AssignmentModel({
   const [active, setActive] = useState(0);
   const [effortActive, setEffortActive] = useState(0);
   const [inEffort, setInEffort] = useState(false);
+  const [effortKeyboard, setEffortKeyboard] = useState(false);
+  const pickerId = useId();
+  const listId = `${pickerId}-models`;
+  const optionId = (choice: OrchestrationChoice) =>
+    `${pickerId}-${encodeURIComponent(`${choice.harness}:${choice.model}`)}`;
   const [activeRow, setActiveRow] = useState<HTMLButtonElement | null>(null);
   const anchor = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -85,6 +91,13 @@ function AssignmentModel({
     selectedModel && selectedModel.harness === selected?.harness
       ? modelEffortLabel(selectedModel, task.modelSettings)
       : undefined;
+  useEffect(() => {
+    if (!open || !inEffort || !effortKeyboard || !effort?.options[effortActive]) return;
+    const focus = () => document.getElementById(`${pickerId}-effort-${effortActive}`)?.focus();
+    focus();
+    const frame = requestAnimationFrame(focus);
+    return () => cancelAnimationFrame(frame);
+  }, [open, inEffort, effortKeyboard, effortActive, effort, pickerId]);
   // Two things fought this field for focus. The composer takes focus back
   // unless a picker surface is in the DOM, which `data-model-picker` below
   // now declares; and the popover measures itself with `visibility: hidden`
@@ -128,6 +141,7 @@ function AssignmentModel({
     const model = findModel(choice.model);
     if (model?.harness === choice.harness && modelEffortSetting(model)?.options.length) {
       setInEffort(true);
+      setEffortKeyboard(true);
       return;
     }
     pick(choice, settingsFor(choice));
@@ -135,7 +149,7 @@ function AssignmentModel({
   // Arrows walk the list from the search field, the way the app's other
   // pickers work. The keys stop here so the transcript underneath does not
   // scroll along with the highlight.
-  const onSearchKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+  const onSearchKey = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -155,13 +169,18 @@ function AssignmentModel({
     if (event.key === "ArrowRight") {
       event.preventDefault();
       event.stopPropagation();
-      if (effort?.options.length) setInEffort(true);
+      if (effort?.options.length) {
+        setInEffort(true);
+        setEffortKeyboard(true);
+      }
       return;
     }
-    if (event.key === "ArrowLeft" && inEffort) {
+    if ((event.key === "ArrowLeft" || event.key === "Escape") && inEffort) {
       event.preventDefault();
       event.stopPropagation();
       setInEffort(false);
+      setEffortKeyboard(false);
+      search.current?.focus();
       return;
     }
     if (event.key === "Enter") {
@@ -184,10 +203,12 @@ function AssignmentModel({
         aria-label={t("Model for {p0}", { p0: task.title })}
         selected={open}
         aria-expanded={open}
+        aria-haspopup="listbox"
         onClick={() => {
           setQuery("");
           setActive(selected ? choices.indexOf(selected) : 0);
           setInEffort(false);
+          setEffortKeyboard(false);
           setOpen(!open);
         }}
         className="max-w-full"
@@ -210,16 +231,24 @@ function AssignmentModel({
           onDismiss={() => {
             setOpen(false);
             setInEffort(false);
+            setEffortKeyboard(false);
+            anchor.current?.focus();
           }}
           data-model-picker
           data-assignment-model-target
           className="flex flex-col overflow-hidden"
         >
-          <label className="flex shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2.5 text-(--ui-text-secondary)">
+          <SearchInputGroup className="flex shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2.5 text-(--ui-text-secondary)">
             <Search className="icon-sm shrink-0" strokeWidth={1.75} />
             <SearchInput
               ref={search}
               type="text"
+              role="combobox"
+              aria-expanded={open}
+              aria-autocomplete="list"
+              aria-controls={listId}
+              aria-activedescendant={activeChoice ? optionId(activeChoice) : undefined}
+              focusOwner="group"
               aria-label={t("Search assignment models")}
               placeholder={t("Search models or harnesses…")}
               spellCheck={false}
@@ -229,12 +258,14 @@ function AssignmentModel({
                 setQuery(event.target.value);
                 setActive(0);
                 setInEffort(false);
+                setEffortKeyboard(false);
               }}
               onKeyDown={onSearchKey}
               className="min-w-0 flex-1 bg-transparent text-ui-secondary text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
             />
-          </label>
+          </SearchInputGroup>
           <div
+            id={listId}
             ref={listOverscroll}
             role="listbox"
             aria-label={t("Assignment models")}
@@ -244,6 +275,8 @@ function AssignmentModel({
               <Button
                 variant="item"
                 key={`${choice.harness}:${choice.model}`}
+                id={optionId(choice)}
+                tabIndex={-1}
                 ref={index === active ? setActiveRow : undefined}
                 type="button"
                 fullWidth
@@ -254,6 +287,7 @@ function AssignmentModel({
                 aria-expanded={index === active && inEffort}
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={() => {
+                  setEffortKeyboard(false);
                   setActive(index);
                   const model = findModel(choice.model);
                   setInEffort(
@@ -307,6 +341,12 @@ function AssignmentModel({
           width={200}
           layer={LAYER.submenu}
           role="menu"
+          onKeyDown={onSearchKey}
+          onDismiss={() => {
+            setInEffort(false);
+            setEffortKeyboard(false);
+            search.current?.focus();
+          }}
           aria-label={t("{p0} effort", { p0: activeChoice.name })}
           ignore="[data-assignment-model-target]"
           onMouseEnter={() => setInEffort(true)}
@@ -319,6 +359,8 @@ function AssignmentModel({
             return (
               <MenuRow
                 key={option.value}
+                id={`${pickerId}-effort-${index}`}
+                tabIndex={highlighted ? 0 : -1}
                 type="button"
                 data-highlighted={highlighted}
                 role="menuitemradio"
@@ -483,7 +525,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2.5 px-3 py-2.5">
         <span className="grid size-6 shrink-0 place-items-center text-(--ui-text-secondary)">
-          {planning || proposal.status === "starting" ? (
+          {planning ? (
             <CircleDashed className="icon-md animate-spin" />
           ) : (
             <MessageMultiple className="icon-md" strokeWidth={1.75} />
@@ -523,9 +565,10 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
               variant="primary"
               type="button"
               disabled={!editable}
+              loading={starting}
+              startIcon={<Play className="icon-xs" strokeWidth={1.75} />}
               onClick={() => void perform(() => actions!.confirm(proposal.leadId, block.id))}
             >
-              <Play className="icon-xs" strokeWidth={1.75} />
               {starting ? t("Starting…") : t("Confirm & start")}
             </Button>
           )}

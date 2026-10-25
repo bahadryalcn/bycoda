@@ -276,6 +276,13 @@ it("sends a screenshot that is still being read when the turn is sent", async ()
   await send();
   // The read is still out, so the turn has not gone without the image.
   expect(submit).not.toHaveBeenCalled();
+  const pendingSend = container.querySelector<HTMLButtonElement>(
+    '.composer-send-controls button[data-button-loading="true"]',
+  )!;
+  expect(pendingSend).not.toBeNull();
+  expect(pendingSend.getAttribute("aria-busy")).toBe("true");
+  act(() => pendingSend.click());
+  expect(submit).not.toHaveBeenCalled();
 
   release?.();
   await settleUntil(() => submit.mock.calls.length === 1, "the turn to include the screenshot");
@@ -286,6 +293,35 @@ it("sends a screenshot that is still being read when the turn is sent", async ()
   ]);
   // The chip went with the turn, not onto the cleared composer.
   expect(chipCount()).toBe(0);
+  expect(container.querySelector('.composer-send-controls [aria-busy="true"]')).toBeNull();
+});
+
+it("shows attachment waiting on Queue without blocking Stop or sending twice", async () => {
+  let release!: () => void;
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "clipboard_file_paths") return [];
+    if (command === "clipboard_image") {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return PNG_BYTES.buffer;
+    }
+    return [];
+  });
+  draw({ initialDraft: "queue with image", busy: true, onStop: vi.fn() });
+  paste(container.querySelector("textarea")!);
+  await settleUntil(() => Boolean(release), "clipboard read");
+  const queue = container.querySelector<HTMLButtonElement>('[data-usage-guide="queue-button"]')!;
+  const stop = container.querySelector<HTMLButtonElement>('[data-usage-guide="stop-button"]')!;
+  await act(async () => queue.click());
+  expect(queue.getAttribute("data-button-loading")).toBe("true");
+  expect(stop.getAttribute("aria-disabled")).not.toBe("true");
+  act(() => queue.click());
+  expect(submit).not.toHaveBeenCalled();
+  release();
+  await settleUntil(() => submit.mock.calls.length === 1, "queued image delivery");
+  expect(submit.mock.calls[0][2]).toEqual(expect.objectContaining({ followUpBehavior: "queue" }));
+  expect(container.querySelector('.composer-send-controls [aria-busy="true"]')).toBeNull();
 });
 
 it.each(["button", "keyboard", "parent"])(
@@ -316,6 +352,7 @@ it.each(["button", "keyboard", "parent"])(
         field.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       else draw({ busy: false, onStop });
     });
+    expect(container.querySelector('.composer-send-controls [aria-busy="true"]')).toBeNull();
     release();
     await waitForAttachments(1);
     expect(submit).not.toHaveBeenCalled();
@@ -325,6 +362,39 @@ it.each(["button", "keyboard", "parent"])(
     expect(submit.mock.calls[0][1]).toHaveLength(1);
   },
 );
+
+it("allows an explicit retry after Stop while the original attachment read is still pending", async () => {
+  let release!: () => void;
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "clipboard_file_paths") return [];
+    if (command === "clipboard_image") {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return PNG_BYTES.buffer;
+    }
+    return [];
+  });
+  const onStop = vi.fn(() => draw({ busy: false, onStop }));
+  draw({ initialDraft: "retry explicitly", busy: true, onStop });
+  paste(container.querySelector("textarea")!);
+  await settleUntil(() => Boolean(release), "clipboard read");
+  await send();
+  act(() =>
+    container.querySelector<HTMLButtonElement>('[data-usage-guide="stop-button"]')!.click(),
+  );
+  await send();
+  const pending = container.querySelector<HTMLButtonElement>(
+    '.composer-send-controls [aria-busy="true"]',
+  )!;
+  expect(pending).not.toBeNull();
+  act(() => pending.click());
+  release();
+  await settleUntil(() => submit.mock.calls.length === 1, "explicit retry with its image");
+  expect(submit.mock.calls[0][0]).toBe("retry explicitly [image1]");
+  expect(submit.mock.calls[0][1]).toHaveLength(1);
+  expect(container.querySelector('.composer-send-controls [aria-busy="true"]')).toBeNull();
+});
 
 it("does not attach a file that finishes reading after the draft was reset", async () => {
   let release: (() => void) | undefined;

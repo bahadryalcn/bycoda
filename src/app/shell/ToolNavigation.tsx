@@ -121,7 +121,8 @@ export function ToolNavigation() {
   const t = useT();
   const sshReviews = useSshRunbookQueue();
   const navigation = useContext(ToolNavigationContext);
-  const [opening, setOpening] = useState(false);
+  const [opening, setOpening] = useState<"single" | "grouped" | null>(null);
+  const openingRef = useRef(false);
   const [error, setError] = useState("");
   const tabRefs = useRef(new Map<WorkspaceToolId, HTMLButtonElement>());
   const pickerRef = useRef<HTMLButtonElement>(null);
@@ -145,9 +146,10 @@ export function ToolNavigation() {
                 : true,
         );
   const open = async (grouped: boolean) => {
-    if (opening) return;
+    if (openingRef.current) return;
     const active = navigation.active!;
-    setOpening(true);
+    openingRef.current = true;
+    setOpening(grouped ? "grouped" : "single");
     setError("");
     try {
       if (
@@ -163,7 +165,8 @@ export function ToolNavigation() {
     } catch (cause) {
       setError(String(cause));
     } finally {
-      setOpening(false);
+      openingRef.current = false;
+      setOpening(null);
     }
   };
   return (
@@ -256,7 +259,8 @@ export function ToolNavigation() {
           iconOnly
           label={t("Open in new window")}
           data-tauri-drag-region="false"
-          disabled={opening}
+          disabled={opening !== null}
+          loading={opening === "single"}
           onClick={() => void open(false)}
           aria-label={t("Open in new window")}
           title={t("Open in new window")}
@@ -267,15 +271,14 @@ export function ToolNavigation() {
           variant="ghost"
           motion="none"
           data-tauri-drag-region="false"
-          disabled={opening}
+          disabled={opening !== null}
+          loading={opening === "grouped"}
+          startIcon={<DashboardSquare className="icon-sm" aria-hidden />}
           onClick={() => void open(true)}
           aria-label={t("Open all tools in one window")}
           title={t("Open all tools in one window")}
         >
-          <DashboardSquare className="icon-sm" aria-hidden />
-          <span className="tool-action-label">
-            {opening ? t("Opening new window…") : t("All tools in one window")}
-          </span>
+          <span className="tool-action-label">{t("All tools in one window")}</span>
         </Button>
       </div>
       {error ? (

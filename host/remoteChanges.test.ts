@@ -1,6 +1,60 @@
 import { expect, it, vi } from "vitest";
 import type { HostSessionSummary } from "../src/features/connections/model/protocol";
 import { RemoteChanges } from "./remoteChanges";
+import { ChangeSignal } from "./changeSignal";
+
+it("wakes only the changed owner and immediately resumes continuous new-demand updates", async () => {
+  vi.useFakeTimers();
+  try {
+    const signal = new ChangeSignal(),
+      changes = new RemoteChanges(signal);
+    const revisions = new Map([
+      ["a", 1],
+      ["b", 1],
+    ]);
+    const project = vi.fn(async () => ({ etag: "p", sessions: [] }));
+    const read = async (owner: string, sessionId: string, demandChanged = false, waitMs = 10_000) =>
+      await changes.read(
+        {
+          instanceId: changes.instanceId,
+          sessions: [{ sessionId, revision: 1 }],
+          projects: [],
+          demandChanged,
+          waitMs,
+        },
+        (id) => revisions.get(id),
+        project,
+        () => false,
+        undefined,
+        undefined,
+        () => 1000,
+        owner,
+      );
+    let oldCompleted = false;
+    const old = read("one", "a").then((value) => {
+      oldCompleted = true;
+      return value;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await read("other", "b", true, 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(oldCompleted).toBe(false);
+    await read("one", "b", true, 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect((await old).sessions).toEqual([]);
+    expect(oldCompleted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    const next = read("one", "b");
+    await vi.advanceTimersByTimeAsync(0);
+    revisions.set("b", 2);
+    signal.notify();
+    await vi.advanceTimersByTimeAsync(0);
+    expect((await next).sessions).toEqual([{ sessionId: "b", revision: 2 }]);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 it("reads unchanged metadata only once for a non-waiting request", async () => {
   const changes = new RemoteChanges();
@@ -69,7 +123,7 @@ it("overlaps project IO with a bounded pool and preserves response order", async
     () => undefined,
     project,
   );
-  expect(project).toHaveBeenCalledTimes(4);
+  await vi.waitFor(() => expect(project).toHaveBeenCalledTimes(4));
   for (let i = 0; i < ids.length; i++) {
     await vi.waitFor(() => expect(releases[i]).toBeTypeOf("function"));
     releases[i]();
@@ -92,7 +146,7 @@ it("shares in-flight project reads across clients and retries failed reads", asy
   const first = changes.read(input, () => undefined, project);
   const second = changes.read(input, () => undefined, project);
   const results = Promise.allSettled([first, second]);
-  expect(project).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(project).toHaveBeenCalledTimes(1));
   reject(new Error("read failed"));
   expect((await results).map((result) => result.status)).toEqual(["rejected", "rejected"]);
   project.mockResolvedValue({ etag: "recovered", sessions: [] });
@@ -275,8 +329,8 @@ it("returns git cursors by comparing counters with the known etag", async () => 
   const changes = new RemoteChanges();
   let git: { etag: string; watching: boolean } = { etag: "2.3", watching: true };
   const readGit = async () => git;
-  const read = (known?: string) =>
-    changes.read(
+  const read = async (known?: string) =>
+    await changes.read(
       {
         instanceId: changes.instanceId,
         sessions: [],
@@ -328,8 +382,8 @@ it("reports every git cursor after a host restart", async () => {
 
 it("validates git subscriptions", async () => {
   const changes = new RemoteChanges();
-  const run = (git: unknown) =>
-    changes.read(
+  const run = async (git: unknown) =>
+    await changes.read(
       { instanceId: changes.instanceId, sessions: [], projects: [], git: git as never },
       () => undefined,
       noSessions,

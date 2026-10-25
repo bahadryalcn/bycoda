@@ -90,6 +90,7 @@ describe("update failure diagnostics", () => {
       status: "failed",
       error: "opencode version check: Failed to run opencode: access denied",
     });
+    expect(updateHarnessCli).toHaveBeenCalledWith("opencode", "2.1.3");
     expect(warning).toHaveBeenCalledWith(
       "[bycoda] Harness update failed: opencode version check: Failed to run opencode: access denied",
     );

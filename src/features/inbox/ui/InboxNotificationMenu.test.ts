@@ -337,7 +337,9 @@ it("opens custom timing from the duration submenu for all projects", async () =>
   expect(
     [...document.querySelectorAll("button")].some((item) => item.textContent === "1 hour"),
   ).toBe(false);
-  act(() => document.querySelector<HTMLButtonElement>('button[aria-label="2030-01-16"]')!.click());
+  const day = document.querySelector<HTMLButtonElement>('button[data-date="2030-01-16"]');
+  expect(day).not.toBeNull();
+  act(() => day!.click());
   const input = document.querySelector<HTMLInputElement>('input[placeholder="HH:mm"]');
   expect(input).not.toBeNull();
   act(() => {

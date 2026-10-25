@@ -1008,7 +1008,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
           blocks={stableBlocks}
           busy={sessionBusy}
           pendingQuestion={hasPendingQuestion}
-          deliveryUnconfirmed={stableSession.queuedMessages?.some((message) => message.deliveryUnknown)}
+          deliveryUnconfirmed={stableSession.queuedMessages?.some(
+            (message) => message.deliveryUnknown,
+          )}
           backgroundTasks={session.backgroundTasks}
           backgroundAgents={session.backgroundAgents}
           visible={visible}
@@ -1175,7 +1177,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
       onSelectProviderAccount={onSelectProviderAccount ? composerSelectProviderAccount : undefined}
       onOpenFile={onOpenFile}
-      busy={!!session.busy}
+      busy={!!session.busy || !!session.continuingElsewhere}
       backgroundOnly={isBackgroundOnly(
         !!session.busy,
         session.backgroundTasks,
@@ -1215,7 +1217,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const notesShortcut = useKeybindingShortcut(NOTES_PANEL_COMMAND);
   const closeShortcut = useKeybindingShortcut("Pane: Close");
   const paneActions: ExpandingButtonGroupItem[] = [
-    ...(hasPaneHeader && !session.inboxAsk && findAction ? [findAction] : []),
+    ...(!session.inboxAsk && findAction ? [findAction] : []),
     ...(notesEnabled && visible && focused && !showNotesPanel
       ? [
           {
@@ -1328,16 +1330,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
           </div>
         </div>
       ) : null}
-      {!hasPaneHeader && workingBadge ? (
-        <div
-          data-session-agent-header
-          className="flex h-9 shrink-0 items-center gap-3 border-b border-(--ui-tone-neutral-border) px-12"
-        >
-          {workingBadge}
-        </div>
-      ) : null}
       {!hasPaneHeader ? (
-        <div className="absolute end-3 top-1.5 z-10 flex max-w-full flex-wrap items-center justify-end gap-1.5">
+        <div
+          data-session-toolbar
+          className="flex min-h-9 shrink-0 flex-wrap items-center justify-end gap-1.5 px-3 py-1"
+        >
+          {workingBadge ? <div className="me-auto min-w-0">{workingBadge}</div> : null}
           {headerStatus}
           <BackgroundSessionIndicator key={session.id} session={session} />
           {projectActions}
@@ -1485,7 +1483,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               {!session.inboxAsk ? (
                 <TranscriptFind
                   sessionId={session.id}
-                  onTriggerChange={hasPaneHeader ? setFindAction : undefined}
+                  onTriggerChange={setFindAction}
                   blocks={findSearching ? session.blocks : stableBlocks}
                   visible={visible}
                   focused={focused}

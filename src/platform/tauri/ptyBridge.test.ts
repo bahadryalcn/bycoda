@@ -13,6 +13,42 @@ afterEach(() => {
   vi.resetModules();
 });
 
+it("returns native credits exactly once after the controlled parser completes and protects replacement subscribers", async () => {
+  const callbacks = new Map<string, (event: { payload: unknown }) => void>();
+  listen.mockImplementation(async (name, callback) => {
+    callbacks.set(name, callback);
+    return vi.fn();
+  });
+  invoke.mockResolvedValue(undefined);
+  const { subscribePty, readyPtyBridge } = await import("./pty");
+  let consumed: (() => void) | undefined;
+  const stop = subscribePty(
+    "flow",
+    (_data, done) => {
+      consumed = done;
+    },
+    vi.fn(),
+    true,
+  );
+  await readyPtyBridge();
+  callbacks.get("pty-data")!({
+    payload: { id: "flow", data: btoa("bytes"), flow: { generation: 7, sequence: 8 } },
+  });
+  expect(invoke).not.toHaveBeenCalled();
+  consumed!();
+  consumed!();
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("pty_output_ack", {
+    id: "flow",
+    generation: 7,
+    sequence: 8,
+  });
+  const replacement = subscribePty("flow", vi.fn(), vi.fn(), true);
+  stop();
+  expect(invoke).toHaveBeenCalledTimes(1);
+  replacement();
+  expect(invoke).toHaveBeenLastCalledWith("pty_output_flow", { id: "flow", enabled: false });
+});
+
 it.each([0, 1])(
   "cleans partial listener setup and lets the next subscriber retry (failure=%s)",
   async (failed) => {

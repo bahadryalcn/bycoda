@@ -55,6 +55,8 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   restoreFocus?: boolean;
   /** A non-interactive hint participates in modal containment without owning Escape. */
   passive?: boolean;
+  /** Keyboard hints and other frequent surfaces can skip their entrance motion. */
+  motion?: "auto" | "none";
   /**
    * Keeps the frame but paints an opaque surface instead of backdrop glass.
    * For popovers over live canvases (terminal WebGL): a backdrop-filter that
@@ -204,6 +206,7 @@ function NativePopover({
     layer: _layer,
     bare: _bare,
     solid: _solid,
+    motion: _motion,
     ...rest
   } = props;
   return createPortal(
@@ -243,6 +246,7 @@ function WebPopover({
   dismissOnEscape = true,
   restoreFocus = true,
   passive = false,
+  motion = "auto",
   ignore,
   ref,
   children,
@@ -414,7 +418,7 @@ function WebPopover({
           transformOrigin: origin(position?.side ?? side, align),
           ...style,
         }}
-        className={`${position ? "popover-open " : ""}relative z-[1] outline-none ${className ?? ""}`}
+        className={`${position && motion !== "none" ? "popover-open " : ""}relative z-[1] outline-none ${className ?? ""}`}
       >
         <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
       </div>

@@ -7,19 +7,23 @@ export class RevisionWaits {
     private readonly signal = new ChangeSignal(),
   ) {}
   async wait(
-    read: () => number,
+    read: () => number | Promise<number>,
     revision: number,
     duration: number,
-    cancelled: () => boolean = () => false,
-    recheckMs: () => number = () => 1000,
+    cancelled: () => boolean | Promise<boolean> = () => false,
+    recheckMs: () => number | Promise<number> = () => 1000,
   ): Promise<void> {
     let version = this.signal.version;
-    if (this.active >= this.maximum || read() !== revision) return;
+    if (this.active >= this.maximum) return;
     this.active++;
     const deadline = Date.now() + Math.min(10_000, Math.max(0, duration));
     try {
-      while (!cancelled() && read() === revision && Date.now() < deadline) {
-        await this.signal.wait(Math.min(deadline, Date.now() + recheckMs()), cancelled, version);
+      while (!(await cancelled()) && (await read()) === revision && Date.now() < deadline) {
+        await this.signal.wait(
+          Math.min(deadline, Date.now() + (await recheckMs())),
+          cancelled,
+          version,
+        );
         version = this.signal.version;
       }
     } finally {

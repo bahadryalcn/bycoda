@@ -33,7 +33,9 @@ function Field({
       <span>{label}</span>
       {children}
       {hint ? (
-        <span className="text-ui-micro font-normal leading-snug text-(--ui-text-secondary)">{hint}</span>
+        <span className="text-ui-micro font-normal leading-snug text-(--ui-text-secondary)">
+          {hint}
+        </span>
       ) : null}
     </div>
   );
@@ -85,7 +87,9 @@ function AcpSettingsShell({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
         <div className="min-w-0">
           <p className="text-ui-caption leading-snug text-(--ui-text-secondary)">{scope}</p>
-          <p className="text-ui-caption text-(--ui-text-secondary)">{t("Changes require saving")}</p>
+          <p className="text-ui-caption text-(--ui-text-secondary)">
+            {t("Changes require saving")}
+          </p>
         </div>
         {action}
       </div>
@@ -172,14 +176,20 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       activeRef.current = false;
     };
   }, [cwd]);
-  async function run(label: string, action: () => Promise<void>) {
-    if (!activeRef.current || busyRef.current || loading) return;
+  async function run(label: string, action: () => Promise<void>, confirm = false) {
+    if (!activeRef.current || busyRef.current || loading) {
+      if (confirm)
+        throw new Error("ACP operation is unavailable while another request is pending.");
+      return;
+    }
     busyRef.current = true;
     setError("");
     setStatus("");
     setBusy(label);
+    let completed = false;
     try {
       await action();
+      completed = true;
       if (!activeRef.current) return;
       await reload();
       if (!activeRef.current) return;
@@ -192,6 +202,9 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       if (activeRef.current) {
         setError(reason instanceof Error ? reason.message : String(reason));
       }
+      // A confirmation owns its failure state. A refresh failure after the
+      // mutation completed remains a list error, not a failed deletion.
+      if (confirm && !completed) throw reason;
     } finally {
       busyRef.current = false;
       if (activeRef.current) setBusy("");
@@ -203,9 +216,15 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
   }
   const editing = configs.some((config) => config.id === form.id);
   const openAgentForm = () => {
-    // The shared settings group is always visible. Move keyboard focus to its
-    // first field instead of trying to open the retired native disclosure.
-    formDisclosureRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    const root = formDisclosureRef.current;
+    const input = root?.querySelector<HTMLInputElement>("input");
+    if (input) input.focus();
+    else {
+      root?.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click();
+      requestAnimationFrame(() => {
+        if (activeRef.current) root?.querySelector<HTMLInputElement>("input")?.focus();
+      });
+    }
   };
   const openRegistry = () => {
     if (!activeRef.current || busyRef.current) return;
@@ -299,10 +318,16 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
             className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-(--ui-tone-neutral-border) px-3 py-2 last:border-b-0"
           >
             <div className="min-w-0 flex-1">
-              <div className="truncate text-ui-caption font-medium text-content" title={config.name}>
+              <div
+                className="truncate text-ui-caption font-medium text-content"
+                title={config.name}
+              >
                 {config.name}
               </div>
-              <div className="truncate text-ui-caption text-(--ui-text-secondary)" title={config.command}>
+              <div
+                className="truncate text-ui-caption text-(--ui-text-secondary)"
+                title={config.command}
+              >
                 {config.command} · {config.envKeys.length}
                 {t(" environment values")}
               </div>
@@ -332,7 +357,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                   doneLabel={t("Removed")}
                   disabled={loading || !!busy}
                   onConfirm={() =>
-                    run("Removing", () => request("generic_acp_remove", { id: config.id }))
+                    run("Removing", () => request("generic_acp_remove", { id: config.id }), true)
                   }
                 />
               </span>
@@ -549,7 +574,8 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                         className="truncate text-ui-caption font-medium text-content"
                         title={`${entry.name} ${entry.version}`}
                       >
-                        {entry.name} <span className="text-(--ui-text-secondary)">{entry.version}</span>
+                        {entry.name}{" "}
+                        <span className="text-(--ui-text-secondary)">{entry.version}</span>
                       </div>
                       <p className="mt-0.5 text-ui-caption leading-snug text-(--ui-text-secondary)">
                         {entry.supported

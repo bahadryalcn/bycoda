@@ -1,3 +1,6 @@
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -50,6 +53,8 @@ export function SocialAuthority({
   run: (work: () => Promise<unknown>) => Promise<boolean>;
   onSelect: (id: string) => void;
 }) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [status, setStatus] = useState<Status>();
   const [loading, setLoading] = useState(true);
@@ -121,7 +126,7 @@ export function SocialAuthority({
     setError("");
     setNotice("");
   };
-  const changeAuthority = (
+  const changeAuthority = async (
     machineId: string | null,
     mapping: Record<string, string>,
     sourceEndpoint: string | null,
@@ -134,7 +139,7 @@ export function SocialAuthority({
     setError("");
     setNotice("");
     let started = false;
-    void run(async () => {
+    return run(async () => {
       started = true;
       try {
         await invoke("social_authority_connect", {
@@ -183,13 +188,13 @@ export function SocialAuthority({
       </p>
       {loading ? <p role="status">{t("Loading host setting…")}</p> : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      {!status && !loading ? (
+      {!status && (!loading || pendingUi.is("read-host.try-again")) ? (
         <Button
           variant="secondary"
-          loading={busy}
+          loading={pendingUi.is("read-host.try-again")}
           type="button"
-          disabled={busy}
-          onClick={() => void loadStatus()}
+          disabled={busy || loading || socialLocked || busy}
+          onClick={() => void pendingUi.run("read-host.try-again", () => loadStatus())}
         >
           {t("Try again")}
         </Button>
@@ -219,17 +224,21 @@ export function SocialAuthority({
                   return;
                 }
                 try {
-                  changeAuthority(selectedHost, validMapping, peerEndpoint(current.sourceEndpoint));
+                  const endpoint = peerEndpoint(current.sourceEndpoint);
+                  void pendingUi.run("authority.save", () =>
+                    changeAuthority(selectedHost, validMapping, endpoint),
+                  );
                 } catch (error) {
                   setError(errorText(error));
                 }
               }}
             >
-              <fieldset className="social-workspace" disabled={busy || loading}>
+              <fieldset className="social-workspace">
                 <p>
                   <strong>{t("New main computer: {p0}", { p0: target.name })}</strong>
                 </p>
                 <TextField
+                  disabled={busy || loading || socialLocked}
                   label={t("This computer's HTTPS address")}
                   description={t(
                     "The selected host must be able to reach this address. Both hosts must be connected to each other.",
@@ -255,6 +264,7 @@ export function SocialAuthority({
                   <label key={project.id}>
                     {project.name}
                     <SearchableSelect
+                      disabled={busy || loading || socialLocked}
                       value={validMapping[project.id] ?? ""}
                       label={t("Project on {p0}", { p0: target.name })}
                       options={[
@@ -287,9 +297,16 @@ export function SocialAuthority({
                   </p>
                 ) : null}
                 <Button
+                  loading={pendingUi.is("authority.save")}
                   type="submit"
                   variant="primary"
-                  disabled={!Object.keys(validMapping).length || staleMappings}
+                  disabled={
+                    busy ||
+                    loading ||
+                    socialLocked ||
+                    !Object.keys(validMapping).length ||
+                    staleMappings
+                  }
                 >
                   {busy ? t("Saving…") : t("Use {p0}", { p0: target.name })}
                 </Button>
@@ -301,10 +318,14 @@ export function SocialAuthority({
               <Button
                 variant="secondary"
                 tone="danger"
-                loading={busy}
+                loading={pendingUi.is("authority.return-to-this-computer-and-stop-sending")}
                 type="button"
-                disabled={busy || loading}
-                onClick={() => changeAuthority(null, {}, null)}
+                disabled={busy || loading || socialLocked || busy || loading}
+                onClick={() =>
+                  pendingUi.run("authority.return-to-this-computer-and-stop-sending", () =>
+                    changeAuthority(null, {}, null),
+                  )
+                }
               >
                 {t("Return to this computer and stop sending")}
               </Button>

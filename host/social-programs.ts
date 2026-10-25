@@ -1,3 +1,4 @@
+import { everyAsync, filterAsync, flatMapAsync, mapAsync, someAsync } from "./async-collections";
 import { createHash, randomUUID } from "node:crypto";
 import type { HostStore } from "./store";
 import type { SocialPrincipal } from "./social";
@@ -42,7 +43,6 @@ import {
   validateGeneratedImage,
   type SocialImageAdapters,
 } from "./social-images";
-
 const signature = (v: unknown) =>
   createHash("sha256")
     .update(JSON.stringify(v) ?? "null")
@@ -52,29 +52,65 @@ const publicProgram = (p: SocialProgram): SocialProgram => {
   return safe;
 };
 export type ProgramHooks = {
-  account: (id: string) => SocialAccount;
-  validateAccount: (id: string, needsMedia: boolean) => void;
-  policy: (id: string, agent?: SocialAgent) => SocialPolicy;
-  facts: (projectId: string, ids: string[]) => PublicFact[];
-  pool: (id: string, accountId: string, projectId: string) => CampaignVariant;
-  validateVariant: (v: CampaignVariant, partial?: boolean) => void;
-  prepareMedia: (v: CampaignVariant) => CampaignVariant;
-  enqueue: (p: SocialProgram, o: SocialOccurrence, t: ProgramTarget) => SocialJob;
-  job: (id: string) => SocialJob;
-  cancelJob: (id: string) => void;
+  account: (id: string) => SocialAccount | Promise<SocialAccount>;
+  validateAccount: (id: string, needsMedia: boolean) => void | Promise<void>;
+  policy: (id: string, agent?: SocialAgent) => SocialPolicy | Promise<SocialPolicy>;
+  facts: (projectId: string, ids: string[]) => PublicFact[] | Promise<PublicFact[]>;
+  pool: (
+    id: string,
+    accountId: string,
+    projectId: string,
+  ) => CampaignVariant | Promise<CampaignVariant>;
+  validateVariant: (v: CampaignVariant, partial?: boolean) => void | Promise<void>;
+  prepareMedia: (v: CampaignVariant) => CampaignVariant | Promise<CampaignVariant>;
+  enqueue: (
+    p: SocialProgram,
+    o: SocialOccurrence,
+    t: ProgramTarget,
+  ) => SocialJob | Promise<SocialJob>;
+  job: (id: string) => SocialJob | Promise<SocialJob>;
+  cancelJob: (id: string) => void | Promise<void>;
   dispatchTimes: (
     programId: string,
     accountId: string,
     since: number,
-  ) => { lastAt: number; recent: number[] };
-  accountQueued: (accountId: string) => boolean;
-  media: (bytes: Uint8Array, actorId: string) => Promise<{ uploadId: string; url?: string }>;
-  running: () => boolean;
+  ) =>
+    | {
+        lastAt: number;
+        recent: number[];
+      }
+    | Promise<{
+        lastAt: number;
+        recent: number[];
+      }>;
+  accountQueued: (accountId: string) => boolean | Promise<boolean>;
+  media: (
+    bytes: Uint8Array,
+    actorId: string,
+  ) => Promise<{
+    uploadId: string;
+    url?: string;
+  }>;
+  running: () => boolean | Promise<boolean>;
 };
-
+class ProgramStateChanged extends Error {}
 /** Program records produce exact campaigns and existing SocialJobs; they never send.
  * The same authorization signature is checked again by SocialService.execute. */
 export class SocialPrograms {
+  private readonly programRows = new WeakMap<SocialProgram, string>();
+  private readonly occurrenceRows = new WeakMap<SocialOccurrence, string>();
+  private programRow(value: unknown): SocialProgram {
+    const raw = String(value);
+    const program = JSON.parse(raw) as SocialProgram;
+    this.programRows.set(program, raw);
+    return program;
+  }
+  private occurrenceRow(value: unknown): SocialOccurrence {
+    const raw = String(value);
+    const occurrence = JSON.parse(raw) as SocialOccurrence;
+    this.occurrenceRows.set(occurrence, raw);
+    return occurrence;
+  }
   private active?: {
     programId: string;
     occurrenceId: string;
@@ -85,6 +121,8 @@ export class SocialPrograms {
     promise: Promise<void>;
   };
   private closed = false;
+  private lifecycleEpoch = 0;
+  readonly ready: Promise<void>;
   constructor(
     private store: HostStore,
     private hooks: ProgramHooks,
@@ -92,90 +130,118 @@ export class SocialPrograms {
     private images: SocialImageAdapters,
     private now = Date.now,
   ) {
-    store.db
-      .exec(`CREATE TABLE IF NOT EXISTS social_programs (id TEXT PRIMARY KEY,value TEXT NOT NULL);
+    this.ready = (async () => {
+      await store.ready;
+      await store.db.scope(async () => {
+        await store.db
+          .exec(`CREATE TABLE IF NOT EXISTS social_programs (id TEXT PRIMARY KEY,value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS social_occurrences (id TEXT PRIMARY KEY,program_id TEXT NOT NULL,sequence INTEGER NOT NULL,value TEXT NOT NULL,UNIQUE(program_id,sequence));
       CREATE INDEX IF NOT EXISTS social_occurrences_program ON social_occurrences(program_id,sequence);
       CREATE TABLE IF NOT EXISTS social_generation_leases (id TEXT PRIMARY KEY,executor_id TEXT NOT NULL,expires_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS social_occurrences_active ON social_occurrences(program_id,json_extract(value,'$.programRevision'),coalesce(json_extract(value,'$.settled'),0),json_extract(value,'$.scheduledAt'));
       CREATE INDEX IF NOT EXISTS social_jobs_program_dispatch ON social_jobs(account_id,json_extract(value,'$.programId'),json_extract(value,'$.dispatchedAt'));`);
+      });
+    })();
   }
-  private putProgram(p: SocialProgram) {
-    this.store.db
-      .prepare(
-        "INSERT INTO social_programs VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
-      )
-      .run(p.id, JSON.stringify(p));
+  private async putProgram(p: SocialProgram) {
+    const before = this.programRows.get(p);
+    const value = JSON.stringify(p);
+    if (before === undefined)
+      await this.store.db.prepare("INSERT INTO social_programs VALUES (?,?)").run(p.id, value);
+    else {
+      const result = await this.store.db
+        .prepare("UPDATE social_programs SET value=? WHERE id=? AND value=?")
+        .run(value, p.id, before);
+      if (Number(result.changes) !== 1)
+        throw new ProgramStateChanged("Campaign was changed by another session.");
+    }
+    this.programRows.set(p, value);
     return p;
   }
-  private putOccurrence(o: SocialOccurrence) {
+  private async putOccurrence(o: SocialOccurrence) {
     o.settled = o.targets.every((t) => t.status === "succeeded" || t.status === "cancelled");
-    this.store.db
-      .prepare(
-        "INSERT INTO social_occurrences VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
-      )
-      .run(o.id, o.programId, o.sequence, JSON.stringify(o));
+    const before = this.occurrenceRows.get(o);
+    const value = JSON.stringify(o);
+    if (before === undefined)
+      await this.store.db
+        .prepare("INSERT INTO social_occurrences VALUES (?,?,?,?)")
+        .run(o.id, o.programId, o.sequence, value);
+    else {
+      const result = await this.store.db
+        .prepare("UPDATE social_occurrences SET value=? WHERE id=? AND value=?")
+        .run(value, o.id, before);
+      if (Number(result.changes) !== 1)
+        throw new ProgramStateChanged("Content was changed by another session.");
+    }
+    this.occurrenceRows.set(o, value);
     return o;
   }
-  private get(id: unknown): SocialProgram {
+  private async get(id: unknown): Promise<SocialProgram> {
     if (typeof id !== "string") throw new Error("Choose a campaign program.");
-    const row = this.store.db.prepare("SELECT value FROM social_programs WHERE id=?").get(id);
+    const row = await this.store.db.prepare("SELECT value FROM social_programs WHERE id=?").get(id);
     if (!row) throw new Error("Campaign program not found.");
-    return JSON.parse(String(row.value));
+    return this.programRow(row.value);
   }
-  private occurrence(id: unknown): SocialOccurrence {
+  private async occurrence(id: unknown): Promise<SocialOccurrence> {
     if (typeof id !== "string") throw new Error("Choose a sharing occurrence.");
-    const row = this.store.db.prepare("SELECT value FROM social_occurrences WHERE id=?").get(id);
+    const row = await this.store.db
+      .prepare("SELECT value FROM social_occurrences WHERE id=?")
+      .get(id);
     if (!row) throw new Error("Sharing occurrence not found.");
-    return JSON.parse(String(row.value));
+    return this.occurrenceRow(row.value);
   }
-  private occurrences(id: string, limit?: number): SocialOccurrence[] {
+  private async occurrences(id: string, limit?: number): Promise<SocialOccurrence[]> {
     if (limit !== undefined)
-      return this.store.db
-        .prepare(
-          "SELECT value FROM social_occurrences WHERE program_id=? ORDER BY sequence DESC LIMIT ?",
-        )
-        .all(id, limit)
-        .map((row) => JSON.parse(String(row.value)))
+      return (
+        await this.store.db
+          .prepare(
+            "SELECT value FROM social_occurrences WHERE program_id=? ORDER BY sequence DESC LIMIT ?",
+          )
+          .all(id, limit)
+      )
+        .map((row) => this.occurrenceRow(row.value))
         .reverse();
-    return this.store.db
-      .prepare("SELECT value FROM social_occurrences WHERE program_id=? ORDER BY sequence")
-      .all(id)
-      .map((row) => JSON.parse(String(row.value)));
+    return (
+      await this.store.db
+        .prepare("SELECT value FROM social_occurrences WHERE program_id=? ORDER BY sequence")
+        .all(id)
+    ).map((row) => this.occurrenceRow(row.value));
   }
-  private firstOccurrence(p: SocialProgram): SocialOccurrence | undefined {
-    const row = this.store.db
+  private async firstOccurrence(p: SocialProgram): Promise<SocialOccurrence | undefined> {
+    const row = await this.store.db
       .prepare(
         "SELECT value FROM social_occurrences WHERE program_id=? AND json_extract(value,'$.programRevision')=? ORDER BY sequence LIMIT 1",
       )
       .get(p.id, p.revision);
-    return row ? JSON.parse(String(row.value)) : undefined;
+    return row ? this.occurrenceRow(row.value) : undefined;
   }
-  private activeOccurrences(id: string, revision: number): SocialOccurrence[] {
-    return this.store.db
-      .prepare(
-        "SELECT value FROM social_occurrences WHERE program_id=? AND json_extract(value,'$.programRevision')=? AND coalesce(json_extract(value,'$.settled'),0)=0 ORDER BY sequence",
-      )
-      .all(id, revision)
-      .map((row) => JSON.parse(String(row.value)));
+  private async activeOccurrences(id: string, revision: number): Promise<SocialOccurrence[]> {
+    return (
+      await this.store.db
+        .prepare(
+          "SELECT value FROM social_occurrences WHERE program_id=? AND json_extract(value,'$.programRevision')=? AND coalesce(json_extract(value,'$.settled'),0)=0 ORDER BY sequence",
+        )
+        .all(id, revision)
+    ).map((row) => this.occurrenceRow(row.value));
   }
-  private programs(activeOnly = false): SocialProgram[] {
-    return this.store.db
-      .prepare(
-        activeOnly
-          ? "SELECT value FROM social_programs WHERE json_extract(value,'$.enabled')=1 ORDER BY coalesce((SELECT min(json_extract(o.value,'$.scheduledAt')) FROM social_occurrences o WHERE o.program_id=social_programs.id AND json_extract(o.value,'$.programRevision')=json_extract(social_programs.value,'$.revision') AND coalesce(json_extract(o.value,'$.settled'),0)=0),json_extract(value,'$.nextAt')),id"
-          : "SELECT value FROM social_programs ORDER BY id",
-      )
-      .all()
-      .map((row) => JSON.parse(String(row.value)));
+  private async programs(activeOnly = false): Promise<SocialProgram[]> {
+    return (
+      await this.store.db
+        .prepare(
+          activeOnly
+            ? "SELECT value FROM social_programs WHERE json_extract(value,'$.enabled')=1 ORDER BY coalesce((SELECT min(json_extract(o.value,'$.scheduledAt')) FROM social_occurrences o WHERE o.program_id=social_programs.id AND json_extract(o.value,'$.programRevision')=json_extract(social_programs.value,'$.revision') AND coalesce(json_extract(o.value,'$.settled'),0)=0),json_extract(value,'$.nextAt')),id"
+            : "SELECT value FROM social_programs ORDER BY id",
+        )
+        .all()
+    ).map((row) => this.programRow(row.value));
   }
-  private allowed(actor: SocialPrincipal, p: ProgramConfig, write = false) {
-    this.store.project(p.projectId);
+  private async allowed(actor: SocialPrincipal, p: ProgramConfig, write = false) {
+    await this.store.project(p.projectId);
     if (actor.kind === "owner" && !write) return;
     if (actor.kind !== "owner" && actor.projectId !== p.projectId)
       throw new Error("Program belongs to another project.");
     for (const id of p.accountIds) {
-      const account = this.hooks.account(id);
+      const account = await this.hooks.account(id);
       if (!account.grants[p.projectId]?.includes(write ? "draft" : "read"))
         throw new Error("Project account access is missing.");
     }
@@ -184,20 +250,20 @@ export class SocialPrograms {
     if (actor.kind !== "owner")
       throw new Error("Only the owner can approve or activate a campaign program.");
   }
-  private checkConfig(c: ProgramConfig) {
+  private async checkConfig(c: ProgramConfig) {
     if (c.strategy === "pool" && c.image.mode === "generate")
       throw new Error(
         "Approved content pools reuse their exact text and media. Choose unique/repeat content to generate new images.",
       );
-    this.hooks.facts(c.projectId, c.brief.factIds);
+    await this.hooks.facts(c.projectId, c.brief.factIds);
     for (const id of c.accountIds) {
-      const a = this.hooks.account(id);
+      const a = await this.hooks.account(id);
       if (c.strategy !== "unique" && a.platform === "x")
         throw new Error(
           "X does not permit automated duplicate or substantially similar posts. Choose unique content.",
         );
       if (c.strategy === "pool")
-        for (const poolId of c.poolCampaignIds) this.hooks.pool(poolId, id, c.projectId);
+        for (const poolId of c.poolCampaignIds) await this.hooks.pool(poolId, id, c.projectId);
       const media = c.mediaOverrides?.[id] ?? (c.image.mode === "existing" ? c.image.media : []);
       if (
         a.platform === "youtube" &&
@@ -205,7 +271,7 @@ export class SocialPrograms {
         (media.length !== 1 || media[0].kind !== "video" || !c.youtube)
       )
         throw new Error("YouTube requires an uploaded video and explicit video declarations.");
-      const policy = this.hooks.policy(id, c.textAgent);
+      const policy = await this.hooks.policy(id, c.textAgent);
       if (c.strategy !== "pool" && !policy.agent)
         throw new Error(
           "Choose a text model or save an effective account agent before generation.",
@@ -233,25 +299,33 @@ export class SocialPrograms {
     } = p;
     return config;
   }
-  private authorizationSignature(p: SocialProgram) {
+  private async authorizationSignature(p: SocialProgram) {
     return signature({
       config: this.configOf(p),
       executorId: p.executorId,
-      accounts: p.accountIds.map((id) => {
-        const { expiresAt: _, ...identity } = this.hooks.account(id);
+      accounts: await mapAsync(p.accountIds, async (id) => {
+        const { expiresAt: _, ...identity } = await this.hooks.account(id);
         return identity;
       }),
-      policies: p.accountIds.map((id) => this.hooks.policy(id, p.textAgent)),
-      facts: this.hooks.facts(p.projectId, p.brief.factIds),
+      policies: await mapAsync(
+        p.accountIds,
+        async (id) => await this.hooks.policy(id, p.textAgent),
+      ),
+      facts: await this.hooks.facts(p.projectId, p.brief.factIds),
       pool:
         p.strategy === "pool"
-          ? p.poolCampaignIds.flatMap((id) =>
-              p.accountIds.map((account) => this.hooks.pool(id, account, p.projectId)),
+          ? await flatMapAsync(
+              p.poolCampaignIds,
+              async (id) =>
+                await mapAsync(
+                  p.accountIds,
+                  async (account) => await this.hooks.pool(id, account, p.projectId),
+                ),
             )
           : [],
     });
   }
-  private checkActive(p: SocialProgram) {
+  private async checkActive(p: SocialProgram) {
     if (p.schedule.endsAt !== undefined && this.now() > p.schedule.endsAt)
       throw new Error("Campaign end time reached. Review unfinished targets before continuing.");
     if (
@@ -260,14 +334,14 @@ export class SocialPrograms {
       p.executorId !== this.store.environmentId ||
       !p.authorization ||
       p.authorization.revision !== p.revision ||
-      p.authorization.signature !== this.authorizationSignature(p)
+      p.authorization.signature !== (await this.authorizationSignature(p))
     )
       throw new Error(
         "Campaign authority, policy or configuration changed. Review and activate again.",
       );
     for (const id of p.accountIds) {
-      const a = this.hooks.account(id);
-      this.hooks.validateAccount(
+      const a = await this.hooks.account(id);
+      await this.hooks.validateAccount(
         id,
         programGeneratesImage(p, id) ||
           !!(
@@ -303,12 +377,18 @@ export class SocialPrograms {
               : content,
     });
   }
-  private required(p: SocialProgram, o: SocialOccurrence, t: ProgramTarget): ProgramStep[] {
-    const first = this.store.db
-      .prepare(
-        "SELECT sequence FROM social_occurrences WHERE program_id=? AND json_extract(value,'$.programRevision')=? ORDER BY sequence LIMIT 1",
-      )
-      .get(p.id, p.revision)?.sequence;
+  private async required(
+    p: SocialProgram,
+    o: SocialOccurrence,
+    t: ProgramTarget,
+  ): Promise<ProgramStep[]> {
+    const first = (
+      await this.store.db
+        .prepare(
+          "SELECT sequence FROM social_occurrences WHERE program_id=? AND json_extract(value,'$.programRevision')=? ORDER BY sequence LIMIT 1",
+        )
+        .get(p.id, p.revision)
+    )?.sequence;
     const usesMedia = programGeneratesImage(p, t.accountId) || !!t.variant?.media.length;
     const steps = p.approval.steps.filter(
       (s) =>
@@ -319,46 +399,52 @@ export class SocialPrograms {
     if (t.platform === "linkedin" && !steps.includes("publish")) steps.push("publish");
     return steps;
   }
-  private missing(p: SocialProgram, o: SocialOccurrence, t: ProgramTarget) {
-    return this.required(p, o, t).filter((s) => t.approvals[s] !== this.stepSignature(o, t, s));
+  private async missing(p: SocialProgram, o: SocialOccurrence, t: ProgramTarget) {
+    return (await this.required(p, o, t)).filter(
+      (s) => t.approvals[s] !== this.stepSignature(o, t, s),
+    );
   }
-  private addOccurrence(p: SocialProgram, at: number) {
-    const sequence = p.nextSequence;
-    const o: SocialOccurrence = {
-      id: `${p.id}:${sequence}`,
-      programId: p.id,
-      programRevision: p.revision,
-      sequence,
-      scheduledAt: at,
-      originalAt: at,
-      revision: 1,
-      targets: p.accountIds.map((accountId) => ({
-        accountId,
-        platform: this.hooks.account(accountId).platform,
-        status: "pending",
-        approvals: {},
-        generation: { attempts: 0, transitions: [] },
-      })),
-    };
-    this.putOccurrence(o);
-    p.nextSequence++;
-    p.nextAt = followingProgramSlot(p.schedule, at, p.id, p.nextSequence);
-    this.putProgram(p);
-    return o;
+  private async addOccurrence(p: SocialProgram, at: number) {
+    return this.store.transaction(async () => {
+      const sequence = p.nextSequence;
+      const o: SocialOccurrence = {
+        id: `${p.id}:${sequence}`,
+        programId: p.id,
+        programRevision: p.revision,
+        sequence,
+        scheduledAt: at,
+        originalAt: at,
+        revision: 1,
+        targets: await mapAsync(p.accountIds, async (accountId) => ({
+          accountId,
+          platform: (await this.hooks.account(accountId)).platform,
+          status: "pending",
+          approvals: {},
+          generation: { attempts: 0, transitions: [] },
+        })),
+      };
+      await this.putOccurrence(o);
+      p.nextSequence++;
+      p.nextAt = followingProgramSlot(p.schedule, at, p.id, p.nextSequence);
+      await this.putProgram(p);
+      return o;
+    });
   }
-  private detail(p: SocialProgram, before?: number): ProgramDetail {
-    const all: SocialOccurrence[] = this.store.db
-        .prepare(
-          "SELECT value FROM social_occurrences WHERE program_id=? AND sequence<? ORDER BY sequence DESC LIMIT 51",
-        )
-        .all(p.id, before ?? Number.MAX_SAFE_INTEGER)
-        .map((row) => JSON.parse(String(row.value)))
+  private async detail(p: SocialProgram, before?: number): Promise<ProgramDetail> {
+    const all: SocialOccurrence[] = (
+        await this.store.db
+          .prepare(
+            "SELECT value FROM social_occurrences WHERE program_id=? AND sequence<? ORDER BY sequence DESC LIMIT 51",
+          )
+          .all(p.id, before ?? Number.MAX_SAFE_INTEGER)
+      )
+        .map((row) => this.occurrenceRow(row.value))
         .reverse(),
       page = all.slice(-50);
     for (const o of page)
       for (const t of o.targets)
         if (t.jobId) {
-          const job = this.hooks.job(t.jobId);
+          const job = await this.hooks.job(t.jobId);
           t.status =
             job.status === "running" || job.status === "queued"
               ? "queued"
@@ -376,8 +462,10 @@ export class SocialPrograms {
     };
   }
   async features(accounts: SocialAccount[]): Promise<ProgramFeatures> {
+    await this.ready;
     const images = await Promise.all(
-      (["codex", "gemini", "comfyui", "openai-api"] as const).map(
+      await mapAsync(
+        ["codex", "gemini", "comfyui", "openai-api"] as const,
         async (provider) =>
           (await this.images[provider]?.capability()) ?? {
             provider,
@@ -418,22 +506,24 @@ export class SocialPrograms {
     action: string,
     input: Record<string, unknown>,
   ): Promise<unknown> {
+    await this.ready;
     if (action === "programs.list")
-      return this.programs()
-        .filter((p) => {
+      return (
+        await filterAsync(await this.programs(), async (p) => {
           try {
-            this.allowed(actor, p);
+            await this.allowed(actor, p);
             return !input.projectId || input.projectId === p.projectId;
           } catch {
             return false;
           }
         })
+      )
         .slice(-100)
         .map(publicProgram);
     if (action === "programs.preview-schedule") {
       const c = parseProgramConfig(input.config);
-      this.allowed(actor, c, true);
-      this.checkConfig(c);
+      await this.allowed(actor, c, true);
+      await this.checkConfig(c);
       return {
         dates: previewProgramSchedule(c.schedule, c.totalPosts ?? 10),
         logicalPosts: c.totalPosts,
@@ -442,79 +532,106 @@ export class SocialPrograms {
     }
     if (action === "programs.configure") {
       const c = parseProgramConfig(input.config);
-      this.allowed(actor, c, true);
-      this.checkConfig(c);
-      const old = input.id ? this.get(input.id) : undefined;
+      await this.allowed(actor, c, true);
+      await this.checkConfig(c);
+      let old = input.id ? await this.get(input.id) : undefined;
       if (old) {
-        this.allowed(actor, old);
+        await this.allowed(actor, old);
         this.owner(actor);
         if (Number(input.expectedRevision) !== old.revision)
           throw new Error("Campaign was changed by another session.");
         if (
-          this.occurrences(old.id).some((o) =>
-            o.targets.some((t) => t.jobId && this.hooks.job(t.jobId).status === "running"),
+          await someAsync(
+            await this.occurrences(old.id),
+            async (o) =>
+              await someAsync(
+                o.targets,
+                async (t) => t.jobId && (await this.hooks.job(t.jobId)).status === "running",
+              ),
           )
         )
           throw new Error("Wait for active publication before editing.");
-        this.pause(old, "Configuration edited. Review the new revision.");
       }
-      const p: SocialProgram = {
-        ...c,
-        id: old?.id ?? randomUUID(),
-        revision: (old?.revision ?? 0) + 1,
-        enabled: false,
-        createdAt: old?.createdAt ?? this.now(),
-        updatedAt: this.now(),
-        executorId: this.store.environmentId,
-        generationCount: old?.generationCount ?? 0,
-        imageGenerationCount: old?.imageGenerationCount ?? 0,
-        generationDay: old?.generationDay ?? "",
-        dailyGenerationCount: old?.dailyGenerationCount ?? 0,
-        nextSequence: old?.nextSequence ?? 0,
-        nextAt: nextProgramSlot(c.schedule, this.now()),
-        reason: "Saved paused. Generate and review a sample before activation.",
-      };
-      this.putProgram(p);
-      // Editing explicitly replaces unsent draft slots; dispatched/uncertain jobs stay immutable.
-      let replacementAt = p.nextAt;
-      if (old)
-        for (const o of this.occurrences(old.id)) {
-          const replace = o.targets.every(
-            (t) => !t.jobId || this.hooks.job(t.jobId).status === "queued",
-          );
-          for (const t of o.targets)
-            if (t.jobId && this.hooks.job(t.jobId).status === "queued")
-              this.hooks.cancelJob(t.jobId);
+      return this.store.transaction(async () => {
+        if (old) {
+          old = await this.get(old.id);
+          if (Number(input.expectedRevision) !== old.revision)
+            throw new Error("Campaign was changed by another session.");
+          await this.allowed(actor, old);
           if (
-            replace &&
-            replacementAt !== undefined &&
-            (c.totalPosts === null || o.sequence < c.totalPosts)
-          ) {
-            o.programRevision = p.revision;
-            o.revision++;
-            o.scheduledAt = replacementAt;
-            o.targets = c.accountIds.map((accountId) => ({
-              accountId,
-              platform: this.hooks.account(accountId).platform,
-              status: "pending",
-              approvals: {},
-              generation: { attempts: 0, transitions: [] },
-            }));
-            replacementAt = followingProgramSlot(c.schedule, replacementAt, p.id, o.sequence + 1);
-          } else
-            for (const t of o.targets)
-              if (!t.jobId && t.status !== "succeeded") t.status = "cancelled";
-          this.putOccurrence(o);
+            await someAsync(
+              await this.occurrences(old.id),
+              async (o) =>
+                await someAsync(
+                  o.targets,
+                  async (t) => t.jobId && (await this.hooks.job(t.jobId)).status === "running",
+                ),
+            )
+          )
+            throw new Error("Wait for active publication before editing.");
+          await this.pause(old, "Configuration edited. Review the new revision.");
         }
-      p.nextAt = replacementAt;
-      this.putProgram(p);
-      return publicProgram(p);
+        await this.allowed(actor, c, true);
+        const p: SocialProgram = {
+          ...c,
+          id: old?.id ?? randomUUID(),
+          revision: (old?.revision ?? 0) + 1,
+          enabled: false,
+          createdAt: old?.createdAt ?? this.now(),
+          updatedAt: this.now(),
+          executorId: this.store.environmentId,
+          generationCount: old?.generationCount ?? 0,
+          imageGenerationCount: old?.imageGenerationCount ?? 0,
+          generationDay: old?.generationDay ?? "",
+          dailyGenerationCount: old?.dailyGenerationCount ?? 0,
+          nextSequence: old?.nextSequence ?? 0,
+          nextAt: nextProgramSlot(c.schedule, this.now()),
+          reason: "Saved paused. Generate and review a sample before activation.",
+        };
+        if (old) this.programRows.set(p, this.programRows.get(old)!);
+        await this.putProgram(p);
+        // Editing explicitly replaces unsent draft slots; dispatched/uncertain jobs stay immutable.
+        let replacementAt = p.nextAt;
+        if (old)
+          for (const o of await this.occurrences(old.id)) {
+            const replace = await everyAsync(
+              o.targets,
+              async (t) => !t.jobId || (await this.hooks.job(t.jobId)).status === "queued",
+            );
+            for (const t of o.targets)
+              if (t.jobId && (await this.hooks.job(t.jobId)).status === "queued")
+                await this.hooks.cancelJob(t.jobId);
+            if (
+              replace &&
+              replacementAt !== undefined &&
+              (c.totalPosts === null || o.sequence < c.totalPosts)
+            ) {
+              o.programRevision = p.revision;
+              o.revision++;
+              o.scheduledAt = replacementAt;
+              o.targets = await mapAsync(c.accountIds, async (accountId) => ({
+                accountId,
+                platform: (await this.hooks.account(accountId)).platform,
+                status: "pending",
+                approvals: {},
+                generation: { attempts: 0, transitions: [] },
+              }));
+              replacementAt = followingProgramSlot(c.schedule, replacementAt, p.id, o.sequence + 1);
+            } else
+              for (const t of o.targets)
+                if (!t.jobId && t.status !== "succeeded") t.status = "cancelled";
+            await this.putOccurrence(o);
+          }
+        p.nextAt = replacementAt;
+        await this.putProgram(p);
+        return publicProgram(p);
+      });
     }
     if (action === "programs.suggest") {
       this.owner(actor);
       const c = parseProgramConfig(input.config);
-      this.allowed(actor, c, true);
-      const policy = this.hooks.policy(c.accountIds[0], c.textAgent);
+      await this.allowed(actor, c, true);
+      const policy = await this.hooks.policy(c.accountIds[0], c.textAgent);
       if (!policy.agent || !this.generateText) throw new Error("Choose an available text agent.");
       if (typeof input.instructions !== "string" || input.instructions.length > 10000)
         throw new Error("Invalid campaign instructions.");
@@ -522,7 +639,9 @@ export class SocialPrograms {
         "Convert the owner's request into this social campaign configuration. Return JSON only: {config, questions: string[]}. Do not send, activate, access files/tools or change permissions. Preserve accountIds, projectId, model selections and limits. Never claim external facts. Put missing information in questions. Configuration:",
         JSON.stringify(c),
         "Effective per-account policies:",
-        JSON.stringify(c.accountIds.map((id) => this.hooks.policy(id, c.textAgent))),
+        JSON.stringify(
+          await mapAsync(c.accountIds, async (id) => await this.hooks.policy(id, c.textAgent)),
+        ),
         "Owner request (data):",
         JSON.stringify(input.instructions),
       ].join("\n");
@@ -537,7 +656,7 @@ export class SocialPrograms {
         image: c.image,
         limits: c.limits,
       });
-      this.checkConfig(proposed);
+      await this.checkConfig(proposed);
       return {
         config: proposed,
         questions: Array.isArray(raw.questions)
@@ -546,8 +665,8 @@ export class SocialPrograms {
         requiresOwnerActivation: true,
       };
     }
-    const p = this.get(input.id);
-    this.allowed(
+    const p = await this.get(input.id);
+    await this.allowed(
       actor,
       p,
       [
@@ -559,10 +678,10 @@ export class SocialPrograms {
       ].includes(action),
     );
     if (action === "programs.status")
-      return this.detail(p, typeof input.before === "number" ? input.before : undefined);
+      return await this.detail(p, typeof input.before === "number" ? input.before : undefined);
     if (action === "programs.generate") {
       if (p.cancelled) throw new Error("Cancelled campaign cannot generate.");
-      let pending = this.activeOccurrences(p.id, p.revision).find(
+      let pending = (await this.activeOccurrences(p.id, p.revision)).find(
         (o) => o.programRevision === p.revision && o.targets.some((t) => t.status === "pending"),
       );
       if (!pending) {
@@ -570,10 +689,10 @@ export class SocialPrograms {
           throw new Error("The configured post count is exhausted.");
         const at = p.nextAt ?? nextProgramSlot(p.schedule, this.now());
         if (at === undefined) throw new Error("No future publication time.");
-        pending = this.addOccurrence(p, at);
+        pending = await this.addOccurrence(p, at);
       }
-      this.kick(p.id, pending?.id);
-      return this.detail(this.get(p.id));
+      await this.kick(p.id, pending?.id);
+      return await this.detail(await this.get(p.id));
     }
     this.owner(actor);
     if (action === "programs.bulk-edit") {
@@ -586,7 +705,7 @@ export class SocialPrograms {
       }
       let changed = 0,
         skipped = 0;
-      for (const item of this.occurrences(p.id)) {
+      for (const item of await this.occurrences(p.id)) {
         if (item.programRevision !== p.revision) continue;
         for (const target of item.targets) {
           if (target.jobId || !target.variant || target.status === "generating") {
@@ -594,7 +713,7 @@ export class SocialPrograms {
             continue;
           }
           const variant = { ...target.variant, link: input.link || undefined };
-          this.hooks.validateVariant(
+          await this.hooks.validateVariant(
             variant,
             programGeneratesImage(p, target.accountId) && !variant.media.length,
           );
@@ -604,12 +723,12 @@ export class SocialPrograms {
           item.revision++;
           changed++;
         }
-        this.putOccurrence(item);
+        await this.putOccurrence(item);
       }
-      return { ...this.detail(p), bulkResult: { changed, skipped } };
+      return { ...(await this.detail(p)), bulkResult: { changed, skipped } };
     }
     if (action === "programs.pause" || action === "programs.cancel") {
-      this.pause(
+      await this.pause(
         p,
         action === "programs.cancel"
           ? "Future publications cancelled by owner."
@@ -617,15 +736,15 @@ export class SocialPrograms {
       );
       if (action === "programs.cancel") {
         p.cancelled = true;
-        for (const o of this.occurrences(p.id)) {
+        for (const o of await this.occurrences(p.id)) {
           for (const t of o.targets) {
-            if (t.jobId && this.hooks.job(t.jobId).status === "queued")
-              this.hooks.cancelJob(t.jobId);
+            if (t.jobId && (await this.hooks.job(t.jobId)).status === "queued")
+              await this.hooks.cancelJob(t.jobId);
             if (!t.jobId && t.status !== "succeeded") t.status = "cancelled";
           }
-          this.putOccurrence(o);
+          await this.putOccurrence(o);
         }
-        this.putProgram(p);
+        await this.putProgram(p);
       }
       return publicProgram(p);
     }
@@ -633,11 +752,15 @@ export class SocialPrograms {
       if (input.confirm !== true || input.expectedRevision !== p.revision)
         throw new Error("Review and confirm the exact campaign revision.");
       if (p.cancelled) throw new Error("Cancelled campaign cannot be activated.");
-      this.checkConfig(p);
-      const sample = this.firstOccurrence(p);
+      await this.checkConfig(p);
+      const sample = await this.firstOccurrence(p);
       if (
         p.approval.mode === "semi" &&
-        (!sample || sample.targets.some((t) => !t.variant || this.missing(p, sample, t).length))
+        (!sample ||
+          (await someAsync(
+            sample.targets,
+            async (t) => !t.variant || (await this.missing(p, sample, t)).length,
+          )))
       )
         throw new Error("Review and approve every account's first sample.");
       p.enabled = true;
@@ -645,14 +768,14 @@ export class SocialPrograms {
       p.authorization = {
         actorId: actor.actorId,
         revision: p.revision,
-        signature: this.authorizationSignature(p),
+        signature: await this.authorizationSignature(p),
         activatedAt: this.now(),
       };
-      this.checkActive(p);
-      this.putProgram(p);
+      await this.checkActive(p);
+      await this.putProgram(p);
       return publicProgram(p);
     }
-    const o = this.occurrence(input.occurrenceId);
+    const o = await this.occurrence(input.occurrenceId);
     if (o.programId !== p.id || o.programRevision !== p.revision)
       throw new Error("Occurrence belongs to another campaign revision.");
     const t = o.targets.find((t) => t.accountId === input.accountId);
@@ -669,8 +792,8 @@ export class SocialPrograms {
         delete target.approvals.schedule;
         delete target.approvals.publish;
       }
-      this.putOccurrence(o);
-      return this.detail(p);
+      await this.putOccurrence(o);
+      return await this.detail(p);
     }
     if (!t) throw new Error("Select an account target.");
     if (t.jobId)
@@ -687,9 +810,9 @@ export class SocialPrograms {
         throw new Error("Only an existing local ComfyUI image job can be resumed.");
       t.status = "pending";
       t.error = undefined;
-      this.putOccurrence(o);
-      this.kick(p.id, o.id);
-      return this.detail(p);
+      await this.putOccurrence(o);
+      await this.kick(p.id, o.id);
+      return await this.detail(p);
     }
     if (action === "programs.regenerate") {
       t.variant = undefined;
@@ -699,9 +822,9 @@ export class SocialPrograms {
       t.error = undefined;
       delete t.generation.providerJobId;
       o.revision++;
-      this.putOccurrence(o);
-      this.kick(p.id, o.id);
-      return this.detail(p);
+      await this.putOccurrence(o);
+      await this.kick(p.id, o.id);
+      return await this.detail(p);
     }
     if (action === "programs.edit") {
       if (input.expectedRevision !== o.revision)
@@ -709,16 +832,16 @@ export class SocialPrograms {
       const variant = input.variant as CampaignVariant;
       if (!variant || variant.accountId !== t.accountId)
         throw new Error("Account target cannot change.");
-      this.hooks.validateVariant({ ...variant, scheduledAt: o.scheduledAt });
-      this.hooks.facts(p.projectId, variant.factIds);
-      t.variant = this.hooks.prepareMedia({ ...variant, scheduledAt: o.scheduledAt });
+      await this.hooks.validateVariant({ ...variant, scheduledAt: o.scheduledAt });
+      await this.hooks.facts(p.projectId, variant.factIds);
+      t.variant = await this.hooks.prepareMedia({ ...variant, scheduledAt: o.scheduledAt });
       for (const step of PROGRAM_STEPS)
         if (t.approvals[step] !== this.stepSignature(o, t, step)) delete t.approvals[step];
       t.status = "review";
       t.error = undefined;
       o.revision++;
-      this.putOccurrence(o);
-      return this.detail(p);
+      await this.putOccurrence(o);
+      return await this.detail(p);
     }
     if (action === "programs.approve") {
       if (input.expectedRevision !== o.revision || input.confirm !== true || !t.variant)
@@ -734,100 +857,112 @@ export class SocialPrograms {
         input.steps.some((s) => s !== "text" && s !== "schedule")
       )
         throw new Error("Generate and review the image before approving later steps.");
-      if (t.variant.media.length) t.variant = this.hooks.prepareMedia(t.variant);
-      this.hooks.validateVariant(
+      if (t.variant.media.length) t.variant = await this.hooks.prepareMedia(t.variant);
+      await this.hooks.validateVariant(
         t.variant,
         programGeneratesImage(p, t.accountId) && !t.variant.media.length,
       );
-      t.generation.inputSignature = this.authorizationSignature(p);
+      t.generation.inputSignature = await this.authorizationSignature(p);
       for (const step of input.steps as ProgramStep[])
         t.approvals[step] = this.stepSignature(o, t, step);
-      t.status = this.missing(p, o, t).length ? "review" : "ready";
+      t.status = (await this.missing(p, o, t)).length ? "review" : "ready";
       t.error = undefined;
-      this.putOccurrence(o);
+      await this.putOccurrence(o);
       if (programGeneratesImage(p, t.accountId) && !t.variant.media.length) {
         t.status = "pending";
-        this.putOccurrence(o);
-        this.kick(p.id, o.id);
+        await this.putOccurrence(o);
+        await this.kick(p.id, o.id);
       }
-      return this.detail(p);
+      return await this.detail(p);
     }
     throw new Error("Unknown campaign program action.");
   }
-  private pause(p: SocialProgram, reason: string) {
+  private async pause(p: SocialProgram, reason: string) {
     p.enabled = false;
     p.reason = reason;
     delete p.authorization;
-    this.putProgram(p);
-    if (this.active?.programId === p.id) this.active.controller.abort();
+    await this.putProgram(p);
+    const active = this.active?.programId === p.id ? this.active : undefined;
+    if (active) this.store.afterCommit(() => active.controller.abort());
   }
-  recover() {
-    for (const p of this.programs())
-      for (const o of this.activeOccurrences(p.id, p.revision))
+  async recover() {
+    await this.ready;
+    for (const p of await this.programs())
+      for (const o of await this.activeOccurrences(p.id, p.revision))
         for (const t of o.targets)
           if (t.status === "generating") {
             t.status = "review";
             t.error = "Host restarted during generation. Review before explicit regeneration.";
-            this.putOccurrence(o);
+            await this.putOccurrence(o);
           }
-    this.store.db
+    await this.store.db
       .prepare("DELETE FROM social_generation_leases WHERE expires_at<=?")
       .run(this.now());
   }
-  start() {
+  async start() {
+    const epoch = this.lifecycleEpoch;
+    await this.ready;
+    if (epoch !== this.lifecycleEpoch) return;
     this.closed = false;
-    this.recover();
+    await this.recover();
   }
-  stop() {
-    if (this.closed) return;
+  async stop() {
+    this.lifecycleEpoch++;
     this.closed = true;
-    if (this.active) {
-      const o = this.occurrence(this.active.occurrenceId),
-        t = o.targets.find((t) => t.accountId === this.active!.accountId);
-      if (t?.status === "generating") {
-        t.status = "review";
-        t.error = "Generation stopped. Review before retry.";
-        this.putOccurrence(o);
-      }
-      this.store.db
-        .prepare("DELETE FROM social_generation_leases WHERE id=? AND executor_id=?")
-        .run(this.active.leaseId, this.active.leaseOwner);
-      this.active.controller.abort();
+    const active = this.active;
+    active?.controller.abort();
+    await this.ready;
+    if (active) {
+      await this.store.db.scope(async () => {
+        const o = await this.occurrence(active.occurrenceId),
+          t = o.targets.find((t) => t.accountId === active.accountId);
+        if (t?.status === "generating") {
+          t.status = "review";
+          t.error = "Generation stopped. Review before retry.";
+          await this.putOccurrence(o);
+        }
+        await this.store.db
+          .prepare("DELETE FROM social_generation_leases WHERE id=? AND executor_id=?")
+          .run(active.leaseId, active.leaseOwner);
+      });
     }
   }
   async idle() {
+    await this.ready;
     while (this.active) await this.active.promise;
   }
-  canDispatch(programId: string, occurrenceId: string, accountId: string) {
-    const p = this.get(programId);
-    this.checkActive(p);
-    const o = this.occurrence(occurrenceId),
+  async canDispatch(programId: string, occurrenceId: string, accountId: string) {
+    await this.ready;
+    const p = await this.get(programId);
+    await this.checkActive(p);
+    const o = await this.occurrence(occurrenceId),
       t = o.targets.find((t) => t.accountId === accountId);
     if (
       o.programId !== p.id ||
       o.programRevision !== p.revision ||
       !t?.variant ||
-      this.missing(p, o, t).length
+      (await this.missing(p, o, t)).length
     )
       throw new Error("Campaign content approval changed before dispatch.");
-    if (t.generation.inputSignature !== this.authorizationSignature(p))
+    if (t.generation.inputSignature !== (await this.authorizationSignature(p)))
       throw new Error("Effective policy changed since generation. Review the exact content again.");
     if (p.schedule.endsAt !== undefined && this.now() > p.schedule.endsAt)
       throw new Error("Campaign end time passed.");
   }
-  tick() {
-    if (this.closed || !this.hooks.running()) return;
+  async tick() {
+    await this.ready;
+    if (this.closed || !(await this.hooks.running())) return;
     const now = this.now();
-    for (const p of this.programs(true)) {
+    for (const p of await this.programs(true)) {
       if (!p.enabled) continue;
       try {
-        this.checkActive(p);
-        const all = this.activeOccurrences(p.id, p.revision);
+        await this.checkActive(p);
+        const all = await this.activeOccurrences(p.id, p.revision);
         for (const o of all) {
           if (o.programRevision !== p.revision) continue;
           for (const t of o.targets) {
             if (t.jobId) {
-              const job = this.hooks.job(t.jobId);
+              const job = await this.hooks.job(t.jobId);
               t.status =
                 job.status === "running" || job.status === "queued"
                   ? "queued"
@@ -838,7 +973,7 @@ export class SocialPrograms {
               t.url = job.url;
               t.error = job.error;
               if (job.status === "failed" || job.status === "review") {
-                this.putOccurrence(o);
+                await this.putOccurrence(o);
                 throw new Error(
                   "Publication failed or is uncertain. Inspect the exact job before continuing.",
                 );
@@ -851,13 +986,14 @@ export class SocialPrograms {
               t.status === "cancelled"
             )
               continue;
-            if (this.missing(p, o, t).length) {
+            if ((await this.missing(p, o, t)).length) {
               t.status = "review";
               continue;
             }
             t.status = "ready";
             if (p.schedule.mode === "interval") {
-              const last = this.hooks.dispatchTimes(p.id, t.accountId, now - 48 * 3600000).lastAt;
+              const last = (await this.hooks.dispatchTimes(p.id, t.accountId, now - 48 * 3600000))
+                .lastAt;
               const next = last
                 ? followingProgramSlot(p.schedule, last, p.id, o.sequence)
                 : undefined;
@@ -870,10 +1006,8 @@ export class SocialPrograms {
             }
             if (o.scheduledAt > now) continue;
             if (now - o.scheduledAt > 60000) {
-              const lastDispatch = this.hooks.dispatchTimes(
-                p.id,
-                t.accountId,
-                now - 48 * 3600000,
+              const lastDispatch = (
+                await this.hooks.dispatchTimes(p.id, t.accountId, now - 48 * 3600000)
               ).lastAt;
               const next = nextProgramSlot(
                 p.schedule,
@@ -894,27 +1028,27 @@ export class SocialPrograms {
               delete t.approvals.schedule;
               delete t.approvals.publish;
               if (next > now) continue;
-              if (this.missing(p, o, t).length) continue;
+              if ((await this.missing(p, o, t)).length) continue;
             }
             const today = programDay(p.schedule, now);
-            const sent = this.hooks
-              .dispatchTimes(p.id, t.accountId, now - 48 * 3600000)
-              .recent.filter((at) => programDay(p.schedule, at) === today).length;
+            const sent = (
+              await this.hooks.dispatchTimes(p.id, t.accountId, now - 48 * 3600000)
+            ).recent.filter((at) => programDay(p.schedule, at) === today).length;
             if (sent >= p.limits.dailyPosts) {
               t.error = "Daily publication limit reached.";
               continue;
             }
-            const pending = this.hooks.accountQueued(t.accountId);
+            const pending = await this.hooks.accountQueued(t.accountId);
             if (pending) continue;
-            t.variant = this.hooks.prepareMedia(t.variant);
-            this.hooks.validateVariant(t.variant);
-            this.putOccurrence(o);
-            const job = this.hooks.enqueue(p, o, t);
+            t.variant = await this.hooks.prepareMedia(t.variant);
+            await this.hooks.validateVariant(t.variant);
+            await this.putOccurrence(o);
+            const job = await this.hooks.enqueue(p, o, t);
             t.jobId = job.id;
             t.campaignId = job.campaignId;
             t.status = "queued";
           }
-          this.putOccurrence(o);
+          await this.putOccurrence(o);
         }
         const unsettled = all
           .filter((o) => o.programRevision === p.revision)
@@ -925,7 +1059,7 @@ export class SocialPrograms {
         if ((p.nextSequence >= limit || p.nextAt === undefined) && !unsettled) {
           p.enabled = false;
           p.reason = "Completed.";
-          this.putProgram(p);
+          await this.putProgram(p);
           continue;
         }
         const buffered = all.filter((o) =>
@@ -937,51 +1071,67 @@ export class SocialPrograms {
           p.nextAt !== undefined &&
           p.nextAt <= now + 7 * 86400000
         )
-          this.addOccurrence(p, p.nextAt);
-        this.kick(p.id);
+          await this.addOccurrence(p, p.nextAt);
+        await this.kick(p.id);
       } catch (error) {
-        this.pause(p, error instanceof Error ? error.message : "Campaign requires review.");
+        if (error instanceof ProgramStateChanged) continue;
+        try {
+          await this.pause(p, error instanceof Error ? error.message : "Campaign requires review.");
+        } catch (pauseError) {
+          if (!(pauseError instanceof ProgramStateChanged)) throw pauseError;
+        }
       }
     }
   }
-  private kick(programId: string, occurrenceId?: string) {
-    if (this.closed || this.active || !this.hooks.running()) return;
-    const p = this.get(programId),
-      o = this.activeOccurrences(programId, p.revision).find(
-        (o) =>
-          (!occurrenceId || o.id === occurrenceId) &&
-          o.programRevision === p.revision &&
-          o.targets.some((t) => t.status === "pending"),
-      );
-    const t = o?.targets.find((t) => t.status === "pending");
-    if (!o || !t) return;
-    const leaseId = `${o.id}:${t.accountId}`;
-    const leaseOwner = `${this.store.environmentId}:${randomUUID()}`;
-    const claimed = this.store.db
-      .prepare(
-        "INSERT INTO social_generation_leases VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET executor_id=excluded.executor_id,expires_at=excluded.expires_at WHERE social_generation_leases.expires_at<=?",
-      )
-      .run(leaseId, leaseOwner, this.now() + 11 * 60000, this.now());
-    if (!claimed.changes) return;
-    const controller = new AbortController();
-    const promise = this.generate(p, o, t, controller.signal).finally(() => {
-      if (!this.closed)
-        this.store.db
-          .prepare("DELETE FROM social_generation_leases WHERE id=? AND executor_id=?")
-          .run(leaseId, leaseOwner);
-      if (this.active?.controller === controller) this.active = undefined;
-      if (!controller.signal.aborted)
-        this.kick(programId, this.get(programId).enabled ? undefined : o.id);
+  private async kick(programId: string, occurrenceId?: string) {
+    return this.store.db.scope(async () => {
+      if (this.closed || this.active || !(await this.hooks.running())) return;
+      const p = await this.get(programId),
+        o = (await this.activeOccurrences(programId, p.revision)).find(
+          (o) =>
+            (!occurrenceId || o.id === occurrenceId) &&
+            o.programRevision === p.revision &&
+            o.targets.some((t) => t.status === "pending"),
+        );
+      const t = o?.targets.find((t) => t.status === "pending");
+      if (!o || !t) return;
+      const leaseId = `${o.id}:${t.accountId}`;
+      const leaseOwner = `${this.store.environmentId}:${randomUUID()}`;
+      const claimed = await this.store.db
+        .prepare(
+          "INSERT INTO social_generation_leases VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET executor_id=excluded.executor_id,expires_at=excluded.expires_at WHERE social_generation_leases.expires_at<=?",
+        )
+        .run(leaseId, leaseOwner, this.now() + 11 * 60000, this.now());
+      if (!claimed.changes) return;
+      this.store.afterCommit(() => {
+        if (this.closed || this.active) {
+          return this.store.db
+            .prepare("DELETE FROM social_generation_leases WHERE id=? AND executor_id=?")
+            .run(leaseId, leaseOwner)
+            .then(() => undefined);
+        }
+        const controller = new AbortController();
+        const promise = this.generate(p, o, t, controller.signal).finally(async () => {
+          if (!this.closed)
+            await this.store.db
+              .prepare("DELETE FROM social_generation_leases WHERE id=? AND executor_id=?")
+              .run(leaseId, leaseOwner);
+          if (this.active?.controller === controller) this.active = undefined;
+          if (!controller.signal.aborted)
+            await this.kick(programId, (await this.get(programId)).enabled ? undefined : o.id);
+        });
+        this.active = {
+          programId,
+          occurrenceId: o.id,
+          accountId: t.accountId,
+          leaseId,
+          leaseOwner,
+          controller,
+          promise,
+        };
+        void promise.catch((error) => console.error("Social generation failed:", error));
+      });
     });
-    this.active = {
-      programId,
-      occurrenceId: o.id,
-      accountId: t.accountId,
-      leaseId,
-      leaseOwner,
-      controller,
-      promise,
-    };
   }
   private async generate(
     p: SocialProgram,
@@ -993,27 +1143,30 @@ export class SocialPrograms {
       runId = randomUUID();
     let firstSave = true;
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(10 * 60000)]);
-    const policy = this.hooks.policy(t.accountId, p.textAgent),
-      inputSignature = this.authorizationSignature(p);
-    const save = () => {
-      signal.throwIfAborted();
-      const current = this.get(p.id),
-        item = this.occurrence(o.id);
-      const index = item.targets.findIndex((target) => target.accountId === t.accountId);
-      if (
-        current.revision !== configRevision ||
-        index < 0 ||
-        (!firstSave && item.targets[index].generation.runId !== runId) ||
-        this.authorizationSignature(current) !== inputSignature
-      )
-        throw new Error("Campaign or effective policy changed during generation.");
-      o.scheduledAt = item.scheduledAt;
-      if (t.variant) t.variant.scheduledAt = item.scheduledAt;
-      if (signature(item.targets[index].variant) !== signature(t.variant)) item.revision++;
-      item.targets[index] = t;
-      this.putOccurrence(item);
-      o.revision = item.revision;
-      firstSave = false;
+    const policy = await this.hooks.policy(t.accountId, p.textAgent),
+      inputSignature = await this.authorizationSignature(p);
+    const save = async () => {
+      return this.store.db.scope(async () => {
+        signal.throwIfAborted();
+        const current = await this.get(p.id),
+          item = await this.occurrence(o.id);
+        const index = item.targets.findIndex((target) => target.accountId === t.accountId);
+        if (
+          current.revision !== configRevision ||
+          index < 0 ||
+          (!firstSave && item.targets[index].generation.runId !== runId) ||
+          (await this.authorizationSignature(current)) !== inputSignature
+        )
+          throw new Error("Campaign or effective policy changed during generation.");
+        o.scheduledAt = item.scheduledAt;
+        if (t.variant) t.variant.scheduledAt = item.scheduledAt;
+        if (signature(item.targets[index].variant) !== signature(t.variant)) item.revision++;
+        item.targets[index] = t;
+        signal.throwIfAborted();
+        await this.putOccurrence(item);
+        o.revision = item.revision;
+        firstSave = false;
+      });
     };
     try {
       t.status = "generating";
@@ -1021,29 +1174,32 @@ export class SocialPrograms {
       t.generation.runId = runId;
       t.generation.startedAt = this.now();
       t.generation.inputSignature = inputSignature;
-      save();
+      await save();
       if (p.strategy === "pool") {
         t.variant = {
-          ...this.hooks.pool(
+          ...(await this.hooks.pool(
             p.poolCampaignIds[o.sequence % p.poolCampaignIds.length],
             t.accountId,
             p.projectId,
-          ),
+          )),
           scheduledAt: o.scheduledAt,
         };
       } else if (
         p.strategy === "repeat" &&
-        o.sequence > (this.firstOccurrence(p)?.sequence ?? o.sequence)
+        o.sequence > ((await this.firstOccurrence(p))?.sequence ?? o.sequence)
       ) {
-        const sampleOccurrence = this.firstOccurrence(p);
+        const sampleOccurrence = await this.firstOccurrence(p);
         const sample = sampleOccurrence?.targets.find((item) => item.accountId === t.accountId);
         if (
           !sample?.variant ||
           !sampleOccurrence ||
-          this.missing(p, sampleOccurrence, sample).length
+          (await this.missing(p, sampleOccurrence, sample)).length
         )
           throw new Error("Approve the first content before repeating it.");
-        t.variant = this.hooks.prepareMedia({ ...sample.variant, scheduledAt: o.scheduledAt });
+        t.variant = await this.hooks.prepareMedia({
+          ...sample.variant,
+          scheduledAt: o.scheduledAt,
+        });
         t.textAgent = sample.textAgent;
         t.imageProvider = sample.imageProvider;
         t.imageModel = sample.imageModel;
@@ -1051,11 +1207,11 @@ export class SocialPrograms {
         if (!t.variant) {
           if (!policy.agent || !this.generateText)
             throw new Error("Selected text agent is unavailable.");
-          this.consume(p, false);
+          await this.consume(p, false);
           t.generation.attempts++;
           t.textAgent = policy.agent;
-          const facts = this.hooks.facts(p.projectId, p.brief.factIds),
-            previous = this.occurrences(p.id, 20)
+          const facts = await this.hooks.facts(p.projectId, p.brief.factIds),
+            previous = (await this.occurrences(p.id, 20))
               .flatMap((item) => item.targets)
               .filter(
                 (item) =>
@@ -1151,23 +1307,23 @@ export class SocialPrograms {
               maximum
           )
             throw new Error("Generated content exceeds effective account policy.");
-          save();
+          await save();
           if (
-            this.required(p, o, t).includes("text") &&
+            (await this.required(p, o, t)).includes("text") &&
             t.approvals.text !== this.stepSignature(o, t, "text")
           ) {
             t.status = "review";
-            save();
+            await save();
             return;
           }
         }
         if (programGeneratesImage(p, t.accountId) && !t.variant.media.length) {
           if (
-            this.required(p, o, t).includes("text") &&
+            (await this.required(p, o, t)).includes("text") &&
             t.approvals.text !== this.stepSignature(o, t, "text")
           ) {
             t.status = "review";
-            save();
+            await save();
             return;
           }
           const result = await generateSocialImage(
@@ -1181,20 +1337,20 @@ export class SocialPrograms {
               signal: deadline,
               id: `${o.id}:${t.accountId}`,
               providerJobId: t.generation.providerJobId,
-              progress: (percent) => {
+              progress: async (percent) => {
                 t.generation.imageProgress = percent;
-                save();
+                await save();
               },
-              checkpoint: (id) => {
+              checkpoint: async (id) => {
                 t.generation.providerJobId = id;
-                save();
+                await save();
               },
             },
-            (message) => {
+            async (message) => {
               t.generation.transitions.push(message);
-              save();
+              await save();
             },
-            (provider) => {
+            async (provider) => {
               if (
                 !(
                   provider === "comfyui" &&
@@ -1202,10 +1358,10 @@ export class SocialPrograms {
                   t.generation.providerJobId
                 )
               )
-                this.consume(this.get(p.id), true);
+                await this.consume(await this.get(p.id), true);
               if (t.imageProvider !== provider) delete t.generation.providerJobId;
               t.imageProvider = provider;
-              save();
+              await save();
             },
           );
           const dimensions = validateGeneratedImage(result.bytes);
@@ -1225,37 +1381,39 @@ export class SocialPrograms {
         }
       }
       if (!t.variant) throw new Error("No campaign content was produced.");
-      t.variant = this.hooks.prepareMedia(t.variant);
-      this.hooks.validateVariant(t.variant);
-      t.status = this.missing(p, o, t).length ? "review" : "ready";
+      t.variant = await this.hooks.prepareMedia(t.variant);
+      await this.hooks.validateVariant(t.variant);
+      t.status = (await this.missing(p, o, t)).length ? "review" : "ready";
       t.generation.completedAt = this.now();
-      save();
+      await save();
     } catch (error) {
       if (this.closed) return;
-      const current = this.get(p.id),
-        item = this.occurrence(o.id);
-      const index = item.targets.findIndex((target) => target.accountId === t.accountId);
-      if (
-        current.revision === configRevision &&
-        index >= 0 &&
-        item.targets[index].generation.runId === runId
-      ) {
-        const held = signal.aborted ? item.targets[index] : t;
-        held.status = "review";
-        held.error =
-          error instanceof ImageGenerationError
-            ? error.message
-            : signal.aborted
-              ? "Generation paused. Review before retry."
-              : error instanceof Error
-                ? error.message
-                : "Generation requires review.";
-        item.targets[index] = held;
-        this.putOccurrence(item);
-      }
+      await this.store.db.scope(async () => {
+        const current = await this.get(p.id),
+          item = await this.occurrence(o.id);
+        const index = item.targets.findIndex((target) => target.accountId === t.accountId);
+        if (
+          current.revision === configRevision &&
+          index >= 0 &&
+          item.targets[index].generation.runId === runId
+        ) {
+          const held = signal.aborted ? item.targets[index] : t;
+          held.status = "review";
+          held.error =
+            error instanceof ImageGenerationError
+              ? error.message
+              : signal.aborted
+                ? "Generation paused. Review before retry."
+                : error instanceof Error
+                  ? error.message
+                  : "Generation requires review.";
+          item.targets[index] = held;
+          await this.putOccurrence(item);
+        }
+      });
     }
   }
-  private consume(p: SocialProgram, image: boolean) {
+  private async consume(p: SocialProgram, image: boolean) {
     const day = programDay(p.schedule, this.now());
     if (p.generationDay !== day) {
       p.generationDay = day;
@@ -1270,6 +1428,6 @@ export class SocialPrograms {
     p.generationCount++;
     p.dailyGenerationCount++;
     if (image) p.imageGenerationCount++;
-    this.putProgram(p);
+    await this.putProgram(p);
   }
 }

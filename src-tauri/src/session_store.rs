@@ -44,6 +44,9 @@ pub struct SessionStore {
     /// run `content_search::sync_index`, and indexing a session twice is waste.
     search_index_lock: Mutex<()>,
     search_background_queued: AtomicBool,
+    search_background_urgent: AtomicBool,
+    search_background_query: Mutex<String>,
+    search_background_error: Mutex<Option<content_search::IndexFailure>>,
     legacy_page_cache: Mutex<incremental::LegacyPageCache>,
 }
 
@@ -81,6 +84,9 @@ impl SessionStore {
             list_conn: Mutex::new(Some(list_conn)),
             search_index_lock: Mutex::new(()),
             search_background_queued: AtomicBool::new(false),
+            search_background_urgent: AtomicBool::new(false),
+            search_background_query: Mutex::new(String::new()),
+            search_background_error: Mutex::new(None),
             legacy_page_cache: Mutex::new(Default::default()),
         })
     }
@@ -98,6 +104,9 @@ impl SessionStore {
             list_conn: Mutex::new(None),
             search_index_lock: Mutex::new(()),
             search_background_queued: AtomicBool::new(false),
+            search_background_urgent: AtomicBool::new(false),
+            search_background_query: Mutex::new(String::new()),
+            search_background_error: Mutex::new(None),
             legacy_page_cache: Mutex::new(Default::default()),
         })
     }
@@ -176,6 +185,11 @@ fn queue_search_indexing(app: &AppHandle, delay: std::time::Duration) {
     let Some(store) = app.try_state::<SessionStore>() else {
         return;
     };
+    if delay.is_zero() {
+        store
+            .search_background_urgent
+            .store(true, Ordering::Release);
+    }
     if store.search_background_queued.swap(true, Ordering::AcqRel) {
         return;
     }
@@ -184,10 +198,10 @@ fn queue_search_indexing(app: &AppHandle, delay: std::time::Duration) {
     let spawned = std::thread::Builder::new()
         .name("session-search-index".into())
         .spawn(move || {
-            // Let startup finish first; this is catch-up work, not on the
-            // critical path, and a search indexes what it needs by itself.
-            std::thread::sleep(delay);
             if let Some(store) = app.try_state::<SessionStore>() {
+                // A user search wakes the already queued startup worker rather
+                // than waiting for its entire optional startup delay.
+                wait_for_search_index_start(delay, &store.search_background_urgent);
                 struct Reset<'a>(&'a AtomicBool);
                 impl Drop for Reset<'_> {
                     fn drop(&mut self) {
@@ -205,6 +219,45 @@ fn queue_search_indexing(app: &AppHandle, delay: std::time::Duration) {
                 .store(false, Ordering::Release);
         }
         eprintln!("session search index thread: {error}");
+    }
+}
+
+fn wait_for_search_index_start(delay: std::time::Duration, urgent: &AtomicBool) {
+    let deadline = std::time::Instant::now() + delay;
+    while let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) {
+        if urgent.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        std::thread::sleep(remaining.min(std::time::Duration::from_millis(100)));
+    }
+    urgent.store(false, Ordering::Release);
+}
+
+#[cfg(test)]
+mod search_index_start_tests {
+    use super::wait_for_search_index_start;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Barrier,
+    };
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn pending_search_wakes_a_delayed_background_worker() {
+        let urgent = Arc::new(AtomicBool::new(false));
+        let ready = Arc::new(Barrier::new(2));
+        let worker_flag = urgent.clone();
+        let worker_ready = ready.clone();
+        let started = Instant::now();
+        let worker = std::thread::spawn(move || {
+            worker_ready.wait();
+            wait_for_search_index_start(Duration::from_secs(5), &worker_flag);
+        });
+        ready.wait();
+        urgent.store(true, Ordering::Release);
+        worker.join().unwrap();
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(!urgent.load(Ordering::Acquire));
     }
 }
 
@@ -784,7 +837,7 @@ pub fn session_search_content(
     options: ContentSearchOptions,
 ) -> Result<ContentSearchResult, String> {
     let result = content_search::search_content(&store, &options)?;
-    if result.pending > 0 {
+    if result.pending > 0 && result.index_error.is_none() {
         queue_search_indexing(&app, std::time::Duration::ZERO);
     }
     Ok(result)

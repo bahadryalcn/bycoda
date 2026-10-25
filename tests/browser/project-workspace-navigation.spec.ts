@@ -199,6 +199,26 @@ test("Inbox keeps long issue titles readable and list actions available", async 
   await expect(card).toHaveAttribute("aria-current", "true");
 });
 
+test("Inbox refresh keeps focus and shows progress only on the initiating action", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/project-workspace-navigation.html?inbox-layout=1");
+  await expect(page.getByRole("button", { name: /DESIGN-1:/ }).first()).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).inboxRefreshControl.hold = true;
+  });
+  const refresh = page.getByRole("button", { name: "Refresh", exact: true });
+  await refresh.focus();
+  await refresh.press("Enter");
+  await expect(refresh).toHaveAttribute("aria-busy", "true");
+  await expect(refresh).toBeFocused();
+  await page.keyboard.press("Enter");
+  expect(await page.evaluate(() => (window as any).inboxRefreshControl.calls)).toBe(1);
+  await page.evaluate(() => (window as any).inboxRefreshControl.release());
+  await expect(refresh).not.toHaveAttribute("aria-busy", "true");
+  await expect(page.getByRole("button", { name: /DESIGN-1:/ }).first()).toBeVisible();
+});
+
 test("Inbox review separates unread, draft, review and pending checks and restores filtered work", async ({
   page,
 }, testInfo) => {
@@ -415,7 +435,9 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.clear();
     localStorage.setItem("bycoda.language", "en");
+    const inboxRefreshControl = { hold: false, calls: 0, release: () => {} };
     Object.assign(window, {
+      inboxRefreshControl,
       __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
       __TAURI_INTERNALS__: {
         metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
@@ -514,7 +536,13 @@ test.beforeEach(async ({ page }) => {
           if (new URL(location.href).searchParams.has("inbox-layout")) {
             if (command.endsWith("_status"))
               return { connected: command === "jira_status", login: "fixture" };
-            if (command === "jira_list_issues")
+            if (command === "jira_list_issues") {
+              if (inboxRefreshControl.hold) {
+                inboxRefreshControl.calls += 1;
+                await new Promise<void>((resolve) => {
+                  inboxRefreshControl.release = resolve;
+                });
+              }
               return Array.from({ length: 12 }, (_, index) => ({
                 provider: "jira",
                 kind: "jira",
@@ -534,6 +562,7 @@ test.beforeEach(async ({ page }) => {
                 teamName: "Design workspace",
                 projectPath: "G:/wallet/api",
               }));
+            }
             if (command === "jira_issue_details")
               return { body: "Fixture issue description", author: "Fixture" };
             if (command === "jira_issue_thread")

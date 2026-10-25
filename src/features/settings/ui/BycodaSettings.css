@@ -51,6 +51,9 @@
 .bycoda-settings-category-picker {
   display: none;
 }
+.bycoda-settings-toolbar .bycoda-settings-mobile-help {
+  display: none;
+}
 .bycoda-settings-categories {
   display: flex;
   flex-direction: column;
@@ -187,6 +190,7 @@
   font-weight: 500;
 }
 .bycoda-settings-workbench .bycoda-settings-form .settings-group > .settings-group-content {
+  align-self: start;
   min-width: 0;
   border: 1px solid var(--color-stroke);
   border-radius: var(--radius-lg, 12px);
@@ -340,10 +344,15 @@
     padding: 12px 20px 60px;
   }
   .bycoda-settings-workbench .bycoda-settings-form > header {
-    justify-content: flex-end;
-    margin-block-end: 4px;
-    padding-block-end: 4px;
+    margin-block-end: 0;
+    padding-block-end: 0;
     border-block-end: 0;
+  }
+  .bycoda-settings-toolbar .bycoda-settings-mobile-help {
+    display: inline-flex;
+  }
+  .bycoda-settings-workbench .bycoda-settings-form > header .settings-page-help {
+    display: none;
   }
   /* The category picker supplies the visible identity. Keep the page heading
      for navigation by heading without repeating a large title below it. */

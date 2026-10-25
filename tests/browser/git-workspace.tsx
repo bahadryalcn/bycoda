@@ -3,6 +3,7 @@ import { GitHistoryGraph } from "../../src/features/source-control/ui/GitHistory
 import { GitGraphWorkspace } from "../../src/features/source-control/ui/GitGraphWorkspace";
 import { WorkspaceSourceControl } from "../../src/features/source-control/ui/WorkspaceSourceControl";
 import { SourceControl } from "../../src/features/source-control/ui/SourceControl";
+import { GitChangesPanel } from "../../src/features/source-control/ui/GitChangesPanel";
 import type { Worktree } from "../../src/features/source-control/model/worktrees";
 import "../../src/styles/index.css";
 // Eagerly include the workspace in fixture discovery so Vite optimizes its
@@ -14,6 +15,8 @@ void GitGraphWorkspace;
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 const large = new URLSearchParams(location.search).has("large");
 const diffUsability = new URLSearchParams(location.search).has("diff-usability");
+const actionFeedback = new URLSearchParams(location.search).has("action-feedback");
+const pendingActions = new Map<string, () => void>();
 const diffRepository = "/fixture/engineering/long-repository-name-for-working-tree-review";
 const diffRelative =
   "src/features/a-very-long-feature-directory/another-long-nested-directory/selected-hunk-review.ts";
@@ -87,6 +90,10 @@ let disk =
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 Object.assign(window, {
   gitFixtureCalls: calls,
+  gitFixtureFinishAction: (command: string) => {
+    pendingActions.get(command)?.();
+    pendingActions.delete(command);
+  },
   __TAURI_INTERNALS__: {
     metadata: {
       currentWindow: { label: "main" },
@@ -95,6 +102,8 @@ Object.assign(window, {
     transformCallback: () => 1,
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args });
+      if (actionFeedback && ["git_sync", "git_stash", "git_stash_action"].includes(command))
+        await new Promise<void>((resolve) => pendingActions.set(command, resolve));
       if (diffUsability && command === "git_stage_contents") {
         if (failHunk) {
           failHunk = false;
@@ -309,7 +318,15 @@ const renderFixture = () =>
           : "w-80 border-r border-stroke"
       }
     >
-      {diffUsability ? (
+      {actionFeedback ? (
+        <GitChangesPanel
+          cwd="/fixture"
+          enabled
+          onOpenFile={() => {}}
+          onOpenAllChanges={() => {}}
+          onOpenCommit={() => {}}
+        />
+      ) : diffUsability ? (
         <GitGraphWorkspace
           cwd={diffRepository}
           commit={null}

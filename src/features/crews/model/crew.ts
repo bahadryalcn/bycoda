@@ -3,6 +3,7 @@ import type { RuntimeMode } from "../../sessions/model/session";
 
 export const HOST_CREWS = "crews.v1";
 export const HOST_CREW_TASKS = "crews.tasks.v1";
+export const HOST_CREW_RUN_DELETE = "crews.run-delete.v1";
 export const HOST_CREW_DELETE = "crews.delete.v1";
 /** Library members carry specialty groups and crews remember which profile a member came from. */
 export const HOST_CREW_AGENT_GROUPS = "crews.agent-groups.v1";

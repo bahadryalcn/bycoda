@@ -10,7 +10,8 @@ beforeEach(() => {
   processApi.exec.mockImplementation(async (_exe: string, args: string[]) => {
     let stdout = "";
     if (args.includes("--is-inside-work-tree")) stdout = "true\n";
-    else if (args.includes("status")) stdout = " M file.txt\0";
+    else if (args.includes("status"))
+      stdout = "## feature...origin/feature [ahead 1]\0 M file.txt\0";
     else if (args.includes("--numstat")) stdout = "2\t1\tfile.txt\0";
     else if (args.includes("--show-prefix")) stdout = "";
     else if (args.includes("--verify") && args.includes("HEAD")) stdout = "a".repeat(40);
@@ -78,13 +79,18 @@ it("does not reuse a pre-mutation refresh after invalidation", async () => {
 it("retains a slow files refresh after a later full refresh has completed", async () => {
   const execute = processApi.exec.getMockImplementation()!;
   let release!: (value: { stdout: string; stderr: string }) => void;
+  const entered = Promise.withResolvers<void>();
   processApi.exec.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
         release = resolve;
+        entered.resolve();
       }),
   );
   const files = hostGitIndex("/repo", false);
+  // Ensure the delayed command belongs to the lightweight request even when
+  // the Windows process-start gate changes which async request reaches Git first.
+  await entered.promise;
   const full = hostGitIndex("/repo");
   await full;
   expect(hostGitIndex("/repo", false)).toBe(files);

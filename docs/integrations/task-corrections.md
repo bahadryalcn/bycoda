@@ -24,6 +24,125 @@ or malformed. These turns do not start implementation workers or invent acceptan
 evidence. A trusted host interruption can resume a planner or reviewer's retained conversation;
 daily usage limits delay recovery instead of discarding the plan.
 
+## Acceptance evidence and continuation
+
+For a structured `bycoda.task.v1` brief with acceptance criteria, a new independent
+review records one result per criterion: `verified`, `failed` or `unresolved`.
+Verified results require references to evidence the reviewer inspected. The host
+stores these references, the review session and its time in
+`verification.acceptance`; it does not treat a worker summary or an overall PASS
+as criterion evidence. Missing or unresolved required criteria prevent acceptance.
+Continuous reviews can repair a missing or malformed evidence report in the same
+read-only conversation, within the existing two-follow-up budget.
+
+Open **Acceptance evidence** in the task details to inspect the recorded results
+and open the reviewer conversation. References render as text. They describe the
+recorded review, not a live filesystem check or deployment approval. Older reviews
+and tasks with review disabled do not gain verified criteria retroactively.
+
+When a bounded local snapshot is available, the host compares the working copy
+and declared local output paths before and after review. This includes explicit
+outputs under ignored `temp/` directories. A detected change invalidates that
+review and requires a recheck. The snapshot does not cover remote URLs, natural
+language deliverable descriptions or every external dependency; unavailable
+snapshots are not represented as verified file freshness.
+
+Worker and recovery contracts include a current `bycoda.task-continuation.v1`
+snapshot of retained checks, open findings, evidence, output paths and recent
+attempts. Supplemental context is bounded and reports omissions. Correction
+feedback retains a bounded selection of previous evidence after current checks
+are cleared. These are previous-run records: the next agent must inspect current
+files before reusing them. Original task instructions, owner stops, run limits
+and delivery permissions remain authoritative.
+
+## Integrated Goal acceptance
+
+New Goal drafts and conversation-created plans enable **Verify the integrated
+result before completing this goal**. An older Goal without `finalReview` keeps
+its existing completion behavior. Hosts advertise `goals.final-review`; a client
+rejects an unsupported host before creating a new plan with this option.
+
+After all planned tasks finish and deliver, an independent final reviewer checks
+the original objective and the interactions between the delivered results. Both
+conditions require explicit acceptance evidence. Individual task PASS results
+alone do not complete the Goal. Its final review shows queued/running, verified
+or failed, with a link to the retained conversation and the recorded evidence.
+**Recheck final acceptance** requests another read-only review of existing work;
+it does not rerun workers or grant merge, release or device access.
+
+The host binds the review to child task identities and, when available, bounded
+snapshots of the delivered files and explicit outputs. Changed results require a
+fresh review. Unsupported snapshots remain visibly unknown. Cancellation,
+restarts, owner stops, machine concurrency and run limits also apply to this
+final stage. A retained launch receipt prevents a restart from creating a second
+review for the same pending request.
+
+## Total run budgets
+
+Open **Total run budget** in a Task or Goal form. Limits can cover cumulative
+agent minutes, agent runs and reported tokens. Empty or zero is unlimited. A
+Goal budget includes its planner, workers, independent reviewers, correction
+turns and final reviewer. Crew task budgets include their coordinator and member
+runs. Concurrent agent time is added, rather than treated as wall-clock time.
+Near-limit warnings use 80% by default.
+
+The host records run identities durably and does not count the same receipt
+twice. It checks limits before another turn starts, after asynchronous preparation
+and while recorded work is running. Stopping at a limit retains sessions, files
+and feedback. Raising a limit does not silently restart a blocked task; use its
+existing restart/recheck action. Clearing an existing budget sends an explicit
+empty budget. Budget controls do not override owner cancellation or permissions.
+
+Providers may report tokens only at completion. A token ceiling therefore gates
+new turns using recorded usage and stops an active turn only when a known reading
+has reached the ceiling; it cannot promise an exact in-flight token cutoff.
+Missing metrics and pre-upgrade history are unknown, never zero. A configured
+total limit cannot fund another run when historical consumption is unknown;
+start a fresh task/Goal or remove that historical total limit explicitly. Reported
+costs are shown only when billing lineage is available. No price estimate is
+invented for unavailable cost data.
+
+## Saved workflows and preparation
+
+Task forms offer project-and-machine-scoped workflows for bug fixes, source
+research and UI changes. Apply one explicitly to merge its procedure and checks
+with the current request. Save the current configuration to reuse its brief,
+required sources, verification command, worker settings and reviewer profile.
+Saving or applying never starts work, enables a skill or changes permissions.
+Profiles stay in this desktop's local storage; they are not credentials or
+automatically shared project policy. Concurrent profile edits are detected before
+replacement or removal, and their version stamps increase even after clock rollback.
+
+Turning off a saved separate reviewer profile explicitly restores the worker's
+reviewer defaults. Clearing a profile requires a host advertising
+`tasks.reviewer-profile`; older hosts are rejected before any task write. An
+omitted profile field in a legacy request continues to preserve the saved profile.
+
+**Check preparation** is read-only. The host checks access to declared local
+sources in the selected workspace and repeats required resource checks before
+starting the task. Unsafe paths are rejected without reading source contents.
+An installed skill, tool inventory or connection configuration does not prove an
+authenticated runtime. Unchecked external resources stay unknown; required
+unknown/missing resources prevent the run, while optional unknown resources do
+not. No preparation action installs tools or changes access. Changing the draft's
+workspace, agent, model or resources invalidates its displayed preparation result.
+Provider authentication and model execution are informational unknowns during this
+read-only check; their validation is deferred to actual provider execution.
+
+## Accepted-work comparisons
+
+The Task details' **Run quality and usage** section records the owner's explicit
+acceptance for measurement, review time and required corrections. This does not
+complete, approve, merge or publish work. A new run clears old result acceptance;
+an unsaved checkbox cannot carry over to a different result.
+
+Open **Compare accepted results** from the board's action menu. Comparisons group
+completed accepted results by agent, model settings and workflow version. They
+include recorded reviewer/retry consumption, human review time and corrections.
+Unknown history, token readings and cost totals stay separate from complete
+measurements. Different objectives or acceptance criteria are identified: these
+are descriptive outcomes, not a controlled model benchmark.
+
 ## Execution machine
 
 Task and Goal forms provide an explicit machine selector and list projects from

@@ -15,11 +15,11 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-function setup() {
+async function setup() {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-shell-test-"));
   const path = join(directory, "host.db");
   const store = new HostStore(path);
-  const project = store.addProject(directory, "Test");
+  const project = await store.addProject(directory, "Test");
   const turns: Array<{ input: SendTurnInput; finish: () => void }> = [];
   const provider: HostProvider = {
     send: vi.fn(
@@ -42,18 +42,21 @@ function setup() {
   const shell = (cwd: string, command: string) =>
     new Promise<ShellResult>((finish) => runs.push({ cwd, command, finish }));
   const engine = new HostEngine(store, { codex: provider }, shell);
-  const id = engine.command({
-    type: "create",
-    commandId: "create",
-    projectId: project.id,
-    harness: "codex",
-    model: "codex:test",
-    runtimeMode: "supervised",
-  }).sessionId;
+  await engine.ready;
+  const id = (
+    await engine.command({
+      type: "create",
+      commandId: "create",
+      projectId: project.id,
+      harness: "codex",
+      model: "codex:test",
+      runtimeMode: "supervised",
+    })
+  ).sessionId;
   cleanups.push(async () => {
     await engine.close();
     try {
-      store.close();
+      await store.close();
     } catch {
       // The restart test closes it itself.
     }
@@ -62,88 +65,92 @@ function setup() {
   return { directory, path, store, provider, engine, turns, runs, id };
 }
 
-const shellBlocks = (store: HostStore, id: string) =>
-  store.session(id).session.blocks.filter((block) => block.shell);
+const shellBlocks = async (store: HostStore, id: string) =>
+  (await store.session(id)).session.blocks.filter((block) => block.shell);
 
 describe("a !command on the host", () => {
   it("runs in the session's folder without a model turn and records the output", async () => {
-    const { engine, store, provider, runs, id, directory } = setup();
-    engine.command({ type: "shell", commandId: "run-1", sessionId: id, line: "git status" });
+    const { engine, store, provider, runs, id, directory } = await setup();
+    await engine.command({ type: "shell", commandId: "run-1", sessionId: id, line: "git status" });
 
     expect(runs).toMatchObject([{ command: "git status" }]);
-    expect(runs[0].cwd).toBe(store.session(id).session.cwd);
+    expect(runs[0].cwd).toBe((await store.session(id)).session.cwd);
     expect(directory).toBeTruthy();
-    expect(shellBlocks(store, id)).toMatchObject([
+    expect(await shellBlocks(store, id)).toMatchObject([
       { id: "run-1", role: "system", shell: { command: "git status", running: true } },
     ]);
-    expect(store.session(id).status).toBe("idle");
-    const before = store.session(id).revision;
+    expect((await store.session(id)).status).toBe("idle");
+    const before = (await store.session(id)).revision;
 
     runs[0].finish({ output: "clean\n", exitCode: 0, timedOut: false });
-    await vi.waitFor(() =>
-      expect(shellBlocks(store, id)[0].shell).toEqual({
+    await vi.waitFor(async () =>
+      expect((await shellBlocks(store, id))[0].shell).toEqual({
         command: "git status",
         output: "clean\n",
         exitCode: 0,
       }),
     );
     // A client polling for changes sees the finished block.
-    expect(store.session(id).revision).toBeGreaterThan(before);
+    expect((await store.session(id)).revision).toBeGreaterThan(before);
     expect(provider.send).not.toHaveBeenCalled();
   });
 
   it("hands the output to the next message, once", async () => {
-    const { engine, runs, turns, id } = setup();
-    engine.command({ type: "shell", commandId: "run-1", sessionId: id, line: "npm test" });
+    const { engine, runs, turns, id } = await setup();
+    await engine.command({ type: "shell", commandId: "run-1", sessionId: id, line: "npm test" });
     runs[0].finish({ output: "1 failed", exitCode: 1, timedOut: false });
     await vi.waitFor(() => expect(runs).toHaveLength(1));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    engine.command({ type: "send", commandId: "ask", sessionId: id, text: "Fix it" });
+    await engine.command({ type: "send", commandId: "ask", sessionId: id, text: "Fix it" });
     await vi.waitFor(() => expect(turns).toHaveLength(1));
     expect(turns[0].input.text).toContain("$ npm test\n1 failed\n[exit code 1]");
     expect(turns[0].input.text.endsWith("Fix it")).toBe(true);
     turns[0].finish();
-    await vi.waitFor(() => expect(engine.store.session(id).status).toBe("idle"));
+    await vi.waitFor(async () => expect((await engine.store.session(id)).status).toBe("idle"));
 
-    engine.command({ type: "send", commandId: "again", sessionId: id, text: "Thanks" });
+    await engine.command({ type: "send", commandId: "again", sessionId: id, text: "Thanks" });
     await vi.waitFor(() => expect(turns).toHaveLength(2));
     expect(turns[1].input.text).toBe("Thanks");
     turns[1].finish();
   });
 
   it("is accepted while a turn is running and keeps the turn's output", async () => {
-    const { engine, store, runs, turns, id } = setup();
-    engine.command({ type: "send", commandId: "work", sessionId: id, text: "Work" });
+    const { engine, store, runs, turns, id } = await setup();
+    await engine.command({ type: "send", commandId: "work", sessionId: id, text: "Work" });
     await vi.waitFor(() => expect(turns).toHaveLength(1));
     turns[0].input.onEvent({ type: "message.delta", text: "Working" });
 
-    engine.command({ type: "shell", commandId: "run-1", sessionId: id, line: "ls" });
+    await engine.command({ type: "shell", commandId: "run-1", sessionId: id, line: "ls" });
     turns[0].input.onEvent({ type: "message.delta", text: " on it" });
     runs[0].finish({ output: "a.txt", exitCode: 0, timedOut: false });
-    await vi.waitFor(() => expect(shellBlocks(store, id)[0].shell?.running).toBeUndefined());
+    await vi.waitFor(async () =>
+      expect((await shellBlocks(store, id))[0].shell?.running).toBeUndefined(),
+    );
     turns[0].finish();
-    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
 
-    const blocks = store.session(id).session.blocks;
+    const blocks = (await store.session(id)).session.blocks;
     expect(blocks.find((block) => block.role === "assistant")?.text).toBe("Working on it");
-    expect(shellBlocks(store, id)[0].shell).toMatchObject({ output: "a.txt", exitCode: 0 });
+    expect((await shellBlocks(store, id))[0].shell).toMatchObject({ output: "a.txt", exitCode: 0 });
   });
 
   it("marks a command the host did not finish before restarting", async () => {
-    const { engine, store, path, id } = setup();
-    engine.command({ type: "shell", commandId: "run-1", sessionId: id, line: "sleep 99" });
+    const { engine, store, path, id } = await setup();
+    await engine.command({ type: "shell", commandId: "run-1", sessionId: id, line: "sleep 99" });
     await engine.close();
-    store.close();
+    await store.close();
 
     const reopened = new HostStore(path);
-    cleanups.push(() => reopened.close());
-    new HostEngine(reopened, {});
-    expect(shellBlocks(reopened, id)[0].shell).toEqual({
+    cleanups.push(async () => await reopened.close());
+    const restarted = new HostEngine(reopened, {});
+    await restarted.ready;
+    expect((await shellBlocks(reopened, id))[0].shell).toEqual({
       command: "sleep 99",
       output: "Host restarted before this command finished.",
       exitCode: null,
     });
+    await restarted.close();
   });
 
   it("rejects an empty or oversized command", () => {

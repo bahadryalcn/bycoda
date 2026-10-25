@@ -17,21 +17,27 @@ import type { SocialCredential } from "./social-credentials";
 import type { SocialAdapters } from "../src/integrations/social/adapter";
 import { accountCapabilities, X_BROWSER_SCOPES } from "../src/integrations/social/capabilities";
 import type { SocialAccount, SocialJob } from "../src/features/social/model/social";
-
-const cleanup: (() => void)[] = [];
-afterEach(() => cleanup.splice(0).forEach((fn) => fn()));
+const cleanup: (() => void | Promise<void>)[] = [];
+afterEach(async () => {
+  for (const action of cleanup.splice(0).reverse()) await action();
+});
 const owner = { kind: "owner", actorId: "device", provider: "owner" } as const;
 const loggedIn = (id = "42") => [
   { name: "auth_token", value: "synthetic" },
   { name: "twid", value: `u%3D${id}` },
 ];
-
 function fakeBrowser(options: {
-  cookies?: () => { name: string; value: string }[];
+  cookies?: () => {
+    name: string;
+    value: string;
+  }[];
   path?: string;
   emptyMentions?: boolean;
   response?: string;
-  responses?: { mentions?: string; inbox?: string };
+  responses?: {
+    mentions?: string;
+    inbox?: string;
+  };
 }) {
   const calls: string[] = [];
   let closed!: () => void;
@@ -96,15 +102,14 @@ function fakeBrowser(options: {
   });
   return { calls, launcher, page, plain, closeWindow: () => closeWindow() };
 }
-
 async function fixture(
   launcher: BrowserLauncher,
-  now = () => 1_000_000,
+  now = () => 1000000,
   plain?: PlainBrowserLauncher,
 ) {
   const path = mkdtempSync(join(tmpdir(), "social-browser-"));
   const store = new HostStore(join(path, "host.db"));
-  const project = store.addProject(path, "Project");
+  const project = await store.addProject(path, "Project");
   const tokens = new Map<string, SocialCredential>();
   const vault = {
     get: async (id: string) => tokens.get(id),
@@ -135,9 +140,9 @@ async function fixture(
     undefined,
     browser.adapter(),
   );
-  cleanup.push(() => {
-    social.stop();
-    store.close();
+  cleanup.push(async () => {
+    await social.dispose();
+    await store.close();
     rmSync(path, { recursive: true, force: true });
   });
   const account = (await social.call(owner, "accounts.create", {
@@ -148,8 +153,8 @@ async function fixture(
   })) as SocialAccount;
   return { social, browser, account, tokens, project };
 }
-async function settle(check: () => boolean) {
-  for (let attempt = 0; attempt < 200 && !check(); attempt++)
+async function settle(check: () => boolean | Promise<boolean>) {
+  for (let attempt = 0; attempt < 200 && !(await check()); attempt++)
     await new Promise((resolve) => setImmediate(resolve));
 }
 const job = (overrides: Partial<SocialJob["payload"]> = {}): SocialJob => ({
@@ -170,7 +175,6 @@ const job = (overrides: Partial<SocialJob["payload"]> = {}): SocialJob => ({
 const created = JSON.stringify({
   data: { create_tweet: { tweet_results: { result: { rest_id: "777" } } } },
 });
-
 describe("X tarayıcı oturumu", () => {
   it("keeps profile mutations owner-only, explicitly confirmed and on the executor", async () => {
     const fake = fakeBrowser({});
@@ -217,19 +221,26 @@ describe("X tarayıcı oturumu", () => {
     expect(fake.launcher).not.toHaveBeenCalled();
   });
   it("logs in through a plain window and verifies the session after it closes", async () => {
-    let cookies: { name: string; value: string }[] = [];
+    let cookies: {
+      name: string;
+      value: string;
+    }[] = [];
     const fake = fakeBrowser({ cookies: () => cookies });
     const s = await fixture(fake.launcher, undefined, fake.plain);
-    expect(() => s.browser.begin(s.social, owner, s.account.id, undefined)).toThrow("unofficial");
-    expect(s.browser.begin(s.social, owner, s.account.id, true).status).toBe("waiting");
+    await expect(
+      (async () => await s.browser.begin(s.social, owner, s.account.id, undefined))(),
+    ).rejects.toThrow("unofficial");
+    expect((await s.browser.begin(s.social, owner, s.account.id, true)).status).toBe("waiting");
     await settle(() => fake.calls.includes("plain https://x.com/login"));
     // No debugger-controlled browser while the owner logs in (Google blocks those).
     expect(fake.launcher).not.toHaveBeenCalled();
-    expect(s.browser.status(s.social, owner, s.account.id).status).toBe("waiting");
+    expect((await s.browser.status(s.social, owner, s.account.id)).status).toBe("waiting");
     cookies = loggedIn("42");
     fake.closeWindow();
-    await settle(() => s.browser.status(s.social, owner, s.account.id).status !== "waiting");
-    expect(s.browser.status(s.social, owner, s.account.id)).toEqual({
+    await settle(
+      async () => (await s.browser.status(s.social, owner, s.account.id)).status !== "waiting",
+    );
+    expect(await s.browser.status(s.social, owner, s.account.id)).toEqual({
       status: "connected",
       error: undefined,
     });
@@ -269,11 +280,15 @@ describe("X tarayıcı oturumu", () => {
   it("fails when the window closes without an X login and removes the profile on disconnect", async () => {
     const fake = fakeBrowser({ cookies: () => [] });
     const s = await fixture(fake.launcher, undefined, fake.plain);
-    s.browser.begin(s.social, owner, s.account.id, true);
+    await s.browser.begin(s.social, owner, s.account.id, true);
     await settle(() => fake.calls.includes("plain https://x.com/login"));
     fake.closeWindow();
-    await settle(() => s.browser.status(s.social, owner, s.account.id).status === "failed");
-    expect(s.browser.status(s.social, owner, s.account.id).error).toContain("not completed");
+    await settle(
+      async () => (await s.browser.status(s.social, owner, s.account.id)).status === "failed",
+    );
+    expect((await s.browser.status(s.social, owner, s.account.id)).error).toContain(
+      "not completed",
+    );
     const forget = vi.fn(async () => undefined);
     s.social.forgetBrowserSession = forget;
     await s.social.connectAccount(
@@ -295,17 +310,19 @@ describe("X tarayıcı oturumu", () => {
   it("cancels an open login on disconnect and requires the executor host", async () => {
     const fake = fakeBrowser({ cookies: () => [] });
     const s = await fixture(fake.launcher, undefined, fake.plain);
-    s.browser.begin(s.social, owner, s.account.id, true);
+    await s.browser.begin(s.social, owner, s.account.id, true);
     await settle(() => fake.calls.includes("plain https://x.com/login"));
     await s.browser.forget(s.account.id);
     expect(fake.calls).toContain("window closed");
     expect(fake.launcher).not.toHaveBeenCalled();
-    expect(s.browser.status(s.social, owner, s.account.id).status).toBe("idle");
+    expect((await s.browser.status(s.social, owner, s.account.id)).status).toBe("idle");
     await s.social.call(owner, "accounts.executor", {
       accountId: s.account.id,
       executorId: "other-host",
     });
-    expect(() => s.browser.begin(s.social, owner, s.account.id, true)).toThrow("executor host");
+    await expect(
+      (async () => await s.browser.begin(s.social, owner, s.account.id, true))(),
+    ).rejects.toThrow("executor host");
   });
   it("publishes text, link and images from the matching logged-in account", async () => {
     const fake = fakeBrowser({ response: created });
@@ -401,7 +418,7 @@ describe("X tarayıcı oturumu", () => {
     ).rejects.toMatchObject({ code: "expired" });
   });
   it("treats a missing post response as uncertain and spaces sends", async () => {
-    let now = 1_000_000;
+    let now = 1000000;
     const fake = fakeBrowser({ response: undefined });
     const s = await fixture(fake.launcher, () => now);
     const account = { ...s.account, platformId: "42" };
@@ -410,11 +427,10 @@ describe("X tarayıcı oturumu", () => {
     now += 1000;
     await expect(send()).rejects.toMatchObject({
       code: "rate_limit",
-      retryAt: 1_030_000,
+      retryAt: 1030000,
     });
   });
 });
-
 describe("X browser background monitoring and messaging", () => {
   it("rotates owned post comment reads and deduplicates mentions from the same poll", async () => {
     const fake = fakeBrowser({});
@@ -520,14 +536,16 @@ describe("X browser background monitoring and messaging", () => {
     await s.social.tick();
     expect(fake.calls).toContain("goto https://x.com/notifications/mentions");
     expect(fake.calls).toContain("goto https://x.com/messages");
-    expect(s.social.monitoringStatus(owner, s.account.id)).toMatchObject({
+    expect(await s.social.monitoringStatus(owner, s.account.id)).toMatchObject({
       status: "healthy",
       coverage: [
         { channel: "mentions", status: "read" },
         { channel: "messages", status: "read" },
       ],
     });
-    const snapshot = (await s.social.call(owner, "snapshot", {})) as { threads: unknown[] };
+    const snapshot = (await s.social.call(owner, "snapshot", {})) as {
+      threads: unknown[];
+    };
     expect(snapshot.threads).toHaveLength(2);
     clock += 61000;
     expect(await s.social.pollAccount(s.account.id)).toEqual({ ingested: 0 });
@@ -537,7 +555,7 @@ describe("X browser background monitoring and messaging", () => {
     });
     clock += 61000;
     await s.social.pollAccount(s.account.id);
-    expect(s.social.monitoringStatus(owner, s.account.id)).toMatchObject({
+    expect(await s.social.monitoringStatus(owner, s.account.id)).toMatchObject({
       status: "partial",
       coverage: [
         { channel: "mentions", status: "read" },
@@ -591,7 +609,9 @@ describe("X browser background monitoring and messaging", () => {
       topics: ["product"],
       dailyLimit: 1,
       answers: [{ keyword: "what is bycoda", factId: "fact" }],
-    })) as { id: string };
+    })) as {
+      id: string;
+    };
     await s.social.call(owner, "automations.activate", {
       id: rule.id,
       confirm: "ENABLE_AUTOMATIC_REPLIES",
@@ -615,9 +635,11 @@ describe("X browser background monitoring and messaging", () => {
     await s.social.tick();
     // Inbound polling runs independently of dispatch; its authorized reply is
     // queued for the next dispatch tick rather than delaying existing jobs.
-    expect(s.social.snapshot(owner).jobs).toMatchObject([{ kind: "reply", status: "queued" }]);
+    expect((await s.social.snapshot(owner)).jobs).toMatchObject([
+      { kind: "reply", status: "queued" },
+    ]);
     await s.social.tick();
-    const snapshot = s.social.snapshot(owner);
+    const snapshot = await s.social.snapshot(owner);
     expect(snapshot.jobs).toHaveLength(1);
     expect(snapshot.jobs[0]).toMatchObject({
       kind: "reply",
@@ -627,7 +649,7 @@ describe("X browser background monitoring and messaging", () => {
     expect(fake.calls).toContain("text bycoda helps develop software.");
     clock += 61000;
     await s.social.tick();
-    expect(s.social.snapshot(owner).jobs).toHaveLength(1);
+    expect((await s.social.snapshot(owner)).jobs).toHaveLength(1);
   });
   it("does not read another account's profile", async () => {
     const fake = fakeBrowser({ cookies: () => loggedIn("99"), responses: { mentions, inbox } });
@@ -691,7 +713,6 @@ describe("X browser background monitoring and messaging", () => {
     ).rejects.toMatchObject({ code: "unknown" });
   });
 });
-
 describe("X web yanıtları", () => {
   it("reads post IDs and maps explicit errors", () => {
     expect(

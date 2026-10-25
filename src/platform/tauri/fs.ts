@@ -830,7 +830,7 @@ const GIT_CHANGED = "bycoda-git-changed";
  */
 export type GitChangeScope = "index" | "checkout" | "refs";
 
-type GitChange = { cwd?: string; scope: GitChangeScope };
+export type GitChange = { cwd?: string; scope: GitChangeScope };
 
 /** Whether two folders belong to one checkout: the same folder or nested. */
 function sameCheckout(a: string, b: string): boolean {
@@ -968,7 +968,7 @@ export function isGitWatched(cwd: string): boolean {
  * skips every `index` change, for views of commits, branches or stashes.
  */
 export function subscribeGitChanged(
-  listener: () => void,
+  listener: (change?: GitChange | null) => void,
   filter?: { cwd?: string; refsOnly?: boolean },
 ): () => void {
   const onChange = (event: Event) => {
@@ -979,7 +979,7 @@ export function subscribeGitChanged(
         return;
       }
     }
-    listener();
+    listener(change);
   };
   window.addEventListener(GIT_CHANGED, onChange);
   const cwd = filter?.cwd;

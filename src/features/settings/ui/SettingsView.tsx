@@ -1,3 +1,4 @@
+import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { Button } from "../../../shared/ui/Button";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { CrewsSettings } from "../../crews/ui/CrewsSettings";
@@ -39,6 +40,7 @@ import {
   RevealedSetting,
   PageAutomaticSaveHint,
   PageHeader,
+  SettingsPageHelp,
   Group,
   Row,
   Toggle,
@@ -93,6 +95,7 @@ type Props = {
   /** Lets search jump to a setting that lives on another page. */
   onSelectSection?: (section: SettingsSectionId) => void;
   onOpenSession: (sessionId: string) => void;
+  onOpenBackgroundSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
   onArchiveSession: (sessionId: string, archived: boolean) => void;
   onDeleteSession: (sessionId: string) => void;
   onRestoreProject?: (path: string) => void;
@@ -127,6 +130,7 @@ export function SettingsView({
   onClose,
   onSelectSection,
   onOpenSession,
+  onOpenBackgroundSession,
   onArchiveSession,
   onDeleteSession,
   onRestoreProject,
@@ -209,8 +213,12 @@ export function SettingsView({
         if (target.getClientRects().length === 0) return;
         observer.disconnect();
         target.scrollIntoView?.({ block: "center" });
+        // Search should land on the setting itself, not its optional help trigger.
+        const controlRoot =
+          target.querySelector<HTMLElement>(".settings-row-control, .settings-group-content") ??
+          target;
         const control = [
-          ...target.querySelectorAll<HTMLElement>(
+          ...controlRoot.querySelectorAll<HTMLElement>(
             'input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), [tabindex="0"]',
           ),
         ].find((element) => element.getClientRects().length > 0);
@@ -302,6 +310,11 @@ export function SettingsView({
         <div className="bycoda-settings-toolbar-actions">
           <SidebarUpdateFooter />
           <SettingsSearch onReveal={onReveal} />
+          <SettingsPageHelp
+            className="bycoda-settings-mobile-help"
+            description={settingsSectionDescription(section)}
+            automaticSave={AUTOMATIC_SAVE_SECTIONS.includes(section)}
+          />
           {section === "appearance" ? (
             <Button
               variant="ghost"
@@ -423,7 +436,19 @@ export function SettingsView({
                       automaticSave={AUTOMATIC_SAVE_SECTIONS.includes(section)}
                     />
                     {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
-                    {section === "crews" ? <CrewsSettings cwd={cwd} /> : null}
+                    {section === "crews" ? (
+                      <CrewsSettings
+                        cwd={cwd}
+                        onOpen={
+                          onOpenBackgroundSession
+                            ? async (target) => {
+                                await onOpenBackgroundSession(target);
+                                onClose();
+                              }
+                            : undefined
+                        }
+                      />
+                    ) : null}
                     {section === "connections" ? (
                       <>
                         <ConnectionsSettings />

@@ -2,11 +2,13 @@ import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
   GlobalWorkerOptions,
   TextLayer,
   getDocument,
   type PDFDocumentProxy,
+  type PDFPageProxy,
 } from "pdfjs-dist/legacy/build/pdf.mjs";
 // The worker is bundled as a hashed asset, so it loads from the app's own
 // origin (allowed by `script-src 'self'`) and works offline. The legacy build
@@ -42,7 +44,7 @@ type Zoom = "fit" | number;
 
 /** The page point under the pointer: which page, and where within it. */
 type Anchor = {
-  frame: HTMLElement;
+  page: number;
   fx: number;
   fy: number;
   x: number;
@@ -111,51 +113,134 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
   const setPageInput = (input: string) => setPageState((previous) => ({ ...previous, input }));
   // Unscaled page sizes; pages not yet measured borrow the first page's.
   const [sizes, setSizes] = useState<Record<number, Size>>({});
+  const pendingAnchor = useRef<Anchor | null>(null);
+  const observedWidth = useRef(0);
+  const rememberAnchor = () => {
+    const element = scrollRef.current;
+    if (!element || pendingAnchor.current) return;
+    const rect = element.getBoundingClientRect();
+    pendingAnchor.current = anchorAt(
+      element,
+      rect.left + element.clientWidth / 2,
+      rect.top + element.clientHeight / 2,
+    );
+  };
 
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
+    const observer = new ResizeObserver(() => {
+      if (observedWidth.current === element.clientWidth) return;
+      observedWidth.current = element.clientWidth;
+      rememberAnchor();
+      setWidth(element.clientWidth);
+    });
     observer.observe(element);
     setWidth(element.clientWidth);
+    observedWidth.current = element.clientWidth;
     return () => observer.disconnect();
   }, []);
 
   const first = sizes[1];
   const fitScale = first ? clampZoom((width - SIDE_PADDING) / first[0], MIN_SCALE, MAX_SCALE) : 1;
   const scale = zoom === "fit" ? fitScale : zoom;
+  // Geometry follows the gesture every frame; only the committed scale below
+  // drives PDF rendering. This keeps virtual offsets, gaps and stretched
+  // bitmaps in agreement without rasterizing on every wheel event.
+  const [gestureScale, setGestureScale] = useState<number | null>(null);
+  const visualScale = gestureScale ?? scale;
+  const pageHeight = (number: number) =>
+    Math.floor((sizes[number] ?? first ?? [600, 800])[1] * visualScale);
+  const pageStart = (number: number) => {
+    let start = 0;
+    for (let page = 1; page < number; page++) start += pageHeight(page) + PAGE_GAP;
+    return start;
+  };
+  // Invalidate estimated offsets during render, before the spacer commits its
+  // new height. There are no independently measured DOM heights to retain.
+  const geometryKey = useCallback((index: number) => index, [sizes, visualScale]);
+  const pages = useVirtualizer({
+    count: doc.numPages,
+    getScrollElement: () => scrollRef.current,
+    getItemKey: geometryKey,
+    estimateSize: (index) => pageHeight(index + 1) + PAGE_GAP,
+    overscan: 2,
+    initialRect: { width: 0, height: 800 },
+    rangeExtractor: (range) => {
+      const anchor = pendingAnchor.current;
+      if (!anchor) return defaultRangeExtractor(range);
+      // Until the layout effect synchronizes scrollTop, select the new range
+      // from the anchor. Otherwise a deep page can unmount for one commit and
+      // unnecessarily discard its still-valid bitmap during a wheel gesture.
+      let start = anchor.page - 1;
+      let top = pageStart(anchor.page);
+      const offset = Math.max(0, top + anchor.fy * pageHeight(anchor.page) - anchor.y);
+      while (start > 0 && top > offset) {
+        start--;
+        top -= pageHeight(start + 1) + PAGE_GAP;
+      }
+      let end = start;
+      let bottom = top + pageHeight(end + 1) + PAGE_GAP;
+      const height = scrollRef.current?.clientHeight || 800;
+      while (end < doc.numPages - 1 && bottom < offset + height) {
+        end++;
+        bottom += pageHeight(end + 1) + PAGE_GAP;
+      }
+      return Array.from(
+        {
+          length:
+            Math.min(doc.numPages - 1, end + range.overscan) -
+            Math.max(0, start - range.overscan) +
+            1,
+        },
+        (_, index) => Math.max(0, start - range.overscan) + index,
+      );
+    },
+  });
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    const anchor = pendingAnchor.current;
+    pendingAnchor.current = null;
+    if (!element || !anchor) return;
+    const padding = Number.parseFloat(getComputedStyle(element).paddingTop) || 0;
+    const pageWidth = Math.floor((sizes[anchor.page] ?? first ?? [600, 800])[0] * visualScale);
+    // A virtual page may have unmounted between capture and commit. Restore
+    // from its stable page number and current metrics, never a detached node.
+    const top = padding + pageStart(anchor.page) + anchor.fy * pageHeight(anchor.page) - anchor.y;
+    const left =
+      Math.max(0, (element.clientWidth - pageWidth) / 2) + anchor.fx * pageWidth - anchor.x;
+    pages.scrollToOffset(top);
+    element.scrollLeft = left;
+  }, [pages, sizes, visualScale, scale, width]);
 
   const onSize = useCallback((page: number, size: Size) => {
     setSizes((prev) => {
       const known = prev[page];
       if (known && known[0] === size[0] && known[1] === size[1]) return prev;
+      rememberAnchor();
       return { ...prev, [page]: size };
     });
   }, []);
 
   const goTo = (page: number) => {
     const target = clampZoom(Math.round(page) || 1, 1, doc.numPages);
-    scrollRef.current
-      ?.querySelector<HTMLElement>(`[data-page="${target}"]`)
-      ?.scrollIntoView({ block: "start" });
+    pages.scrollToIndex(target - 1, { align: "start" });
     setCurrent(target);
     setPageInput(String(target));
   };
 
   const changeZoom = (next: Zoom) => {
+    if ((next === "fit" ? fitScale : next) !== visualScale) rememberAnchor();
     rememberZoom("pdf", next);
     setZoom(next);
   };
 
-  // Ctrl/Cmd+wheel zooms without touching React or the canvases: a CSS variable
-  // scales every page frame (and the stretched bitmap inside it) at once. Once
-  // the wheel settles, the committed scale changes and the visible pages are
-  // re-rasterised; the old bitmap stays on screen until the new one is ready.
+  // Ctrl/Cmd+wheel changes the page/virtual geometry while retaining the
+  // existing canvases. Once the gesture settles, visible pages re-rasterize.
   const gesture = useRef<{
     target: number | null;
-    anchor: Anchor | null;
     timer: number;
-  }>({ target: null, anchor: null, timer: 0 });
+  }>({ target: null, timer: 0 });
   const scaleRef = useRef(scale);
   const percentRef = useRef<HTMLSpanElement>(null);
 
@@ -163,8 +248,7 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
     const g = gesture.current;
     window.clearTimeout(g.timer);
     g.target = null;
-    g.anchor = null;
-    scrollRef.current?.style.removeProperty("--zoom-ratio");
+    setGestureScale(null);
   };
 
   const onWheelZoom = (factor: number, clientX: number, clientY: number) => {
@@ -176,9 +260,8 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
     if (next === visual) return;
     const anchor = anchorAt(element, clientX, clientY);
     g.target = next;
-    g.anchor = anchor;
-    element.style.setProperty("--zoom-ratio", String(next / scaleRef.current));
-    if (anchor) restoreAnchor(element, anchor);
+    pendingAnchor.current = anchor;
+    setGestureScale(next);
     if (percentRef.current) {
       percentRef.current.textContent = formatZoomPercent(next);
     }
@@ -186,27 +269,15 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
     g.timer = window.setTimeout(() => {
       g.timer = 0;
       if (g.target == null) return;
-      if (g.target === scaleRef.current) endGesture();
-      else changeZoom(g.target);
+      const target = g.target;
+      changeZoom(target);
+      endGesture();
     }, SETTLE_MS);
   };
   useWheelZoom(scrollRef, onWheelZoom);
 
-  // The new scale is committed: drop the temporary ratio in the same frame the
-  // frames take their real size, and put the anchored point back under the
-  // pointer (frame sizes are floored, so the two layouts differ by a pixel or so).
   useLayoutEffect(() => {
     scaleRef.current = scale;
-    const g = gesture.current;
-    const element = scrollRef.current;
-    if (g.target == null || !element) return;
-    if (scale === g.target) {
-      const anchor = g.anchor;
-      endGesture();
-      if (anchor) restoreAnchor(element, anchor);
-    } else {
-      element.style.setProperty("--zoom-ratio", String(g.target / scale));
-    }
   }, [scale]);
 
   useEffect(() => () => window.clearTimeout(gesture.current.timer), []);
@@ -263,24 +334,33 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
       </div>
       <div
         ref={scrollRef}
-        className="flex min-h-0 flex-1 flex-col overflow-auto overscroll-contain bg-(--ui-surface-muted) py-3"
-        style={{ gap: PAGE_GAP }}
+        className="min-h-0 flex-1 overflow-auto overscroll-contain bg-(--ui-surface-muted) py-3"
+        style={{ overflowAnchor: "none" }}
       >
-        {Array.from({ length: doc.numPages }, (_, index) => {
-          const number = index + 1;
-          return (
-            <PdfPage
-              key={number}
-              doc={doc}
-              number={number}
-              scale={scale}
-              size={sizes[number] ?? first}
-              root={scrollRef}
-              onSize={onSize}
-              onCenter={setCurrent}
-            />
-          );
-        })}
+        <div className="relative w-full" style={{ height: pages.getTotalSize() }}>
+          {pages.getVirtualItems().map((item) => {
+            const number = item.index + 1;
+            return (
+              <div
+                key={number}
+                data-index={item.index}
+                className="absolute left-0 top-0 w-full"
+                style={{ transform: `translateY(${item.start}px)`, paddingBottom: PAGE_GAP }}
+              >
+                <PdfPage
+                  doc={doc}
+                  number={number}
+                  scale={scale}
+                  visualScale={visualScale}
+                  size={sizes[number] ?? first}
+                  root={scrollRef}
+                  onSize={onSize}
+                  onCenter={setCurrent}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -290,6 +370,7 @@ function PdfPage({
   doc,
   number,
   scale,
+  visualScale,
   size,
   root,
   onSize,
@@ -298,6 +379,7 @@ function PdfPage({
   doc: PDFDocumentProxy;
   number: number;
   scale: number;
+  visualScale: number;
   size: Size | undefined;
   root: React.RefObject<HTMLDivElement | null>;
   onSize: (page: number, size: Size) => void;
@@ -370,6 +452,8 @@ function PdfPage({
     let release: ((pixels?: number) => void) | undefined;
     let rendering = false;
     let copied = false;
+    let page: PDFPageProxy | undefined;
+    let settled = false;
     // Resolution is budgeted independently of CSS/text zoom. Reserve both canvases
     // before allocating, and release the temporary half as soon as copying ends.
     const buffer = document.createElement("canvas");
@@ -380,7 +464,7 @@ function PdfPage({
     setError(null);
 
     void (async () => {
-      const page = await doc.getPage(number);
+      page = await doc.getPage(number);
       if (cancelled) return;
       const natural = page.getViewport({ scale: 1 });
       onSize(number, [natural.width, natural.height]);
@@ -429,11 +513,13 @@ function PdfPage({
         setError(documentErrorMessage(cause));
       })
       .finally(() => {
+        settled = true;
         rendering = false;
         releaseBuffer();
         // cancel() requests cancellation; the render promise owns the buffer
         // until it actually settles. Keep its allocation charged meanwhile.
         if (cancelled || !copied) release?.();
+        if (cancelled) page?.cleanup();
       });
 
     return () => {
@@ -441,6 +527,7 @@ function PdfPage({
       allocation.abort();
       renderTask?.cancel();
       textLayer?.cancel();
+      if (settled) page?.cleanup();
       canvas.width = 0;
       canvas.height = 0;
       if (!rendering) {
@@ -452,12 +539,9 @@ function PdfPage({
 
   // Keep unmeasured frames visible to IntersectionObserver so their page load
   // (and any page-specific failure) does not depend on eager getPage(1).
-  const width = Math.floor((size?.[0] ?? 600) * scale);
-  const height = size ? Math.floor(size[1] * scale) : undefined;
+  const width = Math.floor((size?.[0] ?? 600) * visualScale);
+  const height = Math.floor((size?.[1] ?? 800) * visualScale);
 
-  // `--zoom-ratio` is set on the scroll container while the wheel is zooming;
-  // it stretches the frame (and, via the text layer's scale factor, the text)
-  // before the pages are re-rendered at the new scale.
   return (
     <div
       ref={frameRef}
@@ -465,9 +549,9 @@ function PdfPage({
       className="relative mx-auto shrink-0 bg-on-solid shadow-sm"
       style={
         {
-          width: width && `calc(${width}px * var(--zoom-ratio, 1))`,
-          height: `calc(${height ?? 800}px * var(--zoom-ratio, 1))`,
-          "--total-scale-factor": `calc(${scale} * var(--zoom-ratio, 1))`,
+          width,
+          height,
+          "--total-scale-factor": visualScale,
         } as React.CSSProperties
       }
     >
@@ -501,28 +585,20 @@ function anchorAt(container: HTMLElement, clientX: number, clientY: number): Anc
   let hit: HTMLElement | null = null;
   let rect: DOMRect | null = null;
   for (const frame of frames) {
+    const bounds = frame.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) continue;
     hit = frame;
-    rect = frame.getBoundingClientRect();
+    rect = bounds;
     if (rect.bottom > clientY) break;
   }
   if (!hit || !rect) return null;
   return {
-    frame: hit,
+    page: Number(hit.dataset.page),
     fx: clampZoom((clientX - rect.left) / (rect.width || 1), 0, 1),
     fy: clampZoom((clientY - rect.top) / (rect.height || 1), 0, 1),
-    x: clientX,
-    y: clientY,
+    x: clientX - container.getBoundingClientRect().left,
+    y: clientY - container.getBoundingClientRect().top,
   };
-}
-
-/**
- * Scrolls so the anchored page point sits under its pointer again. Measured
- * rather than computed from the zoom ratio: the gaps between pages don't scale.
- */
-function restoreAnchor(container: HTMLElement, anchor: Anchor) {
-  const rect = anchor.frame.getBoundingClientRect();
-  container.scrollLeft += rect.left + anchor.fx * rect.width - anchor.x;
-  container.scrollTop += rect.top + anchor.fy * rect.height - anchor.y;
 }
 
 function ToolbarButton({

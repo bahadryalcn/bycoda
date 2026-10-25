@@ -9,6 +9,7 @@ type PanelState = {
   status: string | null;
   message: string;
   generating: boolean;
+  stashAction: "create" | `entry:${string}` | null;
   amendTarget: AmendTarget | null;
   feedback: GitOperationFeedback | null;
 };
@@ -29,6 +30,7 @@ function createEntry() {
       status: null,
       message: "",
       generating: false,
+      stashAction: null,
       amendTarget: null,
       feedback: null,
     } as PanelState,

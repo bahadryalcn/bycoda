@@ -225,7 +225,7 @@ export function GithubSettings() {
             {t("Installation guide")}
           </Button>
         ) : null}
-        <Button className="shrink-0" onClick={() => void checkStatus()} disabled={checking}>
+        <Button className="shrink-0" onClick={() => void checkStatus()} loading={checking}>
           {checking ? t("Checking") : t("Check again")}
         </Button>
       </Row>
@@ -240,7 +240,8 @@ export function GitlabSettings() {
   const [token, setToken] = useState("");
   const [connected, setConnected] = useState(false);
   const [checking, setChecking] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<"save" | "disconnect" | null>(null);
+  const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
 
   const request = useRef(0);
@@ -270,7 +271,7 @@ export function GitlabSettings() {
 
   const onSave = async () => {
     if (!url.trim() || !token.trim() || busy || checking) return;
-    setBusy(true);
+    setOperation("save");
     setError(null);
     try {
       const status = await saveGitlabConfig(url, token);
@@ -284,13 +285,13 @@ export function GitlabSettings() {
       setConnected(false);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      setOperation(null);
     }
   };
 
   const onDisconnect = async () => {
     if (busy) return;
-    setBusy(true);
+    setOperation("disconnect");
     setError(null);
     try {
       const status = await disconnectGitlab(url);
@@ -300,7 +301,7 @@ export function GitlabSettings() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      setOperation(null);
     }
   };
 
@@ -315,7 +316,10 @@ export function GitlabSettings() {
       />
       <Row
         label={t("Account configuration")}
-        persistence={{ mode: "explicit", state: busy ? "saving" : token ? "dirty" : "idle" }}
+        persistence={{
+          mode: "explicit",
+          state: operation === "save" ? "saving" : token ? "dirty" : "idle",
+        }}
         description={t(
           "Connect GitLab.com or a self-managed GitLab instance. Use a personal access token with API access; the token is stored locally and Disconnect deletes it.",
         )}
@@ -328,9 +332,10 @@ export function GitlabSettings() {
             <Button
               className="shrink-0"
               onClick={() => void onDisconnect()}
+              loading={operation === "disconnect"}
               disabled={busy || checking}
             >
-              {busy ? t("Disconnecting") : t("Disconnect")}
+              {operation === "disconnect" ? t("Disconnecting") : t("Disconnect")}
             </Button>
           </div>
         ) : (
@@ -363,6 +368,7 @@ export function GitlabSettings() {
             <Button
               className="shrink-0"
               onClick={() => void onSave()}
+              loading={operation === "save"}
               disabled={busy || checking || !url.trim() || !token.trim()}
             >
               {busy
@@ -385,7 +391,8 @@ export function AzureDevOpsSettings() {
   const [token, setToken] = useState("");
   const [connected, setConnected] = useState(false);
   const [checking, setChecking] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<"save" | "disconnect" | null>(null);
+  const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
 
   const request = useRef(0);
@@ -415,7 +422,7 @@ export function AzureDevOpsSettings() {
 
   const onSave = async () => {
     if (!url.trim() || !token.trim() || busy || checking) return;
-    setBusy(true);
+    setOperation("save");
     setError(null);
     try {
       const status = await saveAzureDevOpsConfig(url, token);
@@ -429,13 +436,13 @@ export function AzureDevOpsSettings() {
       setConnected(false);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      setOperation(null);
     }
   };
 
   const onDisconnect = async () => {
     if (busy) return;
-    setBusy(true);
+    setOperation("disconnect");
     setError(null);
     try {
       const status = await disconnectAzureDevOps(url);
@@ -445,7 +452,7 @@ export function AzureDevOpsSettings() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      setOperation(null);
     }
   };
 
@@ -460,7 +467,10 @@ export function AzureDevOpsSettings() {
       />
       <Row
         label={t("Account configuration")}
-        persistence={{ mode: "explicit", state: busy ? "saving" : token ? "dirty" : "idle" }}
+        persistence={{
+          mode: "explicit",
+          state: operation === "save" ? "saving" : token ? "dirty" : "idle",
+        }}
         description={t(
           "Connect your ADO organization with a personal access token (Boards + Repos read & write for comments). The token is stored locally and Disconnect deletes it.",
         )}
@@ -473,9 +483,10 @@ export function AzureDevOpsSettings() {
             <Button
               className="shrink-0"
               onClick={() => void onDisconnect()}
+              loading={operation === "disconnect"}
               disabled={busy || checking}
             >
-              {busy ? t("Disconnecting") : t("Disconnect")}
+              {operation === "disconnect" ? t("Disconnecting") : t("Disconnect")}
             </Button>
           </div>
         ) : (
@@ -508,6 +519,7 @@ export function AzureDevOpsSettings() {
             <Button
               className="shrink-0"
               onClick={() => void onSave()}
+              loading={operation === "save"}
               disabled={busy || checking || !url.trim() || !token.trim()}
             >
               {busy
@@ -528,16 +540,19 @@ export function LinearSettings() {
   useLocale();
   const [token, setToken] = useState("");
   const [connected, setConnected] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<"save" | "disconnect" | null>(null);
+  const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
   const [teamsError, setTeamsError] = useState<string | null>(null);
+  const [teamsLoading, setTeamsLoading] = useState(false);
   const [teams, setTeams] = useState<LinearTeam[]>([]);
   const [hiddenTeamIds, setHiddenTeamIds] = useState(loadHiddenLinearTeamIds);
   const teamRequest = useRef(0);
 
   const loadTeams = useCallback(async () => {
     const generation = ++teamRequest.current;
+    setTeamsLoading(true);
     setTeamsError(null);
     try {
       const next = await listLinearTeams();
@@ -545,6 +560,8 @@ export function LinearSettings() {
     } catch (err: unknown) {
       if (generation === teamRequest.current)
         setTeamsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (generation === teamRequest.current) setTeamsLoading(false);
     }
   }, []);
 
@@ -585,7 +602,8 @@ export function LinearSettings() {
     if (!token.trim() || busy || checking) return;
     request.current += 1;
     teamRequest.current += 1;
-    setBusy(true);
+    setTeamsLoading(false);
+    setOperation("save");
     setError(null);
     try {
       const status = await saveLinearToken(token);
@@ -600,7 +618,7 @@ export function LinearSettings() {
       setConnected(false);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      setOperation(null);
     }
   };
 
@@ -608,7 +626,8 @@ export function LinearSettings() {
     if (busy) return;
     request.current += 1;
     teamRequest.current += 1;
-    setBusy(true);
+    setTeamsLoading(false);
+    setOperation("disconnect");
     setError(null);
     try {
       await disconnectLinear();
@@ -620,7 +639,7 @@ export function LinearSettings() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      setOperation(null);
     }
   };
 
@@ -645,7 +664,10 @@ export function LinearSettings() {
         onCheck={() => void checkStatus()}
       />
       <Row
-        persistence={{ mode: "explicit", state: busy ? "saving" : token ? "dirty" : "idle" }}
+        persistence={{
+          mode: "explicit",
+          state: operation === "save" ? "saving" : token ? "dirty" : "idle",
+        }}
         label={t("API key")}
         description={t(
           "Create a personal API key in Linear → Settings → Security & Access. Disconnect deletes it.",
@@ -655,6 +677,7 @@ export function LinearSettings() {
           <Button
             className="shrink-0"
             onClick={() => void onDisconnect()}
+            loading={operation === "disconnect"}
             disabled={busy || checking}
           >
             {t("Disconnect")}
@@ -678,6 +701,7 @@ export function LinearSettings() {
             <Button
               className="shrink-0"
               onClick={() => void onSave()}
+              loading={operation === "save"}
               disabled={busy || checking || !token.trim()}
             >
               {busy
@@ -718,7 +742,17 @@ export function LinearSettings() {
               }}
             />
           ) : null}
-          <Button className="shrink-0" disabled={busy || checking} onClick={() => void loadTeams()}>
+          {teams.length === 0 && !teamsLoading && !teamsError ? (
+            <span role="status" className="text-ui-caption text-(--ui-text-secondary)">
+              {t("No teams available. Refresh teams to try again.")}
+            </span>
+          ) : null}
+          <Button
+            className="shrink-0"
+            loading={teamsLoading}
+            disabled={busy || checking}
+            onClick={() => void loadTeams()}
+          >
             {teamsError ? t("Retry") : t("Refresh teams")}
           </Button>
         </Row>

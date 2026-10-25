@@ -1,7 +1,11 @@
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { SocialFilters } from "./SocialFilters";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
+import { Progress } from "../../../shared/ui/Progress";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useState } from "react";
@@ -18,6 +22,8 @@ import { threadTarget } from "./socialBulk";
 import { Composer, Empty, Notice, StatusBadge, names, time, type Props } from "./socialShared";
 
 export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState(snapshot.threads[0]?.id ?? "");
@@ -127,7 +133,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
           <div className="social-list-tools">
             <label>
               {t("Find a conversation")}
-              <SearchInput
+              <SearchInput disabled={socialLocked}
                 appearance="field"
                 type="search"
                 value={query}
@@ -144,7 +150,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
             >
               <label>
                 {t("Account")}
-                <SearchableSelect
+                <SearchableSelect disabled={socialLocked}
                   value={accountFilter}
                   label={t("Account")}
                   options={[
@@ -160,7 +166,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               </label>
               <label>
                 {t("Message type")}
-                <NativeSelect
+                <NativeSelect disabled={socialLocked}
                   value={kindFilter}
                   onChange={(event) => setKindFilter(event.target.value)}
                 >
@@ -170,7 +176,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                 </NativeSelect>
               </label>
             </SocialFilters>
-            <Button
+            <Button disabled={socialLocked}
               type="button"
               variant={selecting ? "secondary" : "ghost"}
               aria-pressed={selecting}
@@ -187,9 +193,9 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               variant="secondary"
               iconOnly
               label={syncing ? t("Refreshing…") : t("Refresh conversations")}
-              loading={syncing}
-              disabled={!snapshot.hostOnline || !syncAccounts.length || syncing}
-              onClick={() => void synchronize()}
+              loading={pendingUi.is("inbox.refresh")}
+              disabled={socialLocked || (!snapshot.hostOnline || !syncAccounts.length || syncing)}
+              onClick={() => void pendingUi.run("inbox.refresh", () => synchronize())}
             >
               <RefreshCw aria-hidden="true" />
             </Button>
@@ -249,7 +255,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                 checked={
                   threads.length > 0 && threads.every((item) => checkedIds.includes(item.id))
                 }
-                disabled={!threads.length}
+                disabled={socialLocked || (!threads.length)}
                 onChange={(event) =>
                   setCheckedIds(event.target.checked ? threads.map((item) => item.id) : [])
                 }
@@ -263,7 +269,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               <Button
                 type="button"
                 variant="ghost"
-                disabled={!checkedIds.length}
+                disabled={socialLocked || (!checkedIds.length)}
                 onClick={() => setCheckedIds([])}
               >
                 {t("Clear selection")}
@@ -286,7 +292,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                 <div className="social-selection-row" key={item.id}>
                   {selecting || checkedIds.length ? (
                     <label>
-                      <Checkbox
+                      <Checkbox disabled={socialLocked}
                         aria-label={t("Select conversation with {p0}", {
                           p0: contacts.get(item.contactId)?.name ?? t("Contact person"),
                         })}
@@ -301,7 +307,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                       />
                     </label>
                   ) : null}
-                  <Button
+                  <Button disabled={socialLocked}
                     type="button"
                     variant="tab"
                     layout="stacked"
@@ -387,7 +393,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               ) : null}
               <label>
                 {t("Related project")}
-                <SearchableSelect
+                <SearchableSelect disabled={socialLocked || pendingUi.is(`thread.assign:${thread.id}`)}
                   value={thread.projectId ?? ""}
                   label={t("Related project")}
                   options={[
@@ -400,17 +406,20 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                       })),
                   ]}
                   onChange={(nextValue) =>
-                    void run(
+                    void pendingUi.run(`thread.assign:${thread.id}`, () => run(
                       () =>
                         client.request("thread.assign", {
                           id: thread.id,
                           projectId: nextValue,
                         }),
                       t("Conversation project updated."),
-                    )
+                    ))
                   }
                   searchLocale={getLocale()}
                 />
+                {pendingUi.is(`thread.assign:${thread.id}`) ? (
+                  <Progress compact label={t("Working…")} />
+                ) : null}
               </label>
               <div className="social-conversation">
                 {detail.loading ? (

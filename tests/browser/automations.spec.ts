@@ -1,4 +1,84 @@
 import { expect, test } from "@playwright/test";
+
+test("automation save keeps its label and focus while fields lock and failures preserve the draft", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/automations.html");
+  await page.getByRole("button", { name: "Open Daily review", exact: true }).click();
+  const name = page.getByRole("textbox", { name: "Automation name", exact: true });
+  await name.fill("Keep this edited automation");
+  await page.evaluate(() => {
+    (
+      window as unknown as { automationFixtureControl: { holdSave: boolean } }
+    ).automationFixtureControl.holdSave = true;
+  });
+  const save = page.getByRole("button", { name: "Save", exact: true });
+  await save.click();
+  await expect(save).toHaveAttribute("aria-busy", "true");
+  await expect(save).toBeFocused();
+  await expect(save).toHaveText("Save");
+  await expect(name).toBeDisabled();
+  expect(await save.evaluate((node) => node.closest("[inert]") === null)).toBe(true);
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as unknown as { automationFixtureCalls: { command: string }[] }
+        ).automationFixtureCalls.filter((entry) => entry.command === "automations_upsert").length,
+    ),
+  ).toBe(1);
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width === 390) {
+      await expect
+        .poll(() =>
+          page
+            .getByRole("textbox", { name: "Instructions", exact: true, includeHidden: true })
+            .evaluate((node) => node.getBoundingClientRect().height),
+        )
+        .toBeLessThan(220);
+      expect((await name.boundingBox())!.width).toBeGreaterThan(300);
+    }
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      await expect(save).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: `temp/verification/2026-10-25-full-ui/automation-save-${width}-${light ? "light" : "dark"}.png`,
+      });
+    }
+  }
+  await page.evaluate(() => {
+    const control = (
+      window as unknown as {
+        automationFixtureControl: { holdSave: boolean; finishSave: (error?: string) => void };
+      }
+    ).automationFixtureControl;
+    control.holdSave = false;
+    control.finishSave("Save unavailable; retry your changes");
+  });
+  await expect(save).not.toHaveAttribute("aria-busy", "true");
+  await expect(name).toBeEnabled();
+  await expect(name).toHaveValue("Keep this edited automation");
+  await expect(
+    page.getByText("Save unavailable; retry your changes", { exact: true }),
+  ).toBeVisible();
+  await save.click();
+  await expect(
+    page.getByText("Save unavailable; retry your changes", { exact: true }),
+  ).toBeHidden();
+  await expect(name).toHaveValue("Keep this edited automation");
+});
+
 for (const width of [390, 1440]) {
   test(`automation drafts, filters and menu cancellation at ${width}px`, async ({
     page,
@@ -44,9 +124,12 @@ for (const width of [390, 1440]) {
     ).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(actions).toBeFocused();
-    page.once("dialog", (dialog) => dialog.dismiss());
     await actions.click();
     await page.getByRole("menuitem", { name: "Delete automation", exact: true }).click();
+    const confirmation = page.getByRole("dialog", { name: "Delete automation", exact: true });
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(confirmation).toBeHidden();
     expect(
       await page.evaluate(
         () =>

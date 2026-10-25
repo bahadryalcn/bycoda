@@ -5,7 +5,7 @@ import { act, createElement, Profiler } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SocialPrograms as QueryComponent } from "./SocialPrograms";
-import { defaultProgram, programApprovalSteps } from "../model/socialProgram";
+import { defaultProgram, programApprovalSteps, type ProgramDetail } from "../model/socialProgram";
 import type { SocialSnapshot } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 import { setLanguagePreference } from "../../../shared/i18n";
@@ -22,12 +22,15 @@ async function render(
   active = true,
   programProjectId?: string,
   withProjects = false,
+  detail?: ProgramDetail,
 ) {
   await setLanguagePreference("en");
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  const request = vi.fn(async () => []);
+  const request = vi.fn(async (action: string) =>
+    action === "programs.status" ? detail : detail ? [detail.program] : [],
+  );
   const commits = vi.fn();
   const client = { request, upload: vi.fn(), uploadVideo: vi.fn() } as unknown as SocialClient;
   const snapshot = {
@@ -118,6 +121,87 @@ describe("Social campaign program UI", () => {
 });
 
 const SocialPrograms = withQueryClient(QueryComponent);
+
+it("keeps generated image previews separate and recovers a failed preview without losing content", async () => {
+  const program = {
+    ...defaultProgram(),
+    id: "p",
+    name: "Two images",
+    revision: 1,
+    enabled: false,
+    createdAt: 1,
+    updatedAt: 1,
+    executorId: "test",
+    generationCount: 0,
+    imageGenerationCount: 0,
+    generationDay: "",
+    dailyGenerationCount: 0,
+    nextSequence: 1,
+  };
+  const detail: ProgramDetail = {
+    program,
+    occurrences: [
+      {
+        id: "o",
+        programId: "p",
+        programRevision: 1,
+        sequence: 0,
+        scheduledAt: 1,
+        originalAt: 1,
+        revision: 1,
+        targets: [
+          {
+            accountId: "a",
+            platform: "x",
+            status: "review",
+            approvals: {},
+            generation: { attempts: 0, transitions: [] },
+            variant: {
+              accountId: "a",
+              text: "Keep my content",
+              scheduledAt: 1,
+              factIds: [],
+              media: [
+                { kind: "image", uploadId: "a", alt: "First" },
+                { kind: "image", uploadId: "b", alt: "Second" },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const { host, request } = await render(true, true, undefined, false, detail);
+  await vi.waitFor(() => expect(host.textContent).toContain("Two images"));
+  const choose = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
+    b.textContent?.includes("Two images"),
+  )!;
+  await act(async () => choose.click());
+  const previews = () =>
+    Array.from(host.querySelectorAll<HTMLButtonElement>("button")).filter(
+      (b) => b.textContent === "Preview generated image",
+    );
+  expect(previews()).toHaveLength(2);
+  request.mockResolvedValueOnce({ mime: "image/png", base64: "YQ==" } as never);
+  await act(async () => previews()[0].click());
+  expect(host.querySelectorAll(".social-program-target img")).toHaveLength(1);
+  expect(host.querySelector('img[alt="First"]')?.getAttribute("src")).toContain("YQ==");
+  expect(previews()).toHaveLength(1);
+  request.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => previews()[0].click());
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Failed");
+  expect(host.querySelector('img[alt="First"]')).not.toBeNull();
+  request.mockResolvedValueOnce({ mime: "image/png", base64: "Yg==" } as never);
+  const retry = Array.from(
+    host.querySelectorAll<HTMLButtonElement>(".social-program-target button"),
+  ).find((b) => b.textContent?.includes("Retry"))!;
+  await act(async () => retry.click());
+  expect(host.querySelector('img[alt="Second"]')?.getAttribute("src")).toContain("Yg==");
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(host.querySelector<HTMLTextAreaElement>(".social-program-target textarea")?.value).toBe(
+    "Keep my content",
+  );
+});
 
 it("guides first campaign setup inline and preserves content while changing steps", async () => {
   const { host, request } = await render();

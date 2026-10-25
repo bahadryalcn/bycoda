@@ -67,6 +67,8 @@ const snapshot: SocialSnapshot = {
   approvedCampaignIds: [],
 };
 const calls: { command: string; args: Record<string, unknown> }[] = [];
+let heldAction: string | undefined;
+let releaseAction: ((reject: boolean) => void) | undefined;
 let configured = false;
 let oauthStatus = "idle";
 let xProfileFixture = {
@@ -285,6 +287,14 @@ function fixtureWorkspace(input: SocialWorkspaceQuery): SocialWorkspaceResponse 
 }
 Object.assign(window, {
   socialFixtureCalls: calls,
+  socialFixtureHold: (action: string) => {
+    heldAction = action;
+  },
+  socialFixtureRelease: (reject = false) => {
+    heldAction = undefined;
+    releaseAction?.(reject);
+    releaseAction = undefined;
+  },
   socialFixtureConfigure: () => {
     configured = true;
   },
@@ -592,6 +602,11 @@ Object.assign(window, {
         }
         if (args.method === "social.request") {
           const params = args.params as { action: string; input?: Record<string, unknown> };
+          if (params.action === heldAction)
+            await new Promise<void>((resolve, reject) => {
+              releaseAction = (fail) =>
+                fail ? reject(new Error("Fixture request rejected.")) : resolve();
+            });
           if (programFixture && params.action.startsWith("programs.")) {
             const input = params.input ?? {};
             if (params.action === "programs.list") return structuredClone(programRecords);
@@ -662,6 +677,16 @@ Object.assign(window, {
           if (params.action === "policy.get") return { effective: snapshot.policies?.global ?? {} };
           const input = params.input ?? {};
           if (workflowWrites) {
+            if (params.action === "segments.create") {
+              const segment = {
+                id: `segment-${snapshot.segments.length}`,
+                name: String(input.name),
+                projectIds: input.projectIds as string[],
+                tags: input.tags as string[],
+              };
+              snapshot.segments.push(segment);
+              return structuredClone(segment);
+            }
             if (["replies.draft", "messages.draft", "comments.draft"].includes(params.action)) {
               const thread = snapshot.threads.find((item) => item.id === input.threadId);
               const contact = snapshot.contacts.find(

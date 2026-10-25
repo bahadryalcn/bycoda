@@ -408,7 +408,7 @@ function SearchableSelectMenu({
           gap={4}
           width={menuWidth}
           maxHeight={longMenu ? 240 : undefined}
-          constrainHeight={longMenu}
+          constrainHeight
           layer={popoverLayer}
           role="dialog"
           aria-label={selectionLabels?.menu ?? t("{p0} options", { p0: label })}

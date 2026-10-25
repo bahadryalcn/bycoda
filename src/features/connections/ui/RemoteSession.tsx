@@ -415,6 +415,8 @@ function ConnectedRemoteSession({
         );
         setRemovingDraft(undefined);
         preparingRef.current = false;
+        setFollowUpPreparing(false);
+        setUploadProgress(undefined);
         setSnapshot(next ? cachedSessionSnapshots.get(snapshotKey(machine.id, next)) : undefined);
       }
       setPending(pendingRemoteCommand(project.key, machine.environmentId, next ?? null, shell.id));
@@ -511,6 +513,7 @@ function ConnectedRemoteSession({
   const sendingOwner = useRef<symbol | undefined>(undefined);
   const rewindOwner = useRef<symbol | undefined>(undefined);
   const preparingRef = useRef(false);
+  const [followUpPreparing, setFollowUpPreparing] = useState(false);
   const submissionGeneration = useRef(0);
   const preparingTurn = useRef<OptimisticTurn | undefined>(undefined);
   const [unseenSend, setUnseenSend] = useState<
@@ -662,8 +665,14 @@ function ConnectedRemoteSession({
   ]);
   const reservedFollowUp = useRef<RemoteQueueDraft | undefined>(undefined);
   const followUpGeneration = useRef(0);
+  // `desktop` records transcript synchronization, including host-created chats.
+  // Older hosts identify a desktop-owned run with the reserved `desktop` run id.
+  const desktopRun =
+    snapshot?.status === "running" &&
+    (snapshot.executionOwner === "desktop" ||
+      (!snapshot.executionOwner && snapshot.runId === "desktop"));
   const remoteCanSteer =
-    !snapshot?.desktop &&
+    !desktopRun &&
     !!descriptor?.capabilities.includes("sessions.steer") &&
     !!hostSession &&
     ["codex", "claude", "cursor", "opencode", "pi", "omp", "hermes"].includes(hostSession.harness);
@@ -2006,6 +2015,13 @@ function ConnectedRemoteSession({
     onAcceptance?: (accepted: boolean) => void,
   ): boolean => {
     if (rewindOwner.current) return false;
+    // Repeated Send must keep its draft while the preceding send is preparing
+    // or awaiting acknowledgement. Explicit Queue remains available.
+    if (
+      (preparingRef.current || sendingRef.current || pending) &&
+      options?.followUpBehavior !== "queue"
+    )
+      return false;
     if (pageCacheOnly || remoteDeleted || snapshotRef.current?.historyLoading || queue.error)
       return false;
     const hostDraft = options?.draftBlockId
@@ -2093,6 +2109,7 @@ function ConnectedRemoteSession({
         return false;
       };
       preparingRef.current = true;
+      setFollowUpPreparing(true);
       void (async () => {
         const commandId = crypto.randomUUID();
         let accepted = false;
@@ -2102,6 +2119,14 @@ function ConnectedRemoteSession({
             ownershipSource: `submit:${commandId}`,
             environmentId: machine.environmentId,
             resumable: descriptor?.capabilities.includes("attachments.resume"),
+            onProgress: (_id, offset, size) => {
+              if (
+                alive.current &&
+                version === bindingVersion.current &&
+                generation === followUpGeneration.current
+              )
+                setUploadProgress({ offset, size });
+            },
           });
           if (
             !alive.current ||
@@ -2140,7 +2165,13 @@ function ConnectedRemoteSession({
           onAcceptance?.(accepted);
           ownership?.finishJob(`submit:${commandId}`);
           if (reservedFollowUp.current === unsent) reservedFollowUp.current = undefined;
-          if (submission === submissionGeneration.current) preparingRef.current = false;
+          if (submission === submissionGeneration.current) {
+            preparingRef.current = false;
+            if (alive.current && version === bindingVersion.current) {
+              setFollowUpPreparing(false);
+              setUploadProgress(undefined);
+            }
+          }
         }
       })();
       return true;
@@ -2203,7 +2234,7 @@ function ConnectedRemoteSession({
     return launch(turn, generation, onAcceptance);
   };
 
-  const working = sending || !!pending;
+  const working = sending || !!pending || followUpPreparing;
   const queuedSession: Session = {
     ...(hostSession ?? shell),
     busy,
@@ -2611,6 +2642,7 @@ function ConnectedRemoteSession({
     const stoppedTurn = preparingTurn.current;
     preparingTurn.current = undefined;
     preparingRef.current = false;
+    setFollowUpPreparing(false);
     setUploadProgress(undefined);
     if (stoppedTurn)
       setStarting((current) =>
@@ -3143,6 +3175,21 @@ function ConnectedRemoteSession({
   return (
     <ModelSourceContext.Provider value={modelSource}>
       <div className="relative flex h-full min-h-0 flex-col">
+        {followUpPreparing || sending ? (
+          <div role="status" className="shrink-0 px-4 py-2 text-xs text-(--ui-text-secondary)">
+            {t(
+              sending
+                ? "Waiting for the host to confirm your request."
+                : "Preparing the message and attachments…",
+            )}
+          </div>
+        ) : desktopRun ? (
+          <div role="status" className="shrink-0 px-4 py-2 text-xs text-(--ui-text-secondary)">
+            {t(
+              "This turn is running in the desktop app. New messages are queued until it finishes.",
+            )}
+          </div>
+        ) : null}
         {uploadProgress ? (
           <div role="status" className="shrink-0 px-4 py-2 text-xs text-(--ui-text-muted)">
             {t("Uploading attachment: ")}

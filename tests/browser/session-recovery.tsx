@@ -7,6 +7,8 @@ import { Sidebar } from "../../src/app/shell/Sidebar";
 import { ProjectRail } from "../../src/app/shell/ProjectRail";
 import { WorkspaceControls } from "../../src/app/shell/WorkspaceControls";
 import { newSession } from "../../src/features/sessions/model/session";
+import type { SessionSummary } from "../../src/features/sessions/data/sessionStore";
+import { saveSessionFolders } from "../../src/features/sessions/model/sessionFolders";
 import { markTurnInterrupted } from "../../src/features/sessions/model/inFlight";
 import { newTab } from "../../src/features/workspace/model/layout";
 import { collectWorkspaceSnapshot } from "../../src/features/workspace/model/workspaceSnapshot";
@@ -57,6 +59,7 @@ const recovery = captureSessionRecovery(
   collectWorkspaceSnapshot(tabs, sessions, tabs[0].id, sessions[0].cwd, new Map()),
 )!;
 function RailFixture() {
+  const full = new URLSearchParams(location.search).has("full");
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState(128);
   const [settings, setSettings] = useState("");
@@ -64,12 +67,29 @@ function RailFixture() {
     <main className="flex h-dvh bg-background-base text-content">
       <ProjectRail
         cwd="/fixture"
-        recents={[]}
+        recents={
+          full
+            ? [
+                {
+                  path: "/projects/Long descriptive project name for narrow navigation",
+                  openedAt: 2,
+                },
+                { path: "/projects/Another project", openedAt: 1 },
+              ]
+            : []
+        }
+        busyPaths={full ? new Set(["/fixture"]) : undefined}
         onSelectProject={() => {}}
         onOpenProject={() => {}}
         onSearch={() => {}}
         onTogglePanel={() => {}}
         onOpenSettings={() => setSettings("general")}
+        onOpenServers={() => setSettings("servers")}
+        onOpenInbox={() => setSettings("inbox")}
+        onOpenNotes={() => setSettings("notes")}
+        onOpenAutomations={() => setSettings("automations")}
+        onOpenTasks={() => setSettings("tasks")}
+        tasksActive={settings === "tasks"}
         recoveryControl={
           <SessionRecoveryControl
             count={count}
@@ -102,6 +122,34 @@ function RailFixture() {
   );
 }
 function SidebarFixture() {
+  const [fullSessions] = useState<SessionSummary[]>(() => {
+    if (!new URLSearchParams(location.search).has("full")) return [];
+    saveSessionFolders("/fixture", [
+      { id: "review", name: "Design review", sessionIds: ["list-1"], collapsed: false },
+      {
+        id: "nested",
+        name: "Narrow screen checks",
+        parentId: "review",
+        sessionIds: ["list-2"],
+        collapsed: false,
+      },
+    ]);
+    return Array.from({ length: 6 }, (_, index) => ({
+      id: `list-${index}`,
+      cwd: "/fixture",
+      harness: "codex",
+      model: "gpt-6.1",
+      runtimeMode: "supervised",
+      title:
+        index === 2
+          ? "Nested review conversation"
+          : `Conversation ${index + 1} with a descriptive project title`,
+      createdAt: Date.now() - index * 10000,
+      updatedAt: Date.now() - index * 10000,
+      pinned: index === 0,
+      issue: index === 4 ? "failed" : undefined,
+    }));
+  });
   const [recoveredCount, setRecoveredCount] = useState(40);
   const [tab, setTab] = useState<"sessions" | "files" | "changes" | "inbox">("sessions");
   const [railOpen, setRailOpen] = useState(false);
@@ -110,7 +158,7 @@ function SidebarFixture() {
       <Sidebar
         cwd="/fixture"
         open
-        sessions={[]}
+        sessions={fullSessions}
         busySessionIds={new Set()}
         approvalSessionIds={new Set()}
         status="idle"
@@ -153,7 +201,14 @@ function Fixture() {
           sessions={sessions}
           remoteSessions={[]}
           onClose={() => setOpen(false)}
-          onOpen={async (ids, layout) => setResult(JSON.stringify({ ids, layout }))}
+          onOpen={async (ids, layout) => {
+            setResult(JSON.stringify({ ids, layout }));
+            if (new URLSearchParams(location.search).has("hold")) {
+              await new Promise<void>((resolve) => {
+                Object.assign(window, { finishRecovery: resolve });
+              });
+            }
+          }}
           onRemove={async (ids) => setJournal((current) => removeRecoverySessions(current, ids))}
         />
       ) : null}

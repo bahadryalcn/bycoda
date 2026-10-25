@@ -25,7 +25,10 @@ const object = (properties: Record<string, unknown>, required: string[]) => ({
 });
 export const STEWARD_CONVERSATION_TOOLS = {
   "stewards.delete": object(target, ["stewardId", "expectedUpdatedAt"]),
-  "stewards.decline": object({ ...target, taskId: text, expectedTaskUpdatedAt: { type: "integer", minimum: 0 } }, ["stewardId", "expectedUpdatedAt", "taskId", "expectedTaskUpdatedAt"]),
+  "stewards.decline": object(
+    { ...target, taskId: text, expectedTaskUpdatedAt: { type: "integer", minimum: 0 } },
+    ["stewardId", "expectedUpdatedAt", "taskId", "expectedTaskUpdatedAt"],
+  ),
   "stewards.create": object({ stewardId: text, ...schedule, enabled: { type: "boolean" } }, [
     "stewardId",
     "scheduleKind",
@@ -60,7 +63,10 @@ const runReceipt = (run: StewardRun | undefined) =>
 export class ConversationStewardTools {
   constructor(
     private readonly store: Pick<HostStore, "project" | "transaction">,
-    private readonly stewards: Pick<HostStewards, "list" | "save" | "runNow" | "stopRun" | "delete" | "decline">,
+    private readonly stewards: Pick<
+      HostStewards,
+      "list" | "save" | "runNow" | "stopRun" | "delete" | "decline"
+    >,
     private readonly tasks?: Pick<HostTasks, "get">,
   ) {}
 
@@ -69,18 +75,18 @@ export class ConversationStewardTools {
     input: Record<string, unknown>,
     principal: RuntimeLogPrincipal,
     session: Session,
-    authorized: () => boolean,
+    authorized: () => boolean | Promise<boolean>,
   ): Promise<unknown> {
-    if (!authorized()) throw new Error("Session authority revoked.");
+    if (!(await authorized())) throw new Error("Session authority revoked.");
     if (!isStewardConversationTool(action))
       throw new Error("Unsupported steward conversation tool.");
     const schema = STEWARD_CONVERSATION_TOOLS[action];
     if (Object.keys(input).some((key) => !Object.hasOwn(schema.properties, key)))
       throw new Error("Unknown or protected steward field.");
-    this.store.project(principal.projectId);
+    await this.store.project(principal.projectId);
     const id = String(input.stewardId);
-    const current = () => {
-      const existing = this.stewards.list().find((entry) => entry.id === id);
+    const current = async () => {
+      const existing = (await this.stewards.list()).find((entry) => entry.id === id);
       if (!existing || existing.projectId !== principal.projectId)
         throw new Error("Steward not found in this project scope.");
       if (existing.updatedAt !== input.expectedUpdatedAt)
@@ -93,10 +99,10 @@ export class ConversationStewardTools {
       return existing;
     };
     if (action === "stewards.create")
-      return this.store.transaction(() => {
-        if (this.stewards.list().some((entry) => entry.id === id))
+      return await this.store.transaction(async () => {
+        if ((await this.stewards.list()).some((entry) => entry.id === id))
           throw new Error("Steward ID already exists. Read it before retrying creation.");
-        const saved = this.stewards.save({
+        const saved = await this.stewards.save({
           ...input,
           id,
           projectId: principal.projectId,
@@ -117,17 +123,32 @@ export class ConversationStewardTools {
           nextRunAt: saved.nextRunAt,
         };
       });
-    const existing = current();
+    const existing = await current();
     if (action === "stewards.delete") {
-      if (existing.run) throw new Error("Stop the steward run and wait for settlement before deleting it.");
+      if (existing.run)
+        throw new Error("Stop the steward run and wait for settlement before deleting it.");
       await this.stewards.delete(id);
       return { stewardId: id, deleted: true };
     }
     if (action === "stewards.decline") {
-      const task = this.tasks?.get(String(input.taskId));
-      if (!task || task.projectId !== principal.projectId || task.stewardId !== id || task.source !== "steward" || task.status !== "todo") throw new Error("Proposal is not an unstarted suggestion of this project's steward.");
-      if (task.updatedAt !== input.expectedTaskUpdatedAt) throw new Error("Proposal changed; read it before declining.");
-      if (task.sessionId === principal.sessionId || task.reviewer?.sessionId === principal.sessionId || task.branch || task.startedAt) throw new Error("Cannot decline active work or your own task.");
+      const task = await this.tasks?.get(String(input.taskId));
+      if (
+        !task ||
+        task.projectId !== principal.projectId ||
+        task.stewardId !== id ||
+        task.source !== "steward" ||
+        task.status !== "todo"
+      )
+        throw new Error("Proposal is not an unstarted suggestion of this project's steward.");
+      if (task.updatedAt !== input.expectedTaskUpdatedAt)
+        throw new Error("Proposal changed; read it before declining.");
+      if (
+        task.sessionId === principal.sessionId ||
+        task.reviewer?.sessionId === principal.sessionId ||
+        task.branch ||
+        task.startedAt
+      )
+        throw new Error("Cannot decline active work or your own task.");
       await this.stewards.decline(task.id);
       return { stewardId: id, taskId: task.id, declined: true };
     }
@@ -141,7 +162,7 @@ export class ConversationStewardTools {
       if (existing.run)
         return { requested: false, reason: "already-running", run: runReceipt(existing.run) };
       const result = await this.stewards.runNow(id);
-      if (!authorized())
+      if (!(await authorized()))
         throw new Error("Session authority revoked. Read steward state before retrying.");
       return {
         requested: !!result.run,
@@ -154,13 +175,13 @@ export class ConversationStewardTools {
       };
     }
     if (action === "stewards.stopRun") {
-      const result = this.stewards.stopRun(id, String(input.runId));
+      const result = await this.stewards.stopRun(id, String(input.runId));
       return { requested: result.requested, run: runReceipt(result.run) };
     }
-    return this.store.transaction(() => {
-      const latest = current();
+    return await this.store.transaction(async () => {
+      const latest = await current();
       if (action === "stewards.pause" || action === "stewards.resume") {
-        const saved = this.stewards.save({
+        const saved = await this.stewards.save({
           ...latest,
           enabled: action === "stewards.resume",
           expectedConfiguration: latest,
@@ -174,7 +195,7 @@ export class ConversationStewardTools {
       }
       const { stewardId: _id, expectedUpdatedAt: _version, ...patch } = input;
       if (!Object.keys(patch).length) throw new Error("Supply steward fields to update.");
-      const saved = this.stewards.save({
+      const saved = await this.stewards.save({
         ...latest,
         ...patch,
         id,

@@ -100,12 +100,10 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
           "Gemini CLI remains available for enterprise Gemini Code Assist licenses and supported API keys. Existing Gemini sessions and CLI paths are preserved.",
         )}
       </p>
-      <Button className="shrink-0" disabled={checking} onClick={() => void checkInstallation()}>
+      <Button className="shrink-0" loading={checking} onClick={() => void checkInstallation()}>
         {checking ? t("Checking…") : t("Check installation and models")}
       </Button>
-      {checking ? (
-        <SettingsFeedback state="loading">{t("Checking…")}</SettingsFeedback>
-      ) : status ? (
+      {!checking && status ? (
         <SettingsFeedback state={available ? "success" : "warning"}>{t(status)}</SettingsFeedback>
       ) : null}
       {error && <SettingsFeedback state="error">{t(error)}</SettingsFeedback>}

@@ -9,6 +9,197 @@ import { HostChildBackend } from "./child-backend";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
 import type { SocialService } from "./social";
 
+function startupGate<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+it("invalidates a pending launch on per-ID kill and drains accepted preparation during close", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-cancel-start-"));
+  const file = join(directory, "provider.cjs");
+  const marker = join(directory, "started");
+  writeFileSync(
+    file,
+    `require('node:fs').writeFileSync(${JSON.stringify(marker)},'started'); setInterval(()=>{},1000)`,
+  );
+  const entered = startupGate<void>(),
+    release = startupGate<undefined>();
+  const backend = new HostChildBackend();
+  const issueSessionGrant = vi.fn(async () => ({ token: "fixture-local-token" }));
+  backend.setSocialAccess(
+    {
+      store: { environmentId: "fixture" },
+      issueSessionGrant,
+      remoteAccess: async () => {
+        entered.resolve();
+        return release.promise;
+      },
+    } as unknown as SocialService,
+    "http://127.0.0.1:1",
+  );
+  const laterGrant = vi.fn(async () => ({ token: "never-issued" }));
+  backend.setConversationAccess({ issueSessionGrant: laterGrant } as never, "http://127.0.0.1:1");
+  const launch = backend.invoke("harness_spawn", {
+    sessionId: "pending",
+    command: file,
+    args: [],
+    cwd: directory,
+  });
+  const rejected = expect(launch).rejects.toThrow(/startup cancelled|Host is stopping/);
+  await entered.promise;
+  await backend.kill("pending");
+  let closed = false;
+  const close = backend.close().then(() => {
+    closed = true;
+  });
+  try {
+    await expect(
+      backend.invoke("harness_spawn", {
+        sessionId: "later",
+        command: file,
+        args: [],
+        cwd: directory,
+      }),
+    ).rejects.toThrow("Host is stopping");
+    expect(closed).toBe(false);
+    expect(existsSync(marker)).toBe(false);
+  } finally {
+    release.resolve(undefined);
+    await rejected;
+    await close;
+    await backend.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+  expect(issueSessionGrant).not.toHaveBeenCalled();
+  expect(laterGrant).not.toHaveBeenCalled();
+  expect(closed).toBe(true);
+});
+
+it("lets a replacement start while old grant preparation is held without stale launch or credential publication", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-replace-start-"));
+  const file = join(directory, "provider.cjs");
+  const marker = join(directory, "started");
+  writeFileSync(
+    file,
+    `require('node:fs').appendFileSync(${JSON.stringify(marker)},'started\\n'); console.log('ready'); setInterval(()=>{},1000)`,
+  );
+  const entered = startupGate<void>(),
+    release = startupGate<{ token: string; endpoint: string; environmentId: string }>();
+  const backend = new HostChildBackend();
+  const current = {
+    token: "fixture-new-token",
+    endpoint: "http://127.0.0.1:1",
+    environmentId: "fixture",
+  };
+  const remoteAccess = vi
+    .fn()
+    .mockImplementationOnce(async () => {
+      entered.resolve();
+      return release.promise;
+    })
+    .mockResolvedValue(current);
+  backend.setSocialAccess({ remoteAccess } as unknown as SocialService, current.endpoint);
+  const old = backend.invoke("harness_spawn", {
+    sessionId: "same",
+    command: file,
+    args: [],
+    cwd: directory,
+  });
+  const rejected = expect(old).rejects.toThrow("startup cancelled");
+  try {
+    await entered.promise;
+    const replacement = await backend.invoke<number>("harness_spawn", {
+      sessionId: "same",
+      command: file,
+      args: [],
+      cwd: directory,
+    });
+    await vi.waitFor(() => expect(existsSync(marker)).toBe(true));
+    release.resolve({ ...current, token: "fixture-old-token" });
+    await rejected;
+    expect(readFileSync(marker, "utf8")).toBe("started\n");
+    const state = backend as unknown as {
+      socialEnvironments: Map<string, NodeJS.ProcessEnv>;
+      children: Map<string, { pid?: number }>;
+    };
+    expect(state.socialEnvironments.get("same")?.BYCODA_SOCIAL_TOKEN).toBe(current.token);
+    expect(state.children.get("same")?.pid).toBe(replacement);
+    expect(() => process.kill(replacement, 0)).not.toThrow();
+  } finally {
+    release.resolve({ ...current, token: "fixture-old-token" });
+    await rejected;
+    await backend.close();
+    rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
+it("shares close and joins accepted preparation before reporting a child-kill failure", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-close-start-"));
+  const file = join(directory, "provider.cjs");
+  writeFileSync(file, "setInterval(()=>{},1000)");
+  const entered = startupGate<void>(),
+    release = startupGate<undefined>();
+  const backend = new HostChildBackend();
+  const remoteAccess = vi
+    .fn()
+    .mockImplementationOnce(async () => {
+      entered.resolve();
+      return release.promise;
+    })
+    .mockResolvedValue({
+      token: "fixture-token",
+      endpoint: "http://127.0.0.1:1",
+      environmentId: "fixture",
+    });
+  backend.setSocialAccess({ remoteAccess } as unknown as SocialService, "http://127.0.0.1:1");
+  const launch = backend.invoke("harness_spawn", {
+    sessionId: "preparing",
+    command: file,
+    args: [],
+    cwd: directory,
+  });
+  const rejected = expect(launch).rejects.toThrow("Host is stopping");
+  await entered.promise;
+  await backend.invoke("harness_spawn", {
+    sessionId: "running",
+    command: file,
+    args: [],
+    cwd: directory,
+  });
+  const failure = new Error("fixture child kill failed");
+  const kill = vi.spyOn(backend, "kill").mockRejectedValueOnce(failure);
+  const close = backend.close();
+  const failed = expect(close).rejects.toMatchObject({ errors: [failure] });
+  let finished = false;
+  void close.then(
+    () => {
+      finished = true;
+    },
+    () => {
+      finished = true;
+    },
+  );
+  try {
+    expect(backend.close()).toBe(close);
+    await vi.waitFor(() => expect(kill).toHaveBeenCalledWith("running"));
+    expect(finished).toBe(false);
+    release.resolve(undefined);
+    await rejected;
+    await failed;
+    expect(finished).toBe(true);
+  } finally {
+    release.resolve(undefined);
+    await rejected;
+    await close.catch(() => undefined);
+    kill.mockRestore();
+    await backend.kill("running");
+    rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
 it("discovers Social MCP for a resolved desktop session and numeric child suffix", async () => {
   const backend = new HostChildBackend();
   const sessionIdentity = vi.fn((id: string) => {

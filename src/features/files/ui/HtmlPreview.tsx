@@ -19,6 +19,7 @@ export function HtmlPreview({
   useLocale();
   const [state, setState] = useState<{ url?: string; error?: string }>({});
   const [reload, setReload] = useState(0);
+  const opening = useRef(false);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [selection, setSelection] = useState<TranscriptSelection | null>(null);
   useEffect(() => {
@@ -26,6 +27,7 @@ export function HtmlPreview({
     if (!active) return;
     let cancelled = false;
     let token: string | undefined;
+    opening.current = true;
     setState({});
     const channel = crypto.randomUUID();
     const onMessage = (event: MessageEvent) => {
@@ -47,10 +49,14 @@ export function HtmlPreview({
         }
         // Tauri encodes the full path argument, including slashes. Convert only
         // the token so the preview route and its relative assets stay hierarchical.
+        opening.current = false;
         setState({ url: `${convertFileSrc(id, "html-preview")}/index.html` });
       })
       .catch((error: unknown) => {
-        if (!cancelled) setState({ error: String(error) });
+        if (!cancelled) {
+          opening.current = false;
+          setState({ error: String(error) });
+        }
       });
     return () => {
       cancelled = true;
@@ -60,25 +66,29 @@ export function HtmlPreview({
   }, [path, source, active, reload]);
 
   if (!active) return null;
-  if (state.error)
-    return (
-      <div role="alert" className="p-6 text-ui-caption text-danger">
-        {state.error}
-      </div>
-    );
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
-      <div className="flex h-8 shrink-0 items-center border-b border-stroke bg-surface px-3">
+      <div className="flex min-h-9 shrink-0 items-center border-b border-stroke bg-surface px-3 py-1">
         <Button
           variant="ghost"
           size="sm"
           motion="none"
-          onClick={() => setReload((value) => value + 1)}
+          loading={!state.url && !state.error}
+          onClick={() => {
+            if (opening.current) return;
+            opening.current = true;
+            setState({});
+            setReload((value) => value + 1);
+          }}
         >
           {t("Reload preview")}
         </Button>
       </div>
-      {state.url ? (
+      {state.error ? (
+        <div role="alert" className="min-w-0 break-words p-6 text-ui-caption text-danger">
+          {state.error}
+        </div>
+      ) : state.url ? (
         <iframe
           ref={frameRef}
           title={t("HTML live preview")}
@@ -88,7 +98,9 @@ export function HtmlPreview({
           className="min-h-0 w-full flex-1 border-0"
         />
       ) : (
-        <p className="p-6 text-ui-caption text-[var(--ui-text-muted)]">{t("Opening preview…")}</p>
+        <p role="status" className="p-6 text-ui-caption text-[var(--ui-text-muted)]">
+          {t("Opening preview…")}
+        </p>
       )}
       <PreviewSelectionMenu
         selection={selection}

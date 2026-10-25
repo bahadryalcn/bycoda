@@ -16,7 +16,11 @@ import {
   useComposerTranslationSelection,
   type ComposerTranslationSelection,
 } from "../hooks/useComposerTranslationSelection";
-import { canOfferTranslation, repromptReference, type TextActionTarget } from "../model/translation";
+import {
+  canOfferTranslation,
+  repromptReference,
+  type TextActionTarget,
+} from "../model/translation";
 import {
   translatedSelection,
   translationHistoryKey,
@@ -1018,15 +1022,25 @@ export const Composer = memo(function Composer({
   const sendIntentRef = useRef(0);
   /** Pasted and dropped files still reading when Send is pressed. */
   const pasteFlightRef = useRef<Promise<void> | null>(null);
-  const submitLockRef = useRef(false);
+  const submitLockRef = useRef<symbol | null>(null);
+  const [submission, setSubmission] = useState<{
+    sessionId: string | undefined;
+    action: "send" | "queue";
+  } | null>(null);
   const previousBusyRef = useRef(busy);
   useEffect(() => {
-    if (previousBusyRef.current && !busy) sendIntentRef.current += 1;
+    if (previousBusyRef.current && !busy) {
+      sendIntentRef.current += 1;
+      submitLockRef.current = null;
+      setSubmission(null);
+    }
     previousBusyRef.current = busy;
   }, [busy]);
   const stopPendingSend = () => {
     // Retire submission intent without discarding a clipboard read or its result.
     sendIntentRef.current += 1;
+    submitLockRef.current = null;
+    setSubmission(null);
     onStop?.();
   };
   const positionedInitialDraft = useRef(false);
@@ -2206,9 +2220,13 @@ export const Composer = memo(function Composer({
 
   const submit = (value: string, queue = false) => {
     if (disabled || worktreeRemoved || sendHeldReason || submitLockRef.current) return;
-    submitLockRef.current = true;
+    const token = Symbol();
+    submitLockRef.current = token;
+    setSubmission({ sessionId, action: queue ? "queue" : "send" });
     void completeSubmit(value, queue).finally(() => {
-      submitLockRef.current = false;
+      if (submitLockRef.current !== token) return;
+      submitLockRef.current = null;
+      setSubmission(null);
     });
   };
   const completeSubmit = async (submittedValue: string, queue = false) => {
@@ -2870,7 +2888,11 @@ export const Composer = memo(function Composer({
       {translationRequest ? (
         <TranslationResultDialog
           text={translationRequest.selection.text}
-          surroundingText={repromptReference(translationRequest.selection.value, translationRequest.selection.start, translationRequest.selection.end)}
+          surroundingText={repromptReference(
+            translationRequest.selection.value,
+            translationRequest.selection.start,
+            translationRequest.selection.end,
+          )}
           target={translationRequest.target}
           context={translationContext}
           onClose={() => setTranslationRequest(null)}
@@ -3554,6 +3576,7 @@ export const Composer = memo(function Composer({
               ) : null}
               <ComposerAction
                 busy={busy}
+                submitting={submission?.sessionId === sessionId ? submission?.action : null}
                 disabled={disabled}
                 hasValue={hasValue && !worktreeRemoved}
                 allowBusySubmit={allowBusySubmit}
@@ -3611,24 +3634,56 @@ export const Composer = memo(function Composer({
             aria-label={t("Chat workspace")}
             className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-b-xl border border-t-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 pb-1.5 pt-2"
           >
-            {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
-              <>
-                <WorkspacePicker
-                  alignBase="end"
-                  cwd={executionCwd}
-                  mode={workspaceMode ?? "current"}
-                  base={resolvedWorktreeBase}
-                  enabled={enabled && !busy}
-                  onModeChange={onWorkspaceModeChange}
-                  onBaseChange={onWorktreeBaseChange}
-                  onSelectWorktree={onWorktreeChange}
-                  onOpenSettings={onManageWorktrees}
-                  onClose={() => ref.current?.focus()}
-                >
-                  <ComposerTips active={focused && !disabled} />
-                </WorkspacePicker>
-                {(workspaceMode ?? "current") === "current" ? (
-                  <div className="ml-auto flex min-w-0 justify-end">
+            <ComposerTips active={focused && !disabled} />
+            <div
+              data-composer-workspace-controls
+              className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1"
+            >
+              {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
+                <>
+                  <WorkspacePicker
+                    alignBase="inline"
+                    cwd={executionCwd}
+                    mode={workspaceMode ?? "current"}
+                    base={resolvedWorktreeBase}
+                    enabled={enabled && !busy}
+                    onModeChange={onWorkspaceModeChange}
+                    onBaseChange={onWorktreeBaseChange}
+                    onSelectWorktree={onWorktreeChange}
+                    onOpenSettings={onManageWorktrees}
+                    onClose={() => ref.current?.focus()}
+                  />
+                  {(workspaceMode ?? "current") === "current" ? (
+                    <div className="flex min-w-0 justify-end">
+                      <BranchPicker
+                        cwd={executionCwd}
+                        branch={branch}
+                        enabled={enabled && !busy}
+                        onChange={onBranchChange}
+                        onClose={() => ref.current?.focus()}
+                      />
+                    </div>
+                  ) : null}
+                </>
+              ) : worktreeRemoved && onWorktreeChange ? (
+                <>
+                  <WorktreePicker
+                    cwd={cwd}
+                    executionCwd={executionCwd}
+                    enabled={enabled && !busy}
+                    onSelect={onWorktreeChange}
+                    worktreeRemoved={worktreeRemoved}
+                    onBranchChange={onBranchChange}
+                    onManage={onManageWorktrees}
+                    onClose={() => ref.current?.focus()}
+                  />
+                </>
+              ) : (
+                <>
+                  {onWorktreeChange ? (
+                    <WorkspaceIdentity worktree={pathKey(cwd) !== pathKey(executionCwd)} />
+                  ) : null}
+                  <div className="flex min-w-0 justify-end">
                     <BranchPicker
                       cwd={executionCwd}
                       branch={branch}
@@ -3637,44 +3692,14 @@ export const Composer = memo(function Composer({
                       onClose={() => ref.current?.focus()}
                     />
                   </div>
-                ) : null}
-              </>
-            ) : worktreeRemoved && onWorktreeChange ? (
-              <>
-                <WorktreePicker
-                  cwd={cwd}
-                  executionCwd={executionCwd}
-                  enabled={enabled && !busy}
-                  onSelect={onWorktreeChange}
-                  worktreeRemoved={worktreeRemoved}
-                  onBranchChange={onBranchChange}
-                  onManage={onManageWorktrees}
-                  onClose={() => ref.current?.focus()}
-                />
-                <ComposerTips active={focused && !disabled} />
-              </>
-            ) : (
-              <>
-                {onWorktreeChange ? (
-                  <WorkspaceIdentity worktree={pathKey(cwd) !== pathKey(executionCwd)} />
-                ) : null}
-                <ComposerTips active={focused && !disabled} />
-                <div className="ml-auto flex min-w-0 justify-end">
-                  <BranchPicker
-                    cwd={executionCwd}
-                    branch={branch}
-                    enabled={enabled && !busy}
-                    onChange={onBranchChange}
-                    onClose={() => ref.current?.focus()}
-                  />
+                </>
+              )}
+              {sessionDirectoryPicker ? (
+                <div data-composer-directories className="flex min-w-0 justify-end">
+                  {sessionDirectoryPicker}
                 </div>
-              </>
-            )}
-            {sessionDirectoryPicker ? (
-              <div data-composer-directories className="ml-auto flex min-w-0 justify-end">
-                {sessionDirectoryPicker}
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         ) : null}
       </div>
@@ -3782,6 +3807,7 @@ function FileMentionRuns({
 
 export function ComposerAction({
   busy,
+  submitting = null,
   disabled = false,
   hasValue,
   allowBusySubmit = true,
@@ -3795,6 +3821,8 @@ export function ComposerAction({
   onStop,
 }: {
   busy: boolean;
+  /** Submission can wait for attachments independently of the running turn. */
+  submitting?: "send" | "queue" | null;
   disabled?: boolean;
   hasValue: boolean;
   allowBusySubmit?: boolean;
@@ -3812,7 +3840,7 @@ export function ComposerAction({
 }) {
   const t = useT();
   const label = labelProp ?? t("Send");
-  if (disabled && !busy) {
+  if (disabled && !busy && !submitting) {
     return (
       <Button variant="primary" motion="none" iconOnly label={label} shortcut="Enter" disabled>
         <ArrowUp className="size-3.5" strokeWidth={2.25} />
@@ -3822,7 +3850,7 @@ export function ComposerAction({
   if (busy) {
     return (
       <>
-        {hasValue && allowBusySubmit && !disabled ? (
+        {(hasValue && allowBusySubmit && !disabled) || submitting ? (
           <>
             {onQueue ? (
               <Button
@@ -3832,6 +3860,9 @@ export function ComposerAction({
                 tooltip={t("Queue message for when this turn finishes")}
                 shortcut={queueShortcut}
                 data-usage-guide="queue-button"
+                loading={submitting === "queue"}
+                loadingLabel={t("Sending…")}
+                disabled={submitting === "send"}
                 onClick={onQueue}
               >
                 <ListEnd className="size-3.5" strokeWidth={1.75} />
@@ -3845,10 +3876,19 @@ export function ComposerAction({
               tooltip={busyLabel ?? label}
               shortcut="Enter"
               aria-description={busyLabel}
+              loading={submitting === "send"}
+              loadingLabel={t("Sending…")}
+              disabled={submitting === "queue"}
+              startIcon={
+                busyLabel ? <ArrowUp className="size-3.5" strokeWidth={2.25} /> : undefined
+              }
               onClick={onSend}
             >
-              {busyLabel ? <span>{busyLabel}</span> : null}
-              <ArrowUp className="size-3.5" strokeWidth={2.25} />
+              {busyLabel ? (
+                <span>{busyLabel}</span>
+              ) : (
+                <ArrowUp className="size-3.5" strokeWidth={2.25} />
+              )}
             </Button>
           </>
         ) : null}
@@ -3874,7 +3914,9 @@ export function ComposerAction({
       label={blockedReason ? `${label}. ${blockedReason}` : label}
       tooltip={blockedReason ?? label}
       shortcut={blockedReason ? null : "Enter"}
-      disabled={!hasValue}
+      disabled={!hasValue && !submitting}
+      loading={submitting !== null}
+      loadingLabel={t("Sending…")}
       onClick={onSend}
       aria-description={blockedReason}
     >

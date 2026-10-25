@@ -34,60 +34,79 @@ function endpoint(value: unknown): string {
  * directly between the two hosts; neither renderer nor model ever receives it. */
 export class SocialPeers {
   private readonly identities = new Map<string, HostSession>();
+  readonly ready: Promise<void>;
   constructor(
     private readonly service: SocialService,
     private readonly vault: SocialCredentialStore,
     private readonly fetcher: typeof fetch = fetch,
   ) {
-    service.store.db.exec(
-      "CREATE TABLE IF NOT EXISTS social_peers (id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS social_peer_tokens (hash TEXT PRIMARY KEY,peer_id TEXT NOT NULL,device_hash TEXT NOT NULL)",
-    );
-    service.setPeerResolver(
-      (id) => this.identities.get(id),
-      (id) => this.verify(id),
-    );
-    service.remoteAccess = (id) => this.access(id);
-    service.isDelegated = () => !!this.get("authority");
+    this.ready = (async () => {
+      await service.store.ready;
+      await service.ready;
+      await service.store.db.scope(async () => {
+        await service.store.db.exec(
+          "CREATE TABLE IF NOT EXISTS social_peers (id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS social_peer_tokens (hash TEXT PRIMARY KEY,peer_id TEXT NOT NULL,device_hash TEXT NOT NULL)",
+        );
+        service.setPeerResolver(
+          (id) => this.identities.get(id),
+          async (id) => await this.verify(id),
+        );
+        service.remoteAccess = async (id) => await this.access(id);
+        service.isDelegated = async () => !!(await this.get("authority"));
+      });
+    })();
   }
-  private get(id: string): Peer | undefined {
-    const row = this.service.store.db.prepare("SELECT value FROM social_peers WHERE id=?").get(id);
+  private async get(id: string): Promise<Peer | undefined> {
+    const row = await this.service.store.db
+      .prepare("SELECT value FROM social_peers WHERE id=?")
+      .get(id);
     return row ? (JSON.parse(String(row.value)) as Peer) : undefined;
   }
-  private save(id: string, peer: Peer) {
-    this.service.store.db
+  private async save(id: string, peer: Peer) {
+    await this.service.store.db
       .prepare(
         "INSERT INTO social_peers VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
       )
       .run(id, JSON.stringify(peer));
   }
-  status() {
-    const authority = this.get("authority");
+  async status() {
+    await this.ready;
+
+    const authority = await this.get("authority");
     return {
       environmentId: this.service.store.environmentId,
       authority: authority
         ? { environmentId: authority.environmentId, mapping: authority.mapping }
         : null,
-      projects: this.service.store.projects().map(({ id, name }) => ({ id, name })),
+      projects: (await this.service.store.projects()).map(({ id, name }) => ({ id, name })),
     };
   }
   async enroll(targetId: string, deviceHash: string) {
+    await this.ready;
+
     if (!targetId || targetId === this.service.store.environmentId || targetId.length > 200)
       throw new Error("Invalid social authority.");
     const token = randomBytes(32).toString("base64url");
-    this.service.store.db.prepare("DELETE FROM social_peer_tokens WHERE peer_id=?").run(targetId);
-    this.service.store.db
+    await this.service.store.db
+      .prepare("DELETE FROM social_peer_tokens WHERE peer_id=?")
+      .run(targetId);
+    await this.service.store.db
       .prepare("INSERT INTO social_peer_tokens VALUES (?,?,?)")
       .run(hash(token), targetId, deviceHash);
     await this.vault.set(`social-peer:${targetId}`, { accessToken: token });
     return { token, environmentId: this.service.store.environmentId };
   }
-  authenticated(token: string): string | undefined {
-    const row = this.service.store.db
+  async authenticated(token: string): Promise<string | undefined> {
+    await this.ready;
+
+    const row = await this.service.store.db
       .prepare("SELECT peer_id,device_hash FROM social_peer_tokens WHERE hash=?")
       .get(hash(token));
     if (
       !row ||
-      !this.service.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(row.device_hash!)
+      !(await this.service.store.db
+        .prepare("SELECT id FROM devices WHERE hash=?")
+        .get(row.device_hash!))
     )
       return undefined;
     return String(row.peer_id);
@@ -116,6 +135,8 @@ export class SocialPeers {
     return result.result;
   }
   async register(input: Record<string, unknown>, deviceHash: string) {
+    await this.ready;
+
     const environmentId = String(input.environmentId ?? "");
     if (
       !environmentId ||
@@ -156,18 +177,20 @@ export class SocialPeers {
     for (const [from, to] of Object.entries(mapping)) {
       if (!source.projects.some((project) => project.id === from) || typeof to !== "string")
         throw new Error("Source project identity was not verified.");
-      this.service.store.project(to);
+      await this.service.store.project(to);
     }
-    this.save(environmentId, peer);
-    this.service.store.db
+    await this.save(environmentId, peer);
+    await this.service.store.db
       .prepare("DELETE FROM social_peer_tokens WHERE peer_id=?")
       .run(environmentId);
-    this.service.store.db
+    await this.service.store.db
       .prepare("INSERT INTO social_peer_tokens VALUES (?,?,?)")
       .run(hash(String(input.token)), environmentId, deviceHash);
     return { connected: true, environmentId, mapping };
   }
   async useAuthority(input: Record<string, unknown>) {
+    await this.ready;
+
     const targetId = String(input.environmentId ?? "");
     const peer: Peer = {
       environmentId: targetId,
@@ -181,24 +204,28 @@ export class SocialPeers {
     if (target.environmentId !== targetId) throw new Error("Social authority identity changed.");
     if (target.authority)
       throw new Error("Peer chains are not supported. Choose one direct central authority.");
-    this.service.suspendLocalExecution();
-    this.save("authority", peer);
-    return this.status();
+    await this.service.suspendLocalExecution();
+    await this.save("authority", peer);
+    return await this.status();
   }
-  resetAuthority() {
-    this.service.suspendLocalExecution();
-    const authority = this.get("authority");
+  async resetAuthority() {
+    await this.ready;
+
+    await this.service.suspendLocalExecution();
+    const authority = await this.get("authority");
     if (authority)
-      this.service.store.db
+      await this.service.store.db
         .prepare("DELETE FROM social_peer_tokens WHERE peer_id=?")
         .run(authority.environmentId);
-    this.service.store.db.prepare("DELETE FROM social_peers WHERE id='authority'").run();
-    return this.status();
+    await this.service.store.db.prepare("DELETE FROM social_peers WHERE id='authority'").run();
+    return await this.status();
   }
   async peerRpc(peerId: string, method: string, params: Record<string, unknown>) {
-    if (method === "social.peer.status") return this.status();
+    await this.ready;
+
+    if (method === "social.peer.status") return await this.status();
     if (method === "social.peer.identity") {
-      const session = this.service.sessionIdentity(String(params.sessionId ?? ""));
+      const session = await this.service.sessionIdentity(String(params.sessionId ?? ""));
       if (session.session.id.includes("/"))
         throw new Error("Indirect peer sessions are not allowed.");
       return {
@@ -208,13 +235,14 @@ export class SocialPeers {
       } satisfies Identity;
     }
     if (method === "social.peer.grant") {
-      if (this.get("authority")) throw new Error("Only the central authority issues peer grants.");
-      const peer = this.get(peerId);
+      if (await this.get("authority"))
+        throw new Error("Only the central authority issues peer grants.");
+      const peer = await this.get(peerId);
       if (!peer) throw new Error("Peer project mapping is not registered.");
       const id = `${peerId}/${String(params.sessionId ?? "")}`;
       await this.verify(id);
       return {
-        ...this.service.issueSessionGrant(id),
+        ...(await this.service.issueSessionGrant(id)),
         environmentId: this.service.store.environmentId,
       };
     }
@@ -225,14 +253,14 @@ export class SocialPeers {
     const split = id.indexOf("/");
     const peerId = id.slice(0, split);
     const sessionId = id.slice(split + 1);
-    const peer = this.get(peerId);
-    if (!peer || this.get("authority")) {
+    const peer = await this.get(peerId);
+    if (!peer || (await this.get("authority"))) {
       this.identities.delete(id);
       throw new Error("Social peer was removed or is no longer an authority.");
     }
     try {
       const credential = await this.vault.get(`social-peer:${peerId}`);
-      if (!credential || this.authenticated(credential.accessToken) !== peerId)
+      if (!credential || (await this.authenticated(credential.accessToken)) !== peerId)
         throw new Error("Peer owner device was revoked.");
       const identity = await this.rpc<Identity>(peer, "social.peer.identity", {
         sessionId,
@@ -240,7 +268,7 @@ export class SocialPeers {
       const projectId = peer.mapping[identity.projectId];
       if (identity.sessionId !== sessionId || !projectId || typeof identity.provider !== "string")
         throw new Error("Source session/project identity changed.");
-      this.service.store.project(projectId);
+      await this.service.store.project(projectId);
       this.identities.set(id, {
         projectId,
         session: { id, harness: identity.provider },
@@ -253,11 +281,11 @@ export class SocialPeers {
     }
   }
   private async access(sessionId: string) {
-    const authority = this.get("authority");
+    const authority = await this.get("authority");
     if (!authority) return undefined;
     // Verify locally before requesting a central grant; tools cannot choose a
     // different session identity by passing JSON fields.
-    this.service.sessionIdentity(sessionId);
+    await this.service.sessionIdentity(sessionId);
     const grant = await this.rpc<{
       token: string;
       expiresAt: number;

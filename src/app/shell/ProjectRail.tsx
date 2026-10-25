@@ -138,7 +138,6 @@ import { LastSessionsSection, type RecentSessionsSource } from "./LastSessionsSe
 import { DevModeSlot, TabVisitNav } from "./TitleBar";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 import type { InstalledUpdate } from "../model/updateNotice";
-import { Shimmer } from "../../shared/ui/Shimmer";
 import type { SettingsSectionId } from "../../features/settings/model/settings";
 import { InboxNotificationMenu } from "./sidebarSurfaces";
 import { notificationMuteStatus } from "../../features/notifications/ui/notificationMuteActions";
@@ -1948,6 +1947,7 @@ function ProjectCard({
   const remoteConnection = useRemoteConnection(item.path);
   const indicator = connectionIndicator(remoteConnection, remoteConnection.reconnecting);
   const reconnectable = !!machine && indicator.tone === "down";
+  const showReconnect = reconnectable || remoteConnection.reconnecting;
   const connection = !remote
     ? ""
     : !machine
@@ -2066,7 +2066,7 @@ function ProjectCard({
         title={muteStatus ? `${cardTitle}\n${muteStatus}` : cardTitle}
         aria-label={muteStatus ? `${cardAriaLabel}, ${muteStatus}` : cardAriaLabel}
         aria-current={selected ? "true" : undefined}
-        className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-6 group-has-[button:focus-visible]:pr-6 @max-[140px]/rail:justify-center @max-[140px]/rail:pr-0!"
+        className={`flex min-w-0 flex-1 cursor-default items-center gap-2 text-left ${multi?.active ? "" : showReconnect ? "pe-12" : "pe-6"} @max-[140px]/rail:justify-center @max-[140px]/rail:pe-0!`}
       >
         <div
           className={`project-card-logo grid size-4 shrink-0 place-items-center ${multi?.active ? "" : "transition-opacity group-hover:opacity-0"} @max-[140px]/rail:opacity-100!`}
@@ -2098,43 +2098,22 @@ function ProjectCard({
             <TerminalSpinner />
           </span>
         ) : null}
-        {busy ? (
-          <Shimmer as="span" duration={1.4} className={labelClassName}>
-            {name}
-          </Shimmer>
-        ) : (
-          <span className={labelClassName}>{name}</span>
-        )}
+        <span className={labelClassName}>{name}</span>
         {machine ? (
           <span className="min-w-0 flex-1 truncate text-ui-caption leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
             {machine.name}
           </span>
         ) : null}
         {hasChanges ? (
-          <span className="project-card-stats shrink-0 group-hover:hidden group-has-[button:focus-visible]:hidden @max-[140px]/rail:hidden!">
+          <span className="project-card-stats shrink-0 @max-[140px]/rail:hidden!">
             <ProjectDiffStat additions={additions} deletions={deletions} />
           </span>
         ) : null}
-        {remote ? (
+        {remote && !showReconnect ? (
           <span
-            role={reconnectable ? "button" : "img"}
-            aria-label={
-              reconnectable ? t("{p0} Reconnect machine", { p0: connection }) : connection
-            }
-            title={reconnectable ? t("{p0}\nClick to reconnect", { p0: connection }) : undefined}
-            data-no-drag={reconnectable ? "" : undefined}
-            onPointerDown={reconnectable ? (event) => event.stopPropagation() : undefined}
-            onClick={
-              reconnectable
-                ? (event) => {
-                    event.stopPropagation();
-                    void remoteConnection.reconnect({ signIn: true });
-                  }
-                : undefined
-            }
-            className={`relative grid size-4 shrink-0 place-items-center text-(--ui-text-secondary) @max-[140px]/rail:hidden ${
-              reconnectable ? "cursor-pointer hover:text-content" : ""
-            }`}
+            role="img"
+            aria-label={connection}
+            className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-secondary) @max-[140px]/rail:hidden"
           >
             <Internet className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
             <span
@@ -2168,6 +2147,24 @@ function ProjectCard({
       ) : null}
       {!multi?.active ? (
         <>
+          {showReconnect ? (
+            <Button
+              iconOnly
+              label={t("{p0} Reconnect machine", { p0: connection })}
+              variant="ghost"
+              motion="none"
+              data-no-drag
+              loading={remoteConnection.reconnecting}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                void remoteConnection.reconnect({ signIn: true });
+              }}
+              className="absolute end-7 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
+            >
+              <Internet className="icon-sm" strokeWidth={1.75} aria-hidden />
+            </Button>
+          ) : null}
           <Button
             iconOnly
             label={t("Project options")}
@@ -2190,7 +2187,7 @@ function ProjectCard({
                 multi && item.path !== "~" ? () => multi.toggle(item.path) : undefined,
               );
             }}
-            className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center group-hover:grid group-has-[button:focus-visible]:grid @max-[140px]/rail:hidden!"
+            className="absolute end-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center @max-[140px]/rail:hidden!"
           >
             <MoreHorizontal className="icon-md" strokeWidth={1.75} />
           </Button>

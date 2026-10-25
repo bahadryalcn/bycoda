@@ -303,6 +303,7 @@ export function InboxCommentForm({
             type="button"
             title={t("Cancel reply")}
             aria-label={t("Cancel reply")}
+            disabled={posting}
             onClick={onCancelReply}
             className="shrink-0"
           >
@@ -313,7 +314,7 @@ export function InboxCommentForm({
       <div className="space-y-1">
         <TextareaField
           hideLabel
-          label=""
+          label={replyTo ? t("Reply") : t("Comment")}
           ref={field}
           rows={2}
           value={draft}
@@ -340,13 +341,18 @@ export function InboxCommentForm({
             type="submit"
             disabled={!canPost}
             loading={posting}
+            loadingLabel={t("Posting...")}
             className="shrink-0"
           >
-            {posting ? t("Posting...") : replyTo ? t("Reply") : t("Comment")}
+            {replyTo ? t("Reply") : t("Comment")}
           </Button>
         </div>
       </div>
-      {error ? <p className="text-ui-caption text-(--ui-tone-danger-fg)">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="text-ui-caption text-(--ui-tone-danger-fg)">
+          {error}
+        </p>
+      ) : null}
     </form>
   );
 }

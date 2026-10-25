@@ -18,6 +18,7 @@ import {
   Copy,
   Eye,
   FolderOpen,
+  LoaderCircle,
   MoreHorizontal,
   RefreshCw,
   Trash2,
@@ -136,7 +137,8 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   const [reload, setReload] = useState(0);
   const [disabledPaths, setDisabledPaths] = useState<string[]>(() => loadDisabledSkillPaths());
   const [policies, setPolicies] = useState<Record<string, SkillPolicy>>({});
-  const [policySaving, setPolicySaving] = useState(false);
+  const [policyTarget, setPolicyTarget] = useState<string | null>(null);
+  const policySaving = policyTarget !== null;
   const policyPending = useRef(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState("");
@@ -396,7 +398,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   ): Promise<void> => {
     if (policyPending.current) return;
     policyPending.current = true;
-    setPolicySaving(true);
+    setPolicyTarget(JSON.stringify([machine?.environmentId ?? "local", skill.path]));
     setActionResult("");
     try {
       const policy = parseSkillPolicy(
@@ -421,7 +423,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       setActionError(`Could not save the skill preference. ${String(error)}`);
     } finally {
       policyPending.current = false;
-      setPolicySaving(false);
+      setPolicyTarget(null);
     }
   };
 
@@ -561,7 +563,12 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     const selected = previewSkill?.path === skill.path;
     const modified = drafts[skill.path] !== undefined;
     return (
-      <div key={skill.path} className={styles.row} data-selected={selected || undefined}>
+      <div
+        key={skill.path}
+        className={styles.row}
+        data-selected={selected || undefined}
+        aria-busy={policyTarget === JSON.stringify([machine?.environmentId ?? "local", skill.path])}
+      >
         <div className={styles.rowTitle}>
           <Button
             variant="item"
@@ -597,6 +604,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               disabled={policySaving}
               onChange={(enabled) => void onToggle(skill, enabled, machine)}
             />
+          ) : null}
+          {policyTarget === JSON.stringify([machine?.environmentId ?? "local", skill.path]) ? (
+            <LoaderCircle className="icon-xs animate-spin" aria-label={t("Saving…")} />
           ) : null}
           {disabled ? <Badge size="sm">{t("Disabled")}</Badge> : null}
         </div>
@@ -827,7 +837,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                 setAdding(false);
                 setShowCreate(false);
                 setCreateError(null);
-                addSkillButton.current?.focus();
+                // The library is hidden while the narrow creation pane is open.
+                // Restore focus after React makes its trigger visible again.
+                requestAnimationFrame(() => addSkillButton.current?.focus());
               }}
               onCreate={onCreate}
             />

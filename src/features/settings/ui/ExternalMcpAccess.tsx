@@ -314,7 +314,8 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
     };
   }, []);
   async function revoke(grant: Grant) {
-    if (!data || pending.current) return;
+    if (!data || pending.current)
+      throw new Error("Token revocation is unavailable while another request is pending.");
     pending.current = true;
     setRevoking(grant.id);
     setError("");
@@ -334,8 +335,9 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             ),
           },
       );
-    } catch {
+    } catch (cause) {
       setError(t("Token revocation failed. Refresh and try again."));
+      throw cause;
     } finally {
       pending.current = false;
       setRevoking(null);

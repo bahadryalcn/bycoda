@@ -18,7 +18,7 @@ export async function cleanupTaskWorktree(
   path: string,
   branch: string,
   evidence: { head?: string; deliveredCommit?: string },
-  inUse: () => boolean = () => false,
+  inUse: () => boolean | Promise<boolean> = () => false,
 ): Promise<string[]> {
   invalidateHostWorktrees(projectCwd);
   let listed = await hostWorktrees(projectCwd);
@@ -60,7 +60,7 @@ export async function cleanupTaskWorktree(
     archives.push(destination);
   };
   const registered = listed.worktrees.find((tree) => same(tree.path, path));
-  if (inUse()) throw new Error("The task checkout is still in use.");
+  if (await inUse()) throw new Error("The task checkout is still in use.");
   if (registered) {
     if (registered.locked)
       throw new Error("The task checkout is locked; cleanup will retry after it is unlocked.");
@@ -72,7 +72,7 @@ export async function cleanupTaskWorktree(
       await git(["merge-base", "--is-ancestor", registered.head, evidence.deliveredCommit]);
     if ((await git(["status", "--porcelain"], path)).trim())
       throw new Error("The task checkout contains changes made after delivery.");
-    if (inUse()) throw new Error("The task checkout is still in use.");
+    if (await inUse()) throw new Error("The task checkout is still in use.");
     if (existsSync(join(path, "temp"))) {
       await git(["check-ignore", "--quiet", "--", "temp"], path);
       await git(["check-ignore", "--quiet", "--", "temp/archive"], main.path);
@@ -80,7 +80,7 @@ export async function cleanupTaskWorktree(
       archive(join(path, "temp"), "temp");
     }
     try {
-      if (inUse()) throw new Error("The task checkout is still in use.");
+      if (await inUse()) throw new Error("The task checkout is still in use.");
       await git(["worktree", "remove", "--", path]);
     } catch (error) {
       invalidateHostWorktrees(projectCwd);
@@ -90,7 +90,7 @@ export async function cleanupTaskWorktree(
       if (existsSync(path)) archive(path, "remaining-files");
     }
   } else if (existsSync(path)) {
-    if (inUse()) throw new Error("The task checkout is still in use.");
+    if (await inUse()) throw new Error("The task checkout is still in use.");
     if (existsSync(join(path, ".git")))
       throw new Error("The leftover task directory has Git metadata; cleanup is paused.");
     await git(["check-ignore", "--quiet", "--", "temp/archive"], main.path);

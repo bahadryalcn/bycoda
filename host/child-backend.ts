@@ -152,8 +152,11 @@ export class HostChildBackend implements ChildBackend {
   }
   private events = new EventEmitter();
   private children = new Map<string, ChildProcessWithoutNullStreams>();
+  private starts = new Map<string, object>();
+  private startWork = new Set<Promise<number>>();
   private streams = new Map<string, AbortController>();
   private closing = false;
+  private closePromise?: Promise<void>;
 
   constructor(
     private readonly binaries: Partial<Record<RemoteProvider, string>> = {},
@@ -192,7 +195,7 @@ export class HostChildBackend implements ChildBackend {
     }
     if (command === "harness_conversation_tools_bridge") {
       return (
-        this.conversationAccess?.service.hasSession(id.replace(/#\d+$/, ""))
+        (await this.conversationAccess?.service.hasSession(id.replace(/#\d+$/, "")))
           ? {
               command: process.execPath,
               args: [process.argv[1]],
@@ -203,7 +206,7 @@ export class HostChildBackend implements ChildBackend {
     }
     if (command === "harness_runtime_logs_bridge") {
       return (
-        this.runtimeLogAccess?.service.hasSession(id.replace(/#\d+$/, ""))
+        (await this.runtimeLogAccess?.service.hasSession(id.replace(/#\d+$/, "")))
           ? {
               command: process.execPath,
               args: [process.argv[1]],
@@ -215,7 +218,7 @@ export class HostChildBackend implements ChildBackend {
     if (command === "harness_social_bridge") {
       if (!this.socialAccess) return null as T;
       try {
-        this.socialAccess.service.sessionIdentity(id.replace(/#\d+$/, ""));
+        await this.socialAccess.service.sessionIdentity(id.replace(/#\d+$/, ""));
         return {
           command: process.execPath,
           args: [process.argv[1]],
@@ -496,136 +499,172 @@ export class HostChildBackend implements ChildBackend {
     }
   }
 
-  private async start(id: string, args: Record<string, unknown>): Promise<number> {
+  private start(id: string, args: Record<string, unknown>): Promise<number> {
+    const work = this.startOwned(id, args);
+    this.startWork.add(work);
+    void work.finally(() => this.startWork.delete(work)).catch(() => undefined);
+    return work;
+  }
+
+  private async startOwned(id: string, args: Record<string, unknown>): Promise<number> {
     if (this.closing) throw new Error("Host is stopping");
-    let genericEnv: Record<string, string> = {};
-    if (args.genericAcpId) {
-      if (!this.genericAcp) throw new Error("Generic ACP management is unavailable");
-      const config = await this.genericAcp.get(String(args.genericAcpId));
-      args = { ...args, command: config.command, args: config.args };
-      genericEnv = config.env ?? {};
-    }
-    await this.kill(id);
-    if (this.closing) throw new Error("Host is stopping");
-    const account = await providerAccountEnvironment(
-      args.account as { provider?: string; id?: string } | undefined,
-    );
-    const cwd = await workingDirectory(String(args.cwd));
-    const launch = await providerLaunch(String(args.command), args.args as string[]);
-    if (this.closing) throw new Error("Host is stopping");
-    const env = await this.runtimeLogEnvironment(
-      id,
-      await this.socialEnvironment(id, { ...genericEnv, ...account?.set }),
-    );
-    for (const key of account?.remove ?? []) delete env[key];
-    if (this.closing) throw new Error("Host is stopping");
-    const child = spawn(
-      process.execPath,
-      [
-        fileURLToPath(new URL("./provider-guard.mjs", import.meta.url)),
-        launch.command,
-        ...launch.args,
-      ],
-      {
-        cwd,
-        stdio: ["pipe", "pipe", "pipe", "pipe"],
-        detached: process.platform !== "win32",
-        windowsHide: true,
-        env: { ...env, BYCODA_HOST: "1" },
-      },
-    );
-    this.children.set(id, child);
-    child.stdin.on("error", () => {
-      /* write callbacks report failures */
-    });
-    let exitReason: string | undefined;
-    const overflow = (reason: string) => {
-      if (exitReason) return;
-      exitReason = reason;
-      void this.kill(id);
+    const attempt = {};
+    this.starts.set(id, attempt);
+    const check = () => {
+      if (this.closing) throw new ProviderStartupCancelled("Host is stopping");
+      if (this.starts.get(id) !== attempt)
+        throw new ProviderStartupCancelled("Provider startup cancelled");
     };
-    this.lines(child, id, "stdout", overflow);
-    this.lines(child, id, "stderr", overflow);
-    child.on("close", (code) => {
-      if (this.children.get(id) === child) this.children.delete(id);
-      this.emit("harness-exit", {
-        sessionId: id,
-        code,
-        pid: child.pid,
-        ...(exitReason ? { reason: exitReason } : {}),
+    try {
+      let genericEnv: Record<string, string> = {};
+      if (args.genericAcpId) {
+        if (!this.genericAcp) throw new Error("Generic ACP management is unavailable");
+        const config = await this.genericAcp.get(String(args.genericAcpId));
+        check();
+        args = { ...args, command: config.command, args: config.args };
+        genericEnv = config.env ?? {};
+      }
+      await this.killCurrent(id);
+      check();
+      const account = await providerAccountEnvironment(
+        args.account as { provider?: string; id?: string } | undefined,
+      );
+      check();
+      const cwd = await workingDirectory(String(args.cwd));
+      check();
+      const launch = await providerLaunch(String(args.command), args.args as string[]);
+      check();
+      const social = await this.socialEnvironment(id, { ...genericEnv, ...account?.set }, check);
+      check();
+      const env = await this.runtimeLogEnvironment(id, social, check);
+      for (const key of account?.remove ?? []) delete env[key];
+      check();
+      // Preparation is local to this attempt. A cancelled older grant must not
+      // replace the authority used by a newer child under the same session ID.
+      for (const [prefix, target] of [
+        ["BYCODA_SOCIAL_", this.socialEnvironments],
+        ["BYCODA_RUNTIME_LOGS_", this.runtimeLogEnvironments],
+        ["BYCODA_CONVERSATION_", this.conversationEnvironments],
+      ] as const) {
+        const scoped = Object.fromEntries(
+          Object.entries(env).filter(([key]) => key.startsWith(prefix)),
+        );
+        target.delete(id);
+        if (Object.keys(scoped).length) target.set(id, scoped);
+      }
+      const child = spawn(
+        process.execPath,
+        [
+          fileURLToPath(new URL("./provider-guard.mjs", import.meta.url)),
+          launch.command,
+          ...launch.args,
+        ],
+        {
+          cwd,
+          stdio: ["pipe", "pipe", "pipe", "pipe"],
+          detached: process.platform !== "win32",
+          windowsHide: true,
+          env: { ...env, BYCODA_HOST: "1" },
+        },
+      );
+      this.children.set(id, child);
+      child.stdin.on("error", () => {
+        /* write callbacks report failures */
       });
-    });
-    await new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
-    });
-    return child.pid!;
+      let exitReason: string | undefined;
+      const overflow = (reason: string) => {
+        if (exitReason) return;
+        exitReason = reason;
+        void this.kill(id);
+      };
+      this.lines(child, id, "stdout", overflow);
+      this.lines(child, id, "stderr", overflow);
+      child.on("close", (code) => {
+        if (this.children.get(id) === child) this.children.delete(id);
+        this.emit("harness-exit", {
+          sessionId: id,
+          code,
+          pid: child.pid,
+          ...(exitReason ? { reason: exitReason } : {}),
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        child.once("spawn", resolve);
+        child.once("error", reject);
+      });
+      check();
+      return child.pid!;
+    } finally {
+      if (this.starts.get(id) === attempt) this.starts.delete(id);
+    }
   }
 
   private async socialEnvironment(
     id: string,
-    overrides: NodeJS.ProcessEnv = {},
+    overrides: NodeJS.ProcessEnv,
+    check: () => void,
   ): Promise<NodeJS.ProcessEnv> {
-    this.socialEnvironments.delete(id);
     const env: NodeJS.ProcessEnv = { ...process.env, ...overrides };
     for (const key of Object.keys(env)) if (key.startsWith("BYCODA_SOCIAL_")) delete env[key];
     if (!this.socialAccess) return env;
     try {
       const sessionId = id.replace(/#\d+$/, "");
-      const grant = (await this.socialAccess.service.remoteAccess?.(sessionId)) ?? {
-        ...this.socialAccess.service.issueSessionGrant(sessionId),
+      const remote = await this.socialAccess.service.remoteAccess?.(sessionId);
+      check();
+      const grant = remote ?? {
+        ...(await this.socialAccess.service.issueSessionGrant(sessionId)),
         endpoint: this.socialAccess.endpoint,
         environmentId: this.socialAccess.service.store.environmentId,
       };
+      check();
       env.BYCODA_SOCIAL_ENDPOINT = grant.endpoint;
       env.BYCODA_SOCIAL_TOKEN = grant.token;
       env.BYCODA_SOCIAL_ENVIRONMENT = grant.environmentId;
-      this.socialEnvironments.set(id, {
-        BYCODA_SOCIAL_TOKEN: grant.token,
-        BYCODA_SOCIAL_ENDPOINT: grant.endpoint,
-        BYCODA_SOCIAL_ENVIRONMENT: grant.environmentId,
-      });
     } catch {
       /* Isolated helper/catalog children do not receive session access. */
     }
+    check();
     return env;
   }
 
   private async runtimeLogEnvironment(
     id: string,
     env: NodeJS.ProcessEnv,
+    check: () => void,
   ): Promise<NodeJS.ProcessEnv> {
-    this.conversationEnvironments.delete(id);
     for (const key of Object.keys(env)) if (key.startsWith("BYCODA_CONVERSATION_")) delete env[key];
     if (this.conversationAccess) {
       try {
-        const grant = this.conversationAccess.service.issueSessionGrant(id.replace(/#\d+$/, ""));
+        const grant = await this.conversationAccess.service.issueSessionGrant(
+          id.replace(/#\d+$/, ""),
+        );
+        check();
         const scoped = {
           BYCODA_CONVERSATION_TOKEN: grant.token,
           BYCODA_CONVERSATION_ENDPOINT: this.conversationAccess.endpoint,
           BYCODA_CONVERSATION_ENVIRONMENT: this.conversationAccess.service.environmentId,
         };
         Object.assign(env, scoped);
-        this.conversationEnvironments.set(id, scoped);
       } catch {
         /* Helpers have no session authority. */
       }
     }
-    this.runtimeLogEnvironments.delete(id);
+    check();
     for (const key of Object.keys(env)) if (key.startsWith("BYCODA_RUNTIME_LOGS_")) delete env[key];
     if (!this.runtimeLogAccess) return env;
     try {
-      const grant = this.runtimeLogAccess.service.issueSessionGrant(id.replace(/#\d+$/, ""));
+      const grant = await this.runtimeLogAccess.service.issueSessionGrant(id.replace(/#\d+$/, ""));
+      check();
       const scoped = {
         BYCODA_RUNTIME_LOGS_TOKEN: grant.token,
         BYCODA_RUNTIME_LOGS_ENDPOINT: this.runtimeLogAccess.endpoint,
         BYCODA_RUNTIME_LOGS_ENVIRONMENT: this.runtimeLogAccess.service.environmentId,
       };
       Object.assign(env, scoped);
-      this.runtimeLogEnvironments.set(id, scoped);
     } catch {
       /* Isolated title/catalog helpers have no authoritative session. */
     }
+    check();
     return env;
   }
 
@@ -670,6 +709,11 @@ export class HostChildBackend implements ChildBackend {
   }
 
   async kill(id: string): Promise<void> {
+    this.starts.delete(id);
+    await this.killCurrent(id);
+  }
+
+  private async killCurrent(id: string): Promise<void> {
     const child = this.children.get(id);
     if (!child) return;
     this.children.delete(id);
@@ -714,9 +758,23 @@ export class HostChildBackend implements ChildBackend {
     });
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
     this.closing = true;
+    this.starts.clear();
     for (const id of this.streams.keys()) this.stopStream(id);
-    await Promise.all([...this.children.keys()].map((id) => this.kill(id)));
+    const work = [...[...this.children.keys()].map(async (id) => this.kill(id)), ...this.startWork];
+    this.closePromise = Promise.allSettled(work).then((results) => {
+      const errors = results.flatMap((result) =>
+        result.status === "rejected" && !(result.reason instanceof ProviderStartupCancelled)
+          ? [result.reason]
+          : [],
+      );
+      if (errors.length)
+        throw new AggregateError(errors, "Provider shutdown could not drain every operation.");
+    });
+    return this.closePromise;
   }
 }
+
+class ProviderStartupCancelled extends Error {}

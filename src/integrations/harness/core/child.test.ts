@@ -64,6 +64,30 @@ describe("isCurrentChildExit", () => {
 });
 
 describe("child bridge", () => {
+  it("updates the resolved binary to the checked release with its configured identity", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) =>
+        key === "bycoda.providerBinaryPaths.v1"
+          ? JSON.stringify({ opencode: "/custom/bin/opencode" })
+          : null,
+    });
+    mocks.invoke.mockResolvedValueOnce({ path: "/resolved/opencode" });
+    const child = await loadChild();
+
+    await child.updateHarnessCli("opencode", "1.19.0");
+
+    expect(mocks.invoke).toHaveBeenCalledWith("harness_resolve_configured", {
+      provider: "opencode",
+      binaryPath: "/custom/bin/opencode",
+    });
+    expect(mocks.invoke).toHaveBeenLastCalledWith("harness_update", {
+      command: "/resolved/opencode",
+      binaryProvider: "opencode",
+      binaryPath: "/custom/bin/opencode",
+      targetVersion: "1.19.0",
+    });
+  });
+
   it("waits until every listener is installed", async () => {
     const pending = deferred<UnlistenFn>();
     mocks.listen.mockImplementation(

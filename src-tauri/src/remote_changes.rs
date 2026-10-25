@@ -79,6 +79,10 @@ struct Shared {
     running: bool,
     generation: u64,
     result: Option<Result<Value, String>>,
+    demand_generation: u64,
+    refresh_running: bool,
+    refresh_generation: Option<u64>,
+    refresh_result: Option<Result<Value, String>>,
 }
 
 impl Changes {
@@ -95,6 +99,7 @@ impl Changes {
             entries.retain(|_, entry| {
                 entry.state.lock().is_ok_and(|state| {
                     state.running
+                        || state.refresh_running
                         || state
                             .windows
                             .values()
@@ -121,8 +126,8 @@ impl Changes {
             let matches = state.windows.get(window).is_none_or(|(registered, _)| {
                 release_id.is_none() || registered.get("subscriptionId") == release_id
             });
-            if matches {
-                state.windows.remove(window);
+            if matches && state.windows.remove(window).is_some() {
+                state.demand_generation += 1;
             }
             return Ok(
                 json!({"instanceId":params.get("instanceId").cloned().unwrap_or(Value::Null),
@@ -132,9 +137,64 @@ impl Changes {
         if !state.windows.contains_key(window) && state.windows.len() >= 32 {
             return Err("Too many remote window subscriptions".into());
         }
+        let immediate = params.get("waitMs").and_then(Value::as_u64) == Some(0);
+        let interest = |value: &Value| {
+            let mut value = value.clone();
+            if let Some(object) = value.as_object_mut() {
+                object.remove("waitMs");
+            }
+            value
+        };
+        if state
+            .windows
+            .get(window)
+            .is_none_or(|(previous, _)| interest(previous) != interest(&params))
+        {
+            state.demand_generation += 1;
+        }
         state
             .windows
             .insert(window.to_owned(), (params, Instant::now()));
+        if state.running && immediate {
+            // A short refresh may coexist with the held poll, but only one short
+            // request runs across all windows. Later registrations join if covered.
+            let mut joined_refresh = false;
+            while state.refresh_running {
+                joined_refresh = true;
+                let (next, timeout) = entry
+                    .changed
+                    .wait_timeout_while(state, Duration::from_secs(35), |state| {
+                        state.refresh_running
+                    })
+                    .map_err(|_| "Control lane is locked")?;
+                if timeout.timed_out() {
+                    return Err("Remote demand refresh timed out".into());
+                }
+                state = next;
+            }
+            let demand_generation = state.demand_generation;
+            if joined_refresh && state.refresh_generation == Some(demand_generation) {
+                if let Some(result) = &state.refresh_result {
+                    return result.clone();
+                }
+            }
+            let mut request = scheduled_request(
+                union(state.windows.values().map(|(value, _)| value))?,
+                state.generation,
+            )?;
+            request["waitMs"] = json!(0);
+            request["demandChanged"] = json!(true);
+            state.refresh_running = true;
+            drop(state);
+            let result =
+                send(request.clone()).and_then(|response| checked_response(&request, response));
+            let mut state = entry.state.lock().map_err(|_| "Control lane is locked")?;
+            state.refresh_running = false;
+            state.refresh_generation = Some(demand_generation);
+            state.refresh_result = Some(result.clone());
+            entry.changed.notify_all();
+            return result;
+        }
         if state.running {
             let generation = state.generation;
             let (next, timeout) = entry
@@ -155,28 +215,10 @@ impl Changes {
             union(state.windows.values().map(|(value, _)| value))?,
             state.generation,
         )?;
-        let checked_sessions = request["sessions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|entry| entry["sessionId"].clone())
-            .collect::<Vec<_>>();
-        let checked_projects = request["projects"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|entry| entry["projectId"].clone())
-            .collect::<Vec<_>>();
         state.running = true;
         drop(state);
-        let result = send(request).and_then(|mut response| {
-            let object = response
-                .as_object_mut()
-                .ok_or("Invalid machine changes response")?;
-            object.insert("checkedSessions".into(), json!(checked_sessions));
-            object.insert("checkedProjects".into(), json!(checked_projects));
-            Ok(response)
-        });
+        let result =
+            send(request.clone()).and_then(|response| checked_response(&request, response));
         let mut state = entry.state.lock().map_err(|_| "Control lane is locked")?;
         state.running = false;
         state.generation += 1;
@@ -184,6 +226,25 @@ impl Changes {
         entry.changed.notify_all();
         result
     }
+}
+
+fn checked_response(request: &Value, mut response: Value) -> Result<Value, String> {
+    let object = response
+        .as_object_mut()
+        .ok_or("Invalid machine changes response")?;
+    for (key, id, checked) in [
+        ("sessions", "sessionId", "checkedSessions"),
+        ("projects", "projectId", "checkedProjects"),
+    ] {
+        let values = request[key]
+            .as_array()
+            .ok_or("Invalid machine changes request")?;
+        object.insert(
+            checked.into(),
+            Value::Array(values.iter().map(|entry| entry[id].clone()).collect()),
+        );
+    }
+    Ok(response)
 }
 
 fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String> {
@@ -674,5 +735,131 @@ mod tests {
         barrier.wait();
         let second = changes.request("m", "b", other_params, |_| panic!("duplicate request"));
         assert_eq!(worker.join().unwrap().unwrap(), second.unwrap());
+    }
+
+    #[test]
+    fn changed_window_demand_has_a_nonblocking_refresh_beside_the_held_poll() {
+        let changes = Arc::new(Changes::default());
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let (release, wait) = std::sync::mpsc::channel();
+        let first = changes.clone();
+        let entered = barrier.clone();
+        let worker = std::thread::spawn(move || {
+            first.request(
+                "m",
+                "a",
+                json!({"sessions":[{"sessionId":"old","revision":1}],"projects":[],"waitMs":20000}),
+                |_| {
+                    entered.wait();
+                    wait.recv_timeout(Duration::from_secs(2)).unwrap();
+                    Ok(json!({"instanceId":"boot"}))
+                },
+            )
+        });
+        barrier.wait();
+        let refreshed = changes
+            .request(
+                "m",
+                "b",
+                json!({"sessions":[{"sessionId":"new","revision":2}],"projects":[],"waitMs":0}),
+                |request| {
+                    assert_eq!(request["waitMs"], 0);
+                    assert_eq!(request["sessions"].as_array().unwrap().len(), 2);
+                    Ok(json!({"instanceId":"boot"}))
+                },
+            )
+            .unwrap();
+        assert!(refreshed["checkedSessions"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("new")));
+        release.send(()).unwrap();
+        worker.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn short_refreshes_are_serialized_across_windows_while_the_long_poll_is_held() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let changes = Arc::new(Changes::default());
+        let active = Arc::new(AtomicUsize::new(0));
+        let maximum = Arc::new(AtomicUsize::new(0));
+        let (long_entered, wait_long) = std::sync::mpsc::channel();
+        let (release_long, wait_release_long) = std::sync::mpsc::channel();
+        let a = changes.clone();
+        let a_active = active.clone();
+        let a_max = maximum.clone();
+        let long =
+            std::thread::spawn(move || {
+                a.request("m", "a",
+            json!({"sessions":[{"sessionId":"a","revision":1}],"projects":[],"waitMs":20000}), |_| {
+                a_max.fetch_max(a_active.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+                long_entered.send(()).unwrap();
+                wait_release_long.recv_timeout(Duration::from_secs(3)).unwrap();
+                a_active.fetch_sub(1, Ordering::SeqCst);
+                Ok(json!({"instanceId":"boot"}))
+            })
+            });
+        wait_long.recv_timeout(Duration::from_secs(3)).unwrap();
+        let (short_entered, wait_short) = std::sync::mpsc::channel();
+        let b = changes.clone();
+        let b_active = active.clone();
+        let b_max = maximum.clone();
+        let short = std::thread::spawn(move || {
+            b.request(
+                "m",
+                "b",
+                json!({"sessions":[{"sessionId":"b","revision":1}],"projects":[],"waitMs":0}),
+                |_| {
+                    b_max.fetch_max(
+                        b_active.fetch_add(1, Ordering::SeqCst) + 1,
+                        Ordering::SeqCst,
+                    );
+                    short_entered.send(()).unwrap();
+                    std::thread::sleep(Duration::from_millis(100));
+                    b_active.fetch_sub(1, Ordering::SeqCst);
+                    Ok(json!({"instanceId":"boot"}))
+                },
+            )
+        });
+        wait_short.recv_timeout(Duration::from_secs(3)).unwrap();
+        changes
+            .request(
+                "m",
+                "c",
+                json!({"sessions":[{"sessionId":"c","revision":1}],"projects":[],"waitMs":0}),
+                |_| {
+                    maximum.fetch_max(active.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    Ok(json!({"instanceId":"boot"}))
+                },
+            )
+            .unwrap();
+        assert_eq!(maximum.load(Ordering::SeqCst), 2);
+        short.join().unwrap().unwrap();
+        release_long.send(()).unwrap();
+        long.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn completed_short_refreshes_are_not_reused_by_later_reads() {
+        let changes = Changes::default();
+        let entry = Arc::new(Entry::default());
+        entry.state.lock().unwrap().running = true;
+        changes.entries.lock().unwrap().insert("m".into(), entry);
+        let calls = std::cell::Cell::new(0);
+        for _ in 0..2 {
+            changes
+                .request(
+                    "m",
+                    "w",
+                    json!({"sessions":[{"sessionId":"s","revision":1}],"projects":[],"waitMs":0}),
+                    |_| {
+                        calls.set(calls.get() + 1);
+                        Ok(json!({"instanceId":"boot"}))
+                    },
+                )
+                .unwrap();
+        }
+        assert_eq!(calls.get(), 2);
     }
 }

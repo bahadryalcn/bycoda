@@ -3,16 +3,28 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
-import { Progress } from "../../../shared/ui/Progress";
+import { Modal } from "../../../shared/ui/Modal";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { ChevronDown, ChevronRight, Pause, Play, Plus, Square } from "../../../shared/ui/icons";
+import {
+  Bot,
+  ChevronRight,
+  CodeBlock,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Shield,
+  Square,
+  Trash2,
+} from "../../../shared/ui/icons";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { taskSessionIds } from "../../tasks/model/backgroundSession";
 import { useProjectCrews, type CrewRunView } from "../model/crewClient";
 import { crewRunTitle } from "../model/crewRoster";
+import { crewWorkStatus, crewWorkStatusLabel } from "../model/crewPresentation";
 import { lazySurface } from "../../../shared/ui/lazySurface";
-import { crewWorkStatus, crewWorkStatusLabel } from "./CrewRailSection";
 
 const CrewEditDialog = lazySurface(async () => ({
   default: (await import("./CrewDialogs")).CrewEditDialog,
@@ -20,32 +32,39 @@ const CrewEditDialog = lazySurface(async () => ({
 const StartCrewDialog = lazySurface(async () => ({
   default: (await import("./CrewDialogs")).StartCrewDialog,
 }));
+type CrewState = ReturnType<typeof useProjectCrews>;
+type OpenSession = (target: BackgroundSessionTarget) => void | Promise<void>;
 
-export function CrewSidebar({
-  cwd,
-  onManagedChange,
-  ...props
-}: {
-  cwd: string;
-  query?: string;
-  onOpen: (target: BackgroundSessionTarget) => void | Promise<void>;
-  onManagedChange: (cwd: string, ids: string[]) => void;
-}) {
-  const state = useProjectCrews(cwd);
-  useEffect(() => {
-    if (!state.data) return;
-    // Crew conversations are reached from their work, not the plain session list.
-    const ids = state.data.runs
-      .flatMap((run) => [
-        run.coordinatorSessionId,
-        ...run.tasks.flatMap((task) => Object.values(taskSessionIds(task))),
-      ])
-      .filter((id): id is string => !!id);
-    onManagedChange(cwd, ids);
-  }, [cwd, state.data, onManagedChange]);
-  return <CrewSessions cwd={cwd} state={state} {...props} />;
+function sessionCount(run: CrewRunView) {
+  return new Set(
+    [
+      run.coordinatorSessionId,
+      ...run.tasks.flatMap((task) => Object.values(taskSessionIds(task))),
+    ].filter(Boolean),
+  ).size;
 }
-
+function runStatus(run: CrewRunView) {
+  return run.status === "finished" ? t("Done") : crewWorkStatusLabel(crewWorkStatus(run));
+}
+function statusTone(run: CrewRunView): BadgeTone {
+  if (run.status === "finished") return "success";
+  const status = crewWorkStatus(run);
+  return status === "input"
+    ? "warning"
+    : status === "blocked"
+      ? "danger"
+      : status === "working"
+        ? "info"
+        : "neutral";
+}
+function progressLabel(run: CrewRunView) {
+  return run.tasks.length
+    ? t("{p0}/{p1} tasks", {
+        p0: run.tasks.filter((task) => task.status === "done").length,
+        p1: run.tasks.length,
+      })
+    : t("Planning");
+}
 function taskStatusLabel(status: string) {
   return status === "verifying"
     ? t("Reviewing")
@@ -57,38 +76,186 @@ function taskStatusLabel(status: string) {
           ? t("Done")
           : status === "queued"
             ? t("Queued")
-            : t("Working");
+            : status === "todo"
+              ? t("To do")
+              : t("Working");
 }
 
-/**
- * Crew work: each delivery given to a crew, with its status and task progress.
- * A row opens the coordinator; details list the members' and reviewers' conversations.
- */
+export function CrewSidebar({
+  cwd,
+  onManagedChange,
+  ...props
+}: {
+  cwd: string;
+  query?: string;
+  onOpen: OpenSession;
+  onManagedChange: (cwd: string, ids: string[]) => void;
+}) {
+  const state = useProjectCrews(cwd);
+  useEffect(() => {
+    if (!state.data) return;
+    onManagedChange(
+      cwd,
+      state.data.runs
+        .flatMap((run) => [
+          run.coordinatorSessionId,
+          ...run.tasks.flatMap((task) => Object.values(taskSessionIds(task))),
+        ])
+        .filter((id): id is string => !!id),
+    );
+  }, [cwd, state.data, onManagedChange]);
+  return <CrewSessions cwd={cwd} state={state} {...props} />;
+}
+
+/** Navigation stays compact. All operations and conversations live in one work view. */
 export function CrewSessions({
   cwd,
   state,
   query = "",
+  definitionId,
   onOpen,
 }: {
   cwd: string;
-  state: ReturnType<typeof useProjectCrews>;
+  state: CrewState;
   query?: string;
-  onOpen?: (target: BackgroundSessionTarget) => void | Promise<void>;
+  definitionId?: string;
+  onOpen?: OpenSession;
 }) {
   useLocale();
-  const [pending, setPending] = useState(false);
+  const [opened, setOpened] = useState<{ definitionId?: string; runId?: string } | null>(null);
+  const data = state.data;
+  const q = query.trim().toLocaleLowerCase();
+  const runs = [...(data?.runs ?? [])]
+    .filter(
+      (run) => run.status !== "finished" && (!definitionId || run.definition.id === definitionId),
+    )
+    .filter(
+      (run) =>
+        !q ||
+        `${crewRunTitle(run)} ${run.definition.name} ${run.tasks.map((task) => task.title).join(" ")} ${run.definition.agents.map((agent) => agent.name).join(" ")} ${run.assignments.map((assignment) => assignment.title).join(" ")}`
+          .toLocaleLowerCase()
+          .includes(q),
+    )
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  if (!data && !state.error) return null;
+  if (data && !data.runs.length && !data.definitions.length) return null;
+  return (
+    <section
+      aria-label={t("Crew work")}
+      className="border-b border-(--ui-tone-neutral-border) px-2 py-2"
+    >
+      <div className="flex items-center gap-1 px-1 pb-1">
+        <span className="min-w-0 flex-1 text-ui-caption font-medium text-(--ui-text-secondary)">
+          {t("Crew work")}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!data}
+          onClick={() => setOpened({ definitionId })}
+        >
+          {t("Manage")}
+        </Button>
+      </div>
+      {state.error ? (
+        <Button variant="ghost" onClick={() => void state.refetch()} title={state.error.message}>
+          {t("Crew host unavailable. Retry")}
+        </Button>
+      ) : null}
+      <div className="flex flex-col gap-px">
+        {runs.map((run) => (
+          <Button
+            key={run.id}
+            data-crew-work-link={run.id}
+            variant="item"
+            motion="none"
+            className="min-w-0 w-full"
+            onClick={() => setOpened({ definitionId: run.definition.id, runId: run.id })}
+            title={crewRunTitle(run)}
+          >
+            <span className="min-w-0 flex-1 text-start">
+              <span className="block truncate font-medium">{crewRunTitle(run)}</span>
+              <span className="mt-0.5 flex min-w-0 items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
+                <span className="truncate">{run.definition.name}</span>
+                <span className="shrink-0">{runStatus(run)}</span>
+              </span>
+            </span>
+            <ChevronRight className="icon-sm shrink-0" />
+          </Button>
+        ))}
+        {!runs.length ? (
+          <p className="px-1 py-1 text-ui-caption text-(--ui-text-secondary)">
+            {q ? t("No matching crew work.") : t("No ongoing crew work.")}
+          </p>
+        ) : null}
+      </div>
+      {opened ? (
+        <CrewManagementDialog
+          cwd={cwd}
+          state={state}
+          definitionId={opened.definitionId}
+          initialRunId={opened.runId}
+          onOpen={onOpen}
+          onClose={() => setOpened(null)}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+/** One workspace for choosing a crew, selecting its work and opening any related session. */
+export function CrewManagementDialog({
+  cwd,
+  state,
+  definitionId,
+  initialRunId,
+  onOpen,
+  onClose,
+}: {
+  cwd: string;
+  state: CrewState;
+  definitionId?: string;
+  initialRunId?: string;
+  onOpen?: OpenSession;
+  onClose: () => void;
+}) {
+  useLocale();
+  const [crewId, setCrewId] = useState(definitionId ?? "");
+  const [selectedId, setSelectedId] = useState(initialRunId ?? "");
+  const [view, setView] = useState<"ongoing" | "finished">(
+    state.data?.runs.find((run) => run.id === initialRunId)?.status === "finished"
+      ? "finished"
+      : "ongoing",
+  );
+  const [page, setPage] = useState<"work" | "start" | "edit">("work");
+  const [editorReturn, setEditorReturn] = useState<"work" | "start">("work");
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const pending = pendingAction !== null;
   const pendingGate = useRef(false);
   const [error, setError] = useState("");
-  const [view, setView] = useState<"ongoing" | "finished">("ongoing");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [dialog, setDialog] = useState<
-    { kind: "start" } | { kind: "edit"; crewId?: string; returnToStart?: boolean } | null
-  >(null);
   const data = state.data;
-  const act = async (operation: () => Promise<unknown>) => {
+  const crews = [...(data?.definitions ?? [])];
+  for (const run of data?.runs ?? []) {
+    if (!crews.some((item) => item.id === run.definition.id)) crews.push(run.definition);
+  }
+  const crew = crews.find((item) => item.id === crewId) ?? crews[0];
+  const savedCrew = !!data?.definitions.some((item) => item.id === crew?.id);
+  const all = [...(data?.runs ?? [])]
+    .filter((run) => run.definition.id === crew?.id)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  const listed = all.filter((run) =>
+    view === "finished" ? run.status === "finished" : run.status !== "finished",
+  );
+  const selected = listed.find((run) => run.id === selectedId) ?? listed[0];
+  const resolvedRunId = selected?.id;
+  const resolvedCrewId = crew?.id;
+  // Reconcile removed records during render so a poll cannot replace an unpinned selection.
+  if (resolvedRunId && resolvedRunId !== selectedId) setSelectedId(resolvedRunId);
+  if (resolvedCrewId && resolvedCrewId !== crewId) setCrewId(resolvedCrewId);
+  const act = async (key: string, operation: () => Promise<unknown>) => {
     if (pendingGate.current) return;
     pendingGate.current = true;
-    setPending(true);
+    setPendingAction(key);
     setError("");
     try {
       await operation();
@@ -96,366 +263,491 @@ export function CrewSessions({
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       pendingGate.current = false;
-      setPending(false);
+      setPendingAction(null);
     }
   };
-  const open = (sessionId: string) => {
+  const open = (sessionId: string, source = sessionId) => {
     if (!data || !onOpen) return;
-    void act(async () =>
-      onOpen({
-        cwd,
-        machineId: data.machine.id,
-        projectId: data.project.id,
-        sessionId,
-      }),
-    );
+    void act(`open:${source}`, async () => {
+      await onOpen({ cwd, machineId: data.machine.id, projectId: data.project.id, sessionId });
+      onClose();
+    });
   };
-  const q = query.trim().toLocaleLowerCase();
-  const all = [...(data?.runs ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
-  const ongoing = all.filter((run) => run.status !== "finished");
-  const finished = all.filter((run) => run.status === "finished");
-  const listed = (view === "ongoing" ? ongoing : finished).filter(
-    (run) =>
-      !q ||
-      `${crewRunTitle(run)} ${run.definition.name} ${run.assignments.map((a) => a.title).join(" ")} ${run.definition.agents.map((a) => a.name).join(" ")}`
-        .toLocaleLowerCase()
-        .includes(q),
-  );
-  // Crews are listed and edited in the project rail; this pane shows their work
-  // and keeps Start reachable while the rail is hidden.
-  if (!data && !state.error) return null;
-  if (data && !all.length && !data.definitions.length) return null;
+  if (page === "edit")
+    return (
+      <CrewEditDialog
+        cwd={cwd}
+        crewId={savedCrew ? crew?.id : undefined}
+        createScope={savedCrew ? undefined : "project"}
+        initialPage="team"
+        onStart={(id) => {
+          setCrewId(id);
+          setPage("start");
+        }}
+        onClose={() => setPage(editorReturn)}
+      />
+    );
+  if (page === "start")
+    return (
+      <StartCrewDialog
+        cwd={cwd}
+        state={state}
+        definitionId={crew?.id}
+        onOpen={
+          onOpen
+            ? async (target) => {
+                await onOpen(target);
+                onClose();
+              }
+            : undefined
+        }
+        onEdit={(id) => {
+          setCrewId(id);
+          setEditorReturn("start");
+          setPage("edit");
+        }}
+        onClose={() => setPage("work")}
+      />
+    );
   return (
-    <section
-      aria-label={t("Crew work")}
-      className="flex flex-col gap-1.5 border-b border-(--ui-tone-neutral-border) px-2 py-2"
+    <Modal
+      title={crew?.name ?? t("Crews")}
+      size="lg"
+      onClose={() => {
+        if (!pending) onClose();
+      }}
     >
-      <div className="flex items-center gap-1">
-        <span className="min-w-0 flex-1 truncate px-1 text-ui-caption font-medium text-(--ui-text-secondary)">
-          {t("Crew work")}
-        </span>
-        {finished.length ? (
-          <SegmentedControl
-            label={t("Crew work view")}
-            value={view}
-            options={[
-              {
-                value: "ongoing",
-                label: t("Ongoing ({p0})", { p0: ongoing.length }),
-              },
-              { value: "finished", label: t("Finished") },
-            ]}
-            onValueChange={(value) => setView(value === "finished" ? "finished" : "ongoing")}
-          />
+      <div className="@container/crew-management min-w-0" aria-busy={pending}>
+        <div className="flex flex-wrap items-end gap-2 border-b border-(--ui-tone-neutral-border) px-4 pb-3 pt-2">
+          {data && crews.length > 1 ? (
+            <div className="min-w-0 flex-1 basis-48">
+              <SearchableSelect
+                label={t("Crew")}
+                value={crew?.id ?? ""}
+                options={crews.map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                  description: data.definitions.some((saved) => saved.id === item.id)
+                    ? undefined
+                    : t("Deleted"),
+                }))}
+                disabled={pending}
+                onChange={(id) => {
+                  setCrewId(id);
+                  setSelectedId("");
+                  setView("ongoing");
+                  setError("");
+                }}
+              />
+            </div>
+          ) : null}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            {crew ? (
+              <span className="me-auto text-ui-caption text-(--ui-text-secondary)">
+                {t("{p0} members", { p0: crew.agents.length })}
+              </span>
+            ) : null}
+            <Button
+              variant={savedCrew ? "ghost" : "primary"}
+              disabled={!data || pending}
+              startIcon={savedCrew ? <Pencil className="icon-sm" /> : <Plus className="icon-sm" />}
+              onClick={() => {
+                setEditorReturn("work");
+                setPage("edit");
+              }}
+            >
+              {savedCrew ? t("Edit crew") : t("New crew")}
+            </Button>
+            {savedCrew ? (
+              <Button
+                variant="primary"
+                disabled={!crew || pending}
+                startIcon={<Plus className="icon-sm" />}
+                onClick={() => setPage("start")}
+              >
+                {t("Start work")}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        {crew && !savedCrew ? (
+          <p className="border-b border-(--ui-tone-neutral-border) px-4 py-2 text-ui-caption text-(--ui-text-secondary)">
+            {t("This crew was deleted. Its work and conversations are kept.")}
+          </p>
         ) : null}
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Start crew work")}
-          disabled={!data || pending}
-          onClick={() => setDialog(data?.definitions.length ? { kind: "start" } : { kind: "edit" })}
-        >
-          <Plus className="icon-sm" />
-        </Button>
+        {!data ? (
+          <div className="p-4">
+            <Alert tone={state.error ? "danger" : "info"}>
+              {state.error?.message ?? t("Loading crews…")}
+            </Alert>
+            <Button variant="ghost" onClick={() => void state.refetch()}>
+              {t("Retry")}
+            </Button>
+          </div>
+        ) : (
+          <div className="grid min-w-0 @min-[640px]/crew-management:grid-cols-[240px_minmax(0,1fr)]">
+            <nav
+              aria-label={t("Crew work")}
+              className="flex min-w-0 flex-col border-b border-(--ui-tone-neutral-border) @min-[640px]/crew-management:border-b-0 @min-[640px]/crew-management:border-e"
+            >
+              <div className="px-3 pb-2 pt-3">
+                <SegmentedControl
+                  label={t("Crew work view")}
+                  value={view}
+                  options={[
+                    {
+                      value: "ongoing",
+                      label: t("Ongoing ({p0})", {
+                        p0: all.filter((run) => run.status !== "finished").length,
+                      }),
+                    },
+                    { value: "finished", label: t("Finished") },
+                  ]}
+                  onValueChange={(value) => {
+                    if (pendingGate.current) return;
+                    setView(value === "finished" ? "finished" : "ongoing");
+                    setSelectedId("");
+                    setError("");
+                  }}
+                />
+              </div>
+              <div
+                className="max-h-40 overflow-y-auto px-2 pb-2 @min-[640px]/crew-management:max-h-[55vh]"
+                role="list"
+                aria-label={t("Work list")}
+              >
+                {listed.map((run) => (
+                  <div key={run.id} role="listitem">
+                    <Button
+                      variant="item"
+                      data-crew-work-choice={run.id}
+                      selected={selected?.id === run.id}
+                      motion="none"
+                      className="w-full min-w-0"
+                      aria-pressed={selected?.id === run.id}
+                      disabled={pending}
+                      onClick={() => {
+                        setSelectedId(run.id);
+                        setError("");
+                      }}
+                      title={crewRunTitle(run)}
+                    >
+                      <span className="min-w-0 flex-1 text-start">
+                        <span className="block line-clamp-2 break-words font-medium">
+                          {crewRunTitle(run)}
+                        </span>
+                        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-ui-caption text-(--ui-text-secondary)">
+                          <span>{runStatus(run)}</span>
+                          <span className="tabular-nums">{progressLabel(run)}</span>
+                        </span>
+                      </span>
+                    </Button>
+                  </div>
+                ))}
+                {!listed.length ? (
+                  <p className="px-2 py-3 text-ui-caption text-(--ui-text-secondary)">
+                    {view === "ongoing" ? t("No ongoing crew work.") : t("No finished crew work.")}
+                  </p>
+                ) : null}
+              </div>
+            </nav>
+            <div className="min-w-0 p-4 @min-[640px]/crew-management:min-h-80">
+              {error ? <Alert tone="danger">{error}</Alert> : null}
+              {state.error ? (
+                <Alert tone="warning">
+                  {state.error.message}
+                  <Button variant="ghost" onClick={() => void state.refetch()}>
+                    {t("Retry")}
+                  </Button>
+                </Alert>
+              ) : null}
+              {selected ? (
+                <CrewWorkDetail
+                  key={selected.id}
+                  run={selected}
+                  pending={pending}
+                  pendingAction={pendingAction}
+                  canOpen={!!onOpen}
+                  onOpen={open}
+                  canDelete={!!data.runDeleteSupported}
+                  onPause={() =>
+                    void act(`pause:${selected.id}`, () =>
+                      state.call(selected.status === "paused" ? "crews.resume" : "crews.pause", {
+                        runId: selected.id,
+                      }),
+                    )
+                  }
+                  onStop={() =>
+                    void act(`stop:${selected.id}`, () =>
+                      state.call("crews.stop", { runId: selected.id }),
+                    )
+                  }
+                  onDelete={() =>
+                    void act(`delete:${selected.id}`, () =>
+                      state.call("crews.deleteRun", {
+                        runId: selected.id,
+                        expectedUpdatedAt: selected.updatedAt,
+                      }),
+                    )
+                  }
+                  catalogName={(harness, model) =>
+                    data.catalog.models[harness as keyof typeof data.catalog.models]?.find(
+                      (item) => item.id === model,
+                    )?.name ?? model
+                  }
+                />
+              ) : (
+                <div className="flex min-h-40 flex-col items-start justify-center gap-3">
+                  <p className="text-ui-body text-(--ui-text-secondary)">
+                    {view === "ongoing" ? t("No ongoing crew work.") : t("No finished crew work.")}
+                  </p>
+                  {savedCrew ? (
+                    <Button variant="secondary" onClick={() => setPage("start")}>
+                      {t("Start work")}
+                    </Button>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
-      {error && <Alert tone="danger">{error}</Alert>}
-      {state.error && (
-        <Button variant="ghost" onClick={() => void state.refetch()} title={state.error.message}>
-          {t("Crew host unavailable. Retry")}
-        </Button>
-      )}
-      {data && !listed.length ? (
-        <p className="px-1 text-ui-caption text-(--ui-text-secondary)">
-          {q
-            ? t("No matching crew work.")
-            : view === "ongoing"
-              ? t("No ongoing crew work.")
-              : t("No finished crew work.")}
-        </p>
-      ) : null}
-      {listed.map((run) => (
-        <CrewWorkRow
-          key={run.id}
-          run={run}
-          catalogName={(harness, model) =>
-            data?.catalog.models[harness as keyof typeof data.catalog.models]?.find(
-              (m) => m.id === model,
-            )?.name ?? model
-          }
-          expanded={!!expanded[run.id]}
-          onToggle={() =>
-            setExpanded((current) => ({
-              ...current,
-              [run.id]: !current[run.id],
-            }))
-          }
-          pending={pending}
-          canOpen={!!onOpen}
-          onOpen={open}
-          onPause={() =>
-            void act(() =>
-              state.call(run.status === "paused" ? "crews.resume" : "crews.pause", {
-                runId: run.id,
-              }),
-            )
-          }
-          onStop={() => void act(() => state.call("crews.stop", { runId: run.id }))}
-        />
-      ))}
-      {dialog?.kind === "start" ? (
-        <StartCrewDialog
-          cwd={cwd}
-          state={state}
-          onOpen={onOpen}
-          onEdit={(crewId) => setDialog({ kind: "edit", crewId, returnToStart: true })}
-          onClose={() => setDialog(null)}
-        />
-      ) : dialog?.kind === "edit" ? (
-        <CrewEditDialog
-          cwd={cwd}
-          crewId={dialog.crewId}
-          createScope={dialog.crewId ? undefined : "project"}
-          onStart={() => setDialog({ kind: "start" })}
-          onClose={() => setDialog(dialog.returnToStart ? { kind: "start" } : null)}
-        />
-      ) : null}
-    </section>
+    </Modal>
   );
 }
 
-function CrewWorkRow({
+function CrewWorkDetail({
   run,
-  catalogName,
-  expanded,
-  onToggle,
   pending,
+  pendingAction,
   canOpen,
   onOpen,
   onPause,
   onStop,
+  onDelete,
+  canDelete,
+  catalogName,
 }: {
   run: CrewRunView;
-  catalogName: (harness: string, model: string) => string;
-  expanded: boolean;
-  onToggle: () => void;
   pending: boolean;
+  pendingAction: string | null;
   canOpen: boolean;
-  onOpen: (sessionId: string) => void;
+  onOpen: (id: string, source?: string) => void;
   onPause: () => void;
   onStop: () => void;
+  onDelete: () => void;
+  canDelete: boolean;
+  catalogName: (harness: string, model: string) => string;
 }) {
+  const { confirm, dialog } = useConfirm();
   const title = crewRunTitle(run);
-  const { confirm, dialog: confirmDialog } = useConfirm();
-  const done = run.tasks.filter((task) => task.status === "done").length;
-  const requests = run.messages.filter((m) => !m.resolvedAt);
+  const requests = run.messages.filter((message) => !message.resolvedAt);
   const blocked = run.tasks.filter((task) => task.status === "blocked");
-  const workStatus = run.status === "finished" ? undefined : crewWorkStatus(run);
-  const status = workStatus ? crewWorkStatusLabel(workStatus) : t("Done");
-  const statusTone: BadgeTone =
-    workStatus === "input"
-      ? "warning"
-      : workStatus === "blocked"
-        ? "danger"
-        : workStatus === "working"
-          ? "info"
-          : workStatus === "paused"
-            ? "neutral"
-            : "success";
-  const progress = run.tasks.length
-    ? t("{p0}/{p1} tasks", { p0: done, p1: run.tasks.length })
-    : t("Planning");
+  const canRemove =
+    run.status !== "active" &&
+    run.coordinatorStatus !== "running" &&
+    !run.tasks.some((task) => task.status === "running" || task.status === "verifying");
   return (
-    <div
-      data-crew-run={run.id}
-      className="group min-w-0 overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface)"
-    >
-      <div className="flex min-w-0 items-center">
-        <Button
-          variant="item"
-          motion="none"
-          className="min-w-0 flex-1"
-          disabled={!run.coordinatorSessionId || !canOpen || pending}
-          title={`${title}\n${run.definition.name}`}
-          onClick={() => run.coordinatorSessionId && onOpen(run.coordinatorSessionId)}
-        >
-          <span className="min-w-0 flex-1 text-start">
-            <span className="block truncate text-ui-body font-medium">{title}</span>
-            <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
-              {run.definition.name}
-            </span>
-            <span className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
-              <Badge tone={statusTone} className="shrink-0">
-                {status}
-              </Badge>
-              {run.tasks.length ? (
-                <span className="w-12 shrink-0">
-                  <Progress compact value={done} max={run.tasks.length} aria-label={progress} />
-                </span>
-              ) : null}
-              <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
-                {progress}
-              </span>
-            </span>
-          </span>
-        </Button>
+    <section data-crew-run={run.id} aria-label={title} className="min-w-0">
+      <h3 className="break-words text-ui-title font-medium text-content">{title}</h3>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Badge tone={statusTone(run)}>{runStatus(run)}</Badge>
+        <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
+          {progressLabel(run)}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-1 border-b border-(--ui-tone-neutral-border) pb-3">
         {run.status !== "finished" ? (
           <>
             <Button
-              variant="ghost"
-              iconOnly
+              variant="secondary"
               size="sm"
-              label={run.status === "paused" ? t("Resume work") : t("Pause new assignments")}
               disabled={pending}
+              loading={pendingAction === `pause:${run.id}`}
+              label={run.status === "paused" ? t("Resume work") : t("Pause new assignments")}
+              startIcon={
+                run.status === "paused" ? (
+                  <Play className="icon-sm" />
+                ) : (
+                  <Pause className="icon-sm" />
+                )
+              }
               onClick={onPause}
             >
-              {run.status === "paused" ? (
-                <Play className="icon-sm" />
-              ) : (
-                <Pause className="icon-sm" />
-              )}
+              {run.status === "paused" ? t("Resume work") : t("Pause")}
             </Button>
             <Button
               variant="ghost"
-              iconOnly
+              tone="danger"
               size="sm"
-              label={t("Stop work")}
-              tooltip={t("Stop work and cancel running assignments")}
               disabled={pending}
+              loading={pendingAction === `stop:${run.id}`}
+              startIcon={<Square className="icon-sm" />}
+              tooltip={t("Stop work and cancel running assignments")}
               onClick={() =>
                 void confirm({
                   title: t("Stop work"),
-                  message: t("Stop work and cancel running assignments"),
+                  message: `${title}\n${t("Stop work and cancel running assignments")}`,
                   confirmLabel: t("Stop work"),
                 }).then((ok) => {
                   if (ok) onStop();
                 })
               }
             >
-              <Square className="icon-sm" />
+              {t("Stop work")}
             </Button>
           </>
         ) : null}
-        <Button
-          variant="ghost"
-          iconOnly
-          size="sm"
-          label={expanded ? t("Hide details") : t("Show details")}
-          aria-expanded={expanded}
-          className="me-1"
-          onClick={onToggle}
-        >
-          {expanded ? <ChevronDown className="icon-sm" /> : <ChevronRight className="icon-sm" />}
-        </Button>
-      </div>
-      {requests.length ? (
-        <div className="flex min-w-0 items-center gap-2 border-t border-(--ui-tone-neutral-border) px-2 py-1">
-          <span
-            className="min-w-0 flex-1 truncate text-ui-caption text-warning"
-            title={requests.map((r) => r.text).join("\n")}
-          >
-            {t("Needs decision: {p0}", { p0: requests[0].text })}
-          </span>
+        {canDelete ? (
           <Button
-            variant="link"
+            variant="ghost"
             size="sm"
-            disabled={!run.coordinatorSessionId || !canOpen || pending}
-            onClick={() => run.coordinatorSessionId && onOpen(run.coordinatorSessionId)}
+            disabled={pending || !canRemove}
+            loading={pendingAction === `delete:${run.id}`}
+            className="ms-auto"
+            startIcon={<Trash2 className="icon-sm" />}
+            tooltip={!canRemove ? t("Stop work before deleting it.") : t("Delete work")}
+            onClick={() =>
+              void confirm({
+                title: t("Delete work"),
+                message: `${title}\n${t("Remove this work from the list? The crew, tasks and conversations are kept.")}`,
+                confirmLabel: t("Delete work"),
+              }).then((ok) => {
+                if (ok) onDelete();
+              })
+            }
           >
-            {t("Answer")}
+            {t("Delete work")}
           </Button>
-        </div>
-      ) : blocked.length ? (
-        <p className="truncate border-t border-(--ui-tone-neutral-border) px-2 py-1 text-ui-caption text-danger">
-          {t("Blocked: {p0}", { p0: blocked[0].error ?? blocked[0].title })}
-        </p>
-      ) : null}
-      {run.error ? (
-        <div className="px-2 pb-2">
-          <Alert tone="warning">{run.error}</Alert>
-        </div>
-      ) : null}
-      {confirmDialog}
-      {expanded ? (
-        <div className="flex flex-col gap-px border-t border-(--ui-tone-neutral-border) p-1">
-          <div className="flex min-w-0 flex-col gap-1 px-2 py-1 text-ui-caption">
-            {requests.map((request) => (
-              <p key={request.id} className="whitespace-pre-wrap break-words text-warning">
+        ) : null}
+      </div>
+      {requests.length || blocked.length || run.error ? (
+        <div className="flex flex-col gap-2 pt-3">
+          {requests.map((request) => (
+            <Alert key={request.id} tone="warning">
+              <p className="whitespace-pre-wrap break-words">
                 {t("Needs decision: {p0}", { p0: request.text })}
               </p>
-            ))}
-            {blocked.map((task) => (
-              <p key={task.id} className="whitespace-pre-wrap break-words text-danger">
+              <Button
+                variant="link"
+                disabled={!run.coordinatorSessionId || !canOpen || pending}
+                loading={pendingAction === `open:answer:${request.id}`}
+                onClick={() =>
+                  run.coordinatorSessionId &&
+                  onOpen(run.coordinatorSessionId, `answer:${request.id}`)
+                }
+              >
+                {t("Answer")}
+              </Button>
+            </Alert>
+          ))}
+          {blocked.map((task) => (
+            <Alert key={task.id} tone="danger">
+              <p className="whitespace-pre-wrap break-words">
                 {t("Blocked: {p0}", { p0: task.error ?? task.title })}
               </p>
-            ))}
-          </div>
+            </Alert>
+          ))}
+          {run.error ? <Alert tone="warning">{run.error}</Alert> : null}
+        </div>
+      ) : null}
+      <h4 className="pb-2 pt-4 text-ui-caption font-medium text-(--ui-text-secondary)">
+        {t("Sessions ({p0})", { p0: sessionCount(run) })}
+      </h4>
+      <div
+        role="list"
+        aria-label={t("Sessions")}
+        className="flex min-w-0 flex-col divide-y divide-(--ui-tone-neutral-border)"
+      >
+        <div role="listitem">
           <Button
             variant="item"
             motion="none"
+            className="w-full min-w-0"
             disabled={!run.coordinatorSessionId || !canOpen || pending}
-            onClick={() => run.coordinatorSessionId && onOpen(run.coordinatorSessionId)}
+            loading={pendingAction === "open:coordinator"}
+            onClick={() =>
+              run.coordinatorSessionId && onOpen(run.coordinatorSessionId, "coordinator")
+            }
           >
-            <span className="min-w-0 flex-1 truncate text-start font-medium">
-              {t("Coordinator")}
+            <Bot className="icon-md shrink-0" />
+            <span className="min-w-0 flex-1 text-start">
+              <span className="block font-medium">{t("Coordinator")}</span>
+              <span className="block text-ui-caption text-(--ui-text-secondary)">
+                {run.coordinatorStatus === "running"
+                  ? t("Working")
+                  : run.coordinatorStatus === "interrupted"
+                    ? t("Interrupted")
+                    : t("Conversation")}
+              </span>
             </span>
-            <span className="text-ui-caption text-(--ui-text-secondary)">
-              {run.coordinatorStatus === "running"
-                ? t("Working")
-                : run.coordinatorStatus === "interrupted"
-                  ? t("Interrupted")
-                  : t("Conversation")}
-            </span>
+            <ChevronRight className="icon-sm shrink-0" />
           </Button>
-          {run.tasks.map((task) => {
-            const assignment = run.assignments.find((a) => a.taskId === task.id);
-            const agent = run.definition.agents.find((a) => a.id === assignment?.memberId);
-            const ids = taskSessionIds(task);
-            return (
-              <div key={task.id} className="flex flex-col gap-px">
+        </div>
+        {run.tasks.map((task) => {
+          const assignment = run.assignments.find((item) => item.taskId === task.id);
+          const agent = run.definition.agents.find((item) => item.id === assignment?.memberId);
+          const ids = taskSessionIds(task);
+          return (
+            <div key={task.id} role="listitem" className="min-w-0 py-1">
+              <Button
+                variant="item"
+                motion="none"
+                className="w-full min-w-0"
+                disabled={!ids.worker || !canOpen || pending}
+                loading={pendingAction === `open:worker:${task.id}`}
+                onClick={() => ids.worker && onOpen(ids.worker, `worker:${task.id}`)}
+                title={`${task.title}\n${task.harness} · ${task.model}\n${assignment?.reason ?? ""}`}
+              >
+                <CodeBlock className="icon-md shrink-0" />
+                <span className="min-w-0 flex-1 text-start">
+                  <span className="block truncate font-medium">
+                    {agent?.name ?? t("Specialist")}
+                  </span>
+                  <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
+                    {task.title}
+                  </span>
+                  <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
+                    {catalogName(task.harness, task.model)}
+                  </span>
+                </span>
+                <span className="max-w-[38%] text-end text-ui-caption text-(--ui-text-secondary)">
+                  {taskStatusLabel(task.status)}
+                </span>
+                <ChevronRight className="icon-sm shrink-0" />
+              </Button>
+              {ids.review ? (
                 <Button
                   variant="item"
                   motion="none"
-                  className="w-full"
-                  disabled={!ids.worker || !canOpen || pending}
-                  title={`${task.title}\n${task.harness} · ${task.model}\n${assignment?.reason ?? ""}\n${task.error ?? ""}`}
-                  onClick={() => ids.worker && onOpen(ids.worker)}
+                  className="w-full min-w-0"
+                  disabled={!canOpen || pending}
+                  loading={pendingAction === `open:review:${task.id}`}
+                  onClick={() => onOpen(ids.review!, `review:${task.id}`)}
+                  title={task.title}
                 >
+                  <Shield className="icon-md shrink-0" />
                   <span className="min-w-0 flex-1 text-start">
-                    <span className="block truncate">{agent?.name ?? task.title}</span>
+                    <span className="block font-medium">{t("Reviewer")}</span>
                     <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
                       {task.title}
                     </span>
                   </span>
-                  <span className="max-w-[42%] shrink-0 text-end text-ui-caption text-(--ui-text-secondary)">
-                    {taskStatusLabel(task.status)}
-                    <span className="block truncate">{catalogName(task.harness, task.model)}</span>
+                  <span className="text-ui-caption text-(--ui-text-secondary)">
+                    {task.verification?.review?.verdict === "pass"
+                      ? t("Passed")
+                      : task.verification?.review?.verdict === "fail"
+                        ? t("Changes needed")
+                        : t("Reviewing")}
                   </span>
+                  <ChevronRight className="icon-sm shrink-0" />
                 </Button>
-                {ids.review ? (
-                  <Button
-                    variant="item"
-                    motion="none"
-                    className="w-full"
-                    disabled={!canOpen || pending}
-                    onClick={() => onOpen(ids.review!)}
-                  >
-                    <span className="min-w-0 flex-1 truncate text-start">
-                      {t("Reviewer")} · {task.title}
-                    </span>
-                    <span className="text-ui-caption text-(--ui-text-secondary)">
-                      {task.verification?.review?.verdict === "pass"
-                        ? t("Passed")
-                        : task.verification?.review?.verdict === "fail"
-                          ? t("Changes needed")
-                          : t("Reviewing")}
-                    </span>
-                  </Button>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {dialog}
+    </section>
   );
 }

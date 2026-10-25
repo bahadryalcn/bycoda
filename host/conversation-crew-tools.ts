@@ -32,7 +32,7 @@ export const CONVERSATION_CREW_READ_TOOLS = {
   }),
 };
 
-type View = ReturnType<HostCrews["list"]>;
+type View = Awaited<ReturnType<HostCrews["list"]>>;
 const matches = (search: unknown, ...values: (string | undefined)[]) =>
   typeof search !== "string" ||
   values.some((value) => value?.toLocaleLowerCase().includes(search.toLocaleLowerCase()));

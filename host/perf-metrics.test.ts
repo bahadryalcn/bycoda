@@ -166,11 +166,12 @@ it("exposes completed dispatches and MCP scopes through authenticated resources.
   const directory = mkdtempSync(join(tmpdir(), "bycoda-perf-test-"));
   const store = new HostStore(join(directory, "host.db"));
   const engine = new HostEngine(store, {});
-  const server = createHostServer(engine, []);
+  await engine.ready;
+  const server = await createHostServer(engine, []);
   try {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const device = store.issueDevice("perf-test");
+    const device = await store.issueDevice("perf-test");
     const call = async (method: string, params = {}) => {
       const response = await fetch(`${origin}/rpc`, {
         method: "POST",
@@ -221,7 +222,7 @@ it("exposes completed dispatches and MCP scopes through authenticated resources.
     await engine.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });

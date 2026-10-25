@@ -121,13 +121,16 @@ it("preserves required IDs and tool output state while stripping inline attachme
 });
 
 it("preserves durable stopped-turn markers in bounded block previews", () => {
-  const preview = previewBlock({
-    id: "stopped",
-    role: "user",
-    text: "x".repeat(200_000),
-    turnOutcome: "stopped",
-    turnStoppedAt: 1234,
-  }, 4);
+  const preview = previewBlock(
+    {
+      id: "stopped",
+      role: "user",
+      text: "x".repeat(200_000),
+      turnOutcome: "stopped",
+      turnStoppedAt: 1234,
+    },
+    4,
+  );
   expect(preview).toMatchObject({ turnOutcome: "stopped", turnStoppedAt: 1234 });
   expect(Buffer.byteLength(JSON.stringify(preview))).toBeLessThan(64 * 1024);
 });
@@ -139,13 +142,15 @@ it("bounds rewind archive metadata in snapshots without changing active or store
     id: `rewind-${index}`,
     createdAt: index,
     fromBlockId: `removed-${index}`,
-    blocks: [{
-      id: `removed-${index}`,
-      role: "assistant" as const,
-      text: `archived ${index} ${"x".repeat(12_000)}`,
-      tool: { output: "large provider payload".repeat(2_000) },
-      attachments: [{ name: `attachment-${index}.png`, data: "YQ==".repeat(20_000) }],
-    }],
+    blocks: [
+      {
+        id: `removed-${index}`,
+        role: "assistant" as const,
+        text: `archived ${index} ${"x".repeat(12_000)}`,
+        tool: { output: "large provider payload".repeat(2_000) },
+        attachments: [{ name: `attachment-${index}.png`, data: "YQ==".repeat(20_000) }],
+      },
+    ],
   }));
   value.session.rewindHistory = archive;
   const original = JSON.stringify(archive);
@@ -239,16 +244,16 @@ it("retains the middle loaded block window when its first loaded block was delet
     value: { history: { before: undefined, totalBlocks: 7, revision: 2 } },
   });
 });
-it("pins history pages while a live revision advances", () => {
+it("pins history pages while a live revision advances", async () => {
   const pages = new TranscriptPages();
   const old = snapshot();
-  const first = pages.page(() => old, "s");
+  const first = await pages.page(() => old, "s");
   const read = () => ({
     ...old,
     revision: 2,
     session: { ...old.session, blocks: [] },
   });
-  const previous = pages.page(read, "s", first.before, first.revision);
+  const previous = await pages.page(read, "s", first.before, first.revision);
   expect(previous.revision).toBe(1);
   expect(previous.totalBlocks).toBe(150);
 });

@@ -20,6 +20,7 @@ import { notifyReviewChanged } from "../../../features/sessions/model/checkpoint
 import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { cancelAdoptedTurn } from "../../../features/connections/model/adoptedSessionCommands";
 import {
   deferUnhandledEscape,
   focusedBusyAgentSessionId,
@@ -70,6 +71,42 @@ export function useSessionStop(deps: SessionStopDeps) {
         }
       }
       const session = sessionsRef.current.find((s) => s.id === sessionId);
+      if (session?.continuingElsewhere && !session.busy) {
+        // There is no local runner to retire, but in-flight attachment preparation
+        // still belongs to this generation and must not send after Stop.
+        turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
+        const stoppingGeneration = turnGen.current.get(sessionId);
+        noteSharedLocalStop(sessionId);
+        setSessions((prev) =>
+          prev.map((entry) =>
+            entry.id === sessionId && entry.queuedMessages?.length
+              ? { ...entry, queueStatus: nextQueueStatus(entry.queueStatus, "pause") }
+              : entry,
+          ),
+        );
+        void cancelAdoptedTurn(sessionId, session.adoptedRunId).catch((error) => {
+          if (turnGen.current.get(sessionId) !== stoppingGeneration) return;
+          setSessions((prev) =>
+            prev.map((entry) =>
+              entry.id === sessionId
+                ? {
+                    ...entry,
+                    blocks: [
+                      ...entry.blocks.filter((block) => block.id !== `stop-error:${sessionId}`),
+                      {
+                        id: `stop-error:${sessionId}`,
+                        role: "system" as const,
+                        notice: "error" as const,
+                        text: `Stop failed: ${error instanceof Error ? error.message : String(error)}. Try Stop again.`,
+                      },
+                    ],
+                  }
+                : entry,
+            ),
+          );
+        });
+        return;
+      }
       // Completion may arrive while the provider is processing Stop. Prevent
       // that completion from draining another queued turn in the meantime.
       setSessions((prev) =>

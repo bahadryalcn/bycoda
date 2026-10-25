@@ -262,7 +262,7 @@ export async function renameHostWorktreeBranch(
   path: string,
   expectedBranch: string,
   branch: string,
-  stillOwned: () => boolean = () => true,
+  stillOwned: () => boolean | Promise<boolean> = () => true,
 ): Promise<HostWorktree> {
   return withHostGitMutation(cwd, () =>
     renameHostWorktreeBranchSerialized(cwd, path, expectedBranch, branch, stillOwned),
@@ -274,7 +274,7 @@ async function renameHostWorktreeBranchSerialized(
   path: string,
   expectedBranch: string,
   branch: string,
-  stillOwned: () => boolean,
+  stillOwned: () => boolean | Promise<boolean>,
 ): Promise<HostWorktree> {
   if (!/^mc\/[a-z0-9]{8}$/.test(expectedBranch))
     throw new Error("This is not an automatically created worktree branch");
@@ -287,7 +287,7 @@ async function renameHostWorktreeBranchSerialized(
   if (!tree || tree.isMain || tree.branch !== expectedBranch)
     throw new Error("The worktree branch has changed");
   if (branch === expectedBranch) return tree;
-  if (!stillOwned()) throw new Error("The session no longer owns this branch");
+  if (!(await stillOwned())) throw new Error("The session no longer owns this branch");
   invalidateHostWorktrees(cwd);
   try {
     await exec("git", ["branch", "-m", expectedBranch, branch], options(tree.path));

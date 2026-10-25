@@ -40,6 +40,8 @@ import {
 
 type Scope = McpConnection["scope"];
 type ServerRow = McpServerRow;
+const serverRowKey = (server: ServerRow) =>
+  `${server.provider}:${server.scope}:${server.configPath}:${server.name}`;
 type Filter = "all" | McpConnection["provider"];
 type Provider = McpConnection["provider"];
 const PROVIDERS: Provider[] = ["claude", "claude_desktop", "codex", "cursor", "opencode"];
@@ -286,7 +288,8 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
     false,
   );
   const [loading, setLoading] = useState(!cached);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<{ server: string; action: "login" | "remove" } | null>(null);
+  const busyRef = useRef(false);
   const [error, setError] = useState(cached?.error ?? "");
   const [claudeError, setClaudeError] = useState(cached?.claudeError ?? "");
   const [addOpen, setAddOpen] = useState(false);
@@ -365,7 +368,9 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
   }, [filter, filterProviders, loading, error, claudeError]);
 
   async function login(server: ServerRow) {
-    setBusy(server.name);
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy({ server: serverRowKey(server), action: "login" });
     setError("");
     try {
       await invoke("mcp_provider_login", {
@@ -377,26 +382,29 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
     } catch (cause) {
       setError(String(cause));
     } finally {
+      busyRef.current = false;
       setBusy(null);
     }
   }
 
   async function remove(server: ServerRow) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy({ server: serverRowKey(server), action: "remove" });
     const selectedScope = server.configPath ? server.scope : (removeScopes[server.name] ?? "local");
-    if (
-      !(await ask(
-        t("Remove {p0} from {p1} scope?", { p0: server.name, p1: scopeLabel(selectedScope) }),
-        {
-          get title() {
-            return t("Remove MCP server");
-          },
-        },
-      ))
-    )
-      return;
-    setBusy(server.name);
     setError("");
     try {
+      if (
+        !(await ask(
+          t("Remove {p0} from {p1} scope?", { p0: server.name, p1: scopeLabel(selectedScope) }),
+          {
+            get title() {
+              return t("Remove MCP server");
+            },
+          },
+        ))
+      )
+        return;
       await invoke("claude_mcp_remove", {
         cwd,
         name: server.name,
@@ -406,6 +414,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
     } catch (cause) {
       setError(String(cause));
     } finally {
+      busyRef.current = false;
       setBusy(null);
     }
   }
@@ -542,7 +551,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
           {t("Claude connection status unavailable: ")} {claudeError}
         </SettingsFeedback>
       ) : null}
-      {loading ? (
+      {loading && servers.length === 0 ? (
         <SettingsFeedback state="loading">{t("Checking servers…")}</SettingsFeedback>
       ) : visible.length === 0 && !error ? (
         <SettingsFeedback state="empty">
@@ -555,10 +564,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
       ) : (
         <div className={styles.list}>
           {pageServers.map((server) => (
-            <div
-              key={`${server.provider}:${server.scope}:${server.configPath}:${server.name}`}
-              className={styles.row}
-            >
+            <div key={serverRowKey(server)} className={styles.row}>
               <span className={styles.providerIcon}>
                 <ProviderIcon provider={server.provider} />
               </span>
@@ -615,8 +621,13 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                 {server.provider !== "claude_desktop" &&
                 server.transport &&
                 !["stdio", "local", "ws"].includes(server.transport) ? (
-                  <Button type="button" disabled={busy !== null} onClick={() => void login(server)}>
-                    {busy === server.name ? t("Working…") : t("Sign in")}
+                  <Button
+                    type="button"
+                    loading={busy?.server === serverRowKey(server) && busy.action === "login"}
+                    disabled={loading || busy !== null}
+                    onClick={() => void login(server)}
+                  >
+                    {t("Sign in")}
                   </Button>
                 ) : null}
                 {server.provider === "claude" ? (
@@ -625,6 +636,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                       <label className="text-ui-caption text-(--ui-text-muted)">
                         {t("Scope")}{" "}
                         <SharedSelect
+                          disabled={loading || busy !== null}
                           label={t("Scope to remove {p0} from", { p0: server.name })}
                           value={removeScopes[server.name] ?? "local"}
                           onValueChange={(value) =>
@@ -648,7 +660,8 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                       iconOnly
                       label={t("Remove")}
                       tooltip={`${t("Remove")}: ${server.name} · ${scopeLabel(server.scope)}`}
-                      disabled={busy !== null}
+                      disabled={loading || busy !== null}
+                      loading={busy?.server === serverRowKey(server) && busy.action === "remove"}
                       onClick={() => void remove(server)}
                     >
                       <Trash2 className="icon-sm" />

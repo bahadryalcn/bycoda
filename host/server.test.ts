@@ -18,7 +18,7 @@ import { HostChildBackend } from "./child-backend";
 import { HostTasks } from "./tasks";
 import { HostGoals } from "./goals";
 import { DesktopSessions } from "./desktopSessions";
-import { HostNotes } from "./host-notes";
+import { AsyncHostNotes } from "./host-notes-async";
 import { GenericAcpService } from "./generic-acp";
 import * as accessCenter from "./access-center";
 import { ConversationDesktopRelay } from "./conversation-tools";
@@ -32,6 +32,8 @@ import type { RemoteProvider } from "../src/features/connections/model/protocol"
 import { QUEUE_LEASE_TTL_MS } from "../src/features/connections/model/sharedQueue";
 import { RUN_LEASE_TTL_MS } from "../src/features/sync/model/runLease";
 import { CLAIM_GRACE_MS, SessionQueues } from "./session-queue";
+import { AttachmentOwnership } from "./attachment-ownership";
+import { SocialService } from "./social";
 
 const modelProbe = vi.hoisted(() => vi.fn());
 vi.mock("../src/integrations/harness/providers/codex/codexCatalog", () => ({
@@ -46,255 +48,645 @@ const cleanups: Array<() => Promise<void>> = [];
 
 it("requires the dedicated review confirmation before queuing an exact PR review", async () => {
   const s = await setup([]);
-  const request = vi.spyOn(ProviderInboxBridge.prototype, "request").mockReturnValue({ id: "job", state: "queued" });
+  const request = vi
+    .spyOn(ProviderInboxBridge.prototype, "request")
+    .mockReturnValue({ id: "job", state: "queued" });
   try {
-    const input = { action: "review", projectId: s.project.id, requestId: "review-rpc", item: { provider: "github", kind: "pr", number: 7, repo: "owner/project", projectPath: s.project.cwd }, commitId: "a".repeat(40), event: "COMMENT", body: "Reviewed summary", comments: [] };
-    expect((await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_PR_STATE" })).value.error).toMatch(/explicit owner/);
+    const input = {
+      action: "review",
+      projectId: s.project.id,
+      requestId: "review-rpc",
+      item: {
+        provider: "github",
+        kind: "pr",
+        number: 7,
+        repo: "owner/project",
+        projectPath: s.project.cwd,
+      },
+      commitId: "a".repeat(40),
+      event: "COMMENT",
+      body: "Reviewed summary",
+      comments: [],
+    };
+    expect(
+      (await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_PR_STATE" })).value
+        .error,
+    ).toMatch(/explicit owner/);
     expect(request).not.toHaveBeenCalled();
-    expect((await s.call("inbox.provider.request", { ...input, confirm: "SUBMIT_PR_REVIEW" }, "invalid")).status).toBe(401);
-    expect((await s.call("inbox.provider.request", { ...input, confirm: "SUBMIT_PR_REVIEW" })).value.result).toEqual({ id: "job", state: "queued" });
-    expect(request).toHaveBeenCalledWith(expect.stringMatching(/^[a-f0-9]{64}$/), "review-rpc", expect.objectContaining({ action: "review", commitId: "a".repeat(40), body: "Reviewed summary", cwd: s.project.cwd }));
+    expect(
+      (await s.call("inbox.provider.request", { ...input, confirm: "SUBMIT_PR_REVIEW" }, "invalid"))
+        .status,
+    ).toBe(401);
+    expect(
+      (await s.call("inbox.provider.request", { ...input, confirm: "SUBMIT_PR_REVIEW" })).value
+        .result,
+    ).toEqual({ id: "job", state: "queued" });
+    expect(request).toHaveBeenCalledWith(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      "review-rpc",
+      expect.objectContaining({
+        action: "review",
+        commitId: "a".repeat(40),
+        body: "Reviewed summary",
+        cwd: s.project.cwd,
+      }),
+    );
     expect(s.send).not.toHaveBeenCalled();
-  } finally { request.mockRestore(); }
+  } finally {
+    request.mockRestore();
+  }
 });
 
 it("requires a dedicated owner confirmation and derives project identity for Jira board writes", async () => {
   const s = await setup([]);
-  expect((await s.call("environment.describe")).value.result.capabilities).toContain("inbox.jiraBoard.v1");
-  const request = vi.spyOn(ProviderInboxBridge.prototype, "request").mockReturnValue({ id: "job", state: "queued" });
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain(
+    "inbox.jiraBoard.v1",
+  );
+  const request = vi
+    .spyOn(ProviderInboxBridge.prototype, "request")
+    .mockReturnValue({ id: "job", state: "queued" });
   try {
-    const input = { action: "jira-board-transition", projectId: s.project.id, requestId: "jira-rpc", snapshotId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", key: "ENG-7", transitionId: "9" };
-    expect((await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_PR_STATE" })).value.error).toMatch(/explicit owner/);
+    const input = {
+      action: "jira-board-transition",
+      projectId: s.project.id,
+      requestId: "jira-rpc",
+      snapshotId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      key: "ENG-7",
+      transitionId: "9",
+    };
+    expect(
+      (await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_PR_STATE" })).value
+        .error,
+    ).toMatch(/explicit owner/);
     expect(request).not.toHaveBeenCalled();
-    expect((await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_JIRA_BOARD" }, "invalid")).status).toBe(401);
-    expect((await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_JIRA_BOARD" })).value.result).toEqual({ id: "job", state: "queued" });
-    expect(request).toHaveBeenCalledWith(expect.stringMatching(/^[a-f0-9]{64}$/), "jira-rpc", { action: "jira-board-transition", cwd: s.project.cwd, snapshotId: input.snapshotId, key: "ENG-7", transitionId: "9" });
-    expect((await s.call("inbox.provider.request", { ...input, projectId: "foreign", confirm: "CHANGE_JIRA_BOARD" })).value.error).toBeTruthy();
-    expect((await s.call("inbox.provider.request", { ...input, cwd: "/foreign", confirm: "CHANGE_JIRA_BOARD" })).value.error).toBeTruthy();
+    expect(
+      (
+        await s.call(
+          "inbox.provider.request",
+          { ...input, confirm: "CHANGE_JIRA_BOARD" },
+          "invalid",
+        )
+      ).status,
+    ).toBe(401);
+    expect(
+      (await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_JIRA_BOARD" })).value
+        .result,
+    ).toEqual({ id: "job", state: "queued" });
+    expect(request).toHaveBeenCalledWith(expect.stringMatching(/^[a-f0-9]{64}$/), "jira-rpc", {
+      action: "jira-board-transition",
+      cwd: s.project.cwd,
+      snapshotId: input.snapshotId,
+      key: "ENG-7",
+      transitionId: "9",
+    });
+    expect(
+      (
+        await s.call("inbox.provider.request", {
+          ...input,
+          projectId: "foreign",
+          confirm: "CHANGE_JIRA_BOARD",
+        })
+      ).value.error,
+    ).toBeTruthy();
+    expect(
+      (
+        await s.call("inbox.provider.request", {
+          ...input,
+          cwd: "/foreign",
+          confirm: "CHANGE_JIRA_BOARD",
+        })
+      ).value.error,
+    ).toBeTruthy();
     expect(request).toHaveBeenCalledOnce();
     expect(s.send).not.toHaveBeenCalled();
-  } finally { request.mockRestore(); }
+  } finally {
+    request.mockRestore();
+  }
 });
 
 it("derives mobile preview ownership from the paired credential and project and guards service stop", async () => {
   const s = await setup([]);
-  const job = { id: "job-id", requestId: "attempt", deviceId: "device", state: "running" as const, stages: [], verification: "launch-only" as const, updatedAt: new Date().toISOString() };
+  const job = {
+    id: "job-id",
+    requestId: "attempt",
+    deviceId: "device",
+    state: "running" as const,
+    stages: [],
+    verification: "launch-only" as const,
+    updatedAt: new Date().toISOString(),
+  };
   let owner = "";
-  const start = vi.spyOn(DevicePreviews.prototype, "start").mockImplementation((_input, currentOwner) => { owner = currentOwner; return job; });
-  const status = vi.spyOn(DevicePreviews.prototype, "mobileStatus").mockImplementation((currentOwner) => { if (currentOwner !== owner) throw new Error("PREVIEW_NOT_FOUND"); return job; });
-  const impact = vi.spyOn(DevicePreviews.prototype, "stopImpact").mockReturnValue({ activeCount: 1, owned: [], otherActiveCount: 1 });
-  const stop = vi.spyOn(DeviceHost.prototype, "stop").mockResolvedValue({ running: false, installed: true, agentInstalled: false, platform: "win32", platforms: [] });
-  const idle = vi.spyOn(DevicePreviews.prototype, "stopIdle").mockRejectedValue(new Error("PREVIEW_BUSY"));
+  const start = vi
+    .spyOn(DevicePreviews.prototype, "start")
+    .mockImplementation((_input, currentOwner) => {
+      owner = currentOwner;
+      return job;
+    });
+  const status = vi
+    .spyOn(DevicePreviews.prototype, "mobileStatus")
+    .mockImplementation((currentOwner) => {
+      if (currentOwner !== owner) throw new Error("PREVIEW_NOT_FOUND");
+      return job;
+    });
+  const impact = vi
+    .spyOn(DevicePreviews.prototype, "stopImpact")
+    .mockReturnValue({ activeCount: 1, owned: [], otherActiveCount: 1 });
+  const stop = vi.spyOn(DeviceHost.prototype, "stop").mockResolvedValue({
+    running: false,
+    installed: true,
+    agentInstalled: false,
+    platform: "win32",
+    platforms: [],
+  });
+  const idle = vi
+    .spyOn(DevicePreviews.prototype, "stopIdle")
+    .mockRejectedValue(new Error("PREVIEW_BUSY"));
   try {
     const scope = { projectId: s.project.id };
-    const input = { ...scope, requestId: "attempt", deviceId: "device", url: "exp://127.0.0.1:8081" };
+    const input = {
+      ...scope,
+      requestId: "attempt",
+      deviceId: "device",
+      url: "exp://127.0.0.1:8081",
+    };
     expect((await s.call("devices.preview.mobile.start", input)).value.result.id).toBe(job.id);
     expect(owner).toMatch(new RegExp(`^mobile:[a-f0-9]{64}:${s.project.id}$`));
     expect(owner).not.toContain(s.first.token);
-    expect((await s.call("devices.preview.mobile.status", { ...scope, requestId: "attempt" })).value.result.id).toBe(job.id);
-    expect((await s.call("devices.preview.mobile.status", { ...scope, requestId: "attempt" }, s.second.token)).value.error).toContain("PREVIEW_NOT_FOUND");
-    const other = s.store.addProject(join(s.directory, "other"), "Other");
-    expect((await s.call("devices.preview.mobile.status", { projectId: other.id, requestId: "attempt" })).value.error).toContain("PREVIEW_NOT_FOUND");
-    expect((await s.call("devices.preview.mobile.start", { ...input, previewOwner: owner })).value.error).toBeTruthy();
+    expect(
+      (await s.call("devices.preview.mobile.status", { ...scope, requestId: "attempt" })).value
+        .result.id,
+    ).toBe(job.id);
+    expect(
+      (
+        await s.call(
+          "devices.preview.mobile.status",
+          { ...scope, requestId: "attempt" },
+          s.second.token,
+        )
+      ).value.error,
+    ).toContain("PREVIEW_NOT_FOUND");
+    const other = await s.store.addProject(join(s.directory, "other"), "Other");
+    expect(
+      (await s.call("devices.preview.mobile.status", { projectId: other.id, requestId: "attempt" }))
+        .value.error,
+    ).toContain("PREVIEW_NOT_FOUND");
+    expect(
+      (await s.call("devices.preview.mobile.start", { ...input, previewOwner: owner })).value.error,
+    ).toBeTruthy();
     expect((await s.call("devices.preview.mobile.start", input, "invalid")).status).toBe(401);
     expect(start).toHaveBeenCalledOnce();
-    expect((await s.call("devices.preview.impact", scope)).value.result).toEqual({ activeCount: 1, owned: [], otherActiveCount: 1 });
+    expect((await s.call("devices.preview.impact", scope)).value.result).toEqual({
+      activeCount: 1,
+      owned: [],
+      otherActiveCount: 1,
+    });
     expect((await s.call("devices.stop", scope)).value.error).toContain("PREVIEW_BUSY");
-    expect(idle).toHaveBeenCalledOnce(); expect(stop).not.toHaveBeenCalled();
+    expect(idle).toHaveBeenCalledOnce();
+    expect(stop).not.toHaveBeenCalled();
     expect(s.send).not.toHaveBeenCalled();
-  } finally { start.mockRestore(); status.mockRestore(); impact.mockRestore(); stop.mockRestore(); idle.mockRestore(); }
+  } finally {
+    start.mockRestore();
+    status.mockRestore();
+    impact.mockRestore();
+    stop.mockRestore();
+    idle.mockRestore();
+  }
 });
 
 it("routes history import only through the authenticated desktop owner with frozen project and conversation identity", async () => {
   const s = await setup();
-  expect((await s.call("environment.describe")).value.result.capabilities).toContain("history.import.desktop.v1");
-  const created = s.engine.command({ type: "create", commandId: "history-rpc-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
-  const source = s.store.session(created.sessionId);
-  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockResolvedValue({ state: "unknown" });
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain(
+    "history.import.desktop.v1",
+  );
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "history-rpc-source",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const source = await s.store.session(created.sessionId);
+  const relay = vi
+    .spyOn(ConversationDesktopRelay.prototype, "call")
+    .mockResolvedValue({ state: "unknown" });
   try {
     const scope = { projectId: s.project.id, sessionId: created.sessionId };
     expect((await s.call("history.import.preview", scope)).value.error).toBeUndefined();
-    expect(relay).toHaveBeenLastCalledWith("historyImport.discover", { sessionId: created.sessionId }, s.project.cwd,
-      { kind: "session", projectId: s.project.id, sessionId: created.sessionId, provider: "codex" }, expect.any(Function));
-    expect(s.store.session(created.sessionId)).toEqual(source);
-    expect((await s.call("history.import.status", { ...scope, operationId: "attempt" })).value.result).toEqual({ state: "unknown" });
+    expect(relay).toHaveBeenLastCalledWith(
+      "historyImport.discover",
+      { sessionId: created.sessionId },
+      s.project.cwd,
+      { kind: "session", projectId: s.project.id, sessionId: created.sessionId, provider: "codex" },
+      expect.any(Function),
+    );
+    expect(await s.store.session(created.sessionId)).toEqual(source);
+    expect(
+      (await s.call("history.import.status", { ...scope, operationId: "attempt" })).value.result,
+    ).toEqual({ state: "unknown" });
     expect(relay.mock.calls.at(-1)?.[0]).toBe("historyImport.status");
     const authorize = relay.mock.calls.at(-1)![4]!;
-    expect(authorize()).toBe(true);
-    expect((await s.call("history.import.preview", { ...scope, projectId: "foreign" })).value.error).toBeTruthy();
-    expect((await s.call("history.import.preview", { ...scope, projectCwd: "/foreign" })).value.error).toBeTruthy();
+    expect(await authorize()).toBe(true);
+    expect(
+      (await s.call("history.import.preview", { ...scope, projectId: "foreign" })).value.error,
+    ).toBeTruthy();
+    expect(
+      (await s.call("history.import.preview", { ...scope, projectCwd: "/foreign" })).value.error,
+    ).toBeTruthy();
     expect((await s.call("history.import.commit", scope, "invalid")).status).toBe(401);
     expect(relay).toHaveBeenCalledTimes(2);
-    s.store.revokeToken(s.first.token); expect(authorize()).toBe(false);
+    await s.store.revokeToken(s.first.token);
+    expect(await authorize()).toBe(false);
     expect(s.send).not.toHaveBeenCalled();
-  } finally { relay.mockRestore(); }
+  } finally {
+    relay.mockRestore();
+  }
 });
 
 it("routes history import to the registered source worktree and refuses unrelated checkouts", async () => {
   const s = await setup();
   const git = (...args: string[]) => execFileSync("git", args, { cwd: s.project.cwd });
   git("init", "-q");
-  git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "initial");
+  git(
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "--allow-empty",
+    "-qm",
+    "initial",
+  );
   const checkout = join(s.directory, "history-worktree");
   git("worktree", "add", "-qb", "history-source", checkout);
   const opened = await s.call("commands.dispatch", {
-    type: "create", commandId: "history-worktree-source", projectId: s.project.id,
-    worktreeCwd: checkout, harness: "codex", model: "codex:test", runtimeMode: "supervised",
+    type: "create",
+    commandId: "history-worktree-source",
+    projectId: s.project.id,
+    worktreeCwd: checkout,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
   });
   expect(opened.value.error).toBeUndefined();
-  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockResolvedValue({ state: "unknown" });
+  const relay = vi
+    .spyOn(ConversationDesktopRelay.prototype, "call")
+    .mockResolvedValue({ state: "unknown" });
   try {
     const scope = { projectId: s.project.id, sessionId: opened.value.result.sessionId };
     expect((await s.call("history.import.preview", scope)).value.error).toBeUndefined();
-    expect(relay.mock.calls[0][2].replaceAll("\\", "/")).toBe(realpathSync.native(checkout).replaceAll("\\", "/"));
-    expect(relay.mock.calls[0][4]!()).toBe(true);
-    expect((await s.call("history.import.preview", { ...scope, cwd: s.project.cwd })).value.error).toBeTruthy();
-    expect((await s.call("commands.dispatch", {
-      type: "create", commandId: "unrelated-history-source", projectId: s.project.id,
-      worktreeCwd: tmpdir(), harness: "codex", model: "codex:test", runtimeMode: "supervised",
-    })).value.error).toContain("available worktree");
+    expect(relay.mock.calls[0][2].replaceAll("\\", "/")).toBe(
+      realpathSync.native(checkout).replaceAll("\\", "/"),
+    );
+    expect(await relay.mock.calls[0][4]!()).toBe(true);
+    expect(
+      (await s.call("history.import.preview", { ...scope, cwd: s.project.cwd })).value.error,
+    ).toBeTruthy();
+    expect(
+      (
+        await s.call("commands.dispatch", {
+          type: "create",
+          commandId: "unrelated-history-source",
+          projectId: s.project.id,
+          worktreeCwd: tmpdir(),
+          harness: "codex",
+          model: "codex:test",
+          runtimeMode: "supervised",
+        })
+      ).value.error,
+    ).toContain("available worktree");
     expect(relay).toHaveBeenCalledOnce();
     expect(s.send).not.toHaveBeenCalled();
-  } finally { relay.mockRestore(); }
+  } finally {
+    relay.mockRestore();
+  }
 });
 
 it("binds organization metadata operations to the authenticated owning conversation", async () => {
   const s = await setup();
-  expect((await s.call("environment.describe")).value.result.capabilities).toContain("projects.organization.desktop.v1");
-  const created = s.engine.command({ type: "create", commandId: "organization-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
-  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockResolvedValue({ state: "unknown" });
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain(
+    "projects.organization.desktop.v1",
+  );
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "organization-source",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const relay = vi
+    .spyOn(ConversationDesktopRelay.prototype, "call")
+    .mockResolvedValue({ state: "unknown" });
   const scope = { projectId: s.project.id, sessionId: created.sessionId };
   try {
     expect((await s.call("projects.organization.read", scope)).value.error).toBeUndefined();
     const change = { kind: "projectName", name: "Reviewed" };
     const patch = { ...scope, expectedRevision: "a".repeat(64), operationId: "attempt", change };
     expect((await s.call("projects.organization.patch", patch)).value.error).toBeUndefined();
-    expect(relay).toHaveBeenLastCalledWith("organization.patch", { sessionId: scope.sessionId, expectedRevision: patch.expectedRevision, operationId: "attempt", change }, s.project.cwd,
-      { kind: "session", projectId: s.project.id, sessionId: scope.sessionId, provider: "codex" }, expect.any(Function));
+    expect(relay).toHaveBeenLastCalledWith(
+      "organization.patch",
+      {
+        sessionId: scope.sessionId,
+        expectedRevision: patch.expectedRevision,
+        operationId: "attempt",
+        change,
+      },
+      s.project.cwd,
+      { kind: "session", projectId: s.project.id, sessionId: scope.sessionId, provider: "codex" },
+      expect.any(Function),
+    );
     const authorize = relay.mock.calls.at(-1)![4]!;
-    expect(authorize()).toBe(true);
+    expect(await authorize()).toBe(true);
     expect((await s.call("projects.organization.patch", patch, "invalid")).status).toBe(401);
-    expect((await s.call("projects.organization.read", { ...scope, projectId: "foreign" })).value.error).toBeTruthy();
-    expect((await s.call("projects.organization.patch", { ...patch, cwd: "/foreign" })).value.error).toBeTruthy();
+    expect(
+      (await s.call("projects.organization.read", { ...scope, projectId: "foreign" })).value.error,
+    ).toBeTruthy();
+    expect(
+      (await s.call("projects.organization.patch", { ...patch, cwd: "/foreign" })).value.error,
+    ).toBeTruthy();
     expect(relay).toHaveBeenCalledTimes(2);
-    s.store.revokeToken(s.first.token); expect(authorize()).toBe(false);
+    await s.store.revokeToken(s.first.token);
+    expect(await authorize()).toBe(false);
     expect(s.send).not.toHaveBeenCalled();
-  } finally { relay.mockRestore(); }
+  } finally {
+    relay.mockRestore();
+  }
 });
 
 it("keeps new canonical desktop preference, provider and worktree facades finite and scoped", async () => {
   const s = await setup([]);
   const capabilities = (await s.call("environment.describe")).value.result.capabilities;
-  for (const capability of ["preferences.desktop.v1", "providers.desktop.v1", "worktrees.removal.desktop.v1"])
+  for (const capability of [
+    "preferences.desktop.v1",
+    "providers.desktop.v1",
+    "worktrees.removal.desktop.v1",
+  ])
     expect(capabilities).toContain(capability);
-  const created = s.engine.command({ type: "create", commandId: "desktop-settings-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "desktop-settings-source",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
   const scope = { projectId: s.project.id, sessionId: created.sessionId };
-  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockImplementation(async (action, args) => ({ state: "unknown",
-    ...(action === "providerManagement.patch" || action === "providerManagement.status" ? { operationId: args.operationId } : {}) }));
+  const relay = vi
+    .spyOn(ConversationDesktopRelay.prototype, "call")
+    .mockImplementation(async (action, args) => ({
+      state: "unknown",
+      ...(action === "providerManagement.patch" || action === "providerManagement.status"
+        ? { operationId: args.operationId }
+        : {}),
+    }));
   const routes = [
     ["preferences.desktop.read", "preferences.read", {}],
-    ["preferences.desktop.template.read", "preferences.templateRead", { templateId: "snippet", expectedRevision: "a".repeat(64) }],
+    [
+      "preferences.desktop.template.read",
+      "preferences.templateRead",
+      { templateId: "snippet", expectedRevision: "a".repeat(64) },
+    ],
     ["preferences.desktop.status", "preferences.status", { operationId: "attempt" }],
-    ["preferences.desktop.patch", "preferences.patch", { operationId: "attempt", expectedRevision: "a".repeat(64), change: { kind: "templateDelete", templateId: "snippet" } }],
+    [
+      "preferences.desktop.patch",
+      "preferences.patch",
+      {
+        operationId: "attempt",
+        expectedRevision: "a".repeat(64),
+        change: { kind: "templateDelete", templateId: "snippet" },
+      },
+    ],
     ["providers.desktop.read", "providerManagement.read", {}],
     ["providers.desktop.status", "providerManagement.status", { operationId: "account-operation" }],
-    ["providers.desktop.patch", "providerManagement.patch", { operationId: "account-operation", expectedAccountRevision: "a".repeat(64), provider: "codex", accountId: "default", change: { kind: "default", confirm: "DEFAULT_FOR_FUTURE_SESSIONS" } }],
+    [
+      "providers.desktop.patch",
+      "providerManagement.patch",
+      {
+        operationId: "account-operation",
+        expectedAccountRevision: "a".repeat(64),
+        provider: "codex",
+        accountId: "default",
+        change: { kind: "default", confirm: "DEFAULT_FOR_FUTURE_SESSIONS" },
+      },
+    ],
   ] as const;
   try {
     for (const [method, action, fields] of routes) {
       const input = { ...scope, ...fields };
       expect((await s.call(method, input, "invalid")).status).toBe(401);
-      expect((await s.call(method, { ...input, cwd: "/injected", command: "unsafe" })).value.error).toBeTruthy();
-      const actorScoped = action === "providerManagement.patch" || action === "providerManagement.status";
-      expect((await s.call(method, input)).value.result).toEqual({ state: "unknown", ...(actorScoped ? { operationId: (fields as Record<string, unknown>).operationId } : {}) });
-      expect(relay).toHaveBeenLastCalledWith(action, { sessionId: scope.sessionId, ...fields, ...(actorScoped ? { operationId: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/) } : {}) }, s.project.cwd,
-        { kind: "session", projectId: s.project.id, sessionId: scope.sessionId, provider: "codex" }, expect.any(Function));
+      expect(
+        (await s.call(method, { ...input, cwd: "/injected", command: "unsafe" })).value.error,
+      ).toBeTruthy();
+      const actorScoped =
+        action === "providerManagement.patch" || action === "providerManagement.status";
+      expect((await s.call(method, input)).value.result).toEqual({
+        state: "unknown",
+        ...(actorScoped ? { operationId: (fields as Record<string, unknown>).operationId } : {}),
+      });
+      expect(relay).toHaveBeenLastCalledWith(
+        action,
+        {
+          sessionId: scope.sessionId,
+          ...fields,
+          ...(actorScoped ? { operationId: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/) } : {}),
+        },
+        s.project.cwd,
+        { kind: "session", projectId: s.project.id, sessionId: scope.sessionId, provider: "codex" },
+        expect.any(Function),
+      );
     }
     expect(relay).toHaveBeenCalledTimes(routes.length);
     expect(s.send).not.toHaveBeenCalled();
-  } finally { relay.mockRestore(); }
+  } finally {
+    relay.mockRestore();
+  }
 });
 
 it("binds a native worktree review and status receipt to its paired device without exposing the host signing key", async () => {
   const s = await setup([]);
-  const created = s.engine.command({ type: "create", commandId: "worktree-device-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "worktree-device-source",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
   const scope = { projectId: s.project.id, sessionId: created.sessionId };
   const nativeId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const expiresAt = Date.now() + 120_000;
   const path = join(s.project.cwd, "checkout");
   const receipts = new Map<string, unknown>();
-  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockImplementation(async (action, args) => {
-    if (action === "worktrees.removal.review") return { reviewId: nativeId, expiresAt, path };
-    if (action === "worktrees.removal.approve") {
-      expect(args.reviewId).toBe(nativeId);
-      receipts.set(String(args.requestId), { state: "applied", path });
-    }
-    return receipts.get(String(args.requestId)) ?? { state: "unknown" };
-  });
+  const relay = vi
+    .spyOn(ConversationDesktopRelay.prototype, "call")
+    .mockImplementation(async (action, args) => {
+      if (action === "worktrees.removal.review") return { reviewId: nativeId, expiresAt, path };
+      if (action === "worktrees.removal.approve") {
+        expect(args.reviewId).toBe(nativeId);
+        receipts.set(String(args.requestId), { state: "applied", path });
+      }
+      return receipts.get(String(args.requestId)) ?? { state: "unknown" };
+    });
   try {
     const reviewed = (await s.call("worktrees.removal.review", { ...scope, path })).value.result;
     expect(reviewed.reviewId).not.toBe(nativeId);
     expect(reviewed.reviewId.length).toBeLessThanOrEqual(200);
     const input = { ...scope, reviewId: reviewed.reviewId, requestId: "phone-operation" };
-    expect((await s.call("worktrees.removal.approve", input, s.second.token)).value.error).toMatch(/does not belong/);
+    expect((await s.call("worktrees.removal.approve", input, s.second.token)).value.error).toMatch(
+      /does not belong/,
+    );
     const actorHash = createHash("sha256").update(s.second.token).digest("hex");
-    const forgedMac = createHmac("sha256", s.second.token).update(JSON.stringify(["bycoda:worktree-removal:v1", actorHash, s.store.environmentId, scope.projectId, scope.sessionId, "review", nativeId, expiresAt])).digest("base64url");
+    const forgedMac = createHmac("sha256", s.second.token)
+      .update(
+        JSON.stringify([
+          "bycoda:worktree-removal:v1",
+          actorHash,
+          s.store.environmentId,
+          scope.projectId,
+          scope.sessionId,
+          "review",
+          nativeId,
+          expiresAt,
+        ]),
+      )
+      .digest("base64url");
     const forged = `v1.${nativeId}.${expiresAt}.${forgedMac}`;
-    expect((await s.call("worktrees.removal.approve", { ...input, reviewId: forged }, s.second.token)).value.error).toMatch(/does not belong/);
-    expect((await s.call("worktrees.removal.approve", { ...input, reviewId: nativeId })).value.error).toBeTruthy();
+    expect(
+      (await s.call("worktrees.removal.approve", { ...input, reviewId: forged }, s.second.token))
+        .value.error,
+    ).toMatch(/does not belong/);
+    expect(
+      (await s.call("worktrees.removal.approve", { ...input, reviewId: nativeId })).value.error,
+    ).toBeTruthy();
     expect(relay).toHaveBeenCalledOnce();
-    expect((await s.call("worktrees.removal.approve", input)).value.result).toEqual({ state: "applied", path });
+    expect((await s.call("worktrees.removal.approve", input)).value.result).toEqual({
+      state: "applied",
+      path,
+    });
     const firstNativeRequest = relay.mock.calls.at(-1)![1].requestId;
     expect(firstNativeRequest).not.toBe("phone-operation");
-    expect((await s.call("worktrees.removal.status", { ...scope, requestId: "phone-operation" })).value.result).toEqual({ state: "applied", path });
-    expect((await s.call("worktrees.removal.status", { ...scope, requestId: "phone-operation" }, s.second.token)).value.result).toEqual({ state: "unknown" });
+    expect(
+      (await s.call("worktrees.removal.status", { ...scope, requestId: "phone-operation" })).value
+        .result,
+    ).toEqual({ state: "applied", path });
+    expect(
+      (
+        await s.call(
+          "worktrees.removal.status",
+          { ...scope, requestId: "phone-operation" },
+          s.second.token,
+        )
+      ).value.result,
+    ).toEqual({ state: "unknown" });
     expect(relay.mock.calls.at(-1)![1].requestId).not.toBe(firstNativeRequest);
     expect(JSON.stringify(reviewed)).not.toContain(s.first.token);
     expect(s.send).not.toHaveBeenCalled();
-  } finally { relay.mockRestore(); }
+  } finally {
+    relay.mockRestore();
+  }
 });
 
 it("isolates SSH approvals, workspace handles and uncertain receipts per actor and source", async () => {
   const s = await setup([]);
-  const created = s.engine.command({ type: "create", commandId: "ssh-owned-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "ssh-owned-source",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
   const scope = { projectId: s.project.id, sessionId: created.sessionId };
   const reviewId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const workspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   const receipts = new Map<string, unknown>();
-  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockImplementation(async (action, args) => {
-    expect(args.actorId).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    if (action === "ssh.workspace.review" || action === "ssh.workspace.close.review") return { reviewId, expiresAt: Date.now() + 60_000, ...(action.includes("close") ? { workspaceId } : {}) };
-    if (action === "ssh.workspace.approve") {
-      expect(args.reviewId).toBe(reviewId);
-      receipts.set(String(args.actorId) + args.requestId, { state: "opening", workspaceId });
-    }
-    if (args.workspaceId) { expect(args.workspaceId).toBe(workspaceId); return { state: "opened-on-computer", workspaceId }; }
-    return receipts.get(String(args.actorId) + args.requestId) ?? { state: "unknown" };
-  });
+  const relay = vi
+    .spyOn(ConversationDesktopRelay.prototype, "call")
+    .mockImplementation(async (action, args) => {
+      expect(args.actorId).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      if (action === "ssh.workspace.review" || action === "ssh.workspace.close.review")
+        return {
+          reviewId,
+          expiresAt: Date.now() + 60_000,
+          ...(action.includes("close") ? { workspaceId } : {}),
+        };
+      if (action === "ssh.workspace.approve") {
+        expect(args.reviewId).toBe(reviewId);
+        receipts.set(String(args.actorId) + args.requestId, { state: "opening", workspaceId });
+      }
+      if (args.workspaceId) {
+        expect(args.workspaceId).toBe(workspaceId);
+        return { state: "opened-on-computer", workspaceId };
+      }
+      return receipts.get(String(args.actorId) + args.requestId) ?? { state: "unknown" };
+    });
   try {
-    expect((await s.call("ssh.workspace.review", { ...scope, connectionId: "saved" }, "invalid")).status).toBe(401);
-    const review = (await s.call("ssh.workspace.review", { ...scope, connectionId: "saved" })).value.result;
+    expect(
+      (await s.call("ssh.workspace.review", { ...scope, connectionId: "saved" }, "invalid")).status,
+    ).toBe(401);
+    const review = (await s.call("ssh.workspace.review", { ...scope, connectionId: "saved" })).value
+      .result;
     const approve = { ...scope, reviewId: review.reviewId, requestId: "one-open" };
-    expect((await s.call("ssh.workspace.approve", approve, s.second.token)).value.error).toBeTruthy();
-    expect((await s.call("ssh.workspace.approve", { ...approve, actorId: "spoof" })).value.error).toBeTruthy();
+    expect(
+      (await s.call("ssh.workspace.approve", approve, s.second.token)).value.error,
+    ).toBeTruthy();
+    expect(
+      (await s.call("ssh.workspace.approve", { ...approve, actorId: "spoof" })).value.error,
+    ).toBeTruthy();
     expect(relay).toHaveBeenCalledOnce();
     const opening = (await s.call("ssh.workspace.approve", approve)).value.result;
     expect(opening.workspaceId).not.toBe(workspaceId);
-    expect((await s.call("ssh.workspace.status", { ...scope, workspaceId: opening.workspaceId }, s.second.token)).value.error).toBeTruthy();
-    expect((await s.call("ssh.workspace.status", { ...scope, requestId: "one-open" }, s.second.token)).value.result).toEqual({ state: "unknown" });
-    expect((await s.call("ssh.workspace.status", { ...scope, requestId: "one-open" })).value.result).toEqual(opening);
-    expect((await s.call("ssh.workspace.status", { ...scope, workspaceId: opening.workspaceId })).value.result.state).toBe("opened-on-computer");
-    expect((await s.call("ssh.workspace.status", { ...scope, workspaceId: opening.workspaceId, requestId: "one-open" })).value.error).toMatch(/exactly one/);
-    const close = (await s.call("ssh.workspace.close.review", { ...scope, workspaceId: opening.workspaceId })).value.result;
+    expect(
+      (
+        await s.call(
+          "ssh.workspace.status",
+          { ...scope, workspaceId: opening.workspaceId },
+          s.second.token,
+        )
+      ).value.error,
+    ).toBeTruthy();
+    expect(
+      (await s.call("ssh.workspace.status", { ...scope, requestId: "one-open" }, s.second.token))
+        .value.result,
+    ).toEqual({ state: "unknown" });
+    expect(
+      (await s.call("ssh.workspace.status", { ...scope, requestId: "one-open" })).value.result,
+    ).toEqual(opening);
+    expect(
+      (await s.call("ssh.workspace.status", { ...scope, workspaceId: opening.workspaceId })).value
+        .result.state,
+    ).toBe("opened-on-computer");
+    expect(
+      (
+        await s.call("ssh.workspace.status", {
+          ...scope,
+          workspaceId: opening.workspaceId,
+          requestId: "one-open",
+        })
+      ).value.error,
+    ).toMatch(/exactly one/);
+    const close = (
+      await s.call("ssh.workspace.close.review", { ...scope, workspaceId: opening.workspaceId })
+    ).value.result;
     expect(close.workspaceId).toBe(opening.workspaceId);
     expect(close.reviewId).not.toBe(reviewId);
     expect(s.send).not.toHaveBeenCalled();
-  } finally { relay.mockRestore(); }
+  } finally {
+    relay.mockRestore();
+  }
 });
 
 it("seals fresh owned PTY identifiers by role and injects actor identity only after public validation", async () => {
   const s = await setup([]);
-  const created = s.engine.command({ type: "create", commandId: "pty-owned-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "pty-owned-source",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
   const scope = { projectId: s.project.id, sessionId: created.sessionId };
   const terminalId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const epoch = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -303,90 +695,251 @@ it("seals fresh owned PTY identifiers by role and injects actor identity only af
   let ownerActor: unknown;
   let createRequest: unknown;
   const createdLease = { terminal, leaseId, expiresAt: Date.now() + 30_000 };
-  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockImplementation(async (action, args) => {
-    expect(args.actorId).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    if (action === "ptyMobile.create") { ownerActor = args.actorId; createRequest = args.requestId; expect(args.requestId).not.toBe("new-pty"); return createdLease; }
-    if (action === "ptyMobile.status" && args.requestId) return args.actorId === ownerActor && args.requestId === createRequest ? createdLease : { state: "unknown" };
-    if (action === "ptyMobile.list") return { terminals: args.actorId === ownerActor ? [terminal] : [] };
-    expect(args.terminalId).toBe(terminalId);
-    expect(args.epoch).toBe(epoch);
-    if (args.leaseId) expect(args.leaseId).toBe(leaseId);
-    if (action === "ptyMobile.read") return { terminalId, epoch, dataBase64: "YQ==", after: 0, next: 1 };
-    return { accepted: true };
-  });
+  const relay = vi
+    .spyOn(ConversationDesktopRelay.prototype, "call")
+    .mockImplementation(async (action, args) => {
+      expect(args.actorId).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      if (action === "ptyMobile.create") {
+        ownerActor = args.actorId;
+        createRequest = args.requestId;
+        expect(args.requestId).not.toBe("new-pty");
+        return createdLease;
+      }
+      if (action === "ptyMobile.status" && args.requestId)
+        return args.actorId === ownerActor && args.requestId === createRequest
+          ? createdLease
+          : { state: "unknown" };
+      if (action === "ptyMobile.list")
+        return { terminals: args.actorId === ownerActor ? [terminal] : [] };
+      expect(args.terminalId).toBe(terminalId);
+      expect(args.epoch).toBe(epoch);
+      if (args.leaseId) expect(args.leaseId).toBe(leaseId);
+      if (action === "ptyMobile.read")
+        return { terminalId, epoch, dataBase64: "YQ==", after: 0, next: 1 };
+      return { accepted: true };
+    });
   try {
-    expect((await s.call("terminals.pty.desktop.create", { ...scope, requestId: "new-pty", cols: 80, rows: 24 }, "invalid")).status).toBe(401);
-    const lease = (await s.call("terminals.pty.desktop.create", { ...scope, requestId: "new-pty", cols: 80, rows: 24 })).value.result;
+    expect(
+      (
+        await s.call(
+          "terminals.pty.desktop.create",
+          { ...scope, requestId: "new-pty", cols: 80, rows: 24 },
+          "invalid",
+        )
+      ).status,
+    ).toBe(401);
+    const lease = (
+      await s.call("terminals.pty.desktop.create", {
+        ...scope,
+        requestId: "new-pty",
+        cols: 80,
+        rows: 24,
+      })
+    ).value.result;
     expect(lease.terminal.terminalId).not.toBe(terminalId);
-    expect((await s.call("terminals.pty.desktop.status", { ...scope, requestId: "new-pty" })).value.result).toEqual(lease);
-    expect((await s.call("terminals.pty.desktop.status", { ...scope, requestId: "new-pty" }, s.second.token)).value.result).toEqual({ state: "unknown" });
-    expect((await s.call("terminals.pty.desktop.status", { ...scope, requestId: "new-pty", terminalId: lease.terminal.terminalId })).value.error).toBeTruthy();
-    const input = { ...scope, terminalId: lease.terminal.terminalId, epoch: lease.terminal.epoch, leaseId: lease.leaseId, inputSequence: 1, dataBase64: "YQ==" };
-    for (const invalid of [{ ...input, actorId: "spoof" }, { ...input, epoch: input.terminalId }, { ...input, terminalId }])
+    expect(
+      (await s.call("terminals.pty.desktop.status", { ...scope, requestId: "new-pty" })).value
+        .result,
+    ).toEqual(lease);
+    expect(
+      (
+        await s.call(
+          "terminals.pty.desktop.status",
+          { ...scope, requestId: "new-pty" },
+          s.second.token,
+        )
+      ).value.result,
+    ).toEqual({ state: "unknown" });
+    expect(
+      (
+        await s.call("terminals.pty.desktop.status", {
+          ...scope,
+          requestId: "new-pty",
+          terminalId: lease.terminal.terminalId,
+        })
+      ).value.error,
+    ).toBeTruthy();
+    const input = {
+      ...scope,
+      terminalId: lease.terminal.terminalId,
+      epoch: lease.terminal.epoch,
+      leaseId: lease.leaseId,
+      inputSequence: 1,
+      dataBase64: "YQ==",
+    };
+    for (const invalid of [
+      { ...input, actorId: "spoof" },
+      { ...input, epoch: input.terminalId },
+      { ...input, terminalId },
+    ])
       expect((await s.call("terminals.pty.desktop.write", invalid)).value.error).toBeTruthy();
-    expect((await s.call("terminals.pty.desktop.write", input, s.second.token)).value.error).toBeTruthy();
+    expect(
+      (await s.call("terminals.pty.desktop.write", input, s.second.token)).value.error,
+    ).toBeTruthy();
     expect(relay).toHaveBeenCalledTimes(3);
-    expect((await s.call("terminals.pty.desktop.write", input)).value.result).toEqual({ accepted: true });
+    expect((await s.call("terminals.pty.desktop.write", input)).value.result).toEqual({
+      accepted: true,
+    });
     const listed = (await s.call("terminals.pty.desktop.list", scope)).value.result.terminals;
     expect(listed[0]).toEqual(lease.terminal);
-    expect((await s.call("terminals.pty.desktop.list", scope, s.second.token)).value.result.terminals).toEqual([]);
-    const read = (await s.call("terminals.pty.desktop.read", { ...scope, terminalId: input.terminalId, epoch: input.epoch, after: 0 })).value.result;
+    expect(
+      (await s.call("terminals.pty.desktop.list", scope, s.second.token)).value.result.terminals,
+    ).toEqual([]);
+    const read = (
+      await s.call("terminals.pty.desktop.read", {
+        ...scope,
+        terminalId: input.terminalId,
+        epoch: input.epoch,
+        after: 0,
+      })
+    ).value.result;
     expect(read.terminalId).toBe(input.terminalId);
     expect(read.dataBase64).toBe("YQ==");
     expect(s.send).not.toHaveBeenCalled();
-  } finally { relay.mockRestore(); }
+  } finally {
+    relay.mockRestore();
+  }
 });
 
 it("authenticates exact native pre-effect authority checks without accepting a caller-selected owner", async () => {
   const s = await setup([]);
-  const authorize = vi.spyOn(ConversationDesktopRelay.prototype, "authorize").mockReturnValue({ authorized: false });
+  const authorize = vi
+    .spyOn(ConversationDesktopRelay.prototype, "authorize")
+    .mockReturnValue({ authorized: false });
   try {
     const input = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", action: "ssh.workspace.approve" };
     expect((await s.call("conversation.desktop.authorize", input, "invalid")).status).toBe(401);
-    expect((await s.call("conversation.desktop.authorize", { ...input, owner: "foreign" })).value.error).toBeTruthy();
-    expect((await s.call("conversation.desktop.authorize", { ...input, action: "ptyMobile.list" })).value.error).toBeTruthy();
+    expect(
+      (await s.call("conversation.desktop.authorize", { ...input, owner: "foreign" })).value.error,
+    ).toBeTruthy();
+    expect(
+      (await s.call("conversation.desktop.authorize", { ...input, action: "ptyMobile.list" })).value
+        .error,
+    ).toBeTruthy();
     expect(authorize).not.toHaveBeenCalled();
-    expect((await s.call("conversation.desktop.authorize", input, s.second.token)).value.result).toEqual({ authorized: false });
-    expect(authorize).toHaveBeenCalledWith(input.id, input.action, createHash("sha256").update(s.second.token).digest("hex"));
-    for (const action of ["ssh.workspace.close.approve", "ptyMobile.create", "ptyMobile.attach", "ptyMobile.write", "ptyMobile.resize", "ptyMobile.detach", "ptyMobile.close"])
-      expect((await s.call("conversation.desktop.authorize", { ...input, action }, s.second.token)).value.result).toEqual({ authorized: false });
+    expect(
+      (await s.call("conversation.desktop.authorize", input, s.second.token)).value.result,
+    ).toEqual({ authorized: false });
+    expect(authorize).toHaveBeenCalledWith(
+      input.id,
+      input.action,
+      createHash("sha256").update(s.second.token).digest("hex"),
+    );
+    for (const action of [
+      "ssh.workspace.close.approve",
+      "ptyMobile.create",
+      "ptyMobile.attach",
+      "ptyMobile.write",
+      "ptyMobile.resize",
+      "ptyMobile.detach",
+      "ptyMobile.close",
+    ])
+      expect(
+        (await s.call("conversation.desktop.authorize", { ...input, action }, s.second.token)).value
+          .result,
+      ).toEqual({ authorized: false });
     expect(s.send).not.toHaveBeenCalled();
-  } finally { authorize.mockRestore(); }
+  } finally {
+    authorize.mockRestore();
+  }
 });
 
 it("partitions provider metadata and quota receipts without leaking internal operation identities", async () => {
   const s = await setup([]);
-  const created = s.engine.command({ type: "create", commandId: "account-owned-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "account-owned-source",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
   const scope = { projectId: s.project.id, sessionId: created.sessionId };
   const receipts = new Map<string, unknown>();
-  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockImplementation(async (action, args) => {
-    expect(args.operationId).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    if (action !== "providerManagement.status") receipts.set(String(args.operationId), { state: "applied", operationId: args.operationId, atomic: false });
-    return receipts.get(String(args.operationId)) ?? { state: "unknown", operationId: args.operationId, atomic: false };
-  });
+  const relay = vi
+    .spyOn(ConversationDesktopRelay.prototype, "call")
+    .mockImplementation(async (action, args) => {
+      expect(args.operationId).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      if (action !== "providerManagement.status")
+        receipts.set(String(args.operationId), {
+          state: "applied",
+          operationId: args.operationId,
+          atomic: false,
+        });
+      return (
+        receipts.get(String(args.operationId)) ?? {
+          state: "unknown",
+          operationId: args.operationId,
+          atomic: false,
+        }
+      );
+    });
   try {
     const identity = { ...scope, operationId: "phone-account-op" };
-    const patch = { ...identity, expectedAccountRevision: "revision", provider: "claude", accountId: "profile", change: { kind: "rename", label: "Work" } };
+    const patch = {
+      ...identity,
+      expectedAccountRevision: "revision",
+      provider: "claude",
+      accountId: "profile",
+      change: { kind: "rename", label: "Work" },
+    };
     expect((await s.call("providers.desktop.patch", patch, "invalid")).status).toBe(401);
     const applied = { state: "applied", operationId: identity.operationId, atomic: false };
     expect((await s.call("providers.desktop.patch", patch)).value.result).toEqual(applied);
     expect((await s.call("providers.desktop.status", identity)).value.result).toEqual(applied);
-    expect((await s.call("providers.desktop.status", identity, s.second.token)).value.result).toEqual({ ...applied, state: "unknown" });
-    expect((await s.call("providers.desktop.quota.refresh", { ...identity, operationId: "quota-once", expectedAccountRevision: "revision", provider: "claude", accountId: "profile", confirm: "REFRESH_PROVIDER_QUOTA" })).value.result.operationId).toBe("quota-once");
-    expect((await s.call("providers.desktop.patch", { ...patch, cwd: "foreign" })).value.error).toBeTruthy();
+    expect(
+      (await s.call("providers.desktop.status", identity, s.second.token)).value.result,
+    ).toEqual({ ...applied, state: "unknown" });
+    expect(
+      (
+        await s.call("providers.desktop.quota.refresh", {
+          ...identity,
+          operationId: "quota-once",
+          expectedAccountRevision: "revision",
+          provider: "claude",
+          accountId: "profile",
+          confirm: "REFRESH_PROVIDER_QUOTA",
+        })
+      ).value.result.operationId,
+    ).toBe("quota-once");
+    expect(
+      (await s.call("providers.desktop.patch", { ...patch, cwd: "foreign" })).value.error,
+    ).toBeTruthy();
     expect(s.send).not.toHaveBeenCalled();
-  } finally { relay.mockRestore(); }
+  } finally {
+    relay.mockRestore();
+  }
 });
 
 it("authenticates reviewed social policy updates without enabling sends or creating work", async () => {
   const s = await setup();
-  expect((await s.call("environment.describe")).value.result.capabilities).toContain("social.policy.reviewed.v1");
-  const expectedPolicies = (await s.call("social.request", { action: "policy.get", input: {} })).value.result;
-  const input = { policies: { global: { maxContentCharacters: 200 }, platforms: {} }, expectedPolicies, confirm: "UPDATE_SOCIAL_POLICY" };
-  expect((await s.call("social.request", { action: "policy.saveReviewed", input }, "invalid")).status).toBe(401);
-  expect((await s.call("social.request", { action: "policy.saveReviewed", input: { ...input, confirm: "SEND" } })).value.error).toMatch(/Confirm/);
-  expect((await s.call("social.request", { action: "policy.saveReviewed", input })).value.result).toEqual(input.policies);
-  expect((await s.call("social.request", { action: "policy.saveReviewed", input })).value.error).toMatch(/changed/);
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain(
+    "social.policy.reviewed.v1",
+  );
+  const expectedPolicies = (await s.call("social.request", { action: "policy.get", input: {} }))
+    .value.result;
+  const input = {
+    policies: { global: { maxContentCharacters: 200 }, platforms: {} },
+    expectedPolicies,
+    confirm: "UPDATE_SOCIAL_POLICY",
+  };
+  expect(
+    (await s.call("social.request", { action: "policy.saveReviewed", input }, "invalid")).status,
+  ).toBe(401);
+  expect(
+    (
+      await s.call("social.request", {
+        action: "policy.saveReviewed",
+        input: { ...input, confirm: "SEND" },
+      })
+    ).value.error,
+  ).toMatch(/Confirm/);
+  expect(
+    (await s.call("social.request", { action: "policy.saveReviewed", input })).value.result,
+  ).toEqual(input.policies);
+  expect(
+    (await s.call("social.request", { action: "policy.saveReviewed", input })).value.error,
+  ).toMatch(/changed/);
   const snapshot = (await s.call("social.request", { action: "snapshot", input: {} })).value.result;
   expect(snapshot.sendingEnabled).toBe(false);
   expect(snapshot.jobs).toEqual([]);
@@ -395,20 +948,44 @@ it("authenticates reviewed social policy updates without enabling sends or creat
 
 it("validates note context before special-command side effects and sends only an explicit authenticated request", async () => {
   const s = await setup();
-  const created = s.engine.command({ type: "create", commandId: "note-rpc-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
-  const noteCard = { id: "reviewed-note", slug: "review", title: "Review", body: "Exact note snapshot" };
-  const source = s.store.session(created.sessionId);
-  const command = { type: "send", commandId: "note-rpc-send", sessionId: created.sessionId, text: "Review this", noteCard };
-  expect((await s.call("environment.describe")).value.result.capabilities).toContain("sessions.noteContext.v1");
-  expect((await s.call("commands.dispatch", { ...command, text: "/clear" })).value.error).toMatch(/regular message/);
-  expect(s.store.session(created.sessionId)).toEqual(source);
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "note-rpc-source",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const noteCard = {
+    id: "reviewed-note",
+    slug: "review",
+    title: "Review",
+    body: "Exact note snapshot",
+  };
+  const source = await s.store.session(created.sessionId);
+  const command = {
+    type: "send",
+    commandId: "note-rpc-send",
+    sessionId: created.sessionId,
+    text: "Review this",
+    noteCard,
+  };
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain(
+    "sessions.noteContext.v1",
+  );
+  expect((await s.call("commands.dispatch", { ...command, text: "/clear" })).value.error).toMatch(
+    /regular message/,
+  );
+  expect(await s.store.session(created.sessionId)).toEqual(source);
   expect((await s.call("commands.dispatch", command, "invalid")).status).toBe(401);
   const response = await s.call("commands.dispatch", command);
   expect(response.value.error).toBeUndefined();
   expect((await s.call("commands.dispatch", command)).value.result).toEqual(response.value.result);
   await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
   expect(s.turn().text).toContain("Exact note snapshot");
-  const user = s.store.session(created.sessionId).session.blocks.find((block) => block.id === command.commandId)!;
+  const user = (await s.store.session(created.sessionId)).session.blocks.find(
+    (block) => block.id === command.commandId,
+  )!;
   expect(user.noteCard).toEqual({ id: "reviewed-note", slug: "review", title: "Review" });
   expect(JSON.stringify(user)).not.toContain("Exact note snapshot");
   s.finish();
@@ -419,33 +996,61 @@ it("scopes access-center device identity and revocation to authenticated paired 
   const descriptor = (await s.call("environment.describe")).value.result;
   expect(descriptor.capabilities).toContain("host.access.read");
   expect(descriptor.capabilities).toContain("devices.revokeOther");
-  const read = vi.spyOn(accessCenter, "readHostAccess").mockImplementation(async (environmentId, dependencies) => ({ environmentId, sampledAt: 1, ...dependencies.devices(), lan: { state: "unavailable" }, privateNetwork: { state: "unavailable" }, tunnels: null }));
+  const read = vi
+    .spyOn(accessCenter, "readHostAccess")
+    .mockImplementation(async (environmentId, dependencies) => ({
+      environmentId,
+      sampledAt: 1,
+      ...(await dependencies.devices()),
+      lan: { state: "unavailable" },
+      privateNetwork: { state: "unavailable" },
+      tunnels: null,
+    }));
   try {
     const report = (await s.call("host.access.read")).value.result;
     expect(report.devices).toHaveLength(2);
     expect(report.devices[0]).toEqual({ id: s.first.id, name: "Laptop", isCurrent: true });
     expect(JSON.stringify(report)).not.toContain(s.second.token);
     expect(JSON.stringify(report)).not.toContain('"hash"');
-    expect((await s.call("devices.revokeOther", { id: s.first.id })).value.error).toMatch(/revoke-self/);
+    expect((await s.call("devices.revokeOther", { id: s.first.id })).value.error).toMatch(
+      /revoke-self/,
+    );
     expect((await s.call("devices.revokeOther", { id: s.second.id }, "invalid")).status).toBe(401);
-    expect((await s.call("devices.revokeOther", { id: s.second.id })).value.result).toEqual({ revoked: true });
+    expect((await s.call("devices.revokeOther", { id: s.second.id })).value.result).toEqual({
+      revoked: true,
+    });
     expect((await s.call("host.access.read", {}, s.second.token)).status).toBe(401);
     expect((await s.call("host.access.read")).value.result.devices).toHaveLength(1);
     expect(s.send).not.toHaveBeenCalled();
-  } finally { read.mockRestore(); }
+  } finally {
+    read.mockRestore();
+  }
 });
 
 it("exposes a safe authenticated provider center and applies only reviewed ACP metadata", async () => {
   const s = await setup([]);
-  const center = { revision: "a".repeat(64), agents: [{ id: "agent", name: "Agent", argumentCount: 1, environmentKeyCount: 1 }] };
+  const center = {
+    revision: "a".repeat(64),
+    agents: [{ id: "agent", name: "Agent", argumentCount: 1, environmentKeyCount: 1 }],
+  };
   const read = vi.spyOn(GenericAcpService.prototype, "center").mockResolvedValue(center);
   const patch = vi.spyOn(GenericAcpService.prototype, "patchMetadata").mockResolvedValue(undefined);
   try {
     const descriptor = (await s.call("environment.describe")).value.result;
     expect(descriptor.capabilities).toContain("providers.center.read");
     expect(descriptor.capabilities).toContain("providers.acp.patchMetadata");
-    expect((await s.call("providers.center.read")).value.result).toEqual({ environmentId: s.store.environmentId, sampledAt: expect.any(Number), providers: [], acp: center });
-    const update = { id: "agent", name: "Reviewed", expectedRevision: center.revision, contextWindow: 4096 };
+    expect((await s.call("providers.center.read")).value.result).toEqual({
+      environmentId: s.store.environmentId,
+      sampledAt: expect.any(Number),
+      providers: [],
+      acp: center,
+    });
+    const update = {
+      id: "agent",
+      name: "Reviewed",
+      expectedRevision: center.revision,
+      contextWindow: 4096,
+    };
     expect((await s.call("providers.acp.patchMetadata", update)).value.result).toBeNull();
     expect(patch).toHaveBeenCalledExactlyOnceWith(update);
     expect((await s.call("providers.center.read", {}, "invalid")).status).toBe(401);
@@ -453,34 +1058,68 @@ it("exposes a safe authenticated provider center and applies only reviewed ACP m
     expect(read).toHaveBeenCalledOnce();
     expect(patch).toHaveBeenCalledOnce();
     expect(s.send).not.toHaveBeenCalled();
-  } finally { read.mockRestore(); patch.mockRestore(); }
+  } finally {
+    read.mockRestore();
+    patch.mockRestore();
+  }
 });
 
 it("binds contextual RPC creation to the reviewed source and reconciles the original receipt after source changes", async () => {
   const s = await setup(["codex", "claude"], true);
-  const created = s.engine.command({ type: "create", commandId: "context-rpc-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
-  s.engine.command({ type: "send", commandId: "context-rpc-turn", sessionId: created.sessionId, text: "Review search" });
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "context-rpc-source",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  await s.engine.command({
+    type: "send",
+    commandId: "context-rpc-turn",
+    sessionId: created.sessionId,
+    text: "Review search",
+  });
   await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
   s.turn().onEvent({ type: "message.delta", text: "Search review complete." });
   s.finish();
-  await vi.waitFor(() => expect(s.store.session(created.sessionId).status).toBe("idle"));
-  const source = s.store.session(created.sessionId);
+  await vi.waitFor(async () =>
+    expect((await s.store.session(created.sessionId)).status).toBe("idle"),
+  );
+  const source = await s.store.session(created.sessionId);
   const reply = source.session.blocks.find((block) => block.role === "assistant")!;
-  const input = { sessionId: created.sessionId, sourceBlockId: reply.id, expectedRevision: source.revision, mode: "handoff", harness: "claude", model: "claude:test", modelSettings: {} };
+  const input = {
+    sessionId: created.sessionId,
+    sourceBlockId: reply.id,
+    expectedRevision: source.revision,
+    mode: "handoff",
+    harness: "claude",
+    model: "claude:test",
+    modelSettings: {},
+  };
   const response = await s.call("sessions.contextual.preview", input);
   expect(response.value.error).toBeUndefined();
   const preview = response.value.result;
   expect(preview.contextText).toContain("Search review complete.");
-  expect(s.store.session(created.sessionId)).toEqual(source);
+  expect(await s.store.session(created.sessionId)).toEqual(source);
   expect((await s.call("sessions.contextual.preview", input, "invalid")).status).toBe(401);
-  const command = { ...input, type: "contextual", commandId: "context-rpc-handoff", previewDigest: preview.digest };
-  expect((await s.call("commands.dispatch", { ...command, model: "changed" })).value.error).toMatch(/context changed/);
+  const command = {
+    ...input,
+    type: "contextual",
+    commandId: "context-rpc-handoff",
+    previewDigest: preview.digest,
+  };
+  expect((await s.call("commands.dispatch", { ...command, model: "changed" })).value.error).toMatch(
+    /context changed/,
+  );
   const receipt = (await s.call("commands.dispatch", command)).value.result;
   expect(receipt.sessionId).not.toBe(created.sessionId);
-  expect(s.store.session(receipt.sessionId).status).toBe("idle");
-  s.engine.updateSession(created.sessionId, { title: "Changed source" });
+  expect((await s.store.session(receipt.sessionId)).status).toBe("idle");
+  await s.engine.updateSession(created.sessionId, { title: "Changed source" });
   expect((await s.call("commands.dispatch", command)).value.result).toEqual(receipt);
-  expect((await s.call("commands.dispatch", { ...command, commandId: "stale-context-rpc" })).value.error).toMatch(/source conversation changed/);
+  expect(
+    (await s.call("commands.dispatch", { ...command, commandId: "stale-context-rpc" })).value.error,
+  ).toMatch(/source conversation changed/);
   expect(s.send).toHaveBeenCalledOnce();
 });
 
@@ -501,43 +1140,365 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
+it("joins an accepted listening phase before resource shutdown and prevents later startup", async () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const attachmentStart = vi
+    .spyOn(AttachmentOwnership.prototype, "start")
+    .mockImplementation(async () => {
+      entered();
+      await gate;
+    });
+  const socialStart = vi.spyOn(SocialService.prototype, "start").mockResolvedValue(undefined);
+  try {
+    const s = await setup([]);
+    await started;
+    const closing = s.server.closeResources();
+    expect(s.server.closeResources()).toBe(closing);
+    let closed = false;
+    void closing.then(() => {
+      closed = true;
+    });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    release();
+    await closing;
+    expect(socialStart).not.toHaveBeenCalled();
+  } finally {
+    release?.();
+    attachmentStart.mockRestore();
+    socialStart.mockRestore();
+  }
+});
+
+it("cleans partial resources when durable initialization rejects before listening", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-server-init-failure-"));
+  const store = new HostStore(join(directory, "host.db"));
+  const engine = new HostEngine(store, {});
+  const desktop = new DesktopSessions(() => []);
+  const closeDesktop = vi.spyOn(desktop, "closeAsync");
+  const initialize = vi
+    .spyOn(
+      AttachmentOwnership.prototype as unknown as { initialize(): Promise<void> },
+      "initialize",
+    )
+    .mockRejectedValueOnce(new Error("fixture initialization failure"));
+  const start = vi.spyOn(AttachmentOwnership.prototype, "start");
+  try {
+    await expect(
+      createHostServer(engine, [], undefined, undefined, undefined, desktop),
+    ).rejects.toThrow("fixture initialization failure");
+    expect(closeDesktop).toHaveBeenCalledOnce();
+    expect(start).not.toHaveBeenCalled();
+  } finally {
+    initialize.mockRestore();
+    start.mockRestore();
+    await desktop.closeAsync();
+    await engine.close();
+    await store.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+it("retains owner authority across domain preparation without holding SQL admission", async () => {
+  const s = await setup();
+  const original = HostTasks.prototype.save;
+  let release!: () => void;
+  let entered!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const save = vi.spyOn(HostTasks.prototype, "save").mockImplementation(async function (raw) {
+    entered();
+    await gate;
+    return await original.call(this, raw);
+  });
+  const pending = s.call("tasks.save", {
+    task: {
+      id: crypto.randomUUID(),
+      projectId: s.project.id,
+      title: "Revoked task",
+      status: "todo",
+      harness: "codex",
+      model: "gpt",
+      runtimeMode: "supervised",
+    },
+  });
+  try {
+    await started;
+    // This durable revoke must complete while the unrelated preparation is paused.
+    await s.store.revokeToken(s.first.token);
+    release();
+    const response = await pending;
+    expect(response.status).toBe(401);
+    expect(response.value.error).toMatch(/authoriz|revoked/i);
+    expect((await s.call("tasks.list", {}, s.second.token)).value.result).toEqual([]);
+  } finally {
+    release();
+    await pending;
+    save.mockRestore();
+  }
+});
+
+function pauseDesktopMetadata(projectId: string) {
+  type Snapshot = Awaited<ReturnType<DesktopSessions["listSnapshotAsync"]>>;
+  let resume!: (value: Snapshot) => void;
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const result = new Promise<Snapshot>((resolve) => {
+    resume = resolve;
+  });
+  const read = vi.spyOn(DesktopSessions.prototype, "listSnapshotAsync").mockImplementation(() => {
+    entered();
+    return result;
+  });
+  return {
+    read,
+    started,
+    release: () =>
+      resume({
+        sessions: [
+          {
+            projectId,
+            revision: 1,
+            status: "idle",
+            updatedAt: 1,
+            id: "paused-desktop-row",
+            title: "Private metadata",
+            harness: "codex",
+          },
+        ],
+        fingerprint: "paused-desktop-metadata",
+      }),
+  };
+}
+
+it("joins accepted asynchronous request handlers during resource shutdown", async () => {
+  const s = await setup([]);
+  const paused = pauseDesktopMetadata(s.project.id);
+  const request = s.call("sessions.list", { projectId: s.project.id });
+  try {
+    await paused.started;
+    const closing = s.server.closeResources();
+    let drained = false;
+    void closing.then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    paused.release();
+    await request;
+    await closing;
+    expect(drained).toBe(true);
+    expect((await s.call("projects.list")).status).toBe(503);
+  } finally {
+    paused.release();
+    paused.read.mockRestore();
+    await request.catch(() => {});
+  }
+});
+
+it.each(["sessions.update", "commands.dispatch"])(
+  "does not adopt or mutate after owner revocation during desktop preparation for %s",
+  async (method) => {
+    const s = await setup();
+    const created = await s.engine.command({
+      type: "create",
+      commandId: crypto.randomUUID(),
+      projectId: s.project.id,
+      harness: "codex",
+      model: "gpt",
+      runtimeMode: "supervised",
+    });
+    const source = await s.store.session(created.sessionId);
+    const id = "desktop-revoked-before-adoption";
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const cwd = vi
+      .spyOn(DesktopSessions.prototype, "projectCwdAsync")
+      .mockImplementation(async (target) => (target === id ? s.project.cwd : undefined));
+    const read = vi
+      .spyOn(DesktopSessions.prototype, "snapshotAsync")
+      .mockImplementation(async (target) => {
+        if (target !== id) return undefined;
+        entered();
+        await gate;
+        return { ...source, desktop: { updatedAt: 1 }, session: { ...source.session, id } };
+      });
+    const pending = s.call(method, {
+      type: "send",
+      commandId: crypto.randomUUID(),
+      sessionId: id,
+      projectId: s.project.id,
+      title: "Revoked rename",
+      text: "must not send",
+      attachments: [],
+    });
+    try {
+      await started;
+      await s.store.revokeToken(s.first.token);
+      release();
+      expect((await pending).value.error).toMatch(/revoked/i);
+      await expect(s.store.session(id)).rejects.toThrow("Session not found");
+      expect(s.send).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await pending;
+      cwd.mockRestore();
+      read.mockRestore();
+    }
+  },
+);
+
+it.each(["sessions.list", "inbox.list"])(
+  "rejects an owner revoked during paused desktop metadata for %s",
+  async (method) => {
+    const s = await setup();
+    const paused = pauseDesktopMetadata(s.project.id);
+    const pending = s.call(method, { projectId: s.project.id });
+    try {
+      await paused.started;
+      await s.store.revokeToken(s.first.token);
+      paused.release();
+      const response = await pending;
+      expect(response.value.result).toBeUndefined();
+      expect(response.value.error).toMatch(/revoked/i);
+    } finally {
+      paused.release();
+      await pending;
+      paused.read.mockRestore();
+    }
+  },
+);
+
+it("rejects a changed project scope during paused desktop metadata", async () => {
+  const s = await setup();
+  const paused = pauseDesktopMetadata(s.project.id);
+  const pending = s.call("sessions.list", { projectId: s.project.id });
+  try {
+    await paused.started;
+    await s.store.db
+      .prepare("UPDATE projects SET cwd=? WHERE id=?")
+      .run(`${s.directory}-changed`, s.project.id);
+    paused.release();
+    const response = await pending;
+    expect(response.value.result).toBeUndefined();
+    expect(response.value.error).toMatch(/project.*changed|scope.*changed/i);
+  } finally {
+    paused.release();
+    await pending;
+    paused.read.mockRestore();
+  }
+});
+
 it("scopes note reads to the authoritative session before accessing notes", async () => {
   const s = await setup();
-  const created = s.engine.command({ type: "create", commandId: "notes-session", projectId: s.project.id, harness: "codex", model: "gpt", runtimeMode: "supervised" });
-  const list = vi.spyOn(HostNotes.prototype, "list").mockReturnValue({ notes: [], total: 0 });
-  const get = vi.spyOn(HostNotes.prototype, "get").mockReturnValue({ id: "foreign", slug: "foreign", title: "Foreign", body: "body", tags: [], sourceSessionId: "another", slugPending: false, createdAt: 1, updatedAt: 1 });
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "notes-session",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "gpt",
+    runtimeMode: "supervised",
+  });
+  const list = vi
+    .spyOn(AsyncHostNotes.prototype, "list")
+    .mockResolvedValue({ notes: [], total: 0 });
+  const get = vi.spyOn(AsyncHostNotes.prototype, "get").mockResolvedValue({
+    id: "foreign",
+    slug: "foreign",
+    title: "Foreign",
+    body: "body",
+    tags: [],
+    sourceSessionId: "another",
+    slugPending: false,
+    createdAt: 1,
+    updatedAt: 1,
+  });
   try {
-    expect((await s.call("notes.list", { projectId: s.project.id, sessionId: created.sessionId })).value.result).toEqual({ notes: [], total: 0 });
+    expect(
+      (await s.call("notes.list", { projectId: s.project.id, sessionId: created.sessionId })).value
+        .result,
+    ).toEqual({ notes: [], total: 0 });
     expect(list).toHaveBeenCalledExactlyOnceWith(undefined, created.sessionId);
-    expect((await s.call("notes.list", { projectId: "another-project", sessionId: created.sessionId })).value.error).toMatch(/another project/);
+    expect(
+      (await s.call("notes.list", { projectId: "another-project", sessionId: created.sessionId }))
+        .value.error,
+    ).toMatch(/another project/);
     expect((await s.call("notes.list", { sessionId: "missing-session" })).value.error).toBeTruthy();
     expect(list).toHaveBeenCalledTimes(1);
-    expect((await s.call("notes.get", { id: "foreign", projectId: s.project.id, sessionId: created.sessionId })).value.error).toMatch(/another session/);
+    expect(
+      (
+        await s.call("notes.get", {
+          id: "foreign",
+          projectId: s.project.id,
+          sessionId: created.sessionId,
+        })
+      ).value.error,
+    ).toMatch(/another session/);
     expect(s.send).not.toHaveBeenCalled();
-  } finally { list.mockRestore(); get.mockRestore(); }
+  } finally {
+    list.mockRestore();
+    get.mockRestore();
+  }
 });
 
 it("serves bounded session usage over authenticated RPC without a provider call", async () => {
   const s = await setup();
-  expect((await s.call("environment.describe")).value.result.capabilities).toContain("usage.sessions.read");
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain(
+    "usage.sessions.read",
+  );
   const params = { projectId: s.project.id, sinceMs: 100, untilMs: 200, limit: 10 };
   expect((await s.call("usage.sessions.read", params)).value.result).toMatchObject({
-    environmentId: s.store.environmentId, projectId: s.project.id, scope: "host-observed-sessions",
-    window: { start: 100, end: 200, timeZone: "UTC", attribution: "turn-start" }, rows: [], nextCursor: null,
+    environmentId: s.store.environmentId,
+    projectId: s.project.id,
+    scope: "host-observed-sessions",
+    window: { start: 100, end: 200, timeZone: "UTC", attribution: "turn-start" },
+    rows: [],
+    nextCursor: null,
   });
-  expect((await s.call("usage.sessions.read", { ...params, projectId: "foreign-project" })).value.error).toBeTruthy();
-  expect((await s.call("usage.sessions.read", { ...params, untilMs: 100 })).value.error).toBeTruthy();
+  expect(
+    (await s.call("usage.sessions.read", { ...params, projectId: "foreign-project" })).value.error,
+  ).toBeTruthy();
+  expect(
+    (await s.call("usage.sessions.read", { ...params, untilMs: 100 })).value.error,
+  ).toBeTruthy();
   expect((await s.call("usage.sessions.read", params, "invalid-device-token")).status).toBe(401);
   expect(s.send).not.toHaveBeenCalled();
 });
 
 it("advertises individual Claude stopping only with an installed provider hook", async () => {
   const s = await setup(["codex", "claude"]);
-  expect((await s.call("environment.describe")).value.result.capabilities).not.toContain("sessions.stopItem.claude");
-  const supported = vi.spyOn(s.engine, "supportsItemStop").mockImplementation((provider) => provider === "claude");
+  expect((await s.call("environment.describe")).value.result.capabilities).not.toContain(
+    "sessions.stopItem.claude",
+  );
+  const supported = vi
+    .spyOn(s.engine, "supportsItemStop")
+    .mockImplementation((provider) => provider === "claude");
   try {
-    expect((await s.call("environment.describe")).value.result.capabilities).toContain("sessions.stopItem.claude");
-  } finally { supported.mockRestore(); }
+    expect((await s.call("environment.describe")).value.result.capabilities).toContain(
+      "sessions.stopItem.claude",
+    );
+  } finally {
+    supported.mockRestore();
+  }
 });
 
 describe("scoped Conversation Tools RPC", () => {
@@ -620,7 +1581,7 @@ describe("scoped Conversation Tools RPC", () => {
   });
   async function sessionTools() {
     const s = await setup();
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: crypto.randomUUID(),
       projectId: s.project.id,
@@ -630,67 +1591,125 @@ describe("scoped Conversation Tools RPC", () => {
     });
     const grant = (await s.call("conversation.access.issue", { sessionId: created.sessionId }))
       .value.result;
-    const tool = (action: string, input: Record<string, unknown> = {}) =>
-      s.call("conversation.tools.call", { action, input }, grant.token);
+    const tool = async (action: string, input: Record<string, unknown> = {}) =>
+      await s.call("conversation.tools.call", { action, input }, grant.token);
     return { ...s, created, grant, tool };
   }
+  it("rejects a scoped grant revoked during paused desktop metadata", async () => {
+    const s = await sessionTools();
+    const paused = pauseDesktopMetadata(s.project.id);
+    const pending = s.tool("sessions.list");
+    try {
+      await paused.started;
+      await s.store.revokeToken(s.first.token);
+      paused.release();
+      const response = await pending;
+      expect(response.value.result).toBeUndefined();
+      expect(response.value.error).toMatch(/revoked/i);
+    } finally {
+      paused.release();
+      await pending;
+      paused.read.mockRestore();
+    }
+  });
   it("creates goal plans from a desktop-only conversation without adopting it", async () => {
     const s = await sessionTools();
-    const source = s.store.session(s.created.sessionId);
+    const source = await s.store.session(s.created.sessionId);
     const id = "desktop-only-goal-caller";
     const snapshot = { ...source, session: { ...source.session, id } };
-    const cwd = vi.spyOn(DesktopSessions.prototype, "projectCwd").mockImplementation((sessionId) =>
-      sessionId === id ? s.project.cwd : undefined,
-    );
-    const read = vi.spyOn(DesktopSessions.prototype, "snapshot").mockImplementation((sessionId) =>
-      sessionId === id ? snapshot : undefined,
-    );
+    const cwd = vi
+      .spyOn(DesktopSessions.prototype, "projectCwdAsync")
+      .mockImplementation(async (sessionId) => (sessionId === id ? s.project.cwd : undefined));
+    const read = vi
+      .spyOn(DesktopSessions.prototype, "snapshotAsync")
+      .mockImplementation(async (sessionId) => (sessionId === id ? snapshot : undefined));
     const create = vi.spyOn(HostGoals.prototype, "create").mockImplementation((raw) => ({
-      ...(raw as ReturnType<HostGoals["create"]>), status: "planning", taskIds: [], createdAt: 1, updatedAt: 1,
+      ...(raw as ReturnType<HostGoals["create"]>),
+      status: "planning",
+      taskIds: [],
+      createdAt: 1,
+      updatedAt: 1,
     }));
     try {
-      expect(() => s.store.session(id)).toThrow("Session not found on this machine");
+      await expect((async () => await s.store.session(id))()).rejects.toThrow(
+        "Session not found on this machine",
+      );
       const issued = await s.call("conversation.access.issue", { sessionId: id });
       expect(issued.value.error).toBeUndefined();
-      const result = await s.call("conversation.tools.call", {
-        action: "goals.create", input: { goalId: "desktop-plan", title: "Plan", prompt: "Implement safely" },
-      }, issued.value.result.token);
+      const result = await s.call(
+        "conversation.tools.call",
+        {
+          action: "goals.create",
+          input: { goalId: "desktop-plan", title: "Plan", prompt: "Implement safely" },
+        },
+        issued.value.result.token,
+      );
       expect(result.value.error).toBeUndefined();
       expect(result.value.result).toMatchObject({
-        id: "desktop-plan", projectIds: [s.project.id], harness: source.session.harness,
-        model: source.session.model, runtimeMode: source.session.runtimeMode,
-        approvePlan: true, manualStart: true, isolate: false, autoMerge: false,
+        id: "desktop-plan",
+        projectIds: [s.project.id],
+        harness: source.session.harness,
+        model: source.session.model,
+        runtimeMode: source.session.runtimeMode,
+        approvePlan: true,
+        manualStart: true,
+        isolate: false,
+        autoMerge: false,
       });
       expect(create).toHaveBeenCalledOnce();
-      expect(() => s.store.session(id)).toThrow("Session not found on this machine");
+      await expect((async () => await s.store.session(id))()).rejects.toThrow(
+        "Session not found on this machine",
+      );
       expect(s.send).not.toHaveBeenCalled();
     } finally {
-      create.mockRestore(); read.mockRestore(); cwd.mockRestore();
+      create.mockRestore();
+      read.mockRestore();
+      cwd.mockRestore();
     }
   });
   it("routes the expanded project catalog through scoped RPC", async () => {
     const s = await sessionTools();
     writeFileSync(join(s.project.cwd, "mcp-parity.txt"), "api_key=private-value\nhello");
     const catalog = (await s.tool("tools.list")).value.result.tools;
-    for (const action of ["files.read", "git.index", "crews.agents.list", "servers.list", "goals.list", "providers.list", "checkpoints.status"])
+    for (const action of [
+      "files.read",
+      "git.index",
+      "crews.agents.list",
+      "servers.list",
+      "goals.list",
+      "providers.list",
+      "checkpoints.status",
+    ])
       expect(catalog.some((tool: { action: string }) => tool.action === action)).toBe(true);
-    expect((await s.tool("files.read", { path: "mcp-parity.txt" })).value.result.text).toBe("api_key=[REDACTED]\nhello");
+    expect((await s.tool("files.read", { path: "mcp-parity.txt" })).value.result.text).toBe(
+      "api_key=[REDACTED]\nhello",
+    );
     expect((await s.tool("files.read", { path: "../outside" })).value.error).toBeTruthy();
-    expect((await s.tool("files.read", { path: "mcp-parity.txt", cwd: "/other" })).value.error).toBeTruthy();
+    expect(
+      (await s.tool("files.read", { path: "mcp-parity.txt", cwd: "/other" })).value.error,
+    ).toBeTruthy();
     expect((await s.tool("providers.list")).value.result.providers).toContain("codex");
     expect((await s.tool("goals.list")).value.result.items).toEqual([]);
     expect((await s.tool("stewards.list")).value.result.items).toEqual([]);
-    expect((await s.tool("automations.preview", { scheduleKind: "daily" })).value.result.nextRunAt).toEqual(expect.any(Number));
-    expect((await s.tool("usage.sessions.read", { sinceMs: 100, untilMs: 200 })).value.result.projectId).toBe(s.project.id);
-    expect((await s.tool("crews.agents.list", { limit: 1 })).value.result.items.length).toBeLessThanOrEqual(1);
+    expect(
+      (await s.tool("automations.preview", { scheduleKind: "daily" })).value.result.nextRunAt,
+    ).toEqual(expect.any(Number));
+    expect(
+      (await s.tool("usage.sessions.read", { sinceMs: 100, untilMs: 200 })).value.result.projectId,
+    ).toBe(s.project.id);
+    expect(
+      (await s.tool("crews.agents.list", { limit: 1 })).value.result.items.length,
+    ).toBeLessThanOrEqual(1);
     expect((await s.tool("checkpoints.status", { sessionId: "foreign" })).value.error).toBeTruthy();
     expect((await s.tool("devServers.logs", { id: "foreign" })).value.error).toBeTruthy();
-    expect((await s.tool("devServers.openExternal", { id: "foreign", port: 5173 })).value.error).toBeTruthy();
+    expect(
+      (await s.tool("devServers.openExternal", { id: "foreign", port: 5173 })).value.error,
+    ).toBeTruthy();
     expect(s.send).not.toHaveBeenCalled();
   });
   it("reads desktop-only checkpoints and attachments without adopting the conversation", async () => {
     const s = await sessionTools();
-    const source = s.store.session(s.created.sessionId);
+    const source = await s.store.session(s.created.sessionId);
     const id = "desktop-only-tool-caller";
     const attachmentId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     mkdirSync(s.store.attachmentDir, { recursive: true });
@@ -719,11 +1738,11 @@ describe("scoped Conversation Tools RPC", () => {
       },
     };
     const cwd = vi
-      .spyOn(DesktopSessions.prototype, "projectCwd")
-      .mockImplementation((target) => (target === id ? s.project.cwd : undefined));
+      .spyOn(DesktopSessions.prototype, "projectCwdAsync")
+      .mockImplementation(async (target) => (target === id ? s.project.cwd : undefined));
     const read = vi
-      .spyOn(DesktopSessions.prototype, "snapshot")
-      .mockImplementation((target) => (target === id ? snapshot : undefined));
+      .spyOn(DesktopSessions.prototype, "snapshotAsync")
+      .mockImplementation(async (target) => (target === id ? snapshot : undefined));
     const relay = vi
       .spyOn(ConversationDesktopRelay.prototype, "call")
       .mockImplementation(async (action) => {
@@ -741,8 +1760,8 @@ describe("scoped Conversation Tools RPC", () => {
     try {
       const issued = await s.call("conversation.access.issue", { sessionId: id });
       expect(issued.value.error).toBeUndefined();
-      const tool = (action: string, input = {}) =>
-        s.call("conversation.tools.call", { action, input }, issued.value.result.token);
+      const tool = async (action: string, input = {}) =>
+        await s.call("conversation.tools.call", { action, input }, issued.value.result.token);
       expect((await tool("checkpoints.status")).value.result).toMatchObject({
         total: 1,
         items: [{ relative: "desktop.txt" }],
@@ -774,7 +1793,9 @@ describe("scoped Conversation Tools RPC", () => {
       expect(relay).toHaveBeenCalledTimes(count);
       relay.mockRejectedValueOnce(new Error("Desktop unavailable"));
       expect((await tool("checkpoints.status")).value.error).toMatch(/Desktop unavailable/);
-      expect(() => s.store.session(id)).toThrow("Session not found on this machine");
+      await expect((async () => await s.store.session(id))()).rejects.toThrow(
+        "Session not found on this machine",
+      );
     } finally {
       relay.mockRestore();
       read.mockRestore();
@@ -783,14 +1804,39 @@ describe("scoped Conversation Tools RPC", () => {
   });
   it("routes task dependencies, evidence and queue ordering without starting work", async () => {
     const s = await sessionTools();
-    const first = (await s.tool("tasks.create", { taskId: "dependency", title: "First", prompt: "first" })).value.result;
-    const second = (await s.tool("tasks.create", { taskId: "dependent", title: "Second", prompt: "second", dependsOn: [first.id], verifyCommand: "pnpm test" })).value.result;
+    const first = (
+      await s.tool("tasks.create", { taskId: "dependency", title: "First", prompt: "first" })
+    ).value.result;
+    const second = (
+      await s.tool("tasks.create", {
+        taskId: "dependent",
+        title: "Second",
+        prompt: "second",
+        dependsOn: [first.id],
+        verifyCommand: "pnpm test",
+      })
+    ).value.result;
     expect(second.dependsOn).toEqual([first.id]);
-    expect((await s.tool("tasks.dependencies.list", { taskId: second.id })).value.result.blockingCount).toBe(1);
-    expect((await s.tool("tasks.artifacts.list", { taskId: second.id })).value.result.items).toEqual([]);
-    expect((await s.tool("tasks.update", { taskId: second.id, dependsOn: [], verifyCommand: "" })).value.result.dependsOn).toEqual([]);
-    expect((await s.tool("tasks.update", { taskId: second.id, dependsOn: ["foreign"] })).value.error).toBeTruthy();
-    expect((await s.tool("tasks.reorder", { order: [{ taskId: first.id, expectedUpdatedAt: first.updatedAt }] })).value.error).toBeUndefined();
+    expect(
+      (await s.tool("tasks.dependencies.list", { taskId: second.id })).value.result.blockingCount,
+    ).toBe(1);
+    expect(
+      (await s.tool("tasks.artifacts.list", { taskId: second.id })).value.result.items,
+    ).toEqual([]);
+    expect(
+      (await s.tool("tasks.update", { taskId: second.id, dependsOn: [], verifyCommand: "" })).value
+        .result.dependsOn,
+    ).toEqual([]);
+    expect(
+      (await s.tool("tasks.update", { taskId: second.id, dependsOn: ["foreign"] })).value.error,
+    ).toBeTruthy();
+    expect(
+      (
+        await s.tool("tasks.reorder", {
+          order: [{ taskId: first.id, expectedUpdatedAt: first.updatedAt }],
+        })
+      ).value.error,
+    ).toBeUndefined();
     expect(s.send).not.toHaveBeenCalled();
   });
   it("runs inspected file lifecycle operations through the editor service", async () => {
@@ -798,19 +1844,54 @@ describe("scoped Conversation Tools RPC", () => {
     mkdirSync(join(s.project.cwd, "destination"));
     mkdirSync(join(s.project.cwd, "tree"));
     writeFileSync(join(s.project.cwd, "tree", "file.txt"), "first");
-    const inspect = async (path: string) => (await s.tool("files.inspect", { path })).value.result.hash;
+    const inspect = async (path: string) =>
+      (await s.tool("files.inspect", { path })).value.result.hash;
     let hash = await inspect("tree");
     writeFileSync(join(s.project.cwd, "tree", "file.txt"), "changed");
-    expect((await s.tool("files.delete", { path: "tree", expectedHash: hash })).value.error).toMatch(/changed/);
+    expect(
+      (await s.tool("files.delete", { path: "tree", expectedHash: hash })).value.error,
+    ).toMatch(/changed/);
     hash = await inspect("tree");
-    expect((await s.tool("files.rename", { path: "tree", name: "renamed", expectedHash: hash })).value.result.path).toBe("renamed");
+    expect(
+      (await s.tool("files.rename", { path: "tree", name: "renamed", expectedHash: hash })).value
+        .result.path,
+    ).toBe("renamed");
     hash = await inspect("renamed");
-    expect((await s.tool("files.copy", { path: "renamed", destinationParent: "destination", expectedHash: hash })).value.result.path).toBe("destination/renamed");
-    expect((await s.tool("files.move", { path: "renamed", destinationParent: "destination", expectedHash: hash })).value.error).toMatch(/exists/);
-    expect((await s.tool("files.read", { path: "destination/renamed/file.txt" })).value.result.text).toBe("changed");
+    expect(
+      (
+        await s.tool("files.copy", {
+          path: "renamed",
+          destinationParent: "destination",
+          expectedHash: hash,
+        })
+      ).value.result.path,
+    ).toBe("destination/renamed");
+    expect(
+      (
+        await s.tool("files.move", {
+          path: "renamed",
+          destinationParent: "destination",
+          expectedHash: hash,
+        })
+      ).value.error,
+    ).toMatch(/exists/);
+    expect(
+      (await s.tool("files.read", { path: "destination/renamed/file.txt" })).value.result.text,
+    ).toBe("changed");
     hash = await inspect("renamed/file.txt");
-    expect((await s.tool("files.move", { path: "renamed/file.txt", destinationParent: "destination", expectedHash: hash })).value.result.path).toBe("destination/file.txt");
-    expect((await s.tool("files.delete", { path: "destination/file.txt", expectedHash: hash })).value.result.deleted).toBe(true);
+    expect(
+      (
+        await s.tool("files.move", {
+          path: "renamed/file.txt",
+          destinationParent: "destination",
+          expectedHash: hash,
+        })
+      ).value.result.path,
+    ).toBe("destination/file.txt");
+    expect(
+      (await s.tool("files.delete", { path: "destination/file.txt", expectedHash: hash })).value
+        .result.deleted,
+    ).toBe(true);
     expect((await s.tool("files.inspect", { path: "." })).value.error).toBeTruthy();
     expect((await s.tool("files.inspect", { path: "../outside" })).value.error).toBeTruthy();
     mkdirSync(join(s.project.cwd, "protected", ".git"), { recursive: true });
@@ -821,32 +1902,90 @@ describe("scoped Conversation Tools RPC", () => {
     const s = await sessionTools();
     const destination = join(s.directory, "transfer-target");
     mkdirSync(destination);
-    const target = s.store.addProject(destination, "Target");
-    const task = (await s.tool("tasks.create", { taskId: "transfer", title: "Transfer me", prompt: "Work", status: "todo" })).value.result;
-    const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockResolvedValue({ approved: false });
+    const target = await s.store.addProject(destination, "Target");
+    const task = (
+      await s.tool("tasks.create", {
+        taskId: "transfer",
+        title: "Transfer me",
+        prompt: "Work",
+        status: "todo",
+      })
+    ).value.result;
+    const relay = vi
+      .spyOn(ConversationDesktopRelay.prototype, "call")
+      .mockResolvedValue({ approved: false });
     try {
-      const input = { taskId: task.id, expectedUpdatedAt: task.updatedAt, targetProjectId: target.id };
+      const input = {
+        taskId: task.id,
+        expectedUpdatedAt: task.updatedAt,
+        targetProjectId: target.id,
+      };
       expect((await s.tool("tasks.transfer", input)).value.error).toMatch(/approval/);
-      expect((await s.tool("tasks.get", { taskId: task.id })).value.result.projectId).toBe(s.project.id);
+      expect((await s.tool("tasks.get", { taskId: task.id })).value.result.projectId).toBe(
+        s.project.id,
+      );
       relay.mockResolvedValue({ approved: true });
-      expect((await s.tool("tasks.transfer", input)).value.result).toMatchObject({ id: task.id, projectId: target.id, status: "todo" });
-      expect((await s.tool("tasks.get", { taskId: task.id })).value.error).toMatch(/not in this project/);
-      const noteTask = (await s.tool("tasks.create", { taskId: "notes-task", title: "Notes", prompt: "Work", status: "todo" })).value.result;
-      s.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.reviewNotes',json(?)) WHERE id=?").run(JSON.stringify([{ id: "finding", text: "Verify fix", createdAt: 1 }]), noteTask.id);
+      expect((await s.tool("tasks.transfer", input)).value.result).toMatchObject({
+        id: task.id,
+        projectId: target.id,
+        status: "todo",
+      });
+      expect((await s.tool("tasks.get", { taskId: task.id })).value.error).toMatch(
+        /not in this project/,
+      );
+      const noteTask = (
+        await s.tool("tasks.create", {
+          taskId: "notes-task",
+          title: "Notes",
+          prompt: "Work",
+          status: "todo",
+        })
+      ).value.result;
+      await s.store.db
+        .prepare("UPDATE tasks SET value=json_set(value,'$.reviewNotes',json(?)) WHERE id=?")
+        .run(JSON.stringify([{ id: "finding", text: "Verify fix", createdAt: 1 }]), noteTask.id);
       // Existing host API observes external test fixtures through its task lookup.
-      expect((await s.tool("tasks.notes.resolve", { taskId: noteTask.id, noteId: "finding", resolved: true, expectedUpdatedAt: noteTask.updatedAt })).value.result.reviewNotes[0].resolvedAt).toBeTypeOf("number");
+      expect(
+        (
+          await s.tool("tasks.notes.resolve", {
+            taskId: noteTask.id,
+            noteId: "finding",
+            resolved: true,
+            expectedUpdatedAt: noteTask.updatedAt,
+          })
+        ).value.result.reviewNotes[0].resolvedAt,
+      ).toBeTypeOf("number");
       const latest = (await s.tool("tasks.get", { taskId: noteTask.id })).value.result;
-      expect((await s.tool("tasks.delete", { taskId: latest.id, expectedUpdatedAt: 0 })).value.error).toMatch(/changed/);
-      expect((await s.tool("tasks.delete", { taskId: latest.id, expectedUpdatedAt: latest.updatedAt })).value.result.deleted).toBe(true);
-      const guarded = (await s.tool("tasks.create", { taskId: "guarded", title: "Guarded", prompt: "Work", status: "todo" })).value.result;
+      expect(
+        (await s.tool("tasks.delete", { taskId: latest.id, expectedUpdatedAt: 0 })).value.error,
+      ).toMatch(/changed/);
+      expect(
+        (await s.tool("tasks.delete", { taskId: latest.id, expectedUpdatedAt: latest.updatedAt }))
+          .value.result.deleted,
+      ).toBe(true);
+      const guarded = (
+        await s.tool("tasks.create", {
+          taskId: "guarded",
+          title: "Guarded",
+          prompt: "Work",
+          status: "todo",
+        })
+      ).value.result;
       relay.mockImplementationOnce(async () => {
         // Preserve the same timestamp to prove approval checks the full task,
         // rather than trusting a clock-based revision alone.
-        s.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.title',?) WHERE id=?").run("Changed during approval", guarded.id);
+        await s.store.db
+          .prepare("UPDATE tasks SET value=json_set(value,'$.title',?) WHERE id=?")
+          .run("Changed during approval", guarded.id);
         return { approved: true };
       });
-      expect((await s.tool("tasks.delete", { taskId: guarded.id, expectedUpdatedAt: guarded.updatedAt })).value.error).toMatch(/changed during approval/i);
-    } finally { relay.mockRestore(); }
+      expect(
+        (await s.tool("tasks.delete", { taskId: guarded.id, expectedUpdatedAt: guarded.updatedAt }))
+          .value.error,
+      ).toMatch(/changed during approval/i);
+    } finally {
+      relay.mockRestore();
+    }
   });
   it("allows paired owner browser takeover while denying takeover by conversation tools", async () => {
     const s = await sessionTools();
@@ -886,8 +2025,8 @@ describe("scoped Conversation Tools RPC", () => {
     const nestedSkill = join(work, ".agents/skills/assigned-skill");
     mkdirSync(nestedSkill, { recursive: true });
     writeFileSync(join(nestedSkill, "SKILL.md"), "Assigned workspace instructions");
-    const current = s.store.session(s.created.sessionId);
-    s.store.save(
+    const current = await s.store.session(s.created.sessionId);
+    await s.store.save(
       { ...current, revision: current.revision + 1, session: { ...current.session, cwd: work } },
       { type: "test.workspace" },
     );
@@ -955,13 +2094,13 @@ describe("scoped Conversation Tools RPC", () => {
     expect(
       (await s.call("conversation.tools.call", { action: "tasks.list", input: {} })).value.error,
     ).toContain("scoped");
-    s.store.revokeDevice(s.first.id);
+    await s.store.revokeDevice(s.first.id);
     expect((await s.tool("tasks.list")).status).toBe(401);
   });
   it("reads other project sessions without approval and refuses cross-project reads or sends", async () => {
     const s = await sessionTools();
-    const create = (projectId: string) =>
-      s.engine.command({
+    const create = async (projectId: string) =>
+      await s.engine.command({
         type: "create",
         commandId: crypto.randomUUID(),
         projectId,
@@ -969,9 +2108,9 @@ describe("scoped Conversation Tools RPC", () => {
         model: "gpt",
         runtimeMode: "supervised",
       });
-    const target = create(s.project.id);
-    const foreignProject = s.store.addProject(join(s.project.cwd, "foreign"), "Foreign");
-    const foreign = create(foreignProject.id);
+    const target = await create(s.project.id);
+    const foreignProject = await s.store.addProject(join(s.project.cwd, "foreign"), "Foreign");
+    const foreign = await create(foreignProject.id);
     const listed = (await s.tool("sessions.list")).value.result.sessions;
     expect(listed.some((session: { id: string }) => session.id === target.sessionId)).toBe(true);
     expect(listed.some((session: { id: string }) => session.id === foreign.sessionId)).toBe(false);
@@ -987,7 +2126,7 @@ describe("scoped Conversation Tools RPC", () => {
   });
   it("routes Notes, Automations and Inbox through the scoped application APIs", async () => {
     const s = await sessionTools();
-    const noteRead = vi.spyOn(HostNotes.prototype, "get").mockReturnValue({
+    const noteRead = vi.spyOn(AsyncHostNotes.prototype, "get").mockResolvedValue({
       id: "note",
       slug: "note",
       title: "Plan",
@@ -1074,7 +2213,7 @@ describe("scoped Conversation Tools RPC", () => {
   });
   it("filters tasks and rejects cross-project recovery, completion, and changes to its own task", async () => {
     const s = await sessionTools();
-    const other = s.store.addProject(join(s.project.cwd, "other"), "Other");
+    const other = await s.store.addProject(join(s.project.cwd, "other"), "Other");
     const input = {
       title: "Task",
       prompt: "Fix the issue",
@@ -1159,7 +2298,7 @@ describe("scoped Conversation Tools RPC", () => {
   });
   it("reads captured terminal output through bounded project logs and scrubs secrets", async () => {
     const s = await sessionTools();
-    const other = s.store.addProject(join(s.project.cwd, "other"), "Other");
+    const other = await s.store.addProject(join(s.project.cwd, "other"), "Other");
     for (const [cwd, id, output] of [
       [s.project.cwd, "own-terminal", "ready\nAuthorization: Bearer secret-value\n"],
       [other.cwd, "other-terminal", "foreign-output\n"],
@@ -1237,28 +2376,55 @@ describe("conversation browser runtime", () => {
 
 it("allows explicit local voice setup only with paired desktop credentials", async () => {
   const s = await setup();
-  const start = vi.spyOn(VoiceSetupService.prototype, "start").mockReturnValue({ state: "installing", stage: "environment", requestedConfig: { natural: false } });
+  const start = vi.spyOn(VoiceSetupService.prototype, "start").mockReturnValue({
+    state: "installing",
+    stage: "environment",
+    requestedConfig: { natural: false },
+  });
   try {
-    expect((await s.call("environment.describe")).value.result.capabilities).toContain("voice.local.setup.v1");
+    expect((await s.call("environment.describe")).value.result.capabilities).toContain(
+      "voice.local.setup.v1",
+    );
     expect((await s.call("voice.local.setupStatus")).value.result).toEqual({ state: "idle" });
     expect(start).not.toHaveBeenCalled();
-    expect((await s.call("voice.local.setup", { config: { natural: false } })).value.result.state).toBe("installing");
+    expect(
+      (await s.call("voice.local.setup", { config: { natural: false } })).value.result.state,
+    ).toBe("installing");
     expect(start).toHaveBeenCalledExactlyOnceWith({ natural: false });
     expect((await s.call("voice.local.setup", {}, "invalid")).status).toBe(401);
-    expect((await s.call("voice.local.setup", {}, s.first.token, {}, { Origin: "http://example.test" })).status).toBe(403);
-    const created = s.engine.command({ type: "create", commandId: crypto.randomUUID(), projectId: s.project.id, harness: "codex", model: "gpt", runtimeMode: "supervised" });
-    const grant = (await s.call("conversation.access.issue", { sessionId: created.sessionId })).value.result;
-    expect((await s.call("voice.local.setup", {}, grant.token)).value.error).toContain("Session conversation credentials");
+    expect(
+      (await s.call("voice.local.setup", {}, s.first.token, {}, { Origin: "http://example.test" }))
+        .status,
+    ).toBe(403);
+    const created = await s.engine.command({
+      type: "create",
+      commandId: crypto.randomUUID(),
+      projectId: s.project.id,
+      harness: "codex",
+      model: "gpt",
+      runtimeMode: "supervised",
+    });
+    const grant = (await s.call("conversation.access.issue", { sessionId: created.sessionId }))
+      .value.result;
+    expect((await s.call("voice.local.setup", {}, grant.token)).value.error).toContain(
+      "Session conversation credentials",
+    );
     expect(start).toHaveBeenCalledOnce();
     expect(s.send).not.toHaveBeenCalled();
-  } finally { start.mockRestore(); }
+  } finally {
+    start.mockRestore();
+  }
 });
 
 it("keeps voice setup and running voice mutually exclusive across desktop windows", async () => {
   const s = await setup();
   const active = vi.spyOn(LocalVoiceService.prototype, "isActive", "get").mockReturnValue(true);
-  const startSetup = vi.spyOn(VoiceSetupService.prototype, "start").mockReturnValue({ state: "installing" });
-  const status = vi.spyOn(VoiceSetupService.prototype, "status").mockReturnValue({ state: "installing" });
+  const startSetup = vi
+    .spyOn(VoiceSetupService.prototype, "start")
+    .mockReturnValue({ state: "installing" });
+  const status = vi
+    .spyOn(VoiceSetupService.prototype, "status")
+    .mockReturnValue({ state: "installing" });
   const startVoice = vi.spyOn(LocalVoiceService.prototype, "start");
   try {
     expect((await s.call("voice.local.setup")).value.error).toContain("Disconnect voice");
@@ -1267,7 +2433,12 @@ it("keeps voice setup and running voice mutually exclusive across desktop window
     active.mockReturnValue(false);
     expect((await s.call("voice.local.start")).value.error).toBe("Voice setup is still running.");
     expect(startVoice).not.toHaveBeenCalled();
-  } finally { active.mockRestore(); startSetup.mockRestore(); status.mockRestore(); startVoice.mockRestore(); }
+  } finally {
+    active.mockRestore();
+    startSetup.mockRestore();
+    status.mockRestore();
+    startVoice.mockRestore();
+  }
 });
 
 async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = false) {
@@ -1282,7 +2453,18 @@ async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = fa
     });
   });
   const engine = new HostEngine(store, {
-    ...(includeClaude ? { claude: { send, stop: async () => finish(), cancel: async () => finish(), bind: () => {}, approve: () => {}, answer: () => {} } } : {}),
+    ...(includeClaude
+      ? {
+          claude: {
+            send,
+            stop: async () => finish(),
+            cancel: async () => finish(),
+            bind: () => {},
+            approve: () => {},
+            answer: () => {},
+          },
+        }
+      : {}),
     codex: {
       send,
       stop: async () => finish(),
@@ -1295,20 +2477,22 @@ async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = fa
   // Follow production's canonicalization, including Windows 8.3 paths such
   // as RUNNER~1 in the CI runner's temporary directory.
   const project = await engine.openProject(directory);
-  const server = createHostServer(engine, providers);
+  const server = await createHostServer(engine, providers);
   try {
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(0, "127.0.0.1", resolve);
     });
   } catch (error) {
-    store.close();
+    await server.closeResources();
+    await engine.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
     throw error;
   }
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/rpc`;
-  const first = store.issueDevice("Laptop");
-  const second = store.issueDevice("Other computer");
+  const first = await store.issueDevice("Laptop");
+  const second = await store.issueDevice("Other computer");
   const call = async (
     method: string,
     params: unknown = {},
@@ -1333,10 +2517,11 @@ async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = fa
     };
   };
   cleanups.push(async () => {
-    await engine.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close();
+    await server.closeResources();
+    await engine.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
   return {
@@ -1355,10 +2540,71 @@ async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = fa
   };
 }
 
+describe("task harness native APIs", () => {
+  it("routes read-only preparation and revision-bound measurements with explicit capabilities", async () => {
+    const s = await setup();
+    const capabilities = (await s.call("environment.describe")).value.result.capabilities;
+    expect(capabilities).toEqual(
+      expect.arrayContaining([
+        "tasks.preflight",
+        "tasks.evaluation",
+        "tasks.reviewer-profile",
+        "tasks.run-budget",
+        "goals.final-review",
+      ]),
+    );
+    writeFileSync(join(s.directory, "brief.md"), "Owner supplied reference");
+    const task = {
+      id: "harness-rpc",
+      title: "Prepare report",
+      prompt: "Prepare report",
+      projectId: s.project.id,
+      harness: "codex",
+      model: "codex:test",
+      modelSettings: {},
+      runtimeMode: "auto",
+      maxRunMinutes: 0,
+      isolate: false,
+      status: "todo",
+      preflightRequirements: [{ kind: "source", id: "brief.md" }],
+    };
+    const prepared = await s.call("tasks.preflight", { task });
+    expect(prepared.value.error).toBeUndefined();
+    expect(prepared.value.result.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ label: "brief.md", state: "ready" })]),
+    );
+    expect(s.send).not.toHaveBeenCalled();
+    expect((await s.call("tasks.list")).value.result).toEqual([]);
+    await s.call("tasks.save", { task });
+    const completed = await s.call("tasks.move", { taskId: task.id, to: "done" });
+    expect(completed.value.error).toBeUndefined();
+    const recorded = await s.call("tasks.evaluation.save", {
+      taskId: task.id,
+      expectedUpdatedAt: completed.value.result.updatedAt,
+      evaluation: { accepted: true, reviewMinutes: 4, corrections: 1 },
+    });
+    expect(recorded.value.result).toMatchObject({
+      status: "done",
+      evaluation: { accepted: true, reviewMinutes: 4, corrections: 1 },
+    });
+    const invalid = await s.call("tasks.evaluation.save", {
+      taskId: task.id,
+      expectedUpdatedAt: -1,
+      evaluation: { accepted: false, reviewMinutes: 0, corrections: 0 },
+    });
+    expect(invalid.value.error).toContain("changed");
+    const missingGoal = await s.call("goals.final-review.recheck", {
+      goalId: "missing",
+      expectedUpdatedAt: 1,
+    });
+    expect(missingGoal.value.error).toContain("Goal not found");
+  });
+});
+
 describe("shared queued messages", () => {
   it("reads an existing host queue without loading its transcript and rejects missing sessions", async () => {
     const s = await setup();
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: "metadata-create",
       projectId: s.project.id,
@@ -1389,7 +2635,7 @@ describe("shared queued messages", () => {
   });
   it("dispatches /clear without opening a session or sending a provider turn", async () => {
     const s = await setup();
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: "clear-create",
       projectId: s.project.id,
@@ -1397,8 +2643,8 @@ describe("shared queued messages", () => {
       model: "codex:test",
       runtimeMode: "supervised",
     });
-    const current = s.store.session(created.sessionId);
-    s.store.save(
+    const current = await s.store.session(created.sessionId);
+    await s.store.save(
       {
         ...current,
         revision: current.revision + 1,
@@ -1418,14 +2664,14 @@ describe("shared queued messages", () => {
     });
     expect(response.value.error).toBeUndefined();
     expect(response.value.result.sessionId).toBe(created.sessionId);
-    expect(s.store.session(created.sessionId).session.blocks).toEqual([]);
-    expect(s.store.session(created.sessionId).session.providerSessionId).toBeUndefined();
+    expect((await s.store.session(created.sessionId)).session.blocks).toEqual([]);
+    expect((await s.store.session(created.sessionId)).session.providerSessionId).toBeUndefined();
     expect(s.send).not.toHaveBeenCalled();
   });
 
   it("dispatches rewind through the async host cleanup path", async () => {
     const s = await setup();
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: "rewind-create",
       projectId: s.project.id,
@@ -1433,8 +2679,8 @@ describe("shared queued messages", () => {
       model: "codex:test",
       runtimeMode: "supervised",
     });
-    const current = s.store.session(created.sessionId);
-    s.store.save(
+    const current = await s.store.session(created.sessionId);
+    await s.store.save(
       {
         ...current,
         revision: current.revision + 1,
@@ -1458,14 +2704,14 @@ describe("shared queued messages", () => {
       blockId: "remove",
     });
     expect(response.value.error).toBeUndefined();
-    expect(s.store.session(created.sessionId).session.blocks.map((block) => block.id)).toEqual([
-      "keep",
-    ]);
+    expect(
+      (await s.store.session(created.sessionId)).session.blocks.map((block) => block.id),
+    ).toEqual(["keep"]);
   });
 
   it("dispatches an explicitly selected idle row while retaining a paused queue", async () => {
     const s = await setup();
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: "selected-create",
       projectId: s.project.id,
@@ -1508,7 +2754,7 @@ describe("shared queued messages", () => {
 
   it("tells the owning desktop which shared queues another computer changed through its heartbeat", async () => {
     const s = await setup();
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: "queue-wake-create",
       projectId: s.project.id,
@@ -1533,7 +2779,9 @@ describe("shared queued messages", () => {
       sessionId,
       clientId: "remote:phone",
       before: { messages: [] },
-      after: { messages: [row], status: "active" },
+      // This case observes change notifications, not automatic queue draining.
+      // Keep the row paused so a claim/finish cannot add a second notification.
+      after: { messages: [row], status: "paused" },
       takeOwnership: false,
     });
     const next = await beat(first.seq);
@@ -1543,7 +2791,7 @@ describe("shared queued messages", () => {
 
   it("shares unsent rows between paired computers and consumes them with a durable receipt once", async () => {
     const s = await setup();
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: "queue-create",
       projectId: s.project.id,
@@ -1610,27 +2858,29 @@ describe("shared queued messages", () => {
   });
 
   describe("drain lease", () => {
-    const create = (s: Awaited<ReturnType<typeof setup>>, commandId: string) =>
-      s.engine.command({
-        type: "create",
-        commandId,
-        projectId: s.project.id,
-        harness: "codex",
-        model: "gpt",
-        runtimeMode: "supervised",
-      }).sessionId;
+    const create = async (s: Awaited<ReturnType<typeof setup>>, commandId: string) =>
+      (
+        await s.engine.command({
+          type: "create",
+          commandId,
+          projectId: s.project.id,
+          harness: "codex",
+          model: "gpt",
+          runtimeMode: "supervised",
+        })
+      ).sessionId;
     const aware = { leaseAware: true };
     const rows = (...ids: string[]) =>
       ids.map((id) => ({ id, text: `send ${id}`, attachments: [] }));
 
     it("advertises the capability and answers an aware client with the lease, an older one with a consumer", async () => {
       const s = await setup();
-      const sessionId = create(s, "lease-cap");
+      const sessionId = await create(s, "lease-cap");
       expect((await s.call("environment.describe")).value.result.capabilities).toContain(
         "sessions.queue.lease",
       );
       s.send.mockClear();
-      const running = s.engine.command({
+      const running = await s.engine.command({
         type: "send",
         commandId: "lease-cap-turn",
         sessionId,
@@ -1701,8 +2951,13 @@ describe("shared queued messages", () => {
       vi.useFakeTimers({ toFake: ["Date"] });
       try {
         const s = await setup();
-        const sessionId = create(s, "lease-beat");
-        s.engine.command({ type: "send", commandId: "lease-beat-turn", sessionId, text: "busy" });
+        const sessionId = await create(s, "lease-beat");
+        await s.engine.command({
+          type: "send",
+          commandId: "lease-beat-turn",
+          sessionId,
+          text: "busy",
+        });
         await s.call("sessions.queue.change", {
           sessionId,
           clientId: "desktop:win1",
@@ -1746,8 +3001,13 @@ describe("shared queued messages", () => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
       try {
         const s = await setup();
-        const sessionId = create(s, "lease-drain");
-        s.engine.command({ type: "send", commandId: "lease-drain-turn", sessionId, text: "busy" });
+        const sessionId = await create(s, "lease-drain");
+        await s.engine.command({
+          type: "send",
+          commandId: "lease-drain-turn",
+          sessionId,
+          text: "busy",
+        });
         await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
         await s.call("sessions.queue.change", {
           sessionId,
@@ -1759,7 +3019,7 @@ describe("shared queued messages", () => {
         await s.call("sessions.queue.lease", { sessionId, clientId: "desktop:win1", ...aware });
         // The turn ends while the desktop holds the queue: the host leaves it alone.
         s.finish();
-        await vi.waitFor(() => expect(s.store.sessionStatus(sessionId)).toBe("idle"));
+        await vi.waitFor(async () => expect(await s.store.sessionStatus(sessionId)).toBe("idle"));
         await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS / 2);
         expect(s.send).toHaveBeenCalledOnce();
         // The desktop is gone: at the end of its lease the host sends the head itself.
@@ -1775,7 +3035,7 @@ describe("shared queued messages", () => {
         await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(3));
         expect(s.turn().text).toBe("send b");
         s.finish();
-        await vi.waitFor(() => expect(s.store.sessionStatus(sessionId)).toBe("idle"));
+        await vi.waitFor(async () => expect(await s.store.sessionStatus(sessionId)).toBe("idle"));
         expect(
           (await s.call("sessions.queue.get", { sessionId, clientId: "remote:mac", ...aware }))
             .value.result.messages,
@@ -1790,8 +3050,13 @@ describe("shared queued messages", () => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
       try {
         const s = await setup();
-        const sessionId = create(s, "lease-legacy");
-        s.engine.command({ type: "send", commandId: "lease-legacy-turn", sessionId, text: "busy" });
+        const sessionId = await create(s, "lease-legacy");
+        await s.engine.command({
+          type: "send",
+          commandId: "lease-legacy-turn",
+          sessionId,
+          text: "busy",
+        });
         await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
         const clientId = "remote:old-mac";
         // No `leaseAware`: it asks to own the queue the way it always did.
@@ -1804,7 +3069,7 @@ describe("shared queued messages", () => {
         });
         expect(published.value.result.consumer).toBe(clientId);
         s.finish();
-        await vi.waitFor(() => expect(s.store.sessionStatus(sessionId)).toBe("idle"));
+        await vi.waitFor(async () => expect(await s.store.sessionStatus(sessionId)).toBe("idle"));
         // It polls like it always did: still its queue, the host stays out.
         for (let i = 0; i < 4; i++) {
           await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS / 5);
@@ -1825,15 +3090,17 @@ describe("shared queued messages", () => {
   });
 
   describe("run lease and claims", () => {
-    const create = (s: Awaited<ReturnType<typeof setup>>, commandId: string) =>
-      s.engine.command({
-        type: "create",
-        commandId,
-        projectId: s.project.id,
-        harness: "codex",
-        model: "gpt",
-        runtimeMode: "supervised",
-      }).sessionId;
+    const create = async (s: Awaited<ReturnType<typeof setup>>, commandId: string) =>
+      (
+        await s.engine.command({
+          type: "create",
+          commandId,
+          projectId: s.project.id,
+          harness: "codex",
+          model: "gpt",
+          runtimeMode: "supervised",
+        })
+      ).sessionId;
     const aware = { leaseAware: true };
     const acquire = async (
       s: Awaited<ReturnType<typeof setup>>,
@@ -1858,7 +3125,7 @@ describe("shared queued messages", () => {
       const s = await setup();
       expect((await acquire(s, "no-such-session", "desktop:win1")).value.error).toBeTruthy();
       expect((await acquire(s, "", "desktop:win1")).value.error).toBeTruthy();
-      const sessionId = create(s, "run-lease-known");
+      const sessionId = await create(s, "run-lease-known");
       expect((await acquire(s, sessionId, "desktop:win1")).value.result.lease).toMatchObject({
         holder: "desktop:win1",
       });
@@ -1868,7 +3135,7 @@ describe("shared queued messages", () => {
       vi.useFakeTimers({ toFake: ["Date"] });
       try {
         const s = await setup();
-        const sessionId = create(s, "run-lease-gap");
+        const sessionId = await create(s, "run-lease-gap");
         const lease = (await acquire(s, sessionId, "desktop:win1")).value.result.lease;
         // A hidden window beats about once a minute: the lease outlives the gap.
         vi.setSystemTime(Date.now() + 60_000);
@@ -1893,7 +3160,7 @@ describe("shared queued messages", () => {
       vi.useFakeTimers({ toFake: ["Date"] });
       try {
         const s = await setup();
-        const sessionId = create(s, "run-lease-lost");
+        const sessionId = await create(s, "run-lease-lost");
         const mine = (await acquire(s, sessionId, "desktop:win1")).value.result.lease;
         expect((await beat(s, sessionId, "win1", mine.epoch))[sessionId]).toMatchObject({
           epoch: mine.epoch,
@@ -1916,7 +3183,7 @@ describe("shared queued messages", () => {
       vi.useFakeTimers({ toFake: ["Date"] });
       try {
         const s = await setup();
-        const sessionId = create(s, "run-lease-regrant");
+        const sessionId = await create(s, "run-lease-regrant");
         const first = (await acquire(s, sessionId, "desktop:win1")).value.result.lease;
         vi.setSystemTime(Date.now() + RUN_LEASE_TTL_MS + 30_000);
         const again = (await beat(s, sessionId, "win1", first.epoch))[sessionId];
@@ -1924,8 +3191,15 @@ describe("shared queued messages", () => {
         expect(again.epoch).toBeGreaterThan(first.epoch);
         // The lease lapses again and the host starts a turn of its own meanwhile.
         vi.setSystemTime(Date.now() + RUN_LEASE_TTL_MS + 30_000);
-        s.engine.command({ type: "send", commandId: "run-lease-host-turn", sessionId, text: "go" });
-        await vi.waitFor(() => expect(s.store.sessionStatus(sessionId)).toBe("running"));
+        await s.engine.command({
+          type: "send",
+          commandId: "run-lease-host-turn",
+          sessionId,
+          text: "go",
+        });
+        await vi.waitFor(async () =>
+          expect(await s.store.sessionStatus(sessionId)).toBe("running"),
+        );
         expect((await beat(s, sessionId, "win1", again.epoch))[sessionId]).toBeNull();
         s.finish();
       } finally {
@@ -1937,7 +3211,7 @@ describe("shared queued messages", () => {
       vi.useFakeTimers({ toFake: ["Date"] });
       try {
         const s = await setup();
-        const sessionId = create(s, "stale-claim");
+        const sessionId = await create(s, "stale-claim");
         const queue = (
           await s.call("sessions.queue.change", {
             sessionId,
@@ -1960,8 +3234,8 @@ describe("shared queued messages", () => {
           ...aware,
         });
         expect(claim.value.result.claim).toBeDefined();
-        const send = (commandId: string) =>
-          s.call("commands.dispatch", { type: "send", commandId, sessionId, text: "hello" });
+        const send = async (commandId: string) =>
+          await s.call("commands.dispatch", { type: "send", commandId, sessionId, text: "hello" });
         // Within the grace the sender is believed: this is a wait.
         expect((await send("stale-claim-1")).value.error).toMatch(/LEASE_HELD/);
         vi.setSystemTime(Date.now() + CLAIM_GRACE_MS + 1_000);
@@ -1980,9 +3254,9 @@ describe("shared queued messages", () => {
 
     it("sends a queue that waited on a usage limit as soon as the limit is dismissed", async () => {
       const s = await setup();
-      const sessionId = create(s, "usage-wake");
-      const current = s.store.session(sessionId);
-      s.store.save(
+      const sessionId = await create(s, "usage-wake");
+      const current = await s.store.session(sessionId);
+      await s.store.save(
         {
           ...current,
           revision: current.revision + 1,
@@ -2012,13 +3286,12 @@ describe("shared queued messages", () => {
       s.finish();
     });
 
-
     it("answers the queue and adopted cursors with the host's boot, so a restart resets a client", async () => {
       const first = await setup();
       const second = await setup();
       const beatOf = async (s: Awaited<ReturnType<typeof setup>>, cursors: object = {}) =>
-        (await s.call("sessions.desktopLive", { clientId: "win1", sessions: [], ...cursors }))
-          .value.result;
+        (await s.call("sessions.desktopLive", { clientId: "win1", sessions: [], ...cursors })).value
+          .result;
       const one = await beatOf(first);
       const two = await beatOf(second);
       expect(one.queues.boot).not.toBe(two.queues.boot);
@@ -2046,13 +3319,13 @@ describe("project directory endpoint", () => {
       groups: [],
       projects: [],
     });
-    const one = s.store.addProject("G:/Work/shared", "One");
+    const one = await s.store.addProject("G:/Work/shared", "One");
     // Existing databases can contain aliases from before project deduplication.
-    s.store.db
+    await s.store.db
       .prepare("INSERT INTO projects VALUES (?, ?, ?)")
       .run("legacy-shared-alias", "g:\\work\\shared", "Two");
-    const two = s.store.project("legacy-shared-alias");
-    s.store.addProject("G:/Private", "Private client");
+    const two = await s.store.project("legacy-shared-alias");
+    await s.store.addProject("G:/Private", "Private client");
     expect(
       (
         await s.call("sessions.desktopLive", {
@@ -2118,7 +3391,7 @@ describe("runtime log access", () => {
 
   it("derives agent project identity and keeps log grants independent from social access", async () => {
     const s = await setup();
-    const session = s.engine.command({
+    const session = await s.engine.command({
       type: "create",
       commandId: "log-session",
       projectId: s.project.id,
@@ -2126,11 +3399,11 @@ describe("runtime log access", () => {
       model: "codex:test",
       runtimeMode: "supervised",
     });
-    const social = s.server.social.issueSessionGrant(session.sessionId);
+    const social = await s.server.social.issueSessionGrant(session.sessionId);
     const issued = await s.call("runtimeLogs.access.issue", { sessionId: session.sessionId });
     expect(issued.status).toBe(200);
     const grant = issued.value.result;
-    expect(s.server.social.principalForToken(social.token)).toBeTruthy();
+    expect(await s.server.social.principalForToken(social.token)).toBeTruthy();
     const read = vi.spyOn(RuntimeLogsService.prototype, "read");
     try {
       expect(
@@ -2178,7 +3451,7 @@ describe("runtime log access", () => {
       expect((await s.call("runtimeLogs.tools.call", { action: "read", input: {} })).status).toBe(
         400,
       );
-      s.store.revokeDevice(s.first.id);
+      await s.store.revokeDevice(s.first.id);
       expect(
         (await s.call("runtimeLogs.tools.call", { action: "read", input: {} }, grant.token)).status,
       ).toBe(401);
@@ -2191,7 +3464,7 @@ describe("runtime log access", () => {
 describe("remote host API", () => {
   it("keeps mobile pairing and access RPCs limited to authenticated paired devices", async () => {
     const s = await setup();
-    const session = s.engine.command({
+    const session = await s.engine.command({
       type: "create",
       commandId: "mobile-session-auth",
       projectId: s.project.id,
@@ -2199,7 +3472,7 @@ describe("remote host API", () => {
       model: "codex:test",
       runtimeMode: "supervised",
     });
-    const grant = s.server.social.issueSessionGrant(session.sessionId);
+    const grant = await s.server.social.issueSessionGrant(session.sessionId);
     const methods = [
       "mobile.pairing.create",
       "mobile.pairing.status",
@@ -2219,7 +3492,7 @@ describe("remote host API", () => {
           .status,
       ).toBe(403);
     }
-    s.store.revokeDevice(s.first.id);
+    await s.store.revokeDevice(s.first.id);
     for (const method of methods) expect((await s.call(method, params)).status).toBe(401);
     expect(
       (await s.call("mobile.pairing.create", { name: "Other desktop phone" }, s.second.token))
@@ -2229,7 +3502,9 @@ describe("remote host API", () => {
 
   it("redeems a mobile QR through the narrow public route once and rechecks issuer revocation", async () => {
     const s = await setup();
-    const before = Number(s.store.db.prepare("SELECT count(*) AS count FROM devices").get()!.count);
+    const before = Number(
+      (await s.store.db.prepare("SELECT count(*) AS count FROM devices").get())!.count,
+    );
     const created = await s.call("mobile.pairing.create", { name: "My phone" });
     expect(created.status).toBe(200);
     const ticket = created.value.result;
@@ -2260,10 +3535,10 @@ describe("remote host API", () => {
     expect(first.status).toBe(200);
     expect(await redeem()).toEqual(first);
     const paired = first.value.result;
-    expect(Number(s.store.db.prepare("SELECT count(*) AS count FROM devices").get()!.count)).toBe(
-      before + 1,
-    );
-    expect(s.store.authenticated(paired.token)).toBe(true);
+    expect(
+      Number((await s.store.db.prepare("SELECT count(*) AS count FROM devices").get())!.count),
+    ).toBe(before + 1);
+    expect(await s.store.authenticated(paired.token)).toBe(true);
     expect(
       (await s.call("environment.describe", {}, paired.token)).value.result.environmentId,
     ).toBe(s.store.environmentId);
@@ -2273,18 +3548,18 @@ describe("remote host API", () => {
     expect(
       (await redeem({ ...input, claimId: randomBytes(32).toString("base64url") })).status,
     ).toBe(400);
-    s.store.revokeDevice(s.first.id);
+    await s.store.revokeDevice(s.first.id);
     expect((await redeem()).status).toBe(400);
-    expect(Number(s.store.db.prepare("SELECT count(*) AS count FROM devices").get()!.count)).toBe(
-      before,
-    );
+    expect(
+      Number((await s.store.db.prepare("SELECT count(*) AS count FROM devices").get())!.count),
+    ).toBe(before);
     // Revoking the issuer does not revoke a phone that was already paired.
     expect((await s.call("environment.describe", {}, paired.token)).status).toBe(200);
   });
 
   it("returns bounded machine change cursors and command receipt status", async () => {
     const s = await setup();
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: "status-create",
       projectId: s.project.id,
@@ -2343,7 +3618,7 @@ describe("remote host API", () => {
 
   it("keeps partial sync bounded to the loaded transcript tail", async () => {
     const s = await setup();
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: "partial-create",
       projectId: s.project.id,
@@ -2351,13 +3626,13 @@ describe("remote host API", () => {
       model: "codex:test",
       runtimeMode: "supervised",
     });
-    const base = s.store.session(created.sessionId);
+    const base = await s.store.session(created.sessionId);
     const original = {
       id: "loaded",
       role: "assistant" as const,
       text: "first",
     };
-    const loaded = s.store.save(
+    const loaded = await s.store.save(
       {
         ...base,
         revision: base.revision + 1,
@@ -2371,7 +3646,7 @@ describe("remote host API", () => {
       role: "assistant" as const,
       text: "second",
     };
-    const current = s.store.save(
+    const current = await s.store.save(
       {
         ...loaded,
         revision: loaded.revision + 1,
@@ -2420,7 +3695,7 @@ describe("remote host API", () => {
 
   it("previews an oversized tail block and serves its full revision-pinned content on demand", async () => {
     const s = await setup();
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: "large-block-create",
       projectId: s.project.id,
@@ -2428,13 +3703,13 @@ describe("remote host API", () => {
       model: "codex:test",
       runtimeMode: "supervised",
     });
-    const before = s.store.session(created.sessionId);
+    const before = await s.store.session(created.sessionId);
     const large = {
       id: "large-tail",
       role: "assistant" as const,
       text: "x".repeat(2_000_000),
     };
-    const current = s.store.save(
+    const current = await s.store.save(
       {
         ...before,
         revision: before.revision + 1,
@@ -2488,7 +3763,7 @@ describe("remote host API", () => {
 
   it("accepts a command while a revision long-poll is pending", async () => {
     const s = await setup();
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: "longpoll-create",
       projectId: s.project.id,
@@ -2569,10 +3844,10 @@ describe("remote host API", () => {
       req.write(body.slice(0, 1));
     });
     await vi.waitFor(() => expect(authenticated).toHaveBeenCalledTimes(1));
-    s.store.revokeToken(s.first.token);
+    await s.store.revokeToken(s.first.token);
     req!.end(body.slice(1));
     expect(await response).toBe(401);
-    expect(s.store.summaries(s.project.id)).toEqual([]);
+    expect(await s.store.summaries(s.project.id)).toEqual([]);
   });
 
   it("uploads an authenticated attachment and sends its host path to the provider", async () => {
@@ -2750,7 +4025,7 @@ describe("remote host API", () => {
       runtimeMode: "supervised",
     });
     expect(opened.status).toBe(200);
-    expect(s.store.session(opened.value.result.sessionId).session.cwd).toBe(tree.path);
+    expect((await s.store.session(opened.value.result.sessionId)).session.cwd).toBe(tree.path);
     expect(
       (await s.call("sessions.list", { projectId: s.project.id })).value.result[0],
     ).toMatchObject({
@@ -2892,7 +4167,7 @@ describe("remote host API", () => {
     await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
     s.turn().onEvent({ type: "message.delta", text: "Finished on the host" });
     s.finish();
-    await vi.waitFor(() => expect(s.store.session(id).status).toBe("idle"));
+    await vi.waitFor(async () => expect((await s.store.session(id)).status).toBe("idle"));
     const recovered = await s.call("sessions.get", { sessionId: id }, s.second.token);
     expect(recovered.value.result.session.blocks.at(-1).text).toBe("Finished on the host");
     await s.call("commands.dispatch", command, s.second.token);
@@ -2921,7 +4196,7 @@ describe("remote host API", () => {
       ).value.error,
     ).toContain("identity changed");
     // Revoked from a separate connection, as the CLI does.
-    const other = new DatabaseSync(s.store.db.location()!);
+    const other = new DatabaseSync(join(s.directory, "host.db"));
     other.prepare("DELETE FROM devices WHERE id=?").run(s.first.id);
     other.close();
     expect((await s.call("environment.describe")).status).toBe(401);
@@ -3619,7 +4894,7 @@ describe("remote host API", () => {
       updatedAt: 1,
       occurrences: 1,
     }));
-    s.store.db
+    await s.store.db
       .prepare("UPDATE tasks SET value=? WHERE id=?")
       .run(JSON.stringify({ ...saved, reviewNotes }), saved.id);
     const read = (await s.call("tasks.notes.read", { taskId: saved.id, noteIds: ["seen"] })).value
@@ -3743,7 +5018,7 @@ describe("host settings commands", () => {
 
 it("previews a transcript above 16 MiB with revision-only unchanged polls and bounded summaries", async () => {
   const s = await setup();
-  const created = s.engine.command({
+  const created = await s.engine.command({
     type: "create",
     commandId: "large-task-preview",
     projectId: s.project.id,
@@ -3751,14 +5026,14 @@ it("previews a transcript above 16 MiB with revision-only unchanged polls and bo
     model: "codex:test",
     runtimeMode: "supervised",
   });
-  const before = s.store.session(created.sessionId);
+  const before = await s.store.session(created.sessionId);
   const blocks = Array.from({ length: 200 }, (_, at) => ({
     id: String(at),
     role: "assistant" as const,
     text: "x".repeat(100000),
   }));
   blocks.unshift({ id: "note", role: "system" as never, text: "Retained early note" });
-  const current = s.store.save(
+  const current = await s.store.save(
     { ...before, revision: before.revision + 1, session: { ...before.session, blocks } },
     { type: "test" },
   );
@@ -3798,7 +5073,7 @@ it("previews a transcript above 16 MiB with revision-only unchanged polls and bo
     text: "Approve command",
     approval: { decided: false },
   };
-  s.store.save(
+  await s.store.save(
     {
       ...current,
       revision: current.revision + 1,
@@ -3838,18 +5113,20 @@ it("advertises durable attachment ownership and scopes release to the authentica
     ).value.result.offset,
   ).toBe(bytes.length);
   expect(
-    s.store.db.prepare("SELECT complete FROM attachment_ownership_files WHERE id=?").get(id)
+    (await s.store.db.prepare("SELECT complete FROM attachment_ownership_files WHERE id=?").get(id))
       ?.complete,
   ).toBe(1);
   await s.call("attachments.release", owner, s.second.token);
   expect(
-    s.store.db
-      .prepare("SELECT count(*) AS count FROM attachment_ownership_claims WHERE id=?")
-      .get(id)?.count,
+    (
+      await s.store.db
+        .prepare("SELECT count(*) AS count FROM attachment_ownership_claims WHERE id=?")
+        .get(id)
+    )?.count,
   ).toBe(1);
   await s.call("attachments.claim", { ...owner, claimId: "generation-B" });
   await s.call("attachments.release", owner);
-  const remaining = s.store.db
+  const remaining = await s.store.db
     .prepare("SELECT principal,claim_id FROM attachment_ownership_claims WHERE id=?")
     .all(id);
   expect(remaining).toHaveLength(1);
@@ -3862,7 +5139,7 @@ it("advertises durable attachment ownership and scopes release to the authentica
 
 it("claims host queue attachment exports before returning an offline-editable snapshot", async () => {
   const s = await setup();
-  const created = s.engine.command({
+  const created = await s.engine.command({
     type: "create",
     commandId: "owned-queue",
     projectId: s.project.id,
@@ -3886,7 +5163,7 @@ it("claims host queue attachment exports before returning an offline-editable sn
       attachments: [{ id, name: "file.txt", mimeType: "text/plain", kind: "file", size: 3 }],
     },
   ];
-  s.store.db
+  await s.store.db
     .prepare("INSERT INTO session_queues VALUES(?,?)")
     .run(created.sessionId, JSON.stringify({ messages, revision: 1 }));
   const response = await s.call(
@@ -3916,14 +5193,17 @@ it("claims host queue attachment exports before returning an offline-editable sn
     ).value.error,
   ).toBe("Invalid attachment claims cursor");
   expect(
-    s.store.db
-      .prepare(
-        "SELECT claim_id FROM attachment_ownership_claims WHERE id=? AND owner_id='queue-view'",
-      )
-      .get(id)?.claim_id,
+    (
+      await s.store.db
+        .prepare(
+          "SELECT claim_id FROM attachment_ownership_claims WHERE id=? AND owner_id='queue-view'",
+        )
+        .get(id)
+    )?.claim_id,
   ).toBe("view-generation");
   expect(
-    s.store.db.prepare("SELECT legacy FROM attachment_ownership_files WHERE id=?").get(id)?.legacy,
+    (await s.store.db.prepare("SELECT legacy FROM attachment_ownership_files WHERE id=?").get(id))
+      ?.legacy,
   ).toBe(0);
   const changed = await s.call(
     "sessions.queue.change",
@@ -3939,11 +5219,13 @@ it("claims host queue attachment exports before returning an offline-editable sn
   );
   expect(changed.value.error).toBeUndefined();
   expect(
-    s.store.db.prepare("SELECT legacy FROM attachment_ownership_files WHERE id=?").get(id)?.legacy,
+    (await s.store.db.prepare("SELECT legacy FROM attachment_ownership_files WHERE id=?").get(id))
+      ?.legacy,
   ).toBe(0);
   await s.call("sessions.queue.get", { sessionId: created.sessionId, clientId: "legacy-reader" });
   expect(
-    s.store.db.prepare("SELECT legacy FROM attachment_ownership_files WHERE id=?").get(id)?.legacy,
+    (await s.store.db.prepare("SELECT legacy FROM attachment_ownership_files WHERE id=?").get(id))
+      ?.legacy,
   ).toBe(1);
 });
 
@@ -3960,17 +5242,31 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         }),
     );
     const engine = new HostEngine(store, {
-      codex: { send, stop: async () => finish(), cancel: async () => finish(), bind: () => {}, approve: () => {}, answer: () => {} },
+      codex: {
+        send,
+        stop: async () => finish(),
+        cancel: async () => finish(),
+        bind: () => {},
+        approve: () => {},
+        answer: () => {},
+      },
     } as never);
     const project = await engine.openProject(directory);
     const desktop = new DesktopSessions();
-    vi.spyOn(desktop, "metadata").mockImplementation(
-      () => ({ cwd: project.cwd, harness: "codex", running: false }) as never,
+    vi.spyOn(desktop, "metadataAsync").mockImplementation(
+      async () => ({ cwd: project.cwd, harness: "codex", running: false }) as never,
     );
-    const server = createHostServer(engine, ["codex"], undefined, undefined, undefined, desktop);
+    const server = await createHostServer(
+      engine,
+      ["codex"],
+      undefined,
+      undefined,
+      undefined,
+      desktop,
+    );
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/rpc`;
-    const device = store.issueDevice("Laptop");
+    const device = await store.issueDevice("Laptop");
     const call = async (method: string, params: unknown = {}) => {
       const response = await fetch(url, {
         method: "POST",
@@ -3980,20 +5276,23 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
       return (await response.json()) as { result?: any; error?: string };
     };
     cleanups.push(async () => {
-      await engine.close();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      store.close();
+      await server.closeResources();
+      await engine.close();
+      await store.close();
       rmSync(directory, { recursive: true, force: true });
     });
-    const sessionId = engine.command({
-      type: "create",
-      commandId: "adopted-create",
-      projectId: project.id,
-      harness: "codex",
-      model: "gpt",
-      runtimeMode: "supervised",
-    } as never).sessionId;
+    const sessionId = (
+      await engine.command({
+        type: "create",
+        commandId: "adopted-create",
+        projectId: project.id,
+        harness: "codex",
+        model: "gpt",
+        runtimeMode: "supervised",
+      } as never)
+    ).sessionId;
     return { engine, store, call, send, sessionId, finish: () => finish(), desktop };
   }
   const aware = { leaseAware: true };
@@ -4003,7 +5302,12 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     try {
       const s = await adopted();
-      s.engine.command({ type: "send", commandId: "mac-turn", sessionId: s.sessionId, text: "mac turn" } as never);
+      await s.engine.command({
+        type: "send",
+        commandId: "mac-turn",
+        sessionId: s.sessionId,
+        text: "mac turn",
+      } as never);
       await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
       await s.call("sessions.queue.change", {
         sessionId: s.sessionId,
@@ -4011,13 +5315,23 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         ...aware,
         before: { messages: [] },
         after: {
-          messages: [row("a", { modelTarget: { harness: "codex", model: "other-model", modelSettings: {} } })],
+          messages: [
+            row("a", {
+              modelTarget: { harness: "codex", model: "other-model", modelSettings: {} },
+            }),
+          ],
           status: "active",
         },
       });
       await vi.advanceTimersByTimeAsync(50);
       // Not held for "Wait for the current turn before changing settings": it just waits.
-      const waiting = (await s.call("sessions.queue.get", { sessionId: s.sessionId, clientId: "remote:mac", ...aware })).result;
+      const waiting = (
+        await s.call("sessions.queue.get", {
+          sessionId: s.sessionId,
+          clientId: "remote:mac",
+          ...aware,
+        })
+      ).result;
       expect(waiting).toMatchObject({ status: "active" });
       expect(waiting.holdReason).toBeUndefined();
       expect(waiting.messages).toHaveLength(1);
@@ -4035,7 +5349,12 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     try {
       const s = await adopted();
-      s.engine.command({ type: "send", commandId: "mac-turn", sessionId: s.sessionId, text: "mac turn" } as never);
+      await s.engine.command({
+        type: "send",
+        commandId: "mac-turn",
+        sessionId: s.sessionId,
+        text: "mac turn",
+      } as never);
       await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
       await s.call("sessions.queue.change", {
         sessionId: s.sessionId,
@@ -4044,7 +5363,13 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         before: { messages: [] },
         after: { messages: [row("a")], status: "active" },
       });
-      const lease = (await s.call("sessions.queue.lease", { sessionId: s.sessionId, clientId: "desktop:win1", ...aware })).result.drain;
+      const lease = (
+        await s.call("sessions.queue.lease", {
+          sessionId: s.sessionId,
+          clientId: "desktop:win1",
+          ...aware,
+        })
+      ).result.drain;
       let lost = 0;
       for (let waited = 0; waited < 100_000; waited += 1_500) {
         await vi.advanceTimersByTimeAsync(1_500);
@@ -4068,7 +5393,12 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     try {
       const s = await adopted();
-      s.engine.command({ type: "send", commandId: "mac-turn", sessionId: s.sessionId, text: "mac turn" } as never);
+      await s.engine.command({
+        type: "send",
+        commandId: "mac-turn",
+        sessionId: s.sessionId,
+        text: "mac turn",
+      } as never);
       await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
       await s.call("sessions.queue.change", {
         sessionId: s.sessionId,
@@ -4077,11 +5407,17 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         before: { messages: [] },
         after: { messages: [row("a")], status: "active" },
       });
-      const lease = (await s.call("sessions.queue.lease", { sessionId: s.sessionId, clientId: "desktop:win1", ...aware })).result.drain;
+      const lease = (
+        await s.call("sessions.queue.lease", {
+          sessionId: s.sessionId,
+          clientId: "desktop:win1",
+          ...aware,
+        })
+      ).result.drain;
       s.finish();
       await vi.waitFor(async () => {
         await vi.advanceTimersByTimeAsync(100);
-        expect(s.store.sessionStatus(s.sessionId)).toBe("idle");
+        expect(await s.store.sessionStatus(s.sessionId)).toBe("idle");
       });
       s.send.mockClear();
       const beat = async (blocked: boolean) =>
@@ -4089,7 +5425,9 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
           await s.call("sessions.desktopLive", {
             clientId: "win1",
             sessions: [],
-            queueLeases: [{ sessionId: s.sessionId, epoch: lease.epoch, ...(blocked ? { blocked: true } : {}) }],
+            queueLeases: [
+              { sessionId: s.sessionId, epoch: lease.epoch, ...(blocked ? { blocked: true } : {}) },
+            ],
           })
         ).result.queueLeases?.[s.sessionId];
       // Blocked for three minutes of beats: the lease stays, the host sends nothing.
@@ -4115,38 +5453,58 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
     const directory = mkdtempSync(join(tmpdir(), "bycoda-restart-queue-"));
     const store = new HostStore(join(directory, "host.db"));
     const send = vi.fn(async () => {});
-    const provider = { send, stop: async () => {}, cancel: async () => {}, bind: () => {}, approve: () => {}, answer: () => {} } as never;
+    const provider = {
+      send,
+      stop: async () => {},
+      cancel: async () => {},
+      bind: () => {},
+      approve: () => {},
+      answer: () => {},
+    } as never;
     const first = new HostEngine(store, { codex: provider });
     const project = await first.openProject(directory);
-    const sessionId = first.command({
-      type: "create",
-      commandId: "restart-create",
-      projectId: project.id,
-      harness: "codex",
-      model: "gpt",
-      runtimeMode: "supervised",
-    } as never).sessionId;
-    const value = store.session(sessionId);
-    store.transaction(() =>
-      store.save(
-        { ...value, revision: value.revision + 1, status: "running", runId: "old-run", session: { ...value.session, busy: true } },
-        { type: "accepted" },
-      ),
+    const sessionId = (
+      await first.command({
+        type: "create",
+        commandId: "restart-create",
+        projectId: project.id,
+        harness: "codex",
+        model: "gpt",
+        runtimeMode: "supervised",
+      } as never)
+    ).sessionId;
+    const value = await store.session(sessionId);
+    await store.transaction(
+      async () =>
+        await store.save(
+          {
+            ...value,
+            revision: value.revision + 1,
+            status: "running",
+            runId: "old-run",
+            session: { ...value.session, busy: true },
+          },
+          { type: "accepted" },
+        ),
     );
     // A queue that was waiting on that turn.
-    new SessionQueues(store.db).change(sessionId, { messages: [] }, { messages: [row("a")], status: "active" } as never);
+    await new SessionQueues(store.db).change(sessionId, { messages: [] }, {
+      messages: [row("a")],
+      status: "active",
+    } as never);
     const restarted = new HostEngine(store, { codex: provider });
-    const server = createHostServer(restarted, ["codex"]);
+    const server = await createHostServer(restarted, ["codex"]);
     cleanups.push(async () => {
+      await server.closeResources();
       await restarted.close();
       await first.close();
       server.closeAllConnections();
-      store.close();
+      await store.close();
       rmSync(directory, { recursive: true, force: true });
     });
     await new Promise<void>((resolve) => setTimeout(resolve, 50));
     expect(send).not.toHaveBeenCalled();
-    expect(new SessionQueues(store.db).get(sessionId)).toMatchObject({
+    expect(await new SessionQueues(store.db).get(sessionId)).toMatchObject({
       status: "paused",
       holdReason: expect.stringContaining("Host restarted"),
     });

@@ -293,6 +293,8 @@ function AutomationsContent({
   const savingRef = useRef(false);
   const [running, setRunning] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const togglingRef = useRef(new Set<string>());
+  const [toggling, setToggling] = useState<Set<string>>(() => new Set());
   const logos = useTabGroupLogos();
   const [groupLabels] = useState(loadTabGroupLabels);
   const [groupMascots] = useState(loadTabGroupMascots);
@@ -550,6 +552,10 @@ function AutomationsContent({
   };
 
   const onToggle = async (automation: Automation, enabled: boolean) => {
+    const key = automationKey(automation);
+    if (savingRef.current || togglingRef.current.has(key)) return;
+    togglingRef.current.add(key);
+    setToggling(new Set(togglingRef.current));
     try {
       if (automation.host) {
         await saveHostAutomation(machines, {
@@ -562,6 +568,9 @@ function AutomationsContent({
       await setAutomationEnabled(automation, enabled);
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      togglingRef.current.delete(key);
+      setToggling(new Set(togglingRef.current));
     }
   };
 
@@ -685,6 +694,11 @@ function AutomationsContent({
                 <li key={automationKey(automation)}>
                   <AutomationCard
                     automation={automation}
+                    pending={
+                      toggling.has(automationKey(automation)) ||
+                      deleting === automationKey(automation)
+                    }
+                    disabled={saving || running === automationKey(automation)}
                     active={
                       !pickerOpen &&
                       automationKey(automation) === selectedId &&
@@ -850,6 +864,8 @@ function AutomationCard({
   customColors,
   onSelect,
   onToggle,
+  pending,
+  disabled,
 }: {
   automation: Automation;
   active: boolean;
@@ -860,6 +876,8 @@ function AutomationCard({
   customColors: Record<string, string>;
   onSelect: () => void;
   onToggle: (enabled: boolean) => void;
+  pending: boolean;
+  disabled: boolean;
 }) {
   useLocale();
   const seed = projectName(automation.cwd);
@@ -883,7 +901,7 @@ function AutomationCard({
         selected={active}
         layout="stacked"
       >
-        <span className="flex min-w-0 items-center gap-1.5 pr-8 text-ui-caption text-(--ui-text-muted)">
+        <span className="flex min-w-0 items-center gap-1.5 pr-14 text-ui-caption text-(--ui-text-muted)">
           <TriggerMark
             kind={automationTriggers(automation)[0]?.kind ?? automation.triggerKind}
             className="icon-xs"
@@ -937,11 +955,14 @@ function AutomationCard({
           </span>
         </span>
       </Button>
-      <span className="absolute right-2.5 top-2 flex">
+      <span className="absolute right-2.5 top-2 flex items-center gap-1">
+        {pending ? <LoaderCircle className="icon-xs animate-spin" aria-hidden="true" /> : null}
         <ToggleSwitch
           label={`${automation.enabled ? "Pause" : "Enable"} ${automation.name}`}
           on={automation.enabled}
           onChange={onToggle}
+          busy={pending}
+          disabled={disabled}
           compact
         />
       </span>
@@ -1368,12 +1389,7 @@ function AutomationEditor({
   const showingHistory = historyAvailable && tab === "history";
 
   return (
-    <form
-      className="flex min-h-0 min-w-0 flex-1 flex-col"
-      onSubmit={onSubmit}
-      aria-busy={saving}
-      inert={saving}
-    >
+    <form className="flex min-h-0 min-w-0 flex-1 flex-col" onSubmit={onSubmit} aria-busy={saving}>
       <div className="relative w-full shrink-0 border-b border-(--ui-tone-neutral-border)">
         <div className="flex w-full flex-col gap-2.5 px-3 sm:px-6 pt-4">
           <header className="flex flex-col gap-2.5">
@@ -1387,21 +1403,23 @@ function AutomationEditor({
                 disabled={saving}
                 onChange={(event) => update("name", event.target.value)}
                 placeholder={t("Untitled")}
-                fieldClassName="min-w-0 flex-1"
+                fieldClassName="min-w-0 flex-[1_1_16rem]"
               />
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                 {!draft.id || dirty ? (
-                  <Button type="button" onClick={onClose} variant="secondary">
+                  <Button type="button" onClick={onClose} disabled={saving} variant="secondary">
                     {draft.id ? t("Reset") : t("Cancel")}
                   </Button>
                 ) : null}
                 {onRun ? (
-                  <Button type="button" onClick={onRun} disabled={running} variant="secondary">
-                    {running ? (
-                      <LoaderCircle className="icon-sm animate-spin" />
-                    ) : (
-                      <Play className="icon-sm" />
-                    )}
+                  <Button
+                    type="button"
+                    onClick={onRun}
+                    loading={running}
+                    disabled={saving}
+                    startIcon={<Play className="icon-sm" />}
+                    variant="secondary"
+                  >
                     {t("Run now")}
                   </Button>
                 ) : null}
@@ -1411,12 +1429,14 @@ function AutomationEditor({
                   variant="primary"
                   loading={saving}
                 >
-                  {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
                   {draft.id ? t("Save") : t("Create")}
                 </Button>
               </div>
             </div>
-            <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-ui-caption text-(--ui-text-muted)">
+            <div
+              inert={saving}
+              className="flex min-w-0 flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-muted)"
+            >
               <ToggleSwitch
                 label={draft.enabled ? t("Pause automation") : t("Enable automation")}
                 on={draft.enabled}
@@ -1508,6 +1528,7 @@ function AutomationEditor({
 
       <div
         ref={lockOverscroll}
+        inert={saving}
         id={historyAvailable ? tabPanelId : undefined}
         role={historyAvailable ? "tabpanel" : undefined}
         aria-labelledby={
@@ -1904,11 +1925,15 @@ function ToggleSwitch({
   on,
   onChange,
   compact = false,
+  busy = false,
+  disabled = false,
 }: {
   label: string;
   on: boolean;
   onChange: (on: boolean) => void;
   compact?: boolean;
+  busy?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <Switch
@@ -1916,7 +1941,12 @@ function ToggleSwitch({
       aria-label={label}
       title={compact ? label : undefined}
       checked={on}
-      onCheckedChange={onChange}
+      disabled={disabled}
+      aria-busy={busy || undefined}
+      aria-disabled={busy || disabled || undefined}
+      onCheckedChange={(value) => {
+        if (!busy && !disabled) onChange(value);
+      }}
       compact={compact}
     />
   );

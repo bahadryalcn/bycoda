@@ -1,5 +1,73 @@
 import { test, expect } from "@playwright/test";
 
+test("Git actions show progress in place without losing focus or repeating mutations", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/tests/browser/git-workspace.html?action-feedback");
+  await page.locator("#root > div").evaluate((node) => {
+    node.style.width = "100%";
+  });
+  const sync = page.getByRole("button").filter({ hasText: "Sync Changes" });
+  await sync.focus();
+  await sync.press("Enter");
+  await expect(sync).toHaveAttribute("aria-busy", "true");
+  await expect(sync).toBeFocused();
+  await expect(page.locator("header").first().getByRole("status")).toHaveCount(0);
+  await sync.press("Enter");
+  const calls = (command: string) =>
+    page.evaluate(
+      (name) =>
+        (window as unknown as { gitFixtureCalls: { command: string }[] }).gitFixtureCalls.filter(
+          (call) => call.command === name,
+        ).length,
+      command,
+    );
+  expect(await calls("git_sync")).toBe(1);
+  for (const width of [280, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      expect(
+        await page.locator("#root > div").evaluate((node) => node.scrollWidth <= node.clientWidth),
+      ).toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(`git-pending-${width}-${light ? "light" : "dark"}.png`),
+      });
+    }
+  }
+  await page.evaluate(() =>
+    (
+      window as unknown as { gitFixtureFinishAction: (command: string) => void }
+    ).gitFixtureFinishAction("git_sync"),
+  );
+  await expect(sync).not.toHaveAttribute("aria-busy", "true");
+  await page.getByRole("button", { name: /^Stashes/ }).click();
+  const stashMenu = page.getByTitle("Actions for WIP: keyboard navigation", { exact: true });
+  await stashMenu.click();
+  await page.getByRole("menuitem", { name: /^Apply\b/ }).click();
+  await expect(stashMenu).toHaveAttribute("aria-busy", "true");
+  await expect(
+    page.getByRole("button", { name: "Stash all changes", exact: true }),
+  ).not.toHaveAttribute("aria-busy", "true");
+  expect(await calls("git_stash_action")).toBe(1);
+  await page.evaluate(() =>
+    (window as unknown as { gitFixtureRemount: () => Promise<void> }).gitFixtureRemount(),
+  );
+  await expect(stashMenu).toHaveAttribute("aria-busy", "true");
+  await page.evaluate(() =>
+    (
+      window as unknown as { gitFixtureFinishAction: (command: string) => void }
+    ).gitFixtureFinishAction("git_stash_action"),
+  );
+  await expect(stashMenu).not.toHaveAttribute("aria-busy", "true");
+});
+
 test("hunk targets retain identity and allow keyboard and pointer recovery after a mock failure", async ({
   page,
 }, testInfo) => {

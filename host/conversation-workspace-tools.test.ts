@@ -33,8 +33,8 @@ async function setup() {
     },
   });
   const project = await engine.openProject(directory);
-  const other = store.addProject(join(directory, "other"), "Other");
-  const created = engine.command({
+  const other = await store.addProject(join(directory, "other"), "Other");
+  const created = await engine.command({
     type: "create",
     commandId: crypto.randomUUID(),
     projectId: project.id,
@@ -71,19 +71,19 @@ async function setup() {
     approval,
   );
   let authorized = true;
-  const call = (action: ConversationTool, input: Record<string, unknown> = {}) => {
+  const call = async (action: ConversationTool, input: Record<string, unknown> = {}) => {
     validateConversationTool(action, input);
-    return service.call(
+    return await service.call(
       action,
       input,
       principal,
-      store.session(created.sessionId).session,
+      (await store.session(created.sessionId)).session,
       () => authorized,
     );
   };
   cleanup.push(async () => {
     await engine.close();
-    store.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
   return {
@@ -189,7 +189,7 @@ describe("direct application workspace tools", () => {
     });
     expect(changed.time).toBe("09:30");
     expect(changed.prompt).toBe("New instructions");
-    s.automations.save({ ...saved, id: "foreign", projectId: s.other.id });
+    await s.automations.save({ ...saved, id: "foreign", projectId: s.other.id });
     await expect(s.call("automations.runNow", { automationId: "foreign" })).rejects.toThrow(
       "another project",
     );
@@ -221,15 +221,15 @@ describe("direct application workspace tools", () => {
     await expect(s.call("inbox.providers.list", { requestId: "offline" })).rejects.toThrow(
       "Open the updated",
     );
-    s.inbox.beat("native", "desktop", { version: 1 });
+    await s.inbox.beat("native", "desktop", { version: 1 });
     const queued: any = await s.call("inbox.providers.list", { requestId: "list", state: "open" });
     expect(queued.state).toBe("queued");
-    const jobs = s.inbox.beat("native", "desktop", { version: 1 }).jobs;
+    const jobs = (await s.inbox.beat("native", "desktop", { version: 1 })).jobs;
     expect(jobs[0].operation).toMatchObject({
       action: "list",
       projects: [{ path: s.project.cwd }],
     });
-    s.inbox.beat("native", "desktop", {
+    await s.inbox.beat("native", "desktop", {
       version: 1,
       replies: [
         { id: queued.id, result: { items: [{ ...item, projectPath: s.project.cwd }], errors: {} } },
@@ -250,7 +250,7 @@ describe("direct application workspace tools", () => {
   it("exposes run history and cancellation while preventing an automation from controlling itself", async () => {
     const s = await setup();
     await s.call("automations.create", automation);
-    const run = s.automations.runNow("daily");
+    const run = await s.automations.runNow("daily");
     expect(((await s.call("automations.runs", { automationId: "daily" })) as any).items[0].id).toBe(
       run.id,
     );
@@ -260,7 +260,7 @@ describe("direct application workspace tools", () => {
         "automations.runNow",
         { automationId: "daily" },
         ownPrincipal,
-        s.store.session(run.sessionId!).session,
+        (await s.store.session(run.sessionId!)).session,
         () => true,
       ),
     ).rejects.toThrow("own automation");
@@ -273,10 +273,10 @@ describe("direct application workspace tools", () => {
   });
   it("requires exact owner approval, refuses revoked authority and never replays approved provider writes", async () => {
     const s = await setup();
-    s.inbox.beat("native", "desktop", { version: 1 });
+    await s.inbox.beat("native", "desktop", { version: 1 });
     const listed: any = await s.call("inbox.providers.list", { requestId: "list" });
-    s.inbox.beat("native", "desktop", { version: 1 });
-    s.inbox.beat("native", "desktop", {
+    await s.inbox.beat("native", "desktop", { version: 1 });
+    await s.inbox.beat("native", "desktop", {
       version: 1,
       replies: [{ id: listed.id, result: { items: [{ ...item, projectPath: s.project.cwd }] } }],
     });
@@ -312,10 +312,10 @@ describe("direct application workspace tools", () => {
     "keeps the reviewed head immutable while %s approval is pending",
     async (prAction) => {
       const s = await setup();
-      s.inbox.beat("native", "desktop", { version: 1 });
+      await s.inbox.beat("native", "desktop", { version: 1 });
       const listed: any = await s.call("inbox.providers.list", { requestId: "list-head" });
-      s.inbox.beat("native", "desktop", { version: 1 });
-      s.inbox.beat("native", "desktop", {
+      await s.inbox.beat("native", "desktop", { version: 1 });
+      await s.inbox.beat("native", "desktop", {
         version: 1,
         replies: [{ id: listed.id, result: { items: [{ ...item, projectPath: s.project.cwd }] } }],
       });
@@ -338,23 +338,23 @@ describe("direct application workspace tools", () => {
       ).rejects.toThrow("another pending operation");
       approve({ approved: true });
       await pending;
-      const jobs = s.inbox.beat("native", "desktop", { version: 1 });
+      const jobs = await s.inbox.beat("native", "desktop", { version: 1 });
       expect(JSON.stringify(jobs)).toContain("a".repeat(40));
       expect(JSON.stringify(jobs)).not.toContain("b".repeat(40));
     },
   );
   it("requires exact approval for inline reviews and deduplicates the entire batch", async () => {
     const s = await setup();
-    s.inbox.beat("native", "desktop", { version: 1 });
+    await s.inbox.beat("native", "desktop", { version: 1 });
     const listed: any = await s.call("inbox.providers.list", { requestId: "list-review" });
-    s.inbox.beat("native", "desktop", { version: 1 });
-    s.inbox.beat("native", "desktop", {
+    await s.inbox.beat("native", "desktop", { version: 1 });
+    await s.inbox.beat("native", "desktop", {
       version: 1,
       replies: [{ id: listed.id, result: { items: [{ ...item, projectPath: s.project.cwd }] } }],
     });
     const context: any = await s.call("inbox.reviewContext", { requestId: "context", item });
     expect(s.approval).not.toHaveBeenCalled();
-    expect(s.inbox.beat("native", "desktop", { version: 1 }).jobs).toContainEqual(
+    expect((await s.inbox.beat("native", "desktop", { version: 1 })).jobs).toContainEqual(
       expect.objectContaining({
         id: context.id,
         operation: expect.objectContaining({ action: "review-context" }),
@@ -385,7 +385,7 @@ describe("direct application workspace tools", () => {
     );
     expect(await s.call("inbox.review", input)).toEqual(first);
     expect(s.approval).toHaveBeenCalledTimes(2);
-    const dispatched = s.inbox.beat("native", "desktop", {
+    const dispatched = await s.inbox.beat("native", "desktop", {
       version: 1,
       replies: [
         { id: context.id, result: { commitId: input.commitId, patch: "diff", truncated: false } },
@@ -397,12 +397,12 @@ describe("direct application workspace tools", () => {
         operation: expect.objectContaining({ action: "review", comments: input.comments }),
       }),
     );
-    s.inbox.beat("native", "desktop", {
+    await s.inbox.beat("native", "desktop", {
       version: 1,
       replies: [{ id: first.id, error: "Response lost after submission" }],
     });
     expect(await s.call("inbox.review", input)).toMatchObject({ id: first.id, state: "uncertain" });
-    expect(s.inbox.beat("native", "desktop", { version: 1 }).jobs).toEqual([]);
+    expect((await s.inbox.beat("native", "desktop", { version: 1 })).jobs).toEqual([]);
     expect(s.approval).toHaveBeenCalledTimes(2);
     await expect(
       s.call("inbox.review", { ...input, comments: [{ ...input.comments[0], line: 10 }] }),

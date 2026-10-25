@@ -1,4 +1,4 @@
-import { useLocale, getLocale, useT } from "../i18n";
+import { useLocale, useT } from "../i18n";
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ChevronLeft, ChevronRight, Clock } from "./icons";
 import { Button } from "./Button";
@@ -82,7 +82,7 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
   const previousDisabled =
     !!minimum &&
     month.getFullYear() * 12 + month.getMonth() <= minimum.getFullYear() * 12 + minimum.getMonth();
-  const monthLabel = month.toLocaleDateString(getLocale(), { month: "long" });
+  const monthLabel = month.toLocaleDateString(locale, { month: "long" });
   const headingId = useId();
   const timeId = useId();
   const timeHintId = useId();
@@ -193,10 +193,11 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
                   {date ? (
                     <button
                       type="button"
-                      aria-label={dateKey(date)}
+                      aria-label={date.toLocaleDateString(locale, { dateStyle: "full" })}
+                      data-date={dateKey(date)}
                       tabIndex={dateKey(date) === dateKey(focusedDate) ? 0 : -1}
                       onKeyDown={(event) => onDayKeyDown(event, date)}
-                      title={date.toLocaleDateString(getLocale(), {
+                      title={date.toLocaleDateString(locale, {
                         dateStyle: "full",
                       })}
                       disabled={!!minimum && date < minimum}

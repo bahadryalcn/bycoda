@@ -2,11 +2,7 @@ import { lazy, Suspense } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { HARNESSES } from "../../sessions/model/session";
-import {
-  defaultSessionChoice,
-  defaultModelSettings,
-  resolveModel,
-} from "../../sessions/model/models";
+import { defaultModelSettings, resolveModel } from "../../sessions/model/models";
 import { canRunHarnessTextPrompt } from "../../../integrations/harness";
 import {
   defaultProviderAccountId,
@@ -17,6 +13,7 @@ import {
   useDefaultTranslationChoice,
   saveDefaultRepromptChoice,
   useDefaultRepromptChoice,
+  defaultTextActionChoice,
   type TranslationChoice,
 } from "../../sessions/model/translationPreferences";
 import { Group, Row } from "./settingsControls";
@@ -37,7 +34,7 @@ export function TranslationSettings({
   const reprompt = action === "reprompt";
   const choice = reprompt ? repromptChoice : translationChoice;
   const saveChoice = reprompt ? saveDefaultRepromptChoice : saveDefaultTranslationChoice;
-  const selected: TranslationChoice = choice ?? defaultSessionChoice();
+  const selected: TranslationChoice = choice ?? defaultTextActionChoice();
   const control = (
     <Row
       id={reprompt ? "reprompt-model-default" : "translation-model-default"}
@@ -45,23 +42,23 @@ export function TranslationSettings({
       description={
         reprompt
           ? t(
-              "Used to clarify prompts across conversations. Without a selection, uses the conversation model.",
+              "Used to clarify prompts across conversations. Without a selection, uses the default model from Settings.",
             )
           : t(
-              "Used for text translations across conversations. Without a selection, uses the conversation model.",
+              "Used for text translations across conversations. Without a selection, uses the default model from Settings.",
             )
       }
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {!choice && (
-          <span className="text-[var(--ui-text-secondary)]">{t("Use conversation model")}</span>
+          <span className="text-[var(--ui-text-secondary)]">{t("Use default model")}</span>
         )}
         <Suspense fallback={<span>{t("Loading…")}</span>}>
           <ModelPicker
             harness={selected.harness}
             model={selected.model}
             values={selected.modelSettings ?? {}}
-            accountId={choice?.providerAccountId}
+            accountId={selected.providerAccountId}
             accountChoices
             allowedHarnesses={HARNESSES.filter(canRunHarnessTextPrompt)}
             onChange={(harness, model, accountId) =>
@@ -89,7 +86,7 @@ export function TranslationSettings({
         </Suspense>
         {choice && (
           <Button variant="link" onClick={() => saveChoice(undefined)}>
-            {t("Use conversation model")}
+            {t("Use default model")}
           </Button>
         )}
       </div>

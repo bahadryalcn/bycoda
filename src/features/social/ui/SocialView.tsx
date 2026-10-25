@@ -1,3 +1,6 @@
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { NativeSelect, Select } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
 import { Skeleton } from "../../../shared/ui/Skeleton";
@@ -215,6 +218,7 @@ export function SocialView({
   onToggleSidebar?: () => void;
   onClose: () => void;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [machines, setMachines] = useState<RemoteMachine[]>([]);
   const [machineId, setMachineId] = useState("");
@@ -580,7 +584,7 @@ export function SocialView({
               <span>{t("Computer")}</span>
               <SearchableSelect
                 value={machineId}
-                disabled={busy}
+                disabled={socialLocked || busy}
                 label={t("Authoritative host")}
                 searchable={machines.length > 5}
                 searchPlaceholder={t("Search computers…")}
@@ -611,13 +615,14 @@ export function SocialView({
                 ]}
                 searchPlaceholder={t("Search projects…")}
                 emptyLabel={t("No project found")}
-                disabled={busy}
+                disabled={socialLocked || busy}
               />
             </div>
           </div>
           <div className="social-host-status" role="status">
             {snapshot ? (
               <Button
+                disabled={socialLocked}
                 variant="ghost"
                 type="button"
                 size="sm"
@@ -651,6 +656,7 @@ export function SocialView({
           </div>
           <div className="social-header-actions">
             <Button
+              disabled={socialLocked}
               ref={headerMenuRef}
               type="button"
               iconOnly
@@ -674,7 +680,7 @@ export function SocialView({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    disabled={busy}
+                    disabled={socialLocked || busy}
                     onClick={() => {
                       setFilter(activeProject);
                       setOffsets({});
@@ -685,9 +691,9 @@ export function SocialView({
                   </Button>
                 ) : null}
                 <Button
+                  disabled={socialLocked}
                   variant="ghost"
                   size="sm"
-                  loading={busy || loading}
                   type="button"
                   onClick={() => {
                     openHistory();
@@ -704,8 +710,8 @@ export function SocialView({
               size="sm"
               label={t("Refresh")}
               variant="ghost"
-              loading={busy || refreshing}
-              disabled={busy || refreshing || !machineId}
+              loading={!busy && refreshing}
+              disabled={socialLocked || busy || refreshing || !machineId}
               title={refreshing ? t("Refreshing…") : t("Refresh")}
               data-refreshing={refreshing}
               onClick={() => {
@@ -716,6 +722,7 @@ export function SocialView({
               <RefreshCw className="icon-md" aria-hidden="true" />
             </Button>
             <Button
+              disabled={socialLocked}
               type="button"
               iconOnly
               size="sm"
@@ -730,6 +737,7 @@ export function SocialView({
         </header>
         <div className="social-section-picker">
           <Select
+            disabled={socialLocked}
             label={t("Social Media sections")}
             value={tab}
             options={tabs.map((item) => ({ value: item, label: tabLabel(item) }))}
@@ -744,6 +752,7 @@ export function SocialView({
             const Icon = tabIcons[item];
             return (
               <Button
+                disabled={socialLocked}
                 type="button"
                 variant="tab"
                 key={item}
@@ -790,8 +799,8 @@ export function SocialView({
             <Button
               type="button"
               variant="secondary"
-              loading={busy || (!error && refreshing)}
-              disabled={busy || loading || (!error && refreshing)}
+              loading={!busy && !error && refreshing}
+              disabled={socialLocked || busy || loading || (!error && refreshing)}
               onClick={() => {
                 if (error) setError("");
                 else if (machineId) void refresh(machineId, true);
@@ -803,12 +812,9 @@ export function SocialView({
           </div>
         ) : null}
         <main className="social-main" aria-busy={loading || busy || refreshing}>
-          {busy || notice ? (
+          {notice ? (
             <div className="social-feedback-bar">
-              <Notice
-                kind={busy ? "loading" : stale ? "warning" : "success"}
-                title={busy ? t("Operation in progress…") : notice}
-              />
+              <Notice kind={stale ? "warning" : "success"} title={notice} />
             </div>
           ) : null}
           {scoped ? (
@@ -908,6 +914,7 @@ function WorkspacePagination({
   disabled: boolean;
   onPage: (collection: SocialCollection, offset: number) => void;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const labels = collectionLabels();
   return (
@@ -928,7 +935,7 @@ function WorkspacePagination({
             <Button
               variant="secondary"
               type="button"
-              disabled={disabled || page.offset === 0}
+              disabled={socialLocked || disabled || page.offset === 0}
               onClick={() => onPage(collection, Math.max(0, page.offset - page.limit))}
             >
               {t("Previous page")}
@@ -936,7 +943,7 @@ function WorkspacePagination({
             <Button
               variant="secondary"
               type="button"
-              disabled={disabled || page.offset + page.limit >= page.total}
+              disabled={socialLocked || disabled || page.offset + page.limit >= page.total}
               onClick={() => onPage(collection, page.offset + page.limit)}
             >
               {t("Next page")}
@@ -978,6 +985,7 @@ function WorkspacePanels({
     filter: SocialCollectionFilter,
   ) => void;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const { tab, visited, filter, automationMode, projects } = host;
   const client = host.client!,
@@ -996,7 +1004,7 @@ function WorkspacePanels({
   const present = (tab: Tab, section: Section) =>
     visited.includes(tab) && host.snapshots.has(section);
   return (
-    <fieldset disabled={busy} className="social-workspace social-workspace-root">
+    <fieldset className="social-workspace social-workspace-root">
       {present("Accounts", "accounts") ? (
         <RetainedSocialPanel {...feedback} active={active && tab === "Accounts"}>
           <Accounts {...props("accounts")} onOpenHistory={onOpenHistory} onNavigate={onNavigate} />
@@ -1031,6 +1039,7 @@ function WorkspacePanels({
               ["history", t("Activity history")],
             ].map(([value, label]) => (
               <Button
+                disabled={socialLocked}
                 variant="tab"
                 type="button"
                 key={value}
@@ -1127,12 +1136,14 @@ function HostStatus({
   ready: boolean;
   updatedAt: number;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   return (
     <div className="social-scheduling-help">
       <Button
+        disabled={socialLocked}
         ref={trigger}
         variant="ghost"
         size="sm"
@@ -1193,6 +1204,8 @@ function Accounts({
   onNavigate,
   onOpenHistory,
 }: Props & { onNavigate?: (tab: Tab) => void; onOpenHistory?: () => void }) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [oauthOperations, setOAuthOperations] = useState<SocialOperation[]>(["publish"]);
   const [resourceId, setResourceId] = useState("");
@@ -1334,27 +1347,32 @@ function Accounts({
           onSubmit={(event) => {
             const form = event.currentTarget;
             const data = field(event);
-            void run(async () => {
-              const created = await client.request<SocialAccount>("accounts.create", {
-                platform,
-                name: data.get("name"),
-                accountType: data.get("type"),
-                projectIds: selectedProjects,
+            void pendingUi
+              .run("accounts.add-account", () =>
+                run(async () => {
+                  const created = await client.request<SocialAccount>("accounts.create", {
+                    platform,
+                    name: data.get("name"),
+                    accountType: data.get("type"),
+                    projectIds: selectedProjects,
+                  });
+                  setSelected(created.id);
+                  setOAuth(null);
+                }),
+              )
+              .then((success) => {
+                if (success) {
+                  form.reset();
+                  closeComposer(form);
+                }
               });
-              setSelected(created.id);
-              setOAuth(null);
-            }).then((success) => {
-              if (success) {
-                form.reset();
-                closeComposer(form);
-              }
-            });
           }}
           className="social-form"
         >
           <label>
             {t("Platform")}
             <SearchableSelect
+              disabled={socialLocked}
               label={t("Platform")}
               triggerProps={{ "aria-label": t("Platform") }}
               value={platform}
@@ -1362,10 +1380,16 @@ function Accounts({
               options={SOCIAL_PLATFORMS.map((id) => ({ value: id, label: names[id] }))}
             />
           </label>
-          <TextField label={t("Account name")} name="name" required maxLength={200} />
+          <TextField
+            disabled={socialLocked}
+            label={t("Account name")}
+            name="name"
+            required
+            maxLength={200}
+          />
           <label>
             {t("Account type")}
-            <NativeSelect name="type" key={platform}>
+            <NativeSelect disabled={socialLocked} name="type" key={platform}>
               {SOCIAL_ACCOUNT_TYPES[platform].map((id) => (
                 <option key={id} value={id}>
                   {accountTypeLabel(id)}
@@ -1378,7 +1402,12 @@ function Accounts({
             selected={selectedProjects}
             onChange={setSelectedProjects}
           />
-          <Button variant="primary" type="submit">
+          <Button
+            loading={pendingUi.is("accounts.add-account")}
+            disabled={socialLocked}
+            variant="primary"
+            type="submit"
+          >
             {t("Add account")}
           </Button>
           {!selectedProjects.length ? (
@@ -1402,6 +1431,7 @@ function Accounts({
           <div className="social-list">
             {snapshot.accounts.map((item) => (
               <Button
+                disabled={socialLocked}
                 type="button"
                 variant="tab"
                 className="social-row"
@@ -1448,10 +1478,20 @@ function Accounts({
                 </span>
                 {account.connected && onNavigate ? (
                   <div className="social-actions">
-                    <Button variant="primary" type="button" onClick={() => onNavigate("Campaigns")}>
+                    <Button
+                      disabled={socialLocked}
+                      variant="primary"
+                      type="button"
+                      onClick={() => onNavigate("Campaigns")}
+                    >
                       {t("Prepare post")}
                     </Button>
-                    <Button variant="secondary" type="button" onClick={onOpenHistory}>
+                    <Button
+                      disabled={socialLocked}
+                      variant="secondary"
+                      type="button"
+                      onClick={onOpenHistory}
+                    >
                       {t("View history")}
                     </Button>
                   </div>
@@ -1505,6 +1545,7 @@ function Accounts({
                   </Notice>
                   <label className="social-inline-check">
                     <Checkbox
+                      disabled={socialLocked}
                       checked={browserRisk}
                       onChange={(event) => setBrowserRisk(event.target.checked)}
                     />
@@ -1521,20 +1562,24 @@ function Accounts({
                   ) : null}
                   <div className="social-actions">
                     <Button
+                      loading={pendingUi.is("accounts.sign-in-again-in-the-browser")}
                       type="button"
                       variant="primary"
                       disabled={
+                        socialLocked ||
                         !browserRisk ||
                         !browserAvailability?.available ||
                         browser?.status === "waiting"
                       }
                       onClick={() =>
-                        void run(async () => {
-                          await queryClient.cancelQueries({ queryKey: browserKey });
-                          const status = await client.browserBegin(account.id);
-                          await queryClient.cancelQueries({ queryKey: browserKey });
-                          setBrowser(status);
-                        })
+                        void pendingUi.run("accounts.sign-in-again-in-the-browser", () =>
+                          run(async () => {
+                            await queryClient.cancelQueries({ queryKey: browserKey });
+                            const status = await client.browserBegin(account.id);
+                            await queryClient.cancelQueries({ queryKey: browserKey });
+                            setBrowser(status);
+                          }),
+                        )
                       }
                     >
                       {account.connected && account.connection === "browser"
@@ -1542,13 +1587,17 @@ function Accounts({
                         : t("Sign in to X in the browser")}
                     </Button>
                     <Button
+                      loading={pendingUi.is("accounts.check-browser-connection")}
+                      disabled={socialLocked}
                       type="button"
                       variant="secondary"
                       onClick={() =>
-                        void run(async () => {
-                          setBrowserAvailability(await client.browserAvailability());
-                          setBrowser(await client.browserStatus(account.id));
-                        })
+                        void pendingUi.run("accounts.check-browser-connection", () =>
+                          run(async () => {
+                            setBrowserAvailability(await client.browserAvailability());
+                            setBrowser(await client.browserStatus(account.id));
+                          }),
+                        )
                       }
                     >
                       {t("Check browser connection")}
@@ -1613,13 +1662,20 @@ function Accounts({
                   </details>
                   <div className="social-actions">
                     <Button
+                      loading={pendingUi.is("accounts.reconnect-host-account")}
                       type="button"
                       variant="primary"
-                      disabled={!availability[account.platform]?.configured || !!availabilityError}
+                      disabled={
+                        socialLocked ||
+                        !availability[account.platform]?.configured ||
+                        !!availabilityError
+                      }
                       onClick={() =>
-                        void run(async () => {
-                          await client.tokenConnect(account.id);
-                        })
+                        void pendingUi.run("accounts.reconnect-host-account", () =>
+                          run(async () => {
+                            await client.tokenConnect(account.id);
+                          }),
+                        )
                       }
                     >
                       {account.connected ? t("Reconnect host account") : t("Connect host account")}
@@ -1737,6 +1793,7 @@ function Accounts({
                         .map((capability) => (
                           <label key={capability.operation}>
                             <Checkbox
+                              disabled={socialLocked}
                               checked={oauthOperations.includes(capability.operation)}
                               onChange={(event) =>
                                 setOAuthOperations((current) =>
@@ -1760,6 +1817,7 @@ function Accounts({
                   )}
                   {account.accountType === "organization" ? (
                     <TextField
+                      disabled={socialLocked}
                       label={t("LinkedIn organization ID")}
                       inputMode="numeric"
                       value={resourceId}
@@ -1768,9 +1826,11 @@ function Accounts({
                   ) : null}
                   <div className="social-actions">
                     <Button
+                      loading={pendingUi.is("accounts.reconnect-in-browser")}
                       type="button"
                       variant="primary"
                       disabled={
+                        socialLocked ||
                         (!oauthOperations.length &&
                           !PROFILE_ONLY_PLATFORMS.includes(account.platform)) ||
                         !!availabilityError ||
@@ -1778,27 +1838,33 @@ function Accounts({
                         (account.accountType === "organization" && !/^\d+$/.test(resourceId))
                       }
                       onClick={() =>
-                        void run(async () => {
-                          await queryClient.cancelQueries({ queryKey: oauthKey });
-                          const begin = await client.oauthBegin(
-                            account.id,
-                            account.accountType === "organization" ? resourceId : undefined,
-                            oauthOperations,
-                          );
-                          // A waiting poll may have started while begin was in flight.
-                          await queryClient.cancelQueries({ queryKey: oauthKey });
-                          setOAuth({ status: "waiting", candidates: [] });
-                          await openUrl(begin.url);
-                        })
+                        void pendingUi.run("accounts.reconnect-in-browser", () =>
+                          run(async () => {
+                            await queryClient.cancelQueries({ queryKey: oauthKey });
+                            const begin = await client.oauthBegin(
+                              account.id,
+                              account.accountType === "organization" ? resourceId : undefined,
+                              oauthOperations,
+                            );
+                            // A waiting poll may have started while begin was in flight.
+                            await queryClient.cancelQueries({ queryKey: oauthKey });
+                            setOAuth({ status: "waiting", candidates: [] });
+                            await openUrl(begin.url);
+                          }),
+                        )
                       }
                     >
                       {account.connected ? t("Reconnect in browser") : t("Connect in browser")}
                     </Button>
                     <Button
+                      loading={pendingUi.is("accounts.check-connection")}
+                      disabled={socialLocked}
                       type="button"
                       variant="secondary"
                       onClick={() =>
-                        void run(async () => setOAuth(await client.oauthStatus(account.id)))
+                        void pendingUi.run("accounts.check-connection", () =>
+                          run(async () => setOAuth(await client.oauthStatus(account.id))),
+                        )
                       }
                     >
                       {t("Check connection")}
@@ -1824,14 +1890,18 @@ function Accounts({
                       </p>
                       {(oauth.candidates ?? []).map((candidate) => (
                         <Button
+                          loading={pendingUi.is(`accounts.connect:${candidate.id}`)}
+                          disabled={socialLocked}
                           type="button"
                           variant="secondary"
                           key={candidate.id}
                           onClick={() =>
-                            void run(async () => {
-                              await client.oauthSelect(account.id, candidate.id);
-                              await queryClient.invalidateQueries({ queryKey: oauthKey });
-                            })
+                            void pendingUi.run(`accounts.connect:${candidate.id}`, () =>
+                              run(async () => {
+                                await client.oauthSelect(account.id, candidate.id);
+                                await queryClient.invalidateQueries({ queryKey: oauthKey });
+                              }),
+                            )
                           }
                         >
                           {t("{p0} · Connect", { p0: candidate.name })}
@@ -1843,14 +1913,18 @@ function Accounts({
               )}
               <div className="social-actions">
                 <Button
+                  loading={pendingUi.is("accounts.resume-account")}
+                  disabled={socialLocked}
                   type="button"
                   variant="secondary"
                   onClick={() =>
-                    void run(() =>
-                      client.request("accounts.pause", {
-                        accountId: account.id,
-                        paused: !account.paused,
-                      }),
+                    void pendingUi.run("accounts.resume-account", () =>
+                      run(() =>
+                        client.request("accounts.pause", {
+                          accountId: account.id,
+                          paused: !account.paused,
+                        }),
+                      ),
                     )
                   }
                 >
@@ -1860,7 +1934,7 @@ function Accounts({
                   type="button"
                   variant="danger"
                   className="ml-auto"
-                  disabled={!account.connected}
+                  disabled={socialLocked || !account.connected}
                   onClick={() => setDisconnecting(true)}
                 >
                   {t("Remove connection")}
@@ -1879,15 +1953,19 @@ function Accounts({
                   </p>
                   <div className="social-actions">
                     <Button
+                      loading={pendingUi.is("accounts.confirm-disconnect")}
+                      disabled={socialLocked}
                       type="button"
                       variant="danger"
                       onClick={() =>
                         void (async () => {
                           if (
-                            await run(() =>
-                              client.request("accounts.disconnect", {
-                                accountId: account.id,
-                              }),
+                            await pendingUi.run("accounts.confirm-disconnect", () =>
+                              run(() =>
+                                client.request("accounts.disconnect", {
+                                  accountId: account.id,
+                                }),
+                              ),
                             )
                           )
                             setDisconnecting(false);
@@ -1897,6 +1975,7 @@ function Accounts({
                       {t("Confirm disconnect")}
                     </Button>
                     <Button
+                      disabled={socialLocked}
                       type="button"
                       variant="secondary"
                       onClick={() => setDisconnecting(false)}
@@ -1945,18 +2024,21 @@ function Accounts({
                   className="social-form"
                   onSubmit={(event) => {
                     field(event);
-                    void run(() =>
-                      client.request("accounts.grants", {
-                        accountId: account.id,
-                        projectId: grantProject,
-                        permissions: grantPermissions,
-                      }),
+                    void pendingUi.run("accounts.save-permissions", () =>
+                      run(() =>
+                        client.request("accounts.grants", {
+                          accountId: account.id,
+                          projectId: grantProject,
+                          permissions: grantPermissions,
+                        }),
+                      ),
                     );
                   }}
                 >
                   <label>
                     {t("Project")}
                     <SearchableSelect
+                      disabled={socialLocked}
                       value={grantProject}
                       label={t("Project")}
                       options={projects.map((project) => ({
@@ -1982,6 +2064,7 @@ function Accounts({
                     ].map(([id, label]) => (
                       <label key={id}>
                         <Checkbox
+                          disabled={socialLocked}
                           checked={grantPermissions.includes(id)}
                           onChange={(event) =>
                             setGrantPermissions(
@@ -1995,7 +2078,12 @@ function Accounts({
                       </label>
                     ))}
                   </fieldset>
-                  <Button type="submit" variant="secondary" disabled={!grantProject}>
+                  <Button
+                    loading={pendingUi.is("accounts.save-permissions")}
+                    type="submit"
+                    variant="secondary"
+                    disabled={socialLocked || !grantProject}
+                  >
                     {t("Save permissions")}
                   </Button>
                   <p className="social-muted">

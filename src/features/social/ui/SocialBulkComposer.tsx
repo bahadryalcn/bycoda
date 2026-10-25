@@ -1,3 +1,6 @@
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
@@ -43,6 +46,8 @@ export function SocialBulkComposer({
   content?: { text: string; factIds: string[] };
   onContentChange?: (value: { text: string; factIds: string[] }) => void;
 }) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [kind, setKind] = useState<BulkKind>(replyOnly ? "reply" : "message");
   const [projectId, setProjectId] = useState(initialProject || projects[0]?.id || "");
@@ -204,7 +209,7 @@ export function SocialBulkComposer({
           className="social-form"
           onSubmit={(event) => {
             event.preventDefault();
-            void start();
+            void pendingUi.run("bulk-composer.prepare-drafts", () => start());
           }}
         >
           <Notice kind="info" title={selectionTitle}>
@@ -217,6 +222,7 @@ export function SocialBulkComposer({
               <label>
                 {t("Action")}
                 <NativeSelect
+                  disabled={busy || socialLocked}
                   value={kind}
                   onChange={(event) => setKind(event.target.value as BulkKind)}
                 >
@@ -227,6 +233,7 @@ export function SocialBulkComposer({
               <label>
                 {t("Project")}
                 <NativeSearchableSelect
+                  disabled={socialLocked || busy}
                   label={t("Project")}
                   options={[
                     { value: "", label: t("Select a project"), disabled: true },
@@ -247,7 +254,7 @@ export function SocialBulkComposer({
               {t("Prepared fact (optional)")}
               <SearchableSelect
                 value=""
-                disabled={!ready}
+                disabled={busy || socialLocked || !ready}
                 label={t("Prepared fact (optional)")}
                 options={[
                   { value: "", label: t("Select a fact") },
@@ -281,6 +288,7 @@ export function SocialBulkComposer({
                 return (
                   <div key={target.key}>
                     <TextField
+                      disabled={busy || socialLocked}
                       label={t("{p0} · post ID", { p0: contact?.name ?? t("Contact not found") })}
                       list={`posts-${target.key}`}
                       value={postIds[target.key] ?? ""}
@@ -311,7 +319,7 @@ export function SocialBulkComposer({
               required
               rows={5}
               value={text}
-              disabled={!ready}
+              disabled={busy || socialLocked || !ready}
               onChange={(event) => changeContent({ text: event.target.value, factIds: [] })}
             />
             <small>
@@ -334,6 +342,7 @@ export function SocialBulkComposer({
                 : t("Loading account content limits…")}
               {Object.keys(policyErrors).length ? (
                 <Button
+                  disabled={busy || socialLocked}
                   variant="secondary"
                   type="button"
                   onClick={() => setPolicyAttempt((attempt) => attempt + 1)}
@@ -386,8 +395,8 @@ export function SocialBulkComposer({
             <Button
               type="submit"
               variant="primary"
-              loading={busy}
-              disabled={busy || !eligible.length || !ready}
+              loading={pendingUi.is("bulk-composer.prepare-drafts")}
+              disabled={busy || socialLocked || busy || !eligible.length || !ready}
             >
               {eligible.length > 1
                 ? t("Prepare {p0} drafts", { p0: eligible.length })
@@ -411,9 +420,8 @@ export function SocialBulkComposer({
               {t("These results belong to the previous preparation.")}
               <Button
                 variant="secondary"
-                loading={busy}
                 type="button"
-                disabled={busy || !targets.length}
+                disabled={busy || socialLocked || busy || !targets.length}
                 onClick={prepareCurrentSelection}
               >
                 {t("Prepare for the new selection")}
@@ -456,9 +464,11 @@ export function SocialBulkComposer({
               <Button
                 type="button"
                 variant="secondary"
-                loading={busy}
-                disabled={busy}
-                onClick={() => void start(true)}
+                loading={pendingUi.is("bulk-composer.retry-only-the-failed-draft")}
+                disabled={busy || socialLocked || busy}
+                onClick={() =>
+                  void pendingUi.run("bulk-composer.retry-only-the-failed-draft", () => start(true))
+                }
               >
                 {failed === 1
                   ? t("Retry only the failed draft")
@@ -469,8 +479,7 @@ export function SocialBulkComposer({
               <Button
                 type="button"
                 variant="secondary"
-                loading={busy}
-                disabled={busy}
+                disabled={busy || socialLocked || busy}
                 onClick={() => {
                   setBatch(undefined);
                   changeContent(

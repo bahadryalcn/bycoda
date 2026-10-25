@@ -33,6 +33,7 @@ export interface WorkspaceSettingsSurfaceProps {
   onCloseSettings: SettingsProps["onClose"];
   onSelectSettingsSection: SettingsProps["onSelectSection"];
   onOpenArchivedSession: SettingsProps["onOpenSession"];
+  onOpenBackgroundSession?: SettingsProps["onOpenBackgroundSession"];
   onArchiveHistorySession: SettingsProps["onArchiveSession"];
   onDeleteHistorySession: SettingsProps["onDeleteSession"];
   onRestoreProject: SettingsProps["onRestoreProject"];
@@ -61,6 +62,7 @@ function WorkspaceSettingsSurfaceComponent({
   onCloseSettings,
   onSelectSettingsSection,
   onOpenArchivedSession,
+  onOpenBackgroundSession,
   onArchiveHistorySession,
   onDeleteHistorySession,
   onRestoreProject,
@@ -115,6 +117,7 @@ function WorkspaceSettingsSurfaceComponent({
             onClose={onCloseSettings}
             onSelectSection={onSelectSettingsSection}
             onOpenSession={onOpenArchivedSession}
+            onOpenBackgroundSession={onOpenBackgroundSession}
             onArchiveSession={onArchiveHistorySession}
             onDeleteSession={onDeleteHistorySession}
             onRestoreProject={onRestoreProject}

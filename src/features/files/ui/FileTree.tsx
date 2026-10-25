@@ -53,6 +53,7 @@ import {
   subscribeDirsChanged,
   TREE_WINDOW_CHUNK,
   windowEntries,
+  displayDirEntries,
 } from "../model/fileTree";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
@@ -431,6 +432,7 @@ export const FileTree = memo(function FileTree({
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
+  const [operationPending, setOperationPending] = useState(false);
   const [refreshFailure, setRefreshFailure] = useState<{
     cwd: string;
     touched: string[];
@@ -946,6 +948,7 @@ export const FileTree = memo(function FileTree({
   const run = async (work: () => Promise<void>) => {
     if (operationRunning.current) return;
     operationRunning.current = true;
+    setOperationPending(true);
     setOpError(null);
     try {
       await work();
@@ -953,6 +956,7 @@ export const FileTree = memo(function FileTree({
       setOpError(err instanceof Error ? err.message : String(err));
     } finally {
       operationRunning.current = false;
+      setOperationPending(false);
     }
   };
 
@@ -1571,6 +1575,15 @@ export const FileTree = memo(function FileTree({
               </HeaderIcon>
             ) : null}
           </div>
+          {operationPending ? (
+            <div
+              role="status"
+              className="flex items-center gap-2 px-3 py-1 text-ui-caption text-(--ui-text-secondary)"
+            >
+              <Loader className="size-3.5 animate-spin" aria-hidden />
+              {t("Working…")}
+            </div>
+          ) : null}
           {search ?? (
             <div
               ref={rootRef}
@@ -1828,11 +1841,7 @@ function TreeChildren({
     ) : null;
   const [limit, setLimit] = useState(TREE_WINDOW_CHUNK);
   const visible = useMemo(() => {
-    const shown = ctx.showExcludedFiles ? entries : entries?.filter((entry) => !entry.ignored);
-    return [
-      ...(shown?.filter((entry) => entry.isDir) ?? []),
-      ...(shown?.filter((entry) => !entry.isDir) ?? []),
-    ];
+    return displayDirEntries(entries ?? null, ctx.showExcludedFiles);
   }, [entries, ctx.showExcludedFiles]);
   // Big folders render a first chunk (folders first, as below); selection,
   // rename and drag targets stay mounted even past the cut.

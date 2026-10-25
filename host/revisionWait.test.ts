@@ -39,11 +39,13 @@ it("caps waiters and releases capacity after disconnected requests", async () =>
       () => cancelled,
     );
     await waits.wait(() => 1, 1, 10_000);
+    await vi.advanceTimersByTimeAsync(0);
     expect(vi.getTimerCount()).toBe(1);
     cancelled = true;
     await vi.advanceTimersByTimeAsync(1000);
     await first;
     const next = waits.wait(() => 1, 1, 100);
+    await vi.advanceTimersByTimeAsync(0);
     expect(vi.getTimerCount()).toBe(1);
     await vi.advanceTimersByTimeAsync(100);
     await next;

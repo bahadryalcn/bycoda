@@ -3,7 +3,7 @@ import { useT } from "../../../shared/i18n";
 import type { HarnessId } from "../model/session";
 import { HARNESS_TITLE } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
-import { Check, RefreshCw } from "../../../shared/ui/icons";
+import { Check } from "../../../shared/ui/icons";
 
 export type ProviderSignInState = "idle" | "running" | "complete" | "error";
 
@@ -15,8 +15,8 @@ export function ProviderSignInPanel({
   onComplete,
   completeActionLabel,
   autoFocus = false,
-  idleTitle = "Authentication required",
-  completeDescription = "You can retry your last message now.",
+  idleTitle,
+  completeDescription,
 }: {
   harness: HarnessId;
   state: ProviderSignInState;
@@ -41,10 +41,14 @@ export function ProviderSignInPanel({
         <HarnessIcon harness={harness} className="size-9" />
       </span>
       <h2 className="mt-3.5 text-ui-title font-medium leading-5 text-(--ui-tone-neutral-fg)">
-        {complete ? t("Signed in to {p0}", { p0: title }) : idleTitle}
+        {complete
+          ? t("Signed in to {p0}", { p0: title })
+          : (idleTitle ?? t("Authentication required"))}
       </h2>
       <p className="mt-1 max-w-56 text-ui-micro leading-4 text-(--ui-text-secondary)">
-        {complete ? completeDescription : t("Sign in to continue using {p0}.", { p0: title })}
+        {complete
+          ? (completeDescription ?? t("You can retry your last message now."))
+          : t("Sign in to continue using {p0}.", { p0: title })}
       </p>
       <Button
         variant="primary"
@@ -52,13 +56,10 @@ export function ProviderSignInPanel({
         autoFocus={autoFocus}
         className="mt-4"
         disabled={state === "running" || (complete && !onComplete)}
+        loading={state === "running"}
+        startIcon={complete ? <Check className="size-3.5" aria-hidden /> : undefined}
         onClick={complete && onComplete ? onComplete : onSignIn}
       >
-        {state === "running" ? (
-          <RefreshCw className="size-3.5 animate-spin" aria-hidden />
-        ) : complete ? (
-          <Check className="size-3.5" aria-hidden />
-        ) : null}
         {state === "running"
           ? t("Waiting for browser…")
           : complete

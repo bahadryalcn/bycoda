@@ -34,11 +34,26 @@ import "./NotificationsSettings.css";
 
 export function NotificationAlerts() {
   useLocale();
-  const [soundsEnabled, setSoundsEnabled] = useStoredPreferenceState(loadSoundsEnabled, subscribeSoundsEnabled);
-  const [notificationsEnabled, setNotificationsEnabled] = useStoredPreferenceState(loadNotificationsEnabled, subscribeNotificationsEnabled);
-  const [notificationEvents, setNotificationEvents] = useStoredPreferenceState(loadNotificationEvents, subscribeNotificationEvents);
-  const [summaryEnabled, setSummaryEnabled] = useStoredPreferenceState(loadDailySummaryEnabled, subscribeDailySummary);
-  const [summaryTime, setSummaryTime] = useStoredPreferenceState(loadDailySummaryTime, subscribeDailySummary);
+  const [soundsEnabled, setSoundsEnabled] = useStoredPreferenceState(
+    loadSoundsEnabled,
+    subscribeSoundsEnabled,
+  );
+  const [notificationsEnabled, setNotificationsEnabled] = useStoredPreferenceState(
+    loadNotificationsEnabled,
+    subscribeNotificationsEnabled,
+  );
+  const [notificationEvents, setNotificationEvents] = useStoredPreferenceState(
+    loadNotificationEvents,
+    subscribeNotificationEvents,
+  );
+  const [summaryEnabled, setSummaryEnabled] = useStoredPreferenceState(
+    loadDailySummaryEnabled,
+    subscribeDailySummary,
+  );
+  const [summaryTime, setSummaryTime] = useStoredPreferenceState(
+    loadDailySummaryTime,
+    subscribeDailySummary,
+  );
   const [permissionPending, setPermissionPending] = useState(false);
   const [permissionError, setPermissionError] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
@@ -114,35 +129,35 @@ export function NotificationAlerts() {
           {!permissionError && !permissionPending && notificationPermission === "granted" ? (
             <p>{t("System permission granted")}</p>
           ) : (
-          <SettingsFeedback
-            state={
-              permissionError
-                ? "error"
-                : permissionPending
-                  ? "loading"
-                  : notificationPermission === "granted"
-                    ? "success"
-                    : "warning"
-            }
-          >
-            {permissionError ? (
-              t("Status unavailable")
-            ) : permissionPending ? (
-              t("Waiting for approval…")
-            ) : (
-              <>
-                {notificationPermission === "denied" ? <NotificationsBlocked /> : null}
-                {notificationPermission === "unsupported"
-                  ? t("Not available on this platform")
-                  : null}
-                {notificationPermission === "prompt"
-                  ? t(
-                      "System permission has not been granted yet. Enabling notifications requests permission.",
-                    )
-                  : null}
-              </>
-            )}
-          </SettingsFeedback>
+            <SettingsFeedback
+              state={
+                permissionError
+                  ? "error"
+                  : permissionPending
+                    ? "loading"
+                    : notificationPermission === "granted"
+                      ? "success"
+                      : "warning"
+              }
+            >
+              {permissionError ? (
+                t("Status unavailable")
+              ) : permissionPending ? (
+                t("Waiting for approval…")
+              ) : (
+                <>
+                  {notificationPermission === "denied" ? <NotificationsBlocked /> : null}
+                  {notificationPermission === "unsupported"
+                    ? t("Not available on this platform")
+                    : null}
+                  {notificationPermission === "prompt"
+                    ? t(
+                        "System permission has not been granted yet. Enabling notifications requests permission.",
+                      )
+                    : null}
+                </>
+              )}
+            </SettingsFeedback>
           )}
         </div>
       </Group>
@@ -245,6 +260,7 @@ function NotificationsBlocked() {
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState(false);
   const openSettings = async () => {
+    if (opening) return;
     setOpening(true);
     setError(false);
     try {
@@ -259,8 +275,8 @@ function NotificationsBlocked() {
     <div className="notification-permission-message">
       {t("Notifications are blocked by system permission.")}
       {IS_MAC || IS_WIN ? (
-        <Button className="shrink-0" onClick={() => void openSettings()} disabled={opening}>
-          {opening ? t("Opening…") : t("Open System Settings")}
+        <Button className="shrink-0" onClick={() => void openSettings()} loading={opening}>
+          {t("Open System Settings")}
         </Button>
       ) : (
         <span>{t("Allow notifications in your system settings to receive desktop alerts.")}</span>

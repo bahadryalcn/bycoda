@@ -89,6 +89,19 @@ fn turn_fingerprint(path: &Path) -> Result<Option<String>, String> {
         // read/parse verification; a preserved mtime is not proof of no edit.
         return Ok(Some(format!("uncached:{}", uuid::Uuid::new_v4())));
     }
+    // Windows can coalesce rapid writes into one change-time tick. In-place
+    // legacy writers may also restore the mtime, leaving every metadata field
+    // equal. Verify recent records until the timestamp has safely settled;
+    // archived records still take the metadata-only path.
+    let now_ticks = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_nanos()
+        / 100
+        + 116_444_736_000_000_000;
+    if now_ticks.saturating_sub(basic.ChangeTime as u128) <= 20_000_000 {
+        return Ok(Some(format!("uncached:{}", uuid::Uuid::new_v4())));
+    }
     Ok(Some(format!(
         "{}:{}:{}:{}:{}:{}:{}:{}",
         info.dwVolumeSerialNumber,
@@ -1106,6 +1119,10 @@ mod active_index_tests {
                 std::fs::create_dir(&dir).unwrap();
                 std::fs::write(dir.join("turn.json"), &bytes).unwrap();
             }
+            // The optimization targets archived records. Fresh Windows records
+            // are deliberately verified while their change-time tick is recent.
+            #[cfg(windows)]
+            std::thread::sleep(std::time::Duration::from_millis(2100));
             assert!(store.active_turns("reader", "/project").unwrap().is_empty());
             let before = {
                 let index = store.active_turn_index.lock().unwrap();

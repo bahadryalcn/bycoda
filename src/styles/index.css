@@ -3627,21 +3627,19 @@ html.theme-light .btw-burst {
     0 8px 10px -6px var(--palette-rgb_0_0_0_0_1);
 }
 
-/* Tabs and messages enter with the panel; the composer is where the morph
-   starts, so it stays put. */
+/* Side questions are frequent input surfaces: keep text and input immediate. */
 .btw-sheet-body {
-  animation: btw-body-in var(--motion-sheet-duration) var(--motion-ease-out) backwards;
+  animation: none;
 }
 
 .btw-overlay[data-state="closed"] {
   pointer-events: none;
 }
 
-/* On close the side composer gives way to the session composer beneath
-   right away, while the panel is still folding down. */
+/* Closing restores the session composer without an exit animation. */
 .btw-overlay[data-state="closed"] .btw-sheet-body,
 .btw-overlay[data-state="closed"] .btw-sheet-composer {
-  animation: btw-fade-out 120ms ease-in both;
+  animation: none;
 }
 
 @keyframes btw-body-in {

@@ -118,6 +118,32 @@ async function mount(value: SocialSnapshot) {
     ),
   );
 }
+it("shows local assignment progress, prevents repeated selection and recovers after failure", async () => {
+  let rejectAssignment!: (reason: Error) => void;
+  request.mockImplementation((action: string) => action === "thread.assign"
+    ? new Promise((_, reject) => { rejectAssignment = reject; })
+    : Promise.resolve({}));
+  await mount(snapshot({ threads: [{ ...thread("message", "message"), projectId: undefined }] }));
+  const projectField = Array.from(container.querySelectorAll("label"))
+    .find((label) => label.textContent?.includes("Related project"))!;
+  const trigger = projectField.querySelector<HTMLButtonElement>('button')!;
+  expect(trigger).not.toBeNull();
+  await act(async () => trigger.click());
+  const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'))
+    .find((item) => item.textContent?.trim() === "Project")!;
+  await act(async () => option.click());
+  expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(1);
+  expect(trigger.disabled).toBe(true);
+  await act(async () => trigger.click());
+  expect(request.mock.calls.filter(([action]) => action === "thread.assign")).toHaveLength(1);
+  await act(async () => rejectAssignment(new Error("Unavailable")));
+  expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  expect(trigger.disabled).toBe(false);
+  expect(runResults).toEqual([false]);
+  await act(async () => trigger.click());
+  expect(document.querySelector('[role="listbox"]')).not.toBeNull();
+});
+
 it("searches the host dataset after typing, keeps truncated matches and cancels hidden searches", async () => {
   vi.useFakeTimers();
   const onFilterChange = vi.fn<NonNullable<Props["onFilterChange"]>>();

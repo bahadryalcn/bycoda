@@ -35,7 +35,8 @@ export function JiraSettings() {
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
   const [checking, setChecking] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<"save" | "disconnect" | null>(null);
+  const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
   const request = useRef(0);
   const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -119,7 +120,7 @@ export function JiraSettings() {
 
   const connect = async () => {
     if (busy || checking || !site.trim() || !email.trim() || !token.trim()) return;
-    setBusy(true);
+    setOperation("save");
     setError(null);
     try {
       const next = await saveJiraConfig({ site, email, token });
@@ -134,13 +135,13 @@ export function JiraSettings() {
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
-      setBusy(false);
+      setOperation(null);
     }
   };
 
   const disconnect = async () => {
     if (busy) return;
-    setBusy(true);
+    setOperation("disconnect");
     setError(null);
     try {
       setStatus(await disconnectJira());
@@ -151,7 +152,7 @@ export function JiraSettings() {
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
-      setBusy(false);
+      setOperation(null);
     }
   };
 
@@ -185,7 +186,10 @@ export function JiraSettings() {
         description={t(
           "Connect your Jira Cloud site using your Atlassian email and an API token without scopes. Disconnect deletes the saved credentials.",
         )}
-        persistence={{ mode: "explicit", state: busy ? "saving" : token ? "dirty" : "idle" }}
+        persistence={{
+          mode: "explicit",
+          state: operation === "save" ? "saving" : token ? "dirty" : "idle",
+        }}
       >
         <div className="w-full min-w-0">
           {checking ? (
@@ -200,8 +204,13 @@ export function JiraSettings() {
                   <PrivateEmail key={status.email} email={status.email} />
                 </p>
               </div>
-              <Button className="shrink-0" onClick={() => void disconnect()} disabled={busy}>
-                {busy ? t("Disconnecting") : t("Disconnect")}
+              <Button
+                className="shrink-0"
+                onClick={() => void disconnect()}
+                loading={operation === "disconnect"}
+                disabled={busy}
+              >
+                {operation === "disconnect" ? t("Disconnecting") : t("Disconnect")}
               </Button>
             </div>
           ) : (
@@ -267,6 +276,7 @@ export function JiraSettings() {
                 <Button
                   className="shrink-0"
                   type="submit"
+                  loading={operation === "save"}
                   disabled={busy || !site.trim() || !email.trim() || !token.trim()}
                 >
                   {busy
@@ -305,6 +315,7 @@ export function JiraSettings() {
                 </span>
                 <Button
                   className="shrink-0"
+                  loading={projectsLoading}
                   disabled={busy || checking || projectsLoading}
                   onClick={() => void loadProjects()}
                 >
@@ -349,6 +360,7 @@ export function JiraSettings() {
                 </span>
                 <Button
                   className="shrink-0"
+                  loading={boardsLoading}
                   disabled={busy || checking || boardsLoading}
                   onClick={() => setBoardsRevision((value) => value + 1)}
                 >

@@ -63,6 +63,7 @@ export function SessionDirsPicker({
   const [mode, setMode] = useState<"folders" | "project">("folders");
   const [query, setQuery] = useState("");
   const [picking, setPicking] = useState(false);
+  const pickingRef = useRef(false);
   const [error, setError] = useState<string>();
   const root = useRef<HTMLDivElement>(null);
   useSyncExternalStore(
@@ -115,7 +116,8 @@ export function SessionDirsPicker({
   };
 
   const browse = async () => {
-    if (picking || !enabled) return;
+    if (pickingRef.current || !enabled) return;
+    pickingRef.current = true;
     const choosingProject = mode === "project";
     setPicking(true);
     setError(undefined);
@@ -144,6 +146,7 @@ export function SessionDirsPicker({
       setError("Could not open the folder picker. Please try again.");
       setOpen(true);
     } finally {
+      pickingRef.current = false;
       setPicking(false);
     }
   };
@@ -281,9 +284,10 @@ export function SessionDirsPicker({
             type="button"
             disabled={picking || !enabled}
             onClick={() => void browse()}
+            loading={picking}
+            startIcon={<Plus className="size-3.5 shrink-0" />}
             className="mt-1 text-left"
           >
-            <Plus className="size-3.5 shrink-0" />
             {picking ? t("Choosing folders…") : t("Choose from {p0}…", { p0: browserLabel })}
           </Button>
           {error ? (

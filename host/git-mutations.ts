@@ -25,7 +25,7 @@ export function gitMutationScope(command: string): GitMutationScope {
 // resolving a junction/worktree path is slower than resolving the next request.
 let admission: Promise<unknown> = Promise.resolve();
 
-async function repositoryKey(cwd: string): Promise<string> {
+export async function hostGitRepositoryKey(cwd: string): Promise<string> {
   const root = await realpath(cwd);
   let directory = root;
   for (;;) {
@@ -56,6 +56,9 @@ async function repositoryKey(cwd: string): Promise<string> {
   }
 }
 
+/** The canonical common Git directory of the currently admitted mutation. */
+export const currentHostGitRepository = () => active.getStore();
+
 /** Serialize complete mutations across API clients and repository aliases.
  * Fetch and index/commit have separate lanes; exclusive work fences both.
  * Nested calls (sync -> push, command dispatch -> stage) retain the same lease. */
@@ -66,7 +69,7 @@ export async function withHostGitMutation<T>(
   scope: GitMutationScope = "exclusive",
 ): Promise<T> {
   const admitted = admission.then(async () => {
-    const key = await repositoryKey(cwd);
+    const key = await hostGitRepositoryKey(cwd);
     if (active.getStore() === key) return { pending: work() };
     let expired = false;
     const timeoutError = () =>

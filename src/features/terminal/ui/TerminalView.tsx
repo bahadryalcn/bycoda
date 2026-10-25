@@ -428,7 +428,11 @@ export function TerminalView({
         webglLoading = false;
       }
     };
-    const output = terminalOutputBuffer((data) => term.write(data));
+    const output = terminalOutputBuffer(
+      (data, consumed) => term.write(data, consumed),
+      undefined,
+      true,
+    );
     let visible = typeof IntersectionObserver === "undefined";
     // The native side holds a hidden terminal's output instead of streaming it.
     let reportedVisible: boolean | undefined;
@@ -483,9 +487,12 @@ export function TerminalView({
       if (closed) return;
       unsubscribe = subscribePty(
         id,
-        (data) => {
-          if (closed) return;
-          output.append(data);
+        (data, consumed) => {
+          if (closed) {
+            consumed?.();
+            return;
+          }
+          output.append(data, consumed);
         },
         (code) => {
           if (closed) return;
@@ -510,6 +517,7 @@ export function TerminalView({
           output.append(`
 [process exited${status}]\r\n`);
         },
+        true,
       );
       await readyPtyBridge();
       if (closed) return;

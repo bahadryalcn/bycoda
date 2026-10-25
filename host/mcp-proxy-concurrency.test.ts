@@ -14,6 +14,40 @@ const gate = () => {
 const call = (id: number, name = "conversation_sessions_list") =>
   JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: {} } }) +
   "\n";
+
+it("forwards cancellation past a saturated read queue and bounded look-ahead", async () => {
+  const held = gate(),
+    input = new PassThrough();
+  const started: (number | string)[] = [];
+  const output = new Writable({
+    write(_chunk, _encoding, done) {
+      done();
+    },
+  });
+  const fetcher = vi.fn(async (_url, options) => {
+    const message = JSON.parse(String(options?.body));
+    started.push(message.id ?? message.method);
+    if (message.id !== undefined) await held.promise;
+    return message.id === undefined
+      ? new Response(null, { status: 202 })
+      : Response.json({ id: message.id, result: {} });
+  }) as unknown as typeof fetch;
+  const running = runMcpProxy("conversation", input, output, env, fetcher);
+  input.end(
+    Array.from({ length: 33 }, (_, index) => call(index + 1)).join("") +
+      JSON.stringify({ method: "notifications/cancelled", params: { requestId: 1 } }) +
+      "\n",
+  );
+  try {
+    for (let index = 0; index < 8; index++) await turn();
+    expect(started.filter((id) => typeof id === "number")).toHaveLength(4);
+    expect(started).toContain("notifications/cancelled");
+  } finally {
+    held.release();
+    await running;
+  }
+  expect(started.filter((id) => typeof id === "number")).toHaveLength(33);
+});
 function sink() {
   const messages: { id: number; error?: unknown }[] = [];
   return {

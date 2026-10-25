@@ -231,6 +231,7 @@ mockIPC(
       }));
     }
     if (new URLSearchParams(location.search).get("skills") === "1") {
+      if (command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };
       if (command === "list_skills")
         return [...skillDocuments.keys()].map((path, index) => ({
           name: index === 0 ? "arc" : `skill-${index}`,

@@ -21,18 +21,26 @@ import {
 } from "../../automations/model/machineResults";
 import { machineProjects, machineCapabilities } from "../../automations/model/machineSnapshot";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
-import { defaultProviderAccountId, supportsProviderAccounts } from "../../providers/model/providerAccounts";
+import {
+  defaultProviderAccountId,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
 import { HOST_TASK_WORKSPACES, type TaskWorkspace } from "./taskWorkspace";
 import { HOST_CREW_TASKS } from "../../crews/model/crew";
+import { TASK_RUN_BUDGET_CAPABILITY, type TaskRunBudget } from "./taskBudget";
+import { TASK_PREFLIGHT_CAPABILITY, type TaskPreflightRequirement } from "./taskPreflight";
+import { projectKey } from "../../../shared/lib/paths";
 import {
   HOST_TASKS,
   HOST_TASK_ACCOUNTS,
+  HOST_TASK_REVIEWER_PROFILE,
   HOST_TASKS_TODO,
   HOST_TASK_CONTINUATION,
   taskColumn,
   type HostTask,
   type HostTaskInput,
+  type HostTaskWireInput,
   type TaskColumn,
   type TaskStatus,
 } from "./hostTasks";
@@ -43,6 +51,7 @@ export const TASK_AGENT_ERROR = "This agent cannot run tasks in the background."
 
 /** A host task as this desktop shows it: on its machine, in its project. */
 export type BoardTask = HostTask & {
+  evaluationSupported?: boolean;
   machineId: string;
   machineName: string;
   /** How this desktop addresses the task's project. */
@@ -56,6 +65,11 @@ export type BoardTask = HostTask & {
 
 /** What the task form edits. A draft with an ID edits that task. */
 export type TaskDraft = {
+  budget?: TaskRunBudget;
+  preflightRequirements?: TaskPreflightRequirement[];
+  workflowId?: string;
+  workflowVersion?: number;
+  reviewerConfig?: HostTaskInput["reviewerConfig"];
   crewDefinitionId?: string;
   workspaceLocked?: boolean;
   workspace?: TaskWorkspace;
@@ -149,7 +163,11 @@ export function newTaskDraft(cwd: string, harness: HarnessId, model: string): Ta
     cwd,
     harness,
     model,
-    ...(!parseRemotePath(cwd) && supportsProviderAccounts(harness) && defaultProviderAccountId(harness) !== "default" ? { providerAccountId: defaultProviderAccountId(harness) } : {}),
+    ...(!parseRemotePath(cwd) &&
+    supportsProviderAccounts(harness) &&
+    defaultProviderAccountId(harness) !== "default"
+      ? { providerAccountId: defaultProviderAccountId(harness) }
+      : {}),
     modelSettings: {},
     runtimeMode: "auto",
     maxRunMinutes: 0,
@@ -163,6 +181,12 @@ export function newTaskDraft(cwd: string, harness: HarnessId, model: string): Ta
 
 export function draftFromTask(task: BoardTask): TaskDraft {
   return {
+    ...(task.budget ? { budget: task.budget } : {}),
+    ...(task.preflightRequirements ? { preflightRequirements: task.preflightRequirements } : {}),
+    ...(task.workflowId
+      ? { workflowId: task.workflowId, workflowVersion: task.workflowVersion }
+      : {}),
+    ...(task.reviewerConfig ? { reviewerConfig: task.reviewerConfig } : {}),
     ...(task.crewDefinitionId ? { crewDefinitionId: task.crewDefinitionId } : {}),
     id: task.id,
     machineId: task.machineId,
@@ -208,18 +232,45 @@ export function boardTasksFromHost(
   });
 }
 
-/** What the host stores for a draft. Throws when the draft's agent cannot run
+function clearsReviewerProfile(options: {
+  id?: string;
+  reviewerConfig?: HostTaskInput["reviewerConfig"];
+}): boolean {
+  return Boolean(
+    options.id &&
+    Object.prototype.hasOwnProperty.call(options, "reviewerConfig") &&
+    options.reviewerConfig === undefined,
+  );
+}
+
+/** What the host receives for a draft. Throws when the draft's agent cannot run
  * on a host. */
-export function hostTaskFromDraft(draft: TaskDraft, id: string, projectId: string): HostTaskInput {
+export function hostTaskFromDraft(
+  draft: TaskDraft,
+  id: string,
+  projectId: string,
+): HostTaskWireInput {
   if (!isRemoteProvider(draft.harness)) throw new Error(TASK_AGENT_ERROR);
   return {
     id,
+    ...("budget" in draft ? { budget: draft.budget ?? {} } : {}),
+    ...(draft.preflightRequirements ? { preflightRequirements: draft.preflightRequirements } : {}),
+    ...(draft.workflowId
+      ? { workflowId: draft.workflowId, workflowVersion: draft.workflowVersion }
+      : {}),
+    ...(draft.reviewerConfig
+      ? { reviewerConfig: draft.reviewerConfig }
+      : clearsReviewerProfile(draft)
+        ? { reviewerConfig: null }
+        : {}),
     ...(draft.crewDefinitionId ? { crewDefinitionId: draft.crewDefinitionId } : {}),
     title: draft.title,
     prompt: draft.prompt,
     projectId,
     harness: draft.harness,
-    ...(draft.providerAccountId === undefined ? {} : { providerAccountId: draft.providerAccountId }),
+    ...(draft.providerAccountId === undefined
+      ? {}
+      : { providerAccountId: draft.providerAccountId }),
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
@@ -417,6 +468,7 @@ export async function listBoardTaskResults(
               reviewRecheckSupported: capabilities.includes("tasks.review-recheck"),
               blockedTakeoverSupported: capabilities.includes("tasks.blocked-takeover"),
               workspaceControlsSupported: capabilities.includes(HOST_TASK_WORKSPACES),
+              evaluationSupported: capabilities.includes("tasks.evaluation"),
             }));
           }
           throw new Error(
@@ -458,6 +510,7 @@ export async function saveTask(
   if (draft.crewDefinitionId && !(await machineCapabilities(machine)).includes(HOST_CREW_TASKS))
     throw new Error("Update this project's host to run tasks with a crew.");
   await requireTaskContinuation(machine, !draft.crewDefinitionId && draft.continueUntilDone);
+  await requireTaskHarnessCapabilities(machine, draft);
   await requireTaskWorkspaces(machine, !draft.crewDefinitionId && Boolean(draft.workspace));
   if (status === "todo" && !draft.id) {
     // An older host would queue the item and start it.
@@ -504,8 +557,15 @@ export function taskMachineFor(
   return machine;
 }
 
-export async function requireTaskAccount(machine: RemoteMachine, accountId?: string): Promise<void> {
-  if (accountId && accountId !== "default" && !(await machineCapabilities(machine)).includes(HOST_TASK_ACCOUNTS))
+export async function requireTaskAccount(
+  machine: RemoteMachine,
+  accountId?: string,
+): Promise<void> {
+  if (
+    accountId &&
+    accountId !== "default" &&
+    !(await machineCapabilities(machine)).includes(HOST_TASK_ACCOUNTS)
+  )
     throw new Error("Update the selected host to run tasks with the selected provider account.");
 }
 
@@ -519,6 +579,69 @@ export async function requireTaskContinuation(
     );
 }
 
+export async function requireTaskHarnessCapabilities(
+  machine: RemoteMachine,
+  options: {
+    id?: string;
+    budget?: TaskRunBudget;
+    preflightRequirements?: TaskPreflightRequirement[];
+    reviewerConfig?: HostTaskInput["reviewerConfig"];
+  },
+): Promise<void> {
+  const clearReviewer = clearsReviewerProfile(options);
+  if (!options.budget && !options.preflightRequirements?.length && !clearReviewer) return;
+  const capabilities = await machineCapabilities(machine);
+  if (clearReviewer && !capabilities.includes(HOST_TASK_REVIEWER_PROFILE))
+    throw new Error(TASK_MACHINE_ERROR);
+  if (options.budget && !capabilities.includes(TASK_RUN_BUDGET_CAPABILITY))
+    throw new Error("Update the selected host to enforce the total run budget.");
+  if (options.preflightRequirements?.length && !capabilities.includes(TASK_PREFLIGHT_CAPABILITY))
+    throw new Error("Update the selected host to check preparation requirements.");
+}
+
+export async function preflightTaskDraft(machines: readonly RemoteMachine[], draft: TaskDraft) {
+  const machine = taskMachineFor(machines, draft.cwd, draft.machineId);
+  const capabilities = await machineCapabilities(machine);
+  if (!capabilities.includes(TASK_PREFLIGHT_CAPABILITY))
+    throw new Error("Update the selected host to check preparation requirements.");
+  const path = parseRemotePath(draft.cwd)?.hostPath ?? draft.cwd;
+  const project = (await machineProjects(machine)).find(
+    (entry) => projectKey(entry.cwd) === projectKey(path),
+  );
+  if (!project) throw new Error("Choose a registered project before checking preparation.");
+  return sendHostRequest<import("./taskPreflight").TaskPreflightReport>(
+    machine.id,
+    "tasks.preflight",
+    {
+      task: hostTaskFromDraft(
+        { ...draft, title: draft.title.trim() || "Preparation" },
+        draft.id ?? "preflight",
+        project.id,
+      ),
+    },
+  );
+}
+
+export async function recordTaskEvaluation(
+  task: BoardTask,
+  evaluation: { accepted: boolean; reviewMinutes: number; corrections: number },
+): Promise<BoardTask> {
+  return updatedBoardTask(
+    task,
+    await sendHostRequest<HostTask>(
+      task.machineId,
+      "tasks.evaluation.save",
+      {
+        taskId: task.id,
+        expectedUpdatedAt: task.updatedAt,
+        evaluation,
+      },
+      false,
+      true,
+    ),
+  );
+}
+
 function updatedBoardTask(task: BoardTask, updated: HostTask): BoardTask {
   return {
     ...updated,
@@ -528,6 +651,7 @@ function updatedBoardTask(task: BoardTask, updated: HostTask): BoardTask {
     reviewRecheckSupported: task.reviewRecheckSupported,
     blockedTakeoverSupported: task.blockedTakeoverSupported,
     workspaceControlsSupported: task.workspaceControlsSupported,
+    evaluationSupported: task.evaluationSupported,
   };
 }
 

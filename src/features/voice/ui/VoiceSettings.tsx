@@ -63,6 +63,8 @@ export function VoiceSettings() {
   const [error, setError] = useState<Failure>();
   const [checkedKey, setCheckedKey] = useState("");
   const [locating, setLocating] = useState(false);
+  const [browsing, setBrowsing] = useState<PathKey | null>(null);
+  const browsePending = useRef(false);
   const [job, setJob] = useState<VoiceSetupStatus>({ state: "idle" });
   const request = useRef(0);
   const mounted = useRef(true);
@@ -181,6 +183,9 @@ export function VoiceSettings() {
     }
   }
   async function browse(key: PathKey) {
+    if (browsePending.current) return;
+    browsePending.current = true;
+    setBrowsing(key);
     const before = currentKey.current;
     try {
       const path = await open({
@@ -195,6 +200,9 @@ export function VoiceSettings() {
     } catch (cause) {
       if (mounted.current)
         setError({ message: t("Enter the location below."), detail: String(cause) });
+    } finally {
+      browsePending.current = false;
+      if (mounted.current) setBrowsing(null);
     }
   }
   const checked = checkedKey === configKey;
@@ -351,7 +359,11 @@ export function VoiceSettings() {
                             change({ [key]: event.target.value });
                           }}
                         />
-                        <Button disabled={installing} onClick={() => void browse(key)}>
+                        <Button
+                          disabled={installing || browsing !== null}
+                          loading={browsing === key}
+                          onClick={() => void browse(key)}
+                        >
                           {t("Browse")}
                         </Button>
                       </div>

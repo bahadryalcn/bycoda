@@ -92,6 +92,11 @@ it("does not save a late validation result after the add dialog is dismissed", a
   await render();
   await fill("D:/custom/codex.exe");
   await click("Add provider");
+  const submit = document.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+  expect(submit.getAttribute("aria-busy")).toBe("true");
+  expect([...document.querySelectorAll('button[aria-busy="true"]')]).toHaveLength(1);
+  await act(async () => submit.click());
+  expect(mock.inspect).toHaveBeenCalledOnce();
   await act(async () => root.render(null));
   await act(async () => complete({ path: "D:/custom/codex.exe", version: "codex-cli 1.0.0" }));
   expect(loadProviderBinaryPath("codex")).toBeNull();

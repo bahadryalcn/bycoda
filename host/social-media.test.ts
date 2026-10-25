@@ -15,6 +15,35 @@ async function fixture() {
 }
 const bytes = Buffer.from([0, 0, 0, 20, 102, 116, 121, 112, 105, 115, 111, 109, 0, 0, 0, 0]);
 describe("Owner-only host video ingestion", () => {
+  it("rechecks authority after chunk preparation and retains a retryable upload", async () => {
+    const { directory } = await fixture();
+    let revokeDuringWrite = false;
+    let checks = 0;
+    const uploads = new SocialVideoUploads(directory, Date.now, async () => {
+      if (revokeDuringWrite && ++checks === 2)
+        throw new Error("Request authorization was revoked.");
+    });
+    const { uploadId } = await uploads.call("owner", { mode: "begin", size: bytes.length });
+    revokeDuringWrite = true;
+    await expect(
+      uploads.call("owner", {
+        mode: "chunk",
+        uploadId,
+        offset: 0,
+        base64: bytes.toString("base64"),
+      }),
+    ).rejects.toThrow("authorization was revoked");
+    expect((await readFile(join(directory, "media", "incoming", uploadId))).length).toBe(0);
+    revokeDuringWrite = false;
+    await uploads.call("owner", {
+      mode: "chunk",
+      uploadId,
+      offset: 0,
+      base64: bytes.toString("base64"),
+    });
+    await uploads.call("owner", { mode: "finish", uploadId });
+    expect(await readFile(join(directory, "media", uploadId))).toEqual(bytes);
+  });
   it("keeps sequential chunks intact and completed media survives a new uploader", async () => {
     const s = await fixture();
     const { uploadId } = await s.uploads.call("owner", {

@@ -153,8 +153,11 @@ export class DeviceHost {
   private origin?: string;
   private error?: string;
   private disposed = false;
+  private closing = false;
+  private disposal?: Promise<void>;
   private serial: Promise<unknown> = Promise.resolve();
-  private capturePending?: Promise<DeviceFrame>;
+  private readonly deviceSerial = new Map<string, Promise<unknown>>();
+  private readonly capturePending = new Map<string, Promise<DeviceFrame>>();
   private lastCapture?: { id: string; frame: DeviceFrame; time: number };
   private readonly agentSessions = new Set<string>();
   private readonly agentTargets = new Map<string, string>();
@@ -230,13 +233,27 @@ export class DeviceHost {
     }
   }
   private runExclusive<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.serial
-      .catch(() => {})
-      .then(() => {
-        if (this.disposed) throw new Error("Device host is disposed");
-        return operation();
-      });
+    if (this.closing) return Promise.reject(new Error("Device host is disposed"));
+    const next = Promise.allSettled([this.serial, ...this.deviceSerial.values()]).then(() => {
+      if (this.disposed) throw new Error("Device host is disposed");
+      return operation();
+    });
     this.serial = next;
+    return next;
+  }
+  /** Input/capture ordering is per device; setup and shutdown fence all lanes. */
+  private runForDevice<T>(id: string, operation: () => Promise<T>): Promise<T> {
+    if (this.closing) return Promise.reject(new Error("Device host is disposed"));
+    const next = Promise.allSettled([this.serial, this.deviceSerial.get(id)]).then(() => {
+      if (this.disposed) throw new Error("Device host is disposed");
+      return operation();
+    });
+    this.deviceSerial.set(id, next);
+    void next
+      .finally(() => {
+        if (this.deviceSerial.get(id) === next) this.deviceSerial.delete(id);
+      })
+      .catch(() => {});
     return next;
   }
   async status(): Promise<DeviceHostStatus> {
@@ -870,21 +887,21 @@ export class DeviceHost {
     });
   }
   async capture(id: string): Promise<DeviceFrame> {
-    if (this.capturePending)
+    if (this.capturePending.has(id))
       throw new Error("Another device capture is in progress; wait for it to finish");
-    const pending = this.runExclusive(async () => {
+    const pending = this.runForDevice(id, async () => {
       if (this.lastCapture?.id === id && Date.now() - this.lastCapture.time < 1000)
         return this.lastCapture.frame;
       const frame = await this.captureFrame(id);
       this.lastCapture = { id, frame, time: Date.now() };
       return frame;
     });
-    this.capturePending = pending;
+    this.capturePending.set(id, pending);
     try {
       const frame = await pending;
       return frame;
     } finally {
-      if (this.capturePending === pending) this.capturePending = undefined;
+      if (this.capturePending.get(id) === pending) this.capturePending.delete(id);
     }
   }
   private async captureFrame(id: string): Promise<DeviceFrame> {
@@ -960,7 +977,7 @@ export class DeviceHost {
     };
   }
   action(id: string, action: DeviceAction): Promise<string> {
-    return this.runExclusive(async () => {
+    return this.runForDevice(id, async () => {
       let args = deviceActionArgs(action);
       const device = await this.device(id);
       if (!device.booted) throw new Error("Boot the device before interacting");
@@ -1126,9 +1143,14 @@ export class DeviceHost {
       return this.status();
     });
   }
-  async dispose() {
-    await this.serial.catch(() => {});
-    this.disposed = true;
-    await this.shutdown();
+  dispose(): Promise<void> {
+    if (this.disposal) return this.disposal;
+    this.closing = true;
+    this.disposal = (async () => {
+      await Promise.allSettled([this.serial, ...this.deviceSerial.values()]);
+      this.disposed = true;
+      await this.shutdown();
+    })();
+    return this.disposal;
   }
 }

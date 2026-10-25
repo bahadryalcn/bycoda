@@ -34,8 +34,8 @@ const LINT_DELAY_MS = 700;
 
 const MAX_TOKEN_CHARS = 24;
 
-/** Timebox a full parse so lint doesn't wait on a huge file's last chunk. */
-const PARSE_BUDGET_MS = 150;
+/** Yield promptly; background parsing changes the tree and refreshes lint again. */
+const PARSE_BUDGET_MS = 8;
 
 /**
  * Extensions whose grammar actually reports errors. Keep in sync with

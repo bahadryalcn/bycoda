@@ -49,12 +49,24 @@ export function MediaView({
   const [state, setState] = useState<State>({ status: "loading" });
   const [retry, setRetry] = useState(0);
   const [actionError, setActionError] = useState<string>();
+  const [opening, setOpening] = useState(false);
+  const openingRef = useRef(false);
+  const openGeneration = useRef(0);
   // Do not display the previous file's metadata during the render before effect cleanup.
   const source = useMemo(() => ({}), [path, readBytes, mimeType, retry, active]);
   const isVideo = mediaKind(path) === "video";
   const player = useRef<HTMLMediaElement | null>(null);
   const generation = useRef(0);
   const localCopy = !!externalPath?.startsWith("remote://") && !localExplorerPath(externalPath);
+  useEffect(() => {
+    openGeneration.current += 1;
+    openingRef.current = false;
+    setOpening(false);
+    setActionError(undefined);
+    return () => {
+      openGeneration.current += 1;
+    };
+  }, [externalPath, source]);
   useEffect(() => {
     if (!active) {
       setState({ status: "loading" });
@@ -214,17 +226,30 @@ export function MediaView({
             variant="ghost"
             motion="none"
             type="button"
+            loading={opening}
             title={
               localCopy
                 ? t("Changes to this local copy are not saved to the connected machine.")
                 : undefined
             }
             onClick={() => {
-              const request = generation.current;
+              if (openingRef.current) return;
+              openingRef.current = true;
+              const request = openGeneration.current;
+              setOpening(true);
               setActionError(undefined);
-              void openPathWithDefaultApp(externalPath).catch((reason: unknown) => {
-                if (request === generation.current) setActionError(String(reason));
-              });
+              void (async () => {
+                try {
+                  await openPathWithDefaultApp(externalPath);
+                } catch (reason) {
+                  if (request === openGeneration.current) setActionError(String(reason));
+                } finally {
+                  if (request === openGeneration.current) {
+                    openingRef.current = false;
+                    setOpening(false);
+                  }
+                }
+              })();
             }}
           >
             {t(localCopy ? "Open local copy" : "Open in default app")}

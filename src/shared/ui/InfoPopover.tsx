@@ -46,6 +46,7 @@ export function InfoPopover({
         <Popover
           anchor={anchor}
           width={width}
+          role="dialog"
           aria-label={name}
           onDismiss={() => setOpen(false)}
           className="flex flex-col gap-2 p-3 text-ui-caption text-(--ui-text-secondary)"

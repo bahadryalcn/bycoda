@@ -64,9 +64,10 @@ repository paths. This option cannot be combined with `-SnapshotRequest`,
   dependency installation.
 - `verifyDepsBeforeRun: false` prevents pnpm from automatically installing before
   `run`/`exec`; the coordinator owns installation decisions.
-- Web, host, and native inputs are tracked separately. Host-only changes do not
-  rebuild the web/native app. Successful stages are recorded immediately and can
-  be reused after a later-stage failure.
+- Web, host, and native inputs are tracked separately. Host-only changes reuse
+  the web build and trigger app packaging so its bundled host matches the new
+  host package; Cargo can reuse unchanged native compilation. Successful stages
+  are recorded immediately and can be reused after a later-stage failure.
 - Web assets are built once; Tauri's duplicate `beforeBuildCommand` is skipped.
 - Host Node archives use a persistent checksum-verified cache. The host stage also
   writes the distribution archive and its checksum, because release-identity
@@ -86,6 +87,20 @@ Build duration depends on the machine and inputs; no fixed completion time is gu
 Each machine has separate hidden host and app helpers. The host waits for running
 sessions in its database; the app waits for its `in_flight_sessions` records.
 A database read failure means wait/recovery, never zero active sessions.
+
+Windows helpers launch through the local current-user WMI broker so closing the
+desktop does not terminate its updater. The broker verifies the same user and
+interactive session, uses hidden processes, and creates no scheduled task or stored
+credential. A keyed launch receipt must be verified before installation starts.
+Status projects an unfinished helper whose known PID has exited as `interrupted`,
+retaining its recorded phase. An unknown launch without a verified PID requires
+inspection and is not automatically repeated.
+
+`-InstallOnly` can resume the same interrupted Windows package when the preserved
+rollback installation passes its saved full-tree hashes and the current installation
+still matches that complete old tree. Partial, changed or corrupt installations and
+unverified rollback/database backups require recovery; the coordinator never
+overwrites the preserved installation snapshot to force a retry.
 
 On Windows, stop the host through its lifecycle command, rather than leaving an
 orphaned Node process with `Stop-ScheduledTask`. Service scripts and launchers use
@@ -157,6 +172,8 @@ Logs, stage timings, immutable payloads, and manifests live at
 `~/.bycoda-host/update-jobs/{host,app}.json`. `-Status` reads both machines.
 The macOS build log is `.bycoda-build/mac-<id>.log` under the coordinator's home.
 Helpers can continue after the command returns: **scheduled does not mean installed**.
+Reusing a completed host installation also checks the running host process and
+database health, rather than trusting only its package files and an old job record.
 
 ## Checks without building
 

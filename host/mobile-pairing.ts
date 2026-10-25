@@ -25,8 +25,11 @@ const INVALID_TICKET = "Mobile pairing ticket is invalid or expired. Create a ne
 
 export type MobilePairingStore = {
   environmentId: string;
-  hasDeviceHash: (hash: string) => boolean;
-  issueDevice: (name: string) => { id: string; token: string };
+  hasDeviceHash: (hash: string) => boolean | Promise<boolean>;
+  issueDevice: (
+    name: string,
+  ) => { id: string; token: string } | Promise<{ id: string; token: string }>;
+  transaction?<T>(action: () => T | Promise<T>): T | Promise<T>;
 };
 
 type Pairing = {
@@ -77,15 +80,21 @@ export class MobilePairing {
   private readonly tickets = new Map<string, string>();
   private readonly creationRates = new Map<string, Rate>();
   private redemptionRate: Rate = { startedAt: 0, count: 0 };
+  private redemptionTail: Promise<void> = Promise.resolve();
+  private closed = false;
 
   constructor(
     private readonly store: MobilePairingStore,
     private readonly now = Date.now,
   ) {}
 
-  create(issuerToken: string, input: Record<string, unknown> = {}): MobilePairingCreated {
-    this.prune();
-    const issuerHash = this.owner(issuerToken);
+  async create(
+    issuerToken: string,
+    input: Record<string, unknown> = {},
+  ): Promise<MobilePairingCreated> {
+    await this.prune();
+    const issuerHash = await this.owner(issuerToken);
+    if (this.closed) throw new MobilePairingError(INVALID_TICKET);
     const name = deviceName(input.name, "My phone");
     this.creationRate(issuerHash);
     for (const entry of this.pairings.values()) {
@@ -126,9 +135,9 @@ export class MobilePairing {
     };
   }
 
-  status(issuerToken: string, pairingId: unknown): MobilePairingStatus {
-    this.prune();
-    const issuerHash = this.owner(issuerToken);
+  async status(issuerToken: string, pairingId: unknown): Promise<MobilePairingStatus> {
+    await this.prune();
+    const issuerHash = await this.owner(issuerToken);
     const entry = this.ownedEntry(issuerHash, pairingId);
     if (!entry) return { state: "expired" };
     return {
@@ -137,9 +146,9 @@ export class MobilePairing {
     };
   }
 
-  cancel(issuerToken: string, pairingId: unknown): MobilePairingStatus {
-    this.prune();
-    const issuerHash = this.owner(issuerToken);
+  async cancel(issuerToken: string, pairingId: unknown): Promise<MobilePairingStatus> {
+    await this.prune();
+    const issuerHash = await this.owner(issuerToken);
     const entry = this.ownedEntry(issuerHash, pairingId);
     if (!entry) return { state: "expired" };
     // Closing the QR after successful redemption never revokes the phone.
@@ -150,13 +159,28 @@ export class MobilePairing {
     };
   }
 
-  redeem(input: Record<string, unknown>): MobilePairingCredential {
+  async redeem(input: Record<string, unknown>): Promise<MobilePairingCredential> {
     this.redeemRate();
-    return this.claim(input);
+    return await this.enqueueClaim(input);
   }
 
-  private claim(input: Record<string, unknown>): MobilePairingCredential {
-    this.prune();
+  private enqueueClaim(input: Record<string, unknown>): Promise<MobilePairingCredential> {
+    const captured = structuredClone(input);
+    const result = this.redemptionTail.then(async () => {
+      if (this.closed) throw new MobilePairingError(INVALID_TICKET);
+      return this.store.transaction
+        ? await this.store.transaction(async () => await this.claim(captured))
+        : await this.claim(captured);
+    });
+    this.redemptionTail = result.then(
+      () => {},
+      () => {},
+    );
+    return result;
+  }
+
+  private async claim(input: Record<string, unknown>): Promise<MobilePairingCredential> {
+    await this.prune();
     if (
       input.version !== MOBILE_PAIRING_VERSION ||
       input.environmentId !== this.store.environmentId ||
@@ -169,7 +193,14 @@ export class MobilePairing {
     }
     const id = this.tickets.get(hash(input.ticket));
     const entry = id ? this.pairings.get(id) : undefined;
-    if (!entry || entry.state === "cancelled" || !this.store.hasDeviceHash(entry.issuerHash)) {
+    if (
+      !entry ||
+      entry.state === "cancelled" ||
+      !(await this.store.hasDeviceHash(entry.issuerHash)) ||
+      this.closed ||
+      this.pairings.get(entry.id) !== entry ||
+      entry.expiresAt <= this.now()
+    ) {
       if (entry) this.remove(entry.id);
       throw new MobilePairingError(INVALID_TICKET);
     }
@@ -180,14 +211,31 @@ export class MobilePairing {
         entry.claimHash !== claimHash ||
         entry.deviceName !== name ||
         !entry.credential ||
-        !this.store.hasDeviceHash(hash(entry.credential.token))
+        !(await this.store.hasDeviceHash(hash(entry.credential.token)))
       ) {
         throw new MobilePairingError(INVALID_TICKET);
       }
+      if (this.closed || this.pairings.get(entry.id) !== entry || entry.expiresAt <= this.now())
+        throw new MobilePairingError(INVALID_TICKET);
       return { ...entry.credential };
     }
-    // No await between checking a pending ticket, issuing and claiming it.
-    const issued = this.store.issueDevice(name);
+    // The FIFO prevents duplicate issuance; the production store's actor transaction
+    // keeps issuer validation and device creation in one durable operation.
+    let issued: { id: string; token: string };
+    try {
+      issued = await this.store.issueDevice(name);
+      if (
+        this.closed ||
+        this.pairings.get(entry.id) !== entry ||
+        entry.state !== "pending" ||
+        entry.expiresAt <= this.now()
+      )
+        throw new MobilePairingError(INVALID_TICKET);
+    } catch (error) {
+      // A rejected issuance may already be durable. Never replay this ticket.
+      this.cancelEntry(entry);
+      throw error;
+    }
     const credential = {
       deviceId: issued.id,
       token: issued.token,
@@ -222,7 +270,7 @@ export class MobilePairing {
         throw new MobilePairingError("Mobile pairing request is too large.", 413);
       }
       const input = await this.readBody(request);
-      response.end(JSON.stringify({ result: this.claim(input) }));
+      response.end(JSON.stringify({ result: await this.enqueueClaim(input) }));
     } catch (error) {
       if (!response.destroyed)
         response.writeHead(error instanceof MobilePairingError ? error.httpStatus : 400).end(
@@ -235,14 +283,19 @@ export class MobilePairing {
   }
 
   close(): void {
+    this.closed = true;
     for (const id of this.pairings.keys()) this.remove(id);
     this.creationRates.clear();
     this.redemptionRate = { startedAt: 0, count: 0 };
   }
 
-  private owner(token: string): string {
+  private async owner(token: string): Promise<string> {
     const issuerHash = hash(token);
-    if (!SECRET_FORMAT.test(token) || !this.store.hasDeviceHash(issuerHash)) {
+    if (
+      this.closed ||
+      !SECRET_FORMAT.test(token) ||
+      !(await this.store.hasDeviceHash(issuerHash))
+    ) {
       throw new MobilePairingError("Device credential is invalid or revoked.", 401);
     }
     return issuerHash;
@@ -271,10 +324,10 @@ export class MobilePairing {
     this.pairings.delete(id);
   }
 
-  private prune(): void {
+  private async prune(): Promise<Awaited<void>> {
     const now = this.now();
     for (const entry of this.pairings.values()) {
-      if (entry.expiresAt <= now || !this.store.hasDeviceHash(entry.issuerHash))
+      if (entry.expiresAt <= now || !(await this.store.hasDeviceHash(entry.issuerHash)))
         this.remove(entry.id);
     }
     for (const [owner, rate] of this.creationRates) {

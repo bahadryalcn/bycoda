@@ -167,9 +167,10 @@ describe("Settings skill preview", () => {
   it("persists owner restrictions before updating the toggle, and keeps it off when save fails", async () => {
     const named = { ...skills[0], name: "project-guide" };
     const policy = { disabledNames: [named.name], disabledPaths: [] as string[] };
+    const savingPolicy = deferred<typeof policy>();
     const original = vi.mocked(invoke).getMockImplementation()!;
     vi.mocked(invoke).mockImplementation(async (command, args) => {
-      if (command === "skill_policy_set") return policy;
+      if (command === "skill_policy_set") return savingPolicy.promise;
       if (command === "list_skills") return [named];
       return original(command, args);
     });
@@ -177,6 +178,10 @@ describe("Settings skill preview", () => {
     const toggle = () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Enable project-guide in bycoda"]')!;
     await act(async () => toggle().click());
+    expect(toggle().closest('[aria-busy="true"]')).not.toBeNull();
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
+    await act(async () => savingPolicy.resolve(policy));
+    expect(toggle().closest('[aria-busy="true"]')).toBeNull();
     expect(invoke).toHaveBeenCalledWith("skill_policy_set", {
       cwd: "",
       name: named.name,
@@ -450,6 +455,7 @@ describe("Settings skill preview", () => {
       escape();
       expect(container.querySelector("form")).toBeNull();
       expect(container.querySelector('[aria-label="Skill preview"]')).toBe(previewPanel);
+      await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
       expect(document.activeElement === button("Add skill")).toBe(true);
       expect(closeSettings).not.toHaveBeenCalled();
       if (preview) {

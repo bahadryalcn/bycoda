@@ -10,28 +10,24 @@ import type { SocialCredential } from "./social-credentials";
 import type { HostSession } from "../src/features/connections/model/protocol";
 import type { SocialAccount, SocialCampaign, SocialJob } from "../src/features/social/model/social";
 import type { SocialAdapters } from "../src/integrations/social/adapter";
-
-const cleanup: (() => void)[] = [];
-afterEach(() =>
-  cleanup
-    .splice(0)
-    .reverse()
-    .forEach((fn) => fn()),
-);
+const cleanup: (() => void | Promise<void>)[] = [];
+afterEach(async () => {
+  for (const action of cleanup.splice(0).reverse()) await action();
+});
 const owner: SocialPrincipal = {
   kind: "owner",
   actorId: "native-owner",
   provider: "owner",
 };
-function pair() {
+async function pair() {
   const registry = new Map<string, SocialPeers>();
   const fetcher = vi.fn(async (raw: string | URL | Request, init?: RequestInit) => {
     const peer = registry.get(new URL(String(raw)).origin)!;
     const token = String((init?.headers as Record<string, string>).Authorization).slice(7);
-    const identity = peer.authenticated(token);
+    const identity = await peer.authenticated(token);
     if (!identity) return Response.json({ error: "revoked" }, { status: 401 });
     const call = JSON.parse(String(init?.body));
-    if (call.environmentId !== peer.status().environmentId)
+    if (call.environmentId !== (await peer.status()).environmentId)
       return Response.json({ error: "wrong host" }, { status: 403 });
     try {
       return Response.json({
@@ -41,11 +37,11 @@ function pair() {
       return Response.json({ error: "denied" }, { status: 403 });
     }
   }) as unknown as typeof fetch;
-  const host = (name: string) => {
+  const host = async (name: string) => {
     const path = mkdtempSync(join(tmpdir(), `social-peer-${name}-`));
     const store = new HostStore(join(path, "host.db"));
-    const project = store.addProject(path, name);
-    const device = store.issueDevice("Native");
+    const project = await store.addProject(path, name);
+    const device = await store.issueDevice("Native");
     const deviceHash = createHash("sha256").update(device.token).digest("hex");
     const tokens = new Map<string, SocialCredential>();
     const vault = {
@@ -76,9 +72,9 @@ function pair() {
     const peers = new SocialPeers(social, vault, fetcher);
     const endpoint = `https://${name}.test`;
     registry.set(endpoint, peers);
-    cleanup.push(() => {
-      social.stop();
-      store.close();
+    cleanup.push(async () => {
+      await social.dispose();
+      await store.close();
       rmSync(path, { recursive: true, force: true });
     });
     return {
@@ -93,11 +89,11 @@ function pair() {
       send,
     };
   };
-  return { source: host("windows"), authority: host("mac"), fetcher };
+  return { source: await host("windows"), authority: await host("mac"), fetcher };
 }
 describe("Tek merkezi host'a güvenilir session erişimi", () => {
   it("iki host aynı kampanyayı paylaşır; kimlik source host'tan doğrulanır ve ACL merkezi uygulanır", async () => {
-    const { source, authority } = pair();
+    const { source, authority } = await pair();
     const sourceId = crypto.randomUUID();
     source.sessions.set(sourceId, {
       projectId: source.project.id,
@@ -134,7 +130,7 @@ describe("Tek merkezi host'a güvenilir session erişimi", () => {
     })) as SocialCampaign;
     const grant = await source.social.remoteAccess!(sourceId);
     expect(grant?.endpoint).toBe(authority.endpoint);
-    const principal = authority.social.principalForToken(grant!.token)!;
+    const principal = (await authority.social.principalForToken(grant!.token))!;
     expect(principal).toMatchObject({
       provider: "claude",
       projectId: authority.project.id,
@@ -163,13 +159,13 @@ describe("Tek merkezi host'a güvenilir session erişimi", () => {
         action: "accounts.list",
       }),
     ).rejects.toThrow("cannot access");
-    source.store.revokeDevice(source.device.id);
+    await source.store.revokeDevice(source.device.id);
     await expect(authority.social.call(principal, "accounts.list", {})).rejects.toThrow(
       "unavailable",
     );
   });
   it("kaynak session proje değişimi veya eşleme dışı kimlik iddiası merkezi grant alamaz", async () => {
-    const { source, authority } = pair();
+    const { source, authority } = await pair();
     const enrollment = await source.peers.enroll(authority.store.environmentId, source.deviceHash);
     await expect(
       authority.peers.register(
@@ -203,8 +199,10 @@ describe("Tek merkezi host'a güvenilir session erişimi", () => {
     } as HostSession);
     const grant = (await authority.peers.peerRpc(source.store.environmentId, "social.peer.grant", {
       sessionId: id,
-    })) as { token: string };
-    const principal = authority.social.principalForToken(grant.token)!;
+    })) as {
+      token: string;
+    };
+    const principal = (await authority.social.principalForToken(grant.token))!;
     source.sessions.delete(id);
     await expect(authority.social.call(principal, "accounts.list", {})).rejects.toThrow(
       "unavailable",

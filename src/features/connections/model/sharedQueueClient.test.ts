@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DatabaseSync } from "node:sqlite";
+import { StoreDatabase } from "../../../../host/store-db";
+import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
 import { SessionQueues } from "../../../../host/session-queue";
 import { invoke } from "@tauri-apps/api/core";
 import { SharedQueueClient, type QueueTransport } from "./sharedQueueClient";
@@ -27,6 +29,19 @@ import {
   removeRemoteMessage,
   reorderRemoteMessages,
 } from "./remoteQueue";
+
+const databases: StoreDatabase[] = [];
+function database() {
+  const db = new StoreDatabase(
+    ":memory:",
+    pathToFileURL(resolve(__dirname, "../../../../host/store-worker.mjs")),
+  );
+  databases.push(db);
+  return db;
+}
+afterEach(async () => {
+  for (const db of databases.splice(0)) await db.close();
+});
 
 const message = (id: string, text = id) => ({ id, text, attachments: [] });
 beforeEach(() => localStorage.clear());
@@ -587,12 +602,12 @@ it("reports an unconfirmed send from its journal, but not while no send was star
 /** The host's durable queue behind its real RPC surface, with a clock the test moves. */
 function leasedHost() {
   const clock = { at: 5_000_000 };
-  const queues = new SessionQueues(new DatabaseSync(":memory:"), () => clock.at);
+  const queues = new SessionQueues(database(), () => clock.at);
   const request: QueueTransport = async (method, params) => {
     const action = method.split(".").pop() as "get" | "change" | "claim" | "finish" | "lease";
     vi.setSystemTime(clock.at);
     return structuredClone(
-      queues.serve(
+      await queues.serve(
         action,
         String(params.sessionId),
         String(params.clientId),
@@ -621,7 +636,7 @@ describe("acknowledgement replay", () => {
     const request: QueueTransport = async (method, params) => {
       const action = method.split(".").pop() as "get" | "change" | "claim" | "finish" | "lease";
       const reply = structuredClone(
-        host.queues.serve(
+        await host.queues.serve(
           action,
           String(params.sessionId),
           String(params.clientId),
@@ -667,8 +682,8 @@ describe("acknowledgement replay", () => {
     await restarted.initialize();
     expect(restarted.snapshot().error).toBeUndefined();
     expect(restarted.snapshot().recovery).toBeUndefined();
-    expect(host.queues.get("chat").messages.map((row) => row.id)).toEqual(["b"]);
-    expect(host.queues.get("chat").status).toBe("active");
+    expect((await host.queues.get("chat")).messages.map((row) => row.id)).toEqual(["b"]);
+    expect((await host.queues.get("chat")).status).toBe("active");
     expect(restarted.canDrain()).toBe(true);
   });
 
@@ -685,8 +700,8 @@ describe("acknowledgement replay", () => {
     const restarted = host.client("desktop:win");
     await restarted.initialize();
     await restarted.sync();
-    expect(host.queues.get("chat").messages.map((row) => row.id)).toEqual(["a", "b"]);
-    expect(host.queues.get("chat").status).toBe("paused");
+    expect((await host.queues.get("chat")).messages.map((row) => row.id)).toEqual(["a", "b"]);
+    expect((await host.queues.get("chat")).status).toBe("paused");
   });
 
   it("does not pause the queue when a wait for the host is replayed", async () => {
@@ -702,7 +717,7 @@ describe("acknowledgement replay", () => {
     host.reachable();
     const restarted = host.client("desktop:win");
     await restarted.initialize();
-    expect(host.queues.get("chat").status).toBe("active");
+    expect((await host.queues.get("chat")).status).toBe("active");
   });
 
   it("settles a replay against a host that moved on, instead of failing every later read", async () => {
@@ -716,11 +731,11 @@ describe("acknowledgement replay", () => {
     await expect(first.finish(token!, true)).rejects.toThrow("reply lost");
     host.reachable();
     // Meanwhile another send went through, so the host's record of this token is gone.
-    const current = host.queues.get("chat");
-    const next = host.queues.claim("chat", "b", "desktop:win", current.revision, false, {
+    const current = await host.queues.get("chat");
+    const next = await host.queues.claim("chat", "b", "desktop:win", current.revision, false, {
       epoch: current.drain!.epoch,
     });
-    host.queues.finish("chat", next.claim!.token, true);
+    await host.queues.finish("chat", next.claim!.token, true);
     const restarted = host.client("desktop:win");
     await restarted.initialize();
     expect(restarted.snapshot().error).toBeUndefined();
@@ -740,7 +755,7 @@ describe("acknowledgement replay", () => {
     await second.takeOver();
     expect(second.canDrain()).toBe(true);
     expect(second.heldByOther()).toBe(false);
-    expect(host.queues.get("chat")).toMatchObject({
+    expect(await host.queues.get("chat")).toMatchObject({
       messages: [waitingRow("a")],
       status: "active",
       drain: { holder: "desktop:two", epoch: 2 },
@@ -761,13 +776,16 @@ describe("drain lease", () => {
     await mac.initialize();
     mac.update((queue) => enqueueRemoteMessage(queue, waitingRow("m1")));
     await mac.sync();
-    expect(host.queues.get("chat").drain).toBeUndefined();
+    expect((await host.queues.get("chat")).drain).toBeUndefined();
     expect(mac.canDrain()).toBe(false);
     expect(mac.hostDrains()).toBe(true);
     const desktop = host.client("desktop:win");
     await desktop.initialize();
     expect(desktop.canDrain()).toBe(true);
-    expect(host.queues.get("chat").drain).toMatchObject({ holder: "desktop:win", epoch: 1 });
+    expect((await host.queues.get("chat")).drain).toMatchObject({
+      holder: "desktop:win",
+      epoch: 1,
+    });
     expect(desktop.heldLease()).toEqual({ sessionId: "chat", epoch: 1 });
     expect(desktop.dispatch("m1")).toMatchObject({ leaseAware: true, epoch: 1 });
     // The Mac sees who holds it, and may still send a row it picked itself.
@@ -790,7 +808,10 @@ describe("drain lease", () => {
     second.update((queue) => ({ ...queue, status: "active" }), true);
     await second.sync();
     expect(second.canDrain()).toBe(true);
-    expect(host.queues.get("chat").drain).toMatchObject({ holder: "desktop:two", epoch: 2 });
+    expect((await host.queues.get("chat")).drain).toMatchObject({
+      holder: "desktop:two",
+      epoch: 2,
+    });
     // The first window finds it has lost the queue.
     await first.sync();
     expect(first.canDrain()).toBe(false);
@@ -814,7 +835,7 @@ describe("drain lease", () => {
     host.clock.at += QUEUE_LEASE_TTL_MS + 1_000;
     await desktop.sync();
     expect(desktop.canDrain()).toBe(true);
-    expect(host.queues.get("chat").drain?.epoch).toBe(2);
+    expect((await host.queues.get("chat")).drain?.epoch).toBe(2);
     // Without renewals the client itself stops trusting its lease at expiry.
     vi.advanceTimersByTime(QUEUE_LEASE_TTL_MS + 5_000);
     expect(desktop.canDrain()).toBe(false);
@@ -826,14 +847,14 @@ describe("drain lease", () => {
     await desktop.initialize();
     desktop.update((queue) => enqueueRemoteMessage(queue, waitingRow("a")));
     await desktop.sync();
-    const lease = host.queues.get("chat").drain!;
+    const lease = (await host.queues.get("chat")).drain!;
     // Three throttled beats in a row, each a minute after the last.
     for (let beat = 0; beat < 3; beat++) {
       host.clock.at += 60_000;
-      expect(host.queues.live(host.queues.get("chat"))).toBe(true);
-      expect(host.queues.renew("chat", "desktop:win", lease.epoch)).not.toBeNull();
+      expect(host.queues.live(await host.queues.get("chat"))).toBe(true);
+      expect(await host.queues.renew("chat", "desktop:win", lease.epoch)).not.toBeNull();
     }
-    expect(host.queues.get("chat").drain?.epoch).toBe(lease.epoch);
+    expect((await host.queues.get("chat")).drain?.epoch).toBe(lease.epoch);
   });
 
   it("passes the host's extra bookkeeping along without tripping over it", async () => {
@@ -922,13 +943,13 @@ describe("desktop window storage", () => {
 describe("one host, two computers (review round 2)", () => {
   const rows = (...ids: string[]) => ids.map((id) => ({ id, text: id, attachments: [] }));
   function hosted(lose?: { claimReply?: boolean }) {
-    const queues = new SessionQueues(new DatabaseSync(":memory:"), () => Date.now());
+    const queues = new SessionQueues(database(), () => Date.now());
     const calls: string[] = [];
     const request: QueueTransport = async (method, params) => {
       const action = method.split(".").pop() as "get";
       calls.push(action);
       const reply = structuredClone(
-        queues.serve(
+        await queues.serve(
           action,
           String(params.sessionId),
           String(params.clientId),
@@ -959,9 +980,9 @@ describe("one host, two computers (review round 2)", () => {
     lose.claimReply = true;
     await expect(desk.claim("a", false)).rejects.toThrow("reply lost");
     await desk.sync(true);
-    expect(queues.get("chat").status).toBe("active");
-    expect(queues.get("chat").claim).toBeUndefined();
-    expect(queues.get("chat").messages.map((row) => row.id)).toEqual(["a", "b"]);
+    expect((await queues.get("chat")).status).toBe("active");
+    expect((await queues.get("chat")).claim).toBeUndefined();
+    expect((await queues.get("chat")).messages.map((row) => row.id)).toEqual(["a", "b"]);
   });
 
   it("settles a competing edit by itself: kept as a new message, queue paused, reason shown", async () => {
@@ -980,13 +1001,11 @@ describe("one host, two computers (review round 2)", () => {
     await desk.sync();
     expect(desk.snapshot().error).toBeUndefined();
     expect(desk.snapshot().notice).toMatch(/another computer/i);
-    expect(queues.get("chat").status).toBe("paused");
-    expect(
-      queues
-        .get("chat")
-        .messages.map((row) => row.text)
-        .sort(),
-    ).toEqual(["from the desktop", "from the mac"]);
+    expect((await queues.get("chat")).status).toBe("paused");
+    expect((await queues.get("chat")).messages.map((row) => row.text).sort()).toEqual([
+      "from the desktop",
+      "from the mac",
+    ]);
     // Syncing goes on: a later edit is accepted again.
     expect(desk.update((queue) => queue)).toBe(true);
   });
@@ -1000,8 +1019,8 @@ describe("one host, two computers (review round 2)", () => {
     const token = (await desk.claim("a", false))!;
     desk.noteStop();
     await desk.finish(token, true);
-    expect(queues.get("chat").messages.map((row) => row.id)).toEqual(["b"]);
-    expect(queues.get("chat").status).toBe("paused");
+    expect((await queues.get("chat")).messages.map((row) => row.id)).toEqual(["b"]);
+    expect((await queues.get("chat")).status).toBe("paused");
   });
 
   it("gives its lease back, and stops asking a host that has no such call", async () => {
@@ -1016,7 +1035,7 @@ describe("one host, two computers (review round 2)", () => {
       }
       const action = method.split(".").pop() as "get";
       return structuredClone(
-        base.queues.serve(
+        await base.queues.serve(
           action,
           String(params.sessionId),
           String(params.clientId),

@@ -12,9 +12,18 @@ type Props = {
   onRead: (noteIds: string[]) => void;
   onResolve: (noteId: string, resolved: boolean) => void;
   onOpenReview: (sessionId: string) => void;
+  isOpeningSession?: (sessionId: string) => boolean;
 };
 
-export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenReview }: Props) {
+export function TaskReviewNotes({
+  notes,
+  busy,
+  stale,
+  onRead,
+  onResolve,
+  onOpenReview,
+  isOpeningSession,
+}: Props) {
   useLocale();
   const unread = unreadReviewNotes(notes);
   const open = notes.filter((note) => note.resolvedAt === undefined).length;
@@ -117,6 +126,7 @@ export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenR
                       type="button"
 
                       onClick={() => onOpenReview(note.sessionId!)}
+                      loading={isOpeningSession?.(note.sessionId)}
                     >
                       {t("Open review")}
                     </Button>
@@ -133,6 +143,7 @@ export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenR
                           type="button"
 
                           onClick={() => onOpenReview(sessionId)}
+                          loading={isOpeningSession?.(sessionId)}
                         >
                           {t("Review ")}
                           {index + 1}

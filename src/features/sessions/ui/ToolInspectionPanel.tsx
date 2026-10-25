@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import type { Block } from "../model/session";
@@ -35,7 +35,9 @@ export function hasToolInspection(block: Block): boolean {
 /** Mounted only after an explicit disclosure; never reads today's file as historical output. */
 export function ToolInspectionPanel({ block }: { block: Block }) {
   const t = useT();
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [copyState, setCopyState] = useState<"idle" | "pending" | "copied" | "failed">("idle");
+  const copying = useRef(false);
+  const copyGeneration = useRef(0);
   const sections = useMemo(() => {
     const preview = boundedToolPreview(block.tool?.preview);
     const inspection = preview?.inspection;
@@ -86,6 +88,14 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
     return items;
   }, [block]);
   const copyText = sections.map((section) => section.text).join("\n\n");
+  useEffect(() => {
+    copyGeneration.current += 1;
+    copying.current = false;
+    setCopyState("idle");
+    return () => {
+      copyGeneration.current += 1;
+    };
+  }, [block.id, copyText]);
 
   return (
     <div
@@ -102,11 +112,23 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
           variant="ghost"
           type="button"
           disabled={!copyText}
-
+          loading={copyState === "pending"}
           onClick={() => {
+            if (copying.current) return;
+            copying.current = true;
+            const generation = copyGeneration.current;
+            setCopyState("pending");
             void copyMessage(copyText).then(
-              () => setCopyState("copied"),
-              () => setCopyState("failed"),
+              () => {
+                if (copyGeneration.current !== generation) return;
+                copying.current = false;
+                setCopyState("copied");
+              },
+              () => {
+                if (copyGeneration.current !== generation) return;
+                copying.current = false;
+                setCopyState("failed");
+              },
             );
           }}
         >

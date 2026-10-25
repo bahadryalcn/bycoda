@@ -35,6 +35,7 @@ const record = value => require('node:fs').appendFileSync(require('node:path').j
 if (!process.argv.includes('app-server')) record({claudeArgs: process.argv.slice(2)});
 readline.createInterface({input: process.stdin}).on('line', line => {
   const request = JSON.parse(line);
+  if (request.type) record({piType: request.type});
   if (request.method) record({rpcMethod: request.method, pid: process.pid});
   if (request.jsonrpc === '2.0') {
     if (request.id == null) return;
@@ -79,6 +80,9 @@ readline.createInterface({input: process.stdin}).on('line', line => {
     send({type: 'result', subtype: 'success', session_id: 'fixture-claude'});
   }, 30);
   if (request.type === 'get_state') send({type: 'response', id: request.id, command: 'get_state', success: true, data: {sessionId: 'fixture_pi', model: {provider: 'openai', id: 'fixture-model', contextWindow: 100000}}});
+  if (request.type === 'new_session') send({type: 'response', id: request.id, command: 'new_session', success: true, data: {sessionId: 'fixture_pi'}});
+  if (request.type === 'get_commands') send({type: 'response', id: request.id, command: 'get_commands', success: true, data: {commands: []}});
+  if (request.type === 'get_available_commands') send({type: 'response', id: request.id, command: 'get_available_commands', success: true, data: {commands: []}});
   if (request.type === 'get_session_stats') send({type: 'response', id: request.id, command: 'get_session_stats', success: true, data: {contextWindow: 100000}});
   if (request.type === 'get_available_models') send({type: 'response', id: request.id, command: 'get_available_models', success: true, data: {models: [{provider: 'openai', id: 'fixture-model', name: 'Fixture model'}]}});
   if (request.type === 'prompt') {
@@ -119,13 +123,14 @@ describe("existing providers over headless process I/O", () => {
     release = await acquireHarnessBridge();
     store = new HostStore(join(directory, "host.db"));
     engine = new HostEngine(store, hostProviders);
+    await engine.ready;
   });
   afterAll(async () => {
     await stopCodexTextPrompt();
     await engine?.close();
     await backend?.close();
     release?.();
-    store?.close();
+    await store?.close();
     // Windows may briefly retain file handles after the child processes exit.
     if (directory)
       rmSync(directory, {
@@ -183,7 +188,7 @@ describe("existing providers over headless process I/O", () => {
     "completes and resumes %s with no React or Tauri process",
     async (harness) => {
       const project = await engine.openProject(directory);
-      const { sessionId } = engine.command({
+      const { sessionId } = await engine.command({
         type: "create",
         commandId: `create-${harness}`,
         projectId: project.id,
@@ -192,16 +197,30 @@ describe("existing providers over headless process I/O", () => {
         runtimeMode: "supervised",
       });
       for (let turn = 0; turn < 2; turn++) {
-        engine.command({
+        await engine.command({
           type: "send",
           commandId: `${harness}-${turn}`,
           sessionId,
           text: "hello",
         });
-        await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"), {
-          timeout: SETTLE_TIMEOUT_MS,
-        });
-        const state = store.session(sessionId).session;
+        await vi
+          .waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
+            timeout: SETTLE_TIMEOUT_MS,
+          })
+          .catch((error) => {
+            console.info(
+              "fixture-pi-command-types",
+              JSON.stringify(
+                readFileSync(join(directory, "calls.log"), "utf8")
+                  .trim()
+                  .split("\n")
+                  .map((line) => JSON.parse(line).piType)
+                  .filter(Boolean),
+              ),
+            );
+            throw error;
+          });
+        const state = (await store.session(sessionId)).session;
         expect(state.blocks.filter((block) => block.role === "assistant")).toHaveLength(turn + 1);
         expect(state.blocks.at(-1)?.text).toContain("completed");
         expect(state.providerSessionId).toBeTruthy();
@@ -211,7 +230,7 @@ describe("existing providers over headless process I/O", () => {
 
   it("saves a generated image without window and serves only that session's image", async () => {
     const project = await engine.openProject(directory);
-    const { sessionId } = engine.command({
+    const { sessionId } = await engine.command({
       type: "create",
       commandId: "create-image",
       projectId: project.id,
@@ -219,16 +238,16 @@ describe("existing providers over headless process I/O", () => {
       model: "codex:test",
       runtimeMode: "supervised",
     });
-    engine.command({
+    await engine.command({
       type: "send",
       commandId: "send-image",
       sessionId,
       text: "generate-fixture-image",
     });
-    await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"), {
+    await vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
       timeout: SETTLE_TIMEOUT_MS,
     });
-    const session = store.session(sessionId).session;
+    const session = (await store.session(sessionId)).session;
     const image = session.blocks.find((block) => block.role === "image")!;
     expect(image.image?.mimeType).toBe("image/png");
     expect(session.blocks.filter((block) => block.notice === "error")).toEqual([]);
@@ -238,16 +257,16 @@ describe("existing providers over headless process I/O", () => {
       offset: 0,
     });
     expect(Buffer.from(chunk.data, "base64")).toEqual(readFileSync(image.image!.path));
-    await expect(readAttachmentChunk(store, { sessionId, id: "unknown-image", offset: 0 })).rejects.toThrow(
-      "not found",
-    );
+    await expect(
+      readAttachmentChunk(store, { sessionId, id: "unknown-image", offset: 0 }),
+    ).rejects.toThrow("not found");
   });
 
   it.each(["pi", "omp"] as const)(
     "completes and resumes %s over the host RPC transport",
     async (harness) => {
       const project = await engine.openProject(directory);
-      const { sessionId } = engine.command({
+      const { sessionId } = await engine.command({
         type: "create",
         commandId: `create-${harness}`,
         projectId: project.id,
@@ -256,16 +275,30 @@ describe("existing providers over headless process I/O", () => {
         runtimeMode: "supervised",
       });
       for (let turn = 0; turn < 2; turn++) {
-        engine.command({
+        await engine.command({
           type: "send",
           commandId: `${harness}-send-${turn}`,
           sessionId,
           text: "hello",
         });
-        await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"), {
-          timeout: SETTLE_TIMEOUT_MS,
-        });
-        const state = store.session(sessionId).session;
+        await vi
+          .waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
+            timeout: SETTLE_TIMEOUT_MS,
+          })
+          .catch((error) => {
+            console.info(
+              "fixture-pi-command-types",
+              JSON.stringify(
+                readFileSync(join(directory, "calls.log"), "utf8")
+                  .trim()
+                  .split("\n")
+                  .map((line) => JSON.parse(line).piType)
+                  .filter(Boolean),
+              ),
+            );
+            throw error;
+          });
+        const state = (await store.session(sessionId)).session;
         expect(state.blocks.filter((block) => block.role === "assistant")).toHaveLength(turn + 1);
         expect(state.blocks.at(-1)?.text).toContain("Headless Pi completed");
         expect(state.providerSessionId).toBe("fixture_pi");
@@ -277,7 +310,7 @@ describe("existing providers over headless process I/O", () => {
     "completes a %s turn over the headless ACP transport",
     async (harness) => {
       const project = await engine.openProject(directory);
-      const { sessionId } = engine.command({
+      const { sessionId } = await engine.command({
         type: "create",
         commandId: `create-${harness}`,
         projectId: project.id,
@@ -285,16 +318,16 @@ describe("existing providers over headless process I/O", () => {
         model: `${harness}:default`,
         runtimeMode: "supervised",
       });
-      engine.command({
+      await engine.command({
         type: "send",
         commandId: `${harness}-send`,
         sessionId,
         text: "hello",
       });
-      await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"), {
+      await vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
         timeout: SETTLE_TIMEOUT_MS,
       });
-      const state = store.session(sessionId).session;
+      const state = (await store.session(sessionId)).session;
       expect(state.blocks.at(-1)?.text).toContain("Headless ACP completed");
       expect(state.providerSessionId).toBe("fixture_acp");
     },
@@ -308,7 +341,7 @@ describe("existing providers over headless process I/O", () => {
     async (harness, setting) => {
       const log = join(directory, "calls.log");
       const project = await engine.openProject(directory);
-      const { sessionId } = engine.command({
+      const { sessionId } = await engine.command({
         type: "create",
         commandId: `effort-create-${harness}`,
         projectId: project.id,
@@ -320,7 +353,7 @@ describe("existing providers over headless process I/O", () => {
       const efforts: Array<string | null> = [];
       for (const [turn, effort] of ["low", "high"].entries()) {
         if (turn)
-          engine.command({
+          await engine.command({
             type: "configure",
             commandId: `effort-configure-${harness}`,
             sessionId,
@@ -329,13 +362,13 @@ describe("existing providers over headless process I/O", () => {
             runtimeMode: "supervised",
           });
         writeFileSync(log, "");
-        engine.command({
+        await engine.command({
           type: "send",
           commandId: `effort-${harness}-${turn}`,
           sessionId,
           text: "hello",
         });
-        await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"), {
+        await vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
           timeout: SETTLE_TIMEOUT_MS,
         });
         const calls = readFileSync(log, "utf8")
@@ -351,7 +384,7 @@ describe("existing providers over headless process I/O", () => {
         }
       }
       expect(efforts).toEqual(["low", "high"]);
-      expect(store.session(sessionId).session.modelSettings).toEqual({
+      expect((await store.session(sessionId)).session.modelSettings).toEqual({
         [setting]: "high",
       });
     },

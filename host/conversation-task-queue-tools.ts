@@ -32,45 +32,47 @@ export class ConversationTaskQueueTools {
     action: TaskQueueTool,
     input: Record<string, unknown>,
     principal: RuntimeLogPrincipal,
-    authorized: () => boolean,
+    authorized: () => boolean | Promise<boolean>,
   ): Promise<unknown> {
-    const check = () => {
-      if (!authorized()) throw new Error("Session authority revoked.");
+    const check = async () => {
+      if (!(await authorized())) throw new Error("Session authority revoked.");
     };
-    check();
+    await check();
     const selected = action === "tasks.queue.pause" ? [input] : input.order;
     if (!Array.isArray(selected) || !selected.length || selected.length > 100)
       throw new Error("Provide 1 to 100 task revisions.");
     const seen = new Set<string>();
-    const tasks = selected.map((entry) => {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry))
-        throw new Error("Invalid task revision.");
-      const { taskId, expectedUpdatedAt } = entry as Record<string, unknown>;
-      if (typeof taskId !== "string" || seen.has(taskId))
-        throw new Error("Provide unique task IDs.");
-      seen.add(taskId);
-      const task = this.tasks.get(taskId);
-      if (!task || task.projectId !== principal.projectId)
-        throw new Error("Task is not in this project.");
-      if (!Number.isSafeInteger(expectedUpdatedAt) || task.updatedAt !== expectedUpdatedAt)
-        throw new Error("Task changed. Read it before changing it.");
-      if (
-        task.sessionId === principal.sessionId ||
-        task.reviewer?.sessionId === principal.sessionId
-      )
-        throw new Error("An agent cannot change its own active task.");
-      return task;
-    });
-    check();
+    const tasks = await Promise.all(
+      selected.map(async (entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry))
+          throw new Error("Invalid task revision.");
+        const { taskId, expectedUpdatedAt } = entry as Record<string, unknown>;
+        if (typeof taskId !== "string" || seen.has(taskId))
+          throw new Error("Provide unique task IDs.");
+        seen.add(taskId);
+        const task = await this.tasks.get(taskId);
+        if (!task || task.projectId !== principal.projectId)
+          throw new Error("Task is not in this project.");
+        if (!Number.isSafeInteger(expectedUpdatedAt) || task.updatedAt !== expectedUpdatedAt)
+          throw new Error("Task changed. Read it before changing it.");
+        if (
+          task.sessionId === principal.sessionId ||
+          task.reviewer?.sessionId === principal.sessionId
+        )
+          throw new Error("An agent cannot change its own active task.");
+        return task;
+      }),
+    );
+    await check();
     if (action === "tasks.queue.pause") {
       if (tasks[0].status !== "queued" || tasks[0].sessionId || tasks[0].startedAt)
         throw new Error("Only a never-started queued task can be paused.");
-      return this.tasks.move(tasks[0].id, "todo");
+      return await this.tasks.move(tasks[0].id, "todo");
     }
     if (action === "tasks.reorder") {
       if (tasks.some((task) => task.status !== "todo" && task.status !== "queued"))
         throw new Error("Only To do and queued tasks can be reordered.");
-      return this.tasks.reorder(tasks.map((task) => task.id));
+      return await this.tasks.reorder(tasks.map((task) => task.id));
     }
     throw new Error("Unknown task queue action");
   }

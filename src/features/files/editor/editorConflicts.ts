@@ -98,8 +98,10 @@ class ConflictActionsWidget extends WidgetType {
   }
 }
 
-function buildConflicts(state: EditorState): ConflictState {
-  const blocks = findConflictBlocks(state.doc.toString());
+function buildConflicts(
+  state: EditorState,
+  blocks: readonly ConflictBlock[] = findConflictBlocks(state.doc.toString()),
+): ConflictState {
   if (blocks.length === 0) return { blocks, decorations: Decoration.none };
 
   const ranges: Range<Decoration>[] = [];
@@ -173,10 +175,41 @@ const conflictField = StateField.define<ConflictState>({
   create: buildConflicts,
   update(value, tr) {
     if (!tr.docChanged) return value;
-    // Existing blocks can shift or break with any edit; rebuild those. Without
-    // blocks, only an edit touching a marker line can produce one.
-    if (value.blocks.length === 0 && !touchesConflictMarker(tr)) return value;
-    return buildConflicts(tr.state);
+    if (touchesConflictMarker(tr)) return buildConflicts(tr.state);
+    if (value.blocks.length === 0) return value;
+    // Ordinary content edits cannot change the marker grammar. Map the handful
+    // of marker positions instead of copying/scanning the complete document.
+    const doc = tr.newDoc;
+    const line = (number: number) =>
+      doc.lineAt(tr.changes.mapPos(tr.startState.doc.line(number).from, 1)).number;
+    const section = (startLine: number, nextLine: number) => ({
+      from: startLine <= doc.lines ? doc.line(startLine).from : doc.length,
+      to: nextLine <= doc.lines ? doc.line(nextLine).from : doc.length,
+      startLine,
+      endLine: nextLine - 1,
+    });
+    const blocks = value.blocks.map((block): ConflictBlock => {
+      const markerLines = {
+        ours: line(block.markerLines.ours),
+        base: block.markerLines.base === null ? null : line(block.markerLines.base),
+        split: line(block.markerLines.split),
+        theirs: line(block.markerLines.theirs),
+      };
+      const closing = doc.line(markerLines.theirs);
+      return {
+        ...block,
+        from: doc.line(markerLines.ours).from,
+        to: closing.to + (closing.number < doc.lines ? 1 : 0),
+        startLine: markerLines.ours,
+        endLine: markerLines.theirs,
+        markerLines,
+        ours: section(markerLines.ours + 1, markerLines.base ?? markerLines.split),
+        base: markerLines.base === null ? null : section(markerLines.base + 1, markerLines.split),
+        theirs: section(markerLines.split + 1, markerLines.theirs),
+        endsWithNewline: closing.number < doc.lines,
+      };
+    });
+    return buildConflicts(tr.state, blocks);
   },
   provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
 });

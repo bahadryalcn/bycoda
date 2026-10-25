@@ -571,7 +571,7 @@ export class XBrowserSessions {
       wait,
     );
   }
-  workflowBegin(
+  async workflowBegin(
     service: SocialService,
     p: SocialPrincipal,
     accountId: string,
@@ -581,7 +581,12 @@ export class XBrowserSessions {
   ) {
     if (this.logins.get(accountId)?.status === "waiting")
       throw new Error("Finish or cancel the account's current login first.");
-    return this.workflows.begin(service, p, { accountId, intent, targetUrl, acknowledgeRisk });
+    return await this.workflows.begin(service, p, {
+      accountId,
+      intent,
+      targetUrl,
+      acknowledgeRisk,
+    });
   }
   availability() {
     return this.launcher
@@ -599,9 +604,9 @@ export class XBrowserSessions {
     action: "read" | "update" | "follow",
     input: Record<string, unknown>,
   ) {
-    const account = service.accountForBrowserManagement(p, accountId, action !== "read");
+    const account = await service.accountForBrowserManagement(p, accountId, action !== "read");
     const check = async () => {
-      const current = service.accountForBrowserManagement(p, accountId, action !== "read");
+      const current = await service.accountForBrowserManagement(p, accountId, action !== "read");
       if (
         current.platform !== "x" ||
         current.connection !== "browser" ||
@@ -651,7 +656,7 @@ export class XBrowserSessions {
             await check();
             await this.identity(page, account);
           },
-          (expression, timeout) => this.until(page, expression, timeout),
+          async (expression, timeout) => await this.until(page, expression, timeout),
         );
         return action === "read"
           ? await actions.read()
@@ -678,17 +683,17 @@ export class XBrowserSessions {
     });
     return next;
   }
-  begin(
+  async begin(
     service: SocialService,
     p: SocialPrincipal,
     accountId: string,
     acknowledgeRisk: unknown,
-  ): { status: LoginFlow["status"]; expiresAt: number } {
+  ): Promise<{ status: LoginFlow["status"]; expiresAt: number }> {
     if (acknowledgeRisk !== true)
       throw new Error(
         "Confirm that browser-session mode is unofficial and can restrict the X account.",
       );
-    const account = service.accountForOAuth(p, accountId);
+    const account = await service.accountForOAuth(p, accountId);
     if (this.workflows.hasActive(accountId))
       throw new Error(
         "Close or cancel the account's browser workflow before verifying its connection.",
@@ -710,16 +715,17 @@ export class XBrowserSessions {
       expiresAt: this.now() + LOGIN_TIMEOUT,
     };
     this.logins.set(accountId, flow);
-    void this.exclusive(accountId, () => this.login(service, launcher, account, flow)).catch(
-      (error) => {
-        flow.status = "failed";
-        flow.error = message(error);
-      },
-    );
+    void this.exclusive(
+      accountId,
+      async () => await this.login(service, launcher, account, flow),
+    ).catch((error) => {
+      flow.status = "failed";
+      flow.error = message(error);
+    });
     return { status: flow.status, expiresAt: flow.expiresAt };
   }
-  status(service: SocialService, p: SocialPrincipal, accountId: string) {
-    service.accountForOAuth(p, accountId);
+  async status(service: SocialService, p: SocialPrincipal, accountId: string) {
+    await service.accountForOAuth(p, accountId);
     const flow = this.logins.get(accountId);
     return flow ? { status: flow.status, error: flow.error } : { status: "idle" as const };
   }
@@ -818,9 +824,9 @@ export class XBrowserSessions {
   adapter(): SocialAdapter {
     return {
       send: (account, job, _token, media) =>
-        this.exclusive(account.id, () => this.publish(account, job, media)),
+        this.exclusive(account.id, async () => await this.publish(account, job, media)),
       poll: (account, _token, posts, cursor) =>
-        this.exclusive(account.id, () => this.poll(account, posts, cursor)),
+        this.exclusive(account.id, async () => await this.poll(account, posts, cursor)),
     };
   }
   private async identity(page: BrowserPage, account: SocialAccount) {

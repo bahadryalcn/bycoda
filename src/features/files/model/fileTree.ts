@@ -9,35 +9,73 @@ const expandedByProject = new Map<string, Set<string>>();
 const selectedByProject = new Map<string, string | null>();
 const dirs = new Map<string, FsEntry[]>();
 const verifiedListings = new WeakMap<FsEntry[], number>();
-const listingKeys = new WeakMap<FsEntry[], number>();
+const presentation = new WeakMap<readonly FsEntry[], { all: FsEntry[]; included: FsEntry[] }>();
+const entryIndexes = new WeakMap<readonly FsEntry[], Map<string, number>>();
 const pollBackoff = new Map<string, { misses: number; nextAt: number }>();
 
-function listingKey(entries: FsEntry[]): number {
-  const cached = listingKeys.get(entries);
-  if (cached !== undefined) return cached;
-  let hash = entries.length;
-  for (const entry of entries) {
-    const value = `${entry.name}\0${entry.path}\0${+entry.isDir}${+entry.ignored}`;
-    for (let i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
+const yieldListing = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+/** Exact comparison without hashing every path character again on unchanged polls. */
+async function sameListing(a: FsEntry[], b: FsEntry[]): Promise<boolean> {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  let sliceAt = performance.now();
+  for (let i = 0; i < a.length; i++) {
+    const entry = a[i],
+      next = b[i];
+    if (
+      entry.name !== next.name ||
+      entry.path !== next.path ||
+      entry.isDir !== next.isDir ||
+      entry.ignored !== next.ignored
+    )
+      return false;
+    if (i && i % 512 === 0 && performance.now() - sliceAt >= 4) {
+      await yieldListing();
+      sliceAt = performance.now();
+    }
   }
-  listingKeys.set(entries, hash);
-  return hash;
+  return true;
 }
-/** Hash fast-path plus exact field comparison: collisions cannot hide a change. */
-function sameListing(a: FsEntry[], b: FsEntry[]): boolean {
-  return (
-    a.length === b.length &&
-    listingKey(a) === listingKey(b) &&
-    a.every((entry, i) => {
-      const next = b[i];
-      return (
-        entry.name === next.name &&
-        entry.path === next.path &&
-        entry.isDir === next.isDir &&
-        entry.ignored === next.ignored
-      );
-    })
-  );
+
+async function preparePresentation(entries: FsEntry[]) {
+  if (presentation.has(entries)) return;
+  if (entries.length > 512) await yieldListing();
+  let sliceAt = performance.now();
+  const folders: FsEntry[] = [],
+    files: FsEntry[] = [],
+    includedFolders: FsEntry[] = [],
+    includedFiles: FsEntry[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    (entry.isDir ? folders : files).push(entry);
+    if (!entry.ignored) (entry.isDir ? includedFolders : includedFiles).push(entry);
+    if (i && i % 512 === 0 && performance.now() - sliceAt >= 4) {
+      await yieldListing();
+      sliceAt = performance.now();
+    }
+  }
+  const all = [...folders, ...files],
+    included = [...includedFolders, ...includedFiles];
+  for (const values of [all, included]) {
+    const indexes = new Map<string, number>();
+    for (let i = 0; i < values.length; i++) {
+      indexes.set(values[i].path.replace(/\\/g, "/"), i);
+      if (i && i % 512 === 0 && performance.now() - sliceAt >= 4) {
+        await yieldListing();
+        sliceAt = performance.now();
+      }
+    }
+    entryIndexes.set(values, indexes);
+  }
+  presentation.set(entries, { all, included });
+}
+
+export function displayDirEntries(entries: FsEntry[] | null, showExcluded: boolean): FsEntry[] {
+  if (!entries) return [];
+  const ready = presentation.get(entries);
+  if (ready) return showExcluded ? ready.all : ready.included;
+  const included = showExcluded ? entries : entries.filter((entry) => !entry.ignored);
+  return [...included.filter((entry) => entry.isDir), ...included.filter((entry) => !entry.isDir)];
 }
 const listeners = new Set<
   (roots?: readonly string[], listingsChanged?: readonly string[]) => void
@@ -130,14 +168,15 @@ function readDir(path: string, previous?: FsEntry[]): Promise<FsEntry[]> {
   dirEpochs.set(path, epoch);
   const read = listDir(path)
     .then(
-      (entries) => {
+      async (entries) => {
+        const cached = previous && (await sameListing(previous, entries)) ? previous : entries;
+        if (dirEpochs.get(path) === epoch) await preparePresentation(cached);
         if (dirEpochs.get(path) === epoch) {
-          const cached = previous && sameListing(previous, entries) ? previous : entries;
           dirs.set(path, cached);
           verifiedListings.set(cached, Date.now());
         }
         if (dirEpochs.get(path) === epoch) reportRemoteConnection(path, "files");
-        return entries;
+        return cached;
       },
       (error: unknown) => {
         if (dirEpochs.get(path) === epoch && previous && keepsLastListing(path, error)) {
@@ -208,7 +247,7 @@ export async function refreshCachedDirs(
         try {
           const next = await read;
           if (dirEpochs.get(path) !== epoch) continue;
-          const unchanged = !!previousEntries && sameListing(previousEntries, next);
+          const unchanged = previousEntries === next;
           if (!unchanged) changed.push(path);
           const misses = unchanged ? Math.min((backoff?.misses ?? 0) + 1, 4) : 0;
           const base = isRemoteProjectPath(path) ? 5000 : 3000;
@@ -382,16 +421,33 @@ export function windowEntries(
   const targets = mustShow
     .filter((path): path is string => !!path)
     .map((path) => path.replace(/\\/g, "/"));
-  const shown: FsEntry[] = [];
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    if (i < limit) {
-      shown.push(entry);
-      continue;
-    }
-    if (!targets.length) continue;
-    const base = entry.path.replace(/\\/g, "/");
-    if (targets.some((path) => path === base || path.startsWith(`${base}/`))) shown.push(entry);
+  const bounded = Math.max(0, Math.floor(limit));
+  if (!targets.length)
+    return {
+      shown: entries.slice(0, bounded),
+      hidden: entries.length - Math.min(entries.length, bounded),
+    };
+  let indexes = entryIndexes.get(entries);
+  if (!indexes) {
+    indexes = new Map(entries.map((entry, i) => [entry.path.replace(/\\/g, "/"), i]));
+    entryIndexes.set(entries, indexes);
   }
+  const extra = new Set<number>();
+  for (let path of targets) {
+    while (path) {
+      const index = indexes.get(path);
+      if (index !== undefined) {
+        if (index >= bounded) extra.add(index);
+        break;
+      }
+      const slash = path.lastIndexOf("/");
+      if (slash < 0) break;
+      path = path.slice(0, slash);
+    }
+  }
+  const shown = [
+    ...entries.slice(0, bounded),
+    ...[...extra].sort((a, b) => a - b).map((index) => entries[index]),
+  ];
   return { shown, hidden: entries.length - shown.length };
 }

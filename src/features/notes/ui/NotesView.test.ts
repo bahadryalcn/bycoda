@@ -23,6 +23,8 @@ import { requestOpenNoteLibrary } from "../noteNavigation";
 import { savePinnedProjects, saveProjectRailOrder } from "../../projects/model/recents";
 
 const invoke = vi.hoisted(() => vi.fn());
+const openDialog = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: openDialog }));
 vi.mock("@tauri-apps/api/core", async (original) => ({
   ...(await original<typeof import("@tauri-apps/api/core")>()),
   invoke,
@@ -71,6 +73,7 @@ beforeEach(() => {
     updatedAt: 1,
   };
   invoke.mockReset();
+  openDialog.mockReset().mockResolvedValue(null);
   invoke.mockImplementation(
     async (command: string, args?: { note: NoteUpsert; id?: string; query?: string }) => {
       if (command === "notes_list" || command === "notes_list_summaries") return [{ ...stored }];
@@ -147,6 +150,42 @@ it("loads only the selected summary's full body and ignores a late previous sele
     "Other note",
   );
   expect(invoke.mock.calls.filter(([command]) => command === "notes_get")).toHaveLength(2);
+});
+
+it("keeps detail retry focused with local pending feedback and ignores duplicate requests", async () => {
+  let finish!: (value: Note) => void;
+  let attempts = 0;
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "notes_list_summaries") return [summarizeNote(stored)];
+    if (command === "notes_get") {
+      attempts += 1;
+      if (attempts === 1) throw new Error("Detail temporarily unavailable");
+      return new Promise<Note>((resolve) => {
+        finish = resolve;
+      });
+    }
+    throw new Error(command);
+  });
+  await render();
+  const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Retry",
+  )!;
+  retry.focus();
+  await act(async () => {
+    retry.click();
+    retry.click();
+  });
+  expect(attempts).toBe(2);
+  expect(retry.isConnected).toBe(true);
+  expect(retry.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(retry);
+  expect(container.textContent).toContain("Detail temporarily unavailable");
+  expect(container.querySelector('[aria-label="Note title"]')).toBeNull();
+  await act(async () => finish(stored));
+  expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value).toBe(
+    stored.title,
+  );
+  expect(container.textContent).not.toContain("Detail temporarily unavailable");
 });
 
 it("bounds a thousand-note library, preserves paging focus and reveals a selected last note after filtering", async () => {
@@ -473,6 +512,31 @@ it("formats the selection from the toolbar and undoes it in one step", async () 
     undo(view);
   });
   expect(view.state.doc.toString()).toBe("make this bold");
+});
+
+it("keeps image picker progress local and cancellation leaves the note unchanged", async () => {
+  let finish!: (value: null) => void;
+  openDialog.mockImplementation(
+    () =>
+      new Promise<null>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render();
+  const image = container.querySelector<HTMLButtonElement>('[aria-label="Insert image"]')!;
+  image.focus();
+  await act(async () => {
+    image.click();
+    image.click();
+  });
+  expect(openDialog).toHaveBeenCalledTimes(1);
+  expect(image.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(image);
+  expect(container.textContent).not.toContain("Adding images…");
+  expect(container.textContent).toContain(stored.body);
+  await act(async () => finish(null));
+  expect(image.getAttribute("aria-busy")).not.toBe("true");
+  expect(invoke.mock.calls.filter(([command]) => command === "notes_upsert")).toHaveLength(0);
 });
 
 it("adds a pasted image to the note at the caret", async () => {
@@ -882,8 +946,17 @@ it("lets the user retry a project change after saving fails", async () => {
     failRetry = reject;
   });
   invoke.mockImplementationOnce(() => retrying);
+  retry!.focus();
   await act(async () => retry!.click());
-  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk full");
+  expect(retry!.isConnected).toBe(true);
+  expect(retry!.getAttribute("aria-busy")).toBe("true");
+  const save = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.textContent === "Save",
+  )!;
+  expect(save.hasAttribute("aria-busy")).toBe(false);
+  expect(save.disabled).toBe(true);
+  expect(document.activeElement).toBe(retry);
   expect(stored.sourceCwd).toBe("/work/Edefyn");
 
   await act(async () => failRetry(new Error("Still no space")));

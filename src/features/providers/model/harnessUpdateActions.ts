@@ -147,7 +147,7 @@ function markCurrent(update: HarnessUpdate, version: string) {
 async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
   let stage = "updater";
   try {
-    await updateHarnessCli(update.harness);
+    await updateHarnessCli(update.harness, update.latest);
     stage = "version check";
     const after = await inspectHarnessBinary(update.harness);
     const version = parseHarnessVersion(update.harness, after.version ?? "");

@@ -201,3 +201,69 @@ it("preserves drafts across provider tabs, supports keyboard navigation, and rev
   await act(async () => root.render(render("jira")));
   expect(tabs[3].getAttribute("aria-selected")).toBe("true");
 });
+
+it.each([
+  [GitlabSettings, "gitlab_status", "gitlab_set_config", "GitLab access token"],
+  [
+    AzureDevOpsSettings,
+    "azure_devops_status",
+    "azure_devops_set_config",
+    "Azure DevOps personal access token",
+  ],
+] as const)(
+  "shows local save progress and blocks repeat %s submissions",
+  async (Component, statusCommand, saveCommand, tokenLabel) => {
+    let finish!: () => void;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === statusCommand) return { connected: false, url: "https://example.com" };
+      if (command === saveCommand)
+        return new Promise((resolve) => {
+          finish = () => resolve({ connected: true, url: "https://example.com" });
+        });
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    await act(async () => root.render(createElement(Component)));
+    await fill(tokenLabel, "test-key");
+    await click("Save and test connection");
+    const saving = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Saving and testing"),
+    )!;
+    expect(saving.getAttribute("aria-busy")).toBe("true");
+    await act(async () => saving.click());
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === saveCommand),
+    ).toHaveLength(1);
+    await act(async () => finish());
+    expect(container.textContent).toContain("Configured");
+    expect(container.querySelector('button[aria-busy="true"]')).toBeNull();
+  },
+);
+
+it("keeps Linear team refresh local, preserves results while pending, and explains an empty result", async () => {
+  let reads = 0;
+  let finish!: () => void;
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "linear_status") return { connected: true };
+    if (command === "linear_list_teams") {
+      reads += 1;
+      if (reads === 1) return [{ id: "engineering", key: "ENG", name: "Engineering" }];
+      return new Promise((resolve) => {
+        finish = () => resolve([]);
+      });
+    }
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  await act(async () => root.render(createElement(LinearSettings)));
+  await click("Refresh teams");
+  const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Refresh teams"),
+  )!;
+  expect(refresh.getAttribute("aria-busy")).toBe("true");
+  expect(container.textContent).toContain("Engineering");
+  expect(container.textContent).not.toContain("No teams available");
+  await act(async () => refresh.click());
+  expect(reads).toBe(2);
+  await act(async () => finish());
+  expect(refresh.getAttribute("aria-busy")).not.toBe("true");
+  expect(container.textContent).toContain("No teams available. Refresh teams to try again.");
+});

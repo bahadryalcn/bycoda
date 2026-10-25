@@ -142,6 +142,10 @@ function ImageView({
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyPending, setCopyPending] = useState(false);
+  const [copyError, setCopyError] = useState<string>();
+  const copying = useRef(false);
+  const copyGeneration = useRef(0);
   const copiedTimer = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -152,6 +156,7 @@ function ImageView({
 
   useEffect(
     () => () => {
+      copyGeneration.current += 1;
       if (copiedTimer.current != null) window.clearTimeout(copiedTimer.current);
       clearTimeout(clickTimer.current);
     },
@@ -159,9 +164,18 @@ function ImageView({
   );
 
   const copyOriginal = useCallback(() => {
+    if (copying.current) return;
+    copying.current = true;
+    const generation = copyGeneration.current;
     setMenu(null);
+    setCopied(false);
+    setCopyPending(true);
+    setCopyError(undefined);
     void copyFileToClipboard(path).then(
       () => {
+        if (generation !== copyGeneration.current) return;
+        copying.current = false;
+        setCopyPending(false);
         setCopied(true);
         if (copiedTimer.current != null) {
           window.clearTimeout(copiedTimer.current);
@@ -169,7 +183,10 @@ function ImageView({
         copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
       },
       (error: unknown) => {
-        console.error("Failed to copy image file:", error);
+        if (generation !== copyGeneration.current) return;
+        copying.current = false;
+        setCopyPending(false);
+        setCopyError(error instanceof Error ? error.message : String(error));
       },
     );
   }, [path]);
@@ -230,13 +247,22 @@ function ImageView({
           style={imageZoom.style}
         />
       </div>
-      <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-stroke px-3 text-[11px] text-[var(--ui-text-secondary)]">
+      {copyError ? (
+        <p role="alert" className="shrink-0 break-words px-3 py-2 text-ui-caption text-danger">
+          {copyError}
+        </p>
+      ) : null}
+      <footer className="flex min-h-8 shrink-0 flex-wrap items-center gap-3 border-t border-stroke px-3 text-[11px] text-[var(--ui-text-secondary)]">
         <span className="tabular-nums">{natural ? `${natural.w} × ${natural.h}` : "—"}</span>
         <span className="tabular-nums">{formatFileSize(size)}</span>
         <span className="uppercase">{mime.replace(/^image\//, "")}</span>
         <span className="flex-1" />
         {IS_MAC ? (
-          <ZoomButton label={copied ? t("Copied") : t("Copy original file")} onClick={copyOriginal}>
+          <ZoomButton
+            label={copied ? t("Copied") : t("Copy original file")}
+            onClick={copyOriginal}
+            loading={copyPending}
+          >
             {copied ? (
               <Check className="size-3" strokeWidth={2} />
             ) : (
@@ -292,15 +318,20 @@ function ZoomButton({
   label,
   onClick,
   children,
+  loading,
 }: {
   label: string;
   onClick: () => void;
   children: React.ReactNode;
+  loading?: boolean;
 }) {
   useLocale();
   return (
     <Button
       size="sm"
+      iconOnly
+      label={label}
+      loading={loading}
       variant="ghost"
       motion="none"
       type="button"
@@ -330,38 +361,59 @@ function FileCard({
   onRetry?: () => void;
 }) {
   useLocale();
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string>();
+  const running = useRef(false);
+  const run = async (action: string, work: () => Promise<void>) => {
+    if (running.current) return;
+    running.current = true;
+    setPending(action);
+    setError(undefined);
+    try {
+      await work();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      running.current = false;
+      setPending(null);
+    }
+  };
   return (
-    <div className="grid h-full place-items-center p-6">
-      <div className="max-w-md text-center">
+    <div className="grid h-full min-w-0 place-items-center overflow-auto p-6">
+      <div className="w-full min-w-0 max-w-md text-center">
         {icon}
-        <p className="text-[13px] text-content">{title}</p>
+        <p className="break-words text-[13px] text-content">{title}</p>
         <p className="mt-1 text-[12px] leading-5 text-[var(--ui-text-secondary)]">{detail}</p>
         <p className="mt-1 truncate font-mono text-[11px] text-[var(--ui-text-muted)]">
           {displayPath(path, cwd)}
         </p>
-        <div className="mt-4 flex items-center justify-center gap-2">
+        {error ? (
+          <p role="alert" className="mt-2 break-words text-ui-caption text-danger">
+            {error}
+          </p>
+        ) : null}
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           {onRetry ? (
-            <CardButton onClick={onRetry}>
-              <RotateCcw className="size-3" strokeWidth={1.75} />
+            <CardButton
+              onClick={onRetry}
+              disabled={pending !== null}
+              startIcon={<RotateCcw className="size-3" strokeWidth={1.75} />}
+            >
               {t("Retry")}
             </CardButton>
           ) : null}
           <CardButton
-            onClick={() =>
-              void revealPath(path).catch((error) => {
-                console.warn("BinaryFileView operation failed", error);
-              })
-            }
+            disabled={pending !== null}
+            loading={pending === "reveal"}
+            startIcon={<Folder className="size-3" strokeWidth={1.75} />}
+            onClick={() => void run("reveal", () => revealPath(path))}
           >
-            <Folder className="size-3" strokeWidth={1.75} />
             {t("Reveal")}
           </CardButton>
           <CardButton
-            onClick={() =>
-              void copyText(path).catch((error) => {
-                console.warn("BinaryFileView operation failed", error);
-              })
-            }
+            disabled={pending !== null}
+            loading={pending === "copy"}
+            onClick={() => void run("copy", () => copyText(path))}
           >
             {t("Copy path")}
           </CardButton>
@@ -371,7 +423,19 @@ function FileCard({
   );
 }
 
-function CardButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function CardButton({
+  onClick,
+  children,
+  loading,
+  disabled,
+  startIcon,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+  loading?: boolean;
+  disabled?: boolean;
+  startIcon?: React.ReactNode;
+}) {
   useLocale();
   return (
     <Button
@@ -380,6 +444,9 @@ function CardButton({ onClick, children }: { onClick: () => void; children: Reac
       motion="none"
       type="button"
       onClick={onClick}
+      loading={loading}
+      disabled={disabled}
+      startIcon={startIcon}
       className="flex items-center gap-1.5"
     >
       {children}

@@ -15,7 +15,7 @@ import {
 } from "../src/features/crews/model/crewDefaults";
 
 const stores: HostStore[] = [];
-afterEach(() => stores.splice(0).forEach((store) => store.close()));
+afterEach(async () => await (await stores.splice(0)).forEach(async (store) => await store.close()));
 
 const catalog: HostModelCatalog = {
   models: {
@@ -39,11 +39,11 @@ const catalog: HostModelCatalog = {
   errors: {},
 };
 
-function fixture() {
+async function fixture() {
   const store = new HostStore(":memory:");
-  stores.push(store);
-  const project = store.addProject("/default-crews", "Default crews");
-  const other = store.addProject("/other-crews", "Other crews");
+  await stores.push(store);
+  const project = await store.addProject("/default-crews", "Default crews");
+  const other = await store.addProject("/other-crews", "Other crews");
   const models = vi.fn(async (): Promise<HostModelCatalog> => structuredClone(catalog));
   const engine = { command: vi.fn(), updateSession: vi.fn() };
   const tasks = { list: () => [], tick: vi.fn() };
@@ -78,8 +78,8 @@ function legacySeed() {
   return { ...seed, definitions: [seed.definition], runs: [], defaultsInitialized: true };
 }
 
-function persistLegacy(store: HostStore, state: unknown) {
-  store.db
+async function persistLegacy(store: HostStore, state: unknown) {
+  await store.db
     .prepare(
       "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
     )
@@ -88,9 +88,9 @@ function persistLegacy(store: HostStore, state: unknown) {
 
 describe("editable bycoda defaults", () => {
   it("adds one valid host-wide example and reusable specialties without running work", async () => {
-    const f = fixture();
+    const f = await fixture();
     await f.list();
-    const view = f.service.list(f.project.id);
+    const view = await f.service.list(f.project.id);
     expect(view.definitions).toHaveLength(1);
     const definition = view.definitions[0]!;
     expect(parseCrewDefinition(definition)).toEqual(definition);
@@ -137,17 +137,17 @@ describe("editable bycoda defaults", () => {
         },
       ]);
     }
-    expect(f.service.list(f.other.id).definitions).toEqual(view.definitions);
-    expect(f.service.list(f.other.id).agents).toEqual(view.agents);
+    expect((await f.service.list(f.other.id)).definitions).toEqual(view.definitions);
+    expect((await f.service.list(f.other.id)).agents).toEqual(view.agents);
     expect(view.runs).toEqual([]);
     expect(f.engine.command).not.toHaveBeenCalled();
     expect(f.tasks.tick).not.toHaveBeenCalled();
   });
 
   it("preserves existing projects, custom profiles and intervening saves during discovery", async () => {
-    const f = fixture();
+    const f = await fixture();
     const initial = createDefaultCrew(catalog, 1)!;
-    f.service.save({
+    await f.service.save({
       ...initial.definition,
       id: "custom",
       projectId: f.project.id,
@@ -168,39 +168,41 @@ describe("editable bycoda defaults", () => {
         }),
     );
     const listing = f.list();
-    const saved = f.service
-      .list(f.project.id)
-      .definitions.find((definition) => definition.id === "custom")!;
-    f.service.save({ ...saved, name: "Owner's latest team" }, saved.updatedAt);
+    await vi.waitFor(() => expect(resolve).toBeTypeOf("function"));
+    const saved = (await f.service.list(f.project.id)).definitions.find(
+      (definition) => definition.id === "custom",
+    )!;
+    await f.service.save({ ...saved, name: "Owner's latest team" }, saved.updatedAt);
     resolve(catalog);
     await listing;
     expect(
-      f.service.list(f.project.id).definitions.find((definition) => definition.id === "custom")
-        ?.name,
+      (await f.service.list(f.project.id)).definitions.find(
+        (definition) => definition.id === "custom",
+      )?.name,
     ).toBe("Owner's latest team");
     expect(
-      f.service.list(f.project.id).agents.find((agent) => agent.id === "custom-lead")?.name,
+      (await f.service.list(f.project.id)).agents.find((agent) => agent.id === "custom-lead")?.name,
     ).toBe("My lead");
-    expect(f.service.list(f.other.id).definitions.map((definition) => definition.id)).toEqual([
-      DEFAULT_CREW_ID,
-    ]);
+    expect(
+      (await f.service.list(f.other.id)).definitions.map((definition) => definition.id),
+    ).toEqual([DEFAULT_CREW_ID]);
   });
 
   it("seeds once across concurrent project reads and host restarts", async () => {
-    const f = fixture();
+    const f = await fixture();
     await Promise.all([f.list(), f.list(f.other.id), f.list()]);
-    expect(f.service.list(f.project.id).definitions).toHaveLength(1);
-    expect(f.service.list(f.project.id).agents).toHaveLength(17);
+    expect((await f.service.list(f.project.id)).definitions).toHaveLength(1);
+    expect((await f.service.list(f.project.id)).agents).toHaveLength(17);
     const calls = f.models.mock.calls.length;
-    await f.restart().call("crews.list", {}, f.project.id);
+    await (await f.restart()).call("crews.list", {}, f.project.id);
     expect(f.models).toHaveBeenCalledTimes(calls);
-    expect(f.service.list(f.project.id).agents).toHaveLength(17);
+    expect((await f.service.list(f.project.id)).agents).toHaveLength(17);
   });
 
   it("keeps owner edits and deletions permanently and leaves team snapshots independent", async () => {
-    const f = fixture();
+    const f = await fixture();
     await f.list();
-    const before = f.service.list(f.project.id);
+    const before = await f.service.list(f.project.id);
     const profile = before.agents.find((agent) => agent.name === "Mobile Engineer")!;
     await f.service.call(
       "crews.agent.save",
@@ -211,58 +213,61 @@ describe("editable bycoda defaults", () => {
       f.project.id,
     );
     expect(
-      f.service.list(f.project.id).definitions[0]!.agents.find((agent) => agent.id === profile.id)
-        ?.instructions,
+      (await f.service.list(f.project.id)).definitions[0]!.agents.find(
+        (agent) => agent.id === profile.id,
+      )?.instructions,
     ).toBe(profile.instructions);
     const team = before.definitions[0]!;
-    f.service.save({ ...team, name: "Our product team" }, team.updatedAt);
-    const restarted = f.restart();
+    await f.service.save({ ...team, name: "Our product team" }, team.updatedAt);
+    const restarted = await f.restart();
     await restarted.call("crews.list", {}, f.other.id);
-    expect(restarted.list(f.other.id).definitions[0]!.name).toBe("Our product team");
+    expect((await restarted.list(f.other.id)).definitions[0]!.name).toBe("Our product team");
     expect(
-      restarted.list(f.other.id).agents.find((agent) => agent.id === profile.id),
+      (await restarted.list(f.other.id)).agents.find((agent) => agent.id === profile.id),
     ).toMatchObject({ name: "Our mobile expert", instructions: "Our own rules" });
-    const savedTeam = restarted.list(f.other.id).definitions[0]!;
+    const savedTeam = (await restarted.list(f.other.id)).definitions[0]!;
     await restarted.call(
       "crews.delete",
       { definitionId: savedTeam.id, expectedUpdatedAt: savedTeam.updatedAt },
       f.other.id,
     );
     await restarted.call("crews.agent.delete", { agentId: profile.id }, f.other.id);
-    const again = f.restart();
+    const again = await f.restart();
     await again.call("crews.list", {}, f.project.id);
-    expect(again.list(f.project.id).definitions).toEqual([]);
-    expect(again.list(f.project.id).agents.some((agent) => agent.id === profile.id)).toBe(false);
-    expect(again.list(f.project.id).agents).toHaveLength(16);
+    expect((await again.list(f.project.id)).definitions).toEqual([]);
+    expect((await again.list(f.project.id)).agents.some((agent) => agent.id === profile.id)).toBe(
+      false,
+    );
+    expect((await again.list(f.project.id)).agents).toHaveLength(16);
   });
 
   it("retries empty or failed catalogs without overwriting existing crews", async () => {
-    const f = fixture();
+    const f = await fixture();
     f.models.mockRejectedValueOnce(new Error("Provider offline"));
     await f.list();
     f.models.mockResolvedValueOnce({ models: {}, errors: {} });
     await f.list();
-    expect(f.service.list(f.project.id).definitions).toEqual([]);
+    expect((await f.service.list(f.project.id)).definitions).toEqual([]);
     await f.list();
-    expect(f.service.list(f.project.id).definitions).toHaveLength(1);
+    expect((await f.service.list(f.project.id)).definitions).toHaveLength(1);
   });
 
   it("does not let conversation reads initialize global data or invalid projects trigger discovery", async () => {
-    const f = fixture();
+    const f = await fixture();
     await f.service.call("crews.list", {}, f.project.id, {
       projectId: f.project.id,
       sessionId: "agent",
     });
-    expect(f.service.list(f.project.id).definitions).toEqual([]);
+    expect((await f.service.list(f.project.id)).definitions).toEqual([]);
     expect(f.models).not.toHaveBeenCalled();
     await expect(f.list("missing-project")).rejects.toThrow();
     expect(f.models).not.toHaveBeenCalled();
     await f.list();
-    expect(f.service.list(f.project.id).definitions).toHaveLength(1);
+    expect((await f.service.list(f.project.id)).definitions).toHaveLength(1);
   });
 
   it("upgrades untouched v1 instructions, adds data specialties and preserves active snapshots", async () => {
-    const f = fixture();
+    const f = await fixture();
     const legacy = legacySeed();
     const oldRun = {
       id: "old-run",
@@ -275,9 +280,9 @@ describe("editable bycoda defaults", () => {
       createdAt: 10,
       updatedAt: 10,
     };
-    persistLegacy(f.store, { ...legacy, runs: [oldRun] });
+    await persistLegacy(f.store, { ...legacy, runs: [oldRun] });
     await f.list();
-    const view = f.service.list(f.project.id);
+    const view = await f.service.list(f.project.id);
     expect(view.agents).toHaveLength(17);
     expect(view.definitions[0]!.agents).toHaveLength(17);
     expect(
@@ -289,17 +294,19 @@ describe("editable bycoda defaults", () => {
       expect(member.source).toEqual({ id: profile.id, updatedAt: profile.updatedAt });
     }
     const stored = JSON.parse(
-      String(f.store.db.prepare("SELECT value FROM metadata WHERE key=?").get("crews.v1")!.value),
+      String(
+        (await f.store.db.prepare("SELECT value FROM metadata WHERE key=?").get("crews.v1"))!.value,
+      ),
     );
     expect(stored.runs).toEqual([oldRun]);
     expect(stored.defaultsRevision).toBe(DEFAULT_CREW_REVISION);
     const calls = f.models.mock.calls.length;
-    await f.restart().call("crews.list", {}, f.project.id);
+    await (await f.restart()).call("crews.list", {}, f.project.id);
     expect(f.models).toHaveBeenCalledTimes(calls);
   });
 
   it("keeps owner instructions, model choices and pending profile changes on revision upgrade", async () => {
-    const f = fixture();
+    const f = await fixture();
     const legacy = legacySeed();
     const mobile = legacy.agents.find((agent) => agent.name === "Mobile Engineer")!;
     mobile.instructions = "Owner's mobile rules";
@@ -319,9 +326,9 @@ describe("editable bycoda defaults", () => {
       id: "custom-copy",
       projectId: f.project.id,
     };
-    persistLegacy(f.store, { ...legacy, definitions: [legacy.definition, custom] });
+    await persistLegacy(f.store, { ...legacy, definitions: [legacy.definition, custom] });
     await f.list();
-    const view = f.service.list(f.project.id);
+    const view = await f.service.list(f.project.id);
     expect(view.agents.find((agent) => agent.id === mobile.id)?.instructions).toBe(
       "Owner's mobile rules",
     );
@@ -340,14 +347,14 @@ describe("editable bycoda defaults", () => {
   });
 
   it("never restores prior deletions or expands an owner-pruned example roster", async () => {
-    const f = fixture();
+    const f = await fixture();
     const legacy = legacySeed();
     const removed = "bycoda.role.mobile-engineer";
     legacy.agents = legacy.agents.filter((agent) => agent.id !== removed);
     legacy.definition.agents = legacy.definition.agents.filter((agent) => agent.id !== removed);
-    persistLegacy(f.store, legacy);
+    await persistLegacy(f.store, legacy);
     await f.list();
-    const view = f.service.list(f.project.id);
+    const view = await f.service.list(f.project.id);
     expect(view.agents).toHaveLength(16);
     expect(view.agents.some((agent) => agent.id === removed)).toBe(false);
     expect(view.agents.some((agent) => agent.id === "bycoda.role.dba")).toBe(true);
@@ -356,17 +363,17 @@ describe("editable bycoda defaults", () => {
       false,
     );
     const deleted = legacySeed();
-    persistLegacy(f.store, { ...deleted, agents: [], definitions: [] });
+    await persistLegacy(f.store, { ...deleted, agents: [], definitions: [] });
     await f.list();
-    expect(f.service.list(f.project.id).definitions).toEqual([]);
-    expect(f.service.list(f.project.id).agents.map((agent) => agent.id)).toEqual([
+    expect((await f.service.list(f.project.id)).definitions).toEqual([]);
+    expect((await f.service.list(f.project.id)).agents.map((agent) => agent.id)).toEqual([
       "bycoda.role.dba",
       "bycoda.role.data-engineer",
     ]);
   });
 
   it("does not give global example members provenance from project-only reserved-ID collisions", async () => {
-    const f = fixture();
+    const f = await fixture();
     const seed = createDefaultCrew(catalog, 1)!;
     const profile = seed.agents.find((agent) => agent.id === "bycoda.role.dba")!;
     await f.service.call(
@@ -377,14 +384,17 @@ describe("editable bycoda defaults", () => {
       f.project.id,
     );
     await f.list();
-    expect(f.service.list(f.other.id).agents.some((agent) => agent.id === profile.id)).toBe(false);
-    const member = f.service
-      .list(f.other.id)
-      .definitions[0]!.agents.find((agent) => agent.id === profile.id)!;
+    expect((await f.service.list(f.other.id)).agents.some((agent) => agent.id === profile.id)).toBe(
+      false,
+    );
+    const member = (await f.service.list(f.other.id)).definitions[0]!.agents.find(
+      (agent) => agent.id === profile.id,
+    )!;
     expect(member.instructions).toBe(profile.instructions);
     expect(member.source).toBeUndefined();
     expect(
-      f.service.list(f.project.id).agents.find((agent) => agent.id === profile.id)?.projectId,
+      (await f.service.list(f.project.id)).agents.find((agent) => agent.id === profile.id)
+        ?.projectId,
     ).toBe(f.project.id);
   });
 });

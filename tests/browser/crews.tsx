@@ -176,7 +176,30 @@ let runs = [
     tasks: [],
   },
 ];
-mockIPC((command, args) => {
+if (params.has("multiple")) {
+  runs.push({
+    ...structuredClone(runs[0]),
+    id: "second-run",
+    coordinatorSessionId: "second-lead",
+    launch: { candidate, runtimeMode: "supervised", prompt: "Improve mobile navigation" },
+    assignments: [],
+    tasks: [],
+    messages: [],
+    createdAt: 2,
+    updatedAt: 3,
+  });
+}
+if (params.has("deletedDefinition")) definitions = [];
+const operationCalls: string[] = [];
+let releaseOperation: () => void = () => {};
+const operationGate = new Promise<void>((resolve) => {
+  releaseOperation = resolve;
+});
+Object.assign(window, {
+  crewFixtureOperations: operationCalls,
+  crewFixtureReleaseOperation: () => releaseOperation(),
+});
+mockIPC(async (command, args) => {
   if (command === "remote_machines")
     return [
       {
@@ -189,6 +212,8 @@ mockIPC((command, args) => {
     ];
   if (command === "remote_request") {
     const p = args?.params as Record<string, unknown>;
+    operationCalls.push(String(args?.method));
+    if (args?.method === params.get("slowOperation")) await operationGate;
     switch (args?.method) {
       case "environment.describe":
         return {
@@ -196,7 +221,7 @@ mockIPC((command, args) => {
             "crews.v1",
             "crews.tasks.v1",
             "crews.delete.v1",
-            ...(params.get("legacy") ? [] : ["crews.agent-groups.v1"]),
+            ...(params.get("legacy") ? [] : ["crews.agent-groups.v1", "crews.run-delete.v1"]),
           ],
           environmentId: "fixture",
         };
@@ -253,14 +278,24 @@ mockIPC((command, args) => {
           coordinatorSessionId: `started-${starts}`,
         };
       case "crews.pause":
-        runs = runs.map((r) => (r.id === p.runId ? { ...r, status: "paused" } : r));
-        return runs[0];
-      case "crews.resume":
-        runs = runs.map((r) => (r.id === p.runId ? { ...r, status: "active" } : r));
-        return runs[0];
       case "crews.stop":
-        runs = runs.map((r) => (r.id === p.runId ? { ...r, status: "finished" } : r));
-        return runs[0];
+        runs = runs.map((r) =>
+          r.id === p.runId ? { ...r, status: "paused", updatedAt: r.updatedAt + 1 } : r,
+        );
+        return runs.find((run) => run.id === p.runId);
+      case "crews.resume":
+        runs = runs.map((r) =>
+          r.id === p.runId ? { ...r, status: "active", updatedAt: r.updatedAt + 1 } : r,
+        );
+        return runs.find((run) => run.id === p.runId);
+      case "crews.deleteRun": {
+        const run = runs.find((run) => run.id === p.runId);
+        if (!run || run.updatedAt !== p.expectedUpdatedAt)
+          throw new Error("Crew work changed. Reload before deleting");
+        if (run.status === "active") throw new Error("Stop work before deleting it");
+        runs = runs.filter((r) => r.id !== p.runId);
+        return { deleted: true };
+      }
     }
   }
   if (command.startsWith("plugin:")) return null;
@@ -269,6 +304,14 @@ mockIPC((command, args) => {
 if (params.has("defaults")) runs = [];
 // Another session saving the same crew while it is open here.
 Object.assign(window, {
+  crewFixtureSnapshot: () => ({
+    definitions: definitions.map((crew) => crew.id),
+    runs: runs.map((run) => ({ id: run.id, status: run.status })),
+  }),
+  simulateRunUpdate: (id: string) => {
+    const next = Math.max(...runs.map((run) => run.updatedAt)) + 1;
+    runs = runs.map((run) => (run.id === id ? { ...run, updatedAt: next } : run));
+  },
   simulateCrewUpdate: () => {
     definitions = definitions.map((d) =>
       d.id === "crew"
@@ -343,7 +386,7 @@ function Fixture() {
             </div>
           ) : view === "settings" ? (
             <div className="bycoda-settings-content bycoda-settings-form">
-              <CrewsSettings cwd={cwd} />
+              <CrewsSettings cwd={cwd} onOpen={(target) => setOpened(target.sessionId)} />
             </div>
           ) : null}
         </div>

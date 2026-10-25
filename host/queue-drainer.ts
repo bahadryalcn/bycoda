@@ -30,14 +30,15 @@ const BLOCK_MARK_MS = 90_000;
 /** What the host needs to know and do to send a queued message itself. */
 export type QueueDrainHost = {
   /** The conversation is free: no turn runs here or in the desktop app. */
-  ready(sessionId: string): boolean;
+  ready(sessionId: string): boolean | Promise<boolean>;
   /** Sends the row as a turn, throwing if the host refuses it. */
-  send(sessionId: string, row: QueuedMessage): void;
-  transaction<T>(action: () => T): T;
+  send(sessionId: string, row: QueuedMessage): void | Promise<void>;
+  transaction<T>(action: () => T | Promise<T>): T | Promise<T>;
+  outsideScope?<T>(action: () => T): T;
   /** When a desktop's hold on a conversation (its run lease) ends if not renewed. */
   wakeAt?(): number | undefined;
   /** Forgets the holds that ended; the drainer then looks again. */
-  expired?(): void;
+  expired?(): void | Promise<void>;
   /** Whether a failed send only means the conversation is busy right now. */
   transient?(error: unknown): boolean;
 };
@@ -58,20 +59,40 @@ export class QueueDrainer {
   /** Queues whose holder reports it cannot send right now (a sync conflict), until when. */
   private readonly blocked = new Map<string, { holder: string; until: number }>();
   private scheduled = false;
+  private flushing?: Promise<void>;
+  private waking?: Promise<void>;
   private timer?: ReturnType<typeof setTimeout>;
   private closed = false;
+  private started = false;
+  private armGeneration = 0;
+  readonly ready: Promise<void>;
   constructor(
     private readonly queues: SessionQueues,
     private readonly host: QueueDrainHost,
     private readonly now: () => number = Date.now,
+    autoStart = true,
   ) {
     queues.onChange = (id) => this.kick(id);
-    this.kickAll();
+    this.ready = Promise.resolve(queues.ready).then(async () => {
+      if (this.closed) return;
+      if (autoStart) await this.activate();
+    });
+    void this.ready.catch(() => {});
+  }
+  async start(): Promise<void> {
+    await this.ready;
+    await this.activate();
+  }
+  private async activate(): Promise<void> {
+    if (this.closed || this.started) return;
+    this.started = true;
+    await this.kickAll();
     this.arm();
   }
   /** Look at every queue that has something to send. */
-  kickAll(): void {
-    for (const id of this.queues.pending()) this.kick(id);
+  async kickAll(): Promise<void> {
+    if (this.closed || !this.started) return;
+    for (const id of await this.queues.pending()) this.kick(id);
   }
   /** Look again at queues that were waiting (a desktop turn ended, a lease went away). */
   kickWaiting(): void {
@@ -82,18 +103,20 @@ export class QueueDrainer {
    * a Stop, a failure or a turn cut short (the host restarted or stopped, its
    * storage failed) the owner decides, so the queue is held with the reason.
    */
-  settled(id: string, outcome: SettleOutcome = {}): void {
-    if (this.closed) return;
+  async settled(id: string, outcome: SettleOutcome = {}): Promise<void> {
     const failure = outcome.interrupted
       ? (outcome.reason ?? outcome.error ?? "This turn was interrupted.")
       : outcome.cancelled
         ? "Stopped by you."
         : outcome.error;
-    if (failure === undefined) return this.kick(id);
+    if (failure === undefined) {
+      if (!this.closed) this.kick(id);
+      return;
+    }
     try {
-      const queue = this.queues.get(id);
+      const queue = await this.queues.get(id);
       if (queue.messages.length && queue.status === "active")
-        this.queues.hold(id, !outcome.interrupted && outcome.cancelled ? "stopped" : failure);
+        await this.queues.hold(id, !outcome.interrupted && outcome.cancelled ? "stopped" : failure);
     } catch (error) {
       console.warn("Host queue hold failed", error);
     }
@@ -104,9 +127,9 @@ export class QueueDrainer {
    * row being sent or edited, does not count). The holder's lease is then not
    * renewed, so it ends and the host sends the row itself.
    */
-  holderStalled(id: string): boolean {
+  async holderStalled(id: string): Promise<boolean> {
     try {
-      if (this.isBlocked(id) || !this.queues.sendable(id) || !this.host.ready(id)) {
+      if (this.isBlocked(id) || !(await this.queues.sendable(id)) || !(await this.host.ready(id))) {
         this.freeSince.delete(id);
         return false;
       }
@@ -150,24 +173,57 @@ export class QueueDrainer {
   kick(id: string): void {
     if (this.closed) return;
     this.pending.add(id);
+    if (!this.started) return;
     if (this.scheduled) return;
     this.scheduled = true;
-    queueMicrotask(() => {
-      this.scheduled = false;
-      const ids = [...this.pending];
-      this.pending.clear();
-      for (const queue of ids) this.drain(queue);
-      this.arm();
-    });
+    const schedule = () =>
+      queueMicrotask(() => {
+        const current = this.flush();
+        this.flushing = current;
+        void current
+          .finally(() => {
+            if (this.flushing === current) this.flushing = undefined;
+          })
+          .catch((error) => console.warn("Host queue flush failed", error));
+      });
+    if (this.host.outsideScope) this.host.outsideScope(schedule);
+    else schedule();
   }
-  close(): void {
+  private async flush(): Promise<void> {
+    try {
+      while (!this.closed && this.pending.size) {
+        const ids = [...this.pending];
+        this.pending.clear();
+        for (const id of ids) await this.drain(id);
+      }
+      await this.arm();
+    } finally {
+      this.scheduled = false;
+      if (!this.closed && this.pending.size) this.kick(this.pending.values().next().value!);
+    }
+  }
+  async idle(): Promise<void> {
+    await this.ready;
+    while (this.scheduled || this.flushing || this.waking) {
+      await Promise.resolve();
+      await this.waking;
+      await this.flushing;
+    }
+  }
+  async close(): Promise<void> {
     this.closed = true;
+    this.armGeneration++;
     clearTimeout(this.timer);
     this.timer = undefined;
     this.queues.onChange = undefined;
+    await this.ready.catch(() => {});
+    await this.waking?.catch(() => {});
+    await this.flushing?.catch(() => {});
   }
   /** One timer at the earliest live lease (drain or run). It looks again when it fires. */
   private arm(): void {
+    if (this.closed || !this.started) return;
+    const generation = ++this.armGeneration;
     clearTimeout(this.timer);
     this.timer = undefined;
     let blockEnds: number | undefined;
@@ -177,29 +233,40 @@ export class QueueDrainer {
       (time): time is number => time !== undefined,
     );
     const at = times.length ? Math.min(...times) : undefined;
-    if (this.closed || at === undefined) return;
-    this.timer = setTimeout(
-      () => {
-        this.timer = undefined;
-        for (const [id, { until }] of [...this.blocked])
-          if (until <= this.now()) this.blocked.delete(id);
-        for (const id of this.queues.takeExpired()) this.drain(id);
-        // A desktop that stopped renewing no longer holds the conversation.
-        this.host.expired?.();
-        this.kickWaiting();
-        this.arm();
-      },
-      Math.max(0, at - this.now()) + 1,
-    );
+    if (this.closed || generation !== this.armGeneration || at === undefined) return;
+    const schedule = () =>
+      setTimeout(
+        () => {
+          const current = (async () => {
+            this.timer = undefined;
+            for (const [id, { until }] of [...this.blocked])
+              if (until <= this.now()) this.blocked.delete(id);
+            for (const id of await this.queues.takeExpired()) this.kick(id);
+            // A desktop that stopped renewing no longer holds the conversation.
+            await this.host.expired?.();
+            this.kickWaiting();
+            await this.arm();
+          })();
+          this.waking = current;
+          void current
+            .finally(() => {
+              if (this.waking === current) this.waking = undefined;
+            })
+            .catch((error) => console.warn("Host queue expiry failed", error));
+        },
+        Math.max(0, at - this.now()) + 1,
+      );
+    this.timer = this.host.outsideScope ? this.host.outsideScope(schedule) : schedule();
     this.timer.unref?.();
   }
-  private drain(id: string): void {
+  private async drain(id: string): Promise<void> {
+    if (this.closed) return;
     try {
-      let queue = this.queues.get(id);
+      let queue = await this.queues.get(id);
       // The sender of a claimed row is gone: its delivery is unconfirmed. A
       // claim is looked at whatever the queue's state, or it would block every
       // send to the conversation for good.
-      if (queue.claim) queue = this.queues.reapStale(id);
+      if (queue.claim) queue = await this.queues.reapStale(id);
       if (!queue.messages.length || queue.status !== "active") {
         this.waiting.delete(id);
         return;
@@ -208,11 +275,27 @@ export class QueueDrainer {
       if (queue.claim || queue.editingId) return;
       if (this.queues.live(queue)) return; // the holder drains
       const row = queue.messages[0];
-      if (row.deliveryUnknown || this.isBlocked(id) || !this.host.ready(id)) return;
+      if (row.deliveryUnknown || this.isBlocked(id) || !(await this.host.ready(id)) || this.closed)
+        return;
       try {
-        this.host.transaction(() => {
-          this.host.send(id, row);
-          this.queues.consumed(id, row.id);
+        await this.host.transaction(async () => {
+          if (this.closed) return;
+          const current = await this.queues.get(id);
+          const head = current.messages[0];
+          if (
+            !head ||
+            head.id !== row.id ||
+            current.status !== "active" ||
+            current.claim ||
+            current.editingId ||
+            this.queues.live(current) ||
+            head.deliveryUnknown ||
+            this.isBlocked(id) ||
+            !(await this.host.ready(id))
+          )
+            return;
+          await this.host.send(id, head);
+          await this.queues.consumed(id, head.id);
         });
       } catch (error) {
         // A conversation that is busy right now (a turn that started meanwhile,
@@ -221,8 +304,8 @@ export class QueueDrainer {
         // refusal the owner has to decide on holds the queue.
         console.warn("Host could not send the queued message", error);
         const transient = this.host.transient ?? isTransientDrainError;
-        if (!transient(error) && this.host.ready(id))
-          this.queues.hold(id, error instanceof Error ? error.message : String(error));
+        if (!transient(error) && (await this.host.ready(id)))
+          await this.queues.hold(id, error instanceof Error ? error.message : String(error));
       }
     } catch (error) {
       console.warn("Host queue drain failed", error);

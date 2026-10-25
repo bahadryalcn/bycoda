@@ -1,5 +1,78 @@
 import { test, expect } from "@playwright/test";
 
+test("composer attachment submission stays local and keeps Stop available", async ({
+  page,
+}, testInfo) => {
+  await initializeChatLayout(page);
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/tests/browser/composer-extras.html?chat-layout");
+  await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
+  await page.evaluate(() => {
+    const fixture = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+      finishComposerPaste?: () => void;
+    };
+    const original = fixture.__TAURI_INTERNALS__.invoke;
+    fixture.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === "clipboard_file_paths") return [];
+      if (command === "clipboard_image") {
+        await new Promise<void>((resolve) => {
+          fixture.finishComposerPaste = resolve;
+        });
+        return Uint8Array.from(
+          atob(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6oS0AAAAASUVORK5CYII=",
+          ),
+          (char) => char.charCodeAt(0),
+        ).buffer;
+      }
+      return original(command, args);
+    };
+    document.querySelector("textarea")!.dispatchEvent(
+      new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: new DataTransfer(),
+      }),
+    );
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Boolean((window as unknown as { finishComposerPaste?: () => void }).finishComposerPaste),
+      ),
+    )
+    .toBe(true);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const pending = page.locator('.composer-send-controls button[data-button-loading="true"]');
+  const stop = page.getByRole("button", { name: "Stop", exact: true });
+  await expect(pending).toHaveCount(1);
+  await expect(pending).toHaveAttribute("aria-busy", "true");
+  await expect(stop).toBeEnabled();
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      light,
+    );
+    await expect(pending).toBeInViewport();
+    await expect(stop).toBeInViewport();
+    await page.screenshot({
+      path: testInfo.outputPath(`composer-pending-390-${light ? "light" : "dark"}.png`),
+    });
+  }
+  await stop.click();
+  await expect(pending).toHaveCount(0);
+  await page.evaluate(() =>
+    (window as unknown as { finishComposerPaste: () => void }).finishComposerPaste(),
+  );
+  await expect(
+    page.getByRole("button", { name: "Remove clipboard-image.png", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
+    /Keep this chat draft/,
+  );
+});
+
 test("Steer explains a prolonged wait and preserves the paused queue at narrow widths", async ({
   page,
 }) => {
@@ -199,20 +272,29 @@ test("reprompt previews, applies and reverses selected text in both themes", asy
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const light of [false, true]) {
     await page.goto("/tests/browser/composer-extras.html?translation-selection");
-    await page.evaluate(value => document.documentElement.classList.toggle("theme-light", value), light);
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      light,
+    );
     await page.setViewportSize({ width: light ? 390 : 1000, height: 800 });
     const input = page.getByRole("textbox", { name: "Message", exact: true });
     const original = "Before selam after";
     await input.fill(original);
-    await input.evaluate((el: HTMLTextAreaElement) => { el.focus(); el.setSelectionRange(7, 12); el.dispatchEvent(new Event("select", { bubbles: true })); });
-    const action = page.getByRole("toolbar", { name: "Selected text actions" }).getByRole("button", { name: "Reprompt", exact: true });
+    await input.evaluate((el: HTMLTextAreaElement) => {
+      el.focus();
+      el.setSelectionRange(7, 12);
+      el.dispatchEvent(new Event("select", { bubbles: true }));
+    });
+    const action = page
+      .getByRole("toolbar", { name: "Selected text actions" })
+      .getByRole("button", { name: "Reprompt", exact: true });
     await action.focus();
     await action.press("Enter");
     const result = page.getByRole("dialog", { name: "Reprompt", exact: true });
     await expect(result).toContainText("Rewritten prompt");
     await expect(result).toContainText("Translated fixture text");
     await expect(input).toHaveValue(original);
-    expect(await result.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(await result.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
     await result.getByRole("button", { name: "Apply prompt", exact: true }).click();
     await expect(input).toHaveValue("Before Translated fixture text after");
     await input.press("ArrowUp");
@@ -442,6 +524,30 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
   const hint = page.locator(".composer-tips-icon");
   const tooltip = page.getByRole("tooltip");
   const folders = page.getByRole("button", { name: "Folders for this session", exact: true });
+  const footer = page.locator("[data-composer-workspace]");
+  const controls = footer.locator("[data-composer-workspace-controls]");
+  const checkout = controls.getByLabel("Workspace Current checkout", { exact: true });
+  const branch = controls.getByRole("button", { name: "Branch main", exact: true });
+  await expect(hint).toHaveText("Next tip");
+  await expect(footer.locator(":scope > [data-composer-tips]")).toHaveCount(1);
+  expect(
+    await footer.evaluate((element) =>
+      element.firstElementChild?.hasAttribute("data-composer-tips"),
+    ),
+  ).toBe(true);
+  await expect(checkout).toBeVisible();
+  await expect(branch).toBeVisible();
+  expect(
+    await controls.evaluate((element) => {
+      const checkout = element.querySelector('[aria-label="Workspace Current checkout"]')!;
+      const branch = element.querySelector('[aria-label="Branch main"]')!;
+      const directories = element.querySelector("[data-composer-directories]")!;
+      return (
+        !!(checkout.compareDocumentPosition(branch) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+        !!(branch.compareDocumentPosition(directories) & Node.DOCUMENT_POSITION_FOLLOWING)
+      );
+    }),
+  ).toBe(true);
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -455,6 +561,8 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
       await expect(input).toBeInViewport();
       await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
       await expect(folders).toBeInViewport();
+      await expect(checkout).toBeInViewport();
+      await expect(branch).toBeInViewport();
       expect(
         await folders.evaluate(
           (button) => !!button.closest("[data-composer-workspace] [data-composer-directories]"),
@@ -462,9 +570,19 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
       ).toBe(true);
       await hint.hover();
       await expect(tooltip).toBeInViewport();
+      await expect(tooltip.getByText("Click again for another tip", { exact: true })).toBeVisible();
       const previous = await tooltip.innerText();
       await hint.click();
       await expect(tooltip).not.toHaveText(previous!);
+      const next = await tooltip.innerText();
+      await hint.click();
+      await expect(tooltip).not.toHaveText(next!);
+      if (theme === "dark" && width === 1024) {
+        await page.screenshot({
+          path: testInfo.outputPath("chat-tip-open.png"),
+          animations: "disabled",
+        });
+      }
       await page.keyboard.press("Escape");
       await expect(tooltip).toHaveCount(0);
       await expect(input).toHaveValue("Keep this chat draft");

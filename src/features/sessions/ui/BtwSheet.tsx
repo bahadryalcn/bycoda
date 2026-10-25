@@ -7,7 +7,6 @@ import { ChevronDown, Plus, RefreshCw, X } from "../../../shared/ui/icons";
 import { Composer } from "./Composer";
 import { AgentTranscript } from "./AgentTranscript";
 import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
-import { BtwQuestionBurst, type BurstRect } from "./BtwQuestionBurst";
 import { preferredModelSettings, resolveModel } from "../model/models";
 import {
   btwOpenTargetTurnId,
@@ -76,10 +75,6 @@ function tabHarnessFor(
 
 const NO_MESSAGES: BtwMessage[] = [];
 const NO_BLOCKS: Block[] = [];
-
-function reducedMotion() {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-}
 
 /**
  * State for `/btw` side conversations. The session's own composer asks the
@@ -385,66 +380,12 @@ function statusClass(status: BtwThread["status"]): string {
   return "bg-(--ui-tone-success-subtle)";
 }
 
-const OPEN_MOTION = {
-  duration: 360,
-  easing: "cubic-bezier(0.22, 1, 0.36, 1)",
-};
-const CLOSE_MOTION = {
-  duration: 260,
-  easing: "cubic-bezier(0.4, 0, 0.2, 1)",
-  fill: "forwards" as const,
-};
-
-/** An element's box relative to a host element. */
-function rectIn(el: HTMLElement, host: HTMLElement): BurstRect {
-  const rect = el.getBoundingClientRect();
-  const frame = host.getBoundingClientRect();
-  return {
-    left: rect.left - frame.left,
-    top: rect.top - frame.top,
-    width: rect.width,
-    height: rect.height,
-  };
-}
-
-function box(rect: BurstRect) {
-  return {
-    left: `${rect.left}px`,
-    top: `${rect.top}px`,
-    width: `${rect.width}px`,
-    height: `${rect.height}px`,
-  };
-}
-
-/** The full sheet and the composer box it grows out of, as clip paths. */
-function morphClips(sheet: HTMLElement, origin: HTMLElement | null) {
-  if (!origin) return null;
-  const box = origin.getBoundingClientRect();
-  const frame = sheet.getBoundingClientRect();
-  if (!box.width || !box.height || !frame.height) return null;
-  const radius = parseFloat(getComputedStyle(origin).borderTopLeftRadius) || 0;
-  const r = `${radius}px`;
-  const top = Math.max(0, box.top - frame.top);
-  const right = Math.max(0, frame.right - box.right);
-  const bottom = Math.max(0, frame.bottom - box.bottom);
-  const left = Math.max(0, box.left - frame.left);
-  return {
-    box: `inset(${top}px ${right}px ${bottom}px ${left}px round ${r} ${r} ${r} ${r})`,
-    full: `inset(0px 0px 0px 0px round ${r} ${r} 0px 0px)`,
-  };
-}
-
-/**
- * The side conversation over the transcript: tabs for every side thread in
- * the session, the active thread, and a composer for it. It morphs out of
- * the session's composer box and folds back into it on close.
- */
+/** Side conversation with immediate presentation and retained thread/draft ownership. */
 export function BtwSheet({
   btw,
   cwd,
   providerAccountId,
   visible = true,
-  origin,
   onSaveNote,
   onOpenFile,
   onOpenDiff,
@@ -453,7 +394,7 @@ export function BtwSheet({
   cwd?: string;
   providerAccountId?: string;
   visible?: boolean;
-  /** The session composer's box, which the sheet grows out of. */
+  /** Retained caller compatibility; presentation no longer morphs from the composer. */
   origin?: () => HTMLElement | null;
   onSaveNote?: (text: string) => void | Promise<void>;
   onOpenFile?: (path: string) => void;
@@ -464,12 +405,6 @@ export function BtwSheet({
   const glassRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
-  const frameRef = useRef<HTMLDivElement | null>(null);
-  const motionRef = useRef<Animation[] | null>(null);
-  // The session composer stays hidden under an open sheet, past the morph.
-  const homeFadeRef = useRef<Animation | null>(null);
-  const startRef = useRef<number[]>([]);
-  const [burst, setBurst] = useState<(BurstRect & { key: number }) | null>(null);
   const { open, rendered, tabs, activeTabId, messages, persisted, running } = btw;
   const harness = btw.harness;
   const finishClose = btw.finishClose;
@@ -488,127 +423,11 @@ export function BtwSheet({
     [messages, btw.pendingBlocks, running, persisted?.updatedAt, harness, btw.model],
   );
 
-  // Morph between the composer box and the full sheet. The panel grows out
-  // of the session composer's box and folds back into it; a frame in the
-  // composer's shape carries the input from one box to the other while the
-  // two composers cross-fade inside it, so the input itself reads as
-  // reshaping. Opening also sets off a burst of question marks. Starting
-  // from the current frame lets a quick reopen or close reverse mid-flight.
-  // Like popovers, the glass layer is never inside an animating ancestor:
-  // it and the content each run the same morph.
+  // Frequent side questions should be usable immediately, without delaying the
+  // composer behind geometry animations or decorative completion effects.
   useLayoutEffect(() => {
-    const sheet = sheetRef.current;
-    const overlay = overlayRef.current;
-    const frame = frameRef.current;
-    const layers = [glassRef.current, contentRef.current].filter(
-      (layer): layer is HTMLDivElement => layer != null,
-    );
-    if (!rendered || !sheet || !overlay || layers.length === 0) return;
-    const originBox = origin?.() ?? null;
-    const clips = morphClips(sheet, originBox);
-    const running = motionRef.current;
-    if (!clips || reducedMotion() || typeof sheet.animate !== "function") {
-      running?.forEach((motion) => motion.cancel());
-      motionRef.current = null;
-      if (!open) {
-        homeFadeRef.current?.cancel();
-        homeFadeRef.current = null;
-        finishClose();
-      }
-      return;
-    }
-    const style = running ? getComputedStyle(layers[0]) : null;
-    const clip = style?.clipPath && style.clipPath !== "none" ? style.clipPath : null;
-    const opacity = style ? Number(style.opacity) : null;
-    const frameNow = running && frame ? rectIn(frame, overlay) : null;
-    running?.forEach((motion) => motion.cancel());
-    startRef.current.forEach((id) => cancelAnimationFrame(id));
-    startRef.current = [];
-    delete overlay.dataset.morph;
-    const timing = open ? OPEN_MOTION : CLOSE_MOTION;
-    const frames = open
-      ? [
-          { clipPath: clip ?? clips.box, opacity: opacity ?? 0 },
-          { opacity: 1, offset: 0.3 },
-          { clipPath: clips.full, opacity: 1 },
-        ]
-      : [
-          { clipPath: clip ?? clips.full, opacity: opacity ?? 1 },
-          { opacity: 1, offset: 0.2 },
-          { clipPath: clips.box, opacity: 0 },
-        ];
-    const motions = layers.map((layer) => layer.animate(frames, timing));
-
-    const sheetComposer = contentRef.current?.querySelector<HTMLElement>(".btw-sheet-composer");
-    const sheetBox = sheetComposer?.querySelector<HTMLElement>("[data-composer-box]");
-    if (frame && originBox && sheetBox) {
-      const home = rectIn(originBox, overlay);
-      const away = rectIn(sheetBox, overlay);
-      const from = frameNow ?? (open ? home : away);
-      const to = open ? away : home;
-      motions.push(
-        frame.animate(
-          [
-            { ...box(from), opacity: 0 },
-            { opacity: 1, offset: 0.15 },
-            { opacity: 1, offset: 0.8 },
-            { ...box(to), opacity: 0 },
-          ],
-          timing,
-        ),
-      );
-      if (open) {
-        // The side composer surfaces inside the frame once it has mostly
-        // taken the new shape.
-        motions.push(
-          sheetComposer!.animate(
-            [{ opacity: 0 }, { opacity: 0, offset: 0.45 }, { opacity: 1 }],
-            timing,
-          ),
-        );
-        if (!running) setBurst({ key: Date.now(), ...away });
-      }
-    }
-
-    const home = originBox?.closest<HTMLElement>("[data-session-composer]");
-    if (home) {
-      homeFadeRef.current?.cancel();
-      const fade = home.animate(
-        open
-          ? [{ opacity: 1 }, { opacity: 0, offset: 0.3 }, { opacity: 0 }]
-          : [{ opacity: 0 }, { opacity: 0, offset: 0.55 }, { opacity: 1 }],
-        { ...timing, fill: open ? "forwards" : "none" },
-      );
-      homeFadeRef.current = open ? fade : null;
-      motions.push(fade);
-    }
-
-    // Opening mounts the whole sheet, and its first paint can take longer
-    // than a frame. Hold everything on its first frame until that paint has
-    // landed, so the morph plays from the start instead of mid-way.
-    if (open) {
-      motions.forEach((motion) => motion.pause());
-      overlay.dataset.morph = "pending";
-      startRef.current = [
-        requestAnimationFrame(() => {
-          startRef.current = [
-            requestAnimationFrame(() => {
-              startRef.current = [];
-              delete overlay.dataset.morph;
-              motions.forEach((motion) => motion.play());
-            }),
-          ];
-        }),
-      ];
-    }
-
-    motionRef.current = motions;
-    motions[0].onfinish = () => {
-      if (motionRef.current !== motions) return;
-      motionRef.current = null;
-      if (!open) finishClose();
-    };
-  }, [open, rendered]);
+    if (rendered && !open) finishClose();
+  }, [open, rendered, finishClose]);
 
   // Esc collapses the sheet from anywhere in this pane, and focus follows
   // the sheet in so typing goes to the side question.
@@ -805,7 +624,7 @@ export function BtwSheet({
             </div>
           ) : null}
 
-          {/* Same inset as the docked composer, so the morph starts on its box. */}
+          {/* Keep the same inset as the docked composer. */}
           <div className="btw-sheet-composer shrink-0 p-1.5 pt-0">
             {activeTabId ? (
               <Composer
@@ -843,10 +662,6 @@ export function BtwSheet({
           </div>
         </div>
       </section>
-      <div ref={frameRef} aria-hidden className="btw-morph-frame" />
-      {burst ? (
-        <BtwQuestionBurst key={burst.key} rect={burst} onDone={() => setBurst(null)} />
-      ) : null}
     </div>
   );
 }

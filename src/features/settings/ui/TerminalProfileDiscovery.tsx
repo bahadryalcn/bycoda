@@ -42,7 +42,8 @@ export function TerminalProfileDiscovery({
   const revealProfiles =
     revealedSetting === settingId || revealedSetting === "terminal-account-profiles";
   const [profiles, setProfiles] = useState<TerminalProfile[] | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [activeOperation, setActiveOperation] = useState<string | null>(null);
+  const busy = activeOperation !== null;
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [openPopover, setOpenPopover] = useState(false);
@@ -56,7 +57,7 @@ export function TerminalProfileDiscovery({
     providerRevision.current += 1;
     operationBusy.current = false;
     setOpenPopover(false);
-    setBusy(false);
+    setActiveOperation(null);
     setProfiles(null);
     setError(null);
     setMessage(null);
@@ -101,12 +102,12 @@ export function TerminalProfileDiscovery({
     }
   }, [openPopover, revealProfiles, provider]);
 
-  const run = async (action: (current: () => boolean) => Promise<void>) => {
+  const run = async (key: string, action: (current: () => boolean) => Promise<void>) => {
     if (operationBusy.current) return;
     operationBusy.current = true;
     const revision = providerRevision.current;
     const current = () => providerRevision.current === revision;
-    setBusy(true);
+    setActiveOperation(key);
     setError(null);
     setMessage(null);
     try {
@@ -116,7 +117,7 @@ export function TerminalProfileDiscovery({
     } finally {
       if (current()) {
         operationBusy.current = false;
-        setBusy(false);
+        setActiveOperation(null);
       }
     }
   };
@@ -225,10 +226,10 @@ export function TerminalProfileDiscovery({
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 aria-label={t("Find terminal profiles")}
-                loading={busy}
+                loading={activeOperation === "find"}
                 disabled={disabled || busy}
                 onClick={() =>
-                  void run(async (current) => {
+                  void run("find", async (current) => {
                     const found = await invoke<TerminalProfile[]>("provider_terminal_profiles", {
                       provider,
                     });
@@ -239,9 +240,10 @@ export function TerminalProfileDiscovery({
                 {busy ? t("Working…") : t("Find terminal profiles")}
               </Button>
               <Button
+                loading={activeOperation === "choose"}
                 disabled={disabled || busy}
                 onClick={() =>
-                  void run(async (current) => {
+                  void run("choose", async (current) => {
                     const path = await open({
                       directory: true,
                       multiple: false,
@@ -274,7 +276,10 @@ export function TerminalProfileDiscovery({
                     </div>
                     <Button
                       disabled={(connected && !onConnected) || disabled || busy}
-                      onClick={() => void run((current) => connect(profile.path, current))}
+                      loading={activeOperation === profile.id}
+                      onClick={() =>
+                        void run(profile.id, (current) => connect(profile.path, current))
+                      }
                     >
                       {onConnected ? t("Use account") : connected ? t("Connected") : t("Connect")}
                     </Button>

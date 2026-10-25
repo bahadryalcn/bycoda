@@ -1,3 +1,5 @@
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { SocialPanelActiveContext } from "./socialContext";
 import { Button } from "../../../shared/ui/Button";
@@ -15,6 +17,7 @@ export function SocialFilters({
   onReset: () => void;
   children: ReactNode;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -25,6 +28,7 @@ export function SocialFilters({
   return (
     <>
       <Button
+        disabled={socialLocked}
         ref={anchor}
         type="button"
         variant="secondary"
@@ -56,14 +60,20 @@ export function SocialFilters({
               type="button"
               variant="ghost"
               size="sm"
-              disabled={!activeCount}
+              disabled={socialLocked || !activeCount}
               onClick={onReset}
             >
               {t("Reset")}
             </Button>
           </div>
           {children}
-          <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(false)}>
+          <Button
+            disabled={socialLocked}
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setOpen(false)}
+          >
             {t("Done")}
           </Button>
         </Popover>

@@ -1,13 +1,16 @@
 """Idle-only host/app installation. Spawned headlessly by local_update.py."""
 import json
+import contextlib
 import os
 import pathlib
 import plistlib
 import re
 import shutil
+import sqlite3
 import sys
 import tempfile
 import time
+import traceback
 import urllib.request
 
 from local_update_lib import (alive, backup, count, digest, lock, ps, ps_quote,
@@ -35,6 +38,46 @@ def windows_app_process_filter(app):
     allowed = '@(' + ','.join(ps_quote(path) for path in paths) + ')'
     return (f'Get-Process | Where-Object {{ $_.ProcessName -eq "{PRODUCT_IDENTITY["binaryName"]}" '
             f'-and {allowed} -contains $_.Path }}')
+
+def windows_app_snapshot(app, rollback, manifest):
+    """Reuse only an intact previous installation, never overwrite recovery data."""
+    saved = rollback / 'installation'
+    hashes_path = rollback / 'windows-installation-hashes.json'
+    if saved.exists() or hashes_path.exists():
+        if not saved.is_dir() or not hashes_path.is_file():
+            raise RuntimeError('Incomplete Windows rollback snapshot; recovery required')
+        hashes = read_json(hashes_path)
+        if not isinstance(hashes, dict) or app.name not in hashes or tree_hashes(saved) != hashes:
+            raise RuntimeError('Windows rollback snapshot failed integrity verification')
+        if not app.exists() or tree_hashes(app.parent) != hashes:
+            raise RuntimeError('Interrupted Windows update has unknown installation state; recovery required')
+        return hashes, False
+    if not app.exists():
+        return None, False
+    hashes = tree_hashes(app.parent)
+    shutil.copytree(app.parent, saved)
+    if tree_hashes(saved) != hashes:
+        raise RuntimeError('Windows rollback snapshot failed integrity verification')
+    write_json(hashes_path, hashes)
+    return hashes, False
+
+def verify_desktop_backup(path, seconds=15):
+    deadline = time.monotonic() + seconds
+    try:
+        if seconds <= 0:
+            raise RuntimeError('Database backup validation timed out')
+        if path.stat().st_size == 0:
+            raise RuntimeError('Empty database backup')
+        with contextlib.closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True,
+                                               timeout=min(1, seconds))) as connection:
+            connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+            if connection.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
+                raise RuntimeError('Database integrity check failed')
+            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if not {'sessions', 'in_flight_sessions'} <= tables or time.monotonic() > deadline:
+                raise RuntimeError('Database backup is incomplete or validation timed out')
+    except (OSError, sqlite3.Error, RuntimeError) as error:
+        raise RuntimeError('Existing desktop database backup requires recovery') from error
 
 def restore_windows_app(app, saved, hashes, rollback, process_filter):
     """Restore the complete installation, keeping the failed tree for diagnosis."""
@@ -277,20 +320,18 @@ def app_install(release, manifest, report):
     rollback = release / 'rollback-app'
     rollback.mkdir(exist_ok=True)
     if has_database:
-        backup(desktop_db(), rollback / 'desktop.db')
+        if (rollback / 'desktop.db').exists():
+            verify_desktop_backup(rollback / 'desktop.db')
+        else:
+            backup(desktop_db(), rollback / 'desktop.db')
     report('installing')
     if windows:
         app = pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName']/(PRODUCT_IDENTITY['binaryName']+'.exe')
         saved = rollback / 'installation'
-        previous_hashes = None
-        if not first_install:
-            if saved.exists():
-                raise RuntimeError('Windows rollback installation already exists; refusing overwrite')
-            previous_hashes = tree_hashes(app.parent)
-            shutil.copytree(app.parent, saved)
-            if tree_hashes(saved) != previous_hashes:
-                raise RuntimeError('Windows rollback snapshot failed integrity verification')
-            write_json(rollback / 'windows-installation-hashes.json', previous_hashes)
+        previous_hashes, already_installed = windows_app_snapshot(app, rollback, manifest)
+        if already_installed:
+            report('installed', version=manifest['version'])
+            return
         app_q = ps_quote(app)
         process_filter = windows_app_process_filter(app)
         was_running = ps('@(' + process_filter + ').Count') != '0'
@@ -354,7 +395,7 @@ def app_install(release, manifest, report):
         run(['open', '-a', str(app)])
     report('installed', version=manifest['version'])
 
-def main():
+def main(launch_key=None):
     manifest_path = pathlib.Path(sys.argv[1]).resolve()
     release = manifest_path.parent
     manifest = read_json(manifest_path)
@@ -367,6 +408,8 @@ def main():
     record = BASE / 'update-jobs' / (component + '.json')
     def report(state, **values):
         message = {'pid': os.getpid(), 'id': manifest['id'], 'state': state, 'time': time.time(), **values}
+        if launch_key is not None:
+            message['launchKey'] = launch_key
         write_json(record, message)
         print(json.dumps(message), flush=True)
     with lock(BASE / 'update-jobs' / (component + '.lock')):
@@ -378,5 +421,39 @@ def main():
             report('failed', errorType=type(error).__name__, error=str(error) if not hasattr(error, 'cmd') else 'Command failed; see local stage logs')
             raise SystemExit(1)
 
+def wait_broker_launch(receipt, launch_key, seconds=15):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            state = read_json(receipt)
+            if state.get('pid') == os.getpid() and state.get('launchKey') == launch_key and state.get('verified') is True:
+                return
+        except (OSError, ValueError):
+            pass
+        time.sleep(.05)
+    raise RuntimeError('Updater broker launch was not verified; installation did not start')
+
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) in (5, 9) and sys.argv[3] == '--log':
+        expected = pathlib.Path(sys.argv[1]).resolve().parent / ('install-' + sys.argv[2] + '.log')
+        if sys.argv[2] not in ('host', 'app') or pathlib.Path(sys.argv[4]).resolve() != expected:
+            raise ValueError('Invalid updater log target')
+        # A broker cannot inherit the coordinator's redirected standard handles.
+        # Own the log for the entire helper lifetime, including startup failures.
+        with open(os.devnull, 'r') as source, expected.open('a', encoding='utf-8', buffering=1) as output:
+            sys.stdin = source
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                try:
+                    if len(sys.argv) == 9:
+                        receipt = expected.parent / ('launch-' + sys.argv[2] + '.json')
+                        if sys.argv[5] != '--broker-receipt' or pathlib.Path(sys.argv[6]).resolve() != receipt or sys.argv[7] != '--broker-key' or not re.fullmatch('[a-f0-9]{32}', sys.argv[8]):
+                            raise ValueError('Invalid updater launch receipt')
+                        wait_broker_launch(receipt, sys.argv[8])
+                    main(sys.argv[8] if len(sys.argv) == 9 else None)
+                except Exception:
+                    traceback.print_exc()
+                    raise SystemExit(1)
+    elif len(sys.argv) == 3:
+        main()
+    else:
+        raise ValueError('Invalid updater arguments')

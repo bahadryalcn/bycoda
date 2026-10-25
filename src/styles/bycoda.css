@@ -379,7 +379,7 @@ html.theme-light .project-sigil {
 .bycoda-rail-tools--compact {
   display: none;
 }
-@container rail (width <= 200px) {
+@container rail (width <= 280px) {
   .bycoda-rail-tools--expanding {
     display: none;
   }

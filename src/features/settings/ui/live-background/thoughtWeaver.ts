@@ -15,7 +15,7 @@ function threadPoint(column: number, row: number): readonly [number, number] {
 }
 
 /**
- * A small computational loom. Stable ASCII stitches form a hanging fabric;
+ * A pane-wide computational loom. Stable ASCII stitches form a hanging fabric;
  * a single shuttle travels through its unfinished edge while work is present.
  * The clock is integrated from presence, so pausing never moves the cloth or
  * makes the shuttle jump. Stream bursts do not alter geometry or brightness.
@@ -36,15 +36,16 @@ export function createThoughtWeaverScene(palette: LiveBackgroundPalette): LiveBa
       if (width <= 0 || height <= 0) return;
 
       const presence = Math.max(0, Math.min(1, signal.presence));
-      const dt = Math.max(0, Math.min(0.1, delta));
-      phase += dt * presence * 0.36;
+      const dt = Number.isFinite(delta) ? Math.max(0, Math.min(0.1, delta)) : 0;
+      phase += dt * presence * 1.8;
 
-      const scale = Math.min(width / DESIGN_WIDTH, height / DESIGN_HEIGHT) * 0.94;
+      const across = (width / DESIGN_WIDTH) * 0.94;
+      const down = (height / DESIGN_HEIGHT) * 0.94;
       const shuttleColumn = (0.5 + Math.sin(phase) * 0.44) * (WARP_COUNT - 1);
       const shuttle = threadPoint(shuttleColumn, 4);
       ctx.save();
-      ctx.translate((width - DESIGN_WIDTH * scale) / 2, (height - DESIGN_HEIGHT * scale) / 2);
-      ctx.scale(scale, scale);
+      ctx.translate((width - DESIGN_WIDTH * across) / 2, (height - DESIGN_HEIGHT * down) / 2);
+      ctx.scale(across, down);
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       ctx.strokeStyle = palette.content;
@@ -116,8 +117,7 @@ export function createThoughtWeaverScene(palette: LiveBackgroundPalette): LiveBa
         ctx.fillText(stitches[stitch]!, x, y - 2.5);
       }
 
-      // The shuttle carries one accent thread. Motion is confined to this row,
-      // with a 17-second round trip at full presence and no flashing highlights.
+      // The shuttle completes a visible pass in a few seconds while working.
       ctx.strokeStyle = palette.accent;
       ctx.fillStyle = palette.accent;
       ctx.globalAlpha = 0.52 + presence * 0.12;
@@ -138,6 +138,23 @@ export function createThoughtWeaverScene(palette: LiveBackgroundPalette): LiveBa
       ctx.beginPath();
       ctx.arc(shuttle[0], shuttle[1], 1.1, 0, Math.PI * 2);
       ctx.fill();
+
+      // Light follows the woven rows behind the shuttle. Fixed row counts keep
+      // the whole background responsive without allocating particles each frame.
+      if (presence > 0) {
+        ctx.lineWidth = 1.25;
+        for (let row = 5; row < WEFT_COUNT; row++) {
+          const wave = (Math.sin(phase * 2 - row * 0.55) + 1) / 2;
+          ctx.globalAlpha = presence * wave ** 3 * 0.6;
+          ctx.beginPath();
+          for (let column = 0; column < WARP_COUNT; column++) {
+            const [x, y] = threadPoint(column, row);
+            if (column === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+      }
 
       // The quiet source above the loom is an open knot, with three short
       // thought threads feeding the warp. Its outline never expands or pulses.

@@ -14,16 +14,31 @@ export class ChangeSignal {
     });
   }
 
-  wait(deadline: number, cancelled: () => boolean, version = this.version): Promise<void> {
-    if (cancelled() || version !== this.version || deadline <= Date.now()) return Promise.resolve();
+  async wait(
+    deadline: number,
+    cancelled: () => boolean | Promise<boolean>,
+    version = this.version,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (
+      signal?.aborted ||
+      (await cancelled()) ||
+      signal?.aborted ||
+      version !== this.version ||
+      deadline <= Date.now()
+    )
+      return;
     return new Promise((resolve) => {
       const wake = () => {
         clearTimeout(timer);
         this.listeners.delete(wake);
+        signal?.removeEventListener("abort", wake);
         resolve();
       };
       const timer = setTimeout(wake, Math.max(0, Math.min(1000, deadline - Date.now())));
       this.listeners.add(wake);
+      signal?.addEventListener("abort", wake, { once: true });
+      if (signal?.aborted) wake();
     });
   }
 }

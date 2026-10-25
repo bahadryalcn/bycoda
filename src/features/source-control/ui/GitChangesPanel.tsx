@@ -288,6 +288,11 @@ export function GitChangesPanel({
   const [status, setStatus] = useGitPanelState(cwd, "status");
   // The step a running action is on ("Pushing…"), shown beside the spinner.
   const [pending, setPending] = useGitPanelState(cwd, "pending");
+  // Keep one progress cue while its action is visible; collapsed repositories
+  // and operations launched from menus still need the header's status.
+  const localProgressVisible =
+    detailsOpen &&
+    (busy === "commit" || busy === "pr" || (busy === "sync" && Boolean(index?.remote)));
   const [feedback] = useGitPanelState(cwd, "feedback");
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [graphHeight, setGraphHeight] = useState(loadGraphPanelHeight);
@@ -405,7 +410,7 @@ export function GitChangesPanel({
         ) : (
           <span className="shrink-0 text-[12px] font-medium text-content">{t("Changes")}</span>
         )}
-        {busy ? (
+        {busy && !localProgressVisible ? (
           <span
             role="status"
             className="flex min-w-0 items-center gap-1 text-[11px] text-[var(--ui-text-secondary)]"
@@ -413,7 +418,7 @@ export function GitChangesPanel({
             <Loader className="size-3 shrink-0 animate-spin" strokeWidth={1.75} />
             <span className="min-w-0 truncate">{pending ?? busyLabel(busy)}</span>
           </span>
-        ) : status ? (
+        ) : !busy && status ? (
           <span
             role="status"
             className="min-w-0 truncate text-[11px] text-[var(--ui-text-secondary)]"
@@ -464,7 +469,9 @@ export function GitChangesPanel({
               label={t("Refresh source control")}
               aria-label={t("Refresh source control")}
               title={t("Refresh source control")}
-              disabled={!enabled || !!busy || loading}
+              disabled={!enabled || !!busy}
+              loading={loading}
+              loadingLabel={t("Refreshing…")}
               onClick={() => {
                 onMutated();
                 changesRef.current?.refreshPr?.();
@@ -1783,7 +1790,7 @@ function GitSyncActions({
   // A permanently disabled Create PR is noise: offer it only when it can run.
   const showCreatePr = !hasOpenPr && !onDefault && (canCreatePr || busy === "pr");
   const showViewPr = hasOpenPr;
-  if (!canPublish && !canSync && !showCreatePr && !showViewPr) return null;
+  if (!canPublish && !canSync && !syncing && !showCreatePr && !showViewPr) return null;
 
   return (
     <div className={styles.syncActions}>
@@ -1793,29 +1800,26 @@ function GitSyncActions({
           size="sm"
           fullWidth
           title={syncTitle}
-          disabled={!!busy}
+          disabled={!!busy && !syncing}
+          loading={syncing}
+          loadingLabel={t("Syncing…")}
+          startIcon={<CloudUpload className="size-3.5 shrink-0" strokeWidth={1.75} />}
           onClick={onSync}
         >
-          {syncing ? (
-            <Loader className="size-3.5 shrink-0 animate-spin" strokeWidth={1.75} />
-          ) : (
-            <CloudUpload className="size-3.5 shrink-0" strokeWidth={1.75} />
-          )}
           <span className="min-w-0 truncate">{t("Publish Branch")}</span>
         </Button>
-      ) : canSync ? (
+      ) : canSync || syncing ? (
         <Button
           variant="secondary"
           size="sm"
           fullWidth
           title={syncTitle}
-          disabled={!!busy}
+          disabled={!!busy && !syncing}
+          loading={syncing}
+          loadingLabel={t("Syncing…")}
+          startIcon={<RefreshCw className="size-3.5 shrink-0" strokeWidth={1.75} />}
           onClick={onSync}
         >
-          <RefreshCw
-            className={`size-3.5 shrink-0 ${syncing ? "animate-spin" : ""}`}
-            strokeWidth={1.75}
-          />
           <span className="min-w-0 truncate">{t("Sync Changes")}</span>
           {behind > 0 ? (
             <Badge
@@ -1849,14 +1853,12 @@ function GitSyncActions({
           size="sm"
           fullWidth
           title={createTitle}
-          disabled={!canCreatePr || !!busy}
+          disabled={busy !== "pr" && (!canCreatePr || !!busy)}
+          loading={busy === "pr"}
+          loadingLabel={t("Creating pull request…")}
+          startIcon={<GitPullRequest className="size-3.5 shrink-0" strokeWidth={1.75} />}
           onClick={onCreatePr}
         >
-          {busy === "pr" ? (
-            <Loader className="size-3.5 shrink-0 animate-spin" strokeWidth={1.75} />
-          ) : (
-            <GitPullRequest className="size-3.5 shrink-0" strokeWidth={1.75} />
-          )}
           {t("Create PR")}
         </Button>
       ) : null}
@@ -1937,6 +1939,8 @@ export function FileSection({
           variant="item"
           motion="none"
           type="button"
+          aria-expanded={open}
+          title={title}
           onClick={onToggle}
           className="flex min-w-0 flex-1 items-center gap-1 text-left"
         >

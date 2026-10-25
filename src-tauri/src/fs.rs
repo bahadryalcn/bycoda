@@ -6084,6 +6084,17 @@ pub(crate) fn git_output_capped(
     max_bytes: usize,
     cancel: Option<&AtomicBool>,
 ) -> Option<(Vec<u8>, bool)> {
+    git_output_capped_with_timeout(root, args, max_bytes, cancel, GIT_LOCAL_TIMEOUT)
+}
+
+fn git_output_capped_with_timeout(
+    root: &Path,
+    args: &[&str],
+    max_bytes: usize,
+    cancel: Option<&AtomicBool>,
+    timeout: Duration,
+) -> Option<(Vec<u8>, bool)> {
+    let deadline = Instant::now() + timeout;
     let mut child = git_cmd();
     let child = child
         .arg("--no-pager")
@@ -6144,7 +6155,7 @@ pub(crate) fn git_output_capped(
 
     let mut buf = Vec::new();
     loop {
-        if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
+        if Instant::now() >= deadline || cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
             stop(&mut child, &mut reader);
             return None;
         }
@@ -6176,7 +6187,16 @@ pub(crate) fn git_output_capped(
         }
     }
     let _ = reader.take().map(thread::JoinHandle::join);
-    let status = child.wait().ok()?;
+    let status = loop {
+        if Instant::now() >= deadline || cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
+            stop(&mut child, &mut reader);
+            return None;
+        }
+        if let Some(status) = child.try_wait().ok()? {
+            break status;
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
     if git_status_ok(&status, args) {
         Some((buf, false))
     } else {
@@ -12323,6 +12343,24 @@ mod tests {
         );
         setter_thread.join().unwrap();
 
+        assert!(result.is_none());
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn git_output_capped_deadline_stops_a_silent_child_without_cancellation() {
+        let dir = tmp("git-output-deadline-silent");
+        if !init_git_commit(&dir.0, &[("a.txt", "a\n")]) {
+            return;
+        }
+        let started = Instant::now();
+        let result = git_output_capped_with_timeout(
+            &dir.0,
+            &["-c", "alias.slow=!sleep 5", "slow"],
+            1024,
+            None,
+            Duration::from_millis(150),
+        );
         assert!(result.is_none());
         assert!(started.elapsed() < Duration::from_secs(3));
     }

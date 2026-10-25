@@ -21,7 +21,12 @@ import {
 import { GIT_ACTIONS, useRemoteSupports } from "../../connections/model/remoteCapabilities";
 import { useGitResource } from "../hooks/useGitResource";
 import { GitFeedback } from "./GitFeedback";
-import { useGitPanelState, withGitOperation, setGitFeedback } from "../model/gitPanelState";
+import {
+  gitPanelRuntime,
+  useGitPanelState,
+  withGitOperation,
+  setGitFeedback,
+} from "../model/gitPanelState";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 
 type Props = {
@@ -55,6 +60,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
   const [open, setOpen] = useState(stashOpen);
   const { confirm, dialog: confirmElement } = useConfirm();
   const [busy] = useGitPanelState(cwd, "busy");
+  const [stashAction, setStashAction] = useGitPanelState(cwd, "stashAction");
   const read = useCallback(() => gitStashList(cwd), [cwd]);
   const { data, loading, error, refresh } = useGitResource(cwd, `stashes:${cwd}`, active, read);
   const entries = data ?? [];
@@ -62,7 +68,9 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
 
   if (!active) return null;
 
-  const run = async (work: () => Promise<unknown>) => {
+  const run = async (target: "create" | `entry:${string}`, work: () => Promise<unknown>) => {
+    if (gitPanelRuntime(cwd).state.busy) return;
+    setStashAction(target);
     try {
       await withGitOperation(cwd, "Updating stash…", work);
       setGitFeedback(cwd, {
@@ -80,6 +88,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
         detail: errorText(error),
       });
     } finally {
+      setStashAction(null);
       notifyGitChanged(cwd, "refs");
     }
   };
@@ -90,7 +99,8 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
       message: t('Drop "{p0}"? The stashed changes are lost.', { p0: entry.message }),
       confirmLabel: t("Drop"),
     });
-    if (confirmed) await run(() => gitStashAction(cwd, "drop", entry.index, entry.sha));
+    if (confirmed)
+      await run(`entry:${entry.sha}`, () => gitStashAction(cwd, "drop", entry.index, entry.sha));
   };
 
   return (
@@ -134,11 +144,11 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
           type="button"
           title={t("Refresh stashes")}
           aria-label={t("Refresh stashes")}
-          aria-busy={loading}
-          disabled={loading}
+          loading={loading}
+          loadingLabel={t("Refreshing…")}
           onClick={refresh}
         >
-          <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} strokeWidth={1.75} />
+          <RefreshCw className="size-3.5" strokeWidth={1.75} />
         </Button>
         <Button
           iconOnly
@@ -148,8 +158,10 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
           type="button"
           title={t("Stash all changes, including untracked files")}
           aria-label={t("Stash all changes")}
-          disabled={!!busy || !hasChanges}
-          onClick={() => void run(() => gitStash(cwd))}
+          disabled={stashAction !== "create" && (!!busy || !hasChanges)}
+          loading={stashAction === "create"}
+          loadingLabel={t("Working…")}
+          onClick={() => void run("create", () => gitStash(cwd))}
         >
           <Plus className="size-3.5" strokeWidth={1.75} />
         </Button>
@@ -184,7 +196,9 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
                   motion="none"
                   iconOnly
                   label={t("Actions for {p0}", { p0: entry.message })}
-                  disabled={!!busy}
+                  disabled={!!busy && stashAction !== `entry:${entry.sha}`}
+                  loading={stashAction === `entry:${entry.sha}`}
+                  loadingLabel={t("Working…")}
                   aria-haspopup="menu"
                   aria-expanded={menu?.entry.sha === entry.sha}
                   onClick={(event) => setMenu({ entry, anchor: event.currentTarget })}
@@ -225,7 +239,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
             if (busy) return;
             if (id === "drop") void drop(entry);
             else if (id === "apply" || id === "pop")
-              void run(() => gitStashAction(cwd, id, entry.index, entry.sha));
+              void run(`entry:${entry.sha}`, () => gitStashAction(cwd, id, entry.index, entry.sha));
           }}
         />
       ) : null}

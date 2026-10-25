@@ -563,8 +563,10 @@ export type Session = {
    * In-memory; request ids do not survive restarts.
    */
   pendingQuestion?: UserQuestionPrompt;
-  /** The local host is running a turn for this session for another computer; Send is held. In-memory. */
+  /** The local host is running this session; follow-ups route to that host. In-memory. */
   continuingElsewhere?: boolean;
+  /** Last mirrored host run, used to fence Stop to the turn the user saw. In-memory. */
+  adoptedRunId?: string;
   /** A host mirror was rejected; the local transcript is intact. In-memory: after
    * a restart only the record (`adoptedDivergence`) returns, and the next pass
    * that reaches the host proves the conflict again before it locks sending. */

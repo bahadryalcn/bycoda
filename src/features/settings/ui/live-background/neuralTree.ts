@@ -87,7 +87,7 @@ const ROOTS: readonly Branch[] = [-1, 1].flatMap((side) =>
   })),
 );
 
-/** A compact neural tree: static branching structure and three quiet sap routes. */
+/** A pane-wide neural canopy with a fixed structure and reply-driven sap routes. */
 export function createNeuralTreeScene(palette: LiveBackgroundPalette): LiveBackgroundScene {
   const { twigs, leaves } = createDetail();
   let width = 0;
@@ -103,10 +103,12 @@ export function createNeuralTreeScene(palette: LiveBackgroundPalette): LiveBackg
       if (width === 0 || height === 0) return;
 
       const scale = Math.min(width / 256, height / 292);
+      const spread = width / 256;
+      const rise = height / 292;
       const presence = Math.max(0, Math.min(1, signal.presence));
       ctx.save();
-      ctx.translate((width - 240 * scale) / 2, (height - 280 * scale) / 2);
-      ctx.scale(scale, scale);
+      ctx.translate((width - 240 * spread) / 2, (height - 280 * rise) / 2);
+      ctx.scale(spread, rise);
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
 
@@ -152,17 +154,19 @@ export function createNeuralTreeScene(palette: LiveBackgroundPalette): LiveBackg
       ctx.arc(120, 189, 3.2, 0, Math.PI * 2);
       ctx.stroke();
 
-      // The reply changes only the visibility of these bounded branch journeys.
-      // Raw token energy never changes speed, position, geometry, or brightness.
+      // Nine bounded routes carry light from the trunk into the whole canopy.
+      // Each route has a short trail; no particle collection grows over time.
       ctx.fillStyle = palette.accent;
-      for (const index of [1, 4, 7]) {
-        const progress = (((time * 0.035 + index * 0.217) % 1) + 1) % 1;
-        const alpha = presence * Math.sin(progress * Math.PI) ** 2 * 0.8;
-        if (alpha < 0.002) continue;
-        ctx.globalAlpha = alpha;
-        ctx.beginPath();
-        ctx.arc(...pointOn(CROWN[index]!, progress), 1.8, 0, Math.PI * 2);
-        ctx.fill();
+      for (let index = 0; index < CROWN.length; index++) {
+        for (let trail = 0; trail < 3; trail++) {
+          const progress = (((time * 0.23 + index * 0.217 - trail * 0.035) % 1) + 1) % 1;
+          const alpha = presence * Math.sin(progress * Math.PI) ** 2 * (0.9 - trail * 0.22);
+          if (alpha < 0.002) continue;
+          ctx.globalAlpha = alpha;
+          ctx.beginPath();
+          ctx.arc(...pointOn(CROWN[index]!, progress), 2.2 - trail * 0.45, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
       ctx.restore();
     },

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
+import { parseProcessJson } from "../../host/parse-process-json.mjs";
 
 const exec = promisify(execFile);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -148,7 +149,7 @@ export async function snapshot() {
   const started = performance.now();
   let processes;
   if (platform() === "win32") {
-    processes = JSON.parse(
+    processes = parseProcessJson(
       await run("powershell.exe", [
         "-NoLogo",
         "-NoProfile",

@@ -32,24 +32,34 @@ describe("live background preference", () => {
     }
   });
 
-  it.each(["none", "neural-tree", "latent-face", "thought-weaver", "ascii-mask"] as const)(
-    "persists %s and notifies open panes once",
-    (effect) => {
-      const listener = vi.fn();
-      window.addEventListener(LIVE_BACKGROUND_CHANGE_EVENT, listener);
-      saveLiveBackground(effect);
-      window.removeEventListener(LIVE_BACKGROUND_CHANGE_EVENT, listener);
-      expect(localStorage.getItem(LIVE_BACKGROUND_KEY)).toBe(effect);
-      expect(loadLiveBackground()).toBe(effect);
-      expect(listener).toHaveBeenCalledTimes(1);
-    },
-  );
+  it.each([
+    "none",
+    "threads",
+    "silk",
+    "dark-veil",
+    "soft-aurora",
+    "floating-lines",
+    "neural-tree",
+    "latent-face",
+    "thought-weaver",
+    "ascii-mask",
+    "dot-grid",
+    "code-rain",
+  ] as const)("persists %s and notifies open panes once", (effect) => {
+    const listener = vi.fn();
+    window.addEventListener(LIVE_BACKGROUND_CHANGE_EVENT, listener);
+    saveLiveBackground(effect);
+    window.removeEventListener(LIVE_BACKGROUND_CHANGE_EVENT, listener);
+    expect(localStorage.getItem(LIVE_BACKGROUND_KEY)).toBe(effect);
+    expect(loadLiveBackground()).toBe(effect);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
 
   it.each([
     ["gradient-ascii", "latent-face"],
     ["orb", "latent-face"],
     ["world-tree", "neural-tree"],
-    ["code-rain", "thought-weaver"],
+    ["code-rain", "code-rain"],
     ["micro-slats", "thought-weaver"],
     ["web-threads", "thought-weaver"],
     ["scanner", "thought-weaver"],
@@ -58,7 +68,7 @@ describe("live background preference", () => {
     ["side-rays", "thought-weaver"],
     ["light-rays", "thought-weaver"],
     ["pixel-blast", "thought-weaver"],
-    ["dot-grid", "thought-weaver"],
+    ["dot-grid", "dot-grid"],
     ["hyperspeed", "thought-weaver"],
     ["letter-glitch", "thought-weaver"],
   ] as const)("loads legacy %s as %s without rewriting saved preferences", (legacy, current) => {

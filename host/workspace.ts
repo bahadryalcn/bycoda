@@ -1,7 +1,12 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { spawn } from "node:child_process";
+import { hostGitStarts } from "./git-start-gate";
 import { setTimeout as delay } from "node:timers/promises";
-import { withHostGitMutation } from "./git-mutations";
+import {
+  currentHostGitRepository,
+  hostGitRepositoryKey,
+  withHostGitMutation,
+} from "./git-mutations";
 import { withWorkspaceMutation } from "./workspace-mutations";
 import {
   lstat,
@@ -88,6 +93,7 @@ async function git(
   literalPaths = args.includes("--") && args[0] !== "check-ignore" && args[0] !== "grep",
 ) {
   try {
+    await hostGitStarts.enter();
     return (
       await exec(
         "git",
@@ -188,22 +194,28 @@ export async function listHostFiles(root: string, input: unknown): Promise<HostF
       /* no ignored entries or a non-Git folder */
     }
   }
-  const out = await Promise.all(
-    visible.map(async (entry, index) => {
-      const path = paths[index];
-      const isDir =
-        entry.isDirectory() ||
-        (entry.isSymbolicLink() &&
-          (await existingPath(root, path)
-            .then((actual) => stat(actual))
-            .then((value) => value.isDirectory())
-            .catch(() => false)));
-      return {
-        name: entry.name,
-        path,
-        isDir,
-        ignored: entry.name === ".git" || ignored.has(path),
-      };
+  const out: HostFileEntry[] = new Array(visible.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(8, visible.length) }, async () => {
+      while (next < visible.length) {
+        const index = next++,
+          entry = visible[index],
+          path = paths[index];
+        const isDir =
+          entry.isDirectory() ||
+          (entry.isSymbolicLink() &&
+            (await existingPath(root, path)
+              .then((actual) => stat(actual))
+              .then((value) => value.isDirectory())
+              .catch(() => false)));
+        out[index] = {
+          name: entry.name,
+          path,
+          isDir,
+          ignored: entry.name === ".git" || ignored.has(path),
+        };
+      }
     }),
   );
   return out.sort(
@@ -232,9 +244,10 @@ let filePathGeneration = 0;
  * root, every list is dropped.
  */
 export function invalidateHostFilePaths(root?: string): void {
-  filePathGeneration++;
-  if (root === undefined) filePathCache.clear();
-  else filePathCache.delete(root);
+  if (root === undefined) {
+    filePathGeneration++;
+    filePathCache.clear();
+  } else filePathCache.delete(root);
 }
 
 /** Cached for a few seconds, so typing in Go to File does not spawn git per key. */
@@ -253,6 +266,13 @@ function hostFilePaths(root: string): Promise<string[]> {
   while (filePathCache.size > FILE_PATHS_CACHE_LIMIT)
     filePathCache.delete(filePathCache.keys().next().value as string);
   // Failures are not cached; a later call retries.
+  entry.paths.then(
+    () => {
+      // A slow cold scan must still supply a full freshness window after it completes.
+      if (filePathCache.get(root) === entry) entry.at = Date.now();
+    },
+    () => {},
+  );
   entry.paths.catch(() => {
     if (filePathCache.get(root) === entry) filePathCache.delete(root);
   });
@@ -383,7 +403,9 @@ function searchColumn(line: string, options: ContentSearchOptions): number {
 export async function searchHostContent(
   root: string,
   input: unknown,
+  signal?: AbortSignal,
 ): Promise<ProjectSearchResult> {
+  signal?.throwIfAborted();
   const options = searchOptions(input);
   if (!options.query) return { matches: [], truncated: false };
   const args = ["grep", "--untracked", "-z", "-n", "--column"];
@@ -395,7 +417,9 @@ export async function searchHostContent(
   let outputTruncated = false;
   try {
     // Search includes/excludes deliberately use glob and pathspec magic.
-    output = await git(root, args, 8 * 1024 * 1024, 10_000, false);
+    const result = await searchGitOutput(root, args, signal, options);
+    output = result.output;
+    outputTruncated = result.truncated;
   } catch (reason) {
     const error = reason as { code?: number | string; stdout?: string };
     if (error.code === 1 || error.code === "1") return { matches: [], truncated: false };
@@ -448,11 +472,13 @@ export async function searchHostContent(
   let files = 0;
   let truncated = false;
   while (pending.length && matches.length <= 500 && files < 5000) {
+    signal?.throwIfAborted();
     const parent = pending.pop()!;
     const entries = await readdir(resolve(root, parent), {
       withFileTypes: true,
     }).catch(() => []);
     for (const entry of entries) {
+      signal?.throwIfAborted();
       if (entry.name === ".git" || entry.name === "node_modules") continue;
       const relative = parent ? `${parent}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
@@ -473,6 +499,7 @@ export async function searchHostContent(
         if ((await stat(path)).size > 512 * 1024) continue;
         content = await readHostFile(root, relative);
       } catch {
+        signal?.throwIfAborted();
         continue;
       }
       for (const [index, line] of content.split(/\r?\n/).entries()) {
@@ -495,6 +522,103 @@ export async function searchHostContent(
   }
   if (files >= 5000 && pending.length) truncated = true;
   return { matches: matches.slice(0, 500), truncated };
+}
+
+/** Stop grep after the first complete result page, rather than buffer its entire output. */
+async function searchGitOutput(
+  root: string,
+  args: string[],
+  signal: AbortSignal | undefined,
+  options: ContentSearchOptions,
+): Promise<{ output: string; truncated: boolean }> {
+  await hostGitStarts.enter(signal);
+  return new Promise((resolve, reject) => {
+    signal?.throwIfAborted();
+    const child = spawn("git", ["-c", "core.pager=cat", ...args], {
+      cwd: root,
+      windowsHide: true,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+    });
+    const chunks: Buffer[] = [];
+    const filterWords = options.wholeWord && !options.regex;
+    let recordParts: Buffer[] = [];
+    let bytes = 0,
+      nulls = 0,
+      records = 0;
+    let truncated = false,
+      finished = false;
+    let diagnostic = "";
+    const finish = (error?: unknown) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      child.stdout.destroy();
+      child.stderr.destroy();
+      if (error) reject(error);
+      else resolve({ output: Buffer.concat(chunks, bytes).toString("utf8"), truncated });
+    };
+    const abort = () => {
+      child.kill();
+      finish(signal?.reason ?? new Error("Search cancelled"));
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(new Error("git grep timed out after 10 seconds"));
+    }, 10_000);
+    signal?.addEventListener("abort", abort, { once: true });
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (finished) return;
+      let length = Math.min(chunk.length, 8 * 1024 * 1024 - bytes);
+      let start = 0;
+      for (let i = 0; i < length; i++) {
+        if (chunk[i] === 0) nulls++;
+        else if (chunk[i] === 10 && nulls >= 3) {
+          nulls = 0;
+          let accepted = true;
+          if (filterWords) {
+            const tail = chunk.subarray(start, i + 1);
+            const record = (
+              recordParts.length ? Buffer.concat([...recordParts, tail]) : tail
+            ).toString("utf8");
+            let preview = -1;
+            for (let field = 0; field < 3; field++) preview = record.indexOf("\0", preview + 1);
+            accepted = searchColumn(record.slice(preview + 1, -1), options) > 0;
+            recordParts = [];
+          }
+          start = i + 1;
+          if (accepted && ++records >= 501) {
+            length = i + 1;
+            truncated = true;
+            break;
+          }
+        }
+      }
+      if (filterWords && start < length) recordParts.push(chunk.subarray(start, length));
+      chunks.push(chunk.subarray(0, length));
+      bytes += length;
+      if (truncated || bytes >= 8 * 1024 * 1024) {
+        truncated = true;
+        child.kill();
+        finish();
+      }
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      diagnostic = (diagnostic + chunk.toString("utf8")).slice(-2000);
+    });
+    child.once("error", finish);
+    child.once("close", (code) => {
+      if (finished) return;
+      if (code === 0 || code === 1) finish();
+      else
+        finish(
+          Object.assign(new Error(diagnostic || "Git search failed"), { code, stderr: diagnostic }),
+        );
+    });
+    if (signal?.aborted) abort();
+  });
 }
 
 function matchesFilters(path: string, options: ContentSearchOptions): boolean {
@@ -565,7 +689,12 @@ export async function createHostPath(
   return withWorkspaceMutation(root, () => createHostPathUnlocked(root, parent, name, isDir));
 }
 
-async function createHostPathUnlocked(root: string, parent: unknown, name: unknown, isDir: unknown): Promise<string> {
+async function createHostPathUnlocked(
+  root: string,
+  parent: unknown,
+  name: unknown,
+  isDir: unknown,
+): Promise<string> {
   if (
     typeof name !== "string" ||
     typeof isDir !== "boolean" ||
@@ -623,16 +752,31 @@ function statusName(code: string): string {
   return "modified";
 }
 
-const gitIndexInflight = new Map<string, { generation: number; value: Promise<GitDiffIndex> }>();
+type HostGitIndexFlight = { generation: number; repository?: string; value: Promise<GitDiffIndex> };
+const gitIndexInflight = new Map<string, HostGitIndexFlight>();
 let gitIndexGeneration = 0;
+const hostNumstats = new Map<string, { key: string; at: number; value: Promise<string> }>();
+const untrackedLineCounts = new Map<string, { stamp: string; count: number }>();
 
 /** A caller that starts after this must not join a refresh begun before it. */
 export function invalidateHostGitIndex(root?: string): void {
-  gitIndexGeneration++;
-  if (root === undefined) gitIndexInflight.clear();
-  else {
+  if (root === undefined) {
+    gitIndexGeneration++;
+    gitIndexInflight.clear();
+    hostNumstats.clear();
+  } else {
     gitIndexInflight.delete(root);
     gitIndexInflight.delete(`${root}\0files`);
+    const repository = currentHostGitRepository();
+    if (repository) {
+      for (const [key, entry] of gitIndexInflight) {
+        // A common refs change affects sibling worktrees. Unknown identities are
+        // conservative; already-known unrelated repositories keep their flight.
+        if (entry.repository === undefined || entry.repository === repository)
+          gitIndexInflight.delete(key);
+      }
+    }
+    hostNumstats.delete(root);
   }
 }
 
@@ -643,9 +787,14 @@ export function hostGitIndex(root: string, full = true): Promise<GitDiffIndex> {
   const key = full ? root : `${root}\0files`;
   const running = gitIndexInflight.get(key);
   if (running?.generation === gitIndexGeneration) return running.value;
-  const entry = {
+  const entry: HostGitIndexFlight = {
     generation: gitIndexGeneration,
-    value: readHostGitIndex(root, full),
+    value: hostGitRepositoryKey(root)
+      .catch(() => undefined)
+      .then((repository) => {
+        entry.repository = repository;
+        return readHostGitIndex(root, full);
+      }),
   };
   gitIndexInflight.set(key, entry);
   const done = () => {
@@ -739,6 +888,16 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
       operation: null,
     };
   }
+  const headRead = git(root, ["rev-parse", "--verify", "HEAD"]).catch(() => "");
+  const branchStatusRead = git(root, [
+    "status",
+    "--porcelain=v1",
+    "--branch",
+    "-z",
+    "--untracked-files=all",
+  ]).then(parseHostBranchStatus);
+  const statusRead = branchStatusRead.then((value) => value.status);
+  const prefixRead = git(root, ["rev-parse", "--show-prefix"]);
   const [
     branchText,
     headText,
@@ -751,52 +910,34 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
     conflicts,
     operation,
     pushedText,
+    prefixText,
   ] = await Promise.all([
-    git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => ""),
-    git(root, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
-    git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    git(root, [
-      "diff",
-      "--relative",
-      "--no-ext-diff",
-      "--no-textconv",
-      "--numstat",
-      "-z",
-      "HEAD",
-      "--",
-    ]).catch(() =>
-      git(root, [
-        "diff",
-        "--cached",
-        "--relative",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--numstat",
-        "-z",
-        "--",
-      ]),
+    branchStatusRead.then((value) => value.branch),
+    headRead,
+    statusRead,
+    Promise.all([headRead, statusRead]).then(([head, status]) =>
+      cachedHostNumstat(root, head, status),
     ),
     full ? git(root, ["remote", "get-url", "origin"]).catch(() => "") : "",
-    full
-      ? git(root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]).catch(
-          () => "",
-        )
-      : "",
-    full
-      ? git(root, ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"]).catch(() => "")
-      : "",
+    full ? branchStatusRead.then((value) => value.upstream) : "",
+    full ? branchStatusRead.then((value) => `${value.behind} ${value.ahead}`) : "",
     full
       ? git(root, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]).catch(
           () => "",
         )
       : "",
-    hostUnmerged(root),
+    statusRead.then((status) =>
+      status.split("\0").some((row) => UNMERGED_CODES.has(row.slice(0, 2)))
+        ? hostUnmerged(root)
+        : [],
+    ),
     hostOperationState(root),
     full
       ? git(root, ["for-each-ref", "--count=1", "--contains", "HEAD", "refs/remotes"]).catch(
           () => "",
         )
       : "",
+    prefixRead,
   ]);
   let [behind, ahead] = countsText.trim().split(/\s+/).map(Number);
   let defaultBranch = defaultText.trim().replace(/^origin\//, "");
@@ -845,7 +986,7 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
       });
     }
   }
-  const prefix = (await git(root, ["rev-parse", "--show-prefix"])).trim();
+  const prefix = prefixText.trim();
   const parts = statusText.split("\0");
   const files: GitChangedFile[] = [];
   const untracked: GitChangedFile[] = [];
@@ -884,8 +1025,17 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
           const full = resolve(root, file.path);
           const info = await lstat(full);
           if (!info.isFile() || info.size > MAX_FILE || info.size > budget) continue;
-          budget -= info.size;
-          file.additions = await countLines(full);
+          const stamp = `${info.size}:${info.mtimeMs}:${info.ctimeMs}:${info.ino}`;
+          const cached = untrackedLineCounts.get(full);
+          if (cached?.stamp === stamp) file.additions = cached.count;
+          else {
+            budget -= info.size;
+            file.additions = await countLines(full);
+            untrackedLineCounts.delete(full);
+            untrackedLineCounts.set(full, { stamp, count: file.additions });
+            while (untrackedLineCounts.size > 1024)
+              untrackedLineCounts.delete(untrackedLineCounts.keys().next().value!);
+          }
         } catch {
           /* a file may change during refresh */
         }
@@ -910,6 +1060,109 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
     conflicts,
     operation,
   };
+}
+
+/** The porcelain branch header supplies branch/upstream/counts in the status read. */
+export function parseHostBranchStatus(output: string) {
+  const end = output.indexOf("\0");
+  if (!output.startsWith("## ") || end < 0)
+    return { branch: "", upstream: "", ahead: 0, behind: 0, status: output };
+  const header = output.slice(3, end);
+  const ahead = Number(/\bahead (\d+)/.exec(header)?.[1]) || 0;
+  const behind = Number(/\bbehind (\d+)/.exec(header)?.[1]) || 0;
+  const tracking = header.replace(/ \[[^\]]*\]$/, "");
+  const unborn = /^(?:No commits yet on|Initial commit on) (.+)$/.exec(tracking);
+  const separator = tracking.indexOf("...");
+  const branch =
+    unborn?.[1] ??
+    (/^HEAD(?: |$)/.test(tracking) ? "" : separator < 0 ? tracking : tracking.slice(0, separator));
+  const upstream = separator < 0 ? "" : tracking.slice(separator + 3);
+  return { branch, upstream, ahead, behind, status: output.slice(end + 1) };
+}
+
+async function cachedHostNumstat(root: string, head: string, status: string): Promise<string> {
+  const read = () =>
+    git(root, [
+      "diff",
+      "--relative",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--numstat",
+      "-z",
+      "HEAD",
+      "--",
+    ]).catch(() =>
+      git(root, [
+        "diff",
+        "--cached",
+        "--relative",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--numstat",
+        "-z",
+        "--",
+      ]),
+    );
+  try {
+    let gitDir = resolve(root, ".git");
+    const dotGit = await stat(gitDir);
+    if (dotGit.isFile()) {
+      const link = /^gitdir: (.+)\s*$/m.exec(await readFile(gitDir, "utf8"));
+      if (!link) return read();
+      gitDir = resolve(root, link[1].trim());
+    }
+    const index = await stat(resolve(gitDir, "index"));
+    const parts = status.split("\0"),
+      paths: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      const row = parts[i];
+      if (row.length < 4) continue;
+      if (row[0] !== "?" || row[1] !== "?") paths.push(row.slice(3));
+      if (row.slice(0, 2).includes("R") || row.slice(0, 2).includes("C")) i++;
+    }
+    // Avoid turning a very large refresh into another unbounded metadata walk.
+    if (paths.length > 512) return read();
+    const stamps: string[] = new Array(paths.length);
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(8, paths.length) }, async () => {
+        while (next < paths.length) {
+          const i = next++;
+          const info = await lstat(resolve(root, paths[i])).catch(() => null);
+          stamps[i] = info ? `${info.size}:${info.mtimeMs}:${info.ctimeMs}:${info.ino}` : "deleted";
+        }
+      }),
+    );
+    const key = JSON.stringify([
+      head,
+      status,
+      index.size,
+      index.mtimeMs,
+      index.ctimeMs,
+      index.ino,
+      stamps,
+    ]);
+    const hit = hostNumstats.get(root);
+    if (hit?.key === key && Date.now() - hit.at < 5000) return hit.value;
+    const entry = { key, at: Date.now(), value: read() };
+    if (key.length <= 1024 * 1024) {
+      hostNumstats.delete(root);
+      hostNumstats.set(root, entry);
+      while (hostNumstats.size > 16) hostNumstats.delete(hostNumstats.keys().next().value!);
+      entry.value.catch(() => {
+        if (hostNumstats.get(root) === entry) hostNumstats.delete(root);
+      });
+      entry.value.then(
+        () => {
+          entry.at = Date.now();
+        },
+        () => {},
+      );
+    }
+    return entry.value;
+  } catch {
+    return read();
+  }
 }
 
 async function gitBlob(root: string, spec: string) {
@@ -1007,7 +1260,16 @@ export async function hostGitAction(
 ) {
   const run = () => {
     const execute = () =>
-      runHostGitAction(root, action, input, message, contents, expectedOriginal, expectedCurrent, verifyReview);
+      runHostGitAction(
+        root,
+        action,
+        input,
+        message,
+        contents,
+        expectedOriginal,
+        expectedCurrent,
+        verifyReview,
+      );
     // Only retry index edits. A commit hook or network operation can report a
     // lock error after other side effects, so replaying those is unsafe.
     return ["stage", "unstage", "stageFiles", "unstageFiles", "stageAll", "unstageAll"].includes(
@@ -1068,11 +1330,19 @@ async function runHostGitAction(
         throw new Error("File too large or invalid");
       if (expectedOriginal !== undefined && typeof expectedOriginal !== "string")
         throw new Error("Invalid index base");
-      if (expectedCurrent !== undefined && (typeof expectedCurrent !== "string" || Buffer.byteLength(expectedCurrent) > MAX_FILE || expectedCurrent.includes("\0")))
+      if (
+        expectedCurrent !== undefined &&
+        (typeof expectedCurrent !== "string" ||
+          Buffer.byteLength(expectedCurrent) > MAX_FILE ||
+          expectedCurrent.includes("\0"))
+      )
         throw new Error("Invalid reviewed worktree content");
-      if (expectedCurrent !== undefined && contents.includes("\0")) throw new Error("Selective staging requires text content");
-      if (!resolving && expectedCurrent !== undefined && typeof expectedOriginal !== "string") throw new Error("A reviewed Git index base is required");
-      if (resolving && (typeof expectedCurrent !== "string" || !verifyReview)) throw new Error("A reviewed conflict snapshot is required");
+      if (expectedCurrent !== undefined && contents.includes("\0"))
+        throw new Error("Selective staging requires text content");
+      if (!resolving && expectedCurrent !== undefined && typeof expectedOriginal !== "string")
+        throw new Error("A reviewed Git index base is required");
+      if (resolving && (typeof expectedCurrent !== "string" || !verifyReview))
+        throw new Error("A reviewed conflict snapshot is required");
       const indexPath = resolve(
         root,
         (await git(root, ["rev-parse", "--git-path", "index"])).trim(),
@@ -1105,27 +1375,41 @@ async function runHostGitAction(
         if (resolving) {
           const sides = [...staged.matchAll(/^([0-7]{6}) ([a-f0-9]+) ([123])\t/gm)];
           const versions = sides.filter((side) => side[3] !== "1");
-          if (entry || !versions.length || versions.some((side) => !["100644", "100755"].includes(side[1])) || new Set(versions.map((side) => side[1])).size !== 1)
+          if (
+            entry ||
+            !versions.length ||
+            versions.some((side) => !["100644", "100755"].includes(side[1])) ||
+            new Set(versions.map((side) => side[1])).size !== 1
+          )
             throw new Error("Review a regular text conflict with compatible file modes");
           mode = versions[0][1];
         }
         if (
-          !resolving && expectedHash !== null &&
+          !resolving &&
+          expectedHash !== null &&
           ((staged && !entry) || (entry ? entry[2] !== expectedHash : expectedOriginal !== ""))
         )
           throw new Error("The Git index changed. Refresh the diff before staging this hunk.");
         if (expectedCurrent !== undefined) {
-          if (entry && !["100644", "100755"].includes(entry[1])) throw new Error("Selective staging requires a regular text file");
+          if (entry && !["100644", "100755"].includes(entry[1]))
+            throw new Error("Selective staging requires a regular text file");
           const fullPath = resolve(root, path);
           const info = await lstat(fullPath);
-          if (!info.isFile() || info.isSymbolicLink()) throw new Error("Selective staging requires a regular text file");
+          if (!info.isFile() || info.isSymbolicLink())
+            throw new Error("Selective staging requires a regular text file");
           if (info.size > MAX_FILE) throw new Error("File too large for selective staging");
           const current = await readFile(fullPath);
           const decoded = current.toString("utf8");
-          if (current.includes(0) || !Buffer.from(decoded, "utf8").equals(current)) throw new Error("Selective staging requires valid UTF-8 text");
-          if (decoded !== expectedCurrent) throw new Error("The working file changed. Refresh the diff before staging this selection.");
+          if (current.includes(0) || !Buffer.from(decoded, "utf8").equals(current))
+            throw new Error("Selective staging requires valid UTF-8 text");
+          if (decoded !== expectedCurrent)
+            throw new Error(
+              "The working file changed. Refresh the diff before staging this selection.",
+            );
           if (!entry && !resolving && info.mode & 0o111) {
-            const fileMode = await git(root, ["config", "--bool", "core.filemode"]).catch(() => "true");
+            const fileMode = await git(root, ["config", "--bool", "core.filemode"]).catch(
+              () => "true",
+            );
             if (fileMode.trim() !== "false") mode = "100755";
           }
         }

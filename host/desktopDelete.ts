@@ -4,7 +4,7 @@ type Job = { id: string; sessionId: string; cwd: string };
 type Pending = {
   job: Job;
   client?: string;
-  authorized: () => boolean;
+  authorized: () => boolean | Promise<boolean>;
   finish: (error?: string) => void;
 };
 
@@ -13,7 +13,11 @@ export class DesktopDelete {
   private clients = new Map<string, number>();
   private pending = new Map<string, Pending>();
 
-  request(sessionId: string, cwd: string, authorized: () => boolean): Promise<void> {
+  request(
+    sessionId: string,
+    cwd: string,
+    authorized: () => boolean | Promise<boolean>,
+  ): Promise<void> {
     if (![...this.clients.values()].some((at) => Date.now() - at < 20_000))
       return Promise.reject(
         new Error(
@@ -43,7 +47,7 @@ export class DesktopDelete {
     });
   }
 
-  beat(client: string, input: unknown): { jobs: Job[]; acked: string[] } {
+  async beat(client: string, input: unknown): Promise<{ jobs: Job[]; acked: string[] }> {
     if (!input || typeof input !== "object" || Array.isArray(input)) return { jobs: [], acked: [] };
     const payload = input as {
       version?: number;
@@ -62,7 +66,9 @@ export class DesktopDelete {
     }
     const jobs: Job[] = [];
     for (const pending of this.pending.values()) {
-      if (!pending.authorized()) {
+      const authorized = await pending.authorized();
+      if (this.pending.get(pending.job.id) !== pending) continue;
+      if (!authorized) {
         pending.finish("Device authorization was revoked");
         continue;
       }

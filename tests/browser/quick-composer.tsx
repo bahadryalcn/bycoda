@@ -42,13 +42,23 @@ Object.assign((window as any).__TAURI_INTERNALS__.metadata, {
   currentWebview: { label: "quick-fixture" },
 });
 const calls: Array<{ command: string; args: unknown }> = [];
-Object.assign(window, { quickFixtureCalls: calls });
+const controls = { hold: false, fail: false, finish: () => {} };
+Object.assign(window, { quickFixtureCalls: calls, quickFixture: controls });
 mockIPC(
   async (command, args) => {
     calls.push({ command, args });
     if (command === "plugin:event|listen") return 1;
     if (command === "quick_composer_submit") {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      if (controls.hold)
+        await new Promise<void>((resolve) => {
+          controls.finish = resolve;
+        });
+      else await new Promise((resolve) => setTimeout(resolve, 150));
+      if (controls.fail)
+        throw new Error(
+          "The owning computer is unavailable. Reconnect it and retry this draft without losing the selected model, permissions or attachments. " +
+            "Diagnostic context ".repeat(12),
+        );
       return null;
     }
     return null;

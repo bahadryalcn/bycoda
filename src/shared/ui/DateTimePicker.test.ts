@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 function day(date: string) {
-  const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${date}"]`);
+  const button = container.querySelector<HTMLButtonElement>(`button[data-date="${date}"]`);
   expect(button, date).not.toBeNull();
   return button!;
 }
@@ -185,4 +185,18 @@ it("localizes weekday labels and their accessible full names", () => {
   expect(headers).toHaveLength(7);
   expect(headers[0].getAttribute("aria-label")).toBe("Pazartesi");
   expect(headers[6].getAttribute("aria-label")).toBe("Pazar");
+});
+
+it.each([
+  ["tr", "29 Şubat 2028 Salı"],
+  ["en", "Tuesday, February 29, 2028"],
+])("announces a full date in %s while preserving its local ISO value", (locale, label) => {
+  vi.spyOn(i18n, "useLocale").mockReturnValue(locale);
+  const onChange = vi.fn();
+  act(() => root.render(createElement(DateTimePicker, { value: "2028-02-20T18:30", onChange })));
+  const leapDay = day("2028-02-29");
+  expect(leapDay.getAttribute("aria-label")).toBe(label);
+  expect(leapDay.title).toBe(label);
+  act(() => leapDay.click());
+  expect(onChange).toHaveBeenCalledWith("2028-02-29T18:30");
 });

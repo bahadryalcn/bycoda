@@ -110,7 +110,6 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
       <Button
         ref={anchor}
         variant="ghost"
-        iconOnly
         motion="none"
         label={t("Next tip")}
         title=""
@@ -132,6 +131,7 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
         }}
       >
         <AiIdea size={14} />
+        <span>{t("Next tip")}</span>
       </Button>
       {open || focusWithin ? (
         <Popover
@@ -155,6 +155,7 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
             text={t(COMPOSER_TIPS[index])}
             animate={active && !hidden}
           />
+          <p className="composer-tips-action">{t("Click again for another tip")}</p>
         </Popover>
       ) : null}
     </aside>

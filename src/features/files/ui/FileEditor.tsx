@@ -812,6 +812,7 @@ export function FileEditor({
             motion="none"
             type="button"
             disabled={openingChrome || isRemoteProjectPath(path)}
+            loading={openingChrome}
             onClick={() => void goLive()}
             title={
               isRemoteProjectPath(path)
@@ -820,7 +821,7 @@ export function FileEditor({
             }
             className="mr-2 shrink-0"
           >
-            {openingChrome ? t("Opening…") : t("Go Live")}
+            {t("Go Live")}
           </Button>
         ) : null}
         <InlineBlameToggle reason={footerBlameReason} />

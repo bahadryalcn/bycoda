@@ -30,6 +30,7 @@ const REVEAL_CATCHUP_S = 0.22;
 const REVEAL_HOLD_MS = 150;
 export const REVEAL_MAX_BACKLOG = 4096;
 export const REVEAL_MAX_LAG_MS = 500;
+export const MAX_PACED_TEXT_CHARS = 32 * 1024;
 
 // All visible replies advance in one browser callback, so React can batch their
 // updates. Keep no idle frame alive once every reply has caught up or unmounted.
@@ -112,6 +113,7 @@ export function usePacedText(
   const backlogSince = useRef<number | null>(null);
   const [direct, setDirect] = useState(false);
   useEffect(() => {
+    if (!streaming && !revealOnMount) return;
     const preference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
     const update = () =>
       setDirect(
@@ -124,7 +126,7 @@ export function usePacedText(
       preference?.removeEventListener?.("change", update);
       window.removeEventListener("storage", update);
     };
-  }, []);
+  }, [streaming, revealOnMount]);
   const [, rerender] = useReducer((n: number) => n + 1, 0);
 
   if (streaming) pacing.current = true;
@@ -133,6 +135,7 @@ export function usePacedText(
   if (
     !visible ||
     !enabled ||
+    text.length > MAX_PACED_TEXT_CHARS ||
     direct ||
     (!streaming && !mountReveal.current) ||
     text.length - shown.current > REVEAL_MAX_BACKLOG

@@ -68,10 +68,63 @@ export function TransientNotice({
   dismiss.current = onDismiss;
   const surface = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (durationMs === null) return;
-    const id = window.setTimeout(() => dismiss.current(), durationMs);
-    return () => window.clearTimeout(id);
-  }, [message, title, durationMs]);
+    const node = surface.current;
+    if (!node || durationMs === null || dismissDisabled) return;
+    let remaining = durationMs;
+    let started = 0;
+    let timer: number | undefined;
+    let hovered = node.matches(":hover");
+    let focused = node.contains(document.activeElement);
+    const pause = () => {
+      if (timer === undefined) return;
+      window.clearTimeout(timer);
+      timer = undefined;
+      remaining = Math.max(0, remaining - (Date.now() - started));
+    };
+    const resume = () => {
+      if (timer !== undefined || hovered || focused || document.hidden) return;
+      started = Date.now();
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        dismiss.current();
+      }, remaining);
+    };
+    const enter = () => {
+      hovered = true;
+      pause();
+    };
+    const leave = () => {
+      hovered = false;
+      resume();
+    };
+    const focus = () => {
+      focused = true;
+      pause();
+    };
+    const blur = (event: FocusEvent) => {
+      if (event.relatedTarget instanceof Node && node.contains(event.relatedTarget)) return;
+      focused = false;
+      resume();
+    };
+    const visibility = () => {
+      if (document.hidden) pause();
+      else resume();
+    };
+    node.addEventListener("pointerenter", enter);
+    node.addEventListener("pointerleave", leave);
+    node.addEventListener("focusin", focus);
+    node.addEventListener("focusout", blur);
+    document.addEventListener("visibilitychange", visibility);
+    resume();
+    return () => {
+      pause();
+      node.removeEventListener("pointerenter", enter);
+      node.removeEventListener("pointerleave", leave);
+      node.removeEventListener("focusin", focus);
+      node.removeEventListener("focusout", blur);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [message, title, durationMs, dismissDisabled]);
   useLayoutEffect(() => {
     const node = surface.current;
     if (!node || !onHeightChange) return;

@@ -74,7 +74,8 @@ export function ProviderBinaryControl({
   const [draft, setDraft] = useState(() => loadProviderBinaryPath(provider) ?? "");
   const [overridden, setOverridden] = useState(() => Boolean(loadProviderBinaryPath(provider)));
   const [inspection, setInspection] = useState<HarnessBinaryInspection & { overridden: boolean }>();
-  const [working, setWorking] = useState(false);
+  const [operation, setOperation] = useState<"inspect" | "save" | "auto" | "choose" | null>(null);
+  const working = operation !== null;
   const inspectionBusy = useRef(false);
   const mounted = useRef(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,10 +88,10 @@ export function ProviderBinaryControl({
   }, []);
 
   const inspect = useCallback(
-    async (binaryPath?: string | null) => {
+    async (binaryPath?: string | null, action: "inspect" | "save" | "auto" = "inspect") => {
       if (inspectionBusy.current) return null;
       inspectionBusy.current = true;
-      setWorking(true);
+      setOperation(action);
       setInspection(undefined);
       setError(null);
       setRevealError(null);
@@ -108,7 +109,7 @@ export function ProviderBinaryControl({
         return null;
       } finally {
         inspectionBusy.current = false;
-        setWorking(false);
+        setOperation(null);
       }
     },
     [provider],
@@ -133,7 +134,7 @@ export function ProviderBinaryControl({
       await useAuto();
       return;
     }
-    const next = await inspect(value);
+    const next = await inspect(value, "save");
     if (!mounted.current || !next) return;
     const validationError = binaryInspectionError(provider, next);
     if (validationError) {
@@ -152,7 +153,7 @@ export function ProviderBinaryControl({
 
   const useAuto = async () => {
     if (working) return;
-    const next = await inspect(null);
+    const next = await inspect(null, "auto");
     if (!next || binaryInspectionError(provider, next)) return;
     if (!saveProviderBinaryPath(provider, null)) {
       setInspection(undefined);
@@ -170,11 +171,12 @@ export function ProviderBinaryControl({
   const chooseExecutable = (
     <Button
       className="shrink-0"
+      loading={operation === "choose"}
       disabled={working}
       onClick={() => {
         if (inspectionBusy.current) return;
         inspectionBusy.current = true;
-        setWorking(true);
+        setOperation("choose");
         void pickFile({
           directory: false,
           multiple: false,
@@ -189,7 +191,7 @@ export function ProviderBinaryControl({
           .catch((cause) => setError(String(cause)))
           .finally(() => {
             inspectionBusy.current = false;
-            setWorking(false);
+            setOperation(null);
           });
       }}
     >
@@ -244,13 +246,19 @@ export function ProviderBinaryControl({
           {t("Cancel")}
         </Button>
         {overridden ? (
-          <Button className="shrink-0" disabled={working} onClick={() => void useAuto()}>
+          <Button
+            className="shrink-0"
+            loading={operation === "auto"}
+            disabled={working}
+            onClick={() => void useAuto()}
+          >
             {t("Use auto-detected path")}
           </Button>
         ) : null}
         <Button
           variant={inline ? "primary" : "secondary"}
           type="submit"
+          loading={operation === "save"}
           disabled={working || (inline && !draft.trim())}
         >
           {working ? t("Checking path…") : inline ? t("Add provider") : t("Save path")}

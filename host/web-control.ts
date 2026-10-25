@@ -69,8 +69,8 @@ function controlPage(nonce: string) {
 <script nonce="${nonce}">${CONTROL_SCRIPT}</script></html>`;
 }
 
-const CONTROL_SCRIPT = String.raw`
-const $=id=>document.getElementById(id);let token='',environment,projectId='',sessionId='',snapshot,before,leaseId='',timer,reading=false,models={},uncertain;
+export const CONTROL_SCRIPT = String.raw`
+const $=id=>document.getElementById(id);let token='',environment,projectId='',sessionId='',snapshot,before,leaseId='',timer,catalogTimer,reading=false,models={},uncertain;
 const showError=e=>{$('error').textContent=e?.message||String(e||'')};
 const el=(tag,text)=>{const n=document.createElement(tag);n.textContent=text;return n};
 const option=(select,id,text)=>{const n=el('option',text);n.value=id;select.append(n)};
@@ -82,10 +82,11 @@ async function rpc(method,params={}){
  const joined=new Uint8Array(bytes);let offset=0;for(const c of chunks){joined.set(c,offset);offset+=c.length}const data=JSON.parse(new TextDecoder().decode(joined));if(!res.ok||data.error)throw Error(data.error||'Host request failed');return data.result;
  }finally{clearTimeout(timeout)}
 }
-function disconnect(){clearTimeout(timer);token='';environment=undefined;leaseId='';snapshot=undefined;sessionId='';$('credential').value='';$('workspace').hidden=true;$('login').hidden=false;$('transcript').replaceChildren();$('questions').replaceChildren();$('frame').removeAttribute('src')}
+function disconnect(){clearTimeout(timer);clearTimeout(catalogTimer);token='';environment=undefined;leaseId='';snapshot=undefined;sessionId='';$('credential').value='';$('workspace').hidden=true;$('login').hidden=false;$('transcript').replaceChildren();$('questions').replaceChildren();$('frame').removeAttribute('src')}
 async function command(params){const commandId=crypto.randomUUID();try{return await rpc('commands.dispatch',{...params,commandId})}catch(e){uncertain=commandId;$('recover').hidden=false;throw Error(e.message+'\nCommand '+commandId+' may have been accepted. Check its status before sending again.')}}
-function providerModels(){const select=$('model');select.replaceChildren();for(const m of models[$('provider').value]||[])option(select,m.id,m.name||m.id)}
-async function project(){projectId=$('project').value;snapshot=undefined;sessionId='';$('sessions').replaceChildren();const catalog=await rpc('models.list',{projectId});models=catalog.models||{};providerModels();await listSessions()}
+function providerModels(){const select=$('model'),previous=select.value;select.replaceChildren();for(const m of models[$('provider').value]||[])option(select,m.id,m.name||m.id);if(Array.from(select.options).some(o=>o.value===previous))select.value=previous}
+async function loadModels(selected){const catalog=await rpc('models.list',{projectId:selected,progressive:true});if(!token||selected!==projectId)return;models=catalog.models||{};providerModels();if(catalog.pending?.length)catalogTimer=setTimeout(()=>void loadModels(selected).catch(showError),1000)}
+async function project(){clearTimeout(catalogTimer);projectId=$('project').value;snapshot=undefined;sessionId='';models={};providerModels();$('sessions').replaceChildren();void loadModels(projectId).catch(showError);await listSessions()}
 async function listSessions(){const list=await rpc('sessions.list',{projectId});const previous=sessionId;$('sessions').replaceChildren();for(const s of list)option($('sessions'),s.id,(s.needsInput?'⚠ ':'')+(s.title||s.id)+' · '+s.status);if(list.some(s=>s.id===previous))$('sessions').value=previous;sessionId=$('sessions').value;await readSession(true)}
 async function readSession(force=false){if(!sessionId||reading||!token)return;reading=true;const selected=sessionId;try{
  if(!force&&snapshot){const sync=await rpc('sessions.sync',{sessionId:selected,revision:snapshot.revision,lazyHistory:true,loadedBlockIds:snapshot.session.blocks.map(b=>b.id)});if(selected!==sessionId)return;if(sync.kind==='unchanged')return;if(sync.kind==='delta'&&sync.partial&&sync.base===snapshot.revision&&sync.blockIds.length<=256&&new TextEncoder().encode(JSON.stringify(sync)).length<=2*1024*1024){const blocks=new Map(snapshot.session.blocks.map(b=>[b.id,b]));for(const b of sync.blocks)blocks.set(b.id,b);if(sync.blockIds.every(id=>blocks.has(id))){snapshot={...sync.value,session:{...sync.value.session,blocks:sync.blockIds.map(id=>blocks.get(id))}};before=snapshot.history?.before;render();return}}}

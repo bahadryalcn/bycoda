@@ -22,6 +22,62 @@ const { invoke, convertFileSrc, urlFormat } = vi.hoisted(() => {
 });
 vi.mock("@tauri-apps/api/core", () => ({ invoke, convertFileSrc }));
 
+it("retains reload after failure and prevents duplicate preview creation while retrying", async () => {
+  (window as unknown as Window).happyDOM.settings.navigation.disableChildFrameNavigation = true;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let finish!: (token: string) => void;
+  invoke.mockReset().mockImplementation(async (command: string) => {
+    if (command === "create_html_preview") throw new Error("Preview service unavailable");
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(HtmlPreview, {
+          path: "example.html",
+          source: "<p>Draft preview</p>",
+          active: true,
+        }),
+      ),
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Preview service unavailable",
+    );
+    const reload = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Reload preview",
+    )!;
+    expect(reload).toBeDefined();
+    invoke.mockImplementation(async (command: string) =>
+      command === "create_html_preview"
+        ? new Promise<string>((resolve) => {
+            finish = resolve;
+          })
+        : undefined,
+    );
+    reload.focus();
+    await act(async () => {
+      reload.click();
+      reload.click();
+    });
+    expect(invoke.mock.calls.filter(([command]) => command === "create_html_preview")).toHaveLength(
+      2,
+    );
+    expect(reload.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(reload);
+    await act(async () => finish("retry-token"));
+    expect(container.querySelector("iframe")?.getAttribute("sandbox")).toBe(
+      "allow-scripts allow-forms",
+    );
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it.each([
   { label: "Windows HTTP", format: "windows-http", base: "http://html-preview.localhost" },
   { label: "Windows HTTPS", format: "windows-https", base: "https://html-preview.localhost" },

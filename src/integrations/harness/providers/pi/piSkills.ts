@@ -35,9 +35,40 @@ export async function discoverOmpCommands(cwd: string): Promise<NativeCommand[]>
   return ompCommandsFromRpcData(await discoverCommands(OMP_FLAVOR, cwd, "get_available_commands"));
 }
 
-async function discoverCommands(flavor: PiFlavor, cwd: string, command: string): Promise<unknown> {
-  const { path } = await flavor.resolveBinary();
-  const releaseBridge = await acquireHarnessBridge();
+function probeWait<T>(signal: AbortSignal | undefined, pending: Promise<T>): Promise<T> {
+  if (!signal) return pending;
+  return new Promise<T>((resolve, reject) => {
+    const cancelled = () => reject(signal.reason);
+    if (signal.aborted) cancelled();
+    else signal.addEventListener("abort", cancelled, { once: true });
+    pending.then(
+      (value) => {
+        signal.removeEventListener("abort", cancelled);
+        if (signal.aborted) cancelled();
+        else resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", cancelled);
+        reject(signal.aborted ? signal.reason : error);
+      },
+    );
+  });
+}
+
+async function discoverCommands(
+  flavor: PiFlavor,
+  cwd: string,
+  command: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  signal?.throwIfAborted();
+  const { path } = await probeWait(signal, flavor.resolveBinary());
+  signal?.throwIfAborted();
+  let releaseBridge: (() => void) | undefined;
+  const acquired = acquireHarnessBridge().then((release) => {
+    if (signal?.aborted) release();
+    else releaseBridge = release;
+  });
   const childId = `bycoda-${flavor.id}-skills-${crypto.randomUUID()}`;
   const replyToUi = (record: Record<string, unknown>) => {
     const request = parseExtensionUiRequest(record);
@@ -46,29 +77,39 @@ async function discoverCommands(flavor: PiFlavor, cwd: string, command: string):
       () => undefined,
     );
   };
-  const rpc = new PiRpc(childId, replyToUi, flavor.label);
+  let rpc: PiRpc | undefined;
 
   try {
+    await probeWait(signal, acquired);
+    signal?.throwIfAborted();
+    rpc = new PiRpc(childId, replyToUi, flavor.label);
+    const client = rpc;
     watchChild(
       childId,
-      (line) => rpc.pushLine(line),
-      () => rpc.close(new Error(`${flavor.label} skill probe exited`)),
+      (line) => client.pushLine(line),
+      () => client.close(new Error(`${flavor.label} skill probe exited`)),
     );
-    await spawnChild(
-      childId,
-      path,
-      buildPiSpawnArgs(flavor, { noSession: true }),
-      cwd,
-      undefined,
-      flavor.id,
+    await probeWait(
+      signal,
+      spawnChild(
+        childId,
+        path,
+        buildPiSpawnArgs(flavor, { noSession: true }),
+        cwd,
+        undefined,
+        flavor.id,
+      ),
     );
-    const response = await rpc.request({ type: command }, REQUEST_TIMEOUT_MS);
+    signal?.throwIfAborted();
+    const response = await probeWait(signal, rpc.request({ type: command }, REQUEST_TIMEOUT_MS));
     return asRecord(response)?.data;
   } finally {
-    rpc.close();
-    unwatchChild(childId);
-    await killChild(childId).catch(() => undefined);
-    releaseBridge();
+    if (rpc) {
+      rpc.close();
+      unwatchChild(childId);
+      await killChild(childId).catch(() => undefined);
+    }
+    releaseBridge?.();
   }
 }
 
@@ -77,11 +118,13 @@ export async function allowedPiSkillPaths(
   flavor: PiFlavor,
   cwd: string,
   policy: SkillPolicy,
+  signal?: AbortSignal,
 ): Promise<string[]> {
   const data = await discoverCommands(
     flavor,
     cwd,
     flavor.id === "omp" ? "get_available_commands" : "get_commands",
+    signal,
   );
   return allowedPiSkillPathsFromData(data, policy);
 }

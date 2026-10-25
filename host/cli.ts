@@ -202,8 +202,9 @@ Connect another computer using an SSH forward to the loopback port.`);
   }
   const { HostStore } = await import("./store");
   const store = new HostStore(join(directory, "host.db"));
+  await store.ready;
   if (command === "pair") {
-    const device = store.issueDevice(option("name", "Desktop"));
+    const device = await store.issueDevice(option("name", "Desktop"));
     console.log(
       JSON.stringify(
         { ...device, environmentId: store.environmentId },
@@ -211,24 +212,26 @@ Connect another computer using an SSH forward to the loopback port.`);
         args.includes("--json") ? undefined : 2,
       ),
     );
-    store.close();
+    await store.close();
     return;
   }
   if (command === "devices") {
-    console.log(JSON.stringify(store.db.prepare("SELECT id, name FROM devices").all(), null, 2));
-    store.close();
+    console.log(
+      JSON.stringify(await store.db.prepare("SELECT id, name FROM devices").all(), null, 2),
+    );
+    await store.close();
     return;
   }
   if (command === "revoke") {
     if (!args[1] || args[1].startsWith("--")) throw new Error("Provide a device ID to revoke");
-    const revoked = store.revokeDevice(args[1]);
-    store.close();
+    const revoked = await store.revokeDevice(args[1]);
+    await store.close();
     if (!revoked) throw new Error("Device not found");
     console.log("Device revoked");
     return;
   }
   if (command !== "serve") {
-    store.close();
+    await store.close();
     throw new Error("Unknown command; run with --help");
   }
   // Keep the forwarding commands independent of the host's engine and providers.
@@ -258,10 +261,13 @@ Connect another computer using an SSH forward to the loopback port.`);
     await readProviderBinaryOverrides(directory),
     store.attachmentDir,
   );
-  let cleanup = () => {
+  let cleanup = async () => {
     rmSync(statePath, { force: true });
-    store.close();
-    releaseOwner();
+    try {
+      await store.close();
+    } finally {
+      releaseOwner();
+    }
   };
   try {
     backend.setGenericAcpService(new GenericAcpService(dirname(store.attachmentDir)));
@@ -279,17 +285,18 @@ Connect another computer using an SSH forward to the loopback port.`);
       }
     }
     const engine = new HostEngine(store, hostProviders);
+    await engine.ready;
     const automations = new HostAutomations(store, engine);
     const tasks = new HostTasks(store, engine);
     // Goals run on the task board's timer.
     const goals = new HostGoals(store, engine, tasks);
     const stewards = new HostStewards(store, engine, tasks);
     const secret = randomBytes(32).toString("base64url");
-    let stopping = false;
+    let stopping: Promise<void> | undefined;
     let stop: () => Promise<void>;
     // A separate local administrative credential cannot be used as a paired
     // client credential, and is never sent to the desktop.
-    const server = createHostServer(
+    const server = await createHostServer(
       engine,
       available,
       (request, response) => {
@@ -335,23 +342,39 @@ Connect another computer using an SSH forward to the loopback port.`);
     backend.setSocialAccess(server.social, `http://127.0.0.1:${port}`);
     backend.setRuntimeLogAccess(server.runtimeLogAccess, `http://127.0.0.1:${port}`);
     backend.setConversationAccess(server.conversationAccess, `http://127.0.0.1:${port}`);
-    stop = async () => {
-      if (stopping) return;
-      stopping = true;
-      automations.stop();
-      tasks.stop();
-      stewards.stop();
-      server.close();
-      server.closeAllConnections();
-      await server.tunnels.close();
-      await engine.close();
-      await backend.close();
-      release();
-      cleanup();
-      // Native/provider handles can outlive close(). All work has now drained;
-      // exit so the service also releases its inherited pipes and log handle.
-      process.exit(0);
-    };
+    stop = () =>
+      (stopping ??= (async () => {
+        let failed = false;
+        const drain = async (name: string, work: () => Promise<unknown>) => {
+          try {
+            await work();
+          } catch {
+            failed = true;
+            console.error(`Host shutdown could not drain ${name}.`);
+          }
+        };
+        const schedulers = Promise.allSettled([
+          automations.close(),
+          tasks.close(),
+          stewards.close(),
+        ]);
+        server.close();
+        server.closeAllConnections();
+        await drain("server resources", () => server.closeResources());
+        const schedulerResults = await schedulers;
+        if (schedulerResults.some((result) => result.status === "rejected")) {
+          failed = true;
+          console.error("Host shutdown could not drain every scheduler.");
+        }
+        await drain("tunnels", () => server.tunnels.close());
+        await drain("engine", () => engine.close());
+        await drain("provider backend", () => backend.close());
+        release();
+        await drain("database", cleanup);
+        // Native/provider handles can outlive close(). All work has now drained;
+        // exit so the service also releases its inherited pipes and log handle.
+        process.exit(failed ? 1 : 0);
+      })());
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(port, "127.0.0.1", resolve);
@@ -370,14 +393,25 @@ Connect another computer using an SSH forward to the loopback port.`);
     console.log(
       `Providers: ${available.join(", ") || "none found; install and authenticate a supported provider on this host"}`,
     );
-    cleanup = () => {
+    cleanup = async () => {
       rmSync(statePath, { force: true });
-      store.close();
-      releaseOwner();
+      try {
+        await store.close();
+      } finally {
+        releaseOwner();
+      }
     };
   } catch (error) {
-    await backend.close();
-    cleanup();
+    const failures: unknown[] = [error];
+    for (const close of [() => backend.close(), cleanup]) {
+      try {
+        await close();
+      } catch (failure) {
+        failures.push(failure);
+      }
+    }
+    if (failures.length > 1)
+      throw new AggregateError(failures, "Host initialization and cleanup failed.");
     throw error;
   }
 }

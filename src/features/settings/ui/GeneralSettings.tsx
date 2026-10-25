@@ -15,7 +15,7 @@ import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
 import { MorphSelect } from "../../../shared/ui/MorphSelect";
 import { Progress } from "../../../shared/ui/Progress";
-import { ArrowDownCircle, Loader, RefreshCw } from "../../../shared/ui/icons";
+import { ArrowDownCircle, RefreshCw } from "../../../shared/ui/icons";
 import { OPEN_ONBOARDING_EVENT } from "../../onboarding/model/onboarding";
 import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/import/importModel";
@@ -43,7 +43,10 @@ import "./GeneralSettings.css";
 
 export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string) => void }) {
   useLocale();
-  const [closeToTray, setCloseToTray] = useStoredPreferenceState(loadCloseToTray, subscribeCloseToTray);
+  const [closeToTray, setCloseToTray] = useStoredPreferenceState(
+    loadCloseToTray,
+    subscribeCloseToTray,
+  );
   const onCloseToTray = (next: boolean) => {
     saveCloseToTray(next);
     setCloseToTray(next);
@@ -195,7 +198,10 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           label={t("Getting started")}
           description={t("Connect computers, set up agents, and choose your projects.")}
         >
-          <Button className="shrink-0" onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}>
+          <Button
+            className="shrink-0"
+            onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}
+          >
             {t("Open setup…")}
           </Button>
         </Row>
@@ -205,7 +211,9 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           description={t("Learn chat, queue, stop and essential shortcuts.")}
         >
           {/* The guide request closes Settings and walks through the workspace. */}
-          <Button className="shrink-0" onClick={openUsageGuide}>{t("Open guide")}</Button>
+          <Button className="shrink-0" onClick={openUsageGuide}>
+            {t("Open guide")}
+          </Button>
         </Row>
       </Group>
 
@@ -377,14 +385,15 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
             className="shrink-0"
             onClick={() => void onClick()}
             disabled={busy || updatesEnabled !== true}
+            loading={busy}
+            startIcon={
+              hasUpdate ? (
+                <ArrowDownCircle className="icon-sm text-accent" aria-hidden />
+              ) : (
+                <RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />
+              )
+            }
           >
-            {busy ? (
-              <Loader className="icon-sm motion-safe:animate-spin" aria-hidden />
-            ) : hasUpdate ? (
-              <ArrowDownCircle className="icon-sm text-accent" aria-hidden />
-            ) : (
-              <RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />
-            )}
             {hasUpdate ? t("Download") : t("Check for updates")}
           </Button>
         )}

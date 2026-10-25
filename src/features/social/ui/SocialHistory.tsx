@@ -1,3 +1,6 @@
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { SocialFilters } from "./SocialFilters";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -130,6 +133,8 @@ export function JobHistory({
   jobs?: SocialJob[];
   onFilterChange?: Props["onFilterChange"];
 }) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const campaigns = socialRows(snapshot.campaigns, snapshot.related?.campaigns);
   const contacts = socialRows(snapshot.contacts, snapshot.related?.contacts);
@@ -183,6 +188,7 @@ export function JobHistory({
         <label className="social-history-search">
           {t("Search jobs")}
           <SearchInput
+            disabled={socialLocked}
             appearance="field"
             type="search"
             value={query}
@@ -200,6 +206,7 @@ export function JobHistory({
           <label>
             {t("Send status")}
             <NativeSelect
+              disabled={socialLocked}
               value={status}
               onChange={(event) => {
                 setStatus(event.target.value);
@@ -228,6 +235,7 @@ export function JobHistory({
           <label>
             {t("Account")}
             <SearchableSelect
+              disabled={socialLocked}
               value={accountId}
               label={t("Account")}
               options={[
@@ -247,6 +255,7 @@ export function JobHistory({
           <label>
             {t("Job type")}
             <NativeSelect
+              disabled={socialLocked}
               value={kind}
               onChange={(event) => {
                 setKind(event.target.value);
@@ -263,6 +272,7 @@ export function JobHistory({
           </label>
           <div>
             <TextField
+              disabled={socialLocked}
               label={t("Start date")}
               type="date"
               value={since}
@@ -280,7 +290,7 @@ export function JobHistory({
         })}
         {!hostFiltered && filtered.length !== jobs.length ? ` / ${jobs.length}` : ""}
         {status || accountId || kind || query || since ? (
-          <Button variant="secondary" type="button" onClick={reset}>
+          <Button disabled={socialLocked} variant="secondary" type="button" onClick={reset}>
             {t("Clear filters")}
           </Button>
         ) : null}
@@ -353,12 +363,16 @@ export function JobHistory({
                           : t("Account removed")}
                       </Badge>
                       <Button
+                        loading={pendingUi.is(`job.retry:${job.id}`)}
+                        disabled={socialLocked}
                         variant="secondary"
                         type="button"
                         onClick={() =>
-                          void run(
-                            () => client.request("jobs.retry", { id: job.id }),
-                            t("Failed target was queued again."),
+                          void pendingUi.run(`job.retry:${job.id}`, () =>
+                            run(
+                              () => client.request("jobs.retry", { id: job.id }),
+                              t("Failed target was queued again."),
+                            ),
                           )
                         }
                       >
@@ -368,13 +382,17 @@ export function JobHistory({
                   ) : null}
                   {job.status === "queued" ? (
                     <Button
+                      loading={pendingUi.is(`job.cancel:${job.id}`)}
+                      disabled={socialLocked}
                       variant="danger"
                       type="button"
                       className="ml-auto"
                       onClick={() =>
-                        void run(
-                          () => client.request("jobs.cancel", { id: job.id }),
-                          t("Queued job cancelled."),
+                        void pendingUi.run(`job.cancel:${job.id}`, () =>
+                          run(
+                            () => client.request("jobs.cancel", { id: job.id }),
+                            t("Queued job cancelled."),
+                          ),
                         )
                       }
                     >
@@ -398,7 +416,7 @@ export function JobHistory({
           <Button
             variant="secondary"
             type="button"
-            disabled={currentPage === 0}
+            disabled={socialLocked || currentPage === 0}
             onClick={() => setPage(currentPage - 1)}
           >
             {t("Previous")}
@@ -409,7 +427,7 @@ export function JobHistory({
           <Button
             variant="secondary"
             type="button"
-            disabled={(currentPage + 1) * PAGE_SIZE >= filtered.length}
+            disabled={socialLocked || (currentPage + 1) * PAGE_SIZE >= filtered.length}
             onClick={() => setPage(currentPage + 1)}
           >
             {t("Next")}

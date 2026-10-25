@@ -16,14 +16,17 @@ export class SocialVideoUploads {
   constructor(
     private directory: string,
     private now = Date.now,
+    private authorize: () => Promise<void> = async () => {},
   ) {}
   async call(
     actor: string,
     input: Record<string, unknown>,
   ): Promise<{ uploadId: string; offset?: number }> {
+    await this.authorize();
     const staging = join(this.directory, "media", "incoming");
     for (const [id, state] of this.pending)
       if (state.expires <= this.now() && !state.busy) {
+        await this.authorize();
         this.pending.delete(id);
         await unlink(join(staging, id)).catch(() => {});
       }
@@ -45,6 +48,7 @@ export class SocialVideoUploads {
         busy: true,
       });
       try {
+        await this.authorize();
         await mkdir(staging, { recursive: true, mode: 0o700 });
         const existing = (await readdir(staging)).filter((id) => /^[a-f0-9-]{36}$/.test(id));
         let count = 0;
@@ -52,12 +56,14 @@ export class SocialVideoUploads {
           if (
             !this.pending.has(id) &&
             (await stat(join(staging, id))).mtimeMs + 30 * 60_000 <= this.now()
-          )
+          ) {
+            await this.authorize();
             await unlink(join(staging, id));
-          else count++;
+          } else count++;
         }
         if (count >= 8)
           throw new Error("Incomplete video uploads must expire before another upload.");
+        await this.authorize();
         const handle = await open(join(staging, uploadId), "wx", 0o600);
         await handle.close();
         this.pending.get(uploadId)!.busy = false;
@@ -74,6 +80,7 @@ export class SocialVideoUploads {
     state.busy = true;
     try {
       if (input.mode === "cancel") {
+        await this.authorize();
         await unlink(join(staging, uploadId));
         this.pending.delete(uploadId);
       } else if (input.mode === "chunk") {
@@ -92,6 +99,7 @@ export class SocialVideoUploads {
         try {
           let written = 0;
           while (written < bytes.length) {
+            await this.authorize();
             const result = await handle.write(
               bytes,
               written,
@@ -119,6 +127,7 @@ export class SocialVideoUploads {
           !header.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))
         )
           throw new Error("Upload an MP4/WebM video. File extension alone is insufficient.");
+        await this.authorize();
         await rename(join(staging, uploadId), join(this.directory, "media", uploadId));
         this.pending.delete(uploadId);
       } else throw new Error("Unsupported video upload step.");

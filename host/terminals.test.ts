@@ -7,7 +7,7 @@ import { listShellProfiles } from "./shellProfiles";
 
 const services: HostTerminals[] = [];
 afterEach(async () => {
-  await Promise.all(services.splice(0).map((service) => service.close()));
+  await Promise.all(services.splice(0).map(async (service) => await service.close()));
 });
 const project = { id: "project", cwd: "/project" };
 function setup(locate = async (root: string) => root) {
@@ -47,9 +47,10 @@ it("deduplicates concurrent creation and does not replay a closed creation recei
     state: "exited",
   });
   expect(s.launch).toHaveBeenCalledTimes(1);
-  expect(() =>
-    s.service.create(project, { ...params, name: "Different" }, "owner", () => true),
-  ).toThrow("different options");
+  await expect(
+    (async () =>
+      await s.service.create(project, { ...params, name: "Different" }, "owner", () => true))(),
+  ).rejects.toThrow("different options");
 });
 
 it("scopes every terminal operation to its registered project and bounds output with stable cursors", async () => {

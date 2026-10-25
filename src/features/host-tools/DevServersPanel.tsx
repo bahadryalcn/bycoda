@@ -91,6 +91,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   useLocale();
   const [scan, setScan] = useState<DevServerScan>();
   const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<string>();
   const [scanning, setScanning] = useState(true);
   const [scanError, setScanError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -169,23 +170,27 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     scanFlight.current = flight;
     return flight;
   };
-  const action = async (work: () => Promise<unknown>) => {
+  const action = async (name: string, work: () => Promise<unknown>, waitForScan = true) => {
     if (!alive.current || pending.current || launch?.pending) return;
     pending.current = true;
     setBusy(true);
+    setOperation(name);
     setError("");
     setNotice("");
     try {
       // A mutation waits for discovery, but background discovery never disables
       // local preview/copy controls or removes the list under the user's scroll.
-      await scanFlight.current;
+      if (waitForScan) await scanFlight.current;
       if (!alive.current) return;
       await work();
     } catch (cause) {
       if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       pending.current = false;
-      if (alive.current) setBusy(false);
+      if (alive.current) {
+        setBusy(false);
+        setOperation(undefined);
+      }
     }
   };
   useEffect(() => {
@@ -230,7 +235,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   useEffect(() => {
     if (launch?.result) {
       setStartResult(launch.result);
-      if (launch.result.server) void action(() => refresh(true));
+      if (launch.result.server) void action("refresh", () => refresh(true));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [launch?.result]);
@@ -238,7 +243,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const select = (server: DevServer, nextIntent: Intent) => {
     // Pin the server so a reordered rescan cannot move the pane away from a confirmation.
     setSelectedId(server.id);
-    return action(async () => {
+    return action(`${server.id}:select:${nextIntent}`, async () => {
       const result = await request<DevServerDetails>("details", target(server, true));
       if (!alive.current) return;
       setDetails(result);
@@ -252,7 +257,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     });
   };
   const control = (operation: "stop" | "kill" | "restart") =>
-    action(async () => {
+    action(`${details?.server.id}:${operation}`, async () => {
       if (!details) return;
       const server = details.server;
       setScan(
@@ -304,6 +309,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
       }
     });
   const disabled = busy || !!launch?.pending;
+  const unavailable = (name: string) => !!launch?.pending || (busy && operation !== name);
   const query = search.trim().toLocaleLowerCase();
   const servers = scan?.servers ?? [];
   const visibleServers = servers.filter(
@@ -347,27 +353,27 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     setMenu(null);
   };
   const openLocal = (server: DevServer, address: DevServerEndpoint) =>
-    void action(async () => {
+    void action(`${server.id}:open`, async () => {
       await openUrl(
         await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address }),
       );
     });
   const copyUrl = (server: DevServer, address: DevServerEndpoint) =>
-    void accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address })
-      .then((url) => navigator.clipboard.writeText(url))
-      .then(
-        () => {
-          if (alive.current) setNotice(t("URL copied."));
-        },
-        (cause) => {
-          if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
-        },
-      );
+    void action(
+      `${server.id}:copy`,
+      async () => {
+        const url = await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address });
+        if (!alive.current) return;
+        await navigator.clipboard.writeText(url);
+        if (alive.current) setNotice(t("URL copied."));
+      },
+      false,
+    );
   const pickMenu = (id: string) => {
     setMenu(null);
     if (!selected) return;
     if (id === "host" && endpoint)
-      void action(async () => {
+      void action(`${selected.id}:openHost`, async () => {
         await request("openExternal", {
           ...target(selected),
           port: endpoint.port,
@@ -378,7 +384,12 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     if (id === "kill") void select(selected, "kill");
   };
   const renderServer = (server: DevServer) => (
-    <li className="dev-server-row" key={server.id} aria-label={server.name}>
+    <li
+      className="dev-server-row"
+      key={server.id}
+      aria-label={server.name}
+      aria-busy={operation?.startsWith(`${server.id}:`) || undefined}
+    >
       <Button
         variant="item"
         className="dev-server-row-button"
@@ -490,7 +501,8 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             {intent === "stop" && !requiresForce ? (
               <Button
                 variant="danger"
-                disabled={disabled || !canControl(current.server)}
+                loading={operation === `${current.server.id}:stop`}
+                disabled={unavailable(`${current.server.id}:stop`) || !canControl(current.server)}
                 onClick={() => void control("stop")}
               >
                 {t("Confirm graceful stop")}
@@ -499,7 +511,8 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             {intent === "kill" || requiresForce ? (
               <Button
                 variant="danger"
-                disabled={disabled || !hasIdentity(current.server)}
+                loading={operation === `${current.server.id}:kill`}
+                disabled={unavailable(`${current.server.id}:kill`) || !hasIdentity(current.server)}
                 onClick={() => void control("kill")}
               >
                 {t("Confirm force terminate")}
@@ -508,8 +521,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             {intent === "restart" ? (
               <Button
                 variant="primary"
+                loading={operation === `${current.server.id}:restart`}
                 disabled={
-                  disabled ||
+                  unavailable(`${current.server.id}:restart`) ||
                   !canControl(current.server) ||
                   (!current.server.managed && (!restartCommand.trim() || !restartCwd.trim()))
                 }
@@ -522,9 +536,10 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         </div>
       ) : null}
       <Button
-        disabled={disabled}
+        disabled={unavailable(`${current.server.id}:logs`)}
+        loading={operation === `${current.server.id}:logs`}
         onClick={() =>
-          void action(async () => {
+          void action(`${current.server.id}:logs`, async () => {
             const result = await request<{ available: boolean; output: string }>(
               "logs",
               target(current.server),
@@ -590,7 +605,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         <Button
           variant="primary"
           startIcon={<Eye />}
-          disabled={disabled || !endpoint}
+          disabled={!endpoint}
           onClick={() => endpoint && setPreview(endpoint.url)}
         >
           {t("Open in preview")}
@@ -598,7 +613,8 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         <Button
           iconOnly
           label={t("Open in this computer's browser")}
-          disabled={disabled || !endpoint}
+          loading={operation === `${server.id}:open`}
+          disabled={unavailable(`${server.id}:open`) || !endpoint}
           onClick={() => endpoint && openLocal(server, endpoint)}
         >
           <ExternalLink className="icon-md" aria-hidden />
@@ -606,25 +622,36 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         <Button
           iconOnly
           label={t("Copy URL")}
-          disabled={disabled || !endpoint}
+          loading={operation === `${server.id}:copy`}
+          disabled={unavailable(`${server.id}:copy`) || !endpoint}
           onClick={() => endpoint && copyUrl(server, endpoint)}
         >
           <Copy className="icon-md" aria-hidden />
         </Button>
         <span className="dev-server-actions-gap" aria-hidden="true" />
-        <Button disabled={disabled} onClick={() => void select(server, "details")}>
+        <Button
+          disabled={unavailable(`${server.id}:select:details`)}
+          loading={operation === `${server.id}:select:details`}
+          onClick={() => void select(server, "details")}
+        >
           {t("Process details")}
         </Button>
         <Button
           startIcon={<Square />}
-          disabled={disabled || !canControl(server) || server.state === "stopped"}
+          loading={operation === `${server.id}:select:stop`}
+          disabled={
+            unavailable(`${server.id}:select:stop`) ||
+            !canControl(server) ||
+            server.state === "stopped"
+          }
           onClick={() => void select(server, "stop")}
         >
           {t("Stop")}
         </Button>
         <Button
           startIcon={<RotateCcw />}
-          disabled={disabled || !canControl(server)}
+          loading={operation === `${server.id}:select:restart`}
+          disabled={unavailable(`${server.id}:select:restart`) || !canControl(server)}
           onClick={() => void select(server, "restart")}
         >
           {t("Restart")}
@@ -633,6 +660,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           variant="ghost"
           iconOnly
           label={t("Actions")}
+          loading={
+            operation === `${server.id}:openHost` || operation === `${server.id}:select:kill`
+          }
           aria-haspopup="menu"
           aria-expanded={!!menu}
           onClick={(event) => {
@@ -732,9 +762,10 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           {scanError ? (
             <Button
               startIcon={<RefreshCw />}
-              disabled={disabled || scanning}
+              loading={operation === "refresh"}
+              disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
               onClick={() =>
-                void action(async () => {
+                void action("refresh", async () => {
                   if (await refresh(true)) setAutoRefresh(true);
                 })
               }
@@ -746,9 +777,10 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
               variant="ghost"
               iconOnly
               label={t("Refresh")}
-              disabled={disabled || scanning}
+              loading={operation === "refresh"}
+              disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
               onClick={() =>
-                void action(async () => {
+                void action("refresh", async () => {
                   if (await refresh(true)) setAutoRefresh(true);
                 })
               }
@@ -823,11 +855,6 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           {notice}
         </Alert>
       ) : null}
-      {launch?.pending ? (
-        <Alert tone="info" role="status">
-          {t("Starting")}
-        </Alert>
-      ) : null}
       {showStart ? (
         <form
           ref={startForm}
@@ -843,8 +870,8 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
                 (!Number.isInteger(expectedPort) || expectedPort < 1 || expectedPort > 65535))
             )
               return;
-            void action(async () => {
-              setNotice(t("Starting"));
+            void action("start", async () => {
+              setStartResult(undefined);
               const result = await request<DevServerStartResult>("start", {
                 name: name.trim(),
                 command: command.trim(),
@@ -896,7 +923,8 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           <Button
             type="submit"
             variant="primary"
-            disabled={disabled || !name.trim() || !command.trim()}
+            loading={operation === "start" || !!launch?.pending}
+            disabled={unavailable("start") || !name.trim() || !command.trim()}
           >
             {t("Start command")}
           </Button>

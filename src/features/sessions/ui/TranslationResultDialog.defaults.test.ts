@@ -5,12 +5,14 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TranslationResultDialog } from "./TranslationResultDialog";
 import { TranslationSettings } from "../../settings/ui/TranslationSettings";
 import { translateSelection } from "../model/translation";
+import { defaultProviderAccountId } from "../../providers/model/providerAccounts";
 import {
   loadDefaultTranslationChoice,
   parseTranslationChoice,
   saveDefaultTranslationChoice,
   loadDefaultRepromptChoice,
   saveDefaultRepromptChoice,
+  defaultTextActionChoice,
   type TranslationChoice,
 } from "../model/translationPreferences";
 
@@ -47,8 +49,10 @@ const context = {
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   vi.clearAllMocks();
+  vi.mocked(translateSelection).mockResolvedValue("Hello");
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -56,6 +60,8 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 async function open(target: "en" | "reprompt" = "en") {
   await act(async () =>
@@ -81,6 +87,7 @@ it("uses the independent reprompt default and leaves it unchanged by dialog mode
     { ...context, ...choice, providerAccountId: "rewriter" },
     expect.any(AbortSignal),
     undefined,
+    expect.any(Function),
   );
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Rewritten prompt");
   const change = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -105,7 +112,7 @@ it("saves and resets reprompt settings without changing translation settings", a
   });
   expect(loadDefaultTranslationChoice()).toEqual(choice);
   const reset = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Use conversation model",
+    (button) => button.textContent === "Use default model",
   )!;
   await act(async () => reset.click());
   expect(loadDefaultRepromptChoice()).toBeUndefined();
@@ -120,6 +127,8 @@ it("starts with the persisted translation account and model while keeping the ca
     "en",
     { ...context, ...choice },
     expect.any(AbortSignal),
+    undefined,
+    expect.any(Function),
   );
   const change = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent === "Change model",
@@ -128,11 +137,18 @@ it("starts with the persisted translation account and model while keeping the ca
   expect(loadDefaultTranslationChoice()).toEqual(choice);
 });
 
-it("returns to the conversation model and account after resetting the default", async () => {
+it("returns to the Settings default model and account after resetting the action default", async () => {
   saveDefaultTranslationChoice(choice);
   saveDefaultTranslationChoice(undefined);
   await open();
-  expect(translateSelection).toHaveBeenCalledWith("selam", "en", context, expect.any(AbortSignal));
+  expect(translateSelection).toHaveBeenCalledWith(
+    "selam",
+    "en",
+    { ...context, ...defaultTextActionChoice() },
+    expect.any(AbortSignal),
+    undefined,
+    expect.any(Function),
+  );
 });
 
 it("saves the settings picker selection and resets it to the conversation model", async () => {
@@ -147,7 +163,7 @@ it("saves the settings picker selection and resets it to the conversation model"
     providerAccountId: "temporary",
   });
   const reset = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Use conversation model",
+    (button) => button.textContent === "Use default model",
   )!;
   await act(async () => reset.click());
   expect(loadDefaultTranslationChoice()).toBeUndefined();
@@ -156,7 +172,9 @@ it("saves the settings picker selection and resets it to the conversation model"
 it("does not inherit the conversation account when the default has no account", async () => {
   saveDefaultTranslationChoice({ ...choice, providerAccountId: undefined });
   await open();
-  expect(vi.mocked(translateSelection).mock.calls[0][2].providerAccountId).toBeUndefined();
+  expect(vi.mocked(translateSelection).mock.calls[0][2].providerAccountId).toBe(
+    defaultProviderAccountId(choice.harness),
+  );
 });
 
 it("ignores corrupt saved choices and filters invalid model settings", () => {
@@ -173,4 +191,47 @@ it("ignores corrupt saved choices and filters invalid model settings", () => {
       JSON.stringify({ ...choice, modelSettings: { effort: "medium", invalid: false } }),
     )?.modelSettings,
   ).toEqual({ effort: "medium" });
+});
+
+it.each(["en", "reprompt"] as const)(
+  "automatically starts %s and shows one waiting label, then partial text",
+  async (target) => {
+    let finish!: (text: string) => void;
+    vi.mocked(translateSelection).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await open(target);
+    const request = vi.mocked(translateSelection).mock.lastCall!;
+    expect(translateSelection).toHaveBeenCalledOnce();
+    const label = target === "reprompt" ? "Rewriting…" : "Translating…";
+    expect(document.body.textContent?.split(label).length).toBe(2);
+    expect(document.body.textContent).not.toContain("After applying:");
+    await act(async () => request[5]?.("Partial output"));
+    expect(document.body.textContent).toContain("Partial output");
+    const apply = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) =>
+        button.textContent === (target === "reprompt" ? "Apply prompt" : "Apply translation"),
+    )!;
+    expect(apply.disabled).toBe(true);
+    await act(async () => finish("Complete output"));
+    expect(apply.disabled).toBe(false);
+    expect(document.body.textContent).not.toContain(label);
+  },
+);
+
+it("explains a slow request and ignores output after closing", async () => {
+  vi.useFakeTimers();
+  vi.mocked(translateSelection).mockImplementationOnce(() => new Promise(() => {}));
+  await open("reprompt");
+  const request = vi.mocked(translateSelection).mock.lastCall!;
+  await act(async () => vi.advanceTimersByTimeAsync(12000));
+  expect(document.body.textContent).toContain("Taking longer than usual");
+  expect(document.body.textContent).toContain("12s");
+  act(() => root.render(null));
+  expect(request[3].aborted).toBe(true);
+  act(() => request[5]?.("Late output"));
+  expect(document.body.textContent).not.toContain("Late output");
 });

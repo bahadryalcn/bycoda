@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { AsyncResource } from "node:async_hooks";
 import { callConversationAppRead } from "./conversation-app-read";
 import { APP_UI_NAVIGATION_VIEWS, APP_UI_SETTINGS } from "../src/app/model/appUiControl";
 import { createInterface } from "node:readline";
@@ -495,8 +496,15 @@ export const CONVERSATION_TOOLS = {
   "browser.close": object({ leaseId: string }, ["leaseId"]),
   "tasks.list": object({}),
   "tasks.delete": object({ ...task, expectedUpdatedAt: version }, ["taskId", "expectedUpdatedAt"]),
-  "tasks.transfer": object({ ...task, targetProjectId: string, expectedUpdatedAt: version }, ["taskId", "targetProjectId", "expectedUpdatedAt"]),
-  "tasks.notes.resolve": object({ ...task, noteId: string, resolved: { type: "boolean" }, expectedUpdatedAt: version }, ["taskId", "noteId", "resolved", "expectedUpdatedAt"]),
+  "tasks.transfer": object({ ...task, targetProjectId: string, expectedUpdatedAt: version }, [
+    "taskId",
+    "targetProjectId",
+    "expectedUpdatedAt",
+  ]),
+  "tasks.notes.resolve": object(
+    { ...task, noteId: string, resolved: { type: "boolean" }, expectedUpdatedAt: version },
+    ["taskId", "noteId", "resolved", "expectedUpdatedAt"],
+  ),
   "tasks.get": object(task, ["taskId"]),
   "tasks.session.read": object(
     {
@@ -770,7 +778,7 @@ export class ConversationDesktopRelay {
     {
       request: Record<string, unknown>;
       claimed: string | false;
-      authorized: () => boolean;
+      authorized: () => boolean | Promise<boolean>;
       resolve: (value: unknown) => void;
       reject: (error: Error) => void;
       timer: ReturnType<typeof setTimeout>;
@@ -781,7 +789,7 @@ export class ConversationDesktopRelay {
     input: Record<string, unknown>,
     cwd: string,
     principal: RuntimeLogPrincipal,
-    authorized: () => boolean = () => true,
+    authorized: () => boolean | Promise<boolean> = () => true,
   ): Promise<unknown> {
     if (Date.now() - this.lastSeen > 10000)
       throw new Error(
@@ -810,19 +818,21 @@ export class ConversationDesktopRelay {
           deadline,
         },
         claimed: false,
-        authorized,
+        authorized: AsyncResource.bind(authorized),
         resolve,
         reject,
         timer,
       });
     });
   }
-  take(owner = "desktop") {
+  async take(owner = "desktop") {
     this.lastSeen = Date.now();
     const requests: Record<string, unknown>[] = [];
     for (const [id, entry] of this.pending)
       if (!entry.claimed && requests.length < 8) {
-        if (!entry.authorized()) {
+        const authorized = await entry.authorized();
+        if (this.pending.get(id) !== entry || entry.claimed) continue;
+        if (!authorized) {
           clearTimeout(entry.timer);
           this.pending.delete(id);
           entry.reject(new Error("Session authority revoked."));
@@ -834,19 +844,31 @@ export class ConversationDesktopRelay {
     return requests;
   }
   /** Native owner rechecks after a dialog and immediately before an effect. */
-  authorize(id: string, action: string, owner = "desktop") {
+  async authorize(id: string, action: string, owner = "desktop") {
     const entry = this.pending.get(id);
+    if (!entry) return { authorized: false };
     const deadline = entry?.request.deadline;
-    return { authorized: !!entry && entry.claimed === owner && entry.request.action === action &&
-      typeof deadline === "number" && deadline > Date.now() && entry.authorized() };
+    const allowed = !!entry && (await entry.authorized());
+    return {
+      authorized:
+        allowed &&
+        this.pending.get(id) === entry &&
+        entry.claimed === owner &&
+        entry.request.action === action &&
+        typeof deadline === "number" &&
+        deadline > Date.now(),
+    };
   }
-  finish(id: string, value: unknown, error?: string, owner = "desktop") {
+  async finish(id: string, value: unknown, error?: string, owner = "desktop") {
     const entry = this.pending.get(id);
     if (!entry || entry.claimed !== owner)
       throw new Error("Desktop request expired, unknown or owned by another device.");
+    const authorized = await entry.authorized();
+    if (this.pending.get(id) !== entry)
+      throw new Error("Desktop request expired, unknown or owned by another device.");
     clearTimeout(entry.timer);
     this.pending.delete(id);
-    if (!entry.authorized()) entry.reject(new Error("Session authority revoked."));
+    if (!authorized) entry.reject(new Error("Session authority revoked."));
     else if (error) entry.reject(new Error(error));
     else entry.resolve(value);
     return { accepted: true };
@@ -881,7 +903,7 @@ export async function callConversationTool(
         ),
       };
     if (action === "sessions.list" || action === "sessions.read")
-      return callConversationAppRead(action, input, env);
+      return await callConversationAppRead(action, input, env);
   }
   if (!token || !environmentId || !env.BYCODA_CONVERSATION_ENDPOINT)
     throw new Error("Start this agent from bycoda with Conversation Tools connected.");

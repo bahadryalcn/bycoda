@@ -8,7 +8,9 @@ for (const theme of ["light", "dark"])
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/settings.html?section=chat&theme=${theme}&lang=en`);
       const chat = page.locator(".chat-settings");
-      await expect(chat.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
+      await page.getByRole("button", { name: "About this page", exact: true }).click();
+      await expect(page.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
+      await page.keyboard.press("Escape");
       await expect(chat.getByRole("button", { name: "Save templates", exact: true })).toHaveCount(
         0,
       );
@@ -184,6 +186,7 @@ for (const theme of ["light", "dark"])
       await connections.getByRole("searchbox", { name: "Search MCP servers" }).fill("server-24");
       await expect(details).toHaveCount(1);
       await expect(connections.getByRole("status")).toHaveText("1–1 of 1 connections");
+      await details.locator("summary").click();
       await expect(details.getByText(/config-24.json/)).toBeVisible();
       expect(await scroller.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(
         true,

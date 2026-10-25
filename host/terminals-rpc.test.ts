@@ -26,7 +26,7 @@ async function setup() {
     chosenId: null,
     defaultId: "test",
   }));
-  const server = createHostServer(
+  const server = await createHostServer(
     engine,
     [],
     undefined,
@@ -41,7 +41,7 @@ async function setup() {
   );
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as { port: number }).port;
-  const device = store.issueDevice("Owner phone");
+  const device = await store.issueDevice("Owner phone");
   const project = await engine.openProject(projectPath);
   const other = await engine.openProject(otherPath);
   const call = async (
@@ -69,10 +69,11 @@ async function setup() {
   };
   cleanups.push(async () => {
     await terminals.close();
-    await engine.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close();
+    await server.closeResources();
+    await engine.close();
+    await store.close();
     await rm(root, { recursive: true, force: true });
   });
   return { root, project, other, store, server, device, terminals, child, launch, call };
@@ -99,7 +100,7 @@ it("requires paired owner authentication and host identity before any terminal d
         .status,
     ).toBe(400);
   }
-  s.store.revokeToken(s.device.token);
+  await s.store.revokeToken(s.device.token);
   expect(
     (await s.call("terminals.create", { projectId: s.project.id, requestId: "request-02" })).status,
   ).toBe(401);
@@ -157,7 +158,7 @@ it("advertises pipes, deduplicates creation, rejects escaping roots and protects
 
 it("does not allow read-only scoped log credentials to create or write terminals", async () => {
   const s = await setup();
-  s.store.save(
+  await s.store.save(
     {
       projectId: s.project.id,
       revision: 0,
@@ -176,7 +177,7 @@ it("does not allow read-only scoped log credentials to create or write terminals
     },
     {},
   );
-  const credential = s.server.runtimeLogAccess.issueSessionGrant("session");
+  const credential = await s.server.runtimeLogAccess.issueSessionGrant("session");
   for (const method of [
     "terminals.list",
     "terminals.create",

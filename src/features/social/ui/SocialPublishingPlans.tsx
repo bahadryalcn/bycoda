@@ -1,3 +1,6 @@
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { TextField } from "../../../shared/ui/TextField";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { Badge } from "../../../shared/ui/Badge";
@@ -37,6 +40,8 @@ const defaultSchedule = (): PublishingScheduleFields => ({
 });
 
 export function PublishingPlans({ client, snapshot, projects, initialProject, run }: Props) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const campaigns = socialRows(snapshot.campaigns, snapshot.related?.campaigns);
   const jobs = socialRows(snapshot.jobs, snapshot.related?.jobs);
@@ -170,21 +175,23 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                 let saved: SocialPublishingPlan | undefined;
                 void (async () => {
                   if (
-                    !(await run(async () => {
-                      saved = await client.request<SocialPublishingPlan>(
-                        editingId ? "publishing-plans.update" : "publishing-plans.create",
-                        {
-                          ...(editingId
-                            ? { id: editingId, expectedRevision: editingRevision }
-                            : {}),
-                          name: name.trim(),
-                          accountId,
-                          projectId,
-                          campaignIds,
-                          schedule: validation.schedule,
-                        },
-                      );
-                    }, t("Publishing plan saved as paused. Review and enable it."))) ||
+                    !(await pendingUi.run("publishing-plans.save-changes-as-paused", () =>
+                      run(async () => {
+                        saved = await client.request<SocialPublishingPlan>(
+                          editingId ? "publishing-plans.update" : "publishing-plans.create",
+                          {
+                            ...(editingId
+                              ? { id: editingId, expectedRevision: editingRevision }
+                              : {}),
+                            name: name.trim(),
+                            accountId,
+                            projectId,
+                            campaignIds,
+                            schedule: validation.schedule,
+                          },
+                        );
+                      }, t("Publishing plan saved as paused. Review and enable it.")),
+                    )) ||
                     !saved
                   )
                     return;
@@ -199,6 +206,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
             >
               <div className="social-plan-content">
                 <TextField
+                  disabled={socialLocked}
                   label={t("Plan name")}
                   required
                   maxLength={200}
@@ -220,7 +228,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                           : [{ value: "", label: t("Connect an account first") }]
                       }
                       value={accountId}
-                      disabled={completedCampaignIds.length > 0}
+                      disabled={socialLocked || completedCampaignIds.length > 0}
                       onChange={(event) => {
                         setAccountId(event.target.value);
                         setCampaignIds([]);
@@ -241,7 +249,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                           : [{ value: "", label: t("No project found") }]
                       }
                       value={projectId}
-                      disabled={completedCampaignIds.length > 0}
+                      disabled={socialLocked || completedCampaignIds.length > 0}
                       onChange={(event) => {
                         setProjectId(event.target.value);
                         setCampaignIds([]);
@@ -287,7 +295,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                           <Button
                             variant="secondary"
                             type="button"
-                            disabled={index <= completedCampaignIds.length}
+                            disabled={socialLocked || index <= completedCampaignIds.length}
                             aria-label={t("Move campaign {p0} up", { p0: index + 1 })}
                             onClick={() =>
                               setCampaignIds((current) => {
@@ -303,6 +311,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                             variant="secondary"
                             type="button"
                             disabled={
+                              socialLocked ||
                               index < completedCampaignIds.length ||
                               index === campaignIds.length - 1
                             }
@@ -334,7 +343,12 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     "Each campaign is shared once. The plan stops when the content pool ends; add new approved campaigns to continue.",
                   )}
                 </p>
-                <Button type="submit" variant="secondary" disabled={!canSave}>
+                <Button
+                  loading={pendingUi.is("publishing-plans.save-changes-as-paused")}
+                  type="submit"
+                  variant="secondary"
+                  disabled={socialLocked || !canSave}
+                >
                   {editingId ? t("Save changes as paused") : t("Save plan as paused")}
                 </Button>
                 {!name.trim() || !account || !projectId || invalidPool ? (
@@ -347,6 +361,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                 <legend>{t("When should it share?")}</legend>
                 <div className="social-actions" aria-label={t("Schedule presets")}>
                   <Button
+                    disabled={socialLocked}
                     variant="secondary"
                     type="button"
                     onClick={() =>
@@ -361,6 +376,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     {t("09:00–18:00 · every 2–5 hours")}
                   </Button>
                   <Button
+                    disabled={socialLocked}
                     variant="secondary"
                     type="button"
                     onClick={() =>
@@ -375,6 +391,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     {t("09:00–22:00 · every 3 hours")}
                   </Button>
                   <Button
+                    disabled={socialLocked}
                     variant="secondary"
                     type="button"
                     onClick={() => updateSchedule({ startTime: "00:00", endTime: "00:00" })}
@@ -384,6 +401,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                 </div>
                 <div className="social-form-grid">
                   <TextField
+                    disabled={socialLocked}
                     label={t("Start time")}
                     type="time"
                     value={scheduleDraft.startTime}
@@ -391,6 +409,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     required
                   />
                   <TextField
+                    disabled={socialLocked}
                     label={t("End time")}
                     type="time"
                     value={scheduleDraft.endTime}
@@ -398,6 +417,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     required
                   />
                   <TextField
+                    disabled={socialLocked}
                     label={t("Shortest interval · hours")}
                     type="number"
                     step="any"
@@ -408,6 +428,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     required
                   />
                   <TextField
+                    disabled={socialLocked}
                     label={t("Longest interval · hours")}
                     type="number"
                     step="any"
@@ -420,6 +441,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                 </div>
                 <div>
                   <TextField
+                    disabled={socialLocked}
                     label={t("Time zone")}
                     value={scheduleDraft.timeZone}
                     onChange={(event) => updateSchedule({ timeZone: event.target.value })}
@@ -456,6 +478,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
               {plans.length ? (
                 plans.map((plan) => (
                   <Button
+                    disabled={socialLocked}
                     type="button"
                     variant="tab"
                     key={plan.id}
@@ -631,6 +654,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                   {!selected.enabled && remaining > 0 ? (
                     <label className="social-check">
                       <Checkbox
+                        disabled={socialLocked}
                         checked={reviewConfirmed}
                         onChange={(event) =>
                           setReviewed(
@@ -659,12 +683,16 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     </Badge>
                     {selected.enabled ? (
                       <Button
+                        loading={pendingUi.is("publishing-plan.pause")}
+                        disabled={socialLocked}
                         type="button"
                         variant="secondary"
                         onClick={() =>
-                          void run(
-                            () => client.request("publishing-plans.pause", { id: selected.id }),
-                            t("Automatic publishing plan paused."),
+                          void pendingUi.run("publishing-plan.pause", () =>
+                            run(
+                              () => client.request("publishing-plans.pause", { id: selected.id }),
+                              t("Automatic publishing plan paused."),
+                            ),
                           )
                         }
                       >
@@ -672,19 +700,22 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                       </Button>
                     ) : (
                       <Button
+                        loading={pendingUi.is("publishing-plan.enable")}
                         type="button"
                         variant="secondary"
-                        disabled={!!activationReason}
+                        disabled={socialLocked || !!activationReason}
                         onClick={() =>
-                          void run(
-                            () =>
-                              client.request("publishing-plans.activate", {
-                                id: selected.id,
-                                revision: selected.revision,
-                                confirm: "ACTIVATE_PUBLISHING_PLAN",
-                              }),
-                            t(
-                              "Automatic publishing plan enabled. The next publication time is shown above.",
+                          void pendingUi.run("publishing-plan.enable", () =>
+                            run(
+                              () =>
+                                client.request("publishing-plans.activate", {
+                                  id: selected.id,
+                                  revision: selected.revision,
+                                  confirm: "ACTIVATE_PUBLISHING_PLAN",
+                                }),
+                              t(
+                                "Automatic publishing plan enabled. The next publication time is shown above.",
+                              ),
                             ),
                           )
                         }
@@ -693,6 +724,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                       </Button>
                     )}
                     <Button
+                      disabled={socialLocked}
                       type="button"
                       variant="secondary"
                       onClick={() => {

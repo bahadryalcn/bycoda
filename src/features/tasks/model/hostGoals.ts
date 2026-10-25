@@ -5,12 +5,20 @@ import type { HostTask } from "./hostTasks";
 import { parseTaskWorkspace, type TaskWorkspace } from "./taskWorkspace";
 import { MAX_RUNNING_TASKS_LIMIT } from "./hostSettings";
 import { readTaskInstructions } from "./taskInstructions";
+import type { TaskAcceptanceReport } from "./taskAcceptance";
+import { parseTaskRunBudget, type TaskRunBudget, type TaskRunBudgetUsage } from "./taskBudget";
 
 /** One main job a machine's host breaks into tasks across several of its
  * projects and carries out. The host advertises this capability when it has
  * it. */
 export const HOST_GOALS = "goals";
 export const HOST_DIRECT_GOALS = "goals.direct-checkout";
+/** Independent integrated acceptance after every planned task is delivered. */
+export const HOST_GOAL_FINAL_REVIEW = "goals.final-review";
+export const GOAL_FINAL_ACCEPTANCE_CRITERIA = [
+  "The integrated result satisfies the complete original goal and its explicit acceptance requirements.",
+  "The delivered tasks work together correctly in the required end-to-end workflow, with concrete verification evidence.",
+] as const;
 
 export const GOAL_STATUSES = [
   "planning",
@@ -67,6 +75,32 @@ export type HostGoalInput = {
   autoMerge?: boolean;
   /** Planned tasks keep correcting actionable failures while making progress. */
   continueUntilDone?: boolean;
+  /** New goals may require an independent final review of the original outcome. */
+  finalReview?: boolean;
+  budget?: TaskRunBudget;
+};
+
+export type GoalFinalAcceptance = {
+  status: "pending" | "running" | "passed" | "failed";
+  taskFingerprint: string;
+  /** Current child identity that invalidated this recorded review. */
+  invalidatedTaskFingerprint?: string;
+  /** Stable launch receipt across a host interruption before session persistence. */
+  requestId?: string;
+  workspaceFingerprint?: string;
+  /** Snapshots unavailable for one or more delivered outputs; not proof of freshness. */
+  freshnessUnknown?: boolean;
+  /** Prevent duplicate machine-minute accounting while an async snapshot settles. */
+  accountedRunId?: string;
+  sessionId?: string;
+  runId?: string;
+  startedAt?: number;
+  completedAt?: number;
+  note?: string;
+  error?: string;
+  recoveryPending?: boolean;
+  formatRepairAttempts?: number;
+  acceptance?: TaskAcceptanceReport;
 };
 
 /** One task of a plan, as the planner wrote it. */
@@ -91,6 +125,7 @@ export type GoalSettings = {
   /** Zero uses the machine limit. */
   maxRunningTasks: number;
   maxRunMinutes: number;
+  budget?: TaskRunBudget;
 };
 
 export type HostGoal = HostGoalInput & {
@@ -100,6 +135,11 @@ export type HostGoal = HostGoalInput & {
   planError?: string;
   /** Why the goal is blocked once it has tasks, e.g. "1 of 3 tasks blocked: …". */
   error?: string;
+  /** Host-owned final acceptance; never accepted from a creation request. */
+  finalAcceptance?: GoalFinalAcceptance;
+  finalAcceptanceHistory?: GoalFinalAcceptance[];
+  budgetUsage?: TaskRunBudgetUsage;
+  budgetStop?: string;
   /** What the owner asked the planner to change, for the next plan. */
   feedback?: string;
   /** The planner's session turn, kept after it finished. */
@@ -186,7 +226,8 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     (v.approvePlan !== undefined && typeof v.approvePlan !== "boolean") ||
     (v.isolate !== undefined && typeof v.isolate !== "boolean") ||
     (v.autoMerge !== undefined && typeof v.autoMerge !== "boolean") ||
-    (v.continueUntilDone !== undefined && typeof v.continueUntilDone !== "boolean")
+    (v.continueUntilDone !== undefined && typeof v.continueUntilDone !== "boolean") ||
+    (v.finalReview !== undefined && typeof v.finalReview !== "boolean")
   )
     throw new Error("Invalid goal options");
   const verify = v.verifyDefaults ?? {};
@@ -215,7 +256,9 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     projectIds,
     leadProjectId: v.leadProjectId,
     harness: v.harness,
-    ...(v.providerAccountId === undefined ? {} : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
+    ...(v.providerAccountId === undefined
+      ? {}
+      : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
     model: v.model,
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,
@@ -231,6 +274,8 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     approvePlan: v.approvePlan === true,
     ...(v.autoMerge === true ? { autoMerge: true } : {}),
     ...(v.continueUntilDone === true ? { continueUntilDone: true } : {}),
+    ...(v.finalReview === true ? { finalReview: true } : {}),
+    ...(v.budget === undefined ? {} : { budget: parseTaskRunBudget(v.budget) }),
   };
 }
 

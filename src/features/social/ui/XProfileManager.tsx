@@ -1,11 +1,15 @@
-import { useState } from "react";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
+import { useContext, useRef, useState } from "react";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Progress } from "../../../shared/ui/Progress";
 import { t, useLocale } from "../../../shared/i18n";
 import type { SocialClient } from "../model/socialClient";
 import type { XProfilePatch, XProfileState } from "../model/socialBrowser";
+import { SocialBusyContext } from "./socialContext";
 
 export function XProfileManager({
   accountId,
@@ -17,6 +21,7 @@ export function XProfileManager({
   accountName?: string;
   client: SocialClient;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [saved, setSaved] = useState<XProfileState>();
   const [values, setValues] = useState<XProfileState>();
@@ -24,12 +29,16 @@ export function XProfileManager({
     {},
   );
   const [handle, setHandle] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string>();
+  const workspaceBusy = useContext(SocialBusyContext);
+  const occupied = useRef(false);
+  const busy = !!pending || workspaceBusy;
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
-  const run = async (action: () => Promise<void>) => {
-    if (busy) return;
-    setBusy(true);
+  const run = async (key: string, action: () => Promise<void>) => {
+    if (busy || occupied.current) return;
+    occupied.current = true;
+    setPending(key);
     setError("");
     setStatus("");
     try {
@@ -41,7 +50,8 @@ export function XProfileManager({
         ),
       );
     } finally {
-      setBusy(false);
+      occupied.current = false;
+      setPending(undefined);
     }
   };
   const patch: XProfilePatch = { ...images };
@@ -60,9 +70,10 @@ export function XProfileManager({
       <Button
         type="button"
         variant="secondary"
-        disabled={busy}
+        disabled={socialLocked || busy}
+        loading={pending === "read"}
         onClick={() =>
-          void run(async () => {
+          void run("read", async () => {
             const profile = await client.xProfileRead(accountId);
             setSaved(profile);
             setValues(profile);
@@ -77,7 +88,7 @@ export function XProfileManager({
           onSubmit={(event) => {
             event.preventDefault();
             if (busy || !Object.keys(patch).length) return;
-            void run(async () => {
+            void run("save", async () => {
               const profile = await client.xProfileUpdate(accountId, patch);
               setSaved(profile);
               setValues(profile);
@@ -86,9 +97,10 @@ export function XProfileManager({
             });
           }}
         >
-          <fieldset disabled={busy}>
+          <fieldset>
             <TextField
               label={t("Profile name")}
+              disabled={socialLocked || busy}
               maxLength={50}
               required
               value={values.name}
@@ -96,18 +108,21 @@ export function XProfileManager({
             />
             <TextareaField
               label={t("About")}
+              disabled={socialLocked || busy}
               maxLength={160}
               value={values.bio}
               onChange={(e) => setValues({ ...values, bio: e.target.value })}
             />
             <TextField
               label={t("Location")}
+              disabled={socialLocked || busy}
               maxLength={30}
               value={values.location}
               onChange={(e) => setValues({ ...values, location: e.target.value })}
             />
             <TextField
               label={t("Website")}
+              disabled={socialLocked || busy}
               type="url"
               maxLength={100}
               value={values.website}
@@ -116,6 +131,7 @@ export function XProfileManager({
             {(["avatarUploadId", "bannerUploadId"] as const).map((key) => (
               <div key={key}>
                 <TextField
+                  disabled={socialLocked || busy}
                   label={
                     key === "avatarUploadId"
                       ? t("Profile image · JPEG/PNG, 5 MiB")
@@ -127,15 +143,17 @@ export function XProfileManager({
                     const file = event.target.files?.[0];
                     event.target.value = "";
                     if (!file || busy) return;
-                    void run(async () => {
+                    void run(key, async () => {
                       const upload = await client.upload(file);
                       setImages((current) => ({ ...current, [key]: upload.uploadId }));
                       setStatus(t("Image is ready; it will be applied when the profile is saved."));
                     });
                   }}
                 />
+                {pending === key ? <Progress label={t("Operation in progress…")} /> : null}
                 {images[key] ? (
                   <Button
+                    disabled={socialLocked || busy}
                     type="button"
                     variant="secondary"
                     tone="danger"
@@ -156,7 +174,11 @@ export function XProfileManager({
               <p className="social-muted">{t("No profile changes to apply.")}</p>
             ) : null}
             <div className="social-actions">
-              <Button type="submit" disabled={!Object.keys(patch).length}>
+              <Button
+                type="submit"
+                loading={pending === "save"}
+                disabled={socialLocked || busy || !Object.keys(patch).length}
+              >
                 {t("Apply changes to X profile")}
               </Button>
               {account}
@@ -168,7 +190,7 @@ export function XProfileManager({
         onSubmit={(event) => {
           event.preventDefault();
           if (busy || !handleValid) return;
-          void run(async () => {
+          void run("follow", async () => {
             const result = await client.xProfileFollow(accountId, handle);
             setStatus(
               result.changed
@@ -181,7 +203,7 @@ export function XProfileManager({
         <TextField
           label={t("X username to follow")}
           value={handle}
-          disabled={busy}
+          disabled={socialLocked || busy}
           placeholder={t("username")}
           maxLength={15}
           pattern="[A-Za-z0-9_]{1,15}"
@@ -191,7 +213,11 @@ export function XProfileManager({
           <p className="social-muted">{t("Use up to 15 letters, digits or underscores.")}</p>
         ) : null}
         <div className="social-actions">
-          <Button type="submit" disabled={busy || !handleValid}>
+          <Button
+            type="submit"
+            loading={pending === "follow"}
+            disabled={socialLocked || busy || !handleValid}
+          >
             {t("Follow this account")}
           </Button>
           {account}

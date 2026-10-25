@@ -88,3 +88,46 @@ it("uploads selected images together, rejects mixed video and preserves existing
     vi.unstubAllGlobals();
   }
 });
+
+it("shows indeterminate progress instead of a fictitious percentage for image uploads", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element);
+  let finish!: (value: { uploadId: string }) => void;
+  const upload = vi.fn(
+    () =>
+      new Promise<{ uploadId: string }>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  try {
+    await act(async () =>
+      root.render(
+        createElement(XMediaFields, {
+          value: [],
+          client: { upload } as unknown as SocialClient,
+          onChange: vi.fn(),
+        }),
+      ),
+    );
+    const input = element.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["image"], "image.png", { type: "image/png" })],
+    });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(element.querySelector('[role="progressbar"]')).not.toBeNull();
+    expect(element.querySelector('[role="progressbar"]')?.hasAttribute("aria-valuenow")).toBe(
+      false,
+    );
+    expect(element.textContent).not.toContain("0%");
+    await act(async () => finish({ uploadId: "uploaded" }));
+    expect(input.disabled).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    element.remove();
+    vi.unstubAllGlobals();
+  }
+});

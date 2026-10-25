@@ -88,7 +88,32 @@ async function click(label: string) {
     button.click();
   });
 }
+
 describe("session recovery navigation", () => {
+  it("keeps progress on the chosen recovery action and prevents duplicate requests", async () => {
+    let finish!: () => void;
+    onOpen.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    render();
+    const button = [...container.querySelectorAll("button")].find((item) =>
+      item.textContent?.startsWith("Open all"),
+    )!;
+    button.focus();
+    act(() => {
+      button.click();
+      button.click();
+    });
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(container.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(button);
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => finish());
+    expect(onClose).toHaveBeenCalledOnce();
+  });
   it("removes selected entries without opening or deleting conversations", async () => {
     act(() => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     await click("Remove selected");

@@ -8,17 +8,31 @@ export const LIVE_BACKGROUND_CHANGE_EVENT = "bycoda:livebackgroundchange";
 
 export type LiveBackground =
   | "none"
+  | "threads"
+  | "silk"
+  | "dark-veil"
+  | "soft-aurora"
+  | "floating-lines"
   | "neural-tree"
   | "latent-face"
   | "thought-weaver"
-  | "ascii-mask";
+  | "ascii-mask"
+  | "dot-grid"
+  | "code-rain";
 
 export const LIVE_BACKGROUNDS: readonly LiveBackground[] = [
   "none",
+  "threads",
+  "silk",
+  "dark-veil",
+  "soft-aurora",
+  "floating-lines",
   "neural-tree",
   "latent-face",
   "thought-weaver",
   "ascii-mask",
+  "dot-grid",
+  "code-rain",
 ];
 
 /** New installations stay still until the owner chooses a scene. */
@@ -29,7 +43,6 @@ const LEGACY_SCENES: Readonly<Record<string, LiveBackground>> = {
   "world-tree": "neural-tree",
   "gradient-ascii": "latent-face",
   orb: "latent-face",
-  "code-rain": "thought-weaver",
   "micro-slats": "thought-weaver",
   "web-threads": "thought-weaver",
   scanner: "thought-weaver",
@@ -38,7 +51,6 @@ const LEGACY_SCENES: Readonly<Record<string, LiveBackground>> = {
   "side-rays": "thought-weaver",
   "light-rays": "thought-weaver",
   "pixel-blast": "thought-weaver",
-  "dot-grid": "thought-weaver",
   hyperspeed: "thought-weaver",
   "letter-glitch": "thought-weaver",
 };
@@ -51,6 +63,16 @@ export function liveBackgroundLabel(value: LiveBackground): string {
   switch (value) {
     case "none":
       return t("None");
+    case "threads":
+      return "Threads";
+    case "silk":
+      return "Silk";
+    case "dark-veil":
+      return "Dark Veil";
+    case "soft-aurora":
+      return "Soft Aurora";
+    case "floating-lines":
+      return "Floating Lines";
     case "neural-tree":
       return t("Neural tree");
     case "latent-face":
@@ -59,6 +81,10 @@ export function liveBackgroundLabel(value: LiveBackground): string {
       return t("Thought weaver");
     case "ascii-mask":
       return t("ASCII mask");
+    case "dot-grid":
+      return t("Dot grid");
+    case "code-rain":
+      return t("Code rain");
   }
 }
 
@@ -66,6 +92,16 @@ export function liveBackgroundDescription(value: LiveBackground): string {
   switch (value) {
     case "none":
       return t("No animated layer behind chat panes.");
+    case "threads":
+      return t("Fine flowing lines that gently wake while the AI replies.");
+    case "silk":
+      return t("Soft satin folds that flow quietly behind the conversation.");
+    case "dark-veil":
+      return t("A quiet veil of light that responds to AI activity.");
+    case "soft-aurora":
+      return t("Soft aurora light that flows with the conversation.");
+    case "floating-lines":
+      return t("Fine floating ribbons that follow the AI’s activity.");
     case "neural-tree":
       return t("A quiet neural tree. Light follows its branches while the AI replies.");
     case "latent-face":
@@ -74,6 +110,10 @@ export function liveBackgroundDescription(value: LiveBackground): string {
       return t("A small digital loom weaves delicate threads while the AI replies.");
     case "ascii-mask":
       return t("A faint mask surfaces from an ASCII gradient while the AI replies.");
+    case "dot-grid":
+      return t("A grid of dots that ripples outward while the AI replies.");
+    case "code-rain":
+      return t("Flickering characters drift down behind the conversation.");
   }
 }
 

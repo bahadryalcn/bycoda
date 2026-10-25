@@ -10,6 +10,7 @@ it("keeps Cancel usable while waiting for browser sign-in and blocks duplicate s
   document.body.append(container);
   const root = createRoot(container);
   const onCancel = vi.fn();
+  const onSubmit = vi.fn();
   try {
     act(() =>
       root.render(
@@ -18,7 +19,7 @@ it("keeps Cancel usable while waiting for browser sign-in and blocks duplicate s
           working: true,
           onLabel: vi.fn(),
           onCancel,
-          onSubmit: vi.fn(),
+          onSubmit,
         }),
       ),
     );
@@ -26,9 +27,14 @@ it("keeps Cancel usable while waiting for browser sign-in and blocks duplicate s
       (button) => button.textContent === "Cancel",
     )!;
     expect(cancel.disabled).toBe(false);
-    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(
-      true,
-    );
+    const submit = container.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    expect(submit.getAttribute("aria-disabled")).toBe("true");
+    expect(submit.getAttribute("aria-busy")).toBe("true");
+    act(() => {
+      submit.click();
+      submit.click();
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
     act(() => cancel.click());
     expect(onCancel).toHaveBeenCalledOnce();
   } finally {

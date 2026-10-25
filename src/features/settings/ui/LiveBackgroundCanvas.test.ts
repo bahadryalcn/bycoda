@@ -176,3 +176,23 @@ it("does not start a loop in a window that is already behind another application
   expect(raf).not.toHaveBeenCalled();
   expect(state.draw).toHaveBeenCalled();
 });
+
+it.each([false, true])("bounds full-pane drawing buffers on an 8K display (still=%s)", (still) => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width: 7680,
+    height: 4320,
+  } as DOMRect);
+  act(() =>
+    root.render(
+      createElement(LiveBackgroundCanvas, {
+        effect: "latent-face",
+        intensity: 0.4,
+        still,
+      }),
+    ),
+  );
+  const canvas = container.querySelector("canvas")!;
+  expect(canvas.width * canvas.height).toBeLessThan(2_505_000);
+  expect(canvas.width / canvas.height).toBeCloseTo(7680 / 4320, 2);
+  expect(state.draw).toHaveBeenCalled();
+});

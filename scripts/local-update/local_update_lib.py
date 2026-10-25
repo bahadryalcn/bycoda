@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import sqlite3
 import subprocess
 import time
@@ -120,6 +121,94 @@ def ps(script):
 
 def ps_quote(value):
     return "'" + str(value).replace("'", "''") + "'"
+
+class UpdaterLaunchRefused(RuntimeError):
+    pass
+
+def spawn_windows_updater(args, cwd, receipt=None, launch_key=None):
+    """The local WMI broker outlives an app-owned kill-on-close job.
+
+    This uses the current user, without elevation, credentials or a persistent
+    task. CREATE_NO_WINDOW alone does not detach a CreateProcess descendant.
+    0x09000000 combines NO_WINDOW with breakaway from WMI's own provider quota
+    job, not from the caller's deliberately non-breakaway app-managed job.
+    """
+    command = subprocess.list2cmdline([str(value) for value in args])
+    receipt_script = ''
+    if receipt is not None:
+        if not launch_key:
+            raise ValueError('Updater launch receipt requires a key')
+        receipt_script = (
+            '$receipt=@{pid=[int]$result.ProcessId;verified=$verified;launchKey=' + ps_quote(launch_key) + '};'
+            '[IO.File]::WriteAllText(' + ps_quote(receipt) + ',($receipt|ConvertTo-Json -Compress),'
+            '(New-Object Text.UTF8Encoding($false)));'
+        )
+    script = (
+        '$startup=New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly '
+        '-Property @{ShowWindow=[uint16]0;CreateFlags=[uint32]150994944};'
+        '$result=Invoke-CimMethod -ClassName Win32_Process -MethodName Create '
+        '-Arguments @{CommandLine=' + ps_quote(command) + ';CurrentDirectory=' + ps_quote(cwd) +
+        ';ProcessStartupInformation=$startup};'
+        'if($result.ReturnValue -ne 0){throw ("BYCODA_CREATE_REFUSED:"+$result.ReturnValue)};'
+        '$verified=$false;' + receipt_script +
+        '$child=Get-CimInstance Win32_Process -Filter ("ProcessId="+$result.ProcessId);'
+        'if(-not $child){throw "Updater broker process exited during launch"};'
+        'if($child.SessionId -ne [Diagnostics.Process]::GetCurrentProcess().SessionId)'
+        '{throw "Updater broker session mismatch"};'
+        '$owner=Invoke-CimMethod -InputObject $child -MethodName GetOwnerSid;'
+        'if($owner.ReturnValue -ne 0 -or $owner.Sid -ne '
+        '[Security.Principal.WindowsIdentity]::GetCurrent().User.Value)'
+        '{throw "Updater broker process owner mismatch"};'
+        '$verified=$true;' + receipt_script +
+        '[Console]::Write($result.ProcessId)'
+    )
+    try:
+        value = ps(script)
+    except subprocess.CalledProcessError as error:
+        if 'BYCODA_CREATE_REFUSED:' in (error.stderr or ''):
+            raise UpdaterLaunchRefused('Updater broker refused process creation') from error
+        raise RuntimeError('Updater broker verification did not complete') from error
+    try:
+        pid = int(value)
+    except (TypeError, ValueError):
+        raise RuntimeError('Updater broker did not return a process id') from None
+    if pid <= 0 or not alive(pid):
+        raise RuntimeError('Updater broker process exited during launch')
+    return pid
+
+def windows_installer_idle(processes, release, app, previous_helper=None):
+    """Classify only updater ownership and relevant installer ambiguity; never kill."""
+    normalize = lambda value: str(value or '').replace('/', '\\').lower()
+    release_path, app_path = normalize(release), normalize(app.parent)
+    setup, uninstall = release_path + '\\setup.exe', app_path + '\\uninstall.exe'
+    owned = {previous_helper} if type(previous_helper) is int and previous_helper > 0 else set()
+    if not isinstance(processes, list):
+        raise RuntimeError('Cannot verify Windows installer idle state')
+    for row in processes:
+        if not isinstance(row, dict) or type(row.get('ProcessId')) is not int:
+            raise RuntimeError('Cannot verify Windows installer idle state')
+    while True:
+        descendants = {row['ProcessId'] for row in processes if row.get('ParentProcessId') in owned}
+        if descendants <= owned:
+            break
+        owned |= descendants
+    for row in processes:
+        path, command, name = normalize(row.get('ExecutablePath')), normalize(row.get('CommandLine')), normalize(row.get('Name'))
+        relevant_name = name == 'setup.exe' or bool(re.match(r'(bycoda.*setup|unins.*)\.exe$', name))
+        nsis_temp = bool(re.search(r'\\(?:~?ns[isu][^\\]*|ns[0-9a-f]+)\.tmp(?:\\|$)', path))
+        product_setup = bool(re.match(r'bycoda.*setup.*\.exe$', name))
+        if row['ProcessId'] in owned or path in (setup, uninstall) or setup in command or uninstall in command or nsis_temp or product_setup or (relevant_name and (app_path in command or release_path in command or not path or not command)):
+            raise RuntimeError('Windows installation/recovery process is still running or ambiguous; recovery required')
+
+def assert_windows_installer_idle(release, app, previous_helper=None):
+    raw = ps('@(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine) | ConvertTo-Json -Compress')
+    try:
+        rows = json.loads(raw)
+    except (ValueError, TypeError):
+        raise RuntimeError('Cannot verify Windows installer idle state') from None
+    if isinstance(rows, dict):
+        rows = [rows]
+    windows_installer_idle(rows, release, app, previous_helper)
 
 def count(db, sql):
     # Failure must never look like zero active sessions.

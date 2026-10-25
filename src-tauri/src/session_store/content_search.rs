@@ -16,8 +16,8 @@
 //! session whose recorded `updated_at` differs from the live one is simply
 //! re-indexed. That is how existing rows are covered after the migration — the
 //! migration only creates empty tables (instant), and [`sync_index`] fills them
-//! lazily, from a background thread after startup and, bounded by a time budget,
-//! ahead of each search. Small transactional revision/dirty rows identify changed
+//! lazily, from a background thread after startup or a pending search. Small
+//! transactional revision/dirty rows identify changed
 //! sessions; foreground searches never reconstruct the full freshness library.
 //!
 //! Matching is token-based: every whitespace-separated query term must occur,
@@ -30,7 +30,7 @@
 //! to the highlighter alike, one `char` to one `char`, so offsets in the folded
 //! text are offsets in the original.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -58,8 +58,6 @@ const MAX_RANGES_PER_SNIPPET: usize = 8;
 const SNIPPET_RADIUS: usize = 60;
 const MAX_QUERY_TERMS: usize = 12;
 const MAX_QUERY_CHARS: usize = 200;
-/// How long one search may spend indexing sessions that are not indexed yet.
-const SEARCH_SYNC_BUDGET: Duration = Duration::from_millis(1500);
 const INDEXED_ROLES: [&str; 6] = ["user", "assistant", "tool", "tasks", "plan", "image"];
 
 pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -608,9 +606,9 @@ fn es(error: rusqlite::Error) -> String {
 
 /// Sessions the index does not cover (or covers at an older `updated_at`),
 /// newest first. Reads only the covering index, never a transcript.
-fn stale_sessions(conn: &Connection) -> rusqlite::Result<Vec<(String, i64, i64)>> {
-    conn.prepare("SELECT session_id,updated_at,version FROM session_search_dirty ORDER BY updated_at DESC,session_id LIMIT 64")?
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+fn stale_sessions(conn: &Connection, limit: usize) -> rusqlite::Result<Vec<(String, i64, i64)>> {
+    conn.prepare("SELECT session_id,updated_at,version FROM session_search_dirty ORDER BY updated_at DESC,session_id LIMIT ?1")?
+        .query_map([limit as i64], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
         .collect()
 }
 
@@ -716,10 +714,8 @@ fn index_session(
                             blocks.push(block);
                         }
                     }
-                    Err(_) => {
-                        blocks.clear();
-                        cursor = length;
-                        break;
+                    Err(error) => {
+                        return Err(format!("Stored transcript could not be indexed: {error}"))
                     }
                 }
                 if blocks.len() >= MAX_BLOCKS_PER_SESSION {
@@ -742,7 +738,7 @@ fn index_session(
         }) {
             Ok(Some(offsets)) => offsets,
             Ok(None) => return Ok(false),
-            Err(_) => Vec::new(), // Legacy malformed blobs stay untouched and index as empty.
+            Err(error) => return Err(format!("Stored transcript could not be indexed: {error}")),
         };
         for (start, end) in offsets {
             if !may_continue(deadline, keep_going) {
@@ -775,40 +771,90 @@ pub(super) fn sync_index(
     deadline: Option<Instant>,
     keep_going: &dyn Fn() -> bool,
 ) -> Result<usize, String> {
+    let mut failed = HashSet::new();
+    let mut first_error = None;
     while may_continue(deadline, keep_going) {
-        let stale = with_index_reader(store, |conn| stale_sessions(conn).map_err(es))?;
+        let stale = with_index_reader(store, |conn| {
+            stale_sessions(conn, 64 + failed.len()).map_err(es)
+        })?;
         if stale.is_empty() {
             break;
         }
         let mut progressed = false;
+        let failed_before = failed.len();
         for (id, updated_at, version) in stale {
+            if failed.contains(&id) {
+                continue;
+            }
             if !may_continue(deadline, keep_going) {
                 break;
             }
-            if index_session(store, &id, updated_at, version, deadline, keep_going)? {
-                progressed = true;
-            } else if !may_continue(deadline, keep_going) {
-                break;
+            match index_session(store, &id, updated_at, version, deadline, keep_going) {
+                Ok(true) => progressed = true,
+                Ok(false) if !may_continue(deadline, keep_going) => break,
+                Ok(false) => {}
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                    failed.insert(id);
+                }
             }
         }
-        if !progressed {
+        if !progressed && failed.len() == failed_before {
             break;
         }
+    }
+    if let Some(error) = first_error {
+        return Err(error);
     }
     with_index_reader(store, |conn| pending_count(conn).map_err(es))
 }
 
 /// Startup pass: index everything, in the background, off the UI path.
+pub(super) struct IndexFailure {
+    version: i64,
+    query: String,
+    message: String,
+}
+
+fn source_version(store: &SessionStore) -> Result<i64, String> {
+    with_index_reader(store, |conn| {
+        conn.query_row(
+            "SELECT version FROM session_search_revision WHERE id=1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(es)
+    })
+}
+
 pub(super) fn index_in_background(store: &SessionStore) {
     let Ok(_guard) = store.search_index_lock.lock() else {
         return;
     };
-    if let Err(error) = sync_index(
+    let version = source_version(store).unwrap_or(-1);
+    let query = store
+        .search_background_query
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
+    let result = sync_index(
         store,
         Some(Instant::now() + Duration::from_secs(30)),
         &|| true,
-    ) {
+    );
+    let mut failure = store
+        .search_background_error
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if let Err(error) = result {
         eprintln!("session search index: {error}");
+        *failure = Some(IndexFailure {
+            version,
+            query,
+            message: error,
+        });
+    } else {
+        *failure = None;
     }
 }
 
@@ -832,6 +878,8 @@ pub struct ContentSearchOptions {
     pub until: Option<i64>,
     #[serde(default)]
     pub search_owner: String,
+    #[serde(default)]
+    pub retry_index: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -867,6 +915,9 @@ pub struct ContentSearchResult {
     pub truncated: bool,
     /// Sessions not indexed yet (their titles are searched, their text is not).
     pub pending: usize,
+    /// Background failure stops automatic retries while committed hits remain usable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index_error: Option<String>,
 }
 
 /// Path identity as the frontend's `pathKey`: slashes, no trailing slash, and
@@ -906,18 +957,45 @@ pub(super) fn search_content(
     }
     let token = begin_session_search(&options.search_owner);
     let _release = SessionSearchRelease(token.clone());
-
-    // Index what is missing, within a budget, unless a background pass is
-    // already at it.
-    let pending = match store.search_index_lock.try_lock() {
-        Ok(_guard) => {
-            let deadline = Instant::now() + SEARCH_SYNC_BUDGET;
-            sync_index(store, Some(deadline), &|| {
-                session_search_is_current(token.as_ref())
-            })?
+    // Polls use fresh cancellation owners, so exclude that owner from the
+    // logical search identity. A stable failed version must not retry forever.
+    let query_key = serde_json::to_string(&(
+        options.query.trim(),
+        &options.cwds,
+        &options.harness,
+        options.include_archived,
+        options.since,
+        options.until,
+    ))
+    .map_err(|error| error.to_string())?;
+    let version = source_version(store)?;
+    let index_error = {
+        let mut failure = store
+            .search_background_error
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(error) = failure.as_ref() {
+            if !options.retry_index && error.version == version && error.query == query_key {
+                Some(format!(
+                    "Session content index could not be updated. Retry the search. {}",
+                    error.message
+                ))
+            } else {
+                *failure = None;
+                None
+            }
+        } else {
+            None
         }
-        Err(_) => with_index_reader(store, |conn| pending_count(conn).map_err(es))?,
     };
+    *store
+        .search_background_query
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = query_key;
+    // Return the committed index immediately. The command owner queues a
+    // background pass when pending > 0, and the UI already refreshes pending
+    // searches. Even one oversized JSON block must not be decoded here.
+    let pending = with_index_reader(store, |conn| pending_count(conn).map_err(es))?;
     if !session_search_is_current(token.as_ref()) {
         return Ok(ContentSearchResult::default());
     }
@@ -935,6 +1013,7 @@ pub(super) fn search_content(
     match result {
         Ok(Some(mut result)) => {
             result.pending = pending;
+            result.index_error = index_error;
             Ok(result)
         }
         // Superseded or cancelled: the caller discards it anyway.
@@ -1093,6 +1172,7 @@ fn run_search(
         sessions,
         truncated,
         pending: 0,
+        index_error: None,
     }))
 }
 
@@ -1135,7 +1215,29 @@ mod tests {
     }
 
     fn search(store: &SessionStore, query: &str) -> ContentSearchResult {
+        sync_index(store, None, &|| true).unwrap();
         search_content(store, &options(query)).unwrap()
+    }
+
+    #[test]
+    fn foreground_search_returns_pending_without_decoding_dirty_transcripts() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            insert_session(&conn, "pending", "/work", "Pending", &json!([]));
+            // Decoding this would fail. The first read must return the existing
+            // committed index, leaving catch-up to the background owner.
+            conn.execute(
+                "UPDATE sessions SET blocks_json='invalid json' WHERE id='pending'",
+                [],
+            )
+            .unwrap();
+        }
+        let result = search_content(&store, &options("needle")).unwrap();
+        assert!(result.sessions.is_empty());
+        assert_eq!(result.pending, 1);
+        let conn = store.lock_conn().unwrap();
+        assert_eq!(pending_count(&conn).unwrap(), 1);
     }
 
     #[test]
@@ -1184,7 +1286,7 @@ mod tests {
             assert_eq!(control.len(), 10_000);
             let before = steps.swap(0, Ordering::Relaxed);
             assert_eq!(pending_count(&conn).unwrap(), 0);
-            assert!(stale_sessions(&conn).unwrap().is_empty());
+            assert!(stale_sessions(&conn, 64).unwrap().is_empty());
             let after = steps.load(Ordering::Relaxed);
             conn.progress_handler(0, None::<fn() -> bool>).unwrap();
             println!("native fresh-index 10k metadata rows: control progress ticks {before}; dirty queue {after}");
@@ -1505,6 +1607,7 @@ mod tests {
             conn.execute("UPDATE sessions SET archived = 1 WHERE id = 'gone'", [])
                 .unwrap();
         }
+        sync_index(&store, None, &|| true).unwrap();
         let ids = |options: ContentSearchOptions| -> Vec<String> {
             search_content(&store, &options)
                 .unwrap()
@@ -1589,7 +1692,7 @@ mod tests {
     }
 
     #[test]
-    fn indexing_leaves_the_transcript_untouched_and_skips_unparseable_ones() {
+    fn indexing_leaves_the_transcript_untouched_and_reports_unparseable_ones() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.lock_conn().unwrap();
         insert_session(
@@ -1607,7 +1710,7 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        assert_eq!(sync_index(&store, None, &|| true).unwrap(), 0);
+        assert!(sync_index(&store, None, &|| true).is_err());
         let conn = store.lock_conn().unwrap();
         let raw: String = conn
             .query_row(
@@ -1617,6 +1720,107 @@ mod tests {
             )
             .unwrap();
         assert_eq!(raw, "not json");
+        assert_eq!(pending_count(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn background_failure_keeps_healthy_hits_and_retries_on_explicit_search_or_new_data() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            insert_session(
+                &conn,
+                "bad",
+                "/w",
+                "Previous",
+                &json!([message("old", "user", "needle previous")]),
+            );
+        }
+        sync_index(&store, None, &|| true).unwrap();
+        let query = options("needle");
+        search_content(&store, &query).unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            conn.execute(
+                "UPDATE sessions SET blocks_json='not json',updated_at=2 WHERE id='bad'",
+                [],
+            )
+            .unwrap();
+            insert_session(
+                &conn,
+                "healthy",
+                "/w",
+                "Healthy",
+                &json!([message("new", "user", "needle healthy")]),
+            );
+        }
+        index_in_background(&store);
+        let failed = search_content(&store, &query).unwrap();
+        assert_eq!(failed.sessions.len(), 2);
+        assert_eq!(failed.pending, 1);
+        assert!(failed.index_error.is_some());
+        assert!(search_content(&store, &query)
+            .unwrap()
+            .index_error
+            .is_some());
+        assert_eq!(
+            store
+                .lock_conn()
+                .unwrap()
+                .query_row(
+                    "SELECT blocks_json FROM sessions WHERE id='bad'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "not json"
+        );
+
+        let mut retry = query.clone();
+        retry.retry_index = true;
+        assert!(search_content(&store, &retry)
+            .unwrap()
+            .index_error
+            .is_none());
+        index_in_background(&store);
+        assert!(search_content(&store, &query)
+            .unwrap()
+            .index_error
+            .is_some());
+        // A genuinely new search gets a fresh attempt, but its following poll
+        // sees the stable failure instead of repeatedly restarting the worker.
+        let changed_query = options("healthy");
+        assert!(search_content(&store, &changed_query)
+            .unwrap()
+            .index_error
+            .is_none());
+        index_in_background(&store);
+        assert!(search_content(&store, &changed_query)
+            .unwrap()
+            .index_error
+            .is_some());
+        {
+            let conn = store.lock_conn().unwrap();
+            conn.execute(
+                "UPDATE sessions SET blocks_json=?1,updated_at=3 WHERE id='bad'",
+                [json!([message("fixed", "user", "needle corrected")]).to_string()],
+            )
+            .unwrap();
+        }
+        assert!(search_content(&store, &changed_query)
+            .unwrap()
+            .index_error
+            .is_none());
+        index_in_background(&store);
+        let fixed = search_content(&store, &query).unwrap();
+        assert!(fixed.index_error.is_none());
+        assert_eq!(fixed.pending, 0);
+        assert_eq!(fixed.sessions.len(), 2);
+        assert!(fixed
+            .sessions
+            .iter()
+            .flat_map(|session| &session.hits)
+            .any(|hit| hit.block_id == "fixed"));
     }
 
     #[test]
@@ -1795,8 +1999,7 @@ mod tests {
         let started = Instant::now();
         let first = search_content(&store, &options("zebrafinch")).unwrap();
         println!(
-            "first search incl. {} ms indexing budget: {:?}, {} sessions, pending {}",
-            SEARCH_SYNC_BUDGET.as_millis(),
+            "first search without foreground indexing: {:?}, {} sessions, pending {}",
             started.elapsed(),
             first.sessions.len(),
             first.pending

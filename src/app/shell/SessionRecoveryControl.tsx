@@ -58,10 +58,10 @@ export function SessionRecoveryControl({
           variant="ghost"
           motion="none"
           type="button"
-          className="recovery-rail-clear recovery-remove opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+          className={`recovery-rail-clear recovery-remove ${pending ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
           title={t("Clear list")}
           aria-label={t("Clear list")}
-          disabled={pending}
+          loading={pending}
           onClick={() => void clear()}
         >
           <Check className="size-3.5" aria-hidden="true" />

@@ -1,3 +1,5 @@
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { useContext } from "react";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect, type SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
@@ -23,6 +25,7 @@ export function SocialMultiSelect({
   searchPlaceholder?: string;
   disabled?: boolean;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const busy = useContext(SocialBusyContext);
   return (
@@ -34,7 +37,7 @@ export function SocialMultiSelect({
         options={options}
         value={selected}
         onChange={onChange}
-        disabled={disabled || busy}
+        disabled={socialLocked || disabled || busy}
         placeholder={placeholder}
         searchPlaceholder={searchPlaceholder}
         emptyLabel={options.length ? t("No options match your search.") : t("No options yet.")}

@@ -16,9 +16,12 @@ import sys
 import tarfile
 import time
 import tomllib
+import uuid
 
 from local_update_lib import (digest, lock, read_json, run, safe_child,
-                              tree_hashes, verify_tree, write_json, alive, windows_binary_digest, PRODUCT_IDENTITY, package_identity)
+                              tree_hashes, verify_tree, write_json, alive, windows_binary_digest, PRODUCT_IDENTITY, package_identity,
+                              spawn_windows_updater, UpdaterLaunchRefused, assert_windows_installer_idle)
+from local_install import verify_host
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TOOLS = ('local_update.py', 'local_update_lib.py', 'local_install.py')
@@ -116,6 +119,12 @@ def host_key(files):
                         if '.test.' not in n and
                         (n.startswith(('host/', 'src/')) or n.startswith('package.') or n == 'LICENSE')})
 
+def bundled_host_key(archive):
+    # The installer ships these generated resources even when no Rust/web source
+    # changed. Fingerprint bytes rather than source so Node/package changes count.
+    return fingerprint({archive.name: digest(archive).encode('ascii'),
+                        archive.name + '.sha256': pathlib.Path(f'{archive}.sha256').read_bytes()})
+
 def dependency_action(workspace, files, installed_key=None, previous_package=None):
     """Never reinstall just because a build cache is missing or force-build is set."""
     if not (workspace / 'node_modules').is_dir():
@@ -168,12 +177,54 @@ def legacy_updaters():
 
 def status():
     base = pathlib.Path.home() / PRODUCT_IDENTITY['hostDirectory'] / 'update-jobs'
-    return {component: read_json(base / (component+'.json')) if (base / (component+'.json')).exists()
+    return {component: install_job_status(read_json(base / (component+'.json'))) if (base / (component+'.json')).exists()
             else {'state': 'not scheduled by this pipeline'} for component in ('host', 'app')}
+
+def install_job_status(record):
+    result = dict(record)
+    pid = record.get('pid')
+    if not pid and record.get('state') in ('launching', 'launch-unknown'):
+        try:
+            component = record['component']
+            if component not in ('host', 'app') or pathlib.Path(record['launchReceipt']) != pathlib.Path(record['releaseDirectory']) / ('launch-' + component + '.json'):
+                raise ValueError('Unexpected updater receipt path')
+            receipt = read_json(record['launchReceipt'])
+            if not isinstance(receipt, dict):
+                raise ValueError('Unexpected updater receipt')
+            if receipt.get('launchKey') == record.get('launchKey') and isinstance(record.get('launchKey'), str) and re.fullmatch('[a-f0-9]{32}', record['launchKey']) and type(receipt.get('pid')) is int and receipt['pid'] > 0:
+                pid = receipt['pid']
+                result['pid'] = pid
+                result['launchVerified'] = receipt.get('verified') is True
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # A broker may still be atomically publishing its receipt.
+        try:
+            if record.get('component') not in ('host', 'app') or not re.fullmatch('[a-f0-9]{32}', str(record.get('launchKey', ''))):
+                raise ValueError('Unexpected updater launch classification')
+            failure_path = pathlib.Path(record['releaseDirectory']) / ('launch-' + record['component'] + '-' + record['launchKey'] + '.error.json')
+            failure = read_json(failure_path)
+            if not isinstance(failure, dict):
+                raise ValueError('Unexpected updater launch classification')
+            if failure.get('launchKey') == record['launchKey']:
+                result['state'] = 'failed' if failure.get('kind') == 'refused' and not pid else 'launch-unknown'
+                result['recordedState'] = record.get('state')
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    if record.get('state') in ('installed', 'failed') or type(pid) is not int or pid <= 0:
+        result['helperAlive'] = None
+    else:
+        result['helperAlive'] = alive(pid)
+        if not result['helperAlive']:
+            result['recordedState'] = record.get('state')
+            result['state'] = 'interrupted'
+    return result
 
 def install_job_active(record):
     # Completed helpers can leave a PID later reused by an unrelated process.
-    return record.get('state') not in ('installed', 'failed') and alive(record.get('pid'))
+    record = install_job_status(record)
+    if record.get('state') in ('launching', 'launch-unknown') and not record.get('pid'):
+        return True
+    pid = record.get('pid')
+    return record.get('state') not in ('installed', 'failed') and type(pid) is int and pid > 0 and alive(pid)
 
 def stage(name, command, workspace, env, release, timings):
     print(f'[{sys.platform}] {name}', flush=True)
@@ -194,12 +245,15 @@ def queue_install(release, components=('host', 'app')):
     results = {}
     for component in components:
         record = base / (component + '.json')
-        old = read_json(record) if record.exists() else {}
+        old = install_job_status(read_json(record)) if record.exists() else {}
+        if old.get('state') == 'launch-unknown' and not old.get('pid'):
+            raise RuntimeError('Updater launch outcome is unknown; inspect the launch receipt before retrying')
         if old.get('id') == manifest['id'] and old.get('state') == 'installed':
             try:
                 if component == 'host':
                     runtime = pathlib.Path((pathlib.Path.home()/PRODUCT_IDENTITY['hostDirectory']/'runtime-path').read_text().strip())
                     verify_tree(runtime, manifest['hostHashes'])
+                    verify_host(runtime)
                 else:
                     binary = (pathlib.Path(os.environ['LOCALAPPDATA'])/PRODUCT_IDENTITY['productName']/(PRODUCT_IDENTITY['binaryName']+'.exe') if os.name == 'nt'
                               else pathlib.Path('/Applications')/(PRODUCT_IDENTITY['productName']+'.app')/'Contents/MacOS'/PRODUCT_IDENTITY['binaryName'])
@@ -214,18 +268,33 @@ def queue_install(release, components=('host', 'app')):
                 raise RuntimeError(f'{component} updater already running for another package; see {record}')
             results[component] = str(record)
             continue
+        if os.name == 'nt' and component == 'app' and (old.get('recordedState', old.get('state')) == 'installing' or (release / 'rollback-app/installation').exists()):
+            app = pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName'] / (PRODUCT_IDENTITY['binaryName'] + '.exe')
+            assert_windows_installer_idle(release, app, old.get('pid'))
         log = release / ('install-' + component + '.log')
-        options = dict(stdin=subprocess.DEVNULL, cwd=release)
-        if os.name == 'nt':
-            options['creationflags'] = subprocess.CREATE_NO_WINDOW
-        else:
-            options['start_new_session'] = True
-        write_json(record, {'pid': None, 'id': manifest['id'], 'state': 'launching', 'log': str(log)})
-        with log.open('ab') as output:
-            child = subprocess.Popen([sys.executable, str(release / 'local_install.py'),
-                                      str(release / 'manifest.json'), component],
-                                     stdout=output, stderr=output, **options)
-        write_json(release / ('launch-'+component+'.json'), {'pid': child.pid, 'log': str(log)})
+        command = [sys.executable, '-B', str(release / 'local_install.py'),
+                   str(release / 'manifest.json'), component]
+        receipt = release / ('launch-'+component+'.json')
+        launch_key = uuid.uuid4().hex
+        write_json(record, {'pid': None, 'id': manifest['id'], 'state': 'launching', 'log': str(log),
+                            'launchKey': launch_key, 'launchReceipt': str(receipt),
+                            'component': component, 'releaseDirectory': str(release)})
+        try:
+            if os.name == 'nt':
+                pid = spawn_windows_updater(command + ['--log', str(log), '--broker-receipt', str(receipt),
+                                                        '--broker-key', launch_key], release, receipt, launch_key)
+            else:
+                with log.open('ab') as output:
+                    child = subprocess.Popen(command, stdin=subprocess.DEVNULL, cwd=release,
+                                             start_new_session=True, stdout=output, stderr=output)
+                pid = child.pid
+        except Exception as error:
+            # Never race the helper's first/advanced report. Classification lives
+            # in an attempt-specific sidecar and is projected only for this launch.
+            write_json(release / ('launch-' + component + '-' + launch_key + '.error.json'),
+                       {'launchKey': launch_key, 'kind': 'refused' if isinstance(error, UpdaterLaunchRefused) else 'unknown'})
+            raise
+        write_json(receipt, {'pid': pid, 'log': str(log), 'launchKey': launch_key, 'verified': True})
         results[component] = str(record)
     write_json(release / 'install-jobs.json', results)
     print(f'[{sys.platform}] install jobs scheduled; state: {base}', flush=True)
@@ -355,6 +424,7 @@ def worker(request):
             stage('host', ['pnpm', 'run', 'host:package'], workspace, env, release, timings)
             cache['host'] = keys['host']
             write_json(cache_file, cache)
+        keys['native'] += ':bundled-host-v1:' + bundled_host_key(archive)
         if needed('web', (workspace / 'dist/index.html').exists()):
             stage('web', ['pnpm', 'run', 'build'], workspace, env, release, timings)
             cache['web'] = keys['web']

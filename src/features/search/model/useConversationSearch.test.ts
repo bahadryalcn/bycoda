@@ -124,3 +124,41 @@ it("retains incomplete results if an indexing poll fails and stops polling until
   await advance(6000);
   expect(searchSessionContent).toHaveBeenCalledTimes(2);
 });
+
+it("shows healthy committed hits with a background index error and retries only on request", async () => {
+  const healthy: SessionContentResult = {
+    ...empty,
+    pending: 1,
+    indexError: "Index failed",
+    sessions: [
+      {
+        sessionId: "healthy",
+        cwd: "/repo",
+        harness: "codex",
+        title: "Healthy",
+        titleRanges: [],
+        createdAt: 1,
+        updatedAt: 1,
+        archived: false,
+        hitCount: 1,
+        hits: [],
+      },
+    ],
+  };
+  searchSessionContent
+    .mockResolvedValueOnce(healthy)
+    .mockResolvedValueOnce({ ...healthy, indexError: undefined })
+    .mockResolvedValue(empty);
+  await render("needle");
+  await advance(200);
+  expect(view.result.sessions[0].sessionId).toBe("healthy");
+  expect(view.error).toBe("Index failed");
+  await advance(6000);
+  expect(searchSessionContent).toHaveBeenCalledTimes(1);
+  act(() => view.retry());
+  await advance(200);
+  expect(searchSessionContent.mock.calls[1][0].retryIndex).toBe(true);
+  await advance(2000);
+  expect(searchSessionContent).toHaveBeenCalledTimes(3);
+  expect(searchSessionContent.mock.calls[2][0].retryIndex).toBeUndefined();
+});

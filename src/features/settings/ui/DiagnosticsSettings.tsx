@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { getPerformanceTrace, clearPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import {
@@ -7,7 +7,7 @@ import {
 } from "../../../shared/lib/performanceTraceSettings";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { Button } from "../../../shared/ui/Button";
-import { Group, Row, Toggle } from "./settingsControls";
+import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
 
 /** Timings only: the copied JSON holds stage names, times, durations and counters. */
 export function DiagnosticsGroup() {
@@ -15,6 +15,9 @@ export function DiagnosticsGroup() {
   const [enabled, setEnabled] = useState(loadPerformanceTraceEnabled);
   const [copied, setCopied] = useState(false);
   const [cleared, setCleared] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const copyPending = useRef(false);
 
   useEffect(() => {
     if (!copied && !cleared) return;
@@ -31,9 +34,25 @@ export function DiagnosticsGroup() {
   };
 
   const onCopy = async () => {
-    const payload = { version: 1, exportedAt: new Date().toISOString(), records: getPerformanceTrace() };
-    await copyText(JSON.stringify(payload, null, 2));
-    setCopied(true);
+    if (copyPending.current) return;
+    copyPending.current = true;
+    setCopying(true);
+    setCopied(false);
+    setError(null);
+    try {
+      const payload = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        records: getPerformanceTrace(),
+      };
+      await copyText(JSON.stringify(payload, null, 2));
+      setCopied(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      copyPending.current = false;
+      setCopying(false);
+    }
   };
 
   const onClear = () => {
@@ -56,14 +75,15 @@ export function DiagnosticsGroup() {
         id="performance-trace-data"
         label={t("Trace data")}
         description={t("Copy the recorded timings as JSON, or clear them.")}
+        feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
       >
         <span role="status" className="text-ui-caption text-(--ui-text-secondary)">
           {copied ? t("Copied") : cleared ? t("Cleared") : ""}
         </span>
-        <Button className="shrink-0" onClick={onCopy}>
+        <Button className="shrink-0" onClick={onCopy} loading={copying}>
           {t("Copy trace")}
         </Button>
-        <Button className="shrink-0" onClick={onClear}>
+        <Button className="shrink-0" onClick={onClear} disabled={copying}>
           {t("Clear")}
         </Button>
       </Row>

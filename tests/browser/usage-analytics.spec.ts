@@ -69,6 +69,7 @@ for (const [theme, width] of [
     await dialog.getByRole("button", { name: /^Date range:/ }).click();
     await expect(page.getByRole("dialog", { name: "Date range", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Date range", exact: true })).toBeHidden();
     await expect(dialog).toBeVisible();
     const date = await page.evaluate(() => {
       const d = new Date();
@@ -77,9 +78,11 @@ for (const [theme, width] of [
     });
     await dialog.getByLabel("Start date and time", { exact: true }).fill(`${date}T14:00`);
     await dialog.getByLabel("End date and time", { exact: true }).fill(`${date}T13:00`);
-    await expect(dialog.getByRole("button", { name: "Apply", exact: true })).toBeDisabled();
+    const applyRange = dialog.locator('button[type="submit"]');
+    await expect(applyRange).toHaveAccessibleName("Apply");
+    await expect(applyRange).toBeDisabled();
     await dialog.getByLabel("End date and time", { exact: true }).fill(`${date}T18:00`);
-    await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+    await applyRange.click();
     await expect(dialog).toBeHidden();
     await select(page, "Resolution", "Hourly");
     await page.keyboard.press("Escape");

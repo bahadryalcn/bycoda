@@ -16,6 +16,7 @@ import {
   HOST_CREWS,
   HOST_CREW_TASKS,
   HOST_CREW_DELETE,
+  HOST_CREW_RUN_DELETE,
   HOST_CREW_AGENT_GROUPS,
   type CrewDefinition,
   type CrewRun,
@@ -30,6 +31,7 @@ export type ProjectCrews = {
   taskExecutionSupported?: boolean;
   /** Older hosts keep every saved crew; delete needs this host capability. */
   deleteSupported?: boolean;
+  runDeleteSupported?: boolean;
   /** Older hosts drop member groups and library sources, so their controls stay hidden. */
   groupsSupported?: boolean;
   machine: RemoteMachine;
@@ -56,7 +58,10 @@ export function useProjectCrews(cwd: string, enabled = true) {
           "crews.list",
           { projectId: project.id },
         ),
-        remoteRequest<HostModelCatalog>(machine.id, "models.list", { projectId: project.id }),
+        remoteRequest<HostModelCatalog>(machine.id, "models.list", {
+          projectId: project.id,
+          progressive: true,
+        }),
       ]);
       const capabilities = await machineCapabilities(machine);
       return {
@@ -66,6 +71,7 @@ export function useProjectCrews(cwd: string, enabled = true) {
         catalog,
         taskExecutionSupported: capabilities.includes(HOST_CREW_TASKS),
         deleteSupported: capabilities.includes(HOST_CREW_DELETE),
+        runDeleteSupported: capabilities.includes(HOST_CREW_RUN_DELETE),
         groupsSupported: capabilities.includes(HOST_CREW_AGENT_GROUPS),
       };
     },
@@ -73,7 +79,11 @@ export function useProjectCrews(cwd: string, enabled = true) {
     // Active runs change quickly. Without one, this app's own calls invalidate the
     // query, and a slower poll still picks up runs that agents start through the host.
     refetchInterval: (query) =>
-      query.state.data?.runs.some((run) => run.status === "active") ? 5000 : 15_000,
+      query.state.data?.catalog.pending?.length
+        ? 1000
+        : query.state.data?.runs.some((run) => run.status === "active")
+          ? 5000
+          : 15_000,
     retry: false,
   });
   const call = async <T = unknown>(action: string, input: Record<string, unknown>): Promise<T> => {

@@ -68,6 +68,7 @@ import {
 import type { ProjectReturnMemory } from "../../features/projects/model/projectReturn";
 import { appName } from "../../shared/lib/appName";
 import { readToolWindow } from "./toolWindows";
+import { setSessions } from "../../features/sessions/model/sessionsStore";
 
 export type { ResumedWorkspace };
 import {
@@ -86,7 +87,7 @@ export { hasInFlightSessions };
 export type BootWorkspace = {
   windowTransfer: WindowTransferPayload | null;
   resumed: ResumedWorkspace | null;
-  /** Sidebar rows listed before first paint, so the rail is not empty. */
+  /** Ready sidebar rows; slow history is refreshed by the mounted workspace. */
   history: SessionSummary[];
   historyCwd: string | null;
 };
@@ -96,6 +97,34 @@ let bootPromise: Promise<BootWorkspace> | null = null;
 let quitting = false;
 let quitDialogOpen = false;
 let bootingResumed: ResumedWorkspace | null = null;
+let deferredBootReads: (() => Promise<void>)[] = [];
+
+function publishBootSession(original: Session, hydrated: Session): void {
+  if (quitting) return;
+  const owns = (session: Session) =>
+    session.id === original.id &&
+    !session.busy &&
+    session.blocks === original.blocks &&
+    session.queuedMessages === original.queuedMessages;
+  if (bootingResumed)
+    bootingResumed.sessions = bootingResumed.sessions.map((session) =>
+      owns(session) ? hydrated : session,
+    );
+  if (liveWorkspace)
+    setSessions((sessions) => sessions.map((session) => (owns(session) ? hydrated : session)));
+}
+
+function startDeferredBootReads(): void {
+  const jobs = deferredBootReads;
+  deferredBootReads = [];
+  const worker = async () => {
+    while (jobs.length && !quitting) await jobs.shift()!();
+  };
+  // Earlier-page hydration shares native storage. Avoid flooding it with all
+  // hidden tabs at once, and never start before the workspace owns live state.
+  void worker();
+  void worker();
+}
 let liveWorkspace: {
   sessions: () => Session[];
   tabs: () => WorkspaceTab[];
@@ -135,6 +164,7 @@ export function setQuitWorkspace(
     flush,
   };
   bootingResumed = null;
+  startDeferredBootReads();
   return () => {
     if (liveWorkspace?.sessions === sessions) liveWorkspace = null;
   };
@@ -284,13 +314,17 @@ export function loadBootWorkspace(): Promise<BootWorkspace> {
         };
       }
       const hintedCwd = lastProjectPath();
-      const historyHint = listProjectHistory(hintedCwd);
-      const [resumed, hinted] = await Promise.all([loadResumedWorkspace(), historyHint]);
-      const listed = await historyForCwd(
-        resumed?.projectCwd ?? hintedCwd,
-        hintedCwd,
-        Promise.resolve(hinted),
-      );
+      const historyHint: { value: Awaited<ReturnType<typeof listProjectHistory>> } = {
+        value: null,
+      };
+      void listProjectHistory(hintedCwd).then((value) => {
+        historyHint.value = value;
+      });
+      const resumed = await loadResumedWorkspace();
+      const listed =
+        hintedCwd && sameProjectPath(resumed?.projectCwd ?? hintedCwd, hintedCwd)
+          ? historyHint.value
+          : null;
       return {
         windowTransfer: null,
         resumed,
@@ -312,16 +346,6 @@ async function listProjectHistory(
   } catch {
     return null;
   }
-}
-
-async function historyForCwd(
-  cwd: string | null | undefined,
-  hintedCwd: string | null | undefined,
-  hinted: Promise<{ cwd: string; rows: SessionSummary[] } | null>,
-): Promise<{ cwd: string; rows: SessionSummary[] } | null> {
-  if (!cwd || cwd === "~") return null;
-  if (hintedCwd && sameProjectPath(cwd, hintedCwd)) return hinted;
-  return listProjectHistory(cwd);
 }
 
 async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
@@ -380,10 +404,37 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   }
   for (const ref of refs) ids.add(ref.sessionId);
 
+  const activeIds = new Set(
+    snapshot?.tabs
+      .filter((tab) => tab.id === snapshot.activeTabId)
+      .flatMap((tab) => leafIds(tab.layout)) ?? [],
+  );
+  const savedIds = new Set(snapshot?.sessions.map((session) => session.id));
+  // References absent from the saved layout still need an authoritative record
+  // to reconstruct their tabs. Known inactive tabs can recover after mount.
+  for (const id of interrupted) if (!savedIds.has(id)) activeIds.add(id);
+  // A workspace without a saved layout still needs its recovered references.
+  if (!snapshot) for (const id of ids) activeIds.add(id);
   const loaded = new Map<string, Session>();
   await Promise.all(
-    [...ids].map(async (id) => {
-      const record = await getSession(id).catch(() => null);
+    [...activeIds].map(async (id) => {
+      const record = await getSession(
+        id,
+        interrupted.has(id)
+          ? undefined
+          : {
+              onHydrated: (original, hydrated) => {
+                if (loaded.get(id)?.blocks === original.blocks) loaded.set(id, hydrated);
+                publishBootSession(original, hydrated);
+              },
+              onHydrationFailed: (original) =>
+                publishBootSession(original, {
+                  ...original,
+                  historyLoadError:
+                    "Earlier messages could not be loaded. Reopen this chat to retry.",
+                }),
+            },
+      ).catch(() => null);
       if (record) loaded.set(id, record);
     }),
   );
@@ -400,12 +451,94 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   }
 
   if (workspace) {
+    workspace.sessions = workspace.sessions.map((session) => {
+      if (activeIds.has(session.id) || !ids.has(session.id)) return session;
+      const placeholder = { ...session, historyLoading: true };
+      const owns = () =>
+        !!liveWorkspace
+          ?.sessions()
+          .some(
+            (value) =>
+              value.id === placeholder.id &&
+              !value.busy &&
+              value.blocks === placeholder.blocks &&
+              value.queuedMessages === placeholder.queuedMessages,
+          );
+      if (interrupted.has(session.id)) {
+        deferredBootReads.push(async () => {
+          try {
+            if (!owns()) return;
+            const record = await getSession(session.id);
+            if (!record) throw new Error("Stored session is unavailable.");
+            if (!owns()) return;
+            const recovered = await recoverInterruptedTurn(markTurnInterrupted(record));
+            if (!owns()) return;
+            if (shouldPersistSession(recovered)) await upsertSession(recovered);
+            publishBootSession(placeholder, recovered);
+          } catch {
+            publishBootSession(placeholder, {
+              ...placeholder,
+              historyLoadError: "Earlier messages could not be loaded. Reopen this chat to retry.",
+            });
+          }
+        });
+        return placeholder;
+      }
+      deferredBootReads.push(
+        () =>
+          new Promise<void>((resolve) => {
+            if (!owns()) {
+              resolve();
+              return;
+            }
+            void getSession(session.id, {
+              onHydrated: (original, hydrated) => {
+                publishBootSession(original, hydrated);
+                if (!hydrated.historyLoading) resolve();
+              },
+              onHydrationFailed: (original) => {
+                publishBootSession(original, {
+                  ...original,
+                  historyLoadError:
+                    "Earlier messages could not be loaded. Reopen this chat to retry.",
+                });
+                resolve();
+              },
+            })
+              .then((record) => {
+                publishBootSession(
+                  placeholder,
+                  record ?? { ...placeholder, historyLoading: false },
+                );
+                if (!record?.historyLoading) resolve();
+              })
+              .catch(() => {
+                publishBootSession(placeholder, {
+                  ...placeholder,
+                  historyLoadError:
+                    "Earlier messages could not be loaded. Reopen this chat to retry.",
+                });
+                resolve();
+              });
+          }),
+      );
+      return placeholder;
+    });
+    // Progressive callbacks can finish while interrupted sessions are being
+    // recovered. Publish into this same object rather than restoring an older
+    // non-interrupted tail after that await.
+    bootingResumed = workspace;
     const recovered = await Promise.all(
       workspace.sessions.map((session) =>
-        interrupted.has(session.id) ? recoverInterruptedTurn(session) : session,
+        interrupted.has(session.id) && !session.historyLoading
+          ? recoverInterruptedTurn(session)
+          : session,
       ),
     );
-    workspace = { ...workspace, sessions: recovered };
+    const recoveredById = new Map(recovered.map((session) => [session.id, session]));
+    workspace.sessions = workspace.sessions.map((session) =>
+      interrupted.has(session.id) ? (recoveredById.get(session.id) ?? session) : session,
+    );
   }
 
   bootingResumed = workspace;
@@ -417,6 +550,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
         // Drafts live in their own store and stay with the tab, so they do not keep it here.
         !isUnsentRemoteChat(session, remoteShellState(session, { hasDraft: false })) &&
         (session.cwd.startsWith("remote://") ||
+          session.historyLoading ||
           session.blocks.some((block) => block.role === "user") ||
           (session.rewindHistory?.length ?? 0) > 0),
     );

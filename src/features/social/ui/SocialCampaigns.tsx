@@ -1,3 +1,7 @@
+import { Progress } from "../../../shared/ui/Progress";
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
 import { NativeSelect } from "../../../shared/ui/Select";
@@ -80,6 +84,8 @@ export function Campaigns({
   run,
   onFilterChange,
 }: Props) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const queryClient = useQueryClient();
   const [view, setView] = useState<"manual" | "ai">("manual");
@@ -286,38 +292,40 @@ export function Campaigns({
               let saved: SocialCampaign | undefined;
               void (async () => {
                 if (
-                  !(await run(async () => {
-                    if (
-                      !name.trim() ||
-                      !validProjects ||
-                      !variants.length ||
-                      invalidVariants ||
-                      Object.keys(videoProgress).length > 0
-                    )
-                      throw new Error(
-                        t("Check the project, account access, content limits and publish times."),
+                  !(await pendingUi.run("campaigns.save-campaign-draft", () =>
+                    run(async () => {
+                      if (
+                        !name.trim() ||
+                        !validProjects ||
+                        !variants.length ||
+                        invalidVariants ||
+                        Object.keys(videoProgress).length > 0
+                      )
+                        throw new Error(
+                          t("Check the project, account access, content limits and publish times."),
+                        );
+                      await Promise.all(
+                        variants.map(async (variant) => {
+                          const { effective } = await client.request<{
+                            effective: SocialPolicy;
+                          }>("policy.get", { accountId: variant.accountId });
+                          const limit = socialLimit(effective, "content");
+                          if (limit !== undefined && variantCount(variant) > limit)
+                            throw new Error(
+                              t("Content for this account can be at most {p0} characters.", {
+                                p0: limit,
+                              }),
+                            );
+                        }),
                       );
-                    await Promise.all(
-                      variants.map(async (variant) => {
-                        const { effective } = await client.request<{
-                          effective: SocialPolicy;
-                        }>("policy.get", { accountId: variant.accountId });
-                        const limit = socialLimit(effective, "content");
-                        if (limit !== undefined && variantCount(variant) > limit)
-                          throw new Error(
-                            t("Content for this account can be at most {p0} characters.", {
-                              p0: limit,
-                            }),
-                          );
-                      }),
-                    );
-                    saved = await client.request<SocialCampaign>("campaigns.create", {
-                      ...(editingId ? { id: editingId, expectedRevision: editingRevision } : {}),
-                      name,
-                      projectIds: selectedProjects,
-                      variants,
-                    });
-                  }, t("Campaign draft saved. Review the preview and approve it for publishing."))) ||
+                      saved = await client.request<SocialCampaign>("campaigns.create", {
+                        ...(editingId ? { id: editingId, expectedRevision: editingRevision } : {}),
+                        name,
+                        projectIds: selectedProjects,
+                        variants,
+                      });
+                    }, t("Campaign draft saved. Review the preview and approve it for publishing.")),
+                  )) ||
                   !saved
                 )
                   return;
@@ -332,6 +340,7 @@ export function Campaigns({
             }}
           >
             <TextField
+              disabled={socialLocked}
               label={t("Campaign name")}
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -390,6 +399,7 @@ export function Campaigns({
                 "youtube" ? (
                   <>
                     <TextField
+                      disabled={socialLocked}
                       label={t("Video title")}
                       required
                       maxLength={100}
@@ -407,6 +417,7 @@ export function Campaigns({
                     <label>
                       {t("Video visibility")}
                       <NativeSelect
+                        disabled={socialLocked}
                         value={variant.youtube?.privacy ?? "private"}
                         onChange={(event) =>
                           update(variant.accountId, {
@@ -427,6 +438,7 @@ export function Campaigns({
                       <legend>{t("Content declaration")}</legend>
                       <label>
                         <Checkbox
+                          disabled={socialLocked}
                           checked={variant.youtube?.madeForKids ?? false}
                           onChange={(event) =>
                             update(variant.accountId, {
@@ -442,6 +454,7 @@ export function Campaigns({
                       </label>
                       <label>
                         <Checkbox
+                          disabled={socialLocked}
                           checked={variant.youtube?.containsSyntheticMedia ?? false}
                           onChange={(event) =>
                             update(variant.accountId, {
@@ -458,6 +471,7 @@ export function Campaigns({
                     </fieldset>
                     <div>
                       <TextField
+                        disabled={socialLocked}
                         label={t("Upload the video to the host · MP4/WebM, up to 64 MiB")}
                         type="file"
                         accept="video/mp4,video/webm"
@@ -512,6 +526,7 @@ export function Campaigns({
                 ) : null}
                 <div>
                   <TextareaField
+                    disabled={socialLocked}
                     label={t("Content for this account")}
                     value={variant.text}
                     required
@@ -544,6 +559,7 @@ export function Campaigns({
                 <details className="social-settings">
                   <summary>{t("One-time publish time, media and link")}</summary>
                   <TextField
+                    disabled={socialLocked}
                     label={t("Link")}
                     type="url"
                     placeholder="https://"
@@ -555,6 +571,7 @@ export function Campaigns({
                     }
                   />
                   <TextField
+                    disabled={socialLocked}
                     label={t("One-time schedule time · this computer's time zone")}
                     type="datetime-local"
                     required
@@ -571,6 +588,7 @@ export function Campaigns({
                       ["youtube", "tiktok"].includes(account.platform),
                   ) ? (
                     <TextField
+                      disabled={socialLocked}
                       label={t("HTTPS image URL")}
                       type="url"
                       placeholder="https://"
@@ -608,20 +626,26 @@ export function Campaigns({
                   ) ? (
                     <div>
                       <TextField
+                        disabled={socialLocked}
                         label={t("Upload the image to the host")}
                         type="file"
                         accept="image/jpeg,image/png"
                         onChange={(event) => {
                           const file = event.target.files?.[0];
                           if (file)
-                            void run(async () => {
-                              const upload = await client.upload(file);
-                              update(variant.accountId, {
-                                media: [{ kind: "image", uploadId: upload.uploadId }],
-                              });
-                            });
+                            void pendingUi.run(`campaign.upload-image:${variant.accountId}`, () =>
+                              run(async () => {
+                                const upload = await client.upload(file);
+                                update(variant.accountId, {
+                                  media: [{ kind: "image", uploadId: upload.uploadId }],
+                                });
+                              }),
+                            );
                         }}
                       />
+                      {pendingUi.is(`campaign.upload-image:${variant.accountId}`) ? (
+                        <Progress label={t("Operation in progress…")} />
+                      ) : null}
                       {variant.media[0]?.uploadId ? (
                         <small>{t("Image uploaded to the host")}</small>
                       ) : null}
@@ -630,6 +654,7 @@ export function Campaigns({
                   <label>
                     {t("Verified fact")}
                     <SearchableSelect
+                      disabled={socialLocked}
                       value=""
                       label={t("Verified fact")}
                       options={[
@@ -652,6 +677,7 @@ export function Campaigns({
                   </label>
                   {variant.media.length ? (
                     <Button
+                      disabled={socialLocked}
                       variant="secondary"
                       tone="danger"
                       type="button"
@@ -677,6 +703,7 @@ export function Campaigns({
                 ) : null}
                 <div className="mt-2 border-t border-(--ui-tone-neutral-border) pt-2">
                   <Button
+                    disabled={socialLocked}
                     variant="secondary"
                     tone="danger"
                     type="button"
@@ -709,9 +736,11 @@ export function Campaigns({
             ) : null}
             <div className="social-actions">
               <Button
+                loading={pendingUi.is("campaigns.save-campaign-draft")}
                 type="submit"
                 variant="secondary"
                 disabled={
+                  socialLocked ||
                   !name.trim() ||
                   !variants.length ||
                   !validProjects ||
@@ -723,6 +752,7 @@ export function Campaigns({
               </Button>
               {editingId ? (
                 <Button
+                  disabled={socialLocked}
                   variant="secondary"
                   type="button"
                   onClick={(event) => {
@@ -747,6 +777,7 @@ export function Campaigns({
               <label>
                 {t("Search campaigns")}
                 <SearchInput
+                  disabled={socialLocked}
                   appearance="field"
                   type="search"
                   value={search}
@@ -758,6 +789,7 @@ export function Campaigns({
                 <label>
                   {t("Status")}
                   <NativeSelect
+                    disabled={socialLocked}
                     value={statusFilter}
                     onChange={(event) => setStatusFilter(event.target.value)}
                   >
@@ -778,6 +810,7 @@ export function Campaigns({
             {snapshot.campaigns.length ? (
               visibleCampaigns.map((campaign) => (
                 <Button
+                  disabled={socialLocked}
                   type="button"
                   variant="tab"
                   className="social-row"
@@ -900,6 +933,7 @@ export function Campaigns({
                         {currentPreview && canApprove ? (
                           <label className="social-check">
                             <Checkbox
+                              disabled={socialLocked}
                               checked={approvalConfirmed}
                               onChange={(event) => setApprovalConfirmed(event.target.checked)}
                             />
@@ -923,47 +957,57 @@ export function Campaigns({
                         ) : null}
                         <div className="social-actions">
                           <Button
+                            loading={pendingUi.is("campaign.validate")}
+                            disabled={socialLocked}
                             type="button"
                             variant={currentPreview ? "secondary" : "primary"}
                             onClick={() =>
-                              void run(async () => {
-                                setPreview(
-                                  await client.request("campaigns.preview", {
-                                    id: selected.id,
-                                  }),
-                                );
-                                setApprovalConfirmed(false);
-                              }, t("Account and content check finished."))
+                              void pendingUi.run("campaign.validate", () =>
+                                run(async () => {
+                                  setPreview(
+                                    await client.request("campaigns.preview", {
+                                      id: selected.id,
+                                    }),
+                                  );
+                                  setApprovalConfirmed(false);
+                                }, t("Account and content check finished.")),
+                              )
                             }
                           >
                             {t("Check account and content")}
                           </Button>
 
                           <Button
+                            loading={pendingUi.is("campaign.approve")}
                             type="button"
                             variant={canApprove && !approved ? "primary" : "secondary"}
-                            disabled={!canApprove || !approvalConfirmed || approved}
+                            disabled={socialLocked || !canApprove || !approvalConfirmed || approved}
                             onClick={() =>
-                              void run(async () => {
-                                await client.request("campaigns.approve", { id: selected.id });
-                                setPreview(
-                                  await client.request("campaigns.preview", { id: selected.id }),
-                                );
-                              }, t("Content approved. You can schedule it once or add it to an automatic publishing plan."))
+                              void pendingUi.run("campaign.approve", () =>
+                                run(async () => {
+                                  await client.request("campaigns.approve", { id: selected.id });
+                                  setPreview(
+                                    await client.request("campaigns.preview", { id: selected.id }),
+                                  );
+                                }, t("Content approved. You can schedule it once or add it to an automatic publishing plan.")),
+                              )
                             }
                           >
                             {approved ? t("Content approved") : t("Give publishing approval")}
                           </Button>
                           <Button
+                            loading={pendingUi.is("campaign.schedule")}
                             type="button"
                             variant={approved ? "primary" : "secondary"}
-                            disabled={!canSchedule}
+                            disabled={socialLocked || !canSchedule}
                             onClick={() =>
-                              void run(async () => {
-                                await client.request("campaigns.schedule", {
-                                  id: selected.id,
-                                });
-                              }, t("One-time posts scheduled. Follow the results below or in the Operation history."))
+                              void pendingUi.run("campaign.schedule", () =>
+                                run(async () => {
+                                  await client.request("campaigns.schedule", {
+                                    id: selected.id,
+                                  });
+                                }, t("One-time posts scheduled. Follow the results below or in the Operation history.")),
+                              )
                             }
                           >
                             {t("Schedule posts")}
@@ -972,18 +1016,22 @@ export function Campaigns({
                       </section>
                       <div className="social-actions">
                         <Button
+                          loading={pendingUi.is("campaign.resume")}
+                          disabled={socialLocked}
                           type="button"
                           variant="secondary"
                           onClick={() =>
-                            void run(
-                              () =>
-                                client.request("campaigns.pause", {
-                                  id: selected.id,
-                                  paused: !snapshot.campaigns.find(
-                                    (campaign) => campaign.id === selected.id,
-                                  )?.paused,
-                                }),
-                              selected.paused ? t("Campaign resumed.") : t("Campaign paused."),
+                            void pendingUi.run("campaign.resume", () =>
+                              run(
+                                () =>
+                                  client.request("campaigns.pause", {
+                                    id: selected.id,
+                                    paused: !snapshot.campaigns.find(
+                                      (campaign) => campaign.id === selected.id,
+                                    )?.paused,
+                                  }),
+                                selected.paused ? t("Campaign resumed.") : t("Campaign paused."),
+                              ),
                             )
                           }
                         >
@@ -992,7 +1040,7 @@ export function Campaigns({
                         <Button
                           type="button"
                           variant="secondary"
-                          disabled={editBlocked}
+                          disabled={socialLocked || editBlocked}
                           onClick={() => {
                             setEditVersion((value) => value + 1);
                             setEditingId(selected.id);
@@ -1068,6 +1116,8 @@ function ProjectProfile({
   initialProject?: string;
   run: Run;
 }) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [projectId, setProjectId] = useState(initialProject ?? projects[0]?.id ?? "");
   const activeProject = projects.some((project) => project.id === projectId)
@@ -1110,7 +1160,7 @@ function ProjectProfile({
         {t("Project")}
         <SearchableSelect
           value={activeProject}
-          disabled={!projects.length}
+          disabled={socialLocked || !projects.length}
           label={t("Project")}
           options={[
             ...(!projects.length ? [{ value: "", label: t("No project found") }] : []),
@@ -1127,11 +1177,14 @@ function ProjectProfile({
         className="social-form"
         onSubmit={(event) => {
           field(event);
-          void run(() => save(profile?.facts ?? []), t("Product profile saved."));
+          void pendingUi.run("project-profile.save-product-profile", () =>
+            run(() => save(profile?.facts ?? []), t("Product profile saved.")),
+          );
         }}
       >
         <h3>{t("Product profile")}</h3>
         <TextField
+          disabled={socialLocked}
           label={t("Product name")}
           required
           maxLength={200}
@@ -1139,6 +1192,7 @@ function ProjectProfile({
           onChange={(event) => updateDraft({ productName: event.target.value })}
         />
         <TextField
+          disabled={socialLocked}
           label={t("Brand voice")}
           required
           maxLength={1000}
@@ -1146,7 +1200,12 @@ function ProjectProfile({
           placeholder={t("E.g. short, clear and friendly")}
           onChange={(event) => updateDraft({ voice: event.target.value })}
         />
-        <Button type="submit" variant="secondary" disabled={!activeProject}>
+        <Button
+          loading={pendingUi.is("project-profile.save-product-profile")}
+          type="submit"
+          variant="secondary"
+          disabled={socialLocked || !activeProject}
+        >
           {t("Save product profile")}
         </Button>
       </form>
@@ -1165,7 +1224,11 @@ function ProjectProfile({
             ? (profile?.facts ?? []).map((item) => (item.id === draft.factId ? fact : item))
             : [...(profile?.facts ?? []), fact];
           void (async () => {
-            if (await run(() => save(facts), t("Verified product fact saved.")))
+            if (
+              await pendingUi.run("project-profile.save-public-fact", () =>
+                run(() => save(facts), t("Verified product fact saved.")),
+              )
+            )
               updateDraft({
                 topic: "",
                 text: "",
@@ -1177,6 +1240,7 @@ function ProjectProfile({
       >
         <h3>{draft.factId ? t("Edit verified fact") : t("Add verified fact")}</h3>
         <TextField
+          disabled={socialLocked}
           label={t("Fact topic")}
           required
           maxLength={200}
@@ -1184,6 +1248,7 @@ function ProjectProfile({
           onChange={(event) => updateDraft({ topic: event.target.value })}
         />
         <TextareaField
+          disabled={socialLocked}
           label={t("Verified, announceable fact")}
           required
           maxLength={4000}
@@ -1191,6 +1256,7 @@ function ProjectProfile({
           onChange={(event) => updateDraft({ text: event.target.value })}
         />
         <TextField
+          disabled={socialLocked}
           label={t("Verification source")}
           required
           maxLength={1000}
@@ -1199,9 +1265,11 @@ function ProjectProfile({
         />
         <div className="social-actions">
           <Button
+            loading={pendingUi.is("project-profile.save-public-fact")}
             type="submit"
             variant="secondary"
             disabled={
+              socialLocked ||
               !activeProject ||
               !productName.trim() ||
               !voice.trim() ||
@@ -1212,6 +1280,7 @@ function ProjectProfile({
           </Button>
           {draft.factId ? (
             <Button
+              disabled={socialLocked}
               variant="secondary"
               type="button"
               onClick={() =>
@@ -1241,6 +1310,7 @@ function ProjectProfile({
             {fact.source} · {time(fact.verifiedAt)}
           </small>
           <Button
+            disabled={socialLocked}
             variant="secondary"
             type="button"
             onClick={() =>

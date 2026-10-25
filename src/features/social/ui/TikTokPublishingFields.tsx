@@ -1,3 +1,5 @@
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { useQuery } from "@tanstack/react-query";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -43,6 +45,7 @@ export function TikTokPublishingFields({
   client: SocialClient;
   onChange: (patch: Partial<CampaignVariant>) => void;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const options = variant.tiktok ?? tiktokDefaults;
   const creator = useQuery({
@@ -87,12 +90,13 @@ export function TikTokPublishingFields({
         type="button"
         variant="secondary"
         loading={creator.isFetching}
-        disabled={creator.isFetching}
+        disabled={socialLocked || creator.isFetching}
         onClick={() => void creator.refetch()}
       >
         {t("Refresh publishing settings")}
       </Button>
       <TextField
+        disabled={socialLocked}
         label={t("HTTPS video URL on a verified domain")}
         type="url"
         value={variant.media[0]?.url ?? ""}
@@ -130,7 +134,7 @@ export function TikTokPublishingFields({
           aria-label={t("Visibility")}
           required
           value={options.privacy}
-          disabled={!info || creator.isFetching || creator.isError}
+          disabled={socialLocked || !info || creator.isFetching || creator.isError}
           onChange={(event) => change({ privacy: event.target.value })}
         >
           <option value="">{t("Select visibility")}</option>
@@ -151,7 +155,7 @@ export function TikTokPublishingFields({
         <label key={key}>
           <Checkbox
             checked={options[key] && !blocked}
-            disabled={!info || !!blocked}
+            disabled={socialLocked || !info || !!blocked}
             onChange={(event) => change({ [key]: event.target.checked })}
           />
           {label}
@@ -159,6 +163,7 @@ export function TikTokPublishingFields({
       ))}
       <label>
         <Checkbox
+          disabled={socialLocked}
           checked={options.brandOrganic}
           onChange={(event) => change({ brandOrganic: event.target.checked })}
         />
@@ -166,6 +171,7 @@ export function TikTokPublishingFields({
       </label>
       <label>
         <Checkbox
+          disabled={socialLocked}
           checked={options.brandContent}
           onChange={(event) => change({ brandContent: event.target.checked })}
         />
@@ -173,6 +179,7 @@ export function TikTokPublishingFields({
       </label>
       <label>
         <Checkbox
+          disabled={socialLocked}
           checked={options.isAigc}
           onChange={(event) => change({ isAigc: event.target.checked })}
         />
@@ -187,6 +194,7 @@ export function TikTokPublishingFields({
         <Checkbox
           checked={options.consent}
           disabled={
+            socialLocked ||
             !info ||
             creator.isFetching ||
             creator.isError ||

@@ -5,6 +5,8 @@
  */
 export type LiveSignal = {
   presence: number;
+  /** Eased 0-1 energy from newly streamed reply/reasoning/tool progress. */
+  energy?: number;
 };
 
 /** Colors are resolved theme tokens for the Canvas 2D artwork. */

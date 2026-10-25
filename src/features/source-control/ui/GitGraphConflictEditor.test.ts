@@ -164,3 +164,75 @@ it("silinmiş tarafı boş dosya oluşturmak yerine git ile uygular", async () =
   expect(writeTextFile).not.toHaveBeenCalled();
   expect(gitResolveConflict).toHaveBeenCalledWith("/repo", stages.relative, "ours");
 });
+
+it("keeps only the chosen whole-file action loading and rejects duplicate pending resolution", async () => {
+  vi.mocked(gitConflictStages).mockResolvedValue({ ...stages, binary: true });
+  let reject!: (reason: Error) => void;
+  vi.mocked(gitResolveConflict).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  await mount();
+  const incoming = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.textContent === "Use incoming",
+  )!;
+  incoming.focus();
+  await act(async () => {
+    incoming.click();
+    incoming.click();
+  });
+  expect(gitResolveConflict).toHaveBeenCalledTimes(1);
+  expect(incoming.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(incoming);
+  expect(host.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
+  expect(
+    [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.textContent === "Use current",
+    )!.disabled,
+  ).toBe(true);
+  await act(async () => reject(new Error("Index locked")));
+  expect(incoming.getAttribute("aria-busy")).not.toBe("true");
+  expect(document.activeElement).toBe(incoming);
+  expect(onResolved).not.toHaveBeenCalled();
+});
+
+it("keeps a plain conflict draft after a deferred save failure and allows the same button to retry", async () => {
+  vi.mocked(readTextFile).mockResolvedValue("original\n");
+  let reject!: (reason: Error) => void;
+  vi.mocked(writeTextFile).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  await mount();
+  const output = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Resolved output"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      output,
+      "my resolution\n",
+    );
+    output.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const save = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.textContent === "Save and stage",
+  )!;
+  save.focus();
+  await act(async () => {
+    save.click();
+    save.click();
+  });
+  expect(writeTextFile).toHaveBeenCalledTimes(1);
+  expect(save.getAttribute("aria-busy")).toBe("true");
+  expect(output.disabled).toBe(true);
+  await act(async () => reject(new Error("Disk unavailable")));
+  expect(output.value).toBe("my resolution\n");
+  expect(document.activeElement).toBe(save);
+  expect(save.getAttribute("aria-busy")).not.toBe("true");
+  vi.mocked(writeTextFile).mockResolvedValue(undefined);
+  await act(async () => save.click());
+  expect(writeTextFile).toHaveBeenCalledTimes(2);
+  expect(onResolved).toHaveBeenCalledOnce();
+});

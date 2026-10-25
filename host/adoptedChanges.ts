@@ -26,8 +26,9 @@ export class AdoptedChanges {
   private seenVersion: number | undefined;
   private readonly signatures = new Map<string, string>();
   private readonly changed = new Map<string, number>();
+  private refreshing?: Promise<void>;
   constructor(
-    private readonly rows: () => readonly AdoptedRow[],
+    private readonly rows: () => readonly AdoptedRow[] | Promise<readonly AdoptedRow[]>,
     private readonly version: () => number,
     boot: number = randomInt(1, 2 ** 20) * 2 ** 32,
   ) {
@@ -35,8 +36,10 @@ export class AdoptedChanges {
     this.boot = boot.toString(16);
   }
 
-  changesSince(since: unknown): { seq: number; ids: string[]; boot: string; reset?: true } {
-    this.refresh();
+  async changesSince(
+    since: unknown,
+  ): Promise<{ seq: number; ids: string[]; boot: string; reset?: true }> {
+    await this.refresh();
     if (
       !Number.isSafeInteger(since) ||
       (since as number) > this.sequence ||
@@ -48,13 +51,26 @@ export class AdoptedChanges {
     return { seq: this.sequence, ids, boot: this.boot };
   }
 
-  private refresh(): void {
+  private async refresh(): Promise<void> {
+    if (this.refreshing) return this.refreshing;
+    const current = this.readRows();
+    this.refreshing = current;
+    try {
+      await current;
+    } finally {
+      if (this.refreshing === current) this.refreshing = undefined;
+    }
+  }
+
+  private async readRows(): Promise<void> {
     const version = this.version();
     if (version === this.seenVersion) return;
     const first = this.seenVersion === undefined;
+    const rows = await this.rows();
+    // A failed read never advances the cached generation.
     this.seenVersion = version;
     const live = new Set<string>();
-    for (const row of this.rows()) {
+    for (const row of rows) {
       live.add(row.id);
       const signature = `${row.revision}|${row.updatedAt}|${row.status}|${row.desktopUpdatedAt}`;
       if (this.signatures.get(row.id) === signature) continue;

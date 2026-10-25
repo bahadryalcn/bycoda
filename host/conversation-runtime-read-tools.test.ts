@@ -13,11 +13,11 @@ afterEach(() => {
 async function setup() {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-runtime-read-"));
   const store = new HostStore(join(directory, "host.db"));
-  closes.push(() => {
-    store.close();
+  closes.push(async () => {
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  const project = store.addProject(directory, "Project");
+  const project = await store.addProject(directory, "Project");
   const id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   const foreignId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const bytes = Buffer.from("abcdefghijklmnopqrstuvwxyz");
@@ -122,8 +122,8 @@ async function setup() {
     bytes,
     limits,
     shells,
-    call: (action: Parameters<typeof tools.call>[0], input: Record<string, unknown> = {}) =>
-      tools.call(action, input, principal, () => authorized),
+    call: async (action: Parameters<typeof tools.call>[0], input: Record<string, unknown> = {}) =>
+      await tools.call(action, input, principal, () => authorized),
     revoke: () => {
       authorized = false;
     },

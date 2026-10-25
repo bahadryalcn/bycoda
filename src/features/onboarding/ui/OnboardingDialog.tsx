@@ -372,6 +372,8 @@ function Projects({
     }
   };
   const addFolders = async () => {
+    if (running.current) return;
+    running.current = true;
     setAdding(true);
     onBusy(true);
     try {
@@ -382,6 +384,7 @@ function Projects({
     } catch (reason) {
       setError(String(reason));
     } finally {
+      running.current = false;
       setAdding(false);
       onBusy(false);
     }
@@ -536,6 +539,7 @@ function Projects({
         <div className="onboarding-project-actions">
           <Button
             disabled={busy}
+            loading={adding}
             onClick={() => void addFolders()}
             variant="secondary"
             type="button"
@@ -567,6 +571,7 @@ function Projects({
           ) : null}
           <Button
             disabled={busy}
+            loading={importing}
             onClick={summary || !selected.size ? onFinish : () => void start()}
             variant="primary"
             type="button"

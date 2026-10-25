@@ -97,6 +97,48 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("shows launch progress once and preserves a newer draft after completion", async () => {
+  let finish!: () => void;
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "quick_composer_submit")
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+  });
+  input("First request");
+  const start = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Start",
+  )!;
+  start.focus();
+  act(() => {
+    start.click();
+    start.click();
+  });
+  await act(async () => {});
+  expect(
+    vi.mocked(invoke).mock.calls.filter(([command]) => command === "quick_composer_submit"),
+  ).toHaveLength(1);
+  expect(start.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(start);
+  input("Next draft while the first request finishes");
+  await act(async () => finish());
+  expect(prompt.value).toBe("Next draft while the first request finishes");
+  expect(start.getAttribute("aria-busy")).not.toBe("true");
+});
+
+it("keeps a failed launch draft and exposes the complete error for recovery", async () => {
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "quick_composer_submit")
+      throw new Error("Reconnect the owning computer before retrying this unchanged draft.");
+  });
+  input("Keep this request");
+  await key("Enter");
+  expect(prompt.value).toBe("Keep this request");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Reconnect the owning computer before retrying this unchanged draft.",
+  );
+});
+
 it.each(["Enter", "Tab"])(
   "offers /operator and completes it with %s before submitting the prompt",
   async (completionKey) => {

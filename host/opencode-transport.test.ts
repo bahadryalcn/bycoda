@@ -75,13 +75,13 @@ afterAll(async () => {
   await engine?.close();
   await backend?.close();
   release?.();
-  store?.close();
+  await store?.close();
   if (directory) rmSync(directory, { recursive: true, force: true });
 });
 
 it("runs an OpenCode session through the host HTTP and SSE bridge", async () => {
   const project = await engine.openProject(directory);
-  const { sessionId } = engine.command({
+  const { sessionId } = await engine.command({
     type: "create",
     commandId: "create-opencode",
     projectId: project.id,
@@ -89,16 +89,16 @@ it("runs an OpenCode session through the host HTTP and SSE bridge", async () => 
     model: "opencode:openai/fixture-model",
     runtimeMode: "supervised",
   });
-  engine.command({
+  await engine.command({
     type: "send",
     commandId: "send-opencode",
     sessionId,
     text: "hello",
   });
-  await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"), {
+  await vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
     timeout: 8_000,
   });
-  const state = store.session(sessionId).session;
+  const state = (await store.session(sessionId)).session;
   expect(state.blocks.at(-1)?.text).toContain("Headless OpenCode completed");
   expect(state.providerSessionId).toBe("fixture_open");
 });

@@ -134,7 +134,8 @@ export function AdoptedSessionNotice({
       list.map((item) => (item.id === session.id ? keepAdoptedDivergence(item) : item)),
     );
   };
-  if (!session.adoptedSyncConflict && !feedback && !refreshing) return null;
+  const hostRunning = !!session.continuingElsewhere && !session.busy;
+  if (!session.adoptedSyncConflict && !feedback && !refreshing && !hostRunning) return null;
   return (
     <div
       role={session.adoptedSyncConflict || feedback?.error ? "alert" : "status"}
@@ -142,6 +143,14 @@ export function AdoptedSessionNotice({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 flex-1 space-y-1">
+          {hostRunning && !session.adoptedSyncConflict ? (
+            <div>
+              {t(ADOPTED_RUNNING_REASON)}{" "}
+              {session.queuedMessages?.length
+                ? t("Queue is waiting for the current turn to finish.")
+                : null}
+            </div>
+          ) : null}
           {session.adoptedSyncConflict ? (
             <div>{t(choosing ? ADOPTED_CHOICE_MESSAGE : ADOPTED_CONFLICT_MESSAGE)}</div>
           ) : null}

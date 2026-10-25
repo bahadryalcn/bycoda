@@ -48,6 +48,7 @@ function SessionReviewContent({
   const [error, setError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [statusStale, setStatusStale] = useState(false);
   const request = useRef(0);
   const actingRef = useRef(false);
   const filesRef = useRef(files);
@@ -65,12 +66,13 @@ function SessionReviewContent({
       .then((status) => {
         if (generation !== request.current) return;
         setFiles(status.files);
+        setStatusStale(false);
         setError(null);
         setRecording(false);
       })
       .catch((cause: unknown) => {
         if (generation === request.current) {
-          setFiles([]);
+          setStatusStale(true);
           const message = cause instanceof Error ? cause.message : String(cause);
           const pending = message.includes("Workspace checkpoint is still recording this turn");
           setRecording(pending);
@@ -171,8 +173,8 @@ function SessionReviewContent({
   ) : null;
   if (files.length === 0) return errorNotice;
 
-  const disabled = acting != null;
-  const canUndoAll = !undoLocked && files.every((file) => file.undoable);
+  const disabled = acting != null || statusStale;
+  const canUndoAll = !statusStale && !undoLocked && files.every((file) => file.undoable);
   const visibleFiles = expanded ? files : files.slice(0, 3);
   const hiddenFileCount = files.length - visibleFiles.length;
   const totals = files.reduce(
@@ -233,6 +235,7 @@ function SessionReviewContent({
               type="button"
               title={t("Keep all session changes and dismiss this card")}
               disabled={disabled}
+              loading={acting === "keep"}
               onClick={() => void run("keep")}
             >
               {t("Keep")}

@@ -1,7 +1,16 @@
 import { test, expect, type Locator } from "@playwright/test";
 
-const effects = ["neural-tree", "latent-face", "thought-weaver", "ascii-mask"] as const;
+const effects = [
+  "neural-tree",
+  "latent-face",
+  "thought-weaver",
+  "ascii-mask",
+  "dot-grid",
+  "code-rain",
+] as const;
 const preferenceKey = "bycoda.liveBackground.v1";
+const ambientEffects = ["threads", "silk", "dark-veil", "soft-aurora", "floating-lines"];
+const sceneChoices = ["none", ...ambientEffects, ...effects];
 
 /** Compare canvas pixels, not CSS opacity or a particular animation formula. */
 function pixels(canvas: Locator, baseline = false) {
@@ -72,9 +81,8 @@ for (const theme of ["dark", "light"]) {
       const canvas = pane.locator("[data-live-background-rail] canvas");
       for (const width of [390, 768, 1440]) {
         await page.setViewportSize({ width, height: 1100 });
-        if (effect === "ascii-mask") {
-          // The owner chose this scene to sit centered behind the conversation, very faint, at
-          // every width. It is the only scene exempt from the free-margin rule below.
+        {
+          // Every scene fills the pane, including narrow and full-width chats.
           await expect(canvas).toBeVisible();
           await expect.poll(async () => (await pixels(canvas)).visible).toBeGreaterThan(100);
           const artwork = await canvas.boundingBox();
@@ -85,20 +93,11 @@ for (const theme of ["dark", "light"]) {
           expect(artwork!.x + artwork!.width).toBeGreaterThanOrEqual(
             paneBox!.x + paneBox!.width - 1,
           );
+          expect(artwork!.y).toBeCloseTo(paneBox!.y, 0);
+          expect(artwork!.height).toBeCloseTo(paneBox!.height, 0);
           // Behind the reading column, never over it.
           const rail = pane.locator("[data-live-background-rail]");
           expect(await rail.evaluate((el) => getComputedStyle(el).zIndex)).toBe("-1");
-        } else if (width < 1440) {
-          await expect(canvas).toBeHidden();
-        } else {
-          await expect(canvas).toBeVisible();
-          await expect.poll(async () => (await pixels(canvas)).visible).toBeGreaterThan(100);
-          const artwork = await canvas.boundingBox();
-          const reading = await pane.locator("[data-reading-area]").boundingBox();
-          expect(artwork).not.toBeNull();
-          expect(reading).not.toBeNull();
-          expect(artwork!.x).toBeGreaterThanOrEqual(reading!.x + reading!.width);
-          expect(artwork!.x + artwork!.width).toBeLessThanOrEqual(width);
         }
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
@@ -110,14 +109,12 @@ for (const theme of ["dark", "light"]) {
       await page.goto(
         `/tests/browser/live-backgrounds.html?effect=${effect}&theme=${theme}&chatWidth=full`,
       );
-      if (effect !== "ascii-mask") await expect(canvas).toBeHidden();
+      await expect(canvas).toBeVisible();
     });
   }
 }
 
-test("every scene stays unchanged while replies stream with reduced motion", async ({
-  page,
-}) => {
+test("every scene stays unchanged while replies stream with reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const effect of effects) {
     await page.goto(`/tests/browser/live-backgrounds.html?effect=${effect}&theme=dark`);
@@ -138,18 +135,18 @@ test("none leaves both artwork and chat clear", async ({ page }) => {
   await expect(page.locator("[data-preview-pane] canvas")).toHaveCount(0);
 });
 
-test("the five-choice picker persists canonical scenes and supports keyboard selection", async ({
+test("the scene picker persists canonical scenes and supports keyboard selection", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/settings.html?section=appearance&lang=en");
   const picker = page.getByRole("radiogroup", { name: "Live background scene", exact: true });
   const radios = picker.getByRole("radio");
-  await expect(radios).toHaveCount(5);
+  await expect(radios).toHaveCount(sceneChoices.length);
   await expect(picker.getByRole("radio", { name: /prism|scanner|hyperspeed|glitch/i })).toHaveCount(
     0,
   );
-  for (const [index, effect] of ["none", ...effects].entries()) {
+  for (const [index, effect] of sceneChoices.entries()) {
     await radios.nth(index).click();
     await expect
       .poll(() => page.evaluate((key) => localStorage.getItem(key), preferenceKey))
@@ -157,14 +154,38 @@ test("the five-choice picker persists canonical scenes and supports keyboard sel
     await page.reload();
     await expect(radios.nth(index)).toBeChecked();
   }
-  await radios.nth(4).focus();
-  await radios.nth(4).press("ArrowRight");
+  await radios.last().focus();
+  await radios.last().press("ArrowRight");
   await expect(radios.nth(0)).toBeFocused();
   await expect(radios.nth(0)).toBeChecked();
   await radios.nth(0).press("End");
-  await expect(radios.nth(4)).toBeFocused();
-  await expect(radios.nth(4)).toBeChecked();
-  await radios.nth(4).press("Home");
+  await expect(radios.last()).toBeFocused();
+  await expect(radios.last()).toBeChecked();
+  await radios.last().press("Home");
   await expect(radios.nth(0)).toBeFocused();
   await expect(radios.nth(0)).toBeChecked();
 });
+
+for (const effect of ambientEffects) {
+  test(`${effect} renders native GPU motion and respects reduced motion`, async ({ page }) => {
+    await page.goto(`/tests/browser/live-backgrounds.html?effect=${effect}&theme=dark`);
+    const canvas = page.locator("[data-preview-pane] canvas");
+    await expect(canvas).toHaveAttribute("data-background-renderer", "webgl");
+    await page.waitForTimeout(2300);
+    const idle = await canvas.screenshot();
+    await page.waitForTimeout(350);
+    expect((await canvas.screenshot()).equals(idle)).toBe(false);
+    await page.getByRole("button", { name: "Start reply", exact: true }).click();
+    await page.waitForTimeout(600);
+    const reply = await canvas.screenshot();
+    await page.waitForTimeout(350);
+    expect((await canvas.screenshot()).equals(reply)).toBe(false);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.reload();
+    await expect(canvas).toHaveAttribute("data-background-renderer", "webgl");
+    const still = await canvas.screenshot();
+    await page.getByRole("button", { name: "Start reply", exact: true }).click();
+    await page.waitForTimeout(350);
+    expect((await canvas.screenshot()).equals(still)).toBe(true);
+  });
+}

@@ -1,8 +1,73 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 
+async function selectSection(page: Page, name: string) {
+  const label = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "iu");
+  const tab = page
+    .getByRole("navigation", { name: "Sosyal Medya bölümleri" })
+    .getByRole("button", { name: label });
+  if (await tab.isVisible()) await tab.click();
+  else {
+    await page.getByRole("button", { name: /^Sosyal Medya bölümleri:/ }).click();
+    await page.getByRole("option", { name: label }).click();
+  }
+}
+
 // Assertions below use the Turkish catalog, so every test starts in Turkish.
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
+});
+
+test("a portalled draft locks edits while only its initiating action stays busy and focused", async ({
+  page,
+}, testInfo) => {
+  await seedWorkflow(page);
+  await selectSection(page, "Hedef kitle");
+  await page.getByRole("button", { name: "Segment oluştur", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Segment oluştur", exact: true });
+  const name = dialog.getByRole("textbox", { name: "İsim", exact: true });
+  await name.fill("Retained pending group");
+  const save = dialog.getByRole("button", { name: "Segment kaydet", exact: true });
+  await dialog.getByRole("button", { name: "İlgili projeler", exact: true }).click();
+  const project = page.getByRole("option", { name: /Demo project/ });
+  if ((await project.getAttribute("aria-selected")) === "true") await project.click();
+  await project.click();
+  await expect(project).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("button", { name: "Tamam", exact: true }).click();
+  await page.evaluate(() =>
+    (window as unknown as { socialFixtureHold: (action: string) => void }).socialFixtureHold(
+      "segments.create",
+    ),
+  );
+  await save.click();
+  await expect(save).toHaveAttribute("aria-busy", "true");
+  await expect(save).toBeFocused();
+  await expect(page.locator('button[aria-busy="true"]')).toHaveCount(1);
+  await expect(name).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "İlgili projeler", exact: true })).toBeDisabled();
+  await save.press("Enter");
+  await dialog.locator("form").evaluate((form: HTMLFormElement) => form.requestSubmit());
+  const requests = () =>
+    page.evaluate(
+      () =>
+        (
+          window as unknown as { socialFixtureCalls: { args: { params?: { action?: string } } }[] }
+        ).socialFixtureCalls.filter((call) => call.args.params?.action === "segments.create")
+          .length,
+    );
+  expect(await requests()).toBe(1);
+  await page.screenshot({ path: testInfo.outputPath("social-local-pending.png") });
+  await page.evaluate(() =>
+    (window as unknown as { socialFixtureRelease: (reject: boolean) => void }).socialFixtureRelease(
+      true,
+    ),
+  );
+  await expect(save).not.toHaveAttribute("aria-busy", "true");
+  await expect(name).toBeEnabled();
+  await expect(name).toHaveValue("Retained pending group");
+  await expect(dialog.getByText("Fixture request rejected.", { exact: false })).toBeVisible();
+  await save.click();
+  await expect(dialog).not.toBeVisible();
+  expect(await requests()).toBe(2);
 });
 
 test("X media selection replaces image batches with video and keeps removal explicit", async ({
@@ -52,7 +117,7 @@ test("X profile editor applies a field diff and follows one selected account", a
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
   await page.goto("/tests/browser/social.html?browser-monitor=1");
-  await page.getByRole("navigation").getByRole("button", { name: "Hesaplar", exact: true }).click();
+  await selectSection(page, "Hesaplar");
   await page
     .locator("summary")
     .filter({ hasText: /^Tarayıcı çalışma alanı$/ })
@@ -95,7 +160,7 @@ test("browser monitoring shows partial coverage without claiming all channels ar
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
   await page.goto("/tests/browser/social.html?browser-monitor=1");
-  await page.getByRole("navigation").getByRole("button", { name: "Hesaplar", exact: true }).click();
+  await selectSection(page, "Hesaplar");
   const workspace = page
     .locator("details")
     .filter({ has: page.locator(":scope > summary", { hasText: "Tarayıcı çalışma alanı" }) });
@@ -125,7 +190,7 @@ test("browser workspace tracks assisted registration without reporting account c
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
   await page.goto("/tests/browser/social.html");
-  await page.getByRole("navigation").getByRole("button", { name: "Hesaplar", exact: true }).click();
+  await selectSection(page, "Hesaplar");
   const workspace = page
     .locator("details")
     .filter({ has: page.locator(":scope > summary", { hasText: "Tarayıcı çalışma alanı" }) });
@@ -166,15 +231,12 @@ test("TikTok publishing shows current privacy choices and explicit consent witho
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
   await page.goto("/tests/browser/social.html?tiktok=1");
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Kampanyalar", exact: true })
-    .click();
-  await page.locator(".social-composer > summary").filter({ hasText: "Yeni kampanya" }).click();
-  const form = page.locator("dialog.social-composer-dialog[open]");
+  await selectSection(page, "Kampanyalar");
+  await page.getByRole("button", { name: "Yeni kampanya", exact: true }).click();
+  const form = page.getByRole("dialog");
   await form.getByRole("button", { name: "Sosyal hesaplar", exact: true }).click();
   await page.getByRole("option", { name: /Demo TikTok/ }).click();
-  await page.getByRole("button", { name: "Bitti", exact: true }).click();
+  await page.getByRole("button", { name: "Tamam", exact: true }).click();
   await expect(
     form.getByText("Hesap: Demo TikTok · En fazla 60 saniye", { exact: true }),
   ).toBeVisible();
@@ -182,8 +244,8 @@ test("TikTok publishing shows current privacy choices and explicit consent witho
   await expect(privacy).toHaveValue("");
   await expect(form.getByLabel("Yorumlara izin ver", { exact: true })).toBeDisabled();
   await expect(form.getByLabel(/Videoyu önizledim/)).toBeDisabled();
-  await form.getByRole("button", { name: "Yeni kampanya formunu kapat", exact: true }).click();
-  await page.locator(".social-composer > summary").filter({ hasText: "Yeni kampanya" }).click();
+  await form.getByRole("button", { name: "Kapat", exact: true }).click();
+  await page.getByRole("button", { name: "Yeni kampanya", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -218,9 +280,9 @@ test("new social platforms are searchable and keyboard accessible in both themes
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
   await page.goto("/tests/browser/social.html");
-  await page.getByRole("navigation").getByRole("button", { name: "Hesaplar", exact: true }).click();
-  await page.locator(".social-composer > summary").filter({ hasText: "Hesap ekle" }).click();
-  const form = page.locator("dialog.social-composer-dialog[open]");
+  await selectSection(page, "Hesaplar");
+  await page.getByRole("button", { name: "Hesap ekle", exact: true }).click();
+  const form = page.getByRole("dialog");
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -237,7 +299,7 @@ test("new social platforms are searchable and keyboard accessible in both themes
       ]) {
         await trigger.click();
         // Search is owned by the shared combobox, including localized placeholder text.
-        await page.locator("[data-dialog-popover]:visible input").fill(name);
+        await page.getByRole("combobox", { name: "Seçeneklerde ara…", exact: true }).fill(name);
         await page.getByRole("option", { name, exact: true }).click();
         await expect(form.locator('select[name="type"]')).toHaveValue(type);
         await expect(trigger).toContainText(name);
@@ -267,7 +329,7 @@ test("scope menus and scheduling help remain readable and keyboard dismissible",
     await page.setViewportSize({ width, height: 844 });
     const trigger = page.locator(".social-project-filter button");
     await trigger.click();
-    const menu = page.locator("[data-dialog-popover]:visible");
+    const menu = page.getByRole("dialog").filter({ has: page.getByRole("listbox") });
     await expect
       .poll(async () => (await menu.boundingBox())?.width ?? 0)
       .toBeGreaterThanOrEqual(238);
@@ -278,8 +340,8 @@ test("scope menus and scheduling help remain readable and keyboard dismissible",
     await expect(menu.getByRole("option", { name: "Tüm projeler", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(trigger).toBeFocused();
-    await page.getByRole("button", { name: "Zamanlama nasıl çalışır?", exact: true }).click();
-    const help = page.getByRole("dialog", { name: "Zamanlama nasıl çalışır?", exact: true });
+    await page.getByRole("button", { name: "Zamanlama hazır", exact: true }).click();
+    const help = page.getByRole("dialog", { name: "Zamanlama durumu", exact: true });
     await expect(help).toContainText("Bilgisayar çevrimdışıyken işler bekler");
     expect(await help.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
       true,
@@ -310,10 +372,7 @@ for (const width of [390, 1440])
     await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/tests/browser/social.html?programs=1");
-    await page
-      .getByRole("navigation", { name: "Sosyal Medya bölümleri" })
-      .getByRole("button", { name: "Kampanyalar", exact: true })
-      .click();
+    await selectSection(page, "Kampanyalar");
     await page
       .locator(".social-campaign-modes")
       .getByRole("button", { name: "AI kampanyaları", exact: true })
@@ -356,15 +415,9 @@ for (const width of [390, 1440])
       path: testInfo.outputPath(`social-programs-${width}.png`),
       animations: "disabled",
     });
-    await page
-      .getByRole("navigation", { name: "Sosyal Medya bölümleri" })
-      .getByRole("button", { name: "Hesaplar", exact: true })
-      .click();
+    await selectSection(page, "Hesaplar");
     await expect(editor).not.toBeVisible();
-    await page
-      .getByRole("navigation", { name: "Sosyal Medya bölümleri" })
-      .getByRole("button", { name: "Kampanyalar", exact: true })
-      .click();
+    await selectSection(page, "Kampanyalar");
     await expect(editor).toBeVisible();
     await steps.getByRole("button", { name: "Amaç ve içerik", exact: true }).click();
     await expect(form.getByLabel("Kampanya adı", { exact: true })).toHaveValue("Fixture campaign");
@@ -392,8 +445,7 @@ test("editing a contact keeps one disabled account payload in native FormData", 
   page,
 }) => {
   await seedWorkflow(page);
-  const nav = page.getByRole("navigation", { name: "Sosyal Medya bölümleri" });
-  await nav.getByRole("button", { name: "Hedef Kitle", exact: true }).click();
+  await selectSection(page, "Hedef kitle");
   await page.locator(".social-row:visible").first().click();
   await page.getByText("Kişi bilgilerini ve izinlerini düzenle", { exact: true }).click();
   const form = page
@@ -426,8 +478,7 @@ test("bounded pages search archived rows and preserve selected detail history", 
     fixture.socialFixtureLargeHistory();
   });
   await page.getByRole("button", { name: "Yenile", exact: true }).click();
-  const nav = page.getByRole("navigation", { name: "Sosyal Medya bölümleri" });
-  await nav.getByRole("button", { name: "Gelen Kutusu", exact: true }).click();
+  await selectSection(page, "Gelen kutusu");
   await expect(page.locator(".social-row:visible")).toHaveCount(50);
   const pages = page.getByRole("group", { name: "Konuşmalar sayfaları", exact: true });
   await pages.getByRole("button", { name: "Sonraki sayfa", exact: true }).click();
@@ -446,7 +497,7 @@ test("bounded pages search archived rows and preserve selected detail history", 
   await expect(page.locator(".social-conversation:visible")).toContainText(
     "Archived message needle 35",
   );
-  await nav.getByRole("button", { name: "Hedef Kitle", exact: true }).click();
+  await selectSection(page, "Hedef kitle");
   await expect(page.locator(".social-row:visible")).toHaveCount(50);
   await page.getByLabel("Kişi veya etiket ara", { exact: true }).fill("Archived contact needle");
   await page.clock.fastForward(250);
@@ -459,10 +510,10 @@ test("bounded pages search archived rows and preserve selected detail history", 
   await expect(contactHistory).toContainText("56–75 / 75");
   await contactHistory.getByRole("button", { name: "Önceki kayıtlar", exact: true }).click();
   await expect(contactHistory).toContainText("36–55 / 75");
-  await nav.getByRole("button", { name: "Hesaplar", exact: true }).click();
+  await selectSection(page, "Hesaplar");
   await page
     .locator(".social-header-actions")
-    .getByRole("button", { name: "More actions", exact: true })
+    .getByRole("button", { name: "Diğer işlemler", exact: true })
     .click();
   await page.getByRole("button", { name: "İşlem geçmişi", exact: true }).click();
   await expect(page.locator(".social-history-record:visible")).toHaveCount(50);
@@ -511,7 +562,7 @@ test("history shows distinct outcomes, filters and keeps state after leaving Soc
   ).toHaveCount(0);
   await page
     .locator(".social-header-actions")
-    .getByRole("button", { name: "More actions", exact: true })
+    .getByRole("button", { name: "Diğer işlemler", exact: true })
     .click();
   await page.getByRole("button", { name: "İşlem geçmişi", exact: true }).click();
   await expect(page.locator(".social-history-record")).toHaveCount(5);
@@ -576,10 +627,7 @@ test("owner creates and explicitly activates a daily 2–5 hour publishing plan"
   page,
 }, testInfo) => {
   await seedWorkflow(page);
-  await page
-    .getByRole("navigation", { name: "Sosyal Medya bölümleri" })
-    .getByRole("button", { name: "Otomasyonlar", exact: true })
-    .click();
+  await selectSection(page, "Otomasyonlar");
   const editor = page.getByRole("region", { name: "Otomatik yayın planı oluştur", exact: true });
   await expect(editor).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -596,7 +644,7 @@ test("owner creates and explicitly activates a daily 2–5 hour publishing plan"
     })
     .getByRole("option")
     .click();
-  await page.getByRole("button", { name: "Bitti", exact: true }).click();
+  await page.getByRole("button", { name: "Tamam", exact: true }).click();
   await expect(editor.getByText(/Her kampanya bir kez paylaşılır/)).toBeVisible();
   await editor.getByRole("button", { name: "Planı durdurulmuş kaydet", exact: true }).click();
   await expect(editor).not.toBeVisible();
@@ -636,26 +684,22 @@ test("group outreach prepares eligible recipients and shows opt-out exclusions w
   page,
 }, testInfo) => {
   await seedWorkflow(page);
-  await page
-    .getByRole("navigation", { name: "Sosyal Medya bölümleri" })
-    .getByRole("button", { name: "Hedef Kitle", exact: true })
-    .click();
+  await selectSection(page, "Hedef kitle");
   const filters = await openFilters(page, page.locator(".social-list-tools:visible"));
   await filters.getByRole("button", { name: /^Segment:/ }).click();
   await page.locator('[role="option"][data-value="group"]').click();
   await closeFilters(page);
   await page.getByRole("button", { name: "Bu grubun tüm kişilerini seç (2)", exact: true }).click();
   await page
-    .locator(".social-composer > summary")
-    .filter({ hasText: "Seçili kişilere mesaj veya yorum hazırla" })
+    .getByRole("button", { name: "Seçili kişilere mesaj veya yorum hazırla", exact: true })
     .click();
   const dialog = page.getByRole("dialog", {
     name: "Seçili kişilere mesaj veya yorum hazırla",
     exact: true,
   });
-  await dialog.getByLabel("Toplu içerik", { exact: true }).fill("Ürün hakkında kısa bilgi");
+  await dialog.getByLabel("İçerik", { exact: true }).fill("Ürün hakkında kısa bilgi");
   await expect(dialog.getByText("Bu kişi iletişim istemiyor.", { exact: true })).toBeVisible();
-  await dialog.getByRole("button", { name: "Taslak kaydet", exact: true }).click();
+  await dialog.getByRole("button", { name: "Taslağı kaydet", exact: true }).click();
   await expect(
     dialog.getByText("1 hazır · 1 atlandı · 0 başarısız", { exact: true }),
   ).toBeVisible();
@@ -677,21 +721,20 @@ test("group outreach prepares eligible recipients and shows opt-out exclusions w
   });
   await dialog
     .getByRole("button", {
-      name: "Seçili kişilere mesaj veya yorum hazırla formunu kapat",
+      name: "Kapat",
       exact: true,
     })
     .click();
   await page.getByRole("checkbox", { name: "Demo kişi kişisini seç", exact: true }).uncheck();
   await page
-    .locator(".social-composer > summary")
-    .filter({ hasText: "Seçili kişilere mesaj veya yorum hazırla" })
+    .getByRole("button", { name: "Seçili kişilere mesaj veya yorum hazırla", exact: true })
     .click();
   await expect(dialog.getByText("Alıcı seçimi değişti.", { exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "Yeni seçilenler için hazırla", exact: true }).click();
-  await expect(dialog.getByLabel("Toplu içerik", { exact: true })).toHaveValue(
+  await expect(dialog.getByLabel("İçerik", { exact: true })).toHaveValue(
     "Ürün hakkında kısa bilgi",
   );
-  await expect(dialog.getByRole("button", { name: "Taslak kaydet", exact: true })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Taslağı kaydet", exact: true })).toBeDisabled();
 });
 
 test("social layout follows its panel width inside a wide window", async ({ page }, testInfo) => {
@@ -747,8 +790,10 @@ test("social layout follows its panel width inside a wide window", async ({ page
         element.style.inlineSize = `${width}px`;
         element.style.maxInlineSize = `${width}px`;
       }, width);
-      const bounds = (await navigation.boundingBox())!;
-      for (const tab of await navigation.getByRole("button").all()) {
+      const visibleNavigation = width < 448 ? page.locator(".social-section-picker") : navigation;
+      await expect(visibleNavigation).toBeVisible();
+      const bounds = (await visibleNavigation.boundingBox())!;
+      for (const tab of await visibleNavigation.getByRole("button").all()) {
         const tabBounds = (await tab.boundingBox())!;
         expect(tabBounds.x).toBeGreaterThanOrEqual(bounds.x);
         expect(tabBounds.x + tabBounds.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
@@ -772,12 +817,11 @@ test("searchable project selections keep unfinished forms compact across section
     (window as unknown as { socialFixtureManyProjects: () => void }).socialFixtureManyProjects(),
   );
   await page.getByRole("button", { name: "Yenile", exact: true }).click();
-  const nav = page.getByRole("navigation", { name: "Sosyal Medya bölümleri" });
-  await nav.getByRole("button", { name: "Kampanyalar", exact: true }).click();
-  const editor = page.getByRole("region", { name: "Yeni kampanya", exact: true });
+  await selectSection(page, "Kampanyalar");
+  const editor = page.getByRole("dialog", { name: "Yeni kampanya", exact: true });
   await expect(editor).not.toBeVisible();
   const listBounds = await page.locator(".social-columns:visible").first().boundingBox();
-  await page.locator(".social-composer > summary").filter({ hasText: "Yeni kampanya" }).click();
+  await page.getByRole("button", { name: "Yeni kampanya", exact: true }).click();
   expect((await page.locator(".social-columns:visible").first().boundingBox())!.y).toBe(
     listBounds!.y,
   );
@@ -799,12 +843,12 @@ test("searchable project selections keep unfinished forms compact across section
   });
   await menu.getByRole("combobox").press("Escape");
   await expect(editor.getByRole("button", { name: "İlgili projeler", exact: true })).toBeFocused();
-  await editor.getByRole("button", { name: "Yeni kampanya formunu kapat", exact: true }).click();
+  await editor.getByRole("button", { name: "Kapat", exact: true }).click();
   await expect(editor).not.toBeVisible();
-  await nav.getByRole("button", { name: "Hedef Kitle", exact: true }).click();
-  await page.locator(".social-composer > summary").filter({ hasText: "Kişi ekle" }).click();
-  const contact = page.getByRole("region", { name: "Kişi ekle", exact: true });
-  await contact.getByLabel("Ad", { exact: true }).fill("Unfinished contact");
+  await selectSection(page, "Hedef kitle");
+  await page.getByRole("button", { name: "Kişi ekle", exact: true }).click();
+  const contact = page.getByRole("dialog", { name: "Kişi ekle", exact: true });
+  await contact.getByLabel("İsim", { exact: true }).fill("Unfinished contact");
   await contact.getByRole("button", { name: "İlgili projeler", exact: true }).click();
   await page
     .getByRole("dialog", { name: "İlgili projeler seçimi", exact: true })
@@ -814,7 +858,7 @@ test("searchable project selections keep unfinished forms compact across section
     .getByRole("dialog", { name: "İlgili projeler seçimi", exact: true })
     .getByRole("option")
     .click();
-  await page.getByRole("button", { name: "Bitti", exact: true }).click();
+  await page.getByRole("button", { name: "Tamam", exact: true }).click();
   await page.setViewportSize({ width: 320, height: 850 });
   await expect(contact).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
@@ -828,10 +872,10 @@ test("searchable project selections keep unfinished forms compact across section
     animations: "disabled",
     path: testInfo.outputPath("project-multiselect-mobile.png"),
   });
-  await page.getByRole("button", { name: "Bitti", exact: true }).click();
-  await contact.getByRole("button", { name: "Kişi ekle formunu kapat", exact: true }).click();
-  await nav.getByRole("button", { name: "Kampanyalar", exact: true }).click();
-  await page.locator(".social-composer > summary").filter({ hasText: "Yeni kampanya" }).click();
+  await page.getByRole("button", { name: "Tamam", exact: true }).click();
+  await contact.getByRole("button", { name: "Kapat", exact: true }).click();
+  await selectSection(page, "Kampanyalar");
+  await page.getByRole("button", { name: "Yeni kampanya", exact: true }).click();
   await expect(page.getByLabel("Kampanya adı", { exact: true })).toHaveValue("Unfinished campaign");
   await expect(
     editor.locator(
@@ -882,7 +926,7 @@ test("social workspace guides OAuth setup and keeps sends disabled", async ({ pa
   );
   await page
     .locator(".social-header-actions")
-    .getByRole("button", { name: "More actions", exact: true })
+    .getByRole("button", { name: "Diğer işlemler", exact: true })
     .click();
   await expect(page.getByRole("button", { name: "Bu proje", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
@@ -907,11 +951,8 @@ test("social workspace guides OAuth setup and keeps sends disabled", async ({ pa
   await expect(page.locator('.social-connection[role="status"] > strong')).toHaveText(
     "Tarayıcıda izin bekleniyor",
   );
-  for (const section of ["Kampanyalar", "Gelen Kutusu", "Hedef Kitle", "Otomasyonlar", "Ayarlar"]) {
-    await page
-      .getByRole("navigation", { name: "Sosyal Medya bölümleri" })
-      .getByRole("button", { name: section, exact: true })
-      .click();
+  for (const section of ["Kampanyalar", "Gelen kutusu", "Hedef kitle", "Otomasyonlar", "Ayarlar"]) {
+    await selectSection(page, section);
     await expect(page.getByRole("heading", { name: section, exact: true }).first()).toBeVisible();
     expect(
       await page
@@ -938,7 +979,7 @@ test("social workspace guides OAuth setup and keeps sends disabled", async ({ pa
   );
   expect(mutations).toEqual([]);
   await page.setViewportSize({ width: 480, height: 850 });
-  await page.getByRole("navigation").getByRole("button", { name: "Hesaplar", exact: true }).click();
+  await selectSection(page, "Hesaplar");
   await expect(page.getByRole("button", { name: "Tarayıcıda bağla", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(480);
   const checkbox = page.locator('input[type="checkbox"]').first();
@@ -963,17 +1004,16 @@ test("all creation forms and verified project information stay readable at deskt
   page,
 }, testInfo) => {
   await page.goto("/tests/browser/social.html");
-  const nav = page.getByRole("navigation", { name: "Sosyal Medya bölümleri" });
   for (const width of [1440, 768, 320]) {
     await page.setViewportSize({ width, height: 900 });
     for (const [section, title] of [
       ["Hesaplar", "Hesap ekle"],
-      ["Hedef Kitle", "Kişi ekle"],
-      ["Hedef Kitle", "Segment oluştur"],
+      ["Hedef kitle", "Kişi ekle"],
+      ["Hedef kitle", "Segment oluştur"],
       ["Otomasyonlar", "Otomasyon kuralı oluştur"],
       ["Otomasyonlar", "Otomatik yayın planı oluştur"],
     ]) {
-      await nav.getByRole("button", { name: section, exact: true }).click();
+      await selectSection(page, section);
       const inlinePlan = title === "Otomatik yayın planı oluştur";
       if (section === "Otomasyonlar")
         await page
@@ -982,9 +1022,8 @@ test("all creation forms and verified project information stay readable at deskt
             exact: true,
           })
           .click();
-      if (!inlinePlan)
-        await page.locator(".social-composer > summary").filter({ hasText: title }).click();
-      const editor = page.getByRole("region", { name: title, exact: true });
+      if (!inlinePlan) await page.getByRole("button", { name: title, exact: true }).click();
+      const editor = page.getByRole(inlinePlan ? "region" : "dialog", { name: title, exact: true });
       if (inlinePlan) {
         await expect(page.getByRole("dialog")).toHaveCount(0);
         await expect(editor.getByLabel("Plan adı", { exact: true })).toBeVisible();
@@ -1003,10 +1042,9 @@ test("all creation forms and verified project information stay readable at deskt
         animations: "disabled",
         path: testInfo.outputPath(`${title}-${width}.png`),
       });
-      if (!inlinePlan)
-        await editor.getByRole("button", { name: `${title} formunu kapat`, exact: true }).click();
+      if (!inlinePlan) await editor.getByRole("button", { name: "Kapat", exact: true }).click();
     }
-    await nav.getByRole("button", { name: "Kampanyalar", exact: true }).click();
+    await selectSection(page, "Kampanyalar");
     const profile = page.locator(".social-page-secondary > details");
     if (!(await profile.evaluate((element) => (element as HTMLDetailsElement).open)))
       await profile.getByText("Ürün bilgisi ve doğrulanmış duyurular", { exact: true }).click();
@@ -1039,50 +1077,49 @@ test("written replies survive navigation and failed saves; review drafts are edi
     (window as unknown as { socialFixtureSeed: () => void }).socialFixtureSeed(),
   );
   await page.getByRole("button", { name: "Yenile", exact: true }).click();
-  const nav = page.getByRole("navigation", { name: "Sosyal Medya bölümleri" });
-  await nav.getByRole("button", { name: "Gelen Kutusu", exact: true }).click();
+  await selectSection(page, "Gelen kutusu");
   await page.getByRole("button").filter({ hasText: "Demo ürün sorusu" }).click();
-  await page
-    .locator(".social-composer > summary")
-    .filter({ hasText: /^Yanıt hazırla$/ })
-    .click();
+  await page.getByRole("button", { name: /^Yanıt hazırla$/, exact: true }).click();
   const reply = page
     .getByRole("dialog", { name: "Yanıt hazırla", exact: true })
     .getByLabel("Yanıt", { exact: true });
   await reply.fill("Kaybolmayan yanıt");
   await expect(page.getByText(/17 karakter/).first()).toBeVisible();
-  await page.getByRole("button", { name: "Yanıt hazırla formunu kapat", exact: true }).click();
-  await nav.getByRole("button", { name: "Hesaplar", exact: true }).click();
-  await nav.getByRole("button", { name: "Gelen Kutusu", exact: true }).click();
   await page
-    .locator(".social-composer > summary")
-    .filter({ hasText: /^Yanıt hazırla$/ })
+    .getByRole("dialog", { name: "Yanıt hazırla", exact: true })
+    .getByRole("button", { name: "Kapat", exact: true })
     .click();
+  await selectSection(page, "Hesaplar");
+  await selectSection(page, "Gelen kutusu");
+  await page.getByRole("button", { name: /^Yanıt hazırla$/, exact: true }).click();
   await expect(reply).toHaveValue("Kaybolmayan yanıt");
-  await page.getByRole("button", { name: "Yanıt hazırla formunu kapat", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Yanıt hazırla", exact: true })
+    .getByRole("button", { name: "Kapat", exact: true })
+    .click();
   await page.getByRole("button").filter({ hasText: "İkinci konuşma" }).click();
-  await page
-    .locator(".social-composer > summary")
-    .filter({ hasText: /^Yanıt hazırla$/ })
-    .click();
+  await page.getByRole("button", { name: /^Yanıt hazırla$/, exact: true }).click();
   await expect(reply).toHaveValue("");
-  await page.getByRole("button", { name: "Yanıt hazırla formunu kapat", exact: true }).click();
-  await page.getByRole("button").filter({ hasText: "Demo ürün sorusu" }).click();
   await page
-    .locator(".social-composer > summary")
-    .filter({ hasText: /^Yanıt hazırla$/ })
+    .getByRole("dialog", { name: "Yanıt hazırla", exact: true })
+    .getByRole("button", { name: "Kapat", exact: true })
     .click();
+  await page.getByRole("button").filter({ hasText: "Demo ürün sorusu" }).click();
+  await page.getByRole("button", { name: /^Yanıt hazırla$/, exact: true }).click();
   await expect(reply).toHaveValue("Kaybolmayan yanıt");
-  await page.getByRole("button", { name: "Taslak kaydet", exact: true }).click();
+  await page.getByRole("button", { name: "Taslağı kaydet", exact: true }).click();
   await expect(
     page.getByText("Unexpected social mutation: replies.draft", { exact: false }).last(),
   ).toBeVisible();
   await page.getByRole("button", { name: "İçeriği düzenle", exact: true }).click();
   await expect(reply).toHaveValue("Kaybolmayan yanıt");
-  await page.getByRole("button", { name: "Yanıt hazırla formunu kapat", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Yanıt hazırla", exact: true })
+    .getByRole("button", { name: "Kapat", exact: true })
+    .click();
   await page.getByRole("button", { name: "Düzenle", exact: true }).click();
   await expect(page.getByLabel("Taslak metni", { exact: true })).toHaveValue("Demo yanıt");
-  await page.getByRole("button", { name: "Vazgeç", exact: true }).click();
+  await page.getByRole("button", { name: "Düzenlemeyi iptal et", exact: true }).click();
   await expect(
     page.getByRole("button", {
       name: "Onayla ve gönderim kuyruğuna ekle",
@@ -1112,15 +1149,12 @@ test("populated workspace remains usable at narrow widths and in both themes", a
     for (const section of [
       "Hesaplar",
       "Kampanyalar",
-      "Gelen Kutusu",
-      "Hedef Kitle",
+      "Gelen kutusu",
+      "Hedef kitle",
       "Otomasyonlar",
       "Ayarlar",
     ]) {
-      await page
-        .getByRole("navigation", { name: "Sosyal Medya bölümleri" })
-        .getByRole("button", { name: section, exact: true })
-        .click();
+      await selectSection(page, section);
       await expect(page.getByRole("heading", { name: section, exact: true }).first()).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
         320,
@@ -1145,7 +1179,7 @@ test("neutral social surfaces keep outcomes readable with larger text and reduce
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page
     .locator(".social-header-actions")
-    .getByRole("button", { name: "More actions", exact: true })
+    .getByRole("button", { name: "Diğer işlemler", exact: true })
     .click();
   await page.getByRole("button", { name: "İşlem geçmişi", exact: true }).click();
   for (const theme of ["dark", "light"]) {

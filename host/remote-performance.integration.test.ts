@@ -30,14 +30,22 @@ async function openHost(directory: string, send: (input: SendTurnInput) => void)
       answer: () => {},
     },
   });
-  const server = createHostServer(engine, ["codex"] as RemoteProvider[], undefined, undefined, undefined, new DesktopSessions(() => []));
+  await engine.ready;
+  const server = await createHostServer(
+    engine,
+    ["codex"] as RemoteProvider[],
+    undefined,
+    undefined,
+    undefined,
+    new DesktopSessions(() => []),
+  );
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/rpc`;
-  const token = store.issueDevice("validation client").token;
-  const secondToken = store.issueDevice("second validation client").token;
+  const token = (await store.issueDevice("validation client")).token;
+  const secondToken = (await store.issueDevice("second validation client")).token;
   return { store, engine, server, url, token, secondToken };
 }
 
@@ -47,7 +55,8 @@ async function closeHost(current: Awaited<ReturnType<typeof openHost>>) {
   await current.engine.close();
   current.server.closeAllConnections();
   await new Promise<void>((resolve) => current.server.close(() => resolve()));
-  current.store.close();
+  await current.server.closeResources();
+  await current.store.close();
 }
 
 async function setup() {
@@ -96,26 +105,39 @@ async function setup() {
 it("coalesces unchanged list materialization without invalidating another project's list", async () => {
   const s = await setup();
   const summaries = vi.spyOn(s.store, "summaries");
-  const original = DesktopSessions.prototype.listSnapshot;
+  const original = DesktopSessions.prototype.listSnapshotAsync;
   let validation = 0;
-  const bypass = vi.spyOn(DesktopSessions.prototype, "listSnapshot").mockImplementation(function (...args) {
-    const value = original.apply(this, args);
-    return { ...value, fingerprint: `control:${++validation}:${value.fingerprint}` };
-  });
+  const bypass = vi
+    .spyOn(DesktopSessions.prototype, "listSnapshotAsync")
+    .mockImplementation(async function (...args) {
+      const value = await original.apply(this, args);
+      return { ...value, fingerprint: `control:${++validation}:${value.fingerprint}` };
+    });
   try {
     // The bypass control retains the old per-request materialization workload.
-    await Promise.all(Array.from({ length: 10 }, () => s.call("sessions.list", { projectId: s.project.id })));
+    await Promise.all(
+      Array.from({ length: 10 }, () => s.call("sessions.list", { projectId: s.project.id })),
+    );
     expect(summaries).toHaveBeenCalledTimes(10);
     bypass.mockRestore();
     summaries.mockClear();
-    await Promise.all(Array.from({ length: 10 }, () => s.call("sessions.list", { projectId: s.project.id })));
+    await Promise.all(
+      Array.from({ length: 10 }, () => s.call("sessions.list", { projectId: s.project.id })),
+    );
     expect(summaries).toHaveBeenCalledTimes(1);
-    const other = s.store.addProject(join(s.directory, "other"), "Other");
-    s.engine.command({ type: "create", commandId: "other-project", projectId: other.id,
-      harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+    const other = await s.store.addProject(join(s.directory, "other"), "Other");
+    await s.engine.command({
+      type: "create",
+      commandId: "other-project",
+      projectId: other.id,
+      harness: "codex",
+      model: "codex:test",
+      runtimeMode: "supervised",
+    });
     await s.call("sessions.list", { projectId: s.project.id });
     expect(summaries).toHaveBeenCalledTimes(1);
-    const first = (await s.call("machine.changes", { projects: [{ projectId: s.project.id }] })).value.result;
+    const first = (await s.call("machine.changes", { projects: [{ projectId: s.project.id }] }))
+      .value.result;
     await s.call("sessions.list", { projectId: s.project.id, known: first.projects[0].etag });
     expect(summaries).toHaveBeenCalledTimes(1);
   } finally {
@@ -126,63 +148,112 @@ it("coalesces unchanged list materialization without invalidating another projec
 
 it("refreshes branch labels without a session write or a global project invalidation", async () => {
   const s = await setup();
-  const created = s.engine.command({ type: "create", commandId: "branch-label", projectId: s.project.id,
-    harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "branch-label",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
   const lookup = vi.spyOn(branchCache, "get").mockResolvedValue("main");
   try {
     const first = await s.call("sessions.list", { projectId: s.project.id });
-    expect(first.value.result.find((row: { id: string }) => row.id === created.sessionId)?.branch).toBe("main");
+    expect(
+      first.value.result.find((row: { id: string }) => row.id === created.sessionId)?.branch,
+    ).toBe("main");
     lookup.mockResolvedValue("feature");
     const second = await s.call("sessions.list", { projectId: s.project.id });
-    expect(second.value.result.find((row: { id: string }) => row.id === created.sessionId)?.branch).toBe("feature");
-  } finally { lookup.mockRestore(); }
+    expect(
+      second.value.result.find((row: { id: string }) => row.id === created.sessionId)?.branch,
+    ).toBe("feature");
+  } finally {
+    lookup.mockRestore();
+  }
 });
 
 it("shares unchanged known-list work for a ten-thousand-session project", async () => {
   const s = await setup();
-  const created = s.engine.command({ type: "create", commandId: "large-list", projectId: s.project.id,
-    harness: "codex", model: "codex:test", runtimeMode: "supervised" });
-  const base = s.store.session(created.sessionId!);
-  const insert = s.store.db.prepare("INSERT INTO sessions (id,project_id,snapshot,summary,has_desktop,revision,updated_at,status) VALUES (?,?,?,?,0,1,1,'idle')");
-  s.store.transaction(() => {
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "large-list",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const base = await s.store.session(created.sessionId!);
+  const insert = s.store.db.prepare(
+    "INSERT INTO sessions (id,project_id,snapshot,summary,has_desktop,revision,updated_at,status) VALUES (?,?,?,?,0,1,1,'idle')",
+  );
+  await s.store.transaction(async () => {
     for (let index = 0; index < 10_000; index++) {
       const id = `large-${index}`;
-      const value = { ...base, status: "idle" as const, updatedAt: 1,
-        session: { ...base.session, id, title: `Synthetic ${index}` } };
-      insert.run(id, s.project.id, JSON.stringify(value), JSON.stringify(summary(value)));
+      const value = {
+        ...base,
+        status: "idle" as const,
+        updatedAt: 1,
+        session: { ...base.session, id, title: `Synthetic ${index}` },
+      };
+      await insert.run(id, s.project.id, JSON.stringify(value), JSON.stringify(summary(value)));
     }
   });
-  const original = DesktopSessions.prototype.listSnapshot;
-  let revision = 0;
-  const bypass = vi.spyOn(DesktopSessions.prototype, "listSnapshot").mockImplementation(function (...args) {
-    const value = original.apply(this, args);
-    return { ...value, fingerprint: `control:${++revision}:${value.fingerprint}` };
-  });
   const lookup = vi.spyOn(branchCache, "get").mockResolvedValue("main");
+  const initial = (await s.call("sessions.list", { projectId: s.project.id, known: "" })).value
+    .result;
+  expect(initial.sessions).toHaveLength(10_001);
+  const original = DesktopSessions.prototype.listSnapshotAsync;
+  let revision = 0;
+  const bypass = vi
+    .spyOn(DesktopSessions.prototype, "listSnapshotAsync")
+    .mockImplementation(async function (...args) {
+      const value = await original.apply(this, args);
+      return { ...value, fingerprint: `control:${++revision}:${value.fingerprint}` };
+    });
   const builds = vi.spyOn(s.store, "summaries");
   try {
-    const initial = (await s.call("sessions.list", { projectId: s.project.id, known: "" })).value.result;
-    expect(initial.sessions).toHaveLength(10_001);
     builds.mockClear();
     const controlStart = performance.now();
-    const control = await Promise.all(Array.from({ length: 10 }, () => s.call("sessions.list", { projectId: s.project.id, known: initial.etag })));
+    const control = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        s.call("sessions.list", { projectId: s.project.id, known: initial.etag }),
+      ),
+    );
     const controlMs = performance.now() - controlStart;
     expect(builds).toHaveBeenCalledTimes(10);
-    expect(control.every((result) => result.value.result.unchanged === true)).toBe(true);
+    expect(control.every((result) => result.value.result.sessions?.length === 10_001)).toBe(true);
     bypass.mockRestore();
     builds.mockClear();
     const cachedStart = performance.now();
-    const cached = await Promise.all(Array.from({ length: 10 }, () => s.call("sessions.list", { projectId: s.project.id, known: initial.etag })));
+    const cached = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        s.call("sessions.list", { projectId: s.project.id, known: initial.etag }),
+      ),
+    );
     const cachedMs = performance.now() - cachedStart;
     expect(builds).toHaveBeenCalledTimes(1);
     expect(cached.every((result) => result.value.result.unchanged === true)).toBe(true);
-    console.info("performance-large-session-list", JSON.stringify({ sessions: 10_001, requests: 10, controlBuilds: 10, cachedBuilds: 1, controlMs, cachedMs }));
-  } finally { bypass.mockRestore(); lookup.mockRestore(); builds.mockRestore(); }
+    console.info(
+      "performance-large-session-list",
+      JSON.stringify({
+        sessions: 10_001,
+        requests: 10,
+        controlBuilds: 10,
+        cachedBuilds: 1,
+        controlMs,
+        cachedMs,
+      }),
+    );
+  } finally {
+    bypass.mockRestore();
+    lookup.mockRestore();
+    builds.mockRestore();
+  }
 });
 
 it("shares bounded machine change cursors, detects restart, and requires device auth", async () => {
   const s = await setup();
-  const created = s.engine.command({
+  const created = await s.engine.command({
     type: "create",
     commandId: "change-create",
     projectId: s.project.id,
@@ -244,7 +315,7 @@ it("shares bounded machine change cursors, detects restart, and requires device 
 
 it("serves an actual tail page and partial delta without shipping unloaded transcript blocks", async () => {
   const s = await setup();
-  const created = s.engine.command({
+  const created = await s.engine.command({
     type: "create",
     commandId: "page-create",
     projectId: s.project.id,
@@ -252,17 +323,18 @@ it("serves an actual tail page and partial delta without shipping unloaded trans
     model: "codex:test",
     runtimeMode: "supervised",
   });
-  const initial = s.store.session(created.sessionId);
+  const initial = await s.store.session(created.sessionId);
   const blocks = Array.from({ length: 180 }, (_, index) => ({
     id: `history-${index}`,
     role: "assistant" as const,
     text: `turn ${index}`,
   }));
-  s.store.transaction(() =>
-    s.store.save(
-      { ...initial, revision: initial.revision + 1, session: { ...initial.session, blocks } },
-      { type: "fixture" },
-    ),
+  await s.store.transaction(
+    async () =>
+      await s.store.save(
+        { ...initial, revision: initial.revision + 1, session: { ...initial.session, blocks } },
+        { type: "fixture" },
+      ),
   );
   const pageResponse = await s.call("sessions.page", { sessionId: created.sessionId });
   const page = pageResponse.value.result;
@@ -274,19 +346,20 @@ it("serves an actual tail page and partial delta without shipping unloaded trans
   };
   expect(known.session.blocks.length).toBeLessThanOrEqual(100);
 
-  const latest = s.store.session(created.sessionId);
+  const latest = await s.store.session(created.sessionId);
   const changedBlocks = latest.session.blocks.map((block) =>
     block.id === "history-179" ? { ...block, text: "changed tail" } : block,
   );
-  s.store.transaction(() =>
-    s.store.save(
-      {
-        ...latest,
-        revision: latest.revision + 1,
-        session: { ...latest.session, blocks: changedBlocks },
-      },
-      { type: "fixture-update" },
-    ),
+  await s.store.transaction(
+    async () =>
+      await s.store.save(
+        {
+          ...latest,
+          revision: latest.revision + 1,
+          session: { ...latest.session, blocks: changedBlocks },
+        },
+        { type: "fixture-update" },
+      ),
   );
   const update = await s.call("sessions.sync", {
     sessionId: created.sessionId,
@@ -309,7 +382,7 @@ it("serves an actual tail page and partial delta without shipping unloaded trans
 
 it("keeps pinned history coherent through a live append, deletion, and host restart", async () => {
   const s = await setup();
-  const created = s.engine.command({
+  const created = await s.engine.command({
     type: "create",
     commandId: "combined-create",
     projectId: s.project.id,
@@ -317,17 +390,18 @@ it("keeps pinned history coherent through a live append, deletion, and host rest
     model: "codex:test",
     runtimeMode: "supervised",
   });
-  const initial = s.store.session(created.sessionId);
+  const initial = await s.store.session(created.sessionId);
   const blocks = Array.from({ length: 150 }, (_, index) => ({
     id: `pinned-${index}`,
     role: "assistant" as const,
     text: `message ${index}`,
   }));
-  s.store.transaction(() =>
-    s.store.save(
-      { ...initial, revision: initial.revision + 1, session: { ...initial.session, blocks } },
-      { type: "fixture" },
-    ),
+  await s.store.transaction(
+    async () =>
+      await s.store.save(
+        { ...initial, revision: initial.revision + 1, session: { ...initial.session, blocks } },
+        { type: "fixture" },
+      ),
   );
   const page = (await s.call("sessions.page", { sessionId: created.sessionId })).value.result;
   const known: HostSession = {
@@ -347,22 +421,23 @@ it("keeps pinned history coherent through a live append, deletion, and host rest
     waitMs: 5_000,
   });
 
-  const current = s.store.session(created.sessionId);
-  s.store.transaction(() =>
-    s.store.save(
-      {
-        ...current,
-        revision: current.revision + 1,
-        session: {
-          ...current.session,
-          blocks: [
-            ...current.session.blocks,
-            { id: "live-message", role: "assistant", text: "arrived during paging" },
-          ],
+  const current = await s.store.session(created.sessionId);
+  await s.store.transaction(
+    async () =>
+      await s.store.save(
+        {
+          ...current,
+          revision: current.revision + 1,
+          session: {
+            ...current.session,
+            blocks: [
+              ...current.session.blocks,
+              { id: "live-message", role: "assistant", text: "arrived during paging" },
+            ],
+          },
         },
-      },
-      { type: "live-fixture" },
-    ),
+        { type: "live-fixture" },
+      ),
   );
   const notice = await waiting;
   expect(notice.value.result.sessions).toEqual([
@@ -431,7 +506,7 @@ it("keeps pinned history coherent through a live append, deletion, and host rest
 
 it("replays the durable receipt after a lost response or host restart without starting a second turn", async () => {
   const s = await setup();
-  const created = s.engine.command({
+  const created = await s.engine.command({
     type: "create",
     commandId: "receipt-create",
     projectId: s.project.id,
@@ -462,7 +537,9 @@ it("replays the durable receipt after a lost response or host restart without st
     400,
   );
   s.finish();
-  await vi.waitFor(() => expect(s.store.session(created.sessionId).status).toBe("idle"));
+  await vi.waitFor(async () =>
+    expect((await s.store.session(created.sessionId)).status).toBe("idle"),
+  );
   await s.close(s);
   const afterRestart = await openHost(s.directory, vi.fn());
   const response = await fetch(afterRestart.url, {
@@ -478,7 +555,7 @@ it("replays the durable receipt after a lost response or host restart without st
   expect(response.status).toBe(200);
   const durableReplay = await response.json();
   expect(durableReplay.result).toEqual(accepted.value.result);
-  expect(afterRestart.store.session(created.sessionId).status).toBe("idle");
+  expect((await afterRestart.store.session(created.sessionId)).status).toBe("idle");
   await closeHost(afterRestart);
 });
 
@@ -509,7 +586,7 @@ it("keeps each loopback host authoritative and usable when the other host discon
   });
   const projectA = await hostA.engine.openProject(directoryA);
   const projectB = await hostB.engine.openProject(directoryB);
-  const sessionA = hostA.engine.command({
+  const sessionA = await hostA.engine.command({
     type: "create",
     commandId: "owner-a-create",
     projectId: projectA.id,
@@ -517,7 +594,7 @@ it("keeps each loopback host authoritative and usable when the other host discon
     model: "codex:test",
     runtimeMode: "supervised",
   });
-  const sessionB = hostB.engine.command({
+  const sessionB = await hostB.engine.command({
     type: "create",
     commandId: "owner-b-create",
     projectId: projectB.id,
@@ -565,9 +642,9 @@ it("keeps each loopback host authoritative and usable when the other host discon
   });
   finishA();
   finishB();
-  await vi.waitFor(() => {
-    expect(hostA.store.session(sessionA.sessionId).status).toBe("idle");
-    expect(hostB.store.session(sessionB.sessionId).status).toBe("idle");
+  await vi.waitFor(async () => {
+    expect((await hostA.store.session(sessionA.sessionId)).status).toBe("idle");
+    expect((await hostB.store.session(sessionB.sessionId)).status).toBe("idle");
   });
 
   await closeHost(hostA);
@@ -585,12 +662,14 @@ it("keeps each loopback host authoritative and usable when the other host discon
   expect(stillOwnedByB.status).toBe(200);
   await vi.waitFor(() => expect(sendB).toHaveBeenCalledTimes(2));
   finishB();
-  await vi.waitFor(() => expect(hostB.store.session(sessionB.sessionId).status).toBe("idle"));
+  await vi.waitFor(async () =>
+    expect((await hostB.store.session(sessionB.sessionId)).status).toBe("idle"),
+  );
 });
 
 it("releases a disconnected long poll without blocking the command lane", async () => {
   const s = await setup();
-  const created = s.engine.command({
+  const created = await s.engine.command({
     type: "create",
     commandId: "cancel-poll-create",
     projectId: s.project.id,
@@ -630,7 +709,7 @@ it("releases a disconnected long poll without blocking the command lane", async 
 
 it("wakes machine readers on store writes and inlines only bounded opted-in deltas", async () => {
   const s = await setup();
-  const created = s.engine.command({
+  const created = await s.engine.command({
     type: "create",
     commandId: "inline-create",
     projectId: s.project.id,
@@ -638,7 +717,7 @@ it("wakes machine readers on store writes and inlines only bounded opted-in delt
     model: "codex:test",
     runtimeMode: "supervised",
   });
-  const known = s.store.session(created.sessionId);
+  const known = await s.store.session(created.sessionId);
   const initial = (
     await s.call("machine.changes", {
       sessions: [{ sessionId: created.sessionId, revision: known.revision }],
@@ -655,22 +734,23 @@ it("wakes machine readers on store writes and inlines only bounded opted-in delt
   const pending = s.call("machine.changes", params);
   await new Promise((resolve) => setTimeout(resolve, 25));
   const started = performance.now();
-  s.store.transaction(() =>
-    s.store.save(
-      {
-        ...known,
-        revision: known.revision + 1,
-        session: {
-          ...known.session,
-          blocks: [{ id: "inline-block", role: "assistant", text: "inline text" }],
+  await s.store.transaction(
+    async () =>
+      await s.store.save(
+        {
+          ...known,
+          revision: known.revision + 1,
+          session: {
+            ...known.session,
+            blocks: [{ id: "inline-block", role: "assistant", text: "inline text" }],
+          },
         },
-      },
-      { type: "fixture" },
-    ),
+        { type: "fixture" },
+      ),
   );
   // Host-created sessions also have a desktop mirror; that is not ownership.
-  expect(s.store.sessionStateMetadata(created.sessionId)?.desktop).toBe(true);
-  expect(s.store.sync(created.sessionId, known.revision).kind).toBe("delta");
+  expect((await s.store.sessionStateMetadata(created.sessionId))?.desktop).toBe(true);
+  expect((await s.store.sync(created.sessionId, known.revision)).kind).toBe("delta");
   const changed = (await pending).value.result;
   expect(changed.reset).toBe(false);
   expect(performance.now() - started).toBeLessThan(500);
@@ -681,19 +761,20 @@ it("wakes machine readers on store writes and inlines only bounded opted-in delt
   const legacy = (await s.call("machine.changes", { ...params, inlineSync: false, waitMs: 0 }))
     .value.result;
   expect(legacy.sessions[0].sync).toBeUndefined();
-  const small = s.store.session(created.sessionId);
-  s.store.transaction(() =>
-    s.store.save(
-      {
-        ...small,
-        revision: small.revision + 1,
-        session: {
-          ...small.session,
-          blocks: [{ id: "inline-block", role: "assistant", text: "x".repeat(70000) }],
+  const small = await s.store.session(created.sessionId);
+  await s.store.transaction(
+    async () =>
+      await s.store.save(
+        {
+          ...small,
+          revision: small.revision + 1,
+          session: {
+            ...small.session,
+            blocks: [{ id: "inline-block", role: "assistant", text: "x".repeat(70000) }],
+          },
         },
-      },
-      { type: "fixture" },
-    ),
+        { type: "fixture" },
+      ),
   );
   const large = (await s.call("machine.changes", { ...params, waitMs: 0 })).value.result;
   expect(large.sessions[0].sync).toBeUndefined();

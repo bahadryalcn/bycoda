@@ -19,6 +19,59 @@ import {
 } from "./translationHistory";
 
 describe("offline translation routing", () => {
+  it("shows only answer deltas as they arrive, preserving repeated tokens", async () => {
+    const output = vi.fn();
+    vi.mocked(runHarnessTextPrompt).mockImplementationOnce(async (input) => {
+      input.onEvent?.({ type: "reasoning.delta", text: "Private thought" });
+      input.onEvent?.({ type: "message.delta", text: "clear " });
+      input.onEvent?.({ type: "message.delta", text: "clear " });
+      return "clear clear";
+    });
+    await translateSelection(
+      "fix",
+      "reprompt",
+      { cwd: "/p", harness: "codex" },
+      new AbortController().signal,
+      undefined,
+      output,
+    );
+    expect(output.mock.calls).toEqual([["clear "], ["clear clear "]]);
+    vi.mocked(runHarnessTextPrompt).mockClear();
+  });
+
+  it("times out provider startup or queue waits and suppresses late deltas", async () => {
+    vi.useFakeTimers();
+    const output = vi.fn();
+    let request!: Parameters<typeof runHarnessTextPrompt>[0];
+    vi.mocked(runHarnessTextPrompt).mockImplementationOnce((input) => {
+      request = input;
+      return new Promise((_, reject) =>
+        input.signal!.addEventListener("abort", () => reject(new Error("cancelled")), {
+          once: true,
+        }),
+      );
+    });
+    try {
+      const promise = translateSelection(
+        "fix",
+        "reprompt",
+        { cwd: "/p", harness: "codex" },
+        new AbortController().signal,
+        undefined,
+        output,
+      );
+      const rejected = expect(promise).rejects.toThrow("Text request timed out");
+      await vi.advanceTimersByTimeAsync(90_000);
+      await rejected;
+      expect(request.signal?.aborted).toBe(true);
+      request.onEvent?.({ type: "message.delta", text: "Late output" });
+      expect(output).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      vi.mocked(runHarnessTextPrompt).mockClear();
+    }
+  });
   it("keeps context around the selected occurrence in long text", () => {
     const source = `${"Old context ".repeat(2000)}Nearby before. fix Nearby after.`;
     const start = source.lastIndexOf("fix");
@@ -49,7 +102,7 @@ describe("offline translation routing", () => {
       providerAccountId: "rewriter",
       ephemeral: true,
       intent: "plan",
-      signal,
+      signal: expect.any(AbortSignal),
     });
     expect(request.prompt).toContain(JSON.stringify(source));
     expect(request.prompt).toContain("Keep the same language");
@@ -121,7 +174,7 @@ describe("offline translation routing", () => {
         harness: "codex",
         providerAccountId: "selected-account",
         ephemeral: true,
-        signal: controller.signal,
+        signal: expect.any(AbortSignal),
         prompt: expect.stringContaining(JSON.stringify(source)),
       }),
     );

@@ -56,6 +56,7 @@ const welcome = new URLSearchParams(location.search).has("welcome");
 const withCrew = new URLSearchParams(location.search).has("crew");
 const withFooter = new URLSearchParams(location.search).has("footer");
 const chatLayout = new URLSearchParams(location.search).has("chat-layout");
+const workspaceFooter = new URLSearchParams(location.search).has("workspace-footer");
 const remoteLayout = new URLSearchParams(location.search).has("remote");
 const showProjectPicker = new URLSearchParams(location.search).has("project-picker");
 const longAccount = new URLSearchParams(location.search).has("long-account");
@@ -208,7 +209,9 @@ function Fixture() {
         cwd={fixtureCwd}
         focused={new URLSearchParams(location.search).has("hint-motion")}
         hideProjectPicker={!showProjectPicker}
-        hideBranchPicker={!new URLSearchParams(location.search).has("workspace-footer")}
+        hideBranchPicker={!workspaceFooter}
+        branch={workspaceFooter ? "main" : undefined}
+        onWorktreeChange={workspaceFooter ? async () => {} : undefined}
         hideTopBar={!chatLayout}
         remoteSession={remoteLayout}
         remoteFeatures={remoteLayout ? { attachments: true, plan: true, draft: true } : undefined}

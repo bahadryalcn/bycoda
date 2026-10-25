@@ -473,7 +473,8 @@ export function ServersView({
             variant="ghost"
             iconOnly
             label={t("Refresh servers")}
-            disabled={loading}
+            loading={loading && !error}
+            disabled={loading && !!error}
             onClick={refresh}
           >
             <RefreshCw aria-hidden className="icon-sm" />
@@ -534,7 +535,7 @@ export function ServersView({
                   ? t("Couldn’t refresh servers. Showing last loaded data.")
                   : t("Couldn’t load servers.")}
               </span>
-              <Button variant="ghost" disabled={loading} onClick={refresh}>
+              <Button variant="ghost" loading={loading} onClick={refresh}>
                 {t("Retry")}
               </Button>
             </div>

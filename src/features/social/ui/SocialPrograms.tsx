@@ -1,3 +1,7 @@
+import { Progress } from "../../../shared/ui/Progress";
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
 import { NativeSelect } from "../../../shared/ui/Select";
@@ -131,6 +135,8 @@ const localInput = (at: number) => {
 };
 
 export function SocialPrograms({ client, snapshot, projects, initialProject, run }: Props) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   const [setupStep, setSetupStep] = useState(0);
   const locale = useLocale(),
     active = useContext(SocialPanelActiveContext),
@@ -259,18 +265,23 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
           onSubmit={(e) => {
             e.preventDefault();
             const form = e.currentTarget;
-            void perform("programs.configure", {
-              config,
-              ...(edit ? { id: edit.id, expectedRevision: edit.revision } : {}),
-            }).then((saved) => {
-              if (saved) closeComposer(form);
-            });
+            void pendingUi
+              .run("programs.save-paused-campaign", () =>
+                perform("programs.configure", {
+                  config,
+                  ...(edit ? { id: edit.id, expectedRevision: edit.revision } : {}),
+                }),
+              )
+              .then((saved) => {
+                if (saved) closeComposer(form);
+              });
           }}
         >
           <nav className="social-program-steps" aria-label={t("Create AI campaign")}>
             {["Purpose and content", "Publishing schedule", "Approval and limits"].map(
               (label, index) => (
                 <Button
+                  disabled={socialLocked}
                   key={label}
                   type="button"
                   variant="tab"
@@ -287,6 +298,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             <details className="social-program-advanced social-program-assistant" open>
               <summary>{t("Describe the campaign to AI")}</summary>
               <TextareaField
+                disabled={socialLocked}
                 label={t("Campaign instructions")}
                 rows={3}
                 value={instructions}
@@ -294,18 +306,20 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               />
               <Button
                 variant="secondary"
-                loading={busy}
+                loading={pendingUi.is("programs.fill-settings-with-ai")}
                 type="button"
-                disabled={busy || !instructions.trim()}
+                disabled={socialLocked || busy || !instructions.trim()}
                 onClick={() =>
-                  void run(async () => {
-                    const result = await client.request<{
-                      config: ProgramConfig;
-                      questions: string[];
-                    }>("programs.suggest", { config, instructions });
-                    setConfig(result.config);
-                    setQuestions(result.questions);
-                  })
+                  void pendingUi.run("programs.fill-settings-with-ai", () =>
+                    run(async () => {
+                      const result = await client.request<{
+                        config: ProgramConfig;
+                        questions: string[];
+                      }>("programs.suggest", { config, instructions });
+                      setConfig(result.config);
+                      setQuestions(result.questions);
+                    }),
+                  )
                 }
               >
                 {t("Fill settings with AI")}
@@ -314,10 +328,11 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 <p key={i}>{q}</p>
               ))}
             </details>
-            <fieldset disabled={busy}>
+            <fieldset>
               <legend>{t("Purpose and content")}</legend>
               <div className="social-program-grid">
                 <TextField
+                  disabled={socialLocked}
                   label={t("Campaign name")}
                   required
                   value={config.name}
@@ -325,6 +340,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 />
                 <Label text="Project">
                   <NativeSearchableSelect
+                    disabled={socialLocked}
                     label={t("Project")}
                     options={[
                       { value: "", label: t("Select project") },
@@ -348,6 +364,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   />
                 </Label>
                 <TextField
+                  disabled={socialLocked}
                   label={t("Topic")}
                   required
                   value={config.brief.topic}
@@ -355,6 +372,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 />
               </div>
               <TextareaField
+                disabled={socialLocked}
                 label={t("Description")}
                 required
                 rows={3}
@@ -374,32 +392,38 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               <details className="social-program-advanced social-program-content-options">
                 <summary>{t("Brand and content details")}</summary>
                 <TextField
+                  disabled={socialLocked}
                   label={t("Title")}
                   value={config.brief.title}
                   onChange={(e) => brief("title", e.target.value)}
                 />
                 <div className="social-program-grid">
                   <TextField
+                    disabled={socialLocked}
                     label={t("Audience")}
                     value={config.brief.audience}
                     onChange={(e) => brief("audience", e.target.value)}
                   />
                   <TextField
+                    disabled={socialLocked}
                     label={t("Content language")}
                     value={config.brief.language}
                     onChange={(e) => brief("language", e.target.value)}
                   />
                   <TextField
+                    disabled={socialLocked}
                     label={t("Brand voice")}
                     value={config.brief.voice}
                     onChange={(e) => brief("voice", e.target.value)}
                   />
                   <TextField
+                    disabled={socialLocked}
                     label={t("Call to action")}
                     value={config.brief.cta}
                     onChange={(e) => brief("cta", e.target.value)}
                   />
                   <TextField
+                    disabled={socialLocked}
                     label={t("Content angles (comma separated)")}
                     value={config.brief.angles?.join(", ") ?? ""}
                     onChange={(e) =>
@@ -413,6 +437,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     }
                   />
                   <TextField
+                    disabled={socialLocked}
                     label={t("Public link")}
                     type="url"
                     value={config.brief.link ?? ""}
@@ -421,6 +446,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 </div>
                 <Label text="Content template">
                   <NativeSelect
+                    disabled={socialLocked}
                     defaultValue=""
                     onChange={(e) => {
                       if (e.target.value)
@@ -441,7 +467,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 <Button
                   variant="secondary"
                   type="button"
-                  disabled={!config.brief.link}
+                  disabled={socialLocked || !config.brief.link}
                   onClick={() => {
                     try {
                       const u = new URL(config.brief.link!);
@@ -468,11 +494,15 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 />
 
                 <Button
+                  loading={pendingUi.is("programs.check-model-and-platform-availability")}
+                  disabled={socialLocked}
                   variant="secondary"
                   type="button"
                   onClick={() =>
-                    void run(async () =>
-                      setFeatures(await client.request<ProgramFeatures>("programs.features")),
+                    void pendingUi.run("programs.check-model-and-platform-availability", () =>
+                      run(async () =>
+                        setFeatures(await client.request<ProgramFeatures>("programs.features")),
+                      ),
                     )
                   }
                 >
@@ -492,11 +522,12 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             </fieldset>
             <details className="social-program-advanced">
               <summary>{t("AI models and media")}</summary>
-              <fieldset disabled={busy}>
+              <fieldset>
                 <legend className="sr-only">{t("AI models and media")}</legend>
                 <div className="social-program-grid">
                   <Label text="Text provider">
                     <NativeSelect
+                      disabled={socialLocked}
                       value={config.textAgent?.provider ?? ""}
                       onChange={(e) =>
                         set(
@@ -524,7 +555,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                       label={t("Text model")}
                       list={`${formId}-models`}
                       value={config.textAgent?.model ?? ""}
-                      disabled={!config.textAgent}
+                      disabled={socialLocked || !config.textAgent}
                       onChange={(e) =>
                         config.textAgent &&
                         set("textAgent", { ...config.textAgent, model: e.target.value })
@@ -542,6 +573,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   </div>
                   <Label text="Media source">
                     <NativeSelect
+                      disabled={socialLocked}
                       value={config.image.mode}
                       onChange={(e) =>
                         set("image", {
@@ -561,6 +593,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     <>
                       <Label text="Image provider">
                         <NativeSelect
+                          disabled={socialLocked}
                           value={config.image.provider}
                           onChange={(e) =>
                             set("image", {
@@ -591,7 +624,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                       <div className="social-program-field">
                         <TextField
                           label={t("Image model")}
-                          disabled={config.image.provider === "automatic"}
+                          disabled={socialLocked || config.image.provider === "automatic"}
                           value={config.image.model ?? ""}
                           list={`${formId}-image-models`}
                           onChange={(e) => set("image", { ...config.image, model: e.target.value })}
@@ -606,6 +639,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                       </div>
                       <Label text="Aspect ratio">
                         <NativeSelect
+                          disabled={socialLocked}
                           value={config.image.aspectRatio}
                           onChange={(e) =>
                             set("image", {
@@ -635,6 +669,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     <>
                       <Label text="Media library">
                         <SearchableSelect
+                          disabled={socialLocked}
                           value=""
                           label={t("Media library")}
                           options={[
@@ -662,29 +697,36 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                         />
                       </Label>
                       <TextField
+                        disabled={socialLocked}
                         label={t("Upload image or video")}
                         type="file"
                         accept="image/png,image/jpeg,video/mp4,video/webm"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file)
-                            void run(async () => {
-                              const asset = file.type.startsWith("video/")
-                                ? await client.uploadVideo(file)
-                                : await client.upload(file);
-                              set("image", {
-                                ...config.image,
-                                media: [
-                                  {
-                                    kind: file.type.startsWith("video/") ? "video" : "image",
-                                    uploadId: asset.uploadId,
-                                  },
-                                ],
-                              });
-                            });
+                            void pendingUi.run("program.upload-media", () =>
+                              run(async () => {
+                                const asset = file.type.startsWith("video/")
+                                  ? await client.uploadVideo(file)
+                                  : await client.upload(file);
+                                set("image", {
+                                  ...config.image,
+                                  media: [
+                                    {
+                                      kind: file.type.startsWith("video/") ? "video" : "image",
+                                      uploadId: asset.uploadId,
+                                    },
+                                  ],
+                                });
+                              }),
+                            );
                         }}
                       />
+                      {pendingUi.is("program.upload-media") ? (
+                        <Progress label={t("Operation in progress…")} />
+                      ) : null}
                       <TextField
+                        disabled={socialLocked}
                         label={t("Public image URL")}
                         type="url"
                         value={config.image.media[0]?.url ?? ""}
@@ -701,6 +743,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 </div>
                 <Label text="Content strategy">
                   <SearchableSelect
+                    disabled={socialLocked}
                     value={config.strategy}
                     searchable={false}
                     label={t("Content strategy")}
@@ -733,33 +776,40 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     <section key={id}>
                       <strong>{snapshot.accounts.find((a) => a.id === id)?.name}</strong>
                       <TextField
+                        disabled={socialLocked}
                         label={t("Override media")}
                         type="file"
                         accept="image/png,image/jpeg,video/mp4,video/webm"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file)
-                            void run(async () => {
-                              const asset = file.type.startsWith("video/")
-                                ? await client.uploadVideo(file)
-                                : await client.upload(file);
-                              setConfig((c) => ({
-                                ...c,
-                                mediaOverrides: {
-                                  ...c.mediaOverrides,
-                                  [id]: [
-                                    {
-                                      kind: file.type.startsWith("video/") ? "video" : "image",
-                                      uploadId: asset.uploadId,
-                                    },
-                                  ],
-                                },
-                              }));
-                            });
+                            void pendingUi.run(`program.upload-override:${id}`, () =>
+                              run(async () => {
+                                const asset = file.type.startsWith("video/")
+                                  ? await client.uploadVideo(file)
+                                  : await client.upload(file);
+                                setConfig((c) => ({
+                                  ...c,
+                                  mediaOverrides: {
+                                    ...c.mediaOverrides,
+                                    [id]: [
+                                      {
+                                        kind: file.type.startsWith("video/") ? "video" : "image",
+                                        uploadId: asset.uploadId,
+                                      },
+                                    ],
+                                  },
+                                }));
+                              }),
+                            );
                         }}
                       />
+                      {pendingUi.is(`program.upload-override:${id}`) ? (
+                        <Progress label={t("Operation in progress…")} />
+                      ) : null}
                       <Label text="Use text only">
                         <Checkbox
+                          disabled={socialLocked}
                           checked={config.mediaOverrides?.[id]?.length === 0}
                           onChange={(e) =>
                             setConfig((c) => {
@@ -775,6 +825,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                         <p>
                           {t("Media override saved")}
                           <Button
+                            disabled={socialLocked}
                             variant="secondary"
                             type="button"
                             onClick={() =>
@@ -807,6 +858,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 ) ? (
                   <div className="social-program-grid">
                     <TextField
+                      disabled={socialLocked}
                       label={t("Video title")}
                       value={config.youtube?.title ?? ""}
                       onChange={(e) =>
@@ -821,6 +873,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     />
                     <Label text="Video visibility">
                       <NativeSelect
+                        disabled={socialLocked}
                         value={config.youtube?.privacy ?? "private"}
                         onChange={(e) =>
                           set("youtube", {
@@ -839,6 +892,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     </Label>
                     <Label text="Made for kids">
                       <Checkbox
+                        disabled={socialLocked}
                         checked={config.youtube?.madeForKids ?? false}
                         onChange={(e) =>
                           set("youtube", {
@@ -853,6 +907,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     </Label>
                     <Label text="Contains synthetic media">
                       <Checkbox
+                        disabled={socialLocked}
                         checked={config.youtube?.containsSyntheticMedia ?? false}
                         onChange={(e) =>
                           set("youtube", {
@@ -871,10 +926,11 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             </details>
           </div>
           <div className="social-program-step" data-program-step="1" hidden={setupStep !== 1}>
-            <fieldset disabled={busy}>
+            <fieldset>
               <legend>{t("Publishing schedule")}</legend>
               <div className="social-program-grid">
                 <RadioGroup
+                  disabled={socialLocked}
                   compact
                   label={t("Schedule mode")}
                   options={[
@@ -888,12 +944,14 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   }
                 />
                 <TextField
+                  disabled={socialLocked}
                   label={t("Time zone")}
                   required
                   value={config.schedule.timeZone}
                   onChange={(e) => schedule("timeZone", e.target.value)}
                 />
                 <TextField
+                  disabled={socialLocked}
                   label={t("Campaign start (device local time)")}
                   type="datetime-local"
                   required
@@ -901,6 +959,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   onChange={(e) => schedule("startsAt", new Date(e.target.value).getTime())}
                 />
                 <TextField
+                  disabled={socialLocked}
                   label={t("Campaign end (optional)")}
                   type="datetime-local"
                   value={config.schedule.endsAt ? localInput(config.schedule.endsAt) : ""}
@@ -916,18 +975,20 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   type="number"
                   min={1}
                   max={10000}
-                  disabled={config.totalPosts === null}
+                  disabled={socialLocked || config.totalPosts === null}
                   value={config.totalPosts ?? ""}
                   onChange={(e) => set("totalPosts", Number(e.target.value))}
                 />
                 <Label text="Continuous campaign">
                   <Checkbox
+                    disabled={socialLocked}
                     checked={config.totalPosts === null}
                     onChange={(e) => set("totalPosts", e.target.checked ? null : 10)}
                   />
                 </Label>
                 {config.schedule.mode === "times" ? (
                   <TextField
+                    disabled={socialLocked}
                     label={t("Publishing times (HH:mm, comma separated)")}
                     required
                     value={config.schedule.times.join(", ")}
@@ -941,12 +1002,14 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 ) : (
                   <>
                     <TextField
+                      disabled={socialLocked}
                       label={t("Window start")}
                       type="time"
                       value={config.schedule.startTime}
                       onChange={(e) => schedule("startTime", e.target.value)}
                     />
                     <TextField
+                      disabled={socialLocked}
                       label={t("Window end")}
                       type="time"
                       value={config.schedule.endTime}
@@ -955,6 +1018,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     {config.schedule.mode === "interval" ? (
                       <>
                         <TextField
+                          disabled={socialLocked}
                           label={t("Minimum interval (minutes)")}
                           type="number"
                           min={1}
@@ -962,6 +1026,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                           onChange={(e) => schedule("minIntervalMinutes", Number(e.target.value))}
                         />
                         <TextField
+                          disabled={socialLocked}
                           label={t("Maximum interval (minutes)")}
                           type="number"
                           min={1}
@@ -972,6 +1037,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     ) : (
                       <>
                         <TextField
+                          disabled={socialLocked}
                           label={t("Posts per period")}
                           type="number"
                           min={1}
@@ -981,6 +1047,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                         />
                         <Label text="Period">
                           <NativeSelect
+                            disabled={socialLocked}
                             value={config.schedule.period}
                             onChange={(e) => schedule("period", e.target.value as "day" | "week")}
                           >
@@ -997,6 +1064,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 {[1, 2, 3, 4, 5, 6, 7].map((day) => (
                   <label key={day}>
                     <Checkbox
+                      disabled={socialLocked}
                       checked={config.schedule.days.includes(day)}
                       onChange={(e) =>
                         schedule(
@@ -1020,16 +1088,20 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 })}
               </p>
               <Button
+                loading={pendingUi.is("programs.preview-publishing-times")}
+                disabled={socialLocked}
                 variant="secondary"
                 type="button"
                 onClick={() =>
-                  void run(async () => {
-                    const result = await client.request<{ dates: number[] }>(
-                      "programs.preview-schedule",
-                      { config },
-                    );
-                    setPreview(result.dates);
-                  })
+                  void pendingUi.run("programs.preview-publishing-times", () =>
+                    run(async () => {
+                      const result = await client.request<{ dates: number[] }>(
+                        "programs.preview-schedule",
+                        { config },
+                      );
+                      setPreview(result.dates);
+                    }),
+                  )
                 }
               >
                 {t("Preview publishing times")}
@@ -1075,9 +1147,10 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 </dd>
               </div>
             </dl>
-            <fieldset disabled={busy}>
+            <fieldset>
               <legend>{t("Approval and limits")}</legend>
               <RadioGroup
+                disabled={socialLocked}
                 label={t("Approval mode")}
                 options={(
                   [
@@ -1104,6 +1177,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 {PROGRAM_STEPS.map((step) => (
                   <label key={step}>
                     <Checkbox
+                      disabled={socialLocked}
                       checked={config.approval.steps.includes(step)}
                       onChange={(e) =>
                         set("approval", {
@@ -1135,6 +1209,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     ] as const
                   ).map((key) => (
                     <TextField
+                      disabled={socialLocked}
                       key={key}
                       label={t(
                         {
@@ -1165,6 +1240,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
           <footer className="social-program-setup-actions">
             {setupStep > 0 ? (
               <Button
+                disabled={socialLocked}
                 variant="secondary"
                 type="button"
                 onClick={() => setSetupStep((step) => step - 1)}
@@ -1174,6 +1250,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             ) : null}
             {setupStep < 2 ? (
               <Button
+                disabled={socialLocked}
                 variant="primary"
                 type="button"
                 onClick={() => setSetupStep((step) => step + 1)}
@@ -1183,15 +1260,16 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             ) : null}
             <Button
               variant="primary"
-              loading={busy}
+              loading={pendingUi.is("programs.save-paused-campaign")}
               type="submit"
-              disabled={busy}
+              disabled={socialLocked || busy}
               hidden={setupStep !== 2}
             >
               {t("Save paused campaign")}
             </Button>
             {edit ? (
               <Button
+                disabled={socialLocked}
                 variant="secondary"
                 type="button"
                 onClick={() => {
@@ -1210,16 +1288,18 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
           {programs.map((p) => (
             <Button
               variant="tab"
-              loading={busy}
+              loading={pendingUi.is(`program.select:${p.id}`)}
               type="button"
               key={p.id}
-              disabled={busy}
+              disabled={socialLocked || busy}
               aria-pressed={detail?.program.id === p.id}
               onClick={() =>
-                void run(async () => {
-                  setDetail(await client.request<ProgramDetail>("programs.status", { id: p.id }));
-                  setConfirmed(false);
-                })
+                void pendingUi.run(`program.select:${p.id}`, () =>
+                  run(async () => {
+                    setDetail(await client.request<ProgramDetail>("programs.status", { id: p.id }));
+                    setConfirmed(false);
+                  }),
+                )
               }
             >
               <strong>{p.name}</strong>
@@ -1250,6 +1330,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             <details className="social-program-advanced">
               <summary>{t("Link for future drafts")}</summary>
               <TextField
+                disabled={socialLocked}
                 label={t("Link for future drafts")}
                 type="url"
                 value={bulkLink}
@@ -1258,14 +1339,16 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               <Button
                 type="button"
                 variant="secondary"
-                loading={busy}
-                disabled={busy}
+                loading={pendingUi.is("programs.apply-link-to-editable-drafts")}
+                disabled={socialLocked || busy}
                 onClick={() =>
-                  void perform("programs.bulk-edit", {
-                    id: detail.program.id,
-                    expectedRevision: detail.program.revision,
-                    link: bulkLink,
-                  })
+                  void pendingUi.run("programs.apply-link-to-editable-drafts", () =>
+                    perform("programs.bulk-edit", {
+                      id: detail.program.id,
+                      expectedRevision: detail.program.revision,
+                      link: bulkLink,
+                    }),
+                  )
                 }
               >
                 {t("Apply link to editable drafts")}
@@ -1275,17 +1358,20 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               <Button
                 type="button"
                 variant="secondary"
-                loading={busy}
-                disabled={busy || detail.program.cancelled}
-                onClick={() => void perform("programs.generate", { id: detail.program.id })}
+                loading={pendingUi.is("programs.generate-next-content")}
+                disabled={socialLocked || busy || detail.program.cancelled}
+                onClick={() =>
+                  void pendingUi.run("programs.generate-next-content", () =>
+                    perform("programs.generate", { id: detail.program.id }),
+                  )
+                }
               >
                 {t("Generate next content")}
               </Button>
               <Button
                 type="button"
                 variant="secondary"
-                loading={busy}
-                disabled={busy}
+                disabled={socialLocked || busy}
                 onClick={() => {
                   const {
                     id: _,
@@ -1315,9 +1401,13 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               <Button
                 type="button"
                 variant="secondary"
-                loading={busy}
-                disabled={busy}
-                onClick={() => void perform("programs.pause", { id: detail.program.id })}
+                loading={pendingUi.is("programs.pause")}
+                disabled={socialLocked || busy}
+                onClick={() =>
+                  void pendingUi.run("programs.pause", () =>
+                    perform("programs.pause", { id: detail.program.id }),
+                  )
+                }
               >
                 {t("Pause")}
               </Button>
@@ -1338,7 +1428,11 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               />
             </div>
             <label className="social-program-confirm">
-              <Checkbox checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+              <Checkbox
+                disabled={socialLocked}
+                checked={confirmed}
+                onChange={(e) => setConfirmed(e.target.checked)}
+              />
               {t(
                 "I reviewed this revision, its accounts, schedule, models, budgets and approval steps.",
               )}
@@ -1361,14 +1455,22 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               <Button
                 type="button"
                 variant="secondary"
-                loading={busy}
-                disabled={busy || !confirmed || detail.program.cancelled || detail.program.enabled}
+                loading={pendingUi.is("programs.activate-reviewed-campaign")}
+                disabled={
+                  socialLocked ||
+                  busy ||
+                  !confirmed ||
+                  detail.program.cancelled ||
+                  detail.program.enabled
+                }
                 onClick={() =>
-                  void perform("programs.activate", {
-                    id: detail.program.id,
-                    expectedRevision: detail.program.revision,
-                    confirm: true,
-                  })
+                  void pendingUi.run("programs.activate-reviewed-campaign", () =>
+                    perform("programs.activate", {
+                      id: detail.program.id,
+                      expectedRevision: detail.program.revision,
+                      confirm: true,
+                    }),
+                  )
                 }
               >
                 {t("Activate reviewed campaign")}
@@ -1411,7 +1513,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     <TextField
                       label={t("Reschedule (device local time)")}
                       type="datetime-local"
-                      disabled={busy}
+                      disabled={socialLocked || busy}
                       defaultValue={localInput(o.scheduledAt)}
                       onBlur={(e) => {
                         const at = new Date(e.target.value).getTime();
@@ -1443,20 +1545,24 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             </div>
             {detail.nextBefore !== undefined ? (
               <Button
+                loading={pendingUi.is("programs.load-older-posts")}
+                disabled={socialLocked}
                 type="button"
                 variant="secondary"
                 onClick={() =>
-                  void run(async () => {
-                    const older = await client.request<ProgramDetail>("programs.status", {
-                      id: detail.program.id,
-                      before: detail.nextBefore,
-                    });
-                    setDetail((d) =>
-                      d
-                        ? { ...older, occurrences: [...older.occurrences, ...d.occurrences] }
-                        : older,
-                    );
-                  })
+                  void pendingUi.run("programs.load-older-posts", () =>
+                    run(async () => {
+                      const older = await client.request<ProgramDetail>("programs.status", {
+                        id: detail.program.id,
+                        before: detail.nextBefore,
+                      });
+                      setDetail((d) =>
+                        d
+                          ? { ...older, occurrences: [...older.occurrences, ...d.occurrences] }
+                          : older,
+                      );
+                    }),
+                  )
                 }
               >
                 {t("Load older posts")}
@@ -1486,15 +1592,22 @@ function TargetEditor({
   perform: (action: string, input: Record<string, unknown>) => Promise<boolean>;
   client: Props["client"];
 }) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   const [variant, setVariant] = useState<CampaignVariant | undefined>(target.variant),
     [selectedSteps, setSelectedSteps] = useState<string[]>([]),
-    [image, setImage] = useState("");
+    [images, setImages] = useState<Record<string, string>>({}),
+    [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
   const dirty = useRef(false);
   const imageVersion = useRef(0);
   const mediaKey = target.variant?.media.map((m) => m.uploadId ?? m.url).join("|");
   useEffect(() => {
     imageVersion.current++;
-    setImage("");
+    setImages({});
+    setImageErrors({});
+    return () => {
+      imageVersion.current++;
+    };
   }, [mediaKey]);
   useEffect(() => {
     if (!dirty.current) setVariant(target.variant);
@@ -1507,9 +1620,16 @@ function TargetEditor({
         "programs.media-preview",
         { uploadId },
       );
-      if (version === imageVersion.current) setImage(`data:${result.mime};base64,${result.base64}`);
+      if (version === imageVersion.current) {
+        setImages((current) => ({
+          ...current,
+          [uploadId]: `data:${result.mime};base64,${result.base64}`,
+        }));
+        setImageErrors((current) => ({ ...current, [uploadId]: false }));
+      }
     } catch {
-      if (version === imageVersion.current) setImage("");
+      if (version === imageVersion.current)
+        setImageErrors((current) => ({ ...current, [uploadId]: true }));
     }
   };
   return (
@@ -1531,9 +1651,13 @@ function TargetEditor({
         <Button
           type="button"
           variant="secondary"
-          loading={busy}
-          disabled={busy}
-          onClick={() => void perform("programs.regenerate", ids)}
+          loading={pendingUi.is("target-editor.regenerate")}
+          disabled={socialLocked || busy}
+          onClick={() =>
+            void pendingUi.run("target-editor.regenerate", () =>
+              perform("programs.regenerate", ids),
+            )
+          }
         >
           {t("Regenerate")}
         </Button>
@@ -1546,9 +1670,13 @@ function TargetEditor({
         <Button
           type="button"
           variant="secondary"
-          loading={busy}
-          disabled={busy}
-          onClick={() => void perform("programs.resume-image", ids)}
+          loading={pendingUi.is("target-editor.resume-existing-image-job")}
+          disabled={socialLocked || busy}
+          onClick={() =>
+            void pendingUi.run("target-editor.resume-existing-image-job", () =>
+              perform("programs.resume-image", ids),
+            )
+          }
         >
           {t("Resume existing image job")}
         </Button>
@@ -1558,7 +1686,7 @@ function TargetEditor({
           <TextareaField
             label={t("Platform content")}
             rows={3}
-            disabled={busy || !!target.jobId || target.status === "generating"}
+            disabled={socialLocked || busy || !!target.jobId || target.status === "generating"}
             value={variant.text}
             onChange={(e) => {
               dirty.current = true;
@@ -1568,7 +1696,7 @@ function TargetEditor({
           <TextField
             label={t("Public link")}
             type="url"
-            disabled={busy || !!target.jobId}
+            disabled={socialLocked || busy || !!target.jobId}
             value={variant.link ?? ""}
             onChange={(e) => {
               dirty.current = true;
@@ -1579,7 +1707,7 @@ function TargetEditor({
             <>
               <TextField
                 label={t("Video title")}
-                disabled={busy || !!target.jobId}
+                disabled={socialLocked || busy || !!target.jobId}
                 value={variant.youtube.title}
                 onChange={(e) => {
                   dirty.current = true;
@@ -1591,7 +1719,7 @@ function TargetEditor({
               />
               <Label text="Video visibility">
                 <NativeSelect
-                  disabled={busy || !!target.jobId}
+                  disabled={socialLocked || busy || !!target.jobId}
                   value={variant.youtube.privacy}
                   onChange={(e) => {
                     dirty.current = true;
@@ -1617,22 +1745,33 @@ function TargetEditor({
                 <>
                   {media.url ? (
                     <img src={media.url} alt={media.alt ?? ""} referrerPolicy="no-referrer" />
-                  ) : image ? (
-                    <img src={image} alt={media.alt ?? ""} />
+                  ) : media.uploadId && images[media.uploadId] ? (
+                    <img src={images[media.uploadId]} alt={media.alt ?? ""} />
                   ) : (
                     <Button
                       type="button"
                       variant="secondary"
-                      loading={busy}
-                      disabled={busy}
-                      onClick={() => void previewImage(media.uploadId!)}
+                      loading={pendingUi.is(`target-editor.preview-generated-image:${i}`)}
+                      disabled={socialLocked || busy}
+                      onClick={() =>
+                        void pendingUi.run(`target-editor.preview-generated-image:${i}`, () =>
+                          previewImage(media.uploadId!),
+                        )
+                      }
                     >
-                      {t("Preview generated image")}
+                      {media.uploadId && imageErrors[media.uploadId]
+                        ? t("Retry")
+                        : t("Preview generated image")}
                     </Button>
                   )}
+                  {media.uploadId && imageErrors[media.uploadId] ? (
+                    <Notice kind="error">
+                      {t("Preview generated image")}: {t("Failed")}
+                    </Notice>
+                  ) : null}
                   <TextField
                     label={t("Image alt text")}
-                    disabled={busy || !!target.jobId}
+                    disabled={socialLocked || busy || !!target.jobId}
                     value={media.alt ?? ""}
                     onChange={(e) => {
                       dirty.current = true;
@@ -1655,19 +1794,23 @@ function TargetEditor({
               <Button
                 type="button"
                 variant="secondary"
-                loading={busy}
-                disabled={busy || target.status === "generating"}
+                loading={pendingUi.is("target-editor.save-content-changes")}
+                disabled={socialLocked || busy || target.status === "generating"}
                 onClick={() =>
-                  void perform("programs.edit", {
-                    ...ids,
-                    expectedRevision: occurrence.revision,
-                    variant,
-                  }).then((saved) => {
-                    if (saved) {
-                      dirty.current = false;
-                      setSelectedSteps([]);
-                    }
-                  })
+                  void pendingUi
+                    .run("target-editor.save-content-changes", () =>
+                      perform("programs.edit", {
+                        ...ids,
+                        expectedRevision: occurrence.revision,
+                        variant,
+                      }),
+                    )
+                    .then((saved) => {
+                      if (saved) {
+                        dirty.current = false;
+                        setSelectedSteps([]);
+                      }
+                    })
                 }
               >
                 {t("Save content changes")}
@@ -1675,9 +1818,13 @@ function TargetEditor({
               <Button
                 type="button"
                 variant="secondary"
-                loading={busy}
-                disabled={busy || target.status === "generating"}
-                onClick={() => void perform("programs.regenerate", ids)}
+                loading={pendingUi.is("target-editor.regenerate")}
+                disabled={socialLocked || busy || target.status === "generating"}
+                onClick={() =>
+                  void pendingUi.run("target-editor.regenerate", () =>
+                    perform("programs.regenerate", ids),
+                  )
+                }
               >
                 {t("Regenerate")}
               </Button>
@@ -1686,6 +1833,7 @@ function TargetEditor({
                   (step) => (
                     <label key={step}>
                       <Checkbox
+                        disabled={socialLocked}
                         checked={selectedSteps.includes(step)}
                         onChange={(e) =>
                           setSelectedSteps(
@@ -1707,17 +1855,23 @@ function TargetEditor({
               <Button
                 type="button"
                 variant="secondary"
-                loading={busy}
+                loading={pendingUi.is("target-editor.approve-selected-steps")}
                 disabled={
-                  busy || dirty.current || !selectedSteps.length || target.status === "generating"
+                  socialLocked ||
+                  busy ||
+                  dirty.current ||
+                  !selectedSteps.length ||
+                  target.status === "generating"
                 }
                 onClick={() =>
-                  void perform("programs.approve", {
-                    ...ids,
-                    expectedRevision: occurrence.revision,
-                    confirm: true,
-                    steps: selectedSteps,
-                  })
+                  void pendingUi.run("target-editor.approve-selected-steps", () =>
+                    perform("programs.approve", {
+                      ...ids,
+                      expectedRevision: occurrence.revision,
+                      confirm: true,
+                      steps: selectedSteps,
+                    }),
+                  )
                 }
               >
                 {t("Approve selected steps")}

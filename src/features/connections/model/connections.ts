@@ -42,6 +42,7 @@ import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
 import { queueRemoteSummaryCache } from "./remoteSummaryCache";
 import { deleteRemotePageCache } from "./remotePageCache";
 import { isLocalSyncMachine } from "./localSync";
+import { decodeSessionSync } from "./sessionSyncDecode";
 import {
   localHostSessionAccess,
   remoteHostSessionAccess,
@@ -465,13 +466,12 @@ async function assembleSessionSync(
     offset += data.length;
   }
   if (offset !== response.length) throw new Error("Session transfer has an unexpected length");
-  const payload = pieces.join("");
   const decodeDone = startPerformanceSpan("remote-decode", {
-    units: payload.length,
+    units: response.length,
   });
   try {
-    const decoded = JSON.parse(payload) as SessionSync;
-    decodeDone({ units: payload.length });
+    const decoded = await decodeSessionSync(pieces, response.length);
+    decodeDone({ units: response.length });
     return decoded;
   } catch (error) {
     decodeDone();

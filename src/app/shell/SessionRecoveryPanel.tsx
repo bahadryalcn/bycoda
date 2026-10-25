@@ -4,7 +4,7 @@ import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import { projectDisplayName } from "../../features/projects/model/projectNames";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useT } from "../../shared/i18n";
 import { Modal } from "../../shared/ui/Modal";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
@@ -68,6 +68,8 @@ export function SessionRecoveryPanel({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pending, setPending] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const pendingRef = useRef(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"attention" | "all">("attention");
   const [stored, setStored] = useState<Map<string, Session | null | "error">>(() => new Map());
@@ -170,7 +172,10 @@ export function SessionRecoveryPanel({
         recoveryStatusOrder(a.status) - recoveryStatusOrder(b.status) ||
         (b.activityAt ?? 0) - (a.activityAt ?? 0),
     );
-  const open = async (ids: string[], layout = false) => {
+  const open = async (ids: string[], layout = false, action = "open-selected") => {
+    if (pendingRef.current) return;
+    pendingRef.current = true;
+    setPendingAction(action);
     setPending(true);
     setError("");
     try {
@@ -183,6 +188,8 @@ export function SessionRecoveryPanel({
         ),
       );
     } finally {
+      pendingRef.current = false;
+      setPendingAction(null);
       setPending(false);
     }
   };
@@ -197,7 +204,10 @@ export function SessionRecoveryPanel({
   const completedIds = rows
     .filter((row) => row.status === "done" || row.status === "idle")
     .map((row) => row.stub.id);
-  const remove = async (ids: string[]) => {
+  const remove = async (ids: string[], action: string) => {
+    if (pendingRef.current) return;
+    pendingRef.current = true;
+    setPendingAction(action);
     setPending(true);
     setError("");
     try {
@@ -206,6 +216,8 @@ export function SessionRecoveryPanel({
     } catch {
       setError(t("Could not update the recovery list. Try again."));
     } finally {
+      pendingRef.current = false;
+      setPendingAction(null);
       setPending(false);
     }
   };
@@ -261,7 +273,14 @@ export function SessionRecoveryPanel({
             size="sm"
             motion="none"
             disabled={pending || !rows.length}
-            onClick={() => void open(rows.map((row) => row.stub.id))}
+            loading={pendingAction === "open-all"}
+            onClick={() =>
+              void open(
+                rows.map((row) => row.stub.id),
+                false,
+                "open-all",
+              )
+            }
           >
             {t("Open all")} ({rows.length})
           </Button>
@@ -272,6 +291,7 @@ export function SessionRecoveryPanel({
                 size="sm"
                 motion="none"
                 disabled={pending}
+                loading={pendingAction === "open-selected"}
                 onClick={() => void open(selectedIds)}
               >
                 {t("Open selected")} ({selectedIds.length})
@@ -282,7 +302,8 @@ export function SessionRecoveryPanel({
                 motion="none"
 
                 disabled={pending}
-                onClick={() => void remove(selectedIds)}
+                loading={pendingAction === "remove-selected"}
+                onClick={() => void remove(selectedIds, "remove-selected")}
               >
                 {t("Remove selected")}
               </Button>
@@ -344,7 +365,8 @@ export function SessionRecoveryPanel({
                 size="sm"
                 motion="none"
                 disabled={pending}
-                onClick={() => void open([stub.id])}
+                loading={pendingAction === `open:${stub.id}`}
+                onClick={() => void open([stub.id], false, `open:${stub.id}`)}
               >
                 {t("Open")}
               </Button>
@@ -356,9 +378,10 @@ export function SessionRecoveryPanel({
                 motion="none"
                 className="recovery-remove"
                 disabled={pending}
+                loading={pendingAction === `remove:${stub.id}`}
                 aria-label={t("Remove {p0} from recovery list", { p0: title })}
                 title={t("Remove from recovery list")}
-                onClick={() => void remove([stub.id])}
+                onClick={() => void remove([stub.id], `remove:${stub.id}`)}
               >
                 <Trash2 className="size-4" aria-hidden="true" />
               </Button>
@@ -381,10 +404,12 @@ export function SessionRecoveryPanel({
             motion="none"
 
             disabled={pending || !rows.length}
+            loading={pendingAction === "restore"}
             onClick={() =>
               void open(
                 rows.map((row) => row.stub.id),
                 true,
+                "restore",
               )
             }
           >
@@ -396,7 +421,8 @@ export function SessionRecoveryPanel({
             motion="none"
 
             disabled={pending || !completedIds.length}
-            onClick={() => void remove(completedIds)}
+            loading={pendingAction === "clear-completed"}
+            onClick={() => void remove(completedIds, "clear-completed")}
           >
             {t("Clear completed")}
           </Button>
@@ -406,7 +432,13 @@ export function SessionRecoveryPanel({
             size="sm"
             motion="none"
             disabled={pending || !rows.length}
-            onClick={() => void remove(rows.map((row) => row.stub.id))}
+            loading={pendingAction === "clear-all"}
+            onClick={() =>
+              void remove(
+                rows.map((row) => row.stub.id),
+                "clear-all",
+              )
+            }
           >
             {t("Clear list")}
           </Button>

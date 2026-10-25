@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { parseProcessJson } from "./parse-process-json.mjs";
 import { readFile, readdir, readlink } from "node:fs/promises";
 import { basename } from "node:path";
 import type {
@@ -152,7 +153,7 @@ function jsonProcesses(value: unknown): DevProcess[] {
     });
 }
 export function parseWindowsListeners(output: string): DiscoveredDevProcess[] {
-  const data = JSON.parse(output.replace(/^\uFEFF/, "")) as {
+  const data = parseProcessJson(output) as {
     processes: unknown;
     listeners: unknown;
   };
@@ -419,7 +420,7 @@ export class DevServerDiscovery implements ProcessDiscovery {
     if (!validPid(pid)) return undefined;
     if (this.platform === "win32") {
       const rows = jsonProcesses(
-        JSON.parse(
+        parseProcessJson(
           await this.powershell(
             `$ErrorActionPreference='Stop';$rows=@(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}' | ForEach-Object {$p=$_;${psBirth};${psProcessProjection}});ConvertTo-Json -InputObject $rows -Compress -Depth 4`,
           ),
@@ -502,7 +503,7 @@ kill -"$sig" "$pid" 2>/dev/null || [ ! -e "/proc/$pid" ]`,
   }
   private async scanProcesses(): Promise<DevProcess[]> {
     if (this.platform === "win32")
-      return jsonProcesses(JSON.parse(await this.powershell(windowsProcesses)));
+      return jsonProcesses(parseProcessJson(await this.powershell(windowsProcesses)));
     if (this.platform === "darwin") {
       const items = parsePsProcesses(await this.run("ps", ["-axo", "pid=,ppid=,lstart=,args="]));
       if (items.length > MAX_PROCESSES)

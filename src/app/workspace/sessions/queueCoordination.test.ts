@@ -8,7 +8,10 @@
  */
 import { act, createElement, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { DatabaseSync } from "node:sqlite";
+import { StoreDatabase } from "../../../../host/store-db";
+import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
+import { setImmediate as nextWorkerTurn } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueueDrainer } from "../../../../host/queue-drainer";
 import { SessionQueues } from "../../../../host/session-queue";
@@ -82,7 +85,11 @@ const row = (id: string) => ({ id, text: id, attachments: [] as never[] });
 
 /** The host's `sessions.queue.*` handlers (host/server.ts) over the real store. */
 class Host {
-  readonly queues = new SessionQueues(new DatabaseSync(":memory:"));
+  readonly db = new StoreDatabase(
+    ":memory:",
+    pathToFileURL(resolve(__dirname, "../../../../host/store-worker.mjs")),
+  );
+  readonly queues = new SessionQueues(this.db);
   unreachable = false;
   /** Runs before a call is served: another computer's write lands here. */
   before?: (method: string) => Promise<void> | void;
@@ -93,7 +100,7 @@ class Host {
     // The host reports a changed queue on the desktop's next heartbeat answer.
     if (action !== "get") setTimeout(() => wakeSharedLocalQueues([String(params.sessionId)]), 1500);
     return structuredClone(
-      this.queues.serve(
+      await this.queues.serve(
         action,
         String(params.sessionId),
         String(params.clientId),
@@ -105,7 +112,7 @@ class Host {
 }
 
 const world = {
-  host: new Host(),
+  host: undefined as unknown as Host,
   sent: [] as Array<{ id?: string; text: string }>,
   /** What the provider answers for a row the queue hands over. */
   mode: "accept" as "accept" | "refuse" | "unknown" | "hang" | "prepare" | "takeover",
@@ -207,7 +214,10 @@ async function pump(ms = 1500, steps = 1) {
   for (let i = 0; i < steps; i++)
     await act(async () => {
       vi.advanceTimersByTime(ms);
-      for (let k = 0; k < 80; k++) await Promise.resolve();
+      for (let k = 0; k < 80; k++) {
+        await nextWorkerTurn();
+        await world.host.db.scope(() => undefined);
+      }
     });
 }
 async function mount(patch: Record<string, unknown> = {}) {
@@ -240,7 +250,10 @@ const click = (label: string) =>
     [...container.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent === label)!
       .click();
-    for (let i = 0; i < 100; i++) await Promise.resolve();
+    for (let i = 0; i < 100; i++) {
+      await nextWorkerTurn();
+      await world.host.db.scope(() => undefined);
+    }
   });
 const wire = (method: string, params: unknown) =>
   world.host.rpc("m", method, params as never) as never;
@@ -254,26 +267,29 @@ async function macEnqueue(mac: SharedQueueClient, id: string) {
   await mac.sync();
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   localStorage.clear();
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   world.host = new Host();
+  await world.host.queues.ready;
   world.sent = [];
   world.mode = "accept";
   world.settle = world.hang = undefined;
   world.status = [];
   reachable.current = true;
   // The desktop's heartbeat keeps its drain leases alive and reports a lost one.
-  beat = setInterval(() => {
+  beat = setInterval(async () => {
     const held = heldSharedQueueLeases();
     if (!held.length || world.host.unreachable) return;
     noteSharedQueueLeases(
       Object.fromEntries(
-        held.map((lease) => [
-          lease.sessionId,
-          world.host.queues.renew(lease.sessionId, desktopQueueClientId, lease.epoch),
-        ]),
+        await Promise.all(
+          held.map(async (lease) => [
+            lease.sessionId,
+            await world.host.queues.renew(lease.sessionId, desktopQueueClientId, lease.epoch),
+          ]),
+        ),
       ),
     );
   }, 1500);
@@ -288,6 +304,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   resetSessionsStore([]);
   vi.useRealTimers();
+  await world.host.db.close();
   vi.unstubAllGlobals();
 });
 
@@ -305,7 +322,7 @@ describe("coordination never pauses the queue", () => {
     let everPaused = false;
     for (let i = 0; i < 12; i++) {
       await pump(1500, 1);
-      everPaused ||= session().queueStatus === "paused" || hostQueue().status === "paused";
+      everPaused ||= session().queueStatus === "paused" || (await hostQueue()).status === "paused";
     }
     expect(injected).toBe(true);
     expect(everPaused).toBe(false);
@@ -319,8 +336,8 @@ describe("coordination never pauses the queue", () => {
     await pump(1500, 6);
     expect(session().continuingElsewhere).toBe(true);
     expect(session().queueStatus).not.toBe("paused");
-    expect(hostQueue().status).not.toBe("paused");
-    expect(hostQueue().claim).toBeUndefined();
+    expect((await hostQueue()).status).not.toBe("paused");
+    expect((await hostQueue()).claim).toBeUndefined();
   });
 
   it("keeps the queue active while the host is unreachable and offers the head again afterwards", async () => {
@@ -341,8 +358,8 @@ describe("coordination never pauses the queue", () => {
     await mount({ queuedMessages: [row("a")], queueStatus: "active" });
     await pump(1500, 6);
     expect(session().queueStatus).toBe("paused");
-    expect(hostQueue().status).toBe("paused");
-    expect(hostQueue().claim).toBeUndefined();
+    expect((await hostQueue()).status).toBe("paused");
+    expect((await hostQueue()).claim).toBeUndefined();
   });
 });
 
@@ -357,7 +374,7 @@ describe("Resume always does something visible", () => {
     await pump(1500, 6);
     expect(error).toBeUndefined();
     expect(world.sent).toEqual([{ id: "a", text: "a" }]);
-    expect(hostQueue().messages).toEqual([]);
+    expect((await hostQueue()).messages).toEqual([]);
   });
 
   it("resumes an idle paused queue by sending its head, never a continue message", async () => {
@@ -367,7 +384,7 @@ describe("Resume always does something visible", () => {
     expect(error).toBeUndefined();
     expect(world.sent).toEqual([{ id: "a", text: "a" }]);
     expect(world.sent.map((s) => s.text)).not.toContain(CONTINUE_PROMPT);
-    expect(hostQueue().messages).toEqual([]);
+    expect((await hostQueue()).messages).toEqual([]);
   });
 
   it("shows why the host holds the queue and drops the reason once Resume releases it", async () => {
@@ -378,7 +395,7 @@ describe("Resume always does something visible", () => {
       before: { messages: [] },
       after: { messages: [row("a")], status: "active" },
     });
-    world.host.queues.hold(SESSION, "Provider crashed");
+    await world.host.queues.hold(SESSION, "Provider crashed");
     await mount({ queuedMessages: undefined, queueStatus: undefined });
     await pump(1500, 4);
     expect(session().queueStatus).toBe("paused");
@@ -387,7 +404,7 @@ describe("Resume always does something visible", () => {
     await pump(1500, 6);
     expect(error).toBeUndefined();
     expect(queueHoldReason(SESSION)).toBeUndefined();
-    expect((hostQueue() as { holdReason?: string }).holdReason).toBeUndefined();
+    expect(((await hostQueue()) as { holdReason?: string }).holdReason).toBeUndefined();
     expect(world.sent).toEqual([{ id: "a", text: "a" }]);
   });
 
@@ -409,7 +426,7 @@ describe("Resume always does something visible", () => {
     world.mode = "unknown";
     await mount({ queuedMessages: [row("a")], queueStatus: "active" });
     await pump(1500, 6);
-    expect(hostQueue().claim?.id).toBe("a");
+    expect((await hostQueue()).claim?.id).toBe("a");
     world.mode = "accept";
     const held = await resume();
     expect(held.error).toBeUndefined();
@@ -418,7 +435,7 @@ describe("Resume always does something visible", () => {
       message: expect.stringMatching(/Choose what happened/),
     });
     expect(world.sent).toEqual([]);
-    expect(hostQueue().claim?.id).toBe("a");
+    expect((await hostQueue()).claim?.id).toBe("a");
     expect(session().queueStatus).toBe("paused");
     expect(container.querySelector("[data-delivery-review]")).not.toBeNull();
     // The provider call is still open: it may yet deliver, so "Send again" is not
@@ -433,7 +450,10 @@ describe("Resume always does something visible", () => {
     );
     await act(async () => {
       world.settle?.("unknown");
-      for (let i = 0; i < 100; i++) await Promise.resolve();
+      for (let i = 0; i < 100; i++) {
+        await nextWorkerTurn();
+        await world.host.db.scope(() => undefined);
+      }
     });
     expect(sendAgain().disabled).toBe(false);
     expect(container.querySelector("[data-delivery-review-warning]")?.textContent).toMatch(
@@ -455,10 +475,10 @@ describe("Resume always does something visible", () => {
     await click("Already delivered");
     await pump(1500, 4);
     expect(world.sent).toEqual([]);
-    expect(hostQueue().claim).toBeUndefined();
-    expect(hostQueue().messages.map((m) => m.id)).toEqual(["b"]);
+    expect((await hostQueue()).claim).toBeUndefined();
+    expect((await hostQueue()).messages.map((m) => m.id)).toEqual(["b"]);
     // The rest of the queue waits for the owner's Resume.
-    expect(hostQueue().status).toBe("paused");
+    expect((await hostQueue()).status).toBe("paused");
   });
 
   it("releases the claim and resumes after the provider's late answer was a rejection", async () => {
@@ -467,13 +487,16 @@ describe("Resume always does something visible", () => {
     await pump(1500, 6);
     await act(async () => {
       world.settle?.("rejected");
-      for (let i = 0; i < 100; i++) await Promise.resolve();
+      for (let i = 0; i < 100; i++) {
+        await nextWorkerTurn();
+        await world.host.db.scope(() => undefined);
+      }
     });
     world.mode = "accept";
     const { error } = await resume();
     await pump(1500, 6);
     expect(error).toBeUndefined();
-    expect(hostQueue().claim).toBeUndefined();
+    expect((await hostQueue()).claim).toBeUndefined();
   });
 
   it("does not throw while a claimed send is still waiting for the provider, and says so", async () => {
@@ -508,7 +531,7 @@ describe("Resume always does something visible", () => {
     });
     expect(sharedLocalQueueClaiming(SESSION)).toBe(false);
     // Held as unconfirmed: the row is neither lost nor sent again.
-    expect(hostQueue().claim?.id).toBe("a");
+    expect((await hostQueue()).claim?.id).toBe("a");
     expect(world.sent).toEqual([]);
     expect(container.querySelector("[data-delivery-review]")).not.toBeNull();
     // The provider may still answer, so sending again could duplicate the message.
@@ -522,11 +545,14 @@ describe("Resume always does something visible", () => {
     // The provider answers late: the held row settles exactly once, as delivered.
     await act(async () => {
       world.hang?.(true);
-      for (let i = 0; i < 100; i++) await Promise.resolve();
+      for (let i = 0; i < 100; i++) {
+        await nextWorkerTurn();
+        await world.host.db.scope(() => undefined);
+      }
     });
     await pump(1500, 3);
-    expect(hostQueue().claim).toBeUndefined();
-    expect(hostQueue().messages).toEqual([]);
+    expect((await hostQueue()).claim).toBeUndefined();
+    expect((await hostQueue()).messages).toEqual([]);
     expect(container.querySelector("[data-delivery-review]")).toBeNull();
     expect(world.sent).toEqual([]);
   });
@@ -573,13 +599,16 @@ describe("Resume always does something visible", () => {
     await resume();
     await click("Keep queued, pause");
     await pump(1500, 3);
-    expect(hostQueue().messages.map((m) => m.id)).toEqual(["a", "b"]);
+    expect((await hostQueue()).messages.map((m) => m.id)).toEqual(["a", "b"]);
     await act(async () => {
       world.hang?.(true);
-      for (let i = 0; i < 100; i++) await Promise.resolve();
+      for (let i = 0; i < 100; i++) {
+        await nextWorkerTurn();
+        await world.host.db.scope(() => undefined);
+      }
     });
     await pump(1500, 3);
-    expect(hostQueue().messages.map((m) => m.id)).toEqual(["b"]);
+    expect((await hostQueue()).messages.map((m) => m.id)).toEqual(["b"]);
     expect(world.sent).toEqual([]);
   });
 
@@ -590,12 +619,15 @@ describe("Resume always does something visible", () => {
     await act(async () => {
       setSessions((all) => all.map((entry) => ({ ...entry, queueStatus: "paused" as const })));
       world.hang?.(false);
-      for (let i = 0; i < 100; i++) await Promise.resolve();
+      for (let i = 0; i < 100; i++) {
+        await nextWorkerTurn();
+        await world.host.db.scope(() => undefined);
+      }
     });
     await pump(1500, 3);
     expect(sharedLocalQueueClaiming(SESSION)).toBe(false);
-    expect(hostQueue().claim).toBeUndefined();
-    expect(hostQueue().status).toBe("paused");
+    expect((await hostQueue()).claim).toBeUndefined();
+    expect((await hostQueue()).status).toBe("paused");
   });
 
   it("resumes dispatch for a conversation the host runs elsewhere without inventing a continue message", async () => {
@@ -606,7 +638,7 @@ describe("Resume always does something visible", () => {
     expect(result).toMatchObject({ kind: "waiting" });
     expect((session().queuedMessages ?? []).map((m) => m.text)).toEqual(["a"]);
     expect(session().queueStatus).toBe("active");
-    expect(hostQueue().status).toBe("active");
+    expect((await hostQueue()).status).toBe("active");
     // The other computer's turn ends: the head goes out once.
     setSessions((all) => all.map((entry) => ({ ...entry, continuingElsewhere: undefined })));
     await pump(1500, 6);
@@ -622,7 +654,7 @@ describe("a queue the other computer enqueued", () => {
     expect(session().queueStatus).not.toBe("restored");
     expect(world.sent.map((s) => s.id)).toEqual(["m1"]);
     // The last row left: nobody holds an empty queue.
-    expect(world.host.queues.live(hostQueue())).toBe(false);
+    expect(world.host.queues.live(await hostQueue())).toBe(false);
   });
 
   it("is never claimed by a remote client", async () => {
@@ -632,7 +664,7 @@ describe("a queue the other computer enqueued", () => {
         sessionId: SESSION,
         clientId: "remote:mac-window-1",
         id: "m1",
-        revision: hostQueue().revision,
+        revision: (await hostQueue()).revision,
       }),
     ).rejects.toThrow("Only the owning desktop claims local sends.");
     await expect(
@@ -657,7 +689,7 @@ describe("a queue the other computer enqueued", () => {
     await pump(1500, 8);
     // Its window is still there (it keeps asking): the queue is its own, nothing is
     // restored and nothing is sent by the desktop.
-    expect(hostQueue().drain?.holder).toBe("remote:old-mac-window");
+    expect((await hostQueue()).drain?.holder).toBe("remote:old-mac-window");
     expect(session().queueStatus).not.toBe("restored");
     expect(world.sent).toEqual([]);
     // The window is closed. At the end of its lease the desktop drains, no click.
@@ -672,7 +704,7 @@ describe("a queue the other computer enqueued", () => {
     await other.initialize();
     other.update((queue) => enqueueRemoteMessage(queue, { id: "w2", text: "w2", attachments: [] }));
     await other.sync();
-    expect(hostQueue().drain?.holder).toBe("desktop:other-window");
+    expect((await hostQueue()).drain?.holder).toBe("desktop:other-window");
     await mount({ queuedMessages: undefined, queueStatus: undefined });
     await pump(1500, 8);
     expect(world.sent).toEqual([]); // the other window holds it and is alive
@@ -680,7 +712,7 @@ describe("a queue the other computer enqueued", () => {
     // That window goes away without a word: its lease runs out and this one drains.
     await pump(1500, Math.ceil(QUEUE_LEASE_TTL_MS / 1500) + 8);
     expect(world.sent.map((s) => s.id)).toEqual(["w2"]);
-    expect(hostQueue().messages).toEqual([]);
+    expect((await hostQueue()).messages).toEqual([]);
   });
 
   it("is taken over by an explicit Resume while another window still holds the lease", async () => {
@@ -707,14 +739,14 @@ describe("a queue the other computer enqueued", () => {
     // Held by the other window, which is alive: nothing here sends, and it says so.
     expect(sharedLocalQueueLeaseHeld(SESSION)).toBe(true);
     expect(world.sent).toEqual([]);
-    expect(hostQueue().drain?.holder).toBe("desktop:other-window");
+    expect((await hostQueue()).drain?.holder).toBe("desktop:other-window");
     await act(async () => {
       await takeOverSharedLocalQueue(SESSION);
     });
     expect(sharedLocalQueueLeaseHeld(SESSION)).toBe(false);
-    expect(hostQueue().drain).toMatchObject({ holder: desktopQueueClientId, epoch: 2 });
-    expect(hostQueue().messages.map((m) => m.id)).toEqual(["w2"]);
-    expect(hostQueue().status).toBe("active");
+    expect((await hostQueue()).drain).toMatchObject({ holder: desktopQueueClientId, epoch: 2 });
+    expect((await hostQueue()).messages.map((m) => m.id)).toEqual(["w2"]);
+    expect((await hostQueue()).status).toBe("active");
     await pump(1500, 6);
     expect(world.sent.map((s) => s.id)).toEqual(["w2"]);
   });
@@ -722,7 +754,7 @@ describe("a queue the other computer enqueued", () => {
   it("re-acquires a lease that lapsed in a throttled window without showing the queue as held by another", async () => {
     await mount({ queuedMessages: [row("a")], queueStatus: "active", busy: true });
     await pump(1500, 4);
-    const lease = hostQueue().drain!;
+    const lease = (await hostQueue()).drain!;
     let heldByOther = false;
     // The window was throttled: no beat for longer than the lease.
     clearInterval(beat);
@@ -731,13 +763,16 @@ describe("a queue the other computer enqueued", () => {
     // The next beat is told the lease is gone and the queue looks again at once.
     await act(async () => {
       noteSharedQueueLeases({ [SESSION]: null });
-      for (let i = 0; i < 80; i++) await Promise.resolve();
+      for (let i = 0; i < 80; i++) {
+        await nextWorkerTurn();
+        await world.host.db.scope(() => undefined);
+      }
     });
     heldByOther ||= sharedLocalQueueLeaseHeld(SESSION);
     await pump(1500, 2);
     heldByOther ||= sharedLocalQueueLeaseHeld(SESSION);
     expect(heldByOther).toBe(false);
-    expect(hostQueue().drain).toMatchObject({
+    expect((await hostQueue()).drain).toMatchObject({
       holder: desktopQueueClientId,
       epoch: lease.epoch + 1,
     });
@@ -750,7 +785,7 @@ describe("a queue the other computer enqueued", () => {
   it("is reclaimed after an app restart under the same instance id", async () => {
     await mount({ queuedMessages: [row("a")], queueStatus: "active", busy: true });
     await pump(1500, 4);
-    const lease = hostQueue().drain!;
+    const lease = (await hostQueue()).drain!;
     expect(lease.holder).toBe(desktopQueueClientId);
     // The app crashes and starts again: same window identity, new process. A
     // crash cannot give the lease back (a graceful quit does, and a new one is granted).
@@ -761,7 +796,10 @@ describe("a queue the other computer enqueued", () => {
     // The saved session comes back with its queue, waiting for the host's word on it.
     await mount({ queuedMessages: [row("a")], queueStatus: "restored", busy: true });
     await pump(1500, 4);
-    expect(hostQueue().drain).toMatchObject({ holder: desktopQueueClientId, epoch: lease.epoch });
+    expect((await hostQueue()).drain).toMatchObject({
+      holder: desktopQueueClientId,
+      epoch: lease.epoch,
+    });
     expect(session().queuedMessages?.map((m) => m.id)).toEqual(["a"]);
     expect(session().queueStatus).toBe("active");
     await finishTurn();
@@ -772,13 +810,13 @@ describe("a queue the other computer enqueued", () => {
   it("is reclaimed under a new epoch when the restart took longer than the lease", async () => {
     await mount({ queuedMessages: [row("a")], queueStatus: "active", busy: true });
     await pump(1500, 4);
-    const lease = hostQueue().drain!;
+    const lease = (await hostQueue()).drain!;
     await act(async () => root.unmount());
     await pump(QUEUE_LEASE_TTL_MS + 1000, 1);
     root = createRoot(container);
     await mount({ queuedMessages: [row("a")], queueStatus: "restored", busy: true });
     await pump(1500, 4);
-    expect(hostQueue().drain).toMatchObject({
+    expect((await hostQueue()).drain).toMatchObject({
       holder: desktopQueueClientId,
       epoch: lease.epoch + 1,
     });
@@ -812,7 +850,7 @@ describe("a queue the other computer enqueued", () => {
       drainer.kick(SESSION);
       await pump(0, 2);
       expect(hostSent).toEqual(["m1", "m2"]);
-      expect(hostQueue().messages).toEqual([]);
+      expect((await hostQueue()).messages).toEqual([]);
     } finally {
       drainer.close();
     }
@@ -821,15 +859,15 @@ describe("a queue the other computer enqueued", () => {
   it("fences a window that comes back after another one took the queue over", async () => {
     await mount({ queuedMessages: [row("a")], queueStatus: "active", busy: true });
     await pump(1500, 4);
-    const stale = hostQueue();
+    const stale = await hostQueue();
     expect(stale.drain?.holder).toBe(desktopQueueClientId);
-    world.host.queues.acquire(SESSION, "desktop:other-window", true);
+    await world.host.queues.acquire(SESSION, "desktop:other-window", true);
     await expect(
       world.host.rpc("m", "sessions.queue.claim", {
         sessionId: SESSION,
         clientId: desktopQueueClientId,
         id: "a",
-        revision: hostQueue().revision,
+        revision: (await hostQueue()).revision,
         epoch: stale.drain!.epoch,
         leaseAware: true,
       }),
@@ -849,11 +887,7 @@ describe("both computers enqueue", () => {
     );
     await macEnqueue(mac, "m1");
     await pump(1500, 4);
-    expect(
-      hostQueue()
-        .messages.map((m) => m.id)
-        .sort(),
-    ).toEqual(["m1", "w1", "w2"]);
+    expect((await hostQueue()).messages.map((m) => m.id).sort()).toEqual(["m1", "w1", "w2"]);
     expect(
       session()
         .queuedMessages?.map((m) => m.id)
@@ -865,7 +899,7 @@ describe("both computers enqueue", () => {
     }
     expect(world.sent.map((s) => s.id).sort()).toEqual(["m1", "w1", "w2"]);
     expect(new Set(world.sent.map((s) => s.id)).size).toBe(3);
-    expect(hostQueue().messages).toEqual([]);
+    expect((await hostQueue()).messages).toEqual([]);
   });
 
   it("refuses the other computer's enqueue while a claim is in flight and takes it after the claim settles", async () => {

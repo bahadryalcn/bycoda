@@ -49,6 +49,8 @@ import type { UserQuestionPrompt } from "../model/userQuestion";
 import { registerHarness } from "../../../integrations/harness/core/registry";
 import { codexAdapter } from "../../../integrations/harness/providers/codex/codexAdapter";
 import { antigravityAdapter } from "../../../integrations/harness/providers/antigravity/antigravityAdapter";
+import { saveLastModelChoice } from "../model/models";
+import { saveDefaultTranslationChoice, saveDefaultRepromptChoice } from "../model/translationPreferences";
 
 function renderAction(busy: boolean, hasValue: boolean, allowBusySubmit = true) {
   return renderToStaticMarkup(
@@ -120,6 +122,8 @@ describe("Composer question focus", () => {
 
   afterEach(() => {
     act(() => root.unmount());
+    saveDefaultTranslationChoice(undefined);
+    saveDefaultRepromptChoice(undefined);
     container.remove();
     vi.unstubAllGlobals();
     registerHarness(codexAdapter);
@@ -129,6 +133,7 @@ describe("Composer question focus", () => {
     ["Translate to English", "Apply translation"],
     ["Reprompt", "Apply prompt"],
   ])("previews %s for a selected draft, applies only on approval, and toggles with arrows", async (action, applyLabel) => {
+    saveLastModelChoice("codex", "codex:gpt-6.1");
     const run = vi.fn(async () => "Hello");
     registerHarness({ ...codexAdapter, runTextPrompt: run });
     const original = "Before Merhaba after";
@@ -178,6 +183,7 @@ describe("Composer question focus", () => {
     expect(run).toHaveBeenCalledOnce();
   });
   it("opens the translation menu for an Antigravity model without silently calling Codex", async () => {
+    saveDefaultTranslationChoice({ harness: "antigravity", model: "antigravity:gemini-3.8-flash-high" });
     const run = vi.fn(async () => "Hello");
     registerHarness({ ...codexAdapter, runTextPrompt: run });
     const antigravityRun = vi.fn(async () => "Hello");
@@ -224,6 +230,7 @@ describe("Composer question focus", () => {
     ["Translate to English", "Apply translation"],
     ["Reprompt", "Apply prompt"],
   ])("keeps an edited draft when %s finishes late", async (action, applyLabel) => {
+    saveLastModelChoice("codex", "codex:gpt-6.1");
     let resolve!: (value: string) => void;
     registerHarness({
       ...codexAdapter,

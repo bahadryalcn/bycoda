@@ -1,7 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoaderCircle } from "../../../shared/ui/icons";
 import { Modal } from "../../../shared/ui/Modal";
 import {
@@ -24,17 +24,33 @@ export function BackgroundSessionDialog({
   const [summary, setSummary] = useState<BackgroundSessionSummary>();
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const pending = useRef(false);
+  const previousTarget = useRef("");
 
   useEffect(() => {
     let alive = true;
+    const key = JSON.stringify([target.machineId, target.sessionId]);
     setSummary(undefined);
-    setError("");
+    if (previousTarget.current !== key) setError("");
+    previousTarget.current = key;
+    pending.current = true;
+    setLoading(true);
     loadBackgroundSessionSummary(target).then(
       (loaded) => {
-        if (alive) setSummary(loaded);
+        if (alive) {
+          setSummary(loaded);
+          setError("");
+          setLoading(false);
+          pending.current = false;
+        }
       },
       (reason: unknown) => {
-        if (alive) setError(reason instanceof Error ? reason.message : String(reason));
+        if (alive) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+          setLoading(false);
+          pending.current = false;
+        }
       },
     );
     return () => {
@@ -48,7 +64,16 @@ export function BackgroundSessionDialog({
         {error ? (
           <Alert tone="danger" role="alert" className="flex-wrap">
             <span>{error}</span>
-            <Button variant="ghost" type="button" onClick={() => setRevision((value) => value + 1)}>
+            <Button
+              variant="ghost"
+              type="button"
+              loading={loading}
+              onClick={() => {
+                if (pending.current) return;
+                pending.current = true;
+                setRevision((value) => value + 1);
+              }}
+            >
               {t("Retry")}
             </Button>
           </Alert>

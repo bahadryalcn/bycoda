@@ -218,6 +218,26 @@ describe("parseHostGoal", () => {
     });
   });
 
+  it("opts new goals into final review without trusting caller-supplied results", () => {
+    const parsed = parseHostGoal(
+      goal({
+        finalReview: true,
+        finalAcceptance: { status: "passed", taskFingerprint: "forged" },
+      }),
+    );
+    expect(parsed.finalReview).toBe(true);
+    expect(parsed).not.toHaveProperty("finalAcceptance");
+    expect(parseHostGoal(goal()).finalReview).toBeUndefined();
+    expect(() => parseHostGoal(goal({ finalReview: "yes" }))).toThrow("Invalid goal options");
+    expect(parseHostGoal(goal({ budget: { maxAttempts: 3 } })).budget).toEqual({
+      maxAttempts: 3,
+      warningPercent: 80,
+    });
+    expect(() => parseHostGoal(goal({ budget: { maxTokens: -1 } }))).toThrow(
+      "Invalid run budget limit",
+    );
+  });
+
   it("keeps check commands for the goal's projects only", () => {
     expect(
       parseHostGoal(
@@ -266,7 +286,10 @@ describe("goal progress", () => {
     ];
     const goal = { taskIds: ["blocked", "own", "deleted"] };
     const index = new Map(all.map((task) => [task.id, task]));
-    expect(goalStateFromTasks(goal, all)).toEqual({ status: "blocked", error: "1 of 2 tasks blocked: Blocked" });
+    expect(goalStateFromTasks(goal, all)).toEqual({
+      status: "blocked",
+      error: "1 of 2 tasks blocked: Blocked",
+    });
     expect(goalStateFromTasks(goal, index)).toEqual(goalStateFromTasks(goal, all));
     index.delete("external");
     expect(goalStateFromTasks(goal, index)).toEqual({ status: "running" });

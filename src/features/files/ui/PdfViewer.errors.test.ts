@@ -33,6 +33,7 @@ function page(render = vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn(
     getViewport: ({ scale }: { scale: number }) => ({ width: 600 * scale, height: 800 * scale }),
     streamTextContent: vi.fn(),
     render,
+    cleanup: vi.fn(() => true),
   };
 }
 
@@ -48,6 +49,8 @@ beforeEach(() => {
   pdf.pages = 2;
   observers = [];
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(632);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(632);
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     drawImage: vi.fn(),
   } as never);
@@ -55,6 +58,7 @@ beforeEach(() => {
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -73,6 +77,7 @@ beforeEach(() => {
         notify(true);
       }
       disconnect() {}
+      unobserve() {}
     },
   );
   host = document.createElement("div");
@@ -173,4 +178,15 @@ it("ignores stale getPage failures after unmount", async () => {
   await act(async () => pending.reject(new Error("Late page failure")));
   expect(host.textContent).toBe("");
   root = createRoot(host);
+});
+
+it("bounds page scaffolding and releases visited PDF resources after render settles", async () => {
+  pdf.pages = 1000;
+  const first = page();
+  pdf.getPage.mockResolvedValue(first);
+  await mount();
+  expect(host.querySelectorAll("[data-page]").length).toBeLessThan(10);
+  expect(first.cleanup).not.toHaveBeenCalled();
+  await act(async () => observers.find(({ target }) => target === frame(1))!.notify(false));
+  expect(first.cleanup).toHaveBeenCalled();
 });

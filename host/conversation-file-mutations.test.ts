@@ -21,22 +21,22 @@ const cleanup: (() => void)[] = [];
 afterEach(() => {
   for (const close of cleanup.splice(0)) close();
 });
-function fixture() {
+async function fixture() {
   // Match fs.promises.realpath used by workspace path checks: resolve macOS
   // /var aliases and expand Windows 8.3 temp paths such as RUNNER~1.
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-file-lifecycle-")));
   const store = new HostStore(join(root, "host.db"));
-  store.addProject(root, "Files");
-  const workspace = new WorkspaceCommands(store, async (_id, fn) => fn());
-  cleanup.push(() => {
-    store.close();
+  await store.addProject(root, "Files");
+  const workspace = new WorkspaceCommands(store, async (_id, fn) => await fn());
+  cleanup.push(async () => {
+    await store.close();
     rmSync(root, { recursive: true, force: true });
   });
   return { root, workspace };
 }
 
 it("rejects deletion when an editor write wins after the caller's initial inspection", async () => {
-  const { root, workspace } = fixture();
+  const { root, workspace } = await fixture();
   writeFileSync(join(root, "file.txt"), "old");
   const expectedHash = (await inspectConversationPath(root, "file.txt")).hash;
   await expect(
@@ -46,7 +46,7 @@ it("rejects deletion when an editor write wins after the caller's initial inspec
       { path: "file.txt", expectedHash },
       async (command, input) => {
         await writeHostFile(root, "file.txt", "old", "new");
-        return workspace.run(command, input);
+        return await workspace.run(command, input);
       },
     ),
   ).rejects.toThrow("changed before commit");
@@ -54,7 +54,7 @@ it("rejects deletion when an editor write wins after the caller's initial inspec
 });
 
 it("rejects a source redirected through a new in-checkout junction before commit", async () => {
-  const { root, workspace } = fixture();
+  const { root, workspace } = await fixture();
   mkdirSync(join(root, "source"));
   mkdirSync(join(root, "victim"));
   writeFileSync(join(root, "source", "file.txt"), "same bytes");
@@ -72,7 +72,7 @@ it("rejects a source redirected through a new in-checkout junction before commit
           join(root, "source"),
           process.platform === "win32" ? "junction" : "dir",
         );
-        return workspace.run(command, input);
+        return await workspace.run(command, input);
       },
     ),
   ).rejects.toThrow("changed before commit");
@@ -80,7 +80,7 @@ it("rejects a source redirected through a new in-checkout junction before commit
 });
 
 it("refuses a destination created between copy inspection and editor commit", async () => {
-  const { root, workspace } = fixture();
+  const { root, workspace } = await fixture();
   writeFileSync(join(root, "file.txt"), "source");
   mkdirSync(join(root, "destination"));
   const expectedHash = (await inspectConversationPath(root, "file.txt")).hash;
@@ -91,7 +91,7 @@ it("refuses a destination created between copy inspection and editor commit", as
       { path: "file.txt", destinationParent: "destination", expectedHash },
       async (command, input) => {
         writeFileSync(join(root, "destination", "file.txt"), "other writer");
-        return workspace.run(command, input);
+        return await workspace.run(command, input);
       },
     ),
   ).rejects.toThrow("already exists");

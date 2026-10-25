@@ -102,6 +102,7 @@ export const HOST_COMMANDS = new Set([
   "git_worktrees",
   "git_submodules",
   "search_project",
+  "cancel_project_search",
   "list_skills",
   "skill_policy_get",
   "skill_policy_set",
@@ -140,7 +141,14 @@ export function runRemoteCommand(command: string, args: Record<string, unknown>)
 
 /** Skill commands that need no project path: a machine's personal skills are
  * addressed by the machine alone (an empty `cwd` means "no project"). */
-const MACHINE_COMMANDS = new Set(["list_skills", "skill_export", "skill_import", "skill_delete", "skill_policy_get", "skill_policy_set"]);
+const MACHINE_COMMANDS = new Set([
+  "list_skills",
+  "skill_export",
+  "skill_import",
+  "skill_delete",
+  "skill_policy_get",
+  "skill_policy_set",
+]);
 
 /** Runs a skill command on a given machine without a project path, with the
  * same argument and result translation as `runRemoteCommand`. */
@@ -219,9 +227,18 @@ async function runOnMachine(
     throw reason;
   }
   const fromHost = (path: string) => remotePath(env, path);
-  if ((command === "skill_policy_get" || command === "skill_policy_set") && result && typeof result === "object") {
+  if (
+    (command === "skill_policy_get" || command === "skill_policy_set") &&
+    result &&
+    typeof result === "object"
+  ) {
     const policy = result as { disabledNames: string[]; disabledPaths: string[] };
-    return { ...policy, disabledPaths: Array.isArray(policy.disabledPaths) ? policy.disabledPaths.map(fromHost) : policy.disabledPaths };
+    return {
+      ...policy,
+      disabledPaths: Array.isArray(policy.disabledPaths)
+        ? policy.disabledPaths.map(fromHost)
+        : policy.disabledPaths,
+    };
   }
   if (
     ["session_checkpoint_status", "session_checkpoint_undo", "session_checkpoint_keep"].includes(

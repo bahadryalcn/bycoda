@@ -61,16 +61,17 @@ it.each([false, true])(
         generateBranchName: branch,
       },
     });
-    const project = store.addProject(cwd, "Test");
+    await engine.ready;
+    const project = await store.addProject(cwd, "Test");
     const root = (await hostWorktrees(cwd)).defaultRoot;
     cleanups.push(async () => {
       await engine.close();
-      store.close();
+      await store.close();
       rmSync(root, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     });
     const tree = await createHostWorktree(cwd, "mc/12345678", "HEAD", false);
-    const { sessionId } = engine.command({
+    const { sessionId } = await engine.command({
       type: "create",
       commandId: "create-named",
       projectId: project.id,
@@ -80,7 +81,7 @@ it.each([false, true])(
       model: "codex:test",
       runtimeMode: "supervised",
     });
-    engine.command({
+    await engine.command({
       type: "send",
       commandId: "first",
       sessionId,
@@ -90,12 +91,12 @@ it.each([false, true])(
     // Settling a turn includes real Git checkpoints; Windows process startup
     // can exceed waitFor's default one-second deadline.
     const waitForIdle = () =>
-      vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"), {
+      vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
         timeout: 10_000,
       });
     if (deleted) {
       await waitForIdle();
-      store.deleteSession(sessionId);
+      await store.deleteSession(sessionId);
       const logged = vi.spyOn(console, "debug").mockImplementation(() => {});
       try {
         finishBranch("remote-naming");
@@ -111,8 +112,8 @@ it.each([false, true])(
       return;
     }
     finishBranch("remote-naming");
-    await vi.waitFor(() => {
-      expect(store.session(sessionId).session).toMatchObject({
+    await vi.waitFor(async () => {
+      expect((await store.session(sessionId)).session).toMatchObject({
         title: "codex · Fix remote naming",
         branch: "mc/remote-naming",
         worktreeCwd: tree.path,
@@ -124,7 +125,7 @@ it.each([false, true])(
     expect(title).toHaveBeenCalledTimes(1);
     expect(branch).toHaveBeenCalledTimes(1);
     await waitForIdle();
-    engine.command({
+    await engine.command({
       type: "send",
       commandId: "second",
       sessionId,
@@ -159,11 +160,12 @@ it("creates registered host worktrees and binds new sessions to the selected che
       answer: () => {},
     },
   });
-  const project = store.addProject(cwd, "Test");
+  await engine.ready;
+  const project = await store.addProject(cwd, "Test");
   const root = (await hostWorktrees(cwd)).defaultRoot;
   cleanups.push(async () => {
     await engine.close();
-    store.close();
+    await store.close();
     rmSync(root, { recursive: true, force: true });
     rmSync(cwd, { recursive: true, force: true });
   });
@@ -177,7 +179,7 @@ it("creates registered host worktrees and binds new sessions to the selected che
   expect(resolveHostWorktree(cwd, tree.path)).toBe(tree.path);
   const listed = await hostWorktrees(cwd);
   expect(listed.worktrees.map((item) => item.branch)).toEqual(["main", "feature/task"]);
-  const receipt = engine.command({
+  const receipt = await engine.command({
     type: "create",
     commandId: "worktree-session",
     projectId: project.id,
@@ -186,8 +188,8 @@ it("creates registered host worktrees and binds new sessions to the selected che
     model: "codex:test",
     runtimeMode: "supervised",
   });
-  expect(store.session(receipt.sessionId).session.cwd).toBe(tree.path);
-  expect(() =>
+  expect((await store.session(receipt.sessionId)).session.cwd).toBe(tree.path);
+  await expect(
     engine.command({
       type: "create",
       commandId: "outside",
@@ -197,7 +199,7 @@ it("creates registered host worktrees and binds new sessions to the selected che
       model: "codex:test",
       runtimeMode: "supervised",
     }),
-  ).toThrow("Choose an available worktree");
+  ).rejects.toThrow("Choose an available worktree");
   await expect(createHostWorktree(cwd, "feature/task", "HEAD", false)).rejects.toThrow(
     "already has a working copy",
   );

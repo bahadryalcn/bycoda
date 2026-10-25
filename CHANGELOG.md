@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.78]
+
+### Performance and reliability
+
+- Move host persistence, Notes processing and workspace search into asynchronous workers to reduce blocking.
+- Improve remote session decoding, synchronization and recovery across machines.
+- Strengthen bundled host lifecycle checks and resumable local updates.
+
+### Tasks and workspace
+
+- Add task acceptance evidence, freshness checks, final review and cumulative execution budgets.
+- Improve saved workflows and task preparation checks.
+- Refine shared controls across tasks, crews, settings, social tools and file previews.
+- Improve editable Notes previews, session deletion and translation controls.
+
 ## [0.6.75]
 
 ### Remote sessions and coordination

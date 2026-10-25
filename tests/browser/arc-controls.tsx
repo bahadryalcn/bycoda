@@ -601,6 +601,25 @@ function ButtonApiControls() {
           Unavailable action
         </Button>
         <Button onClick={() => setBusy(!busy)}>Toggle pending</Button>
+        <Button
+          variant="ghost"
+          iconOnly
+          label="Refresh quiet action"
+          loading={busy}
+          disabled={busy}
+          onClick={() => setCount((value) => value + 1)}
+        >
+          <Search aria-hidden="true" className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          motion="none"
+          loading={busy}
+          disabled={busy}
+          onClick={() => setCount((value) => value + 1)}
+        >
+          Quiet native action
+        </Button>
       </div>
       <output aria-label="Button action count">{count}</output>
     </section>

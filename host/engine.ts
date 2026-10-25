@@ -1,17 +1,31 @@
+import { EngineOperations } from "./engine-operations";
 import { createHash, randomUUID } from "node:crypto";
 import { parseProviderAccountId } from "../src/features/providers/model/providerAccountId";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, dirname, join } from "node:path";
 import { HostCheckpoints } from "./checkpoints";
 import { previewContextualSession } from "./contextual-session";
-import { composeNoteContext, noteContextMeta, readNoteContext } from "../src/features/notes/noteContext";
+import {
+  composeNoteContext,
+  noteContextMeta,
+  readNoteContext,
+} from "../src/features/notes/noteContext";
 import { isEditTool } from "../src/integrations/harness/core/preview";
 import { homedir } from "node:os";
 import { HandoffHistoryStore } from "./handoff-history";
 import { buildBudgetedHandoff, handoffHistory } from "../src/features/sessions/model/handoffBudget";
 import { renameHostWorktreeBranch, resolveHostWorktree } from "./git-worktrees";
-import { applyHarnessEvent, promoteLastAssistantToPlan, stopStreaming } from "../src/integrations/harness/core/apply";
-import { approvedPlanForMessage, buildPlanPrompt, isBuildablePlan, planTurnPrompt } from "../src/features/sessions/model/plan";
+import {
+  applyHarnessEvent,
+  promoteLastAssistantToPlan,
+  stopStreaming,
+} from "../src/integrations/harness/core/apply";
+import {
+  approvedPlanForMessage,
+  buildPlanPrompt,
+  isBuildablePlan,
+  planTurnPrompt,
+} from "../src/features/sessions/model/plan";
 import { changedBlocks, type BlockChanges } from "../src/features/sessions/model/blockChanges";
 import { resolveModel } from "../src/features/sessions/model/models";
 import {
@@ -129,26 +143,50 @@ function modelSettings(value: unknown): Record<string, string> {
 }
 
 function contextualInput(v: Record<string, unknown>): ContextualSessionInput {
-  if (!isRemoteProvider(v.harness) || !["handoff", "secondOpinion"].includes(String(v.mode)) ||
-      !Number.isSafeInteger(v.expectedRevision) || Number(v.expectedRevision) < 0)
+  if (
+    !isRemoteProvider(v.harness) ||
+    !["handoff", "secondOpinion"].includes(String(v.mode)) ||
+    !Number.isSafeInteger(v.expectedRevision) ||
+    Number(v.expectedRevision) < 0
+  )
     throw new Error("Invalid contextual session request");
-  if (v.providerAccountId !== undefined || v.account !== undefined && v.account !== "host-default")
+  if (
+    v.providerAccountId !== undefined ||
+    (v.account !== undefined && v.account !== "host-default")
+  )
     throw new Error("Only the host default account is supported for contextual sessions");
-  return { sessionId: text(v.sessionId, "source session ID"), sourceBlockId: text(v.sourceBlockId, "source reply ID"),
-    expectedRevision: Number(v.expectedRevision), mode: v.mode as ContextualSessionInput["mode"], harness: v.harness,
-    model: text(v.model, "model", 200), modelSettings: modelSettings(v.modelSettings) };
+  return {
+    sessionId: text(v.sessionId, "source session ID"),
+    sourceBlockId: text(v.sourceBlockId, "source reply ID"),
+    expectedRevision: Number(v.expectedRevision),
+    mode: v.mode as ContextualSessionInput["mode"],
+    harness: v.harness,
+    model: text(v.model, "model", 200),
+    modelSettings: modelSettings(v.modelSettings),
+  };
 }
 
 function secondOpinionMeta(value: unknown): SecondOpinionMeta | undefined {
   if (value === undefined) return undefined;
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid second opinion metadata");
-  const row = value as Record<string, unknown>;
-  if (!isRemoteProvider(row.from) || !isRemoteProvider(row.to) || row.kind !== undefined && row.kind !== "handoff" ||
-      row.request !== undefined && (typeof row.request !== "string" || row.request.length > 240) ||
-      row.files !== undefined && (!Number.isSafeInteger(row.files) || Number(row.files) < 0 || Number(row.files) > 40))
+  if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid second opinion metadata");
-  return { from: row.from, to: row.to, ...(row.request ? { request: row.request as string } : {}),
-    ...(row.files !== undefined ? { files: Number(row.files) } : {}), ...(row.kind ? { kind: "handoff" as const } : {}) };
+  const row = value as Record<string, unknown>;
+  if (
+    !isRemoteProvider(row.from) ||
+    !isRemoteProvider(row.to) ||
+    (row.kind !== undefined && row.kind !== "handoff") ||
+    (row.request !== undefined && (typeof row.request !== "string" || row.request.length > 240)) ||
+    (row.files !== undefined &&
+      (!Number.isSafeInteger(row.files) || Number(row.files) < 0 || Number(row.files) > 40))
+  )
+    throw new Error("Invalid second opinion metadata");
+  return {
+    from: row.from,
+    to: row.to,
+    ...(row.request ? { request: row.request as string } : {}),
+    ...(row.files !== undefined ? { files: Number(row.files) } : {}),
+    ...(row.kind ? { kind: "handoff" as const } : {}),
+  };
 }
 
 export function parseCommand(input: unknown): HostCommand {
@@ -156,7 +194,13 @@ export function parseCommand(input: unknown): HostCommand {
     throw new Error("Invalid command");
   const v = input as Record<string, unknown>;
   const commandId = text(v.commandId, "command ID");
-  if (v.noteCard !== undefined && (v.type !== "send" || v.queued !== undefined || typeof v.text !== "string" || /^\s*\/(?:clear|compact|new|plan)(?:\s|$)/i.test(v.text)))
+  if (
+    v.noteCard !== undefined &&
+    (v.type !== "send" ||
+      v.queued !== undefined ||
+      typeof v.text !== "string" ||
+      /^\s*\/(?:clear|compact|new|plan)(?:\s|$)/i.test(v.text))
+  )
     throw new Error("Send note context as a new regular message");
   if (v.type === "create") {
     if (!isRemoteProvider(v.harness) || !RUNTIME_MODES.includes(v.runtimeMode as never))
@@ -179,15 +223,22 @@ export function parseCommand(input: unknown): HostCommand {
         ? { autoWorktreeBranch: v.autoWorktreeBranch as string }
         : {}),
       harness: v.harness,
-      ...(v.providerAccountId === undefined ? {} : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
+      ...(v.providerAccountId === undefined
+        ? {}
+        : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
       model: text(v.model, "model", 200),
       ...(v.modelSettings !== undefined ? { modelSettings: modelSettings(v.modelSettings) } : {}),
       runtimeMode: v.runtimeMode as Session["runtimeMode"],
     };
   }
   const sessionId = text(v.sessionId, "session ID");
-  if (v.type === "contextual") return { type: "contextual", commandId, ...contextualInput(v),
-    previewDigest: text(v.previewDigest, "reviewed context digest", 64) };
+  if (v.type === "contextual")
+    return {
+      type: "contextual",
+      commandId,
+      ...contextualInput(v),
+      previewDigest: text(v.previewDigest, "reviewed context digest", 64),
+    };
   if (v.type === "configure") {
     if (v.harness !== undefined && !isRemoteProvider(v.harness))
       throw new Error("Invalid provider");
@@ -220,7 +271,14 @@ export function parseCommand(input: unknown): HostCommand {
     };
   }
   if (v.type === "send" || v.type === "draft" || v.type === "steer") {
-    if (v.noteCard !== undefined && (v.type !== "send" || v.intent && v.intent !== "default" || v.planBlockId || v.draftBlockId || v.secondOpinion))
+    if (
+      v.noteCard !== undefined &&
+      (v.type !== "send" ||
+        (v.intent && v.intent !== "default") ||
+        v.planBlockId ||
+        v.draftBlockId ||
+        v.secondOpinion)
+    )
       throw new Error("Send note context as a new regular message");
     const noteCard = v.noteCard === undefined ? undefined : readNoteContext(v.noteCard);
     const attachments = parseRemoteAttachments(v.attachments);
@@ -242,10 +300,17 @@ export function parseCommand(input: unknown): HostCommand {
       throw new Error("Invalid turn intent");
     if (v.planBlockId !== undefined && (v.type !== "send" || v.intent !== "build"))
       throw new Error("Invalid plan build");
-    if (v.expectedPlanText !== undefined &&
-        (v.type !== "send" || v.intent !== "build" || !v.planBlockId ||
-          typeof v.expectedPlanText !== "string" || v.expectedPlanText.length > 256_000 ||
-          v.expectedPlanText.includes("\0") || v.draftBlockId !== undefined || attachments.length > 0))
+    if (
+      v.expectedPlanText !== undefined &&
+      (v.type !== "send" ||
+        v.intent !== "build" ||
+        !v.planBlockId ||
+        typeof v.expectedPlanText !== "string" ||
+        v.expectedPlanText.length > 256_000 ||
+        v.expectedPlanText.includes("\0") ||
+        v.draftBlockId !== undefined ||
+        attachments.length > 0)
+    )
       throw new Error("Invalid reviewed plan");
     if (v.type === "steer")
       return {
@@ -275,7 +340,9 @@ export function parseCommand(input: unknown): HostCommand {
       ...(v.type === "send" && v.expectedPlanText !== undefined
         ? { expectedPlanText: v.expectedPlanText as string }
         : {}),
-      ...(v.type === "send" && v.secondOpinion !== undefined ? { secondOpinion: secondOpinionMeta(v.secondOpinion) } : {}),
+      ...(v.type === "send" && v.secondOpinion !== undefined
+        ? { secondOpinion: secondOpinionMeta(v.secondOpinion) }
+        : {}),
       ...(v.type === "send" && noteCard ? { noteCard } : {}),
     };
   }
@@ -308,8 +375,15 @@ export function parseCommand(input: unknown): HostCommand {
       line: text(v.line, "shell command", SHELL_COMMAND_LIMIT),
     };
   const runId = text(v.runId, "run ID");
-  if (v.type === "stopItem") return { type: "stopItem", commandId, sessionId, runId,
-    blockId: text(v.blockId, "agent block ID"), callId: text(v.callId, "agent call ID") };
+  if (v.type === "stopItem")
+    return {
+      type: "stopItem",
+      commandId,
+      sessionId,
+      runId,
+      blockId: text(v.blockId, "agent block ID"),
+      callId: text(v.callId, "agent call ID"),
+    };
   if (v.type === "cancel") return { type: "cancel", commandId, sessionId, runId };
   if (!Number.isSafeInteger(v.requestId) || Number(v.requestId) < 0)
     throw new Error("Invalid request ID");
@@ -377,6 +451,7 @@ export function parseCommand(input: unknown): HostCommand {
 }
 
 export class HostEngine {
+  private readonly operations = new EngineOperations();
   private switchingProjects = new Set<string>();
   private running = new Map<
     string,
@@ -403,22 +478,25 @@ export class HostEngine {
     }
   >();
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private recoveryWork = new Map<string, Promise<void>>();
   private closing = false;
+  private closePromise?: Promise<void>;
   /** A turn ended and the session is idle again, and how it ended (the host drains its queue). */
   onSettled?: (
     sessionId: string,
     outcome: { cancelled?: boolean; error?: string; interrupted?: boolean; reason?: string },
-  ) => void;
+  ) => void | Promise<void>;
   /** Conversations whose turn was found running at startup and settled as interrupted. */
   readonly recoveredInterrupted: string[] = [];
   /** A rewind, clear or branch switch ended: conversations waiting on it may go on. */
   onUnblocked?: () => void;
   /** Why a turn cannot start in this conversation right now, apart from one running in it. */
-  busyReason(sessionId: string): string | undefined {
+  async busyReason(sessionId: string): Promise<string | undefined> {
+    await this.ready;
     if (this.closing) return "Host is stopping";
     if (this.rewinding.has(sessionId)) return "A conversation change is in progress";
     try {
-      if (this.switchingProjects.has(this.store.session(sessionId).projectId))
+      if (this.switchingProjects.has((await this.store.session(sessionId)).projectId))
         return "A branch switch is in progress";
     } catch {
       /* unknown conversation */
@@ -438,21 +516,29 @@ export class HostEngine {
       checkpointRoot,
       process.env.VITEST ? undefined : join(homedir(), ".bycoda-host", "checkpoint-active"),
     );
+    this.ready = this.initialize();
+  }
+
+  readonly ready: Promise<void>;
+
+  private async initialize(): Promise<void> {
+    await this.store.ready;
+    const store = this.store;
     // Provider dispatch is not transactional with SQLite. Never replay a send
     // automatically after a crash; its external effects may already exist.
     // Only sessions that need rewriting are parsed; the rest are bound from
     // mirror columns and their snapshot loads on first access.
-    for (const state of store.startupStates()) {
+    for (const state of await store.startupStates()) {
       if (state.hasDesktop && !state.shellRunning && !state.running) {
         if (state.providerSessionId && state.harness)
           this.provider(state.harness).bind(state.id, state.providerSessionId, state.cwd ?? "");
         continue;
       }
-      let value = store.session(state.id);
+      let value = await store.session(state.id);
       // Sessions started here before they were shared with this machine's
       // desktop app become shared too, so the app on this machine lists them.
       if (!value.desktop)
-        value = this.save(
+        value = await this.save(
           { ...value, desktop: { updatedAt: 0 } },
           {
             type: "desktopShared",
@@ -460,7 +546,7 @@ export class HostEngine {
         );
       // A `!command` cannot outlive the host process that started it.
       if (value.session.blocks.some((block) => block.shell?.running))
-        value = this.save(
+        value = await this.save(
           {
             ...value,
             session: {
@@ -478,7 +564,7 @@ export class HostEngine {
         void this.checkpoints
           .recover(value.session.id, value.session.cwd)
           .catch((error) => console.warn("Checkpoint recovery failed", error));
-        this.save(
+        await this.save(
           this.settled(
             value,
             "interrupted",
@@ -500,20 +586,23 @@ export class HostEngine {
   }
 
   async openProject(path: string) {
+    await this.ready;
     if (!isAbsolute(path) || path.includes("\0"))
       throw new Error("Choose an absolute directory path on the host");
     const cwd = await realpath(path);
     if (!(await stat(cwd)).isDirectory()) throw new Error("Project path is not a directory");
-    return this.store.addProject(cwd, basename(cwd));
+    return await this.store.addProject(cwd, basename(cwd));
   }
 
   async withIdleProject<T>(projectId: string, action: () => Promise<T>): Promise<T> {
+    await this.ready;
     if (this.switchingProjects.has(projectId))
       throw new Error("A branch switch is already in progress");
-    if (this.store.hasRunning(projectId))
-      throw new Error("Wait for running host sessions before switching branches");
     this.switchingProjects.add(projectId);
     try {
+      if (await this.store.hasRunning(projectId))
+        throw new Error("Wait for running host sessions before switching branches");
+      await this.store.db.checkAuthorization();
       return await action();
     } finally {
       this.switchingProjects.delete(projectId);
@@ -531,95 +620,151 @@ export class HostEngine {
     return typeof this.providers[harness]?.stopItem === "function";
   }
 
-  previewContextual(raw: Record<string, unknown>, source?: HostSession) {
+  async previewContextual(raw: Record<string, unknown>, source?: HostSession) {
+    await this.ready;
     const input = contextualInput(raw);
     this.provider(input.harness);
-    return previewContextualSession(source ?? this.store.session(input.sessionId), input);
+    return previewContextualSession(source ?? (await this.store.session(input.sessionId)), input);
   }
 
-  private contextualCommand(command: Extract<HostCommand, { type: "contextual" }>, signature: string): CommandReceipt {
+  private async contextualCommand(
+    command: Extract<HostCommand, { type: "contextual" }>,
+    signature: string,
+  ): Promise<CommandReceipt> {
     if (this.rewinding.has(command.sessionId) || this.running.has(command.sessionId))
       throw new Error("Wait for the source conversation to finish before transferring context");
     this.provider(command.harness);
-    this.flush(command.sessionId);
-    const source = this.store.session(command.sessionId);
+    await this.flush(command.sessionId);
+    const source = await this.store.session(command.sessionId);
     const preview = previewContextualSession(source, contextualInput(command), true);
-    if (preview.digest !== command.previewDigest) throw new Error("The reviewed context changed. Review it again before continuing.");
-    return this.store.transaction(() => {
-      const created = this.command({ type: "create", commandId: `${command.commandId}:create`, projectId: source.projectId,
-        worktreeCwd: preview.cwd, harness: command.harness, model: command.model, modelSettings: command.modelSettings,
-        runtimeMode: source.session.runtimeMode });
-      const destination = this.store.session(created.sessionId);
-      const session = command.mode === "handoff" ? appendReadyHandoff(destination.session,
-        preview.sourceProvider, command.harness, preview.contextText) : destination.session;
-      const prepared = this.save({ ...destination, session: { ...session,
-        title: formatSessionTitle(command.harness, command.mode === "handoff" ? "Handoff" : "Second opinion"),
-        ...(source.session.worktreeCwd ? { worktreeCwd: source.session.worktreeCwd } : {}),
-        ...(source.session.branch ? { branch: source.session.branch } : {}),
-      } }, { type: "session.contextualOrigin", sourceSessionId: source.session.id, sourceBlockId: command.sourceBlockId,
-        sourceRevision: command.expectedRevision, previewDigest: preview.digest, mode: command.mode });
-      const result = command.mode === "secondOpinion" ? this.command({ type: "send", commandId: `${command.commandId}:send`,
-        sessionId: created.sessionId, text: preview.contextText, secondOpinion: preview.secondOpinion }) :
-        { commandId: command.commandId, sessionId: created.sessionId, revision: prepared.revision };
+    if (preview.digest !== command.previewDigest)
+      throw new Error("The reviewed context changed. Review it again before continuing.");
+    return await this.store.transaction(async () => {
+      const created = await this.command({
+        type: "create",
+        commandId: `${command.commandId}:create`,
+        projectId: source.projectId,
+        worktreeCwd: preview.cwd,
+        harness: command.harness,
+        model: command.model,
+        modelSettings: command.modelSettings,
+        runtimeMode: source.session.runtimeMode,
+      });
+      const destination = await this.store.session(created.sessionId);
+      const session =
+        command.mode === "handoff"
+          ? appendReadyHandoff(
+              destination.session,
+              preview.sourceProvider,
+              command.harness,
+              preview.contextText,
+            )
+          : destination.session;
+      const prepared = await this.save(
+        {
+          ...destination,
+          session: {
+            ...session,
+            title: formatSessionTitle(
+              command.harness,
+              command.mode === "handoff" ? "Handoff" : "Second opinion",
+            ),
+            ...(source.session.worktreeCwd ? { worktreeCwd: source.session.worktreeCwd } : {}),
+            ...(source.session.branch ? { branch: source.session.branch } : {}),
+          },
+        },
+        {
+          type: "session.contextualOrigin",
+          sourceSessionId: source.session.id,
+          sourceBlockId: command.sourceBlockId,
+          sourceRevision: command.expectedRevision,
+          previewDigest: preview.digest,
+          mode: command.mode,
+        },
+      );
+      const result =
+        command.mode === "secondOpinion"
+          ? await this.command({
+              type: "send",
+              commandId: `${command.commandId}:send`,
+              sessionId: created.sessionId,
+              text: preview.contextText,
+              secondOpinion: preview.secondOpinion,
+            })
+          : {
+              commandId: command.commandId,
+              sessionId: created.sessionId,
+              revision: prepared.revision,
+            };
       const receipt = { ...result, commandId: command.commandId };
-      this.store.recordReceipt(signature, receipt);
+      await this.store.recordReceipt(signature, receipt);
       return receipt;
     });
   }
 
-  private save(
+  private async save(
     value: HostSession,
     event: unknown,
     deferred = false,
     blockChanges?: BlockChanges,
     journal = false,
-  ): HostSession {
-    return this.store.transaction(() =>
-      this.store.save({ ...value, revision: value.revision + 1, updatedAt: Date.now() }, event, {
-        deferred,
-        blockChanges,
-        journal,
-      }),
+  ): Promise<HostSession> {
+    return await this.store.transaction(
+      async () =>
+        await this.store.save(
+          { ...value, revision: value.revision + 1, updatedAt: Date.now() },
+          event,
+          {
+            deferred,
+            blockChanges,
+            journal,
+          },
+        ),
     );
   }
 
   /** Takes over a session the desktop app created: same id, then host-owned. */
-  adoptSession(snapshot: HostSession): HostSession {
-    const id = snapshot.session.id;
-    if (this.rewinding.has(id)) throw new Error("A conversation change is in progress");
-    if (snapshot.status === "running") throw new LeaseHeldError("desktop");
-    const provider = this.provider(snapshot.session.harness);
-    const saved = this.store.transaction(() => {
-      try {
-        return this.store.session(id);
-      } catch {
-        // The desktop's bookkeeping about its own host copy stays on the desktop.
-        const { adoptedBase: _base, ...session } = snapshot.session;
-        const digests = transcriptDigests(session.blocks);
-        return this.store.save(
-          {
-            ...snapshot,
-            session,
-            status: "idle",
-            desktop: {
-              updatedAt: snapshot.updatedAt,
-              revision: snapshot.revision,
-              // Both hold this transcript now.
-              ...(digests ? { base: headOfDigests(digests) } : {}),
-            },
-          },
-          { type: "adopted" },
-        );
-      }
-    });
-    if (saved.session.providerSessionId)
-      provider.bind(
-        id,
-        saved.session.providerSessionId,
-        saved.session.cwd,
-        saved.session.providerAccountId,
-      );
-    return saved;
+  async adoptSession(snapshot: HostSession): Promise<HostSession> {
+    await this.ready;
+    return this.store.db.scope(() =>
+      this.operations.run(snapshot.session.id, async () => {
+        const id = snapshot.session.id;
+        if (this.rewinding.has(id)) throw new Error("A conversation change is in progress");
+        if (snapshot.status === "running") throw new LeaseHeldError("desktop");
+        const provider = this.provider(snapshot.session.harness);
+        const saved = await this.store.transaction(async () => {
+          try {
+            return await this.store.session(id);
+          } catch {
+            // The desktop's bookkeeping about its own host copy stays on the desktop.
+            const { adoptedBase: _base, ...session } = snapshot.session;
+            const digests = transcriptDigests(session.blocks);
+            return await this.store.save(
+              {
+                ...snapshot,
+                session,
+                status: "idle",
+                desktop: {
+                  updatedAt: snapshot.updatedAt,
+                  revision: snapshot.revision,
+                  // Both hold this transcript now.
+                  ...(digests ? { base: headOfDigests(digests) } : {}),
+                },
+              },
+              { type: "adopted" },
+            );
+          }
+        });
+        if (saved.session.providerSessionId)
+          provider.bind(
+            id,
+            saved.session.providerSessionId,
+            saved.session.cwd,
+            saved.session.providerAccountId,
+          );
+        return saved;
+      }),
+    );
   }
 
   /**
@@ -636,167 +781,183 @@ export class HostEngine {
     return this.rewinding.has(id) || this.live.has(id);
   }
 
-  refreshFromDesktop(snapshot: HostSession): HostSession | undefined {
-    const id = snapshot.session.id;
-    if (this.rewinding.has(id)) return undefined;
-    if (snapshot.status === "running" || this.live.has(id)) return undefined;
-    const current = this.store.session(id);
-    if (!current.desktop || current.status === "running") return undefined;
-    if (snapshot.updatedAt <= current.desktop.updatedAt) return undefined;
-    const { session } = snapshot;
-    // A copy the desktop saved before this host's latest change, e.g. while
-    // the host was still running the turn, holds nothing newer; replacing the
-    // transcript with it would drop the turn's output.
-    const stale = snapshot.updatedAt <= current.updatedAt;
-    // This revision is host-owned. Desktop snapshot revisions are timestamps,
-    // not host sequence numbers, so even equal revisions cannot prove equality.
-    const synced = current.desktop.revision === current.revision;
-    const sameBlocks = () => {
-      const incoming = session.blocks;
-      const existing = current.session.blocks;
-      if (incoming.length !== existing.length) return false;
-      const tail = incoming.at(-1);
-      const previousTail = existing.at(-1);
-      if (
-        tail?.id !== previousTail?.id ||
-        tail?.role !== previousTail?.role ||
-        tail?.text !== previousTail?.text ||
-        tail?.streaming !== previousTail?.streaming
-      )
-        return false;
-      // Matching tail metadata (or revisions) says nothing about earlier edits,
-      // tool payloads or attachments. Retain the structural fallback for them.
-      return JSON.stringify(incoming) === JSON.stringify(existing);
-    };
-    const same =
-      stale ||
-      (session.title === current.session.title &&
-        session.providerSessionId === current.session.providerSessionId &&
-        session.model === current.session.model &&
-        sameBlocks());
-    // A remote turn or failure recorded here may be absent from a desktop copy
-    // saved before it mirrored them. Newer is not enough to replace them; only
-    // a failure notice the desktop never saw and has continued past is
-    // superseded rather than lost.
-    const seen = new Set(session.blocks.map((block) => block.id));
-    const unseenFailures = new Set(
-      current.session.blocks.filter((block) => isSessionErrorBlock(block) && !seen.has(block.id)),
+  async refreshFromDesktop(snapshot: HostSession): Promise<HostSession | undefined> {
+    await this.ready;
+    return this.store.db.scope(() =>
+      this.operations.run(snapshot.session.id, async () => {
+        const id = snapshot.session.id;
+        if (this.rewinding.has(id)) return undefined;
+        if (snapshot.status === "running" || this.live.has(id)) return undefined;
+        const current = await this.store.session(id);
+        if (!current.desktop || current.status === "running") return undefined;
+        if (snapshot.updatedAt <= current.desktop.updatedAt) return undefined;
+        const { session } = snapshot;
+        // A copy the desktop saved before this host's latest change, e.g. while
+        // the host was still running the turn, holds nothing newer; replacing the
+        // transcript with it would drop the turn's output.
+        const stale = snapshot.updatedAt <= current.updatedAt;
+        // This revision is host-owned. Desktop snapshot revisions are timestamps,
+        // not host sequence numbers, so even equal revisions cannot prove equality.
+        const synced = current.desktop.revision === current.revision;
+        const sameBlocks = () => {
+          const incoming = session.blocks;
+          const existing = current.session.blocks;
+          if (incoming.length !== existing.length) return false;
+          const tail = incoming.at(-1);
+          const previousTail = existing.at(-1);
+          if (
+            tail?.id !== previousTail?.id ||
+            tail?.role !== previousTail?.role ||
+            tail?.text !== previousTail?.text ||
+            tail?.streaming !== previousTail?.streaming
+          )
+            return false;
+          // Matching tail metadata (or revisions) says nothing about earlier edits,
+          // tool payloads or attachments. Retain the structural fallback for them.
+          return JSON.stringify(incoming) === JSON.stringify(existing);
+        };
+        const same =
+          stale ||
+          (session.title === current.session.title &&
+            session.providerSessionId === current.session.providerSessionId &&
+            session.model === current.session.model &&
+            sameBlocks());
+        // A remote turn or failure recorded here may be absent from a desktop copy
+        // saved before it mirrored them. Newer is not enough to replace them; only
+        // a failure notice the desktop never saw and has continued past is
+        // superseded rather than lost.
+        const seen = new Set(session.blocks.map((block) => block.id));
+        const unseenFailures = new Set(
+          current.session.blocks.filter(
+            (block) => isSessionErrorBlock(block) && !seen.has(block.id),
+          ),
+        );
+        // Which side changed since both last held the same transcript, from the
+        // digests of the full blocks. Unreadable content falls back to comparing it.
+        const mine = transcriptDigests(session.blocks);
+        const held = transcriptDigests(current.session.blocks);
+        const keptBlocks = current.session.blocks.filter((block) => !unseenFailures.has(block));
+        // The desktop names the host transcript it last agreed on (and, when the user
+        // kept its version of a divergence, the one it replaced); the host remembers
+        // the same. A host that has not moved since one of them has nothing to add.
+        // Before the host recorded one, an unchanged revision says the same.
+        const base = held
+          ? (chooseBase(held, session.adoptedBase, current.desktop.base) ??
+            (synced ? headOfDigests(held) : undefined))
+          : undefined;
+        const hostUnchanged = !!held && !!base && atHead(held, base);
+        let verdict: Reconciled | undefined;
+        if (mine && held) {
+          const compared =
+            hostUnchanged || unseenFailures.size === 0 ? held : transcriptDigests(keptBlocks);
+          verdict = compared ? reconcile(mine, compared, base) : undefined;
+          // The host's own failure notice, which the desktop has not seen, is host content.
+          if (verdict === "equal" && compared !== held) verdict = "hostAhead";
+        }
+        // Content the digests cannot judge, or tell apart (a turn sealed at quit), is
+        // compared block by block as before.
+        const compare = !same && !synced && (verdict === undefined || verdict === "conflict");
+        const lead = compare
+          ? adoptedTranscriptLead(session, { ...current.session, blocks: keptBlocks })
+          : undefined;
+        const accepted =
+          !same &&
+          (verdict === undefined || verdict === "conflict"
+            ? synced || lead === "local" || (lead === "same" && unseenFailures.size === 0)
+            : verdict === "localAhead" || (verdict === "equal" && unseenFailures.size === 0));
+        if (!same && !accepted) {
+          const behind = verdict === undefined || verdict === "conflict" ? lead : verdict;
+          console.warn(
+            `Kept host transcript for session ${id}: the desktop copy ${behind ? "is behind it" : "diverged"}`,
+          );
+        }
+        const agreed =
+          (accepted || verdict === "equal") && mine ? headOfDigests(mine) : current.desktop.base;
+        const saved = await this.save(
+          {
+            ...current,
+            ...(!accepted
+              ? {}
+              : {
+                  status: "idle" as const,
+                  session: {
+                    ...current.session,
+                    title: session.title,
+                    model: session.model,
+                    modelSettings: session.modelSettings,
+                    runtimeMode: session.runtimeMode,
+                    blocks: session.blocks,
+                    providerSessionId: session.providerSessionId,
+                    providerAccountId: session.providerAccountId,
+                  },
+                }),
+            desktop: {
+              updatedAt: snapshot.updatedAt,
+              // Matching again only when both transcripts are now the same one.
+              revision:
+                accepted || synced || (same && !stale)
+                  ? current.revision + 1
+                  : current.desktop.revision,
+              // Where both last agreed: the desktop's transcript once taken, or the
+              // host's own when the desktop holds the same one.
+              ...(agreed ? { base: agreed } : {}),
+            },
+          },
+          { type: accepted ? "desktopRefreshed" : same ? "desktopSeen" : "desktopDiverged" },
+        );
+        if (accepted && saved.session.providerSessionId)
+          this.provider(saved.session.harness).bind(
+            id,
+            saved.session.providerSessionId,
+            saved.session.cwd,
+            saved.session.providerAccountId,
+          );
+        return saved;
+      }),
     );
-    // Which side changed since both last held the same transcript, from the
-    // digests of the full blocks. Unreadable content falls back to comparing it.
-    const mine = transcriptDigests(session.blocks);
-    const held = transcriptDigests(current.session.blocks);
-    const keptBlocks = current.session.blocks.filter((block) => !unseenFailures.has(block));
-    // The desktop names the host transcript it last agreed on (and, when the user
-    // kept its version of a divergence, the one it replaced); the host remembers
-    // the same. A host that has not moved since one of them has nothing to add.
-    // Before the host recorded one, an unchanged revision says the same.
-    const base = held
-      ? (chooseBase(held, session.adoptedBase, current.desktop.base) ??
-        (synced ? headOfDigests(held) : undefined))
-      : undefined;
-    const hostUnchanged = !!held && !!base && atHead(held, base);
-    let verdict: Reconciled | undefined;
-    if (mine && held) {
-      const compared =
-        hostUnchanged || unseenFailures.size === 0 ? held : transcriptDigests(keptBlocks);
-      verdict = compared ? reconcile(mine, compared, base) : undefined;
-      // The host's own failure notice, which the desktop has not seen, is host content.
-      if (verdict === "equal" && compared !== held) verdict = "hostAhead";
-    }
-    // Content the digests cannot judge, or tell apart (a turn sealed at quit), is
-    // compared block by block as before.
-    const compare = !same && !synced && (verdict === undefined || verdict === "conflict");
-    const lead = compare
-      ? adoptedTranscriptLead(session, { ...current.session, blocks: keptBlocks })
-      : undefined;
-    const accepted =
-      !same &&
-      (verdict === undefined || verdict === "conflict"
-        ? synced || lead === "local" || (lead === "same" && unseenFailures.size === 0)
-        : verdict === "localAhead" || (verdict === "equal" && unseenFailures.size === 0));
-    if (!same && !accepted) {
-      const behind = verdict === undefined || verdict === "conflict" ? lead : verdict;
-      console.warn(
-        `Kept host transcript for session ${id}: the desktop copy ${behind ? "is behind it" : "diverged"}`,
-      );
-    }
-    const agreed =
-      (accepted || verdict === "equal") && mine ? headOfDigests(mine) : current.desktop.base;
-    const saved = this.save(
-      {
-        ...current,
-        ...(!accepted
-          ? {}
-          : {
-              status: "idle" as const,
-              session: {
-                ...current.session,
-                title: session.title,
-                model: session.model,
-                modelSettings: session.modelSettings,
-                runtimeMode: session.runtimeMode,
-                blocks: session.blocks,
-                providerSessionId: session.providerSessionId,
-                providerAccountId: session.providerAccountId,
-              },
-            }),
-        desktop: {
-          updatedAt: snapshot.updatedAt,
-          // Matching again only when both transcripts are now the same one.
-          revision:
-            accepted || synced || (same && !stale)
-              ? current.revision + 1
-              : current.desktop.revision,
-          // Where both last agreed: the desktop's transcript once taken, or the
-          // host's own when the desktop holds the same one.
-          ...(agreed ? { base: agreed } : {}),
-        },
-      },
-      { type: accepted ? "desktopRefreshed" : same ? "desktopSeen" : "desktopDiverged" },
-    );
-    if (accepted && saved.session.providerSessionId)
-      this.provider(saved.session.harness).bind(
-        id,
-        saved.session.providerSessionId,
-        saved.session.cwd,
-        saved.session.providerAccountId,
-      );
-    return saved;
   }
 
-  updateSession(id: string, patch: Parameters<HostStore["updateSession"]>[1]) {
-    this.flush(id);
-    const summary = this.store.updateSession(id, patch);
-    const live = this.live.get(id);
-    if (live) live.value = this.store.session(id);
-    return summary;
-  }
-
-  private flush(id: string): void {
-    const live = this.live.get(id);
-    if (!live) return;
-    clearTimeout(live.timer);
-    live.timer = undefined;
-    if (!live.events.length) return;
-    const events = live.events;
-    const deferred = events.every((event) => BATCHED.has(event.type));
-    // Only batched streaming deltas may wait for the store checkpoint; a batch
-    // holding anything else (tool start, approval, question, ...) is written now.
-    live.value = this.save(
-      live.value,
-      { type: "events", events },
-      deferred,
-      live.blockChanges,
-      !deferred,
+  async updateSession(id: string, patch: Parameters<HostStore["updateSession"]>[1]) {
+    await this.ready;
+    return this.store.db.scope(() =>
+      this.operations.run(id, async () => {
+        await this.flush(id);
+        const summary = await this.store.updateSession(id, patch);
+        const live = this.live.get(id);
+        if (live) live.value = await this.store.session(id);
+        return summary;
+      }),
     );
-    live.events = [];
-    live.blockChanges = new Map();
   }
 
-  private scheduledFlush(id: string, provider: HostProvider): void {
+  private async flush(id: string): Promise<void> {
+    return this.store.db.scope(() =>
+      this.operations.run(id, async () => {
+        const live = this.live.get(id);
+        if (!live) return;
+        clearTimeout(live.timer);
+        live.timer = undefined;
+        if (!live.events.length) return;
+        const events = live.events;
+        const deferred = events.every((event) => BATCHED.has(event.type));
+        // Only batched streaming deltas may wait for the store checkpoint; a batch
+        // holding anything else (tool start, approval, question, ...) is written now.
+        live.value = await this.save(
+          live.value,
+          { type: "events", events },
+          deferred,
+          live.blockChanges,
+          !deferred,
+        );
+        live.events = [];
+        live.blockChanges = new Map();
+      }),
+    );
+  }
+
+  private async scheduledFlush(id: string, provider: HostProvider): Promise<void> {
     try {
-      this.flush(id);
+      await this.flush(id);
     } catch (error) {
       const active = this.running.get(id);
       if (active) active.persistenceFailed = true;
@@ -809,604 +970,752 @@ export class HostEngine {
   }
 
   private retrySettlement(id: string, runId: string, provider: HostProvider): void {
-    if (this.closing || this.retryTimers.has(id)) return;
-    const timer = setTimeout(() => {
-      this.retryTimers.delete(id);
-      void (async () => {
-        try {
-          await provider.stop(id);
-          this.flush(id);
-          const latest = this.store.session(id);
-          await this.checkpoints
-            .finish(id, latest.session.cwd, runId)
-            .catch((error) => console.warn("Workspace checkpoint failed", error));
-          if (latest.runId === runId && latest.status === "running")
-            this.save(
-              this.settled(
-                latest,
-                "interrupted",
-                "Session storage failed during this turn. Inspect its work before continuing.",
-                latest.updatedAt,
-              ),
-              { type: "interrupted", reason: "persistence failure" },
+    if (
+      this.closing ||
+      this.retryTimers.has(id) ||
+      this.recoveryWork.has(id) ||
+      this.store.db.restartRequired
+    )
+      return;
+    const timer = this.store.db.outsideScope(() =>
+      setTimeout(() => {
+        this.retryTimers.delete(id);
+        if (this.closing) return;
+        let retry = false;
+        const work = (async () => {
+          try {
+            await provider.stop(id);
+            const before = await this.store.session(id);
+            if (this.running.get(id)?.runId !== runId || before.runId !== runId) return;
+            await this.checkpoints
+              .finish(id, before.session.cwd, runId)
+              .catch((error) => console.warn("Workspace checkpoint failed", error));
+            await this.store.db.scope(() =>
+              this.operations.run(id, async () => {
+                if (this.running.get(id)?.runId !== runId) return;
+                await this.flush(id);
+                const latest = await this.store.session(id);
+                if (latest.runId !== runId) return;
+                if (latest.status === "running") {
+                  await this.save(
+                    this.settled(
+                      latest,
+                      "interrupted",
+                      "Session storage failed during this turn. Inspect its work before continuing.",
+                      latest.updatedAt,
+                    ),
+                    { type: "interrupted", reason: "persistence failure" },
+                  );
+                }
+                await this.onSettled?.(id, {
+                  interrupted: true,
+                  reason:
+                    "Session storage failed during this turn. Inspect its work before continuing.",
+                });
+                const persisted = await this.store.session(id);
+                if (persisted.session.providerSessionId)
+                  provider.bind(
+                    id,
+                    persisted.session.providerSessionId,
+                    persisted.session.cwd,
+                    persisted.session.providerAccountId,
+                  );
+                this.live.delete(id);
+                this.running.delete(id);
+              }),
             );
-          this.live.delete(id);
-          this.running.delete(id);
-          // The turn ended through this path (its normal end could not be saved):
-          // whoever drains the conversation's queue is told it was cut short.
-          this.onSettled?.(id, {
-            interrupted: true,
-            reason: "Session storage failed during this turn. Inspect its work before continuing.",
-          });
-          if (latest.session.providerSessionId)
-            provider.bind(id, latest.session.providerSessionId, latest.session.cwd);
-        } catch (error) {
-          console.error(
-            "Retrying session persistence:",
-            error instanceof Error ? error.message : "unknown error",
-          );
-          this.retrySettlement(id, runId, provider);
-        }
-      })();
-    }, 1_000);
+          } catch (error) {
+            console.error(
+              "Retrying session persistence:",
+              error instanceof Error ? error.message : "unknown error",
+            );
+            retry = !this.store.db.restartRequired;
+          }
+        })();
+        this.recoveryWork.set(id, work);
+        void work.finally(() => {
+          if (this.recoveryWork.get(id) === work) this.recoveryWork.delete(id);
+          if (retry) this.retrySettlement(id, runId, provider);
+        });
+      }, 1_000),
+    );
     timer.unref?.();
     this.retryTimers.set(id, timer);
   }
 
-  command(raw: unknown): CommandReceipt {
-    if (
-      raw &&
-      typeof raw === "object" &&
-      (raw as Record<string, unknown>).type === "create" &&
-      (raw as Record<string, unknown>).firstTurn !== undefined
-    ) {
-      const input = raw as Record<string, unknown>;
-      const create = parseCommand({ ...input, firstTurn: undefined });
-      if (create.type !== "create") throw new Error("Invalid session creation");
-      const first = parseCommand({ ...(input.firstTurn as object), sessionId: "pending" });
-      if (first.type !== "send" && first.type !== "draft") throw new Error("Invalid first turn");
-      const signature = createHash("sha256")
-        .update(JSON.stringify({ create, first }))
-        .digest("hex");
-      const previous = this.store.receipt(create.commandId, signature);
-      if (previous) return previous;
-      return this.store.transaction(() => {
-        const created = this.command({ ...create, commandId: `${create.commandId}:create` });
-        const sent = this.command({ ...first, sessionId: created.sessionId });
-        const receipt = { ...sent, commandId: create.commandId };
-        this.store.recordReceipt(signature, receipt);
-        return receipt;
-      });
-    }
-    if (this.closing) throw new Error("Host is stopping");
-    const command = parseCommand(raw);
-    if (command.type === "rewind")
-      throw new Error("Rewind commands must use the asynchronous rewind handler");
-    const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
-    const previous = this.store.receipt(command.commandId, signature);
-    if (previous) return previous;
-    if (command.type === "contextual") return this.contextualCommand(command, signature);
-    if (command.type !== "create" && this.rewinding.has(command.sessionId))
-      throw new Error("A conversation change is in progress");
-    // Commands apply to the latest state, including batched stream output.
-    if (command.type !== "create") this.flush(command.sessionId);
-    let effect: ((saved: HostSession) => void) | undefined;
-    const { receipt, saved } = this.store.transaction(() => {
-      let value: HostSession;
-      if (command.type === "create") {
-        const project = this.store.project(command.projectId);
-        if (this.switchingProjects.has(project.id))
-          throw new Error("Wait for the branch switch to finish");
-        this.provider(command.harness);
-        const cwd = resolveHostWorktree(project.cwd, command.worktreeCwd);
-        const now = Date.now();
-        value = {
-          projectId: project.id,
-          autoWorktreeBranch: command.autoWorktreeBranch,
-          // Shared with this machine's desktop app from the start: it lists
-          // the session in its project, and turns it runs come back here.
-          desktop: { updatedAt: 0 },
-          revision: 0,
-          status: "idle",
-          createdAt: now,
-          updatedAt: now,
-          session: {
-            id: randomUUID(),
-            cwd,
-            harness: command.harness,
-            ...(command.providerAccountId === undefined ? {} : { providerAccountId: command.providerAccountId }),
-            model: command.model,
-            runtimeMode: command.runtimeMode,
-            modelSettings: command.modelSettings ?? {},
-            title: "New remote session",
-            ...(command.autoWorktreeBranch
-              ? { branch: command.autoWorktreeBranch, worktreeCwd: cwd }
-              : {}),
-            blocks: [],
-          },
-        };
-      } else {
-        value = this.store.session(command.sessionId);
-        if ((command.type === "send" || command.type === "steer" || command.type === "draft") && command.attachments?.some((file) => file.browserAnnotation && (file.browserAnnotation.projectId !== value.projectId || file.browserAnnotation.sessionId !== value.session.id)))
-          throw new Error("Browser selection belongs to another project or conversation");
-        if (
-          (command.type === "send" || command.type === "compact") &&
-          this.switchingProjects.has(value.projectId)
-        )
-          throw new Error("Wait for the branch switch to finish");
-        const provider = this.provider(value.session.harness);
-        if (command.type === "configure") {
-          if (value.status === "running")
-            throw new Error("Wait for the current turn before changing settings");
-          const harness = command.harness ?? value.session.harness;
-          this.provider(harness);
-          const plan = planComposerSwitch(value.session, harness);
-          const changedHarness = value.session.harness !== harness;
-          value = {
-            ...value,
-            session: {
-              ...value.session,
-              harness,
-              model: command.model,
-              modelSettings: command.modelSettings,
-              runtimeMode: command.runtimeMode,
-              ...(changedHarness
-                ? {
-                    providerSessionId: undefined,
-                    providerAccountId: undefined,
-                    context: undefined,
-                    usageLimit: undefined,
-                  }
-                : {}),
-              ...(plan.kind === "arm" ? { pendingSwitch: plan.pending } : {}),
-              ...(plan.kind === "empty" ? { pendingSwitch: undefined } : {}),
-              ...(plan.kind === "revert"
-                ? {
-                    pendingSwitch: undefined,
-                    providerSessionId: plan.restoreProviderSessionId,
-                    providerAccountId: plan.restoreProviderAccountId,
-                  }
-                : {}),
-            },
-          };
-          if (plan.kind === "revert" && plan.restoreProviderSessionId) {
-            effect = (saved) =>
-              this.provider(saved.session.harness).bind(
-                saved.session.id,
-                plan.restoreProviderSessionId!,
-                saved.session.cwd,
-                saved.session.providerAccountId,
-              );
-          }
-        } else if (command.type === "draft") {
-          if (value.status === "running" || value.session.blocks.some((block) => block.draft))
-            throw new Error("This session cannot save another draft right now");
-          const attachments = resolveAttachments(this.store, command.attachments ?? []);
-          value = {
-            ...value,
-            session: {
-              ...value.session,
-              title: value.session.blocks.length
-                ? value.session.title
-                : titleFromPrompt(command.text, value.session.harness, attachments),
-              blocks: [
-                ...value.session.blocks,
-                {
-                  id: command.commandId,
-                  role: "user",
-                  text: command.text,
-                  ...(attachments.length ? { attachments } : {}),
-                  draft: true,
-                },
-              ],
-            },
-          };
-        } else if (command.type === "usageLimit") {
-          const limit = value.session.usageLimit;
-          if (limit) {
-            const { usageLimit: _dismissed, ...rest } = value.session;
-            value = {
-              ...value,
-              session:
-                command.action === "dismiss"
-                  ? rest
-                  : {
-                      ...value.session,
-                      usageLimit: {
-                        ...limit,
-                        resumeAtReset: command.action === "arm",
-                      },
-                    },
-            };
-          }
-        } else if (command.type === "removeDraft") {
-          const draft = value.session.blocks.find(
-            (block) => block.id === command.draftBlockId && block.draft,
-          );
-          if (!draft) throw new Error("Draft not found");
+  async command(raw: unknown): Promise<CommandReceipt> {
+    await this.ready;
+    return this.store.db.scope(() =>
+      this.operations.run(
+        typeof raw === "object" && raw !== null && "sessionId" in raw
+          ? String(raw.sessionId)
+          : `create:${typeof raw === "object" && raw !== null && "commandId" in raw ? raw.commandId : randomUUID()}`,
+        async () => {
           if (
-            draft.followUpDelivery === "pending" ||
-            (value.status === "running" && draft.followUpDelivery)
-          )
-            throw new Error("Follow-up delivery is still active");
-          value = {
-            ...value,
-            session: {
-              ...value.session,
-              blocks: value.session.blocks.filter((block) => block.id !== draft.id),
-            },
-          };
-        } else if (command.type === "shell") {
-          // No model turn: the block is the whole effect, so it is allowed
-          // while a turn runs.
-          value = {
-            ...value,
-            session: {
-              ...value.session,
-              blocks: [...value.session.blocks, shellBlock(command.commandId, command.line)],
-            },
-          };
-          effect = (saved) =>
-            this.runShell(saved.session.id, command.commandId, saved.session.cwd, command.line);
-        } else if (command.type === "send" || command.type === "compact") {
-          if (value.status === "running") throw new Error("This session is already running");
-          if (command.type === "compact" && !provider.compact)
-            throw new Error("Context compaction is unavailable for this provider");
-          const draft =
-            command.type === "send" && command.draftBlockId
-              ? value.session.blocks.find(
-                  (block) => block.id === command.draftBlockId && block.draft,
-                )
-              : undefined;
-          if (command.type === "send" && command.draftBlockId && !draft)
-            throw new Error("Draft not found");
-          const plan =
-            command.type === "send" && command.planBlockId
-              ? value.session.blocks.find(
-                  (block) => block.id === command.planBlockId && block.role === "plan",
-                )
-              : command.type === "send" && (command.intent ?? "default") === "default" &&
-                  !command.draftBlockId && !command.attachments?.length
-                ? approvedPlanForMessage(value.session, command.text)
-                : undefined;
-          const turnIntent = plan ? "build" : command.type === "send" ? command.intent : undefined;
-          if (
-            command.type === "send" &&
-            (command.planBlockId || command.intent === "build") &&
-            (!plan || !isBuildablePlan(plan))
-          )
-            throw new Error("Plan is not ready to build");
-          if (command.type === "send" && command.expectedPlanText !== undefined &&
-              plan?.text !== command.expectedPlanText)
-            throw new Error("The reviewed plan changed. Review the current plan before building.");
-          const approvedPlanText = plan && command.type === "send" && command.expectedPlanText !== undefined
-            ? command.text : plan?.text;
-          const attachments =
-            command.type === "send"
-              ? (draft?.attachments ?? resolveAttachments(this.store, command.attachments ?? []))
-              : [];
-          if (attachments.some((file) => file.browserAnnotation && (file.browserAnnotation.projectId !== value.projectId || file.browserAnnotation.sessionId !== value.session.id)))
-            throw new Error("Browser selection belongs to another project or conversation");
-          if (command.type === "send" && command.secondOpinion && command.secondOpinion.to !== value.session.harness)
-            throw new Error("The second opinion target does not match this conversation");
-          // Read before the turn's own block lands after them.
-          let handoffText: string | undefined;
-          let handoffFrom: RemoteProvider | undefined;
-          const rewindReplay =
-            command.type === "send" ? conversationReplayPrompt(value.session) : "";
-          if (command.type === "send" && value.session.pendingSwitch) {
-            const from = value.session.pendingSwitch.from;
-            const brief = buildDeterministicHandoff(value.session, command.text);
-            value = {
-              ...value,
-              session: appendReadyHandoff(
-                { ...value.session, pendingSwitch: undefined },
-                from,
-                value.session.harness,
-                brief,
-              ),
-            };
-          }
-          if (command.type === "send") {
-            const handoff = pendingHandoff(value.session);
-            handoffText = handoff?.text;
-            handoffFrom = handoff?.from as RemoteProvider | undefined;
-            if (handoffText) {
-              const archive = new HandoffHistoryStore(dirname(this.store.attachmentDir)).saveSync(
-                handoffHistory(value.session),
-              );
-              handoffText = buildBudgetedHandoff(value.session, {
-                contextWindow: resolveModel(value.session.harness, value.session.model)
-                  .contextWindow,
-                request: command.text,
-                brief: handoffText,
-                historyPath: archive.path,
-              }).text;
-              value = { ...value, session: consumeHandoff(value.session) };
-            }
-          }
-          const shellRuns = command.type === "send" ? pendingShellRuns(value.session.blocks) : [];
-          const runId = randomUUID();
-          const firstTurn =
-            command.type === "send" && !value.session.blocks.some((block) => !block.draft);
-          const placeholderTitle =
-            value.session.title === "New remote session" ||
-            canReplaceSessionTitle(
-              value.session.title,
-              value.session.harness,
-              HARNESS_LABEL[value.session.harness],
-            );
-          const model = resolveModel(value.session.harness, value.session.model);
-          // A new turn answers the last usage limit, so its notice (and any
-          // armed resume) must not outlive it.
-          const { usageLimit: _answered, ...current } = value.session;
-          value = {
-            ...value,
-            status: "running",
-            runId,
-            session: {
-              ...current,
-              busy: true,
-              pendingQuestion: undefined,
-              title:
-                firstTurn && placeholderTitle
-                  ? titleFromPrompt(command.text, value.session.harness, attachments)
-                  : value.session.title,
-              blocks: [
-                ...value.session.blocks
-                  .filter(
-                    (block) => !block.draft || (!!block.followUpDelivery && block.id !== draft?.id),
-                  )
-                  .map((block) =>
-                    block === plan
-                      ? {
-                          ...block,
-                          text: approvedPlanText ?? block.text,
-                          plan: {
-                            ...(block.plan ?? { status: "ready" as const }),
-                            status: "building" as const,
-                            approvedText: approvedPlanText ?? block.text,
-                            ...(approvedPlanText !== block.text ? {
-                              originalText: block.plan?.originalText ?? block.text,
-                              edited: true,
-                            } : {}),
-                          },
-                        }
-                      : block,
-                  ),
-                {
-                  id: command.commandId,
-                  role: "user",
-                  text: command.type === "compact" ? "/compact" : command.text,
-                  ...(command.type === "send" && command.secondOpinion ? { secondOpinion: command.secondOpinion } : {}),
-                  ...(command.type === "send" && command.noteCard ? { noteCard: noteContextMeta(command.noteCard) } : {}),
-                  ...(attachments.length ? { attachments } : {}),
-                  startedAt: Date.now(),
-                  turnModel: {
-                    harness: value.session.harness,
-                    id: value.session.model,
-                    name:
-                      model.id === value.session.model
-                        ? model.name
-                        : value.session.model.replace(/^[^:]+:/, ""),
-                  },
-                },
-              ],
-            },
-          };
-          effect = (saved) => {
-            const turnText = command.type === "send"
-              ? plan ? buildPlanPrompt(approvedPlanText ?? plan.text)
-                : turnIntent === "plan" ? planTurnPrompt(command.text) : command.noteCard ? composeNoteContext(command.noteCard, command.text) : command.text
-              : "";
-            const handoffBlock = handoffText
-              ? `<previous_agent_context>\n${handoffText}\n</previous_agent_context>\n\n`
-              : "";
-            // Codex parses /goal only as the first token; context travels separately.
-            const codexGoal =
-              command.type === "send" &&
-              saved.session.harness === "codex" &&
-              /^\s*\/goal(?=\s|$)/.test(command.text);
-            this.run(
-              saved,
-              command.type === "compact"
-                ? null
-                : codexGoal
-                  ? command.text
-                  : withShellContext(shellRuns, `${handoffBlock}${turnText}`),
-              turnIntent,
-              attachments,
-              command.resumeAtReset,
-              handoffText ? handoffFrom : undefined,
-              rewindReplay,
-              codexGoal ? withShellContext(shellRuns, `${handoffBlock}${command.type === "send" && command.noteCard ? composeNoteContext(command.noteCard, "") : ""}`).trim() : "",
-            );
-            if (firstTurn && command.type === "send") {
-              this.generateFirstTurnNames(saved, command.text, placeholderTitle);
-            }
-          };
-        } else {
-          if (value.runId !== command.runId || value.status !== "running")
-            throw new Error("This request belongs to a finished or replaced turn");
-          if (command.type === "cancel") {
-            effect = () => {
-              const active = this.running.get(command.sessionId);
-              if (active) active.cancelled = true;
-              void provider.cancel(command.sessionId).catch(() => provider.stop(command.sessionId));
-            };
-          } else if (command.type === "stopItem") {
-            const active = this.running.get(command.sessionId);
-            if (!provider.stopItem) throw new Error("This provider cannot stop an individual task");
-            if (!active || active.runId !== command.runId || active.cancelled || active.ending)
-              throw new Error("Only an active host-owned turn can stop an individual task");
-            const block = value.session.blocks.find((entry) => entry.id === command.blockId);
-            if (!block?.agentRun || block.agentRun.endedAt !== undefined || block.tool?.callId !== command.callId ||
-                active.priorBlockIds.has(block.id) ||
-                value.session.blocks.filter((entry) => entry.tool?.callId === command.callId).length !== 1 ||
-                !["running", "in_progress", "pending"].includes(block.tool.status ?? "") ||
-                block.approval && !block.approval.decided)
-              throw new Error("This subagent changed or is no longer running");
-            effect = () => {
-              void active.ready.then(async () => {
-                if (this.running.get(command.sessionId) !== active || active.cancelled || active.ending) return;
-                this.flush(command.sessionId);
-                const current = this.store.session(command.sessionId);
-                const target = current.session.blocks.find((entry) => entry.id === command.blockId);
-                if (current.runId !== command.runId || target?.tool?.callId !== command.callId || !target.agentRun || target.agentRun.endedAt !== undefined ||
-                    !["running", "in_progress", "pending"].includes(target.tool.status ?? "")) return;
-                await provider.stopItem!(command.sessionId, command.callId);
-              }).catch((reason) => {
-                if (this.running.get(command.sessionId) === active) this.event(command.sessionId, command.runId, {
-                  type: "status", text: `Could not confirm the subagent stop request. Inspect its current status before taking further action: ${String(reason)}`,
-                });
+            raw &&
+            typeof raw === "object" &&
+            (raw as Record<string, unknown>).type === "create" &&
+            (raw as Record<string, unknown>).firstTurn !== undefined
+          ) {
+            const input = raw as Record<string, unknown>;
+            const create = parseCommand({ ...input, firstTurn: undefined });
+            if (create.type !== "create") throw new Error("Invalid session creation");
+            const first = parseCommand({ ...(input.firstTurn as object), sessionId: "pending" });
+            if (first.type !== "send" && first.type !== "draft")
+              throw new Error("Invalid first turn");
+            const signature = createHash("sha256")
+              .update(JSON.stringify({ create, first }))
+              .digest("hex");
+            const previous = await this.store.receipt(create.commandId, signature);
+            if (previous) return previous;
+            return await this.store.transaction(async () => {
+              const created = await this.command({
+                ...create,
+                commandId: `${create.commandId}:create`,
               });
-            };
-          } else if (command.type === "steer") {
-            const active = this.running.get(command.sessionId);
-            if (!provider.steer) throw new Error("This provider cannot steer an active turn");
-            if (!active || active.cancelled || active.ending)
-              throw new Error("This turn was stopped");
-            const attachments = resolveAttachments(this.store, command.attachments ?? []);
-            value = {
-              ...value,
-              session: {
-                ...value.session,
-                blocks: [
-                  ...value.session.blocks,
-                  {
-                    id: command.commandId,
-                    role: "user",
-                    text: command.text,
-                    attachments,
-                    draft: true,
-                    followUpDelivery: "pending",
-                  },
-                ],
-              },
-            };
-            effect = () => {
-              let attempted = false;
-              active.steers = active.steers
-                .then(async () => {
-                  await active.ready;
-                  if (
-                    active.cancelled ||
-                    active.ending ||
-                    this.running.get(command.sessionId) !== active
-                  )
-                    return;
-                  const files = await Promise.all(
-                    attachments.map(async (file) =>
-                      isVisionImage(file.mimeType) && file.path && file.size <= 20 * 1024 * 1024
-                        ? { ...file, data: (await readFile(file.path)).toString("base64") }
-                        : file,
-                    ),
-                  );
-                  const prompt = await prepareHostSkillPrompt(command.text, value.session.cwd, undefined, value.session.id);
-                  if (
-                    active.cancelled ||
-                    active.ending ||
-                    this.running.get(command.sessionId) !== active
-                  )
-                    return;
-                  attempted = true;
-                  this.followUpDelivery(
-                    command.sessionId,
-                    command.runId,
-                    command.commandId,
-                    "uncertain",
-                  );
-                  await provider.steer!({
-                    sessionId: command.sessionId,
-                    cwd: value.session.cwd,
-                    model: value.session.model,
-                    modelSettings: value.session.modelSettings,
-                    text: prompt,
-                    attachments: files,
-                  });
-                  // Cancellation can resolve a provider's steer without submitting it.
-                  // A retired owner therefore cannot establish successful delivery.
-                  if (
-                    !active.cancelled &&
-                    !active.ending &&
-                    this.running.get(command.sessionId) === active
-                  )
-                    this.followUpDelivery(command.sessionId, command.runId, command.commandId);
-                })
-                .catch((reason) => {
-                  if (this.running.get(command.sessionId) === active) {
-                    this.followUpDelivery(
-                      command.sessionId,
-                      command.runId,
-                      command.commandId,
-                      attempted ? "uncertain" : "undelivered",
-                    );
-                    this.event(command.sessionId, command.runId, {
-                      type: "status",
-                      text: `Could not confirm delivery of the follow-up. It is saved as a draft; inspect the provider's work before retrying: ${String(reason)}`,
-                    });
-                  }
-                });
-            };
-          } else if (command.type === "approve") {
-            const pending = value.session.blocks.some(
-              (block) => block.approval?.requestId === command.requestId && !block.approval.decided,
-            );
-            if (!pending) throw new Error("Approval is already resolved");
-            value = {
-              ...value,
-              session: applyHarnessEvent(value.session, {
-                type: "approval.resolved",
-                requestId: command.requestId,
-                decision: command.decision,
-              }),
-            };
-            effect = () => provider.approve(command.sessionId, command.requestId, command.decision);
-          } else {
-            if (value.session.pendingQuestion?.requestId !== command.requestId)
-              throw new Error("Question is already resolved");
-            value = {
-              ...value,
-              session: applyHarnessEvent(value.session, {
-                type: "question.resolved",
-                requestId: command.requestId,
-                decision: command.reply.kind,
-                ...(command.reply.kind === "answered" ? { reply: command.reply } : {}),
-              }),
-            };
-            effect = () => provider.answer(command.sessionId, command.requestId, command.reply);
+              const sent = await this.command({ ...first, sessionId: created.sessionId });
+              const receipt = { ...sent, commandId: create.commandId };
+              await this.store.recordReceipt(signature, receipt);
+              return receipt;
+            });
           }
-        }
-      }
-      const saved = this.store.save(
-        {
-          ...value,
-          revision: value.revision + 1,
-          // Creation already initialized both timestamps from the same clock read.
-          updatedAt: command.type === "create" ? value.updatedAt : Date.now(),
+          if (this.closing) throw new Error("Host is stopping");
+          const command = parseCommand(raw);
+          if (command.type === "rewind")
+            throw new Error("Rewind commands must use the asynchronous rewind handler");
+          const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
+          const previous = await this.store.receipt(command.commandId, signature);
+          if (previous) return previous;
+          if (command.type === "contextual")
+            return await this.contextualCommand(command, signature);
+          if (command.type !== "create" && this.rewinding.has(command.sessionId))
+            throw new Error("A conversation change is in progress");
+          // Commands apply to the latest state, including batched stream output.
+          if (command.type !== "create") await this.flush(command.sessionId);
+          let effect: ((saved: HostSession) => void) | undefined;
+          const { receipt, saved } = await this.store.transaction(async () => {
+            let value: HostSession;
+            if (command.type === "create") {
+              const project = await this.store.project(command.projectId);
+              if (this.switchingProjects.has(project.id))
+                throw new Error("Wait for the branch switch to finish");
+              this.provider(command.harness);
+              const cwd = resolveHostWorktree(project.cwd, command.worktreeCwd);
+              const now = Date.now();
+              value = {
+                projectId: project.id,
+                autoWorktreeBranch: command.autoWorktreeBranch,
+                // Shared with this machine's desktop app from the start: it lists
+                // the session in its project, and turns it runs come back here.
+                desktop: { updatedAt: 0 },
+                revision: 0,
+                status: "idle",
+                createdAt: now,
+                updatedAt: now,
+                session: {
+                  id: randomUUID(),
+                  cwd,
+                  harness: command.harness,
+                  ...(command.providerAccountId === undefined
+                    ? {}
+                    : { providerAccountId: command.providerAccountId }),
+                  model: command.model,
+                  runtimeMode: command.runtimeMode,
+                  modelSettings: command.modelSettings ?? {},
+                  title: "New remote session",
+                  ...(command.autoWorktreeBranch
+                    ? { branch: command.autoWorktreeBranch, worktreeCwd: cwd }
+                    : {}),
+                  blocks: [],
+                },
+              };
+            } else {
+              value = await this.store.session(command.sessionId);
+              if (
+                (command.type === "send" || command.type === "steer" || command.type === "draft") &&
+                command.attachments?.some(
+                  (file) =>
+                    file.browserAnnotation &&
+                    (file.browserAnnotation.projectId !== value.projectId ||
+                      file.browserAnnotation.sessionId !== value.session.id),
+                )
+              )
+                throw new Error("Browser selection belongs to another project or conversation");
+              if (
+                (command.type === "send" || command.type === "compact") &&
+                this.switchingProjects.has(value.projectId)
+              )
+                throw new Error("Wait for the branch switch to finish");
+              const provider = this.provider(value.session.harness);
+              if (command.type === "configure") {
+                if (value.status === "running")
+                  throw new Error("Wait for the current turn before changing settings");
+                const harness = command.harness ?? value.session.harness;
+                this.provider(harness);
+                const plan = planComposerSwitch(value.session, harness);
+                const changedHarness = value.session.harness !== harness;
+                value = {
+                  ...value,
+                  session: {
+                    ...value.session,
+                    harness,
+                    model: command.model,
+                    modelSettings: command.modelSettings,
+                    runtimeMode: command.runtimeMode,
+                    ...(changedHarness
+                      ? {
+                          providerSessionId: undefined,
+                          providerAccountId: undefined,
+                          context: undefined,
+                          usageLimit: undefined,
+                        }
+                      : {}),
+                    ...(plan.kind === "arm" ? { pendingSwitch: plan.pending } : {}),
+                    ...(plan.kind === "empty" ? { pendingSwitch: undefined } : {}),
+                    ...(plan.kind === "revert"
+                      ? {
+                          pendingSwitch: undefined,
+                          providerSessionId: plan.restoreProviderSessionId,
+                          providerAccountId: plan.restoreProviderAccountId,
+                        }
+                      : {}),
+                  },
+                };
+                if (plan.kind === "revert" && plan.restoreProviderSessionId) {
+                  effect = (saved) =>
+                    this.provider(saved.session.harness).bind(
+                      saved.session.id,
+                      plan.restoreProviderSessionId!,
+                      saved.session.cwd,
+                      saved.session.providerAccountId,
+                    );
+                }
+              } else if (command.type === "draft") {
+                if (value.status === "running" || value.session.blocks.some((block) => block.draft))
+                  throw new Error("This session cannot save another draft right now");
+                const attachments = resolveAttachments(this.store, command.attachments ?? []);
+                value = {
+                  ...value,
+                  session: {
+                    ...value.session,
+                    title: value.session.blocks.length
+                      ? value.session.title
+                      : titleFromPrompt(command.text, value.session.harness, attachments),
+                    blocks: [
+                      ...value.session.blocks,
+                      {
+                        id: command.commandId,
+                        role: "user",
+                        text: command.text,
+                        ...(attachments.length ? { attachments } : {}),
+                        draft: true,
+                      },
+                    ],
+                  },
+                };
+              } else if (command.type === "usageLimit") {
+                const limit = value.session.usageLimit;
+                if (limit) {
+                  const { usageLimit: _dismissed, ...rest } = value.session;
+                  value = {
+                    ...value,
+                    session:
+                      command.action === "dismiss"
+                        ? rest
+                        : {
+                            ...value.session,
+                            usageLimit: {
+                              ...limit,
+                              resumeAtReset: command.action === "arm",
+                            },
+                          },
+                  };
+                }
+              } else if (command.type === "removeDraft") {
+                const draft = value.session.blocks.find(
+                  (block) => block.id === command.draftBlockId && block.draft,
+                );
+                if (!draft) throw new Error("Draft not found");
+                if (
+                  draft.followUpDelivery === "pending" ||
+                  (value.status === "running" && draft.followUpDelivery)
+                )
+                  throw new Error("Follow-up delivery is still active");
+                value = {
+                  ...value,
+                  session: {
+                    ...value.session,
+                    blocks: value.session.blocks.filter((block) => block.id !== draft.id),
+                  },
+                };
+              } else if (command.type === "shell") {
+                // No model turn: the block is the whole effect, so it is allowed
+                // while a turn runs.
+                value = {
+                  ...value,
+                  session: {
+                    ...value.session,
+                    blocks: [...value.session.blocks, shellBlock(command.commandId, command.line)],
+                  },
+                };
+                effect = (saved) =>
+                  this.runShell(
+                    saved.session.id,
+                    command.commandId,
+                    saved.session.cwd,
+                    command.line,
+                  );
+              } else if (command.type === "send" || command.type === "compact") {
+                if (value.status === "running") throw new Error("This session is already running");
+                if (command.type === "compact" && !provider.compact)
+                  throw new Error("Context compaction is unavailable for this provider");
+                const draft =
+                  command.type === "send" && command.draftBlockId
+                    ? value.session.blocks.find(
+                        (block) => block.id === command.draftBlockId && block.draft,
+                      )
+                    : undefined;
+                if (command.type === "send" && command.draftBlockId && !draft)
+                  throw new Error("Draft not found");
+                const plan =
+                  command.type === "send" && command.planBlockId
+                    ? value.session.blocks.find(
+                        (block) => block.id === command.planBlockId && block.role === "plan",
+                      )
+                    : command.type === "send" &&
+                        (command.intent ?? "default") === "default" &&
+                        !command.draftBlockId &&
+                        !command.attachments?.length
+                      ? approvedPlanForMessage(value.session, command.text)
+                      : undefined;
+                const turnIntent = plan
+                  ? "build"
+                  : command.type === "send"
+                    ? command.intent
+                    : undefined;
+                if (
+                  command.type === "send" &&
+                  (command.planBlockId || command.intent === "build") &&
+                  (!plan || !isBuildablePlan(plan))
+                )
+                  throw new Error("Plan is not ready to build");
+                if (
+                  command.type === "send" &&
+                  command.expectedPlanText !== undefined &&
+                  plan?.text !== command.expectedPlanText
+                )
+                  throw new Error(
+                    "The reviewed plan changed. Review the current plan before building.",
+                  );
+                const approvedPlanText =
+                  plan && command.type === "send" && command.expectedPlanText !== undefined
+                    ? command.text
+                    : plan?.text;
+                const attachments =
+                  command.type === "send"
+                    ? (draft?.attachments ??
+                      resolveAttachments(this.store, command.attachments ?? []))
+                    : [];
+                if (
+                  attachments.some(
+                    (file) =>
+                      file.browserAnnotation &&
+                      (file.browserAnnotation.projectId !== value.projectId ||
+                        file.browserAnnotation.sessionId !== value.session.id),
+                  )
+                )
+                  throw new Error("Browser selection belongs to another project or conversation");
+                if (
+                  command.type === "send" &&
+                  command.secondOpinion &&
+                  command.secondOpinion.to !== value.session.harness
+                )
+                  throw new Error("The second opinion target does not match this conversation");
+                // Read before the turn's own block lands after them.
+                let handoffText: string | undefined;
+                let handoffFrom: RemoteProvider | undefined;
+                const rewindReplay =
+                  command.type === "send" ? conversationReplayPrompt(value.session) : "";
+                if (command.type === "send" && value.session.pendingSwitch) {
+                  const from = value.session.pendingSwitch.from;
+                  const brief = buildDeterministicHandoff(value.session, command.text);
+                  value = {
+                    ...value,
+                    session: appendReadyHandoff(
+                      { ...value.session, pendingSwitch: undefined },
+                      from,
+                      value.session.harness,
+                      brief,
+                    ),
+                  };
+                }
+                if (command.type === "send") {
+                  const handoff = pendingHandoff(value.session);
+                  handoffText = handoff?.text;
+                  handoffFrom = handoff?.from as RemoteProvider | undefined;
+                  if (handoffText) {
+                    const archive = new HandoffHistoryStore(
+                      dirname(this.store.attachmentDir),
+                    ).saveSync(handoffHistory(value.session));
+                    handoffText = buildBudgetedHandoff(value.session, {
+                      contextWindow: resolveModel(value.session.harness, value.session.model)
+                        .contextWindow,
+                      request: command.text,
+                      brief: handoffText,
+                      historyPath: archive.path,
+                    }).text;
+                    value = { ...value, session: consumeHandoff(value.session) };
+                  }
+                }
+                const shellRuns =
+                  command.type === "send" ? pendingShellRuns(value.session.blocks) : [];
+                const runId = randomUUID();
+                const firstTurn =
+                  command.type === "send" && !value.session.blocks.some((block) => !block.draft);
+                const placeholderTitle =
+                  value.session.title === "New remote session" ||
+                  canReplaceSessionTitle(
+                    value.session.title,
+                    value.session.harness,
+                    HARNESS_LABEL[value.session.harness],
+                  );
+                const model = resolveModel(value.session.harness, value.session.model);
+                // A new turn answers the last usage limit, so its notice (and any
+                // armed resume) must not outlive it.
+                const { usageLimit: _answered, ...current } = value.session;
+                value = {
+                  ...value,
+                  status: "running",
+                  runId,
+                  session: {
+                    ...current,
+                    busy: true,
+                    pendingQuestion: undefined,
+                    title:
+                      firstTurn && placeholderTitle
+                        ? titleFromPrompt(command.text, value.session.harness, attachments)
+                        : value.session.title,
+                    blocks: [
+                      ...value.session.blocks
+                        .filter(
+                          (block) =>
+                            !block.draft || (!!block.followUpDelivery && block.id !== draft?.id),
+                        )
+                        .map((block) =>
+                          block === plan
+                            ? {
+                                ...block,
+                                text: approvedPlanText ?? block.text,
+                                plan: {
+                                  ...(block.plan ?? { status: "ready" as const }),
+                                  status: "building" as const,
+                                  approvedText: approvedPlanText ?? block.text,
+                                  ...(approvedPlanText !== block.text
+                                    ? {
+                                        originalText: block.plan?.originalText ?? block.text,
+                                        edited: true,
+                                      }
+                                    : {}),
+                                },
+                              }
+                            : block,
+                        ),
+                      {
+                        id: command.commandId,
+                        role: "user",
+                        text: command.type === "compact" ? "/compact" : command.text,
+                        ...(command.type === "send" && command.secondOpinion
+                          ? { secondOpinion: command.secondOpinion }
+                          : {}),
+                        ...(command.type === "send" && command.noteCard
+                          ? { noteCard: noteContextMeta(command.noteCard) }
+                          : {}),
+                        ...(attachments.length ? { attachments } : {}),
+                        startedAt: Date.now(),
+                        turnModel: {
+                          harness: value.session.harness,
+                          id: value.session.model,
+                          name:
+                            model.id === value.session.model
+                              ? model.name
+                              : value.session.model.replace(/^[^:]+:/, ""),
+                        },
+                      },
+                    ],
+                  },
+                };
+                effect = (saved) => {
+                  const turnText =
+                    command.type === "send"
+                      ? plan
+                        ? buildPlanPrompt(approvedPlanText ?? plan.text)
+                        : turnIntent === "plan"
+                          ? planTurnPrompt(command.text)
+                          : command.noteCard
+                            ? composeNoteContext(command.noteCard, command.text)
+                            : command.text
+                      : "";
+                  const handoffBlock = handoffText
+                    ? `<previous_agent_context>\n${handoffText}\n</previous_agent_context>\n\n`
+                    : "";
+                  // Codex parses /goal only as the first token; context travels separately.
+                  const codexGoal =
+                    command.type === "send" &&
+                    saved.session.harness === "codex" &&
+                    /^\s*\/goal(?=\s|$)/.test(command.text);
+                  this.run(
+                    saved,
+                    command.type === "compact"
+                      ? null
+                      : codexGoal
+                        ? command.text
+                        : withShellContext(shellRuns, `${handoffBlock}${turnText}`),
+                    turnIntent,
+                    attachments,
+                    command.resumeAtReset,
+                    handoffText ? handoffFrom : undefined,
+                    rewindReplay,
+                    codexGoal
+                      ? withShellContext(
+                          shellRuns,
+                          `${handoffBlock}${command.type === "send" && command.noteCard ? composeNoteContext(command.noteCard, "") : ""}`,
+                        ).trim()
+                      : "",
+                  );
+                  if (firstTurn && command.type === "send") {
+                    this.generateFirstTurnNames(saved, command.text, placeholderTitle);
+                  }
+                };
+              } else {
+                if (value.runId !== command.runId || value.status !== "running")
+                  throw new Error("This request belongs to a finished or replaced turn");
+                if (command.type === "cancel") {
+                  effect = () => {
+                    const active = this.running.get(command.sessionId);
+                    if (active) active.cancelled = true;
+                    void provider
+                      .cancel(command.sessionId)
+                      .catch(() => provider.stop(command.sessionId));
+                  };
+                } else if (command.type === "stopItem") {
+                  const active = this.running.get(command.sessionId);
+                  if (!provider.stopItem)
+                    throw new Error("This provider cannot stop an individual task");
+                  if (
+                    !active ||
+                    active.runId !== command.runId ||
+                    active.cancelled ||
+                    active.ending
+                  )
+                    throw new Error("Only an active host-owned turn can stop an individual task");
+                  const block = value.session.blocks.find((entry) => entry.id === command.blockId);
+                  if (
+                    !block?.agentRun ||
+                    block.agentRun.endedAt !== undefined ||
+                    block.tool?.callId !== command.callId ||
+                    active.priorBlockIds.has(block.id) ||
+                    value.session.blocks.filter((entry) => entry.tool?.callId === command.callId)
+                      .length !== 1 ||
+                    !["running", "in_progress", "pending"].includes(block.tool.status ?? "") ||
+                    (block.approval && !block.approval.decided)
+                  )
+                    throw new Error("This subagent changed or is no longer running");
+                  effect = () => {
+                    void active.ready
+                      .then(async () => {
+                        if (
+                          this.running.get(command.sessionId) !== active ||
+                          active.cancelled ||
+                          active.ending
+                        )
+                          return;
+                        await this.flush(command.sessionId);
+                        const current = await this.store.session(command.sessionId);
+                        const target = current.session.blocks.find(
+                          (entry) => entry.id === command.blockId,
+                        );
+                        if (
+                          current.runId !== command.runId ||
+                          target?.tool?.callId !== command.callId ||
+                          !target.agentRun ||
+                          target.agentRun.endedAt !== undefined ||
+                          !["running", "in_progress", "pending"].includes(target.tool.status ?? "")
+                        )
+                          return;
+                        await provider.stopItem!(command.sessionId, command.callId);
+                      })
+                      .catch((reason) => {
+                        if (this.running.get(command.sessionId) === active)
+                          this.event(command.sessionId, command.runId, {
+                            type: "status",
+                            text: `Could not confirm the subagent stop request. Inspect its current status before taking further action: ${String(reason)}`,
+                          });
+                      });
+                  };
+                } else if (command.type === "steer") {
+                  const active = this.running.get(command.sessionId);
+                  if (!provider.steer) throw new Error("This provider cannot steer an active turn");
+                  if (!active || active.cancelled || active.ending)
+                    throw new Error("This turn was stopped");
+                  const attachments = resolveAttachments(this.store, command.attachments ?? []);
+                  value = {
+                    ...value,
+                    session: {
+                      ...value.session,
+                      blocks: [
+                        ...value.session.blocks,
+                        {
+                          id: command.commandId,
+                          role: "user",
+                          text: command.text,
+                          attachments,
+                          draft: true,
+                          followUpDelivery: "pending",
+                        },
+                      ],
+                    },
+                  };
+                  effect = () => {
+                    let attempted = false;
+                    active.steers = active.steers
+                      .then(async () => {
+                        await active.ready;
+                        if (
+                          active.cancelled ||
+                          active.ending ||
+                          this.running.get(command.sessionId) !== active
+                        )
+                          return;
+                        const files = await Promise.all(
+                          attachments.map(async (file) =>
+                            isVisionImage(file.mimeType) &&
+                            file.path &&
+                            file.size <= 20 * 1024 * 1024
+                              ? { ...file, data: (await readFile(file.path)).toString("base64") }
+                              : file,
+                          ),
+                        );
+                        const prompt = await prepareHostSkillPrompt(
+                          command.text,
+                          value.session.cwd,
+                          undefined,
+                          value.session.id,
+                        );
+                        if (
+                          active.cancelled ||
+                          active.ending ||
+                          this.running.get(command.sessionId) !== active
+                        )
+                          return;
+                        attempted = true;
+                        await this.followUpDelivery(
+                          command.sessionId,
+                          command.runId,
+                          command.commandId,
+                          "uncertain",
+                        );
+                        await provider.steer!({
+                          sessionId: command.sessionId,
+                          cwd: value.session.cwd,
+                          model: value.session.model,
+                          modelSettings: value.session.modelSettings,
+                          text: prompt,
+                          attachments: files,
+                        });
+                        // Cancellation can resolve a provider's steer without submitting it.
+                        // A retired owner therefore cannot establish successful delivery.
+                        if (
+                          !active.cancelled &&
+                          !active.ending &&
+                          this.running.get(command.sessionId) === active
+                        )
+                          await this.followUpDelivery(
+                            command.sessionId,
+                            command.runId,
+                            command.commandId,
+                          );
+                      })
+                      .catch(async (reason) => {
+                        if (this.running.get(command.sessionId) === active) {
+                          await this.followUpDelivery(
+                            command.sessionId,
+                            command.runId,
+                            command.commandId,
+                            attempted ? "uncertain" : "undelivered",
+                          );
+                          this.event(command.sessionId, command.runId, {
+                            type: "status",
+                            text: `Could not confirm delivery of the follow-up. It is saved as a draft; inspect the provider's work before retrying: ${String(reason)}`,
+                          });
+                        }
+                      });
+                  };
+                } else if (command.type === "approve") {
+                  const pending = value.session.blocks.some(
+                    (block) =>
+                      block.approval?.requestId === command.requestId && !block.approval.decided,
+                  );
+                  if (!pending) throw new Error("Approval is already resolved");
+                  value = {
+                    ...value,
+                    session: applyHarnessEvent(value.session, {
+                      type: "approval.resolved",
+                      requestId: command.requestId,
+                      decision: command.decision,
+                    }),
+                  };
+                  effect = () =>
+                    provider.approve(command.sessionId, command.requestId, command.decision);
+                } else {
+                  if (value.session.pendingQuestion?.requestId !== command.requestId)
+                    throw new Error("Question is already resolved");
+                  value = {
+                    ...value,
+                    session: applyHarnessEvent(value.session, {
+                      type: "question.resolved",
+                      requestId: command.requestId,
+                      decision: command.reply.kind,
+                      ...(command.reply.kind === "answered" ? { reply: command.reply } : {}),
+                    }),
+                  };
+                  effect = () =>
+                    provider.answer(command.sessionId, command.requestId, command.reply);
+                }
+              }
+            }
+            const saved = await this.store.save(
+              {
+                ...value,
+                revision: value.revision + 1,
+                // Creation already initialized both timestamps from the same clock read.
+                updatedAt: command.type === "create" ? value.updatedAt : Date.now(),
+              },
+              { type: "command", command },
+            );
+            const result = {
+              commandId: command.commandId,
+              sessionId: saved.session.id,
+              revision: saved.revision,
+              ...((command.type === "send" || command.type === "compact") && saved.runId
+                ? { runId: saved.runId }
+                : {}),
+            };
+            await this.store.recordReceipt(signature, result);
+            return { receipt: result, saved };
+          });
+          const live = this.live.get(saved.session.id);
+          if (live) live.value = saved;
+          // A receipt means durable host acceptance, not provider completion.
+          if (effect) this.store.afterCommit(() => effect!(saved));
+          return receipt;
         },
-        { type: "command", command },
-      );
-      const result = {
-        commandId: command.commandId,
-        sessionId: saved.session.id,
-        revision: saved.revision,
-        ...((command.type === "send" || command.type === "compact") && saved.runId
-          ? { runId: saved.runId }
-          : {}),
-      };
-      this.store.recordReceipt(signature, result);
-      return { receipt: result, saved };
-    });
-    const live = this.live.get(saved.session.id);
-    if (live) live.value = saved;
-    // A receipt means durable host acceptance, not provider completion.
-    if (effect) this.store.afterCommit(() => effect!(saved));
-    return receipt;
+      ),
+    );
   }
 
   /** /clear uses the existing send transport but never dispatches a model turn. */
   async clearConversation(raw: unknown): Promise<CommandReceipt> {
+    await this.ready;
     if (this.closing) throw new Error("Host is stopping");
     const command = parseCommand(raw);
     if (
@@ -1416,14 +1725,14 @@ export class HostEngine {
     )
       throw new Error("Invalid clear command");
     const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
-    const previous = this.store.receipt(command.commandId, signature);
+    const previous = await this.store.receipt(command.commandId, signature);
     if (previous) return previous;
     if (this.rewinding.has(command.sessionId))
       throw new Error("A conversation change is in progress");
     this.rewinding.add(command.sessionId);
     try {
-      this.flush(command.sessionId);
-      const initial = this.store.session(command.sessionId);
+      await this.flush(command.sessionId);
+      const initial = await this.store.session(command.sessionId);
       if (
         initial.status === "running" ||
         this.running.has(command.sessionId) ||
@@ -1438,11 +1747,11 @@ export class HostEngine {
         initial.session.pendingSwitch.from !== initial.session.harness
       )
         await this.provider(initial.session.pendingSwitch.from).stop(command.sessionId);
-      return this.store.transaction(() => {
-        const latest = this.store.session(command.sessionId);
+      return await this.store.transaction(async () => {
+        const latest = await this.store.session(command.sessionId);
         if (latest.revision !== initial.revision)
           throw new Error("The conversation changed while clearing");
-        const saved = this.save(
+        const saved = await this.save(
           { ...latest, session: clearConversation(latest.session), status: "idle" },
           { type: "conversation.cleared", commandId: command.commandId },
         );
@@ -1453,7 +1762,7 @@ export class HostEngine {
           sessionId: command.sessionId,
           revision: saved.revision,
         };
-        this.store.recordReceipt(signature, receipt);
+        await this.store.recordReceipt(signature, receipt);
         return receipt;
       });
     } finally {
@@ -1464,11 +1773,12 @@ export class HostEngine {
 
   /** Stop the provider binding before atomically committing a rewind. */
   async rewind(raw: unknown): Promise<CommandReceipt> {
+    await this.ready;
     if (this.closing) throw new Error("Host is stopping");
     const command = parseCommand(raw);
     if (command.type !== "rewind") throw new Error("Invalid rewind command");
     const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
-    const previous = this.store.receipt(command.commandId, signature);
+    const previous = await this.store.receipt(command.commandId, signature);
     if (previous) return previous;
     if (this.rewinding.has(command.sessionId))
       throw new Error("Another conversation change is in progress");
@@ -1476,8 +1786,8 @@ export class HostEngine {
     let nativeRewindApplied = false;
     let nativeProvider: HostProvider | undefined;
     try {
-      this.flush(command.sessionId);
-      const initial = this.store.session(command.sessionId);
+      await this.flush(command.sessionId);
+      const initial = await this.store.session(command.sessionId);
       if (command.expectedRevision !== undefined && initial.revision !== command.expectedRevision)
         throw new Error("The conversation changed; refresh before rewinding");
       if (initial.status === "running" || this.running.has(command.sessionId))
@@ -1517,7 +1827,7 @@ export class HostEngine {
         // Fresh-session replay prevents all providers from reusing the old id.
         await provider.stop(command.sessionId);
       }
-      const current = this.store.session(command.sessionId);
+      const current = await this.store.session(command.sessionId);
       if (
         current.revision !== revision ||
         current.status === "running" ||
@@ -1535,11 +1845,11 @@ export class HostEngine {
       if (rewound === current.session) throw new Error("This conversation cannot be rewound");
       if (strategy.preserveProviderBinding && nativeProviderSessionId)
         rewound.providerSessionId = nativeProviderSessionId;
-      const { receipt, saved } = this.store.transaction(() => {
-        const latest = this.store.session(command.sessionId);
+      const { receipt, saved } = await this.store.transaction(async () => {
+        const latest = await this.store.session(command.sessionId);
         if (latest.revision !== revision || latest.status === "running")
           throw new Error("The conversation changed while rewind was preparing");
-        const value = this.store.save(
+        const value = await this.store.save(
           { ...latest, session: rewound, revision: latest.revision + 1, updatedAt: Date.now() },
           { type: "conversation.rewound", commandId: command.commandId, blockId: command.blockId },
         );
@@ -1548,7 +1858,7 @@ export class HostEngine {
           sessionId: value.session.id,
           revision: value.revision,
         };
-        this.store.recordReceipt(signature, receipt);
+        await this.store.recordReceipt(signature, receipt);
         return { receipt, saved: value };
       });
       const live = this.live.get(saved.session.id);
@@ -1565,18 +1875,24 @@ export class HostEngine {
           // The fresh-session binding is still cleared durably below.
         }
         try {
-          const latest = this.store.session(command.sessionId);
-          const replay = buildConversationReplay(latest.session.blocks);
-          this.save(
-            {
-              ...latest,
-              session: {
-                ...latest.session,
-                providerSessionId: undefined,
-                pendingContextReplay: replay || undefined,
-              },
-            },
-            { type: "conversation.rewindRecovery", commandId: command.commandId },
+          await this.store.db.scope(() =>
+            this.operations.run(command.sessionId, async () => {
+              const latest = await this.store.session(command.sessionId);
+              const replay = buildConversationReplay(latest.session.blocks);
+              const saved = await this.save(
+                {
+                  ...latest,
+                  session: {
+                    ...latest.session,
+                    providerSessionId: undefined,
+                    pendingContextReplay: replay || undefined,
+                  },
+                },
+                { type: "conversation.rewindRecovery", commandId: command.commandId },
+              );
+              const live = this.live.get(command.sessionId);
+              if (live) live.value = saved;
+            }),
           );
         } catch {
           // Keep the original rewind error; no transcript mutation was committed.
@@ -1589,59 +1905,68 @@ export class HostEngine {
     }
   }
 
-  private followUpDelivery(
+  private async followUpDelivery(
     id: string,
     runId: string,
     blockId: string,
     outcome?: "undelivered" | "uncertain",
-  ): void {
-    this.flush(id);
-    const current = this.store.session(id);
-    if (current.runId !== runId) return;
-    const block = current.session.blocks.find((entry) => entry.id === blockId);
-    if (!block?.followUpDelivery) return;
-    const saved = this.save(
-      {
-        ...current,
-        session: {
-          ...current.session,
-          blocks: current.session.blocks.map((entry) =>
-            entry.id !== blockId
-              ? entry
-              : {
-                  ...entry,
-                  draft: outcome ? true : undefined,
-                  followUpDelivery: outcome,
-                },
-          ),
-        },
-      },
-      { type: "followUp.delivery", blockId, outcome: outcome ?? "delivered" },
+  ): Promise<void> {
+    return this.store.db.scope(() =>
+      this.operations.run(id, async () => {
+        await this.flush(id);
+        const current = await this.store.session(id);
+        if (current.runId !== runId) return;
+        const block = current.session.blocks.find((entry) => entry.id === blockId);
+        if (!block?.followUpDelivery) return;
+        const saved = await this.save(
+          {
+            ...current,
+            session: {
+              ...current.session,
+              blocks: current.session.blocks.map((entry) =>
+                entry.id !== blockId
+                  ? entry
+                  : {
+                      ...entry,
+                      draft: outcome ? true : undefined,
+                      followUpDelivery: outcome,
+                    },
+              ),
+            },
+          },
+          { type: "followUp.delivery", blockId, outcome: outcome ?? "delivered" },
+        );
+        const live = this.live.get(id);
+        if (live) live.value = saved;
+      }),
     );
-    const live = this.live.get(id);
-    if (live) live.value = saved;
   }
 
   private runShell(id: string, blockId: string, cwd: string, command: string): void {
     void this.shell(cwd, command)
       .then((result) => {
         if (this.closing) return;
-        this.flush(id);
-        const current = this.store.session(id);
-        const saved = this.save(
-          {
-            ...current,
-            session: {
-              ...current.session,
-              blocks: current.session.blocks.map((block) =>
-                block.id === blockId ? finishShellBlock(block, result) : block,
-              ),
-            },
-          },
-          { type: "shell.finished", blockId },
+        return this.store.db.scope(() =>
+          this.operations.run(id, async () => {
+            if (this.closing) return;
+            await this.flush(id);
+            const current = await this.store.session(id);
+            const saved = await this.save(
+              {
+                ...current,
+                session: {
+                  ...current.session,
+                  blocks: current.session.blocks.map((block) =>
+                    block.id === blockId ? finishShellBlock(block, result) : block,
+                  ),
+                },
+              },
+              { type: "shell.finished", blockId },
+            );
+            const live = this.live.get(id);
+            if (live) live.value = saved;
+          }),
         );
-        const live = this.live.get(id);
-        if (live) live.value = saved;
       })
       // The conversation may have been deleted while the command ran.
       .catch((error) => console.debug("[bycoda] remote shell command", error));
@@ -1658,22 +1983,27 @@ export class HostEngine {
       void provider
         .generateTitle({ sessionId: id, cwd, message })
         .then((generated) => {
-          if (!generated) return;
-          this.flush(id);
-          const current = this.store.session(id);
-          if (current.session.title !== title) return;
-          const saved = this.save(
-            {
-              ...current,
-              session: {
-                ...current.session,
-                title: formatSessionTitle(harness, generated.title),
-              },
-            },
-            { type: "session.generatedTitle" },
+          if (this.closing || !generated) return;
+          return this.store.db.scope(() =>
+            this.operations.run(id, async () => {
+              if (this.closing) return;
+              await this.flush(id);
+              const current = await this.store.session(id);
+              if (current.session.title !== title) return;
+              const saved = await this.save(
+                {
+                  ...current,
+                  session: {
+                    ...current.session,
+                    title: formatSessionTitle(harness, generated.title),
+                  },
+                },
+                { type: "session.generatedTitle" },
+              );
+              const live = this.live.get(id);
+              if (live) live.value = saved;
+            }),
           );
-          const live = this.live.get(id);
-          if (live) live.value = saved;
         })
         .catch((error) => console.debug("[bycoda] remote session title", error));
     }
@@ -1683,49 +2013,62 @@ export class HostEngine {
         .generateBranchName(cwd, message)
         .then(async (fragment) => {
           const branch = fragment ? namedWorktreeBranch(fragment) : null;
-          if (!branch) return;
+          if (this.closing || !branch) return;
           // A title/branch request may finish after the conversation was deleted.
-          const currentBeforeRename = this.store.session(id);
-          if (currentBeforeRename.autoWorktreeBranch !== temporary) return;
-          const project = this.store.project(value.projectId);
+          const currentBeforeRename = await this.store.session(id);
+          if (this.closing || currentBeforeRename.autoWorktreeBranch !== temporary) return;
+          const project = await this.store.project(value.projectId);
+          if (this.closing) return;
           await renameHostWorktreeBranch(
             project.cwd,
             cwd,
             temporary,
             branch,
-            () => this.store.session(id).autoWorktreeBranch === temporary,
+            async () =>
+              !this.closing && (await this.store.session(id)).autoWorktreeBranch === temporary,
           );
-          this.flush(id);
-          const current = this.store.session(id);
-          const saved = this.save(
-            {
-              ...current,
-              autoWorktreeBranch: undefined,
-              session: { ...current.session, branch },
-            },
-            { type: "session.generatedBranch", branch },
+          if (this.closing) return;
+          await this.store.db.scope(() =>
+            this.operations.run(id, async () => {
+              if (this.closing) return;
+              await this.flush(id);
+              const current = await this.store.session(id);
+              if (current.autoWorktreeBranch !== temporary) return;
+              const saved = await this.save(
+                {
+                  ...current,
+                  autoWorktreeBranch: undefined,
+                  session: { ...current.session, branch },
+                },
+                { type: "session.generatedBranch", branch },
+              );
+              const live = this.live.get(id);
+              if (live) live.value = saved;
+            }),
           );
-          const live = this.live.get(id);
-          if (live) live.value = saved;
         })
         .catch((error) => console.debug("[bycoda] remote worktree branch", error));
     }
   }
 
-  private consumeContextReplay(id: string, runId: string, replay: string): void {
-    const latest = this.store.session(id);
-    if (
-      latest.runId !== runId ||
-      latest.status !== "running" ||
-      latest.session.pendingContextReplay !== replay
-    )
-      return;
-    const saved = this.save(
-      { ...latest, session: { ...latest.session, pendingContextReplay: undefined } },
-      { type: "conversation.replayAccepted", runId },
+  private async consumeContextReplay(id: string, runId: string, replay: string): Promise<void> {
+    return this.store.db.scope(() =>
+      this.operations.run(id, async () => {
+        const latest = await this.store.session(id);
+        if (
+          latest.runId !== runId ||
+          latest.status !== "running" ||
+          latest.session.pendingContextReplay !== replay
+        )
+          return;
+        const saved = await this.save(
+          { ...latest, session: { ...latest.session, pendingContextReplay: undefined } },
+          { type: "conversation.replayAccepted", runId },
+        );
+        const live = this.live.get(id);
+        if (live) live.value = saved;
+      }),
     );
-    const live = this.live.get(id);
-    if (live) live.value = saved;
   }
 
   private run(
@@ -1743,11 +2086,11 @@ export class HostEngine {
     const provider = this.provider(session.harness);
     let ready!: () => void;
     let replayConsumed = false;
-    const acceptReplay = () => {
+    const acceptReplay = async () => {
       ready();
       if (!rewindReplay || replayConsumed) return;
       replayConsumed = true;
-      this.consumeContextReplay(session.id, runId!, rewindReplay);
+      await this.consumeContextReplay(session.id, runId!, rewindReplay);
     };
     const readyPromise = new Promise<void>((resolve) => {
       ready = resolve;
@@ -1802,14 +2145,12 @@ export class HostEngine {
               runtimeMode: session.runtimeMode,
               intent,
               onEvent: (event) => {
-                if (
+                const accepted =
                   event.type === "turn.started" ||
                   event.type === "message.delta" ||
                   event.type === "reasoning.delta" ||
-                  event.type === "tool.started"
-                )
-                  acceptReplay();
-                this.event(session.id, runId!, event);
+                  event.type === "tool.started";
+                this.event(session.id, runId!, event, accepted ? acceptReplay : undefined);
               },
             };
             if (prompt === null) {
@@ -1854,7 +2195,7 @@ export class HostEngine {
                 ...input,
                 onAccepted: () => {
                   markHint();
-                  acceptReplay();
+                  this.queueEvent(session.id, acceptReplay);
                 },
                 text,
                 ...(codex && runtimeInstructions ? { runtimeInstructions } : {}),
@@ -1875,7 +2216,8 @@ export class HostEngine {
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               await provider.send(providerInput);
               markHint();
-              acceptReplay();
+              active.ending = true;
+              await this.store.db.scope(() => this.operations.run(session.id, acceptReplay));
             }
           }
         } catch (reason) {
@@ -1891,57 +2233,68 @@ export class HostEngine {
         await this.checkpoints
           .finish(session.id, session.cwd, runId!)
           .catch((reason) => console.warn("Workspace checkpoint failed", reason));
-        this.flush(session.id);
-        this.live.delete(session.id);
-        const latest = this.store.session(session.id);
-        if (latest.runId === runId) {
-          const message = this.closing
-            ? "Host stopped. This turn was interrupted."
-            : active.persistenceFailed
-              ? "Session storage failed during this turn. Inspect its work before continuing."
-              : active.cancelled
-                ? "Stopped by you."
-                : error;
-          const finalized = intent === "plan" && !message
-            ? { ...latest, session: promoteLastAssistantToPlan(stopStreaming(latest.session), `plan:${runId}`) }
-            : latest;
-          const settled = this.settled(
-            finalized,
-            this.closing || active.persistenceFailed ? "interrupted" : "idle",
-            message,
-            Date.now(),
-            active.cancelled || this.closing ? "interrupt" : "error",
-          );
-          this.save(
-            active.cancelled
-              ? { ...settled, session: markConversationTurnStopped(settled.session) }
-              : settled,
-            { type: "settled", error, cancelled: active.cancelled },
-          );
-        }
-        this.running.delete(session.id);
-        this.onSettled?.(session.id, {
-          ...(active.cancelled ? { cancelled: true } : {}),
-          ...(this.closing || active.persistenceFailed
-            ? {
-                interrupted: true,
-                reason: this.closing
-                  ? "Host stopped. This turn was interrupted."
-                  : "Session storage failed during this turn. Inspect its work before continuing.",
-              }
-            : {}),
-          ...(!active.cancelled && !this.closing && error ? { error } : {}),
-        });
-        // stop/forget releases callbacks and native resources; bind only retained
-        // provider conversation identity for an explicit future follow-up.
-        const persisted = this.store.session(session.id).session;
-        if (persisted.providerSessionId)
-          provider.bind(
-            session.id,
-            persisted.providerSessionId,
-            persisted.cwd,
-            persisted.providerAccountId,
-          );
+        await this.store.db.scope(() =>
+          this.operations.enqueue(session.id, async () => {
+            await this.flush(session.id);
+            this.live.delete(session.id);
+            const latest = await this.store.session(session.id);
+            if (latest.runId === runId) {
+              const message = this.closing
+                ? "Host stopped. This turn was interrupted."
+                : active.persistenceFailed
+                  ? "Session storage failed during this turn. Inspect its work before continuing."
+                  : active.cancelled
+                    ? "Stopped by you."
+                    : error;
+              const finalized =
+                intent === "plan" && !message
+                  ? {
+                      ...latest,
+                      session: promoteLastAssistantToPlan(
+                        stopStreaming(latest.session),
+                        `plan:${runId}`,
+                      ),
+                    }
+                  : latest;
+              const settled = this.settled(
+                finalized,
+                this.closing || active.persistenceFailed ? "interrupted" : "idle",
+                message,
+                Date.now(),
+                active.cancelled || this.closing ? "interrupt" : "error",
+              );
+              await this.save(
+                active.cancelled
+                  ? { ...settled, session: markConversationTurnStopped(settled.session) }
+                  : settled,
+                { type: "settled", error, cancelled: active.cancelled },
+              );
+            }
+            await this.onSettled?.(session.id, {
+              ...(active.cancelled ? { cancelled: true } : {}),
+              ...(this.closing || active.persistenceFailed
+                ? {
+                    interrupted: true,
+                    reason: this.closing
+                      ? "Host stopped. This turn was interrupted."
+                      : "Session storage failed during this turn. Inspect its work before continuing.",
+                  }
+                : {}),
+              ...(!active.cancelled && !this.closing && error ? { error } : {}),
+            });
+            // stop/forget releases callbacks and native resources; bind only retained
+            // provider conversation identity for an explicit future follow-up.
+            const persisted = (await this.store.session(session.id)).session;
+            if (persisted.providerSessionId)
+              provider.bind(
+                session.id,
+                persisted.providerSessionId,
+                persisted.cwd,
+                persisted.providerAccountId,
+              );
+            this.running.delete(session.id);
+          }),
+        );
       })
       .catch((error) => {
         clearTimeout(this.live.get(session.id)?.timer);
@@ -1954,7 +2307,31 @@ export class HostEngine {
       });
   }
 
-  private event(id: string, runId: string, event: HarnessEvent): void {
+  private queueEvent(id: string, work: () => Promise<void>): void {
+    void this.store.db
+      .scope(() => this.operations.enqueue(id, work))
+      .catch((error) => {
+        const active = this.running.get(id);
+        if (active) active.persistenceFailed = true;
+        console.error("Session event persistence failed:", error);
+        const harness = this.live.get(id)?.value.session.harness;
+        if (harness) void this.provider(harness).stop(id);
+      });
+  }
+
+  private event(
+    id: string,
+    runId: string,
+    event: HarnessEvent,
+    before?: () => Promise<void>,
+  ): void {
+    this.queueEvent(id, async () => {
+      if (before) await before();
+      await this.applyEvent(id, runId, event);
+    });
+  }
+
+  private async applyEvent(id: string, runId: string, event: HarnessEvent): Promise<void> {
     const live = this.live.get(id);
     if (!live || live.value.runId !== runId || live.value.status !== "running") return;
     if (
@@ -1980,11 +2357,13 @@ export class HostEngine {
     }
     live.value = { ...live.value, session };
     live.events.push(event);
-    if (!BATCHED.has(event.type)) this.scheduledFlush(id, this.provider(session.harness));
+    if (!BATCHED.has(event.type)) await this.flush(id);
     else
-      live.timer ??= setTimeout(
-        () => this.scheduledFlush(id, this.provider(session.harness)),
-        FLUSH_MS,
+      live.timer ??= this.store.db.outsideScope(() =>
+        setTimeout(
+          async () => await this.scheduledFlush(id, this.provider(session.harness)),
+          FLUSH_MS,
+        ),
       );
   }
 
@@ -2025,6 +2404,7 @@ export class HostEngine {
 
   /** Wait only for the owned turn, including provider and checkpoint cleanup. */
   async waitForRun(sessionId: string, runId: string | undefined): Promise<void> {
+    await this.ready;
     const active = this.running.get(sessionId);
     if (!active) return;
     if (active.runId !== runId) throw new Error("The session has a different active turn.");
@@ -2032,15 +2412,30 @@ export class HostEngine {
     if (this.running.has(sessionId)) throw new Error("Session cleanup is still pending.");
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    return (this.closePromise ??= this.closeOwned());
+  }
+
+  private async closeOwned(): Promise<void> {
     this.closing = true;
+    await this.ready;
     for (const timer of this.retryTimers.values()) clearTimeout(timer);
     this.retryTimers.clear();
-    await Promise.all(
-      [...this.running.keys()].map((id) =>
-        this.provider(this.store.session(id).session.harness).stop(id),
+    const failures: unknown[] = [];
+    const join = async (work: Iterable<Promise<unknown>>) => {
+      for (const result of await Promise.allSettled(work)) {
+        if (result.status === "rejected") failures.push(result.reason);
+      }
+    };
+    await join(
+      [...this.running.keys()].map(async (id) =>
+        this.provider((await this.store.session(id)).session.harness).stop(id),
       ),
     );
-    await Promise.all([...this.running.values()].map((active) => active.done));
+    await join([...this.running.values()].map((active) => active.done));
+    await join(this.recoveryWork.values());
+    await join([this.operations.drain()]);
+    await join([this.store.flushAll()]);
+    if (failures.length) throw new AggregateError(failures, "Host session shutdown failed.");
   }
 }

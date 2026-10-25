@@ -10,21 +10,18 @@ import { AttachmentOwnership as HostOwnership, ATTACHMENT_GRACE_MS } from "./att
 import { attachmentPath } from "./attachments";
 import { AttachmentOwnership } from "../src/features/connections/model/attachmentOwnership";
 import { uploadRemoteAttachments } from "../src/features/connections/model/remoteAttachments";
-
 const transport = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("../src/features/connections/model/connections", () => ({
-  remoteRequest: (_machine: string, method: string, params: Record<string, unknown>) =>
-    transport.request(method, params),
+  remoteRequest: async (_machine: string, method: string, params: Record<string, unknown>) =>
+    await transport.request(method, params),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   vi.restoreAllMocks();
   transport.request.mockReset();
 });
-
 it("uploads with desktop ownership over real authenticated RPC and collects after durable release retry", async () => {
   let now = Date.now();
   vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -32,21 +29,24 @@ it("uploads with desktop ownership over real authenticated RPC and collects afte
   const directory = mkdtempSync(prefix);
   const store = new HostStore(join(directory, "host.db"));
   const engine = new HostEngine(store, {});
-  const server = createHostServer(engine, []);
+  const server = await createHostServer(engine, []);
   const collector = new HostOwnership(store, () => now);
   cleanups.push(async () => {
-    collector.close();
+    await collector.close();
     await engine.close();
     server.closeAllConnections();
-    if (server.listening) await new Promise<void>((done) => server.close(() => done()));
-    store.close();
+    if (server.listening) await new Promise<void>(async (done) => await server.close(() => done()));
+    await store.close();
     if (!resolve(directory).startsWith(resolve(prefix))) throw new Error("Unsafe fixture cleanup");
     rmSync(directory, { recursive: true, force: true });
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const device = store.issueDevice("Synthetic desktop");
+  const device = await store.issueDevice("Synthetic desktop");
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/rpc`;
-  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const calls: Array<{
+    method: string;
+    params: Record<string, unknown>;
+  }> = [];
   let offline = false;
   const request = async (method: string, params: Record<string, unknown>) => {
     calls.push({ method, params });
@@ -56,7 +56,10 @@ it("uploads with desktop ownership over real authenticated RPC and collects afte
       headers: { Authorization: `Bearer ${device.token}` },
       body: JSON.stringify({ version: 1, environmentId: store.environmentId, method, params }),
     });
-    const value = (await response.json()) as { result?: unknown; error?: string };
+    const value = (await response.json()) as {
+      result?: unknown;
+      error?: string;
+    };
     if (value.error) throw new Error(value.error);
     return value.result;
   };

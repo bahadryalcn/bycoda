@@ -13,11 +13,7 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import { useActivityDock, useDockCountLabel, useStopAllControl } from "../model/reactiveReads";
-import {
-  nextUnseenDone,
-  type ActivityDock as ActivityDockModel,
-  type DockAgent,
-} from "../model/activityDock";
+import { type ActivityDock as ActivityDockModel, type DockAgent } from "../model/activityDock";
 import { canStopAgent } from "../model/backgroundStop";
 import type { Block } from "../model/session";
 import { AgentClock } from "./AgentClock";
@@ -78,26 +74,32 @@ export const ActivityDock = memo(function ActivityDock({
   const t = useT();
   const stops = useStopRequests();
   const root = useRef<HTMLDivElement>(null);
-  const [unseenDone, setUnseenDone] = useState(false);
-  const wasBusy = useRef(busy);
-  const wasAtEnd = useRef(atEnd);
+  let turnId: string | undefined;
+  let turnHasActivity = false;
+  for (let index = blocks.length - 1; index >= 0; index--) {
+    if (blocks[index].role === "user") {
+      turnId = blocks[index].id;
+      turnHasActivity = index < blocks.length - 1;
+      break;
+    }
+  }
+  const [completedTurn, setCompletedTurn] = useState<string>();
+  const previous = useRef({ busy, turnId, sessionId });
 
   useEffect(() => {
-    setUnseenDone((unseen) => nextUnseenDone(unseen, wasBusy.current, busy));
-    wasBusy.current = busy;
-  }, [busy]);
+    const prior = previous.current;
+    if (busy || (visible && atEnd) || prior.turnId !== turnId || prior.sessionId !== sessionId) {
+      setCompletedTurn(undefined);
+    } else if (prior.busy) {
+      setCompletedTurn(turnId);
+    }
+    previous.current = { busy, turnId, sessionId };
+  }, [busy, turnId, sessionId, visible, atEnd]);
 
-  // The result has been seen once the reader is at the input or back at the
-  // end of the transcript. Hidden panes do not count: nobody is looking.
-  useEffect(() => {
-    const arrivedAtEnd = atEnd && !wasAtEnd.current;
-    wasAtEnd.current = atEnd;
-    if (arrivedAtEnd && visible) setUnseenDone(false);
-  }, [atEnd, visible]);
   useEffect(() => {
     const composer = root.current?.closest("[data-composer]");
     if (!composer) return;
-    const acknowledge = () => setUnseenDone(false);
+    const acknowledge = () => setCompletedTurn(undefined);
     composer.addEventListener("focusin", acknowledge);
     return () => composer.removeEventListener("focusin", acknowledge);
   }, []);
@@ -108,11 +110,15 @@ export const ActivityDock = memo(function ActivityDock({
     pendingQuestion,
     backgroundTasks,
     backgroundAgents,
-    unseenDone,
+    // A new user block may arrive before the provider's busy acknowledgement.
+    // Never label that new turn with the previous turn's completion state.
+    unseenDone:
+      turnHasActivity && !!completedTurn && completedTurn === turnId && !(visible && atEnd),
   });
-  const displayLabel = dock.state === "done" && deliveryUnconfirmed
-    ? `${t("Turn activity")}: ${t("Finished")}`
-    : label;
+  const displayLabel =
+    dock.state === "done" && deliveryUnconfirmed
+      ? `${t("Turn activity")}: ${t("Finished")}`
+      : label;
 
   return (
     <div ref={root}>

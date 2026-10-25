@@ -22,7 +22,7 @@ afterEach(async () => {
 async function fixture(platform: "x" | "youtube" = "x") {
   const path = mkdtempSync(join(tmpdir(), "social-tools-"));
   const store = new HostStore(join(path, "host.db"));
-  const project = store.addProject(path, "Project");
+  const project = await store.addProject(path, "Project");
   const adapter = {
     send: vi.fn(async () => ({ platformId: "post" })),
     poll: vi.fn(async () => ({ events: [] })),
@@ -52,7 +52,7 @@ async function fixture(platform: "x" | "youtube" = "x") {
     store,
     Object.fromEntries(REMOTE_PROVIDERS.map((id) => [id, provider])),
   );
-  const server = createHostServer(
+  const server = await createHostServer(
     engine,
     [...REMOTE_PROVIDERS],
     undefined,
@@ -66,13 +66,14 @@ async function fixture(platform: "x" | "youtube" = "x") {
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   cleanup.push(async () => {
-    social.stop();
+    await social.dispose();
     await new Promise<void>((done) => {
       server.close(done);
       server.closeAllConnections();
     });
+    await server.closeResources();
     await engine.close();
-    store.close();
+    await store.close();
     rmSync(path, { recursive: true, force: true });
   });
   const owner = {
@@ -108,8 +109,8 @@ async function fixture(platform: "x" | "youtube" = "x") {
       },
     ],
   })) as SocialCampaign;
-  const session = (harness: (typeof REMOTE_PROVIDERS)[number]) => {
-    const result = engine.command({
+  const session = async (harness: (typeof REMOTE_PROVIDERS)[number]) => {
+    const result = await engine.command({
       type: "create",
       commandId: crypto.randomUUID(),
       projectId: project.id,
@@ -117,7 +118,7 @@ async function fixture(platform: "x" | "youtube" = "x") {
       model: `${harness}:test`,
       runtimeMode: "supervised",
     });
-    const grant = social.issueSessionGrant(result.sessionId);
+    const grant = await social.issueSessionGrant(result.sessionId);
     return {
       token: grant.token,
       env: {
@@ -210,8 +211,8 @@ describe("Gerçek yerel CLI ve MCP taşıması", () => {
     "Claude MCP ve Pi CLI aynı %s HTTP host kampanyasına erişir; token çıktı veya promptta bulunmaz",
     async (platform) => {
       const s = await fixture(platform);
-      const claude = s.session("claude"),
-        pi = s.session("pi");
+      const claude = await s.session("claude"),
+        pi = await s.session("pi");
       const cli = await run(
         "social",
         ["campaigns.status", "--input", "-"],
@@ -272,7 +273,7 @@ describe("Gerçek yerel CLI ve MCP taşıması", () => {
   );
   it("session grant genel host yönetim RPC'sine geçemez; araç JSON içinden sahip kimliği türetilemez", async () => {
     const s = await fixture();
-    const session = s.session("codex");
+    const session = await s.session("codex");
     const response = await fetch(`${s.endpoint}/rpc`, {
       method: "POST",
       headers: {

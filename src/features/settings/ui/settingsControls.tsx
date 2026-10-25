@@ -266,18 +266,34 @@ export function PageHeader({
   /** The page saves every change itself; say so once, here, instead of on every group. */
   automaticSave?: boolean;
 }) {
-  useLocale();
   return (
     <header className="flex items-center gap-1 pb-4">
       <h1 className="text-ui-heading font-medium text-content">{title}</h1>
-      {description || automaticSave ? (
-        <InfoPopover className="shrink-0" label={t("About this page")}>
-          {description ? <p>{description}</p> : null}
-          {automaticSave ? <p>{t("Changes save automatically")}</p> : null}
-        </InfoPopover>
-      ) : null}
+      <SettingsPageHelp description={description} automaticSave={automaticSave} />
     </header>
   );
+}
+
+/** Shared page help moves into the category toolbar on narrow settings layouts. */
+export function SettingsPageHelp({
+  description,
+  automaticSave = false,
+  className = "",
+}: {
+  description?: string;
+  automaticSave?: boolean;
+  className?: string;
+}) {
+  useLocale();
+  return description || automaticSave ? (
+    <InfoPopover
+      className={`settings-page-help shrink-0 ${className}`}
+      label={t("About this page")}
+    >
+      {description ? <p>{description}</p> : null}
+      {automaticSave ? <p>{t("Changes save automatically")}</p> : null}
+    </InfoPopover>
+  ) : null;
 }
 
 /**

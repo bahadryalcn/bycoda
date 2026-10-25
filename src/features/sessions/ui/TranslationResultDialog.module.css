@@ -16,6 +16,7 @@
 }
 
 .secondary,
+.status,
 .hint {
   color: var(--ui-text-secondary);
   font-size: var(--text-xs);
@@ -24,15 +25,20 @@
 .comparison {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  gap: 12px;
+  overflow: hidden;
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--radius-panel);
+  background: var(--ui-surface);
 }
 
 .pane {
   min-inline-size: 0;
   overflow: clip;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-panel);
   background: var(--ui-surface);
+}
+
+.pane + .pane {
+  border-inline-start: 1px solid var(--color-stroke);
 }
 
 .paneHeader {
@@ -72,6 +78,16 @@
   color: var(--ui-text-secondary);
 }
 
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.elapsed {
+  font-variant-numeric: tabular-nums;
+}
+
 .placeholder p {
   margin: 0;
 }
@@ -85,7 +101,7 @@
 .skeleton {
   display: grid;
   gap: 12px;
-  margin-block-start: 20px;
+  padding-block: 8px;
 }
 
 .skeleton span {
@@ -119,4 +135,29 @@
   justify-content: flex-end;
   gap: 8px;
   margin-inline-start: auto;
+}
+
+@media (max-width: 640px) {
+  .comparison {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pane + .pane {
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--color-stroke);
+  }
+
+  .text,
+  .placeholder {
+    min-block-size: 96px;
+    max-block-size: 24dvh;
+  }
+
+  .footer {
+    align-items: stretch;
+  }
+
+  .actions {
+    inline-size: 100%;
+  }
 }

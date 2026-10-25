@@ -79,162 +79,225 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+it("serializes asynchronous claims and never replays an issuance with an uncertain outcome", async () => {
+  const owner = secret();
+  const allowed = new Set([digest(owner)]);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const issued = { id: randomUUID(), token: secret() };
+  const issueDevice = vi.fn(async () => {
+    await gate;
+    allowed.add(digest(issued.token));
+    return issued;
+  });
+  const manager = new MobilePairing({
+    environmentId: "test-environment",
+    hasDeviceHash: async (hash) => allowed.has(hash),
+    issueDevice,
+  });
+  managers.push(manager);
+  const ticket = await manager.create(owner);
+  const input = {
+    version: 1,
+    environmentId: ticket.environmentId,
+    ticket: ticket.ticket,
+    claimId: secret(),
+    deviceName: "Phone",
+  };
+  const first = manager.redeem(input);
+  const second = manager.redeem(input);
+  release();
+  expect(await first).toEqual(await second);
+  expect(issueDevice).toHaveBeenCalledOnce();
+  const uncertain = await manager.create(owner);
+  const retry = { ...input, ticket: uncertain.ticket, claimId: secret() };
+  issueDevice.mockRejectedValueOnce(new Error("durable acknowledgement lost"));
+  await expect(manager.redeem(retry)).rejects.toThrow("acknowledgement lost");
+  await expect(manager.redeem(retry)).rejects.toThrow("invalid or expired");
+  expect(issueDevice).toHaveBeenCalledTimes(2);
+});
+
 describe("short-lived mobile pairing", () => {
-  it("creates a high entropy ticket without issuing a device or exposing secrets in status", () => {
+  it("creates a high entropy ticket without issuing a device or exposing secrets in status", async () => {
     const { manager, owner, issueDevice } = setup();
-    const ticket = manager.create(owner, { name: "My phone" });
+    const ticket = await manager.create(owner, { name: "My phone" });
     expect(ticket.ticket).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(Date.parse(ticket.expiresAt)).toBe(100_000 + MOBILE_PAIRING_TTL_MS);
     expect(ticket.environmentId).toBe("test-environment");
     expect(issueDevice).not.toHaveBeenCalled();
-    expect(manager.status(owner, ticket.pairingId)).toEqual({ state: "pending" });
-    expect(Object.keys(manager.status(owner, ticket.pairingId))).toEqual(["state"]);
+    expect(await manager.status(owner, ticket.pairingId)).toEqual({ state: "pending" });
+    expect(Object.keys(await manager.status(owner, ticket.pairingId))).toEqual(["state"]);
   });
 
-  it("retries a lost response with the same claim without issuing another credential", () => {
+  it("retries a lost response with the same claim without issuing another credential", async () => {
     const { manager, owner, issueDevice, redeem } = setup();
-    const ticket = manager.create(owner);
+    const ticket = await manager.create(owner);
     const input = redeem(ticket);
-    const result = manager.redeem(input);
-    expect(manager.redeem(input)).toEqual(result);
+    const result = await manager.redeem(input);
+    expect(await manager.redeem(input)).toEqual(result);
     expect(issueDevice).toHaveBeenCalledExactlyOnceWith("My test phone");
-    expect(manager.status(owner, ticket.pairingId)).toEqual({
+    expect(await manager.status(owner, ticket.pairingId)).toEqual({
       state: "paired",
       deviceName: "My test phone",
     });
-    const returnedCopy = manager.redeem(input);
+    const returnedCopy = await manager.redeem(input);
     returnedCopy.token = "changed-outside-manager";
-    expect(manager.redeem(input)).toEqual(result);
-    expect(Object.keys(manager.status(owner, ticket.pairingId))).toEqual(["state", "deviceName"]);
+    expect(await manager.redeem(input)).toEqual(result);
+    expect(Object.keys(await manager.status(owner, ticket.pairingId))).toEqual([
+      "state",
+      "deviceName",
+    ]);
   });
 
-  it("rejects a competing claim and changed payload after the first redemption", () => {
+  it("rejects a competing claim and changed payload after the first redemption", async () => {
     const { manager, owner, issueDevice, redeem } = setup();
-    const input = redeem(manager.create(owner));
-    manager.redeem(input);
-    expect(() => manager.redeem({ ...input, claimId: secret() })).toThrow("invalid or expired");
-    expect(() => manager.redeem({ ...input, deviceName: "Another phone" })).toThrow(
-      "invalid or expired",
-    );
-    expect(() => manager.redeem({ ...input, environmentId: "different-host" })).toThrow(
-      "invalid or expired",
-    );
+    const input = redeem(await manager.create(owner));
+    await manager.redeem(input);
+    await expect(
+      (async () => await manager.redeem({ ...input, claimId: secret() }))(),
+    ).rejects.toThrow("invalid or expired");
+    await expect(
+      (async () => await manager.redeem({ ...input, deviceName: "Another phone" }))(),
+    ).rejects.toThrow("invalid or expired");
+    await expect(
+      (async () => await manager.redeem({ ...input, environmentId: "different-host" }))(),
+    ).rejects.toThrow("invalid or expired");
     expect(issueDevice).toHaveBeenCalledTimes(1);
   });
 
-  it("limits cancellation and status to the issuing owner and leaves a paired phone authorized", () => {
+  it("limits cancellation and status to the issuing owner and leaves a paired phone authorized", async () => {
     const { manager, owner, otherOwner, deviceHashes, issueDevice, redeem } = setup();
-    const pending = manager.create(owner);
-    expect(manager.status(otherOwner, pending.pairingId)).toEqual({ state: "expired" });
-    expect(manager.cancel(otherOwner, pending.pairingId)).toEqual({ state: "expired" });
-    expect(manager.status(owner, pending.pairingId)).toEqual({ state: "pending" });
-    expect(manager.cancel(owner, pending.pairingId)).toEqual({ state: "cancelled" });
-    expect(() => manager.redeem(redeem(pending))).toThrow("invalid or expired");
+    const pending = await manager.create(owner);
+    expect(await manager.status(otherOwner, pending.pairingId)).toEqual({ state: "expired" });
+    expect(await manager.cancel(otherOwner, pending.pairingId)).toEqual({ state: "expired" });
+    expect(await manager.status(owner, pending.pairingId)).toEqual({ state: "pending" });
+    expect(await manager.cancel(owner, pending.pairingId)).toEqual({ state: "cancelled" });
+    await expect((async () => await manager.redeem(redeem(pending)))()).rejects.toThrow(
+      "invalid or expired",
+    );
     expect(issueDevice).not.toHaveBeenCalled();
-    const paired = manager.create(owner);
+    const paired = await manager.create(owner);
     const input = redeem(paired);
-    const result = manager.redeem(input);
-    expect(manager.cancel(owner, paired.pairingId)).toEqual({
+    const result = await manager.redeem(input);
+    expect(await manager.cancel(owner, paired.pairingId)).toEqual({
       state: "paired",
       deviceName: "My test phone",
     });
     expect(deviceHashes.has(digest(result.token))).toBe(true);
-    expect(manager.redeem(input)).toEqual(result);
+    expect(await manager.redeem(input)).toEqual(result);
   });
 
-  it("invalidates a replaced pending QR while keeping another owner's QR intact", () => {
+  it("invalidates a replaced pending QR while keeping another owner's QR intact", async () => {
     const { manager, owner, otherOwner, redeem, issueDevice } = setup();
-    const first = manager.create(owner);
-    const other = manager.create(otherOwner);
-    const replacement = manager.create(owner);
-    expect(manager.status(owner, first.pairingId)).toEqual({ state: "cancelled" });
-    expect(() => manager.redeem(redeem(first))).toThrow("invalid or expired");
-    expect(manager.status(otherOwner, other.pairingId)).toEqual({ state: "pending" });
-    expect(manager.status(owner, replacement.pairingId)).toEqual({ state: "pending" });
+    const first = await manager.create(owner);
+    const other = await manager.create(otherOwner);
+    const replacement = await manager.create(owner);
+    expect(await manager.status(owner, first.pairingId)).toEqual({ state: "cancelled" });
+    await expect((async () => await manager.redeem(redeem(first)))()).rejects.toThrow(
+      "invalid or expired",
+    );
+    expect(await manager.status(otherOwner, other.pairingId)).toEqual({ state: "pending" });
+    expect(await manager.status(owner, replacement.pairingId)).toEqual({ state: "pending" });
     expect(issueDevice).not.toHaveBeenCalled();
   });
 
-  it("expires pending and retry credentials at the original TTL without extending it", () => {
+  it("expires pending and retry credentials at the original TTL without extending it", async () => {
     const { manager, owner, otherOwner, redeem, advance, issueDevice } = setup();
-    const paired = manager.create(owner);
-    const pending = manager.create(otherOwner);
+    const paired = await manager.create(owner);
+    const pending = await manager.create(otherOwner);
     const input = redeem(paired);
-    const result = manager.redeem(input);
+    const result = await manager.redeem(input);
     advance(MOBILE_PAIRING_TTL_MS - 1);
-    expect(manager.redeem(input)).toEqual(result);
+    expect(await manager.redeem(input)).toEqual(result);
     advance(1);
-    expect(manager.status(owner, paired.pairingId)).toEqual({ state: "expired" });
-    expect(manager.status(otherOwner, pending.pairingId)).toEqual({ state: "expired" });
-    expect(() => manager.redeem(input)).toThrow("invalid or expired");
-    expect(() => manager.redeem(redeem(pending))).toThrow("invalid or expired");
+    expect(await manager.status(owner, paired.pairingId)).toEqual({ state: "expired" });
+    expect(await manager.status(otherOwner, pending.pairingId)).toEqual({ state: "expired" });
+    await expect((async () => await manager.redeem(input))()).rejects.toThrow("invalid or expired");
+    await expect((async () => await manager.redeem(redeem(pending)))()).rejects.toThrow(
+      "invalid or expired",
+    );
     expect(issueDevice).toHaveBeenCalledTimes(1);
   });
 
-  it("drops idle retry credentials with its TTL timer and on host shutdown", () => {
+  it("drops idle retry credentials with its TTL timer and on host shutdown", async () => {
     vi.useFakeTimers();
     const { manager, owner, redeem, issueDevice } = setup();
-    const input = redeem(manager.create(owner));
-    manager.redeem(input);
+    const input = redeem(await manager.create(owner));
+    await manager.redeem(input);
     vi.advanceTimersByTime(MOBILE_PAIRING_TTL_MS);
-    expect(() => manager.redeem(input)).toThrow("invalid or expired");
-    const second = redeem(manager.create(owner));
-    manager.redeem(second);
+    await expect((async () => await manager.redeem(input))()).rejects.toThrow("invalid or expired");
+    const second = redeem(await manager.create(owner));
+    await manager.redeem(second);
     manager.close();
-    expect(() => manager.redeem(second)).toThrow("invalid or expired");
+    await expect((async () => await manager.redeem(second))()).rejects.toThrow(
+      "invalid or expired",
+    );
     expect(issueDevice).toHaveBeenCalledTimes(2);
   });
 
-  it("rechecks revoked issuer authorization before first redemption and every retry", () => {
+  it("rechecks revoked issuer authorization before first redemption and every retry", async () => {
     const { manager, owner, otherOwner, deviceHashes, redeem, issueDevice } = setup();
-    const pending = redeem(manager.create(owner));
-    const paired = redeem(manager.create(otherOwner));
-    manager.redeem(paired);
+    const pending = redeem(await manager.create(owner));
+    const paired = redeem(await manager.create(otherOwner));
+    await manager.redeem(paired);
     deviceHashes.delete(digest(owner));
     deviceHashes.delete(digest(otherOwner));
-    expect(() => manager.redeem(pending)).toThrow("invalid or expired");
-    expect(() => manager.redeem(paired)).toThrow("invalid or expired");
-    expect(() => manager.create(owner)).toThrow("invalid or revoked");
+    await expect((async () => await manager.redeem(pending))()).rejects.toThrow(
+      "invalid or expired",
+    );
+    await expect((async () => await manager.redeem(paired))()).rejects.toThrow(
+      "invalid or expired",
+    );
+    await expect((async () => await manager.create(owner))()).rejects.toThrow("invalid or revoked");
     expect(issueDevice).toHaveBeenCalledTimes(1);
   });
 
-  it("does not return a phone credential that was revoked after pairing", () => {
+  it("does not return a phone credential that was revoked after pairing", async () => {
     const { manager, owner, deviceHashes, redeem, issueDevice } = setup();
-    const input = redeem(manager.create(owner));
-    const result = manager.redeem(input);
+    const input = redeem(await manager.create(owner));
+    const result = await manager.redeem(input);
     deviceHashes.delete(digest(result.token));
-    expect(() => manager.redeem(input)).toThrow("invalid or expired");
+    await expect((async () => await manager.redeem(input))()).rejects.toThrow("invalid or expired");
     expect(issueDevice).toHaveBeenCalledTimes(1);
   });
 
-  it("bounds concurrent tickets without evicting another live retry credential", () => {
+  it("bounds concurrent tickets without evicting another live retry credential", async () => {
     const { manager, owner, deviceHashes, redeem, issueDevice } = setup();
-    const firstInput = redeem(manager.create(owner));
-    const firstResult = manager.redeem(firstInput);
+    const firstInput = redeem(await manager.create(owner));
+    const firstResult = await manager.redeem(firstInput);
     for (let index = 1; index < 32; index++) {
       const nextOwner = secret();
       deviceHashes.add(digest(nextOwner));
-      manager.create(nextOwner);
+      await manager.create(nextOwner);
     }
     const overflowOwner = secret();
     deviceHashes.add(digest(overflowOwner));
-    expect(() => manager.create(overflowOwner)).toThrow("Too many phone connections");
-    expect(manager.redeem(firstInput)).toEqual(firstResult);
+    await expect((async () => await manager.create(overflowOwner))()).rejects.toThrow(
+      "Too many phone connections",
+    );
+    expect(await manager.redeem(firstInput)).toEqual(firstResult);
     expect(issueDevice).toHaveBeenCalledTimes(1);
   });
 
-  it("bounds creation and redemption attempts and recovers after the rate window", () => {
+  it("bounds creation and redemption attempts and recovers after the rate window", async () => {
     const { manager, owner, advance, redeem, issueDevice } = setup();
-    for (let index = 0; index < 10; index++) manager.create(owner);
-    expect(() => manager.create(owner)).toThrow("Too many pairing attempts");
+    for (let index = 0; index < 10; index++) await manager.create(owner);
+    await expect((async () => await manager.create(owner))()).rejects.toThrow(
+      "Too many pairing attempts",
+    );
     advance(60_000);
-    const input = redeem(manager.create(owner));
+    const input = redeem(await manager.create(owner));
     for (let index = 0; index < 120; index++) {
-      expect(() => manager.redeem({ ...input, ticket: secret() })).toThrow("invalid or expired");
+      await expect(
+        (async () => await manager.redeem({ ...input, ticket: secret() }))(),
+      ).rejects.toThrow("invalid or expired");
     }
-    expect(() => manager.redeem(input)).toThrow(MobilePairingError);
+    await expect((async () => await manager.redeem(input))()).rejects.toThrow(MobilePairingError);
     expect(issueDevice).not.toHaveBeenCalled();
     advance(60_000);
-    expect(manager.redeem(input).environmentId).toBe("test-environment");
+    expect((await manager.redeem(input)).environmentId).toBe("test-environment");
     expect(issueDevice).toHaveBeenCalledTimes(1);
   });
 });
@@ -242,7 +305,7 @@ describe("short-lived mobile pairing", () => {
 describe("native pairing redemption HTTP boundary", () => {
   it("accepts only the narrow POST JSON route and rejects browser origins", async () => {
     const { manager, owner, redeem, issueDevice } = setup();
-    const input = redeem(manager.create(owner));
+    const input = redeem(await manager.create(owner));
     const base = await listen(manager);
     const endpoint = `${base}/mobile/pairing/redeem`;
     expect((await fetch(endpoint)).status).toBe(403);
@@ -274,7 +337,7 @@ describe("native pairing redemption HTTP boundary", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
     const result = await response.json();
-    expect(result).toEqual({ result: manager.redeem(input) });
+    expect(result).toEqual({ result: await manager.redeem(input) });
     expect(issueDevice).toHaveBeenCalledTimes(1);
     expect((await fetch(`${endpoint}?ticket=unused`)).status).toBe(404);
   });
@@ -315,7 +378,7 @@ describe("native pairing redemption HTTP boundary", () => {
 
   it("redacts invalid redemption failures and leaves the valid ticket available", async () => {
     const { manager, owner, redeem, issueDevice } = setup();
-    const input = redeem(manager.create(owner));
+    const input = redeem(await manager.create(owner));
     const endpoint = `${await listen(manager)}/mobile/pairing/redeem`;
     const response = await fetch(endpoint, {
       method: "POST",
@@ -326,7 +389,7 @@ describe("native pairing redemption HTTP boundary", () => {
     expect(response.status).toBe(400);
     for (const value of [input.ticket, input.claimId, owner]) expect(error).not.toContain(value);
     expect(issueDevice).not.toHaveBeenCalled();
-    manager.redeem(input);
+    await manager.redeem(input);
     expect(issueDevice).toHaveBeenCalledTimes(1);
   });
 });

@@ -80,10 +80,10 @@ function setup() {
     },
   );
   let authorized = true;
-  const call = (
+  const call = async (
     action: keyof typeof PROJECT_CONVERSATION_TOOLS,
     input: Record<string, unknown> = {},
-  ) => service.call(action, input, principal, () => authorized);
+  ) => await service.call(action, input, principal, () => authorized);
   return {
     call,
     checkpoints,

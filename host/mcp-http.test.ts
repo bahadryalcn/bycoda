@@ -32,8 +32,8 @@ async function setup() {
   );
   desktop.close();
   const store = new HostStore(join(dir, "host.db"));
-  const project = store.addProject(dir, "MCP test");
-  const foreign = store.addProject(join(dir, "foreign"), "Other");
+  const project = await store.addProject(dir, "MCP test");
+  const foreign = await store.addProject(join(dir, "foreign"), "Other");
   const engine = new HostEngine(store, {
     codex: {
       send: async () => {},
@@ -44,21 +44,23 @@ async function setup() {
       answer: () => {},
     },
   });
-  const server = createHostServer(engine, []);
+  const server = await createHostServer(engine, []);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const device = store.issueDevice("Owner");
+  const device = await store.issueDevice("Owner");
   cleanup.push(async () => {
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
       server.closeAllConnections();
     });
-    store.close();
+    await server.closeResources();
+    await engine.close();
+    await store.close();
     rmSync(dir, { recursive: true, force: true });
   });
   const tokens = new McpTokens(store);
-  const grant = (scopes: object, projectId = project.id) =>
-    tokens.create({
+  const grant = async (scopes: object, projectId = project.id) =>
+    await tokens.create({
       name: "Test",
       projectId,
       scopes,
@@ -99,54 +101,142 @@ async function setup() {
   return { store, engine, project, foreign, server, tokens, grant, rpc, send, url };
 }
 
+it("rechecks owner authority after token creation preparation without blocking revocation", async () => {
+  const s = await setup();
+  const owner = await s.store.issueDevice("Revoked MCP owner");
+  const original = McpTokens.prototype.create;
+  let release!: () => void;
+  let entered!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const create = vi.spyOn(McpTokens.prototype, "create").mockImplementation(async function (input) {
+    entered();
+    await gate;
+    return await original.call(this, input);
+  });
+  const pending = s.rpc(
+    "mcp.tokens.create",
+    {
+      name: "Must not issue",
+      projectId: s.project.id,
+      scopes: { conversation: ["read"] },
+      expiresAt: Date.now() + 60_000,
+    },
+    owner.token,
+  );
+  try {
+    await started;
+    await s.store.revokeToken(owner.token);
+    release();
+    const response = await pending;
+    expect(response.status).toBe(401);
+    expect(response.body.error).toMatch(/authoriz|revoked/i);
+    expect(await s.tokens.list()).toEqual([]);
+  } finally {
+    release();
+    await pending;
+    create.mockRestore();
+  }
+});
+
 describe("Streamable HTTP MCP", () => {
   it("accepts escaped editor saves for a session while keeping external request limits", async () => {
     const s = await setup();
-    const created = s.engine.command({ type: "create", commandId: "large-editor-save", projectId: s.project.id,
-      harness: "codex", model: "test", runtimeMode: "supervised" });
-    const token = s.server.conversationAccess.issueSessionGrant(created.sessionId).token;
+    const created = await s.engine.command({
+      type: "create",
+      commandId: "large-editor-save",
+      projectId: s.project.id,
+      harness: "codex",
+      model: "test",
+      runtimeMode: "supervised",
+    });
+    const token = (await s.server.conversationAccess.issueSessionGrant(created.sessionId)).token;
     writeFileSync(join(s.project.cwd, "large.txt"), "");
-    const snapshot = JSON.parse((await s.send(token, "tools/call", { name: "conversation_files_read", arguments: { path: "large.txt" } })).body.result.content[0].text);
+    const snapshot = JSON.parse(
+      (
+        await s.send(token, "tools/call", {
+          name: "conversation_files_read",
+          arguments: { path: "large.txt" },
+        })
+      ).body.result.content[0].text,
+    );
     const content = "\n".repeat(600000);
-    const params = { name: "conversation_files_write", arguments: { path: "large.txt", expectedHash: snapshot.hash, content } };
+    const params = {
+      name: "conversation_files_write",
+      arguments: { path: "large.txt", expectedHash: snapshot.hash, content },
+    };
     const saved = await s.send(token, "tools/call", params);
     expect(saved.status).toBe(200);
     expect(saved.body.result.isError).toBeUndefined();
     expect(JSON.parse(saved.body.result.content[0].text).saved).toBe(true);
     expect(readFileSync(join(s.project.cwd, "large.txt"), "utf8")).toBe(content);
-    const external = s.grant({ conversation: ["write"] });
+    const external = await s.grant({ conversation: ["write"] });
     expect((await s.send(external.token, "tools/call", params)).status).toBe(413);
   });
   it("uses the shared annotation image adapter over session HTTP MCP", async () => {
     const s = await setup();
-    const created = s.engine.command({ type: "create", commandId: "annotation-mcp", projectId: s.project.id,
-      harness: "codex", model: "fixture", runtimeMode: "supervised" });
-    const token = s.server.conversationAccess.issueSessionGrant(created.sessionId).token;
+    const created = await s.engine.command({
+      type: "create",
+      commandId: "annotation-mcp",
+      projectId: s.project.id,
+      harness: "codex",
+      model: "fixture",
+      runtimeMode: "supervised",
+    });
+    const token = (await s.server.conversationAccess.issueSessionGrant(created.sessionId)).token;
     const data = Buffer.alloc(64 * 1024, "a").toString("base64");
     const dispatch = vi.spyOn(SharedBrowser.prototype, "dispatchForSession").mockResolvedValue({
-      annotationId: "selection", selection: { sessionId: created.sessionId, projectId: s.project.id,
-        trust: "untrusted-page-data", element: { text: "Save" }, limitations: ["Private fields masked"],
+      annotationId: "selection",
+      selection: {
+        sessionId: created.sessionId,
+        projectId: s.project.id,
+        trust: "untrusted-page-data",
+        element: { text: "Save" },
+        limitations: ["Private fields masked"],
         screenshot: { mimeType: "image/jpeg", data, width: 1280, height: 720 },
       },
     });
     try {
       for (const action of ["select", "read"]) {
-        const result = await s.send(token, "tools/call", { name: `conversation_browser_annotation_${action}`,
-          arguments: { leaseId: "lease", navigationId: "navigation", annotationId: "selection", ...(action === "select" ? { x: 50, y: 35 } : {}) },
-        }, "/mcp/conversation");
+        const result = await s.send(
+          token,
+          "tools/call",
+          {
+            name: `conversation_browser_annotation_${action}`,
+            arguments: {
+              leaseId: "lease",
+              navigationId: "navigation",
+              annotationId: "selection",
+              ...(action === "select" ? { x: 50, y: 35 } : {}),
+            },
+          },
+          "/mcp/conversation",
+        );
         expect(result.body.result.isError).not.toBe(true);
         const content = result.body.result.content;
         expect(content[1]).toEqual({ type: "image", mimeType: "image/jpeg", data });
         expect(content[0].text.length).toBeLessThan(1000);
         expect(content[0].text).not.toContain(data);
-        expect(JSON.parse(content[0].text)).toMatchObject({ selection: { trust: "untrusted-page-data", limitations: ["Private fields masked"] } });
+        expect(JSON.parse(content[0].text)).toMatchObject({
+          selection: { trust: "untrusted-page-data", limitations: ["Private fields masked"] },
+        });
       }
-      expect(dispatch).toHaveBeenCalledWith("browser.annotation.select", expect.objectContaining({ sessionId: created.sessionId, projectId: s.project.id }), token);
-    } finally { dispatch.mockRestore(); }
+      expect(dispatch).toHaveBeenCalledWith(
+        "browser.annotation.select",
+        expect.objectContaining({ sessionId: created.sessionId, projectId: s.project.id }),
+        token,
+      );
+    } finally {
+      dispatch.mockRestore();
+    }
   });
   it("negotiates stateless HTTP and serves the existing catalogs and schemas", async () => {
     const s = await setup();
-    const grant = s.grant({
+    const grant = await s.grant({
       conversation: ["read", "write"],
       social: ["read", "write"],
       "runtime-logs": ["read"],
@@ -182,7 +272,7 @@ describe("Streamable HTTP MCP", () => {
   it.each(MCP_GROUPS)("enforces independent read/write scopes for %s", async (group) => {
     const s = await setup();
     for (const mode of ["read", "write"] as const) {
-      const grant = s.grant({ [group]: [mode] });
+      const grant = await s.grant({ [group]: [mode] });
       const { token } = grant;
       const listed = (await s.send(token)).body.result.tools;
       expect(listed.map((tool: any) => tool.name)).toEqual(
@@ -204,7 +294,7 @@ describe("Streamable HTTP MCP", () => {
     "advertises only external project capabilities for grants %j",
     async (...modes) => {
       const s = await setup();
-      const grant = s.grant({ conversation: modes });
+      const grant = await s.grant({ conversation: modes });
       const tools = (await s.send(grant.token, "tools/list", {}, "/mcp/conversation")).body.result
         .tools;
       const names = tools.map((tool: any) => tool.name);
@@ -269,22 +359,22 @@ describe("Streamable HTTP MCP", () => {
     });
     const { token, id } = created.body.result;
     expect(created.status).toBe(200);
-    const rows = JSON.stringify(s.store.db.prepare("SELECT * FROM mcp_tokens").all());
+    const rows = JSON.stringify(await s.store.db.prepare("SELECT * FROM mcp_tokens").all());
     expect(rows).not.toContain(token);
     expect((await s.rpc("mcp.tokens.list")).body.result.tokens[0]).not.toHaveProperty("token");
     expect((await s.rpc("mcp.tokens.create", {}, token)).status).toBe(401);
     expect((await s.send(token)).status).toBe(200);
     expect((await s.rpc("mcp.tokens.revoke", { id })).body.result.revoked).toBe(true);
     expect((await s.send(token)).status).toBe(401);
-    const live = s.grant({ "runtime-logs": ["read"] });
+    const live = await s.grant({ "runtime-logs": ["read"] });
     const future = new McpTokens(s.store, () => live.expiresAt);
-    expect(future.get(live.token)).toBeUndefined();
-    expect(new McpTokens(s.store).get(live.token)?.id).toBe(live.id);
+    expect(await future.get(live.token)).toBeUndefined();
+    expect((await new McpTokens(s.store).get(live.token))?.id).toBe(live.id);
   });
 
   it("rejects rebinding, unsafe origins, URL credentials, bad protocol and oversized requests", async () => {
     const s = await setup();
-    const { token } = s.grant({ "runtime-logs": ["read"] });
+    const { token } = await s.grant({ "runtime-logs": ["read"] });
     expect(
       (await s.send(token, "ping", {}, "/mcp", { Origin: "https://attacker.invalid" })).status,
     ).toBe(403);
@@ -312,7 +402,7 @@ describe("Streamable HTTP MCP", () => {
 
   it("blocks session context and owner actions, restricts project identity and keeps stdio RPC alive", async () => {
     const s = await setup();
-    const { token } = s.grant({ conversation: ["read", "write"], social: ["read", "write"] });
+    const { token } = await s.grant({ conversation: ["read", "write"], social: ["read", "write"] });
     for (const name of [
       "conversation_ui_tools_open",
       "conversation_inbox_comment",
@@ -347,7 +437,7 @@ describe("Streamable HTTP MCP", () => {
         .result.isError,
     ).toBeUndefined();
     // The exact existing session grant and stdio RPC path also work via HTTP.
-    const created = s.engine.command({
+    const created = await s.engine.command({
       type: "create",
       commandId: "mcp-test",
       projectId: s.project.id,
@@ -355,7 +445,8 @@ describe("Streamable HTTP MCP", () => {
       model: "codex:test",
       runtimeMode: "supervised",
     });
-    const sessionToken = s.server.conversationAccess.issueSessionGrant(created.sessionId).token;
+    const sessionToken = (await s.server.conversationAccess.issueSessionGrant(created.sessionId))
+      .token;
     expect(
       (await s.send(sessionToken, "tools/list", {}, "/mcp/conversation")).body.result.tools.map(
         (tool: any) => tool.name,
@@ -369,7 +460,7 @@ describe("Streamable HTTP MCP", () => {
     const http = await s.send(sessionToken, "tools/call", { name: "conversation_tools_list" });
     expect(JSON.parse(http.body.result.content[0].text)).toEqual(direct.body.result);
     expect((await s.send(sessionToken, "tools/list", {}, "/mcp/social")).status).toBe(401);
-    const logToken = s.server.runtimeLogAccess.issueSessionGrant(created.sessionId).token;
+    const logToken = (await s.server.runtimeLogAccess.issueSessionGrant(created.sessionId)).token;
     const logDirect = await s.rpc(
       "runtimeLogs.tools.call",
       { action: "sources", input: {} },
@@ -377,7 +468,7 @@ describe("Streamable HTTP MCP", () => {
     );
     const logHttp = await s.send(logToken, "tools/call", { name: "runtime_logs_sources" });
     expect(JSON.parse(logHttp.body.result.content[0].text)).toEqual(logDirect.body.result);
-    const socialToken = s.server.social.issueSessionGrant(created.sessionId).token;
+    const socialToken = (await s.server.social.issueSessionGrant(created.sessionId)).token;
     const socialDirect = await s.rpc(
       "social.tools.call",
       { action: "accounts.list", input: {} },
@@ -389,7 +480,7 @@ describe("Streamable HTTP MCP", () => {
 
   it("bounds request rate and handles notifications without executing tools", async () => {
     const s = await setup();
-    const { token } = s.grant({ "runtime-logs": ["read"] });
+    const { token } = await s.grant({ "runtime-logs": ["read"] });
     const notification = await fetch(s.url + "/mcp", {
       method: "POST",
       headers: {
@@ -413,7 +504,7 @@ describe("Streamable HTTP MCP", () => {
       accountType: "member",
       projectIds: [s.foreign.id],
     })) as { id: string };
-    const { token } = s.grant({ social: ["read", "write"], conversation: ["read", "write"] });
+    const { token } = await s.grant({ social: ["read", "write"], conversation: ["read", "write"] });
     const call = async (name: string, args: object) =>
       (await s.send(token, "tools/call", { name, arguments: args })).body.result;
     expect(JSON.parse((await call("social_accounts_list", {})).content[0].text)).toEqual([]);
@@ -432,7 +523,7 @@ describe("Streamable HTTP MCP", () => {
 
   it("uses the existing project note service for external writes and reads", async () => {
     const s = await setup();
-    const { token } = s.grant({ conversation: ["read", "write"] });
+    const { token } = await s.grant({ conversation: ["read", "write"] });
     const created = await s.send(token, "tools/call", {
       name: "conversation_notes_create",
       arguments: { id: "external-note", title: "HTTP", body: "Project-scoped note" },
@@ -443,7 +534,7 @@ describe("Streamable HTTP MCP", () => {
       arguments: { id: "external-note" },
     });
     expect(JSON.parse(read.body.result.content[0].text).body).toBe("Project-scoped note");
-    const foreign = s.grant({ conversation: ["read"] }, s.foreign.id);
+    const foreign = await s.grant({ conversation: ["read"] }, s.foreign.id);
     const denied = await s.send(foreign.token, "tools/call", {
       name: "conversation_notes_read",
       arguments: { id: "external-note" },
@@ -453,7 +544,7 @@ describe("Streamable HTTP MCP", () => {
 
   it("rechecks revocation after a yielding body read and bounds chunked uploads", async () => {
     const s = await setup();
-    const grant = s.grant({ "runtime-logs": ["read"] });
+    const grant = await s.grant({ "runtime-logs": ["read"] });
     const status = await new Promise<number>((resolve, reject) => {
       const req = request(
         s.url + "/mcp",
@@ -473,13 +564,13 @@ describe("Streamable HTTP MCP", () => {
       req.on("error", reject);
       req.flushHeaders();
       req.write('{"jsonrpc":"2.0",');
-      setTimeout(() => {
-        s.tokens.revoke(grant.id);
+      setTimeout(async () => {
+        await s.tokens.revoke(grant.id);
         req.end('"id":1,"method":"tools/list"}');
       }, 30);
     });
     expect(status).toBe(401);
-    const next = s.grant({ "runtime-logs": ["read"] });
+    const next = await s.grant({ "runtime-logs": ["read"] });
     const oversized = await new Promise<number>((resolve, reject) => {
       const req = request(
         s.url + "/mcp",

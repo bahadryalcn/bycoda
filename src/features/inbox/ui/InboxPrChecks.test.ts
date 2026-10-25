@@ -514,6 +514,18 @@ it("offers a retry after a load error and refreshes on demand", async () => {
     retry?.click();
   });
   expect(onRefresh).toHaveBeenCalledTimes(1);
+  retry!.focus();
+  render(
+    createElement(InboxPrChecks, {
+      view: view({ loading: true, error: "rate limited" }),
+      onRefresh,
+    }),
+  );
+  expect(retry!.isConnected).toBe(true);
+  expect(document.activeElement).toBe(retry);
+  expect(retry!.getAttribute("aria-busy")).toBe("true");
+  await act(async () => retry!.click());
+  expect(onRefresh).toHaveBeenCalledTimes(1);
 });
 
 it("marks kept results as out of date after a failed refresh", () => {

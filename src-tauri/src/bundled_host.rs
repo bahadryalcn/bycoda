@@ -110,7 +110,13 @@ fn plan(
         return Plan::Deferred("Another host update is being installed.");
     }
     let Some(installed) = installed else {
-        return Plan::Install;
+        // Missing or damaged version metadata does not prove that no host is
+        // running. Keep the same activity gate as an ordinary upgrade.
+        return match busy {
+            Ok(false) => Plan::Install,
+            Ok(true) => Plan::Deferred("The host update waits until running sessions finish."),
+            Err(()) => Plan::Deferred("Could not check whether the host is busy."),
+        };
     };
     if !is_newer(bundled, installed) && healthy {
         return Plan::Current;
@@ -195,11 +201,13 @@ pub(crate) fn probe_lifecycle_status(
 fn host_healthy(base: &Path) -> bool {
     let probe = || -> Option<bool> {
         let runtime = std::fs::read_to_string(base.join("runtime-path")).ok()?;
+        let version = installed_version(base)?;
         let (state, response) = lifecycle_status(base)?;
         Some(
             response.get("pid")?.as_u64()? == state.get("pid")?.as_u64()?
                 && Path::new(response.get("runtime")?.as_str()?)
-                    == PathBuf::from(runtime.trim()).join("host.mjs"),
+                    == PathBuf::from(runtime.trim()).join("host.mjs")
+                && response.get("version")?.as_str()? == version,
         )
     };
     probe().unwrap_or(false)
@@ -214,6 +222,16 @@ fn version_parts(version: &str) -> Option<Vec<u64>> {
 fn is_newer(candidate: &str, current: &str) -> bool {
     match (version_parts(candidate), version_parts(current)) {
         (Some(a), Some(b)) => a > b,
+        _ => false,
+    }
+}
+
+/// A successful installer exit is only an acknowledgement. The launcher must
+/// point at a release at least as new as this app and that exact runtime must
+/// answer the private lifecycle probe before installation is reported complete.
+fn installation_confirmed(installed: Option<&str>, bundled: &str, healthy: bool) -> bool {
+    match (installed.and_then(version_parts), version_parts(bundled)) {
+        (Some(installed), Some(bundled)) => installed >= bundled && healthy,
         _ => false,
     }
 }
@@ -249,6 +267,14 @@ fn installed_version(base: &Path) -> Option<String> {
 fn host_busy(base: &Path) -> Result<bool, ()> {
     let database = base.join("host.db");
     if !database.exists() {
+        // Only a genuinely fresh install has no database. A missing database
+        // beside an existing host is a recovery condition, never evidence of idle.
+        if ["runtime-path", "running.json", "service.ps1"]
+            .iter()
+            .any(|name| base.join(name).exists())
+        {
+            return Err(());
+        }
         return Ok(false);
     }
     let connection = rusqlite::Connection::open_with_flags(
@@ -495,7 +521,9 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
         Plan::Current => {
             let _ = std::fs::remove_file(base.join("bundled-host-retry.json"));
             record(status("current", None));
-            None
+            // Services may be restarted or replaced while the desktop stays
+            // open. Keep reconciling instead of permanently ending this worker.
+            Some(RETRY_INTERVAL)
         }
         Plan::Deferred(reason) => {
             record(status("deferred", Some(reason.into())));
@@ -531,7 +559,18 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
             // downgrading a newer installed release. Bootstrap reuses intact
             // extracted bytes on later attempts.
             let replace = upgrade || (repair && installed.as_deref() == Some(bundled.as_str()));
-            match run_installer(&base, &archive, replace, repair) {
+            let result = run_installer(&base, &archive, replace, repair).and_then(|()| {
+                if installation_confirmed(
+                    installed_version(&base).as_deref(),
+                    &bundled,
+                    host_healthy(&base),
+                ) {
+                    Ok(())
+                } else {
+                    Err("The host installer finished, but the expected host runtime is not running. Installation will retry.".into())
+                }
+            });
+            match result {
                 Ok(()) => {
                     let _ = std::fs::remove_file(&retry_path);
                     record(BundledHostStatus {
@@ -541,7 +580,7 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
                         installed: installed_version(&base),
                     });
                     let _ = crate::local_host::local_host_connect(app.clone());
-                    None
+                    Some(RETRY_INTERVAL)
                 }
                 Err(error) => {
                     let delay = retry.failed(unix_now());
@@ -578,6 +617,29 @@ pub fn local_host_bundle_status() -> Option<BundledHostStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installer_completion_requires_the_expected_live_release() {
+        assert!(installation_confirmed(Some("0.6.75"), "0.6.75", true));
+        assert!(installation_confirmed(Some("0.6.76"), "0.6.75", true));
+        assert!(!installation_confirmed(Some("0.6.71"), "0.6.75", true));
+        assert!(!installation_confirmed(Some("0.6.75"), "0.6.75", false));
+        assert!(!installation_confirmed(None, "0.6.75", true));
+        assert!(!installation_confirmed(Some("unknown"), "0.6.75", true));
+        assert!(!installation_confirmed(Some("0.6.75"), "unknown", true));
+    }
+
+    #[test]
+    fn missing_version_metadata_does_not_bypass_the_activity_gate() {
+        assert_eq!(
+            plan(None, "0.6.75", Ok(true), false, false),
+            Plan::Deferred("The host update waits until running sessions finish.")
+        );
+        assert_eq!(
+            plan(None, "0.6.75", Err(()), false, false),
+            Plan::Deferred("Could not check whether the host is busy.")
+        );
+    }
 
     #[test]
     fn failed_installs_back_off_and_cap_at_one_hour() {
@@ -656,6 +718,60 @@ mod tests {
             Err(LifecycleProbeError::Unconfirmed)
         );
         server.join().unwrap();
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn health_requires_the_serving_version_to_match_selected_runtime_metadata() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let base = scratch("live-version");
+        let runtime = base.join("runtime").join("0.6.75-win32-x64-local");
+        std::fs::create_dir_all(&runtime).unwrap();
+        std::fs::write(base.join("runtime-path"), runtime.to_str().unwrap()).unwrap();
+        std::fs::write(runtime.join("version.json"), r#"{"version":"0.6.75"}"#).unwrap();
+        for actual_version in [Some("0.6.71"), Some("0.6.75"), None] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            std::fs::write(
+                base.join("running.json"),
+                format!(r#"{{"port":{port},"pid":77,"secret":"test"}}"#),
+            )
+            .unwrap();
+            let mut response = serde_json::json!({
+                "pid": 77,
+                "runtime": runtime.join("host.mjs"),
+            });
+            if let Some(version) = actual_version {
+                response["version"] = version.into();
+            }
+            let body = response.to_string();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0; 512];
+                while !request.ends_with(br#"{"action":"status"}"#) {
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+                stream.flush().unwrap();
+            });
+            let healthy = host_healthy(&base);
+            server.join().unwrap();
+            assert_eq!(healthy, actual_version == Some("0.6.75"));
+        }
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -799,7 +915,8 @@ mod tests {
                     request.extend_from_slice(&buffer[..count]);
                 }
                 assert!(String::from_utf8_lossy(&request).contains("Bearer test-secret"));
-                let body = serde_json::json!({"pid":pid,"runtime":entry}).to_string();
+                let body =
+                    serde_json::json!({"pid":pid,"runtime":entry,"version":"0.5.70"}).to_string();
                 write!(
                     socket,
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -818,6 +935,9 @@ mod tests {
     fn treats_an_unreadable_host_database_as_busy_not_idle() {
         let base = scratch("busy");
         assert_eq!(host_busy(&base), Ok(false));
+        std::fs::write(base.join("runtime-path"), "existing-runtime").unwrap();
+        assert_eq!(host_busy(&base), Err(()));
+        std::fs::remove_file(base.join("runtime-path")).unwrap();
         std::fs::write(base.join("host.db"), b"not a database").unwrap();
         assert_eq!(host_busy(&base), Err(()));
         std::fs::remove_file(base.join("host.db")).unwrap();

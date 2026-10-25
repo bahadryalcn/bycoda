@@ -2,6 +2,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Pencil } from "../../../shared/ui/icons";
 import {
   useDeferredValue,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -36,13 +37,19 @@ export function NoteEditablePreview({
   onFocus: () => void;
 }) {
   useLocale();
-  const [active, setActive] = useState<{ from: number; to: number } | null>(null);
+  const [active, setActive] = useState<{
+    from: number;
+    to: number;
+    preview: string;
+    previewFrom: number;
+    previewTo: number;
+  } | null>(null);
   const localValue = useRef(value);
   const callbacks = useRef({ onEditingChange });
   callbacks.current = { onEditingChange };
   // A source edit or host update invalidates the selected source range.
   const currentActive = localValue.current === value ? active : null;
-  rangeRef.current = currentActive;
+  rangeRef.current = currentActive ? { from: currentActive.from, to: currentActive.to } : null;
   useEffect(() => {
     if (localValue.current !== value) {
       localValue.current = value;
@@ -59,15 +66,22 @@ export function NoteEditablePreview({
   );
 
   const deferredValue = useDeferredValue(value);
-  const previewValue = currentActive ? value : deferredValue;
+  // The selected block is a source editor. Its unchanged neighbours need no
+  // reparse/reconciliation until editing ends; retain their original ranges.
+  const previewValue = currentActive ? currentActive.preview : deferredValue;
   const parser = useRef<NotePreviewParser | null>(null);
   if (!parser.current) parser.current = new NotePreviewParser();
   const blocks = useMemo(() => parser.current!.parse(previewValue), [previewValue]);
   const referencesFor = useMemo(() => notePreviewReferences(blocks), [blocks]);
   const start = (from: number, to: number) => {
-    if (deferredValue !== value) return;
+    if (!currentActive && deferredValue !== value) return;
+    if (currentActive && from >= currentActive.previewTo) {
+      const shift = currentActive.to - currentActive.previewTo;
+      from += shift;
+      to += shift;
+    }
     localValue.current = value;
-    setActive({ from, to });
+    setActive({ from, to, preview: value, previewFrom: from, previewTo: to });
     onEditingChange(true);
     onFocus();
   };
@@ -79,62 +93,86 @@ export function NoteEditablePreview({
   const append = () => {
     const next = value.trim() && !value.endsWith("\n\n") ? `${value}\n\n` : value;
     localValue.current = next;
-    setActive({ from: next.length, to: next.length });
+    setActive({
+      from: next.length,
+      to: next.length,
+      preview: next,
+      previewFrom: next.length,
+      previewTo: next.length,
+    });
     onEditingChange(true);
     onFocus();
     if (next !== value) onChange(next);
   };
-  const renderBlocks = (from = 0, to = previewValue.length) =>
-    blocks
-      .filter((block) => block.from >= from && block.to <= to)
-      .map((block) => (
-        <div key={block.key} className="note-preview-block">
+  const beginBlock = useRef(start);
+  beginBlock.current = start;
+  const renderBlocks = useCallback(
+    (from = 0, to = Infinity) =>
+      blocks
+        .filter((block) => block.from >= from && block.to <= to)
+        .map((block) => (
           <div
-            role="button"
-            tabIndex={0}
-            aria-label={t("Edit note block")}
-            className="note-preview-content"
-            onClick={(event) => {
-              if ((event.target as HTMLElement).closest("a, button, input, [role='menu']")) return;
-              if (window.getSelection()?.toString()) return;
-              start(block.from, block.to);
-            }}
-            onKeyDown={(event) => {
-              if (event.target !== event.currentTarget || !["Enter", " "].includes(event.key))
-                return;
-              event.preventDefault();
-              start(block.from, block.to);
-            }}
+            key={block.key}
+            className="note-preview-block"
+            style={{ contentVisibility: "auto", containIntrinsicSize: "auto 64px" }}
           >
-            {block.definition ? (
-              <pre className="whitespace-pre-wrap text-[12px] text-content/70">{block.text}</pre>
-            ) : (
-              <AgentMarkdown
-                text={`${block.text}\n\n${referencesFor(block.text)}`}
-                cwd={cwd}
-                hardBreaks
-              />
-            )}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label={t("Edit note block")}
+              className="note-preview-content"
+              onClick={(event) => {
+                if ((event.target as HTMLElement).closest("a, button, input, [role='menu']"))
+                  return;
+                if (window.getSelection()?.toString()) return;
+                beginBlock.current(block.from, block.to);
+              }}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget || !["Enter", " "].includes(event.key))
+                  return;
+                event.preventDefault();
+                beginBlock.current(block.from, block.to);
+              }}
+            >
+              {block.definition ? (
+                <pre className="whitespace-pre-wrap text-[12px] text-content/70">{block.text}</pre>
+              ) : (
+                <AgentMarkdown
+                  text={`${block.text}\n\n${referencesFor(block.text)}`}
+                  cwd={cwd}
+                  hardBreaks
+                />
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              iconOnly
+              label={t("Edit note block")}
+              className="note-edit-block note-preview-edit"
+              onClick={() => beginBlock.current(block.from, block.to)}
+            >
+              <Pencil className="size-3.5" />
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            iconOnly
-            label={t("Edit note block")}
-            className="note-edit-block note-preview-edit"
-            onClick={() => start(block.from, block.to)}
-          >
-            <Pencil className="size-3.5" />
-          </Button>
-        </div>
-      ));
+        )),
+    [blocks, referencesFor, cwd],
+  );
+
+  const previewFrom = currentActive?.previewFrom ?? previewValue.length;
+  const previewTo = currentActive?.previewTo;
+  const before = useMemo(() => renderBlocks(0, previewFrom), [renderBlocks, previewFrom]);
+  const after = useMemo(
+    () => (previewTo === undefined ? null : renderBlocks(previewTo)),
+    [renderBlocks, previewTo],
+  );
 
   return (
     <div data-note-preview className="min-w-0 select-text">
       {currentActive ? (
         <>
-          {renderBlocks(0, currentActive.from)}
+          {before}
           <div className="note-active-block">
             <NoteMarkdownEditor
               viewRef={viewRef}
@@ -151,7 +189,7 @@ export function NoteEditablePreview({
                   next,
                 );
                 localValue.current = updated;
-                setActive({ from: currentActive.from, to: currentActive.from + next.length });
+                setActive({ ...currentActive, to: currentActive.from + next.length });
                 onChange(updated);
               }}
               onSave={onSave}
@@ -167,10 +205,10 @@ export function NoteEditablePreview({
               {t("Done")}
             </Button>
           </div>
-          {renderBlocks(currentActive.to)}
+          {after}
         </>
       ) : (
-        renderBlocks()
+        before
       )}
       <Button variant="ghost" size="sm" type="button" className="note-add-block" onClick={append}>
         {value.trim() ? t("Add text") : t("Start writing")}

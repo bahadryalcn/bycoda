@@ -19,6 +19,77 @@ import * as gitActions from "./git-actions";
 
 vi.mock("./git-worktrees", () => ({ hostWorktrees: vi.fn() }));
 const roots: string[] = [];
+
+it("isolates search cancellation by server owner and cancels revoked-owner work", async () => {
+  const { projects, commands } = await setup();
+  const cwd = projects[104].cwd;
+  const root = vi
+    .spyOn(commands as unknown as { gitRoot(cwd: unknown): Promise<string> }, "gitRoot")
+    .mockResolvedValue(cwd);
+  const signals: AbortSignal[] = [];
+  const search = vi
+    .spyOn(workspace, "searchHostContent")
+    .mockImplementation(async (_root, _input, signal) => {
+      signals.push(signal!);
+      return new Promise((_resolve, reject) =>
+        signal!.addEventListener("abort", () => reject(new Error("cancelled")), { once: true }),
+      );
+    });
+  try {
+    const first = commands
+      .run("search_project", { options: { cwd, query: "x", searchId: "same-id" } }, "owner-a")
+      .catch((error) => error);
+    const second = commands
+      .run("search_project", { options: { cwd, query: "x", searchId: "same-id" } }, "owner-b")
+      .catch((error) => error);
+    await vi.waitFor(() => expect(signals).toHaveLength(2));
+    await commands.run("cancel_project_search", { cwd, searchId: "same-id" }, "owner-a");
+    expect(await first).toMatchObject({ message: "cancelled" });
+    expect(signals[1].aborted).toBe(false);
+    commands.cancelSearches("owner-b");
+    expect(await second).toMatchObject({ message: "cancelled" });
+    root.mockRestore();
+    await expect(
+      commands.run("cancel_project_search", { cwd: "../outside", searchId: "same-id" }, "owner-a"),
+    ).rejects.toThrow();
+  } finally {
+    root.mockRestore();
+    search.mockRestore();
+  }
+});
+
+it.each(["cancel", "revoke"])(
+  "prevents late search registration after %s during root validation",
+  async (kind) => {
+    const { projects, commands } = await setup();
+    const cwd = projects[104].cwd;
+    let release!: (value: string) => void;
+    const root = vi
+      .spyOn(commands as unknown as { gitRoot(cwd: unknown): Promise<string> }, "gitRoot")
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      )
+      .mockResolvedValue(cwd);
+    const search = vi.spyOn(workspace, "searchHostContent");
+    try {
+      const pending = commands
+        .run("search_project", { options: { cwd, query: "x", searchId: "late-id" } }, "late-owner")
+        .catch((error) => error);
+      if (kind === "cancel")
+        await commands.run("cancel_project_search", { cwd, searchId: "late-id" }, "late-owner");
+      else commands.cancelSearches("late-owner");
+      release(cwd);
+      expect(await pending).toBeInstanceOf(Error);
+      expect(search).not.toHaveBeenCalled();
+    } finally {
+      root.mockRestore();
+      search.mockRestore();
+    }
+  },
+);
 afterEach(async () => {
   vi.clearAllMocks();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -33,7 +104,7 @@ async function setup() {
   await mkdir(projects[104].cwd);
   const commands = new WorkspaceCommands(
     { projects: () => projects, attachmentDir: join(root, "attachments") } as never,
-    (async (_id: string, action: () => Promise<unknown>) => action()) as never,
+    (async (_id: string, action: () => Promise<unknown>) => await action()) as never,
   );
   return { root, projects, commands };
 }
@@ -41,16 +112,59 @@ async function setup() {
 it("pins PR creation to the reviewed provider repository and reads its destination without publishing", async () => {
   const { projects, commands } = await setup();
   const cwd = projects[104].cwd;
-  const bridge = commands as unknown as { gitRoot: (cwd: unknown) => Promise<string>; ghCommand: (cwd: unknown, args: string[]) => Promise<string> };
+  const bridge = commands as unknown as {
+    gitRoot: (cwd: unknown) => Promise<string>;
+    ghCommand: (cwd: unknown, args: string[]) => Promise<string>;
+  };
   const root = vi.spyOn(bridge, "gitRoot").mockResolvedValue(cwd);
-  const gh = vi.spyOn(bridge, "ghCommand").mockResolvedValueOnce(JSON.stringify({ nameWithOwner: "owner/repo", url: "https://github.com/owner/repo" })).mockResolvedValue("https://github.com/owner/repo/pull/1");
+  const gh = vi
+    .spyOn(bridge, "ghCommand")
+    .mockResolvedValueOnce(
+      JSON.stringify({ nameWithOwner: "owner/repo", url: "https://github.com/owner/repo" }),
+    )
+    .mockResolvedValue("https://github.com/owner/repo/pull/1");
   try {
-    expect(await commands.run("git_pr_destination", { cwd })).toEqual({ nameWithOwner: "owner/repo", url: "https://github.com/owner/repo" });
-    await commands.run("git_pr_create", { cwd, repository: "github.com/owner/repo", title: "Review", body: "Body", base: "main", head: "feature" });
-    expect(gh).toHaveBeenLastCalledWith(cwd, ["pr", "create", "--repo", "github.com/owner/repo", "--title", "Review", "--body", "Body", "--base", "main", "--head", "feature"]);
-    await expect(commands.run("git_pr_create", { cwd, repository: "--bad", title: "Review", body: "Body", base: "main", head: "feature" })).rejects.toThrow("Invalid pull request repository");
+    expect(await commands.run("git_pr_destination", { cwd })).toEqual({
+      nameWithOwner: "owner/repo",
+      url: "https://github.com/owner/repo",
+    });
+    await commands.run("git_pr_create", {
+      cwd,
+      repository: "github.com/owner/repo",
+      title: "Review",
+      body: "Body",
+      base: "main",
+      head: "feature",
+    });
+    expect(gh).toHaveBeenLastCalledWith(cwd, [
+      "pr",
+      "create",
+      "--repo",
+      "github.com/owner/repo",
+      "--title",
+      "Review",
+      "--body",
+      "Body",
+      "--base",
+      "main",
+      "--head",
+      "feature",
+    ]);
+    await expect(
+      commands.run("git_pr_create", {
+        cwd,
+        repository: "--bad",
+        title: "Review",
+        body: "Body",
+        base: "main",
+        head: "feature",
+      }),
+    ).rejects.toThrow("Invalid pull request repository");
     expect(gh).toHaveBeenCalledTimes(2);
-  } finally { gh.mockRestore(); root.mockRestore(); }
+  } finally {
+    gh.mockRestore();
+    root.mockRestore();
+  }
 });
 
 it("routes file and summary requests to the lightweight index, including conflict counts", async () => {
@@ -151,14 +265,15 @@ it("isolates concurrent atomic text saves and removes only owned temporary files
   await writeFile(path, "base");
   const otherConnection = new WorkspaceCommands(
     { projects: () => projects, attachmentDir: join(projects[104].cwd, "attachments") } as never,
-    (async (_id: string, action: () => Promise<unknown>) => action()) as never,
+    (async (_id: string, action: () => Promise<unknown>) => await action()) as never,
   );
   const contents = Array.from({ length: 24 }, (_, index) => `complete-save-${index}`);
   const now = vi.spyOn(Date, "now").mockReturnValue(42);
   try {
     await Promise.all(
-      contents.map((content, index) =>
-        (index % 2 ? commands : otherConnection).run("write_text_file", { path, content }),
+      contents.map(
+        async (content, index) =>
+          await (index % 2 ? commands : otherConnection).run("write_text_file", { path, content }),
       ),
     );
   } finally {

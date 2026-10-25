@@ -20,8 +20,8 @@ function setup() {
   return {
     rows,
     tasks,
-    call: (action: "tasks.queue.pause" | "tasks.reorder", input: Record<string, unknown>) =>
-      helper.call(action, input, principal, () => true),
+    call: async (action: "tasks.queue.pause" | "tasks.reorder", input: Record<string, unknown>) =>
+      await helper.call(action, input, principal, () => true),
   };
 }
 describe("conversation task queue", () => {

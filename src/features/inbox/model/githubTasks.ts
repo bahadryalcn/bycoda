@@ -178,6 +178,7 @@ export type GithubStarStatus = "starred" | "notStarred" | "unavailable";
 export type InboxListResult = {
   items: InboxItem[];
   errors: InboxProviderErrors;
+  pendingProviders?: InboxProvider[];
 };
 
 const INBOX_CACHE_FRESH_MS = INBOX_VISIBLE_POLL_MS;
@@ -218,6 +219,8 @@ type InboxListCache = InboxListResult & {
 const inboxListCaches = new Map<string, InboxListCache>();
 let inboxCacheGeneration = 0;
 const inboxListInflight = new Map<string, Promise<InboxListResult>>();
+const inboxProgressListeners = new Map<string, Set<(result: InboxListResult) => void>>();
+const inboxProgressLatest = new Map<string, InboxListResult>();
 const githubLists = new Map<string, { items: GithubWorkItem[]; at: number }>();
 const githubListsInflight = new Map<string, Promise<GithubWorkItem[]>>();
 const repoByPath = new Map<string, string>();
@@ -302,6 +305,8 @@ export function clearInboxCache() {
   clearKnownInboxItems();
   inboxListCaches.clear();
   inboxListInflight.clear();
+  inboxProgressListeners.clear();
+  inboxProgressLatest.clear();
   githubLists.clear();
   githubListsInflight.clear();
   repoByPath.clear();
@@ -857,16 +862,41 @@ export function prefetchGithubWorkItem(
 export async function listInboxItems(
   projects: readonly { path: string }[],
   query: InboxQuery,
-  options?: { force?: boolean; maxAgeMs?: number },
+  options?: { force?: boolean; maxAgeMs?: number; onProgress?: (result: InboxListResult) => void },
 ): Promise<InboxListResult> {
   const key = inboxListCacheKey(projects, query);
   if (!options?.force && inboxListIsFresh(projects, query, Date.now(), options?.maxAgeMs)) {
     return peekInboxList(projects, query) ?? { items: [], errors: {} };
   }
   const pending = inboxListInflight.get(key);
-  if (pending) return pending;
+  const listeners = inboxProgressListeners.get(key) ?? new Set<(result: InboxListResult) => void>();
+  inboxProgressListeners.set(key, listeners);
+  if (options?.onProgress) listeners.add(options.onProgress);
+  const latest = inboxProgressLatest.get(key);
+  if (pending && latest && options?.onProgress) {
+    try { options.onProgress(latest); } catch { /* A view cannot fail provider discovery. */ }
+  }
+  const unsubscribe = () => {
+    if (options?.onProgress) listeners.delete(options.onProgress);
+    if (!listeners.size && inboxProgressListeners.get(key) === listeners)
+      inboxProgressListeners.delete(key);
+  };
+  if (pending) return pending.finally(unsubscribe);
   const generation = inboxCacheGeneration;
-  const promise = fetchInboxItems(projects, query, options)
+  const promise = fetchInboxItems(projects, query, {
+    ...options,
+    onProgress: (result) => {
+      if (generation !== inboxCacheGeneration) return;
+      inboxProgressLatest.set(key, result);
+      for (const listener of listeners) {
+        try {
+          listener(result);
+        } catch {
+          /* A view cannot fail provider discovery. */
+        }
+      }
+    },
+  })
     .then((result) => {
       if (generation === inboxCacheGeneration) {
         const previous = inboxListCaches.get(key);
@@ -884,16 +914,19 @@ export async function listInboxItems(
       return result;
     })
     .finally(() => {
-      if (inboxListInflight.get(key) === promise) inboxListInflight.delete(key);
+      if (inboxListInflight.get(key) === promise) {
+        inboxListInflight.delete(key);
+        inboxProgressLatest.delete(key);
+      }
     });
   inboxListInflight.set(key, promise);
-  return promise;
+  return promise.finally(unsubscribe);
 }
 
 async function fetchInboxItems(
   projects: readonly { path: string }[],
   query: InboxQuery,
-  options?: { force?: boolean },
+  options?: { force?: boolean; onProgress?: (result: InboxListResult) => void },
 ): Promise<InboxListResult> {
   const unique = uniqueInboxProjects(projects);
   const preferredPaths = unique.map((project) => project.path);
@@ -969,13 +1002,42 @@ async function fetchInboxItems(
       ? fetchRepositoryInboxItems(provider, unique, query, preferredPaths)
       : { items: [] };
 
-  const [github, linear, jira, gitlab, azuredevops] = await Promise.all([
-    fetchGithub(),
-    fetchLinear(),
-    fetchJira(),
-    fetchRepositoryProvider("gitlab", gitlabConnected),
-    fetchRepositoryProvider("azuredevops", azureDevOpsConnected),
-  ]);
+  const jobs: [InboxProvider, () => Promise<{ items: InboxItem[]; error?: string }>][] = [
+    ["github", fetchGithub],
+    ["linear", fetchLinear],
+    ["jira", fetchJira],
+    ["gitlab", () => fetchRepositoryProvider("gitlab", gitlabConnected)],
+    ["azuredevops", () => fetchRepositoryProvider("azuredevops", azureDevOpsConnected)],
+  ];
+  const ready = new Map<InboxProvider, { items: InboxItem[]; error?: string }>();
+  const previous = peekInboxList(projects, query);
+  const [github, linear, jira, gitlab, azuredevops] = await Promise.all(
+    jobs.map(async ([provider, work]) => {
+      const value = await work().catch((reason) => ({
+        items: [] as InboxItem[],
+        error: inboxErrorMessage(reason),
+      }));
+      ready.set(provider, value);
+      const errors: InboxProviderErrors = {};
+      for (const [name, result] of ready) if (result.error) errors[name] = result.error;
+      const items = dedupeInboxItems(
+        [
+          ...jobs.flatMap(([name]) => ready.get(name)?.items ?? []),
+          ...(previous?.items.filter(
+            (item) => !ready.has(item.provider) || ready.get(item.provider)?.error,
+          ) ?? []),
+        ],
+        preferredPaths,
+      );
+      if (items.length || Object.keys(errors).length)
+        options?.onProgress?.({
+          items,
+          errors,
+          pendingProviders: jobs.map(([name]) => name).filter((name) => !ready.has(name)),
+        });
+      return value;
+    }),
+  );
   const errors: InboxProviderErrors = {};
   if (github.error) errors.github = github.error;
   if (linear.error) errors.linear = linear.error;

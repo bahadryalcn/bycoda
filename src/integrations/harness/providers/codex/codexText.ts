@@ -25,6 +25,8 @@ import { mergeStream } from "../../core/streamText";
 const TEXT_CHILD_ID = "bycoda-codex-text";
 const INIT_TIMEOUT_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 45_000;
+// A wedged provider must not hold the shared helper queue during cleanup.
+const INTERRUPT_TIMEOUT_MS = 2_000;
 const TEXT_RUNTIME_MODE = "supervised" as const;
 const TEXT_MODEL = "gpt-5.6-luna";
 const TEXT_EFFORT = "low";
@@ -116,7 +118,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
     ? new Promise<void>((_, reject) => {
         abortHandler = () => {
           void session.rpc
-            .request("turn/interrupt", { threadId: session.threadId })
+            .request("turn/interrupt", { threadId: session.threadId }, INTERRUPT_TIMEOUT_MS)
             .catch(() => undefined);
           reject(new Error("By-the-way request cancelled"));
         };
@@ -157,7 +159,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
     return session.output;
   } catch (error) {
     await session.rpc
-      .request("turn/interrupt", { threadId: session.threadId })
+      .request("turn/interrupt", { threadId: session.threadId }, INTERRUPT_TIMEOUT_MS)
       .catch(() => undefined);
     if (session.closed) await dropLive();
     throw error;

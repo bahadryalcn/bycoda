@@ -2,9 +2,26 @@ import { useMemo, useSyncExternalStore } from "react";
 import { createStoredSetting } from "../../../shared/lib/storedSetting";
 import { HARNESSES } from "./session";
 import type { TranslationContext } from "./translation";
+import { defaultSessionChoice, preferredModelSettings, resolveModel } from "./models";
+import {
+  defaultProviderAccountId,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
 
 export type TranslationChoice = Required<Pick<TranslationContext, "harness" | "model">> &
   Pick<TranslationContext, "modelSettings" | "providerAccountId">;
+
+/** The same global default shown in Settings, independent of the calling conversation. */
+export function defaultTextActionChoice(): TranslationChoice {
+  const choice = defaultSessionChoice();
+  return {
+    ...choice,
+    modelSettings: preferredModelSettings(resolveModel(choice.harness, choice.model)),
+    providerAccountId: supportsProviderAccounts(choice.harness)
+      ? defaultProviderAccountId(choice.harness)
+      : undefined,
+  };
+}
 
 export function parseTranslationChoice(raw: string | null): TranslationChoice | undefined {
   try {
@@ -80,12 +97,14 @@ export function translationContextWithDefault(
   action: "translation" | "reprompt" = "translation",
 ): TranslationContext {
   const choice =
-    action === "reprompt" ? loadDefaultRepromptChoice() : loadDefaultTranslationChoice();
-  if (!choice) return context;
-  // A session account only applies to the same harness; an explicit choice account always wins.
-  const { providerAccountId, ...rest } = choice;
-  const account =
-    providerAccountId ??
-    (choice.harness === context.harness ? context.providerAccountId : undefined);
-  return { ...context, ...rest, providerAccountId: account };
+    (action === "reprompt" ? loadDefaultRepromptChoice() : loadDefaultTranslationChoice()) ??
+    defaultTextActionChoice();
+  return {
+    ...context,
+    ...choice,
+    // A conversation account is a separate pin; an unpinned action uses the provider default.
+    providerAccountId: supportsProviderAccounts(choice.harness)
+      ? (choice.providerAccountId ?? defaultProviderAccountId(choice.harness))
+      : undefined,
+  };
 }

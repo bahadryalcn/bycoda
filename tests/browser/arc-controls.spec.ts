@@ -834,6 +834,57 @@ test("shared button variants fit both themes and narrow panels with reduced moti
   }
 });
 
+test("pending quiet actions preserve hierarchy, geometry and keyboard focus", async ({ page }) => {
+  await page.goto("/tests/browser/arc-controls.html");
+  const region = page.getByRole("region", { name: "Shared button API" });
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      for (const reducedMotion of ["no-preference", "reduce"] as const) {
+        await page.emulateMedia({ reducedMotion });
+        const actions = [
+          region.getByRole("button", { name: "Refresh quiet action", exact: true }),
+          region.getByRole("button", { name: "Quiet native action", exact: true }),
+        ];
+        const before = await Promise.all(actions.map((action) => action.boundingBox()));
+        await actions[0].focus();
+        // Change the owner's pending state without moving focus from the action.
+        await region
+          .getByRole("button", { name: "Toggle pending", exact: true })
+          .evaluate((node: HTMLButtonElement) => node.click());
+        await expect(actions[0]).toBeFocused();
+        for (const [index, action] of actions.entries()) {
+          await expect(action).toHaveAttribute("aria-busy", "true");
+          await expect(action).toHaveJSProperty("disabled", false);
+          await expect(action).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+          await expect(action).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+          if (index === 1) {
+            await expect(action.locator(":scope > span").first()).toHaveCSS("opacity", "1");
+            await expect(action).toContainText("Quiet native action");
+          }
+          const after = await action.boundingBox();
+          expect(after!.width).toBe(before[index]!.width);
+          expect(after!.height).toBe(before[index]!.height);
+          await action.focus();
+          await page.keyboard.press("Enter");
+          await page.keyboard.press("Space");
+          await expect(action).toBeFocused();
+        }
+        await expect(region.getByLabel("Button action count")).toHaveText("0");
+        await region.screenshot({
+          path: `temp/verification/2026-10-25-apple-ui/shared-${width}-${light ? "light" : "dark"}-${reducedMotion}.png`,
+        });
+        await region.getByRole("button", { name: "Toggle pending", exact: true }).click();
+        await expect(actions[0]).not.toHaveAttribute("aria-busy", "true");
+      }
+    }
+  }
+});
+
 test("search clearing fits compact and wide layouts, both themes and keyboard use", async ({
   page,
 }) => {

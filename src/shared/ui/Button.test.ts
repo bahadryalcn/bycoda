@@ -91,3 +91,37 @@ it("keeps a toned submit action focusable and prevents duplicate submissions unt
     vi.unstubAllGlobals();
   }
 });
+
+it.each(["auto", "none"] as const)(
+  "retains focus and blocks duplicate actions when disabled and loading overlap (%s)",
+  async (motion) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const click = vi.fn();
+    const render = (loading: boolean, disabled: boolean) =>
+      createElement(Button, { motion, loading, disabled, onClick: click }, "Refresh");
+    try {
+      await act(async () => root.render(render(false, false)));
+      const button = container.querySelector("button")!;
+      button.focus();
+      await act(async () => root.render(render(true, true)));
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute("aria-busy")).toBe("true");
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      expect(document.activeElement).toBe(button);
+      await act(async () => button.click());
+      expect(click).not.toHaveBeenCalled();
+      await act(async () => root.render(render(false, true)));
+      expect(button.disabled).toBe(true);
+      await act(async () => root.render(render(false, false)));
+      await act(async () => button.click());
+      expect(click).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    }
+  },
+);

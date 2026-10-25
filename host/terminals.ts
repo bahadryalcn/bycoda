@@ -44,7 +44,7 @@ export class HostTerminals {
     project: Project,
     params: Record<string, unknown>,
     owner: string,
-    authorized: () => boolean,
+    authorized: () => boolean | Promise<boolean>,
   ): Promise<HostTerminal> {
     const { requestId, name, profileId } = params;
     if (typeof requestId !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(requestId))
@@ -79,10 +79,10 @@ export class HostTerminals {
   private async open(
     project: Project,
     params: Record<string, unknown>,
-    authorized: () => boolean,
+    authorized: () => boolean | Promise<boolean>,
   ): Promise<HostTerminal> {
     const cwd = await this.locate(project.cwd, params.cwd);
-    if (!authorized()) throw new Error("Device credential is invalid or revoked");
+    if (!(await authorized())) throw new Error("Device credential is invalid or revoked");
     if (this.closed) throw new Error("Host terminals are stopping");
     if (this.entries.size >= MAX_TERMINALS)
       throw new Error("Close a terminal before creating another");
@@ -196,7 +196,9 @@ export class HostTerminals {
 
   async close(): Promise<void> {
     this.closed = true;
-    await Promise.allSettled([...this.entries.values()].map((entry) => entry.process?.stop()));
+    await Promise.allSettled(
+      [...this.entries.values()].map(async (entry) => await entry.process?.stop()),
+    );
     this.entries.clear();
   }
 }

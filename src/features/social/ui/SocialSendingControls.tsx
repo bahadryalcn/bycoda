@@ -1,3 +1,6 @@
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
@@ -5,6 +8,8 @@ import { useState } from "react";
 import { Notice, StatusBadge, type Props } from "./socialShared";
 
 export function SocialSendingControls({ snapshot, client, run }: Props) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [confirmed, setConfirmed] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
@@ -50,7 +55,7 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
           <label className="social-inline-check">
             <Checkbox
               checked={confirmed}
-              disabled={!!pending}
+              disabled={socialLocked || !!pending}
               onChange={(event) => setConfirmed(event.target.checked)}
             />
             {t("Content I approve and active rules may send from my real accounts.")}
@@ -58,13 +63,15 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
           <Button
             variant="primary"
             type="button"
-            loading={pending === "enable"}
-            disabled={!confirmed || !snapshot.hostOnline || !!pending}
+            loading={pendingUi.is("sending.enable")}
+            disabled={socialLocked || !confirmed || !snapshot.hostOnline || !!pending}
             onClick={() =>
-              void execute(
-                "enable",
-                () => client.request("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" }),
-                t("Approved sends enabled. Drafts still need separate approval."),
+              void pendingUi.run("sending.enable", () =>
+                execute(
+                  "enable",
+                  () => client.request("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" }),
+                  t("Approved sends enabled. Drafts still need separate approval."),
+                ),
               )
             }
           >
@@ -81,13 +88,15 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
           variant="secondary"
           type="button"
           tone={snapshot.stopped ? "neutral" : "danger"}
-          loading={pending === "stop"}
-          disabled={!snapshot.hostOnline || !!pending}
+          loading={pendingUi.is("sending.resume")}
+          disabled={socialLocked || !snapshot.hostOnline || !!pending}
           onClick={() =>
-            void execute(
-              "stop",
-              () => client.request("execution.stop", { stopped: !snapshot.stopped }),
-              snapshot.stopped ? t("Sending resumed.") : t("All sending stopped."),
+            void pendingUi.run("sending.resume", () =>
+              execute(
+                "stop",
+                () => client.request("execution.stop", { stopped: !snapshot.stopped }),
+                snapshot.stopped ? t("Sending resumed.") : t("All sending stopped."),
+              ),
             )
           }
         >
@@ -108,15 +117,17 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
         <Button
           variant="secondary"
           type="button"
-          loading={pending === "polling"}
-          disabled={!!pending}
+          loading={pendingUi.is("inbox.toggle-refresh")}
+          disabled={socialLocked || !!pending}
           onClick={() =>
-            void execute(
-              "polling",
-              () => client.request("inbox.polling", { enabled: !snapshot.pollingEnabled }),
-              snapshot.pollingEnabled
-                ? t("Inbox auto-refresh turned off.")
-                : t("Auto-refresh turned on for permitted accounts."),
+            void pendingUi.run("inbox.toggle-refresh", () =>
+              execute(
+                "polling",
+                () => client.request("inbox.polling", { enabled: !snapshot.pollingEnabled }),
+                snapshot.pollingEnabled
+                  ? t("Inbox auto-refresh turned off.")
+                  : t("Auto-refresh turned on for permitted accounts."),
+              ),
             )
           }
         >

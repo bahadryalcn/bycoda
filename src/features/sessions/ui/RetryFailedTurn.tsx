@@ -79,7 +79,7 @@ export function RetryFailedTurn({
         variant="secondary"
         size="sm"
         motion="none"
-        disabled={submitted === key}
+        loading={submitted === key}
         onClick={() => {
           if (submitting.current === key) return;
           submitting.current = key;

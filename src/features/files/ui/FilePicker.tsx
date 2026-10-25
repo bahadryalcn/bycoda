@@ -7,6 +7,7 @@ import { Search } from "../../../shared/ui/icons";
 import { appName } from "../../../shared/lib/appName";
 import {
   useEffect,
+  useId,
   useMemo,
   useDeferredValue,
   useRef,
@@ -132,6 +133,7 @@ export function FilePicker({
   useLocale();
   const peekFiles = () => peekProjectFiles(cwd);
   const search = useRef<HTMLInputElement>(null);
+  const listId = useId();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const [query, setQuery] = useState(initialQuery);
@@ -139,6 +141,8 @@ export function FilePicker({
   const [files, setFiles] = useState(() => peekFiles() ?? []);
   const [loading, setLoading] = useState(() => peekFiles() == null);
   const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [retrying, setRetrying] = useState(false);
 
   const recents = useMemo(() => {
     const out: string[] = [];
@@ -177,11 +181,18 @@ export function FilePicker({
       .sort((a, b) => b.score - a.score);
   }, [actionQuery, paletteMode, cwd, stopBackgroundWork, arrangeLayout]);
   const optionCount = paletteMode ? actionResults.length : results.length;
+  const activeIndex = Math.min(active, Math.max(0, optionCount - 1));
+  const rankingPending = !paletteMode && deferredQuery !== query;
 
   useEffect(() => {
     if (!open) return;
     setQuery(initialQuery);
     setActive(0);
+    setRetrying(false);
+  }, [open, cwd, initialQuery]);
+
+  useEffect(() => {
+    if (!open) return;
     setError(null);
     const searchable = looksLikeProject(cwd);
     const cached = peekFiles();
@@ -202,16 +213,18 @@ export function FilePicker({
         if (cancelled) return;
         setFiles(next);
         setLoading(false);
+        setRetrying(false);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
         setLoading(false);
+        setRetrying(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [open, cwd, initialQuery]);
+  }, [open, cwd, initialQuery, retry]);
 
   useEffect(() => {
     setActive((index) => (optionCount === 0 ? 0 : Math.min(index, optionCount - 1)));
@@ -251,12 +264,14 @@ export function FilePicker({
     if (e.key === "Enter") {
       e.preventDefault();
       if (paletteMode) {
-        const action = actionResults[active];
+        const action = actionResults[activeIndex];
         if (action) runAction(action);
       } else {
         // A pending deferred render may still show the previous query's list.
         const file =
-          deferredQuery === query ? results[active] : rankProjectFiles(files, query, recents)[0];
+          deferredQuery === query
+            ? results[activeIndex]
+            : rankProjectFiles(files, query, recents)[0];
         if (file) pick(file);
       }
       return;
@@ -276,9 +291,24 @@ export function FilePicker({
   });
 
   const pickerLabel = paletteMode ? t("Command Palette") : t("Go to File");
+  const detailedError = !!error && (error.length > 200 || /[\r\n]/.test(error));
+  const errorSummary = error?.split(/[\r\n]/, 1)[0].slice(0, 120);
   return (
-    <Modal title={pickerLabel} size="md" minimalHeader fitViewport={false} onClose={onClose}>
-      <div data-file-picker aria-label={pickerLabel} className="flex flex-col">
+    <Modal
+      title={pickerLabel}
+      size="md"
+      minimalHeader
+      fitViewport={false}
+      className="max-h-[80dvh]"
+      motion="none"
+      onClose={onClose}
+    >
+      <div
+        data-file-picker
+        aria-label={pickerLabel}
+        aria-busy={!paletteMode && loading}
+        className="flex flex-col"
+      >
         <div className="pb-1.5">
           <label className="flex items-center gap-2 border-b border-stroke py-2.5 ps-2 pe-12 text-[var(--ui-text-secondary)]">
             <Search className="icon-sm shrink-0" strokeWidth={1.75} />
@@ -288,6 +318,14 @@ export function FilePicker({
               value={query}
               placeholder={t("Go to File (type > for commands)")}
               aria-label={pickerLabel}
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={optionCount > 0}
+              aria-controls={optionCount > 0 ? listId : undefined}
+              aria-activedescendant={
+                optionCount > 0 && !rankingPending ? `${listId}-option-${activeIndex}` : undefined
+              }
+              aria-busy={(!paletteMode && (loading || rankingPending)) || undefined}
               spellCheck={false}
               autoComplete="off"
               autoCorrect="off"
@@ -301,20 +339,58 @@ export function FilePicker({
             />
           </label>
         </div>
-        {empty ? (
-          <p className="px-3 pb-3 pt-1 text-ui-caption text-[var(--ui-text-secondary)]">{empty}</p>
+        {!paletteMode && (error || retrying) ? (
+          <div className="flex min-w-0 items-start gap-2 px-3 py-2 text-ui-caption">
+            {error && detailedError ? (
+              <details className="min-w-0 flex-1 break-words text-danger">
+                <summary className="cursor-pointer" title={t("Error details")}>
+                  <span role="alert" className="line-clamp-2">
+                    {errorSummary}…
+                  </span>
+                </summary>
+                <p tabIndex={0} className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap">
+                  {error}
+                </p>
+              </details>
+            ) : error ? (
+              <p role="alert" className="min-w-0 flex-1 break-words text-danger">
+                {error}
+              </p>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={retrying}
+              onClick={() => {
+                setRetrying(true);
+                setRetry((value) => value + 1);
+              }}
+            >
+              {t("Retry")}
+            </Button>
+          </div>
+        ) : null}
+        {empty && !(error && !files.length) ? (
+          <p
+            role="status"
+            className="px-3 pb-3 pt-1 text-ui-caption text-[var(--ui-text-secondary)]"
+          >
+            {empty}
+          </p>
         ) : paletteMode ? (
           <ActionList
+            id={listId}
             actions={actionResults}
-            active={active}
+            active={activeIndex}
             query={actionQuery}
             onActive={setActive}
             onRun={runAction}
           />
         ) : (
           <FileList
+            id={listId}
             files={results}
-            active={active}
+            active={activeIndex}
             query={query}
             onActive={setActive}
             onPick={pick}
@@ -356,12 +432,14 @@ function emptyLabel({
 }
 
 function ActionList({
+  id,
   actions,
   active,
   query,
   onActive,
   onRun,
 }: {
+  id: string;
   actions: RankedAction[];
   active: number;
   query: string;
@@ -379,6 +457,7 @@ function ActionList({
   return (
     <div
       ref={lockOverscroll}
+      id={id}
       role="listbox"
       aria-label={t("Commands")}
       className="max-h-[min(380px,50vh)] overflow-y-auto overscroll-none px-1.5 pb-1.5"
@@ -393,6 +472,8 @@ function ActionList({
             ref={highlighted ? activeRef : undefined}
             type="button"
             role="option"
+            id={`${id}-option-${index}`}
+            tabIndex={-1}
             aria-selected={highlighted}
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => onActive(index)}
@@ -416,12 +497,14 @@ function ActionList({
   );
 }
 function FileList({
+  id,
   files,
   active,
   query,
   onActive,
   onPick,
 }: {
+  id: string;
   files: RankedFile[];
   active: number;
   query: string;
@@ -463,6 +546,7 @@ function FileList({
   return (
     <div
       ref={lockOverscroll}
+      id={id}
       role="listbox"
       aria-label={t("Files")}
       onMouseMove={onListMouseMove}
@@ -481,6 +565,8 @@ function FileList({
             ref={highlighted ? activeRef : undefined}
             type="button"
             role="option"
+            id={`${id}-option-${index}`}
+            tabIndex={-1}
             aria-selected={highlighted}
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => onRowEnter(index)}

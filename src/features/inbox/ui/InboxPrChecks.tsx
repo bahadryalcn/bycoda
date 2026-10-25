@@ -220,17 +220,20 @@ function PrCheckRow({
   }, [autoExpand, expandable]);
   useEffect(() => {
     setDetails(null);
+    setError(null);
   }, [detailsKey]);
   useEffect(() => {
     if (!expanded || !jobId || (!cwd && (!check.provider || check.provider === "github"))) return;
     let active = true;
     setLoading(true);
-    setError(null);
     // Routine polls keep evidence mounted while fetching updated job steps.
     fetchCheckDetails(cwd, repo, check)
       .then(
         (result) => {
-          if (active) setDetails(result);
+          if (active) {
+            setDetails(result);
+            setError(null);
+          }
         },
         (reason: unknown) => {
           if (active) setError(reason instanceof Error ? reason.message : String(reason));
@@ -417,7 +420,7 @@ function PrCheckRow({
           id={detailsId}
           className="min-w-0 space-y-3 py-3 pl-10 pr-3 text-ui-caption @max-[420px]/checks:pl-3"
         >
-          {loading && !details ? (
+          {loading && !details && !error ? (
             <p
               role="status"
               className="flex items-center gap-2 px-2 py-1 text-(--ui-text-secondary)"
@@ -430,7 +433,12 @@ function PrCheckRow({
             <Alert tone="info" role="alert">
               <p>{t("Could not load job details.")}</p>
               <p className="break-words text-ui-micro">{error}</p>
-              <Button variant="ghost" type="button" onClick={() => setRetry((value) => value + 1)}>
+              <Button
+                variant="ghost"
+                type="button"
+                loading={loading}
+                onClick={() => setRetry((value) => value + 1)}
+              >
                 {t("Retry details")}
               </Button>
             </Alert>
@@ -552,7 +560,7 @@ export function InboxPrChecks({
   useEffect(() => {
     if (selection && !selectionValid) setSelection(null);
   }, [selection, selectionValid]);
-  if (loading) {
+  if (loading && !checks && !error) {
     return (
       <div className="flex justify-center py-10 text-(--ui-text-secondary)">
         <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
@@ -570,9 +578,10 @@ export function InboxPrChecks({
           type="button"
           title={t("Retry loading checks")}
           aria-label={t("Retry loading checks")}
+          loading={loading || refreshing}
+          startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} />}
           onClick={onRefresh}
         >
-          <RefreshCw className="icon-sm" strokeWidth={1.75} />
           {t("Retry")}
         </Button>
       </div>
@@ -661,14 +670,12 @@ export function InboxPrChecks({
             type="button"
             title={t("Refresh checks")}
             aria-label={t("Refresh checks")}
-            disabled={refreshing}
+            iconOnly
+            label={t("Refresh checks")}
+            loading={refreshing}
             onClick={onRefresh}
           >
-            {refreshing ? (
-              <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} />
-            ) : (
-              <RefreshCw className="icon-sm" strokeWidth={1.75} />
-            )}
+            <RefreshCw className="icon-sm" strokeWidth={1.75} />
           </Button>
         </div>
       </div>

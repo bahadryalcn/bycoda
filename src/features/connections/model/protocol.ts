@@ -137,6 +137,8 @@ export type HostSession = {
   revision: number;
   runId?: string;
   status: "idle" | "running" | "interrupted";
+  /** Current turn executor, projected by the home host; unrelated to desktop sync provenance. */
+  executionOwner?: "host" | "desktop";
   /** Missing from snapshots written before creation time was stored. */
   createdAt?: number;
   updatedAt: number;

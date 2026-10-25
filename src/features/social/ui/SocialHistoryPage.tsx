@@ -1,3 +1,5 @@
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { useContext, useEffect, useState } from "react";
@@ -57,6 +59,7 @@ export function HistoryPageControls({
   label: string;
   onPage: (offset: number) => void;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   if (!page || !page.total || (page.total <= page.limit && !page.offset)) return null;
   return (
@@ -68,7 +71,7 @@ export function HistoryPageControls({
         variant="secondary"
         loading={loading}
         type="button"
-        disabled={loading || !page.offset}
+        disabled={socialLocked || loading || !page.offset}
         onClick={() => onPage(Math.max(0, page.offset - page.limit))}
       >
         {t("Previous records")}
@@ -77,7 +80,7 @@ export function HistoryPageControls({
         variant="secondary"
         loading={loading}
         type="button"
-        disabled={loading || page.offset + page.limit >= page.total}
+        disabled={socialLocked || loading || page.offset + page.limit >= page.total}
         onClick={() => onPage(page.offset + page.limit)}
       >
         {t("Next records")}

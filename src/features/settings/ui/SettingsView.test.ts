@@ -326,7 +326,13 @@ describe("settings pages", () => {
 
   it("groups settings by the workflow they configure and preserves old anchor routes", async () => {
     const ownership = {
-      chat: ["chat-width", "code-word-wrap", "streaming-text-mode", "translation-model-default", "reprompt-model-default"],
+      chat: [
+        "chat-width",
+        "code-word-wrap",
+        "streaming-text-mode",
+        "translation-model-default",
+        "reprompt-model-default",
+      ],
       worktrees: ["git-generation-default", "diff-view", "project-worktrees"],
       groupLock: ["mask-emails", "file-access", "start-in-privacy-mode"],
     } as const;
@@ -901,7 +907,12 @@ describe("settings pages", () => {
     await act(async () => {
       confirm.click();
     });
-    expect(remove.disabled).toBe(true);
+    expect(remove.getAttribute("aria-disabled")).toBe("true");
+    expect(remove.getAttribute("aria-busy")).toBe("true");
+    await act(async () => remove.click());
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "provider_account_remove"),
+    ).toHaveLength(1);
     await act(async () => reject(new Error("Dialog unavailable")));
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("Dialog unavailable");
     expect(remove.disabled).toBe(false);
@@ -1309,6 +1320,7 @@ describe("settings pages", () => {
       command: "/bin/claude",
       binaryProvider: "claude",
       binaryPath: null,
+      targetVersion: "2.1.285",
     });
     expect(group.textContent).toContain("Updated to 2.1.285.");
     expect(group.querySelector('[aria-label="Update Claude Code to 2.1.285"]')).toBeNull();

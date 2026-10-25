@@ -124,11 +124,57 @@ it("explains a saved checkpoint failure and refreshes without claiming to recrea
   );
   const calls = mocks.status.mock.calls.length;
   await act(async () => refresh.click());
-  expect(refresh.disabled).toBe(true);
+  expect(refresh.getAttribute("aria-busy")).toBe("true");
   await act(async () => refresh.click());
   expect(mocks.status).toHaveBeenCalledTimes(calls + 1);
   await act(async () => resolve!({ files: [] }));
   expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("retains the saved change list after a failed refresh and requires recovery before mutation", async () => {
+  mocks.status.mockRejectedValueOnce(new Error("Connection unavailable"));
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((resolve) => setTimeout(resolve, 240));
+  });
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Connection unavailable",
+  );
+  expect(row()).not.toBeNull();
+  const keep = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Keep",
+  )!;
+  expect(keep.disabled).toBe(true);
+  const retry = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Retry",
+  )!;
+  await act(async () => retry.click());
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(row()).not.toBeNull();
+  expect(keep.disabled).toBe(false);
+});
+
+it("keeps focus and progress on Keep until its operation settles", async () => {
+  let resolve!: (value: { files: [] }) => void;
+  mocks.keep.mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const keep = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Keep",
+  )!;
+  keep.focus();
+  act(() => {
+    keep.click();
+    keep.click();
+  });
+  expect(mocks.keep).toHaveBeenCalledTimes(1);
+  expect(keep.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(keep);
+  expect(row()).not.toBeNull();
+  await act(async () => resolve({ files: [] }));
+  expect(container.querySelector("[data-session-review]")).toBeNull();
 });
 
 it("automatically refreshes a recording checkpoint without presenting it as an error", async () => {

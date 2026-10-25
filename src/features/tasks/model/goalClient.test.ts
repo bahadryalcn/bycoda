@@ -14,6 +14,7 @@ import {
   toggleGoalProject,
   replanGoal,
   updateGoal,
+  recheckGoalFinalReview,
   type BoardGoal,
 } from "./goalClient";
 import type { HostGoal, HostGoalInput } from "./hostGoals";
@@ -34,6 +35,10 @@ beforeEach(() => {
   vi.mocked(machineCapabilities).mockResolvedValue([
     "tasks.continue-until-done",
     "goals.direct-checkout",
+    "goals.final-review",
+    "tasks.run-budget",
+    "tasks.preflight",
+    "tasks.evaluation",
   ]);
 });
 
@@ -71,6 +76,64 @@ const stored: HostGoal = {
 };
 
 describe("goal client", () => {
+  it("rejects unsupported final acceptance before project registration or any write", async () => {
+    vi.mocked(machineCapabilities).mockResolvedValue([
+      "tasks.continue-until-done",
+      "goals.direct-checkout",
+    ]);
+    const draft = {
+      ...newGoalDraft("G:/app", "claude", "claude:test"),
+      title: "Goal",
+      prompt: "Deliver checked work",
+    };
+    expect(draft.finalReview).toBe(true);
+    await expect(createGoal([local], draft)).rejects.toThrow("verify the completed goal");
+    expect(remoteRequest).not.toHaveBeenCalled();
+    expect(machineProjects).not.toHaveBeenCalled();
+  });
+
+  it("serializes total budgets and requires their host capability before registration", async () => {
+    const draft = {
+      ...newGoalDraft("G:/app", "claude", "claude:test"),
+      title: "Goal",
+      prompt: "Deliver checked work",
+      budget: { maxAgentMinutes: 12, maxAttempts: 8 },
+    };
+    expect(hostGoalFromDraft(draft, "goal", ["project"], "project")).toMatchObject({
+      finalReview: true,
+      budget: draft.budget,
+    });
+    vi.mocked(machineCapabilities).mockResolvedValue([
+      "tasks.continue-until-done",
+      "goals.direct-checkout",
+      "goals.final-review",
+    ]);
+    await expect(createGoal([local], draft)).rejects.toThrow("total run budget");
+    expect(remoteRequest).not.toHaveBeenCalled();
+    expect(machineProjects).not.toHaveBeenCalled();
+  });
+
+  it("rechecks final acceptance against the exact goal revision", async () => {
+    const [goal] = boardGoalsFromHost(
+      local,
+      [{ id: "p-app", cwd: "G:/app", name: "app" }],
+      [{ ...stored, status: "blocked", finalReview: true }],
+    );
+    vi.mocked(remoteRequest).mockResolvedValue({
+      ...stored,
+      status: "running",
+      finalReview: true,
+      updatedAt: 3,
+    });
+    expect(await recheckGoalFinalReview(goal)).toMatchObject({ status: "running", updatedAt: 3 });
+    expect(remoteRequest).toHaveBeenCalledWith(
+      local.id,
+      "goals.final-review.recheck",
+      { goalId: goal.id, expectedUpdatedAt: goal.updatedAt },
+      false,
+      true,
+    );
+  });
   it("shows a host goal on its machine, with the projects it still has", () => {
     const [goal] = boardGoalsFromHost(
       mac,
@@ -157,6 +220,7 @@ describe("goal client", () => {
       maxRunMinutes: 30,
     };
     expect(hostGoalFromDraft(draft, "id-1", ["p-app", "p-api"], "p-api")).toEqual({
+      finalReview: true,
       id: "id-1",
       title: "Launch",
       prompt: "Ship",

@@ -28,7 +28,7 @@ afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 
-function identities() {
+async function identities() {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-runtime-log-tools-"));
   const store = new HostStore(join(directory, "host.db"));
   const provider = {
@@ -40,9 +40,9 @@ function identities() {
     answer: () => {},
   };
   const engine = new HostEngine(store, { codex: provider });
-  const project = store.addProject(directory, "Project");
-  const other = store.addProject(join(directory, "other"), "Other");
-  const created = engine.command({
+  const project = await store.addProject(directory, "Project");
+  const other = await store.addProject(join(directory, "other"), "Other");
+  const created = await engine.command({
     type: "create",
     commandId: crypto.randomUUID(),
     projectId: project.id,
@@ -51,7 +51,7 @@ function identities() {
     runtimeMode: "supervised",
   });
   const sessions = new Map<string, HostSession>([
-    [created.sessionId, structuredClone(store.session(created.sessionId))],
+    [created.sessionId, structuredClone(await store.session(created.sessionId))],
   ]);
   let clock = 1_000;
   const access = new RuntimeLogAccess(
@@ -67,7 +67,7 @@ function identities() {
   );
   cleanup.push(async () => {
     await engine.close();
-    store.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
   return {
@@ -108,37 +108,39 @@ function mcp(
 }
 
 describe("Read-only session runtime log tools", () => {
-  it("revalidates session, project, provider and expiry while preserving sibling grants", () => {
-    const s = identities();
-    const first = s.access.issueSessionGrant(s.sessionId);
-    const second = s.access.issueSessionGrant(s.sessionId);
-    expect(s.access.principalForToken(first.token)).toMatchObject({
+  it("revalidates session, project, provider and expiry while preserving sibling grants", async () => {
+    const s = await identities();
+    const first = await s.access.issueSessionGrant(s.sessionId);
+    const second = await s.access.issueSessionGrant(s.sessionId);
+    expect(await s.access.principalForToken(first.token)).toMatchObject({
       projectId: s.project.id,
       sessionId: s.sessionId,
     });
-    expect(s.access.principalForToken(second.token)).toBeTruthy();
+    expect(await s.access.principalForToken(second.token)).toBeTruthy();
     s.sessions.get(s.sessionId)!.projectId = s.other.id;
-    expect(s.access.principalForToken(first.token)).toBeUndefined();
+    expect(await s.access.principalForToken(first.token)).toBeUndefined();
     s.sessions.get(s.sessionId)!.projectId = s.project.id;
-    expect(s.access.principalForToken(first.token)).toBeUndefined();
+    expect(await s.access.principalForToken(first.token)).toBeUndefined();
     s.sessions.get(s.sessionId)!.session.harness = "claude";
-    expect(s.access.principalForToken(second.token)).toBeUndefined();
-    const expiring = s.access.issueSessionGrant(s.sessionId);
+    expect(await s.access.principalForToken(second.token)).toBeUndefined();
+    const expiring = await s.access.issueSessionGrant(s.sessionId);
     s.tick(12 * 60 * 60_000);
-    expect(s.access.principalForToken(expiring.token)).toBeUndefined();
+    expect(await s.access.principalForToken(expiring.token)).toBeUndefined();
     s.sessions.delete(s.sessionId);
-    expect(s.access.hasSession(s.sessionId)).toBe(false);
-    expect(() => s.access.issueSessionGrant(s.sessionId)).toThrow("Session not found");
+    expect(await s.access.hasSession(s.sessionId)).toBe(false);
+    await expect((async () => await s.access.issueSessionGrant(s.sessionId))()).rejects.toThrow(
+      "Session not found",
+    );
   });
 
-  it("revokes a native owner's grants when that device is revoked", () => {
-    const s = identities();
-    const device = s.store.issueDevice("Owner");
+  it("revokes a native owner's grants when that device is revoked", async () => {
+    const s = await identities();
+    const device = await s.store.issueDevice("Owner");
     const hash = createHash("sha256").update(device.token).digest("hex");
-    const grant = s.access.issueSessionGrant(s.sessionId, hash);
-    expect(s.access.principalForToken(grant.token)).toBeTruthy();
-    s.store.db.prepare("DELETE FROM devices WHERE hash=?").run(hash);
-    expect(s.access.principalForToken(grant.token)).toBeUndefined();
+    const grant = await s.access.issueSessionGrant(s.sessionId, hash);
+    expect(await s.access.principalForToken(grant.token)).toBeTruthy();
+    await s.store.db.prepare("DELETE FROM devices WHERE hash=?").run(hash);
+    expect(await s.access.principalForToken(grant.token)).toBeUndefined();
   });
 
   it("enforces project scope and validates cursor, limit and protected fields", () => {
@@ -263,7 +265,7 @@ describe("Read-only session runtime log tools", () => {
   });
 
   it("headless provider children receive backend-derived log grants and isolated helpers inherit none", async () => {
-    const s = identities();
+    const s = await identities();
     const directory = mkdtempSync(join(tmpdir(), "bycoda-log-child-"));
     const script = join(directory, "provider.cjs");
     writeFileSync(
@@ -366,7 +368,7 @@ readline.createInterface({input:process.stdin}).on('line', line => console.log(l
 // This follows the existing social-tools convention: test:host builds the CLI first.
 describe("Bundled runtime log CLI and MCP transport", () => {
   it("reads identical project-scoped browser/server data through both entry points", async () => {
-    const s = identities();
+    const s = await identities();
     const logs = new RuntimeLogsService();
     for (const [id, kind, projectId, message] of [
       ["server", "server", s.project.id, "Server failure"],
@@ -377,24 +379,33 @@ describe("Bundled runtime log CLI and MCP transport", () => {
         { id, kind, label: id, projectId, available: true },
         { timestamp: 1, level: "error", message },
       );
-    const grant = s.access.issueSessionGrant(s.sessionId);
+    const grant = await s.access.issueSessionGrant(s.sessionId);
     const server = createServer((request, response) => {
       let raw = "";
       request.on("data", (chunk) => {
         raw += String(chunk);
       });
-      request.on("end", () => {
+      request.on("end", async () => {
         try {
           const token = request.headers.authorization?.replace(/^Bearer /, "") ?? "";
-          const principal = s.access.principalForToken(token);
+          const principal = await s.access.principalForToken(token);
           if (!principal) throw new Error("Invalid grant.");
           const rpc = JSON.parse(raw);
           if (request.url === "/mcp/runtime-logs") {
-            expect(rpc).toMatchObject({ method: "tools/call", params: { name: "runtime_logs_read" } });
+            expect(rpc).toMatchObject({
+              method: "tools/call",
+              params: { name: "runtime_logs_read" },
+            });
             const query = runtimeLogToolQuery("read", rpc.params.arguments, principal);
-            response.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result: {
-              content: [{ type: "text", text: JSON.stringify(logs.read(query)) }],
-            } }));
+            response.end(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: rpc.id,
+                result: {
+                  content: [{ type: "text", text: JSON.stringify(logs.read(query)) }],
+                },
+              }),
+            );
             return;
           }
 
@@ -433,11 +444,11 @@ describe("Bundled runtime log CLI and MCP transport", () => {
     };
     const run = (mode: string, args: string[], input: string) =>
       new Promise<{ code: number | null; stdout: string; stderr: string }>((done, reject) => {
-        const child = spawn(
-          process.execPath,
-          [resolve("build/host/host.mjs"), mode, ...args],
-          { env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
-        );
+        const child = spawn(process.execPath, [resolve("build/host/host.mjs"), mode, ...args], {
+          env,
+          windowsHide: true,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
         let stdout = "",
           stderr = "";
         const timer = setTimeout(() => {

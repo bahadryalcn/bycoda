@@ -81,6 +81,36 @@ async function submit() {
   });
 }
 
+it("shows progress on the active Jira operation without labelling a successful connection as disconnecting", async () => {
+  let finishProjects!: () => void;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "jira_status") return { connected: false, site: "", email: "" };
+    if (command === "jira_set_config") return { connected: true, ...(args as object) };
+    if (command === "jira_list_projects")
+      return new Promise((resolve) => {
+        finishProjects = () => resolve([{ id: "1", key: "ENG", name: "Engineering" }]);
+      });
+    if (command === "jira_list_boards") return [];
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  await act(async () => root.render(createElement(JiraSettings)));
+  await input("Jira site", "example.atlassian.net");
+  await input("Atlassian email", "test@example.com");
+  await input("Jira API token", "test-key");
+  await submit();
+  const disconnect = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Disconnect",
+  )!;
+  expect(disconnect).toBeDefined();
+  expect(disconnect.getAttribute("aria-busy")).not.toBe("true");
+  expect(container.textContent).not.toContain("Disconnecting");
+  expect(
+    container.querySelector('section[aria-label="Projects"] button[aria-busy="true"]'),
+  ).not.toBeNull();
+  await act(async () => finishProjects());
+  expect(disconnect.disabled).toBe(false);
+});
+
 it("connects Jira, synchronizes project filters, and disconnects", async () => {
   await act(async () => root.render(createElement(JiraSettings)));
   await input("Jira site", "acme.atlassian.net");

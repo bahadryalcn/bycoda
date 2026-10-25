@@ -103,6 +103,56 @@ describe("task board", () => {
     expect(hostTaskFromDraft(draft, "main", "project-1")).toEqual(parseHostTask(stored));
   });
 
+  it("retains budget, workflow, preparation and independent reviewer settings when editing", () => {
+    const task: HostTask = {
+      ...stored,
+      budget: { maxAgentMinutes: 8, maxAttempts: 6, warningPercent: 80 },
+      workflowId: "workflow",
+      workflowVersion: 3,
+      preflightRequirements: [{ kind: "source", id: "sources/report.md", required: true }],
+      reviewerConfig: {
+        harness: "codex",
+        model: "review",
+        modelSettings: { effort: "high" },
+        instructions: "Check sources",
+      },
+    };
+    const draft = draftFromTask(boardTaskFromHost(local, "G:/app", task));
+    expect(hostTaskFromDraft(draft, task.id, task.projectId)).toMatchObject({
+      budget: task.budget,
+      workflowId: "workflow",
+      workflowVersion: 3,
+      preflightRequirements: task.preflightRequirements,
+      reviewerConfig: task.reviewerConfig,
+    });
+  });
+
+  it("serializes an existing reviewer toggle-off as an explicit wire clear", () => {
+    const task: HostTask = {
+      ...stored,
+      reviewerConfig: {
+        harness: "codex",
+        model: "review",
+        modelSettings: { effort: "high" },
+        instructions: "Check sources",
+      },
+    };
+    const draft = draftFromTask(boardTaskFromHost(local, "G:/app", task));
+    const cleared = hostTaskFromDraft(
+      { ...draft, reviewerConfig: undefined },
+      task.id,
+      task.projectId,
+    );
+    expect(JSON.parse(JSON.stringify(cleared))).toHaveProperty("reviewerConfig", null);
+    expect(
+      hostTaskFromDraft(
+        { ...newTaskDraft("G:/app", "codex", "codex:test"), reviewerConfig: undefined },
+        "new",
+        task.projectId,
+      ),
+    ).not.toHaveProperty("reviewerConfig");
+  });
+
   it("starts a draft with no time limit and refuses agents a host cannot run", () => {
     const draft = newTaskDraft("G:/app", "claude", "claude:test");
     expect(draft).toMatchObject({

@@ -3,6 +3,7 @@ export async function readyPtyBridge() {}
 export async function spawnPty() {}
 export async function killPty() {}
 export async function resizePty() {}
+export async function setPtyVisible() {}
 export async function getPtyStatus() {
   return { foreground: null, supported: false };
 }

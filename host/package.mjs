@@ -92,6 +92,8 @@ for (const target of targets) {
   } else extractTarMembers(archive, folder, [`${stem}/bin/node`, `${stem}/LICENSE`]);
   await copyFile("build/host/host.mjs", join(folder, "host.mjs"));
   await copyFile("build/host/bycoda-host.mjs", join(folder, "bycoda-host.mjs"));
+  await copyFile("build/host/host-notes-worker.mjs", join(folder, "host-notes-worker.mjs"));
+  await copyFile("build/host/store-worker.mjs", join(folder, "store-worker.mjs"));
   await copyFile("host/provider-guard.mjs", join(folder, "provider-guard.mjs"));
   await copyFile("LICENSE", join(folder, "BYCODA-LICENSE"));
   await writeFile(join(folder, "version.json"), JSON.stringify({ version, nodeVersion, target }));

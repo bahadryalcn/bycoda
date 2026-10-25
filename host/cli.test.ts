@@ -2,7 +2,15 @@ import { expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createServer, type AddressInfo } from "node:net";
-import { mkdtempSync, existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdtempSync,
+  existsSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -26,6 +34,10 @@ it(
       readFileSync(resolve("build/host/bycoda-host.mjs"), "utf8") +
         '\nif (process.argv[2] === "serve") setInterval(() => {}, 60_000);\n',
     );
+    // The detached bundle resolves SQLite and Notes workers relative to itself.
+    for (const sidecar of ["store-worker.mjs", "host-notes-worker.mjs", "provider-guard.mjs"]) {
+      copyFileSync(resolve("build/host", sidecar), join(directory, sidecar));
+    }
     const run = (...args: string[]) =>
       exec(process.execPath, [cli, ...args, "--data-dir", directory, "--port", String(port)], {
         timeout: process.platform === "win32" ? 25_000 : 10_000,

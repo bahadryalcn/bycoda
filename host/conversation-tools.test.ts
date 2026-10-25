@@ -15,6 +15,36 @@ import {
 } from "./conversation-tools";
 
 const principal = { kind: "session" as const, projectId: "p", sessionId: "s", provider: "codex" };
+
+it("claims a relay request once across concurrent asynchronous authority checks and rejects a close during finish", async () => {
+  const relay = new ConversationDesktopRelay();
+  await relay.take("native");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const pending = relay.call(
+    "terminals.write",
+    { terminalId: "t", data: "pwd\n" },
+    "/project",
+    principal,
+    async () => {
+      await gate;
+      return true;
+    },
+  );
+  const rejected = expect(pending).rejects.toThrow("Host stopped");
+  const first = relay.take("native");
+  const second = relay.take("other");
+  release();
+  const claimed = await Promise.all([first, second]);
+  expect(claimed.flat()).toHaveLength(1);
+  const [request] = claimed[0];
+  const finish = relay.finish(String(request.id), {}, undefined, "native");
+  relay.close();
+  await expect(finish).rejects.toThrow("expired");
+  await rejected;
+});
 describe("Conversation Tools boundary", () => {
   it("scopes lifecycle writes without accepting owner approval or source identity overrides", () => {
     for (const [action, input] of Object.entries({
@@ -23,13 +53,26 @@ describe("Conversation Tools boundary", () => {
       "files.delete": { path: "a", expectedHash: "a".repeat(64) },
       "tasks.transfer": { taskId: "task", targetProjectId: "destination", expectedUpdatedAt: 1 },
       "tasks.delete": { taskId: "task", expectedUpdatedAt: 1 },
-      "tasks.notes.resolve": { taskId: "task", noteId: "note", resolved: true, expectedUpdatedAt: 1 },
+      "tasks.notes.resolve": {
+        taskId: "task",
+        noteId: "note",
+        resolved: true,
+        expectedUpdatedAt: 1,
+      },
       "stewards.delete": { stewardId: "steward", expectedUpdatedAt: 1 },
-      "stewards.decline": { stewardId: "steward", taskId: "task", expectedUpdatedAt: 1, expectedTaskUpdatedAt: 1 },
+      "stewards.decline": {
+        stewardId: "steward",
+        taskId: "task",
+        expectedUpdatedAt: 1,
+        expectedTaskUpdatedAt: 1,
+      },
     })) {
       expect(() => validateConversationTool(action, input)).not.toThrow();
-      expect(conversationToolCatalog().find((tool) => tool.action === action)?.annotations.readOnlyHint).toBe(false);
-      for (const extra of [{ approved: true }, { projectId: "other" }, { discard: true }]) expect(() => validateConversationTool(action, { ...input, ...extra })).toThrow();
+      expect(
+        conversationToolCatalog().find((tool) => tool.action === action)?.annotations.readOnlyHint,
+      ).toBe(false);
+      for (const extra of [{ approved: true }, { projectId: "other" }, { discard: true }])
+        expect(() => validateConversationTool(action, { ...input, ...extra })).toThrow();
     }
   });
   it("documents every catalog action without a generic fallback", () => {
@@ -43,13 +86,28 @@ describe("Conversation Tools boundary", () => {
     }
   });
   it("accepts schema-valid editor saves larger than the old stdio line cap", async () => {
-    const input = new PassThrough(), output = new PassThrough();
+    const input = new PassThrough(),
+      output = new PassThrough();
     let raw = "";
-    output.on("data", (chunk) => { raw += String(chunk); });
+    output.on("data", (chunk) => {
+      raw += String(chunk);
+    });
     const call = vi.fn(async () => ({ saved: true }));
     const run = runConversationMcp(input, output, call);
-    input.end(JSON.stringify({ id: 1, method: "tools/call", params: { name: "conversation_files_write",
-      arguments: { path: "large.txt", expectedHash: "a".repeat(64), content: "\n".repeat(200000) } } }) + "\n");
+    input.end(
+      JSON.stringify({
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "conversation_files_write",
+          arguments: {
+            path: "large.txt",
+            expectedHash: "a".repeat(64),
+            content: "\n".repeat(200000),
+          },
+        },
+      }) + "\n",
+    );
     await run;
     expect(call).toHaveBeenCalledOnce();
     expect(JSON.parse(raw).result.isError).toBeUndefined();
@@ -380,53 +438,80 @@ describe("Conversation Tools boundary", () => {
   });
   it("fails offline, claims once, binds results to the native owner and never replays writes", async () => {
     const relay = new ConversationDesktopRelay();
-    expect(() => relay.call("terminals.list", {}, "/project", principal)).toThrow("offline");
-    relay.take("owner");
+    await expect(
+      (async () => await relay.call("terminals.list", {}, "/project", principal))(),
+    ).rejects.toThrow("offline");
+    await relay.take("owner");
     const result = relay.call(
       "terminals.write",
       { terminalId: "terminal", data: "pwd\n" },
       "/project",
       principal,
     );
-    const requests = relay.take("owner");
+    const requests = await relay.take("owner");
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       cwd: "/project",
       sessionId: "s",
       action: "terminals.write",
     });
-    expect(relay.take("owner")).toEqual([]);
-    expect(() => relay.finish(String(requests[0].id), {}, undefined, "other")).toThrow();
-    relay.finish(String(requests[0].id), { accepted: true }, undefined, "owner");
+    expect(await relay.take("owner")).toEqual([]);
+    await expect(
+      (async () => await relay.finish(String(requests[0].id), {}, undefined, "other"))(),
+    ).rejects.toThrow();
+    await relay.finish(String(requests[0].id), { accepted: true }, undefined, "owner");
     await expect(result).resolves.toEqual({ accepted: true });
-    expect(() => relay.finish(String(requests[0].id), {})).toThrow();
+    await expect((async () => await relay.finish(String(requests[0].id), {}))()).rejects.toThrow();
     relay.close();
   });
   it("rechecks claimed authority for the exact native owner and action after a pending approval", async () => {
     const relay = new ConversationDesktopRelay();
-    relay.take("native-owner");
+    await relay.take("native-owner");
     let authorized = true;
-    const pending = relay.call("ssh.workspace.approve", {}, "/project", principal, () => authorized);
+    const pending = relay.call(
+      "ssh.workspace.approve",
+      {},
+      "/project",
+      principal,
+      () => authorized,
+    );
     // Checking does not claim or deliver a request.
-    expect(relay.authorize("missing", "ssh.workspace.approve", "native-owner")).toEqual({ authorized: false });
-    const request = relay.take("native-owner")[0];
+    expect(await relay.authorize("missing", "ssh.workspace.approve", "native-owner")).toEqual({
+      authorized: false,
+    });
+    const request = (await relay.take("native-owner"))[0];
     const id = String(request.id);
-    expect(relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({ authorized: true });
-    expect(relay.authorize(id, "ssh.workspace.close.approve", "native-owner")).toEqual({ authorized: false });
-    expect(relay.authorize(id, "ssh.workspace.approve", "other-owner")).toEqual({ authorized: false });
+    expect(await relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({
+      authorized: true,
+    });
+    expect(await relay.authorize(id, "ssh.workspace.close.approve", "native-owner")).toEqual({
+      authorized: false,
+    });
+    expect(await relay.authorize(id, "ssh.workspace.approve", "other-owner")).toEqual({
+      authorized: false,
+    });
     const time = vi.spyOn(Date, "now").mockReturnValue(Number(request.deadline));
-    try { expect(relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({ authorized: false }); }
-    finally { time.mockRestore(); }
+    try {
+      expect(await relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({
+        authorized: false,
+      });
+    } finally {
+      time.mockRestore();
+    }
     authorized = false;
-    expect(relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({ authorized: false });
-    relay.finish(id, {}, undefined, "native-owner");
+    expect(await relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({
+      authorized: false,
+    });
+    await relay.finish(id, {}, undefined, "native-owner");
     await expect(pending).rejects.toThrow("revoked");
-    expect(relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({ authorized: false });
+    expect(await relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({
+      authorized: false,
+    });
     relay.close();
   });
   it("does not deliver revoked or expired queued authority to the desktop", async () => {
     const relay = new ConversationDesktopRelay();
-    relay.take();
+    await relay.take();
     let authorized = true;
     const result = relay.call(
       "terminals.write",
@@ -436,7 +521,7 @@ describe("Conversation Tools boundary", () => {
       () => authorized,
     );
     authorized = false;
-    expect(relay.take()).toEqual([]);
+    expect(await relay.take()).toEqual([]);
     await expect(result).rejects.toThrow("revoked");
     relay.close();
   });

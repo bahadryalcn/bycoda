@@ -118,89 +118,128 @@ function stewardPrompt(
  * project in a throwaway checkout and proposes work as to-do items on the task
  * board. Runs on this machine's own clock, with no desktop open. */
 export class HostStewards {
+  private closing = false;
+  private disposal?: Promise<void>;
+  private readonly manualRuns = new Set<Promise<HostSteward>>();
   private timer?: ReturnType<typeof setInterval>;
   private ticking?: Promise<void>;
   /** Stewards whose run is being started, so a second start does not overlap. */
   private readonly starting = new Set<string>();
 
+  readonly ready: Promise<void>;
   constructor(
     private readonly store: HostStore,
     private readonly engine: SessionRunEngine & Pick<HostEngine, "waitForRun">,
     private readonly tasks: HostTasks,
     private readonly now: () => number = Date.now,
   ) {
-    store.db.exec(
-      "CREATE TABLE IF NOT EXISTS stewards (id TEXT PRIMARY KEY, value TEXT NOT NULL);",
-    );
-    tasks.limits.track(() =>
-      this.list().flatMap((steward) => (steward.run ? [steward.run.startedAt] : [])),
-    );
+    this.ready = (async () => {
+      await store.ready;
+      await tasks.ready;
+      await store.db.scope(async () => {
+        await store.db.exec(
+          "CREATE TABLE IF NOT EXISTS stewards (id TEXT PRIMARY KEY, value TEXT NOT NULL);",
+        );
+        tasks.limits.track(async () =>
+          (await this.list()).flatMap((steward) => (steward.run ? [steward.run.startedAt] : [])),
+        );
+      });
+    })();
   }
 
   start(): void {
-    void this.tick();
-    this.timer = setInterval(() => void this.tick(), TICK_MS);
-    this.timer.unref?.();
+    if (this.closing || this.timer) return;
+    this.store.db.outsideScope(() => {
+      const kick = () =>
+        void this.ready
+          .then(() => this.tick())
+          .catch((error) => console.error("Steward scheduling failed:", error));
+      kick();
+      this.timer = setInterval(kick, TICK_MS);
+      this.timer.unref?.();
+    });
   }
 
   stop(): void {
     clearInterval(this.timer);
     this.timer = undefined;
   }
+  close(): Promise<void> {
+    if (this.disposal) return this.disposal;
+    this.closing = true;
+    this.stop();
+    this.disposal = (async () => {
+      await this.ready;
+      await Promise.allSettled([...this.manualRuns]);
+      await this.idle();
+    })();
+    return this.disposal;
+  }
 
   /** Resolves once no tick is in progress. */
   async idle(): Promise<void> {
+    await this.ready;
+
     while (this.ticking || this.starting.size)
       await (this.ticking ?? new Promise((resolve) => setTimeout(resolve, 5)));
   }
 
-  list(): HostSteward[] {
-    return this.store.db
-      .prepare("SELECT value FROM stewards")
-      .all()
+  async list(): Promise<HostSteward[]> {
+    await this.ready;
+
+    return (await this.store.db.prepare("SELECT value FROM stewards").all())
       .map((row) => JSON.parse(String(row.value)) as HostSteward)
       .sort((a, b) => a.createdAt - b.createdAt);
   }
 
   /** Adds or edits a steward. A project has at most one. */
-  save(raw: unknown): HostSteward {
-    const input = parseHostSteward(raw);
-    this.store.project(input.projectId);
-    if (this.list().some((other) => other.projectId === input.projectId && other.id !== input.id))
-      throw new Error("This project already has a steward.");
-    const now = this.now();
-    const previous = this.find(input.id);
-    assertExpectedConfiguration(raw, previous, parseHostSteward);
-    if (
-      previous &&
-      previous.projectId !== input.projectId &&
-      (previous.run || this.starting.has(input.id))
-    )
-      throw new Error("Wait for the steward run to finish before changing its project.");
-    return this.write({
-      ...input,
-      nextRunAt: nextAutomationRunAt(input, now),
-      lastRunAt: previous?.lastRunAt,
-      lastRunStatus: previous?.lastRunStatus,
-      lastRunError: previous?.lastRunError,
-      lastSessionId: previous?.lastSessionId,
-      lastProposed: previous?.lastProposed,
-      declined: previous?.declined ?? [],
-      run: previous?.run,
-      createdAt: previous?.createdAt ?? now,
-      updatedAt: Math.max(now, (previous?.updatedAt ?? -1) + 1),
+  async save(raw: unknown): Promise<HostSteward> {
+    await this.ready;
+    return this.store.db.scope(async () => {
+      const input = parseHostSteward(raw);
+      await this.store.project(input.projectId);
+      if (
+        (await this.list()).some(
+          (other) => other.projectId === input.projectId && other.id !== input.id,
+        )
+      )
+        throw new Error("This project already has a steward.");
+      const now = this.now();
+      const previous = await this.find(input.id);
+      assertExpectedConfiguration(raw, previous, parseHostSteward);
+      if (
+        previous &&
+        previous.projectId !== input.projectId &&
+        (previous.run || this.starting.has(input.id))
+      )
+        throw new Error("Wait for the steward run to finish before changing its project.");
+      return await this.write({
+        ...input,
+        nextRunAt: nextAutomationRunAt(input, now),
+        lastRunAt: previous?.lastRunAt,
+        lastRunStatus: previous?.lastRunStatus,
+        lastRunError: previous?.lastRunError,
+        lastSessionId: previous?.lastSessionId,
+        lastProposed: previous?.lastProposed,
+        declined: previous?.declined ?? [],
+        run: previous?.run,
+        createdAt: previous?.createdAt ?? now,
+        updatedAt: Math.max(now, (previous?.updatedAt ?? -1) + 1),
+      });
     });
   }
 
   /** Deletes a steward, stopping its run. Its proposals stay on the board. */
   async delete(id: string): Promise<void> {
-    const steward = this.find(id);
+    await this.ready;
+
+    const steward = await this.find(id);
     if (!steward) return;
-    this.store.db.prepare("DELETE FROM stewards WHERE id=?").run(id);
+    await this.store.db.prepare("DELETE FROM stewards WHERE id=?").run(id);
     if (steward.run) {
       try {
-        cancelSessionRun(this.engine, steward.run);
-        this.tasks.limits.record(steward.run.startedAt, this.now());
+        await cancelSessionRun(this.engine, steward.run);
+        await this.tasks.limits.record(steward.run.startedAt, this.now());
       } catch {
         /* the session is gone */
       }
@@ -210,46 +249,67 @@ export class HostStewards {
   }
 
   /** Starts a run now, whatever the schedule says. */
-  async runNow(id: string): Promise<HostSteward> {
-    const steward = this.find(id);
+  runNow(id: string): Promise<HostSteward> {
+    if (this.closing) return Promise.reject(new Error("Steward service is closing."));
+    const pending = this.runNowOwned(id);
+    this.manualRuns.add(pending);
+    void pending.then(
+      () => this.manualRuns.delete(pending),
+      () => this.manualRuns.delete(pending),
+    );
+    return pending;
+  }
+  private async runNowOwned(id: string): Promise<HostSteward> {
+    if (this.closing) throw new Error("Steward service is closing.");
+    await this.ready;
+
+    const steward = await this.find(id);
     if (!steward) throw new Error("Steward not found.");
     await this.begin(steward, this.now());
-    return this.find(id) ?? steward;
+    return (await this.find(id)) ?? steward;
   }
 
   /** Cancels only the named active turn. The normal tick settles and cleans it. */
-  stopRun(id: string, runId: string): { requested: true; run: NonNullable<HostSteward["run"]> } {
-    const steward = this.find(id);
+  async stopRun(
+    id: string,
+    runId: string,
+  ): Promise<{ requested: true; run: NonNullable<HostSteward["run"]> }> {
+    await this.ready;
+
+    const steward = await this.find(id);
     if (!steward?.run || steward.run.runId !== runId)
       throw new Error("Steward run is no longer active. Read it before stopping.");
-    cancelSessionRun(this.engine, steward.run);
+    await cancelSessionRun(this.engine, steward.run);
     return { requested: true, run: steward.run };
   }
 
   /** Deletes a to-do proposal and remembers its title, so the steward does not
    * propose it again. */
   async decline(taskId: string): Promise<void> {
-    const task = this.tasks.get(taskId);
+    await this.ready;
+
+    const task = await this.tasks.get(taskId);
     if (!task) throw new Error("Task not found.");
     if (task.source !== "steward" || task.status !== "todo")
       throw new Error("Only a to-do suggestion from a steward can be declined.");
     // A dependency/branch guard may reject deletion. Do not suppress a proposal
     // title until its task has actually been removed.
     await this.tasks.delete(taskId);
-    const steward = task.stewardId ? this.find(task.stewardId) : undefined;
+    const steward = task.stewardId ? await this.find(task.stewardId) : undefined;
     if (steward) {
       const title = normalizeStewardTitle(task.title);
       const declined = [
         ...steward.declined.filter((entry) => entry !== title),
         ...(title ? [title] : []),
       ].slice(-MAX_DECLINED);
-      this.write({ ...steward, declined, updatedAt: this.now() });
+      await this.write({ ...steward, declined, updatedAt: this.now() });
     }
   }
 
   /** Settles finished runs, stops runs past their time limit, starts due ones.
    * A tick already in progress is not joined by a second one. */
   tick(): Promise<void> {
+    if (this.closing) return Promise.resolve();
     this.ticking ??= this.work().finally(() => {
       this.ticking = undefined;
     });
@@ -258,7 +318,8 @@ export class HostStewards {
 
   private async work(): Promise<void> {
     const now = this.now();
-    for (const steward of this.list()) {
+    for (const steward of await this.list()) {
+      if (this.closing) return;
       if (!steward.run) continue;
       try {
         await this.settle(steward, now);
@@ -266,10 +327,11 @@ export class HostStewards {
         console.error("Could not settle a steward run:", errorMessage(error));
       }
     }
-    for (const steward of this.list()) {
+    for (const steward of await this.list()) {
+      if (this.closing) return;
       if (!steward.enabled || steward.nextRunAt > now) continue;
       try {
-        const due = this.write({
+        const due = await this.write({
           ...steward,
           nextRunAt: nextAutomationRunAt(steward, now),
         });
@@ -280,13 +342,13 @@ export class HostStewards {
     }
   }
 
-  private find(id: string): HostSteward | undefined {
-    const row = this.store.db.prepare("SELECT value FROM stewards WHERE id=?").get(id);
+  private async find(id: string): Promise<HostSteward | undefined> {
+    const row = await this.store.db.prepare("SELECT value FROM stewards WHERE id=?").get(id);
     return row ? (JSON.parse(String(row.value)) as HostSteward) : undefined;
   }
 
-  private write(steward: HostSteward): HostSteward {
-    this.store.db
+  private async write(steward: HostSteward): Promise<HostSteward> {
+    await this.store.db
       .prepare(
         "INSERT INTO stewards VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
       )
@@ -295,64 +357,71 @@ export class HostStewards {
   }
 
   /** Records how a run that did not (or no longer does) go on ended. */
-  private finish(
+  private async finish(
     steward: HostSteward,
     status: StewardRunStatus,
     error: string | undefined,
     now: number,
     proposed?: number,
-  ): HostSteward {
-    // Read again: the owner may have edited or declined meanwhile.
-    const latest = this.find(steward.id);
-    if (!latest) return steward;
-    const { run, ...rest } = latest;
-    return this.write({
-      ...rest,
-      lastRunAt: now,
-      lastRunStatus: status,
-      lastRunError: error || undefined,
-      lastSessionId: run?.sessionId ?? steward.run?.sessionId ?? latest.lastSessionId,
-      ...(proposed !== undefined ? { lastProposed: proposed } : {}),
+  ): Promise<HostSteward> {
+    return this.store.db.scope(async () => {
+      // Read again: the owner may have edited or declined meanwhile.
+      const latest = await this.find(steward.id);
+      if (!latest) return steward;
+      const { run, ...rest } = latest;
+      return await this.write({
+        ...rest,
+        lastRunAt: now,
+        lastRunStatus: status,
+        lastRunError: error || undefined,
+        lastSessionId: run?.sessionId ?? steward.run?.sessionId ?? latest.lastSessionId,
+        ...(proposed !== undefined ? { lastProposed: proposed } : {}),
+      });
     });
   }
 
   /** Records a skipped run. A run still going is left as it is. */
-  private skip(steward: HostSteward, reason: string, now: number): void {
-    const latest = this.find(steward.id);
-    if (!latest) return;
-    this.write({
-      ...latest,
-      lastRunAt: now,
-      lastRunStatus: "skipped",
-      lastRunError: reason,
+  private async skip(steward: HostSteward, reason: string, now: number): Promise<void> {
+    return this.store.db.scope(async () => {
+      const latest = await this.find(steward.id);
+      if (!latest) return;
+      await this.write({
+        ...latest,
+        lastRunAt: now,
+        lastRunStatus: "skipped",
+        lastRunError: reason,
+      });
     });
   }
 
   /** Starts a run unless the steward must skip it. */
   private async begin(steward: HostSteward, now: number): Promise<void> {
-    if (this.starting.has(steward.id) || this.find(steward.id)?.run) {
-      this.skip(steward, PREVIOUS_RUN_SKIP, now);
-      return;
-    }
-    if (this.tasks.limits.reached()) {
-      this.skip(steward, DAILY_LIMIT_SKIP, now);
+    if (this.closing) return;
+    if (this.starting.has(steward.id)) {
+      await this.skip(steward, PREVIOUS_RUN_SKIP, now);
       return;
     }
     this.starting.add(steward.id);
     try {
-      const open = this.tasks
-        .list()
-        .filter(
-          (task) =>
-            task.source === "steward" &&
-            task.projectId === steward.projectId &&
-            (task.status === "todo" || task.status === "queued"),
-        ).length;
-      if (open >= steward.maxOpen) {
-        this.skip(steward, openLimitSkip(steward.maxOpen), now);
+      if ((await this.find(steward.id))?.run) {
+        await this.skip(steward, PREVIOUS_RUN_SKIP, now);
         return;
       }
-      const project = this.store.project(steward.projectId);
+      if (await this.tasks.limits.reached()) {
+        await this.skip(steward, DAILY_LIMIT_SKIP, now);
+        return;
+      }
+      const open = (await this.tasks.list()).filter(
+        (task) =>
+          task.source === "steward" &&
+          task.projectId === steward.projectId &&
+          (task.status === "todo" || task.status === "queued"),
+      ).length;
+      if (open >= steward.maxOpen) {
+        await this.skip(steward, openLimitSkip(steward.maxOpen), now);
+        return;
+      }
+      const project = await this.store.project(steward.projectId);
       let worktree: { path: string; branch: string } | undefined;
       try {
         if (await isRepository(project.cwd)) {
@@ -361,19 +430,54 @@ export class HostStewards {
           worktree = { path: tree.path, branch };
         }
       } catch (error) {
-        this.finish(steward, "failed", `Could not create a checkout: ${errorMessage(error)}`, now);
+        await this.finish(
+          steward,
+          "failed",
+          `Could not create a checkout: ${errorMessage(error)}`,
+          now,
+        );
         return;
       }
-      const started = launchSessionRun(this.store, this.engine, {
-        projectId: steward.projectId,
-        harness: steward.harness,
-        model: steward.model,
-        modelSettings: steward.modelSettings,
-        runtimeMode: steward.runtimeMode,
-        title: `Steward: ${project.name}`.slice(0, 200),
-        prompt: stewardPrompt(steward, project, this.tasks.list(), worktree?.path),
-        ...(worktree ? { worktreeCwd: worktree.path } : {}),
-      });
+      if (this.closing) {
+        if (worktree)
+          await this.removeWorktree(steward.projectId, {
+            worktreeCwd: worktree.path,
+            branch: worktree.branch,
+          });
+        return;
+      }
+      const prompt = stewardPrompt(steward, project, await this.tasks.list(), worktree?.path);
+      if (this.closing) {
+        if (worktree)
+          await this.removeWorktree(steward.projectId, {
+            worktreeCwd: worktree.path,
+            branch: worktree.branch,
+          });
+        return;
+      }
+      const started = await launchSessionRun(
+        this.store,
+        this.engine,
+        {
+          projectId: steward.projectId,
+          harness: steward.harness,
+          model: steward.model,
+          modelSettings: steward.modelSettings,
+          runtimeMode: steward.runtimeMode,
+          title: `Steward: ${project.name}`.slice(0, 200),
+          prompt,
+          ...(worktree ? { worktreeCwd: worktree.path } : {}),
+        },
+        () => !this.closing,
+      );
+      if (started.deferred) {
+        if (worktree)
+          await this.removeWorktree(steward.projectId, {
+            worktreeCwd: worktree.path,
+            branch: worktree.branch,
+          });
+        return;
+      }
       const run = {
         sessionId: started.sessionId,
         runId: started.runId,
@@ -383,7 +487,7 @@ export class HostStewards {
       };
       if (started.error !== undefined) {
         await this.removeWorktree(steward.projectId, run);
-        this.finish(
+        await this.finish(
           { ...steward, run },
           "failed",
           `Could not start the steward: ${started.error}`,
@@ -391,14 +495,14 @@ export class HostStewards {
         );
         return;
       }
-      const latest = this.find(steward.id);
+      const latest = await this.find(steward.id);
       if (!latest) {
         // Deleted while its checkout was made.
-        cancelSessionRun(this.engine, run);
+        await cancelSessionRun(this.engine, run);
         await this.removeWorktree(steward.projectId, run);
         return;
       }
-      this.write({
+      await this.write({
         ...latest,
         run,
         lastRunStatus: "running",
@@ -413,19 +517,19 @@ export class HostStewards {
   private async settle(steward: HostSteward, now: number): Promise<void> {
     const run = steward.run!;
     if (this.starting.has(steward.id)) return;
-    const outcome = sessionRunState(this.store, run, STEWARD_RUN_MINUTES, now);
+    const outcome = await sessionRunState(this.store, run, STEWARD_RUN_MINUTES, now);
     if (outcome.state === "running") return;
     if (outcome.state === "overLimit") {
       // The reason is saved first: the turn settles asynchronously, and a
       // later tick records it as the outcome.
-      this.write({ ...steward, run: { ...run, error: outcome.error } });
-      cancelSessionRun(this.engine, run);
+      await this.write({ ...steward, run: { ...run, error: outcome.error } });
+      await cancelSessionRun(this.engine, run);
       return;
     }
-    this.tasks.limits.record(run.startedAt, now);
+    await this.tasks.limits.record(run.startedAt, now);
     if (outcome.status !== "succeeded") {
       await this.removeWorktree(steward.projectId, run);
-      this.finish(
+      await this.finish(
         steward,
         outcome.status === "cancelled" ? "cancelled" : "failed",
         outcome.error,
@@ -436,19 +540,25 @@ export class HostStewards {
     let proposed: number;
     let failure: string | undefined;
     try {
-      proposed = this.propose(steward, this.reply(run.sessionId ?? ""));
+      proposed = await this.propose(steward, await this.reply(run.sessionId ?? ""));
     } catch (error) {
       proposed = 0;
       failure = errorMessage(error);
     }
     await this.removeWorktree(steward.projectId, run);
-    this.finish(steward, failure === undefined ? "succeeded" : "failed", failure, now, proposed);
+    await this.finish(
+      steward,
+      failure === undefined ? "succeeded" : "failed",
+      failure,
+      now,
+      proposed,
+    );
   }
 
   /** The agent's whole last turn: the answer may sit in an earlier message
    * than its last one, or in a plan block. */
-  private reply(sessionId: string): string {
-    const blocks = this.store.session(sessionId).session.blocks;
+  private async reply(sessionId: string): Promise<string> {
+    const blocks = (await this.store.session(sessionId)).session.blocks;
     const lastUser = blocks.findLastIndex((block) => block.role === "user");
     return blocks
       .slice(lastUser + 1)
@@ -458,18 +568,18 @@ export class HostStewards {
   }
 
   /** Creates tasks for the reply's proposals that are new; returns how many. */
-  private propose(steward: HostSteward, reply: string): number {
-    const latest = this.find(steward.id) ?? steward;
+  private async propose(steward: HostSteward, reply: string): Promise<number> {
+    const latest = (await this.find(steward.id)) ?? steward;
     const proposals = parseStewardProposals(reply, latest.maxProposals);
     const known = new Set(latest.declined);
-    for (const task of this.tasks.list())
+    for (const task of await this.tasks.list())
       if (task.projectId === latest.projectId) known.add(normalizeStewardTitle(task.title));
     let created = 0;
     for (const proposal of proposals) {
       const title = normalizeStewardTitle(proposal.title);
       if (!title || known.has(title)) continue;
       known.add(title);
-      this.tasks.save({
+      await this.tasks.save({
         id: randomUUID(),
         title: proposal.title,
         prompt: proposal.description,
@@ -501,7 +611,7 @@ export class HostStewards {
     if (!worktreeCwd && !branch) return;
     let cwd: string;
     try {
-      cwd = this.store.project(projectId).cwd;
+      cwd = (await this.store.project(projectId)).cwd;
     } catch {
       return;
     }

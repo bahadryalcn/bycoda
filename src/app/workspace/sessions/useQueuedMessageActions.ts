@@ -279,7 +279,8 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       const check = () => {
         const latest = sessionsRef.current.find((entry) => entry.id === sessionId);
         if (!latest?.queuedMessages?.some((entry) => entry.id === messageId)) return resolve(false);
-        if (!latest.busy && !retiringTurns.current.has(sessionId)) return resolve(true);
+        if (!latest.busy && !latest.continuingElsewhere && !retiringTurns.current.has(sessionId))
+          return resolve(true);
         if (Date.now() - started > STOP_WAIT_MS) return resolve(false);
         window.setTimeout(check, 100);
       };
@@ -307,7 +308,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       }
       const restart =
         queuedSteerRoute(
-          session,
+          { ...session, busy: !!session.busy || !!session.continuingElsewhere },
           message,
           steerAppliesModelSettings(runningTargetOf(session).harness),
         ) === "restart";

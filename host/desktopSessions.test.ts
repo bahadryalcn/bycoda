@@ -74,7 +74,7 @@ async function setup() {
     },
   });
   const project = await engine.openProject(projectDir);
-  const server = createHostServer(
+  const server = await createHostServer(
     engine,
     ["codex"],
     undefined,
@@ -84,7 +84,7 @@ async function setup() {
   );
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/rpc`;
-  const device = store.issueDevice("Laptop");
+  const device = await store.issueDevice("Laptop");
   const call = async (method: string, params: unknown = {}) => {
     const response = await fetch(url, {
       method: "POST",
@@ -95,10 +95,11 @@ async function setup() {
   };
   cleanups.push(async () => {
     finish();
-    await engine.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close();
+    await server.closeResources();
+    await engine.close();
+    await store.close();
     desktopDb.close();
     rmSync(directory, { recursive: true, force: true });
   });
@@ -114,16 +115,23 @@ describe("desktop sessions on the host", () => {
     const desktop = new DesktopSessions(() => [broken]);
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      expect(() => desktop.listSnapshot(s.projectDir, s.project.id, ["codex"])).toThrow("Desktop session metadata is temporarily unavailable");
+      expect(() => desktop.listSnapshot(s.projectDir, s.project.id, ["codex"])).toThrow(
+        "Desktop session metadata is temporarily unavailable",
+      );
       writeFileSync(broken, readFileSync(s.dbPath));
-      expect(desktop.listSnapshot(s.projectDir, s.project.id, ["codex"]).sessions.map((row) => row.id)).toEqual(["recovered-metadata"]);
-    } finally { desktop.close(); errors.mockRestore(); }
+      expect(
+        desktop.listSnapshot(s.projectDir, s.project.id, ["codex"]).sessions.map((row) => row.id),
+      ).toEqual(["recovered-metadata"]);
+    } finally {
+      desktop.close();
+      errors.mockRestore();
+    }
   });
 
   it("verifies legacy project aliases when listing and reading a running desktop session", async () => {
     const s = await setup();
     const cwd = s.project.cwd.replace(/\\/g, "/") + "/";
-    s.store.db
+    await s.store.db
       .prepare("INSERT INTO projects VALUES (?, ?, ?)")
       .run("legacy-alias", cwd, s.project.name);
     s.seed({ id: "running-alias", cwd: s.project.cwd });
@@ -152,7 +160,7 @@ describe("desktop sessions on the host", () => {
       sync.value.projectId,
     );
     expect((await s.call("projects.open", { cwd })).result.id).toBe(s.project.id);
-    expect(s.store.projects()).toHaveLength(2);
+    expect(await s.store.projects()).toHaveLength(2);
     expect((await s.call("sessions.list", { projectId: "legacy-alias" })).result).toHaveLength(1);
   });
 
@@ -196,7 +204,7 @@ describe("desktop sessions on the host", () => {
     try {
       const sync = await s.call("sessions.sync", { projectId: s.project.id, sessionId: "a" });
       expect(sync.result?.value?.session?.blocks).toBeUndefined();
-      expect(() => s.store.session("a")).toThrow("Session not found");
+      await expect((async () => await s.store.session("a"))()).rejects.toThrow("Session not found");
     } finally {
       warn.mockRestore();
     }
@@ -212,7 +220,7 @@ describe("desktop sessions on the host", () => {
       text: "go",
     });
     expect(sent.error).toBeUndefined();
-    expect(s.store.session("a").projectId).toBe(s.project.id);
+    expect((await s.store.session("a")).projectId).toBe(s.project.id);
     expect(s.bind).toHaveBeenCalledWith("a", "prov-a", s.project.cwd, undefined);
     await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
     const list = (await s.call("sessions.list", { projectId: s.project.id })).result;
@@ -238,22 +246,22 @@ describe("desktop sessions on the host", () => {
       text: "go",
     });
     expect(busy.error).toMatch(/Wait for it to finish/);
-    expect(() => s.store.session("b")).toThrow();
+    await expect((async () => await s.store.session("b"))()).rejects.toThrow();
     const updated = await s.call("sessions.update", {
       projectId: s.project.id,
       sessionId: "a",
       pinned: true,
     });
     expect(updated.error).toBeUndefined();
-    expect(s.store.session("a").pinned).toBe(true);
+    expect((await s.store.session("a")).pinned).toBe(true);
   });
 
   it("deletes desktop and adopted history only after the owner app confirms", async () => {
     const s = await setup();
     s.seed({ id: "a", cwd: s.project.cwd });
-    s.engine.adoptSession((await s.call("sessions.sync", { sessionId: "a" })).result.value);
-    const beat = (replies: unknown[] = []) =>
-      s.call("sessions.desktopLive", {
+    await s.engine.adoptSession((await s.call("sessions.sync", { sessionId: "a" })).result.value);
+    const beat = async (replies: unknown[] = []) =>
+      await s.call("sessions.desktopLive", {
         clientId: "desktop",
         sessions: [],
         deletions: { version: 1, replies },
@@ -269,11 +277,11 @@ describe("desktop sessions on the host", () => {
       expect(jobs).toHaveLength(1);
     });
     expect(jobs[0]).toMatchObject({ sessionId: "a", cwd: s.project.cwd });
-    expect(s.store.session("a")).toBeDefined();
+    expect(await s.store.session("a")).toBeDefined();
     s.desktopDb.prepare("DELETE FROM sessions WHERE id='a'").run();
     await beat([{ id: jobs[0].id }]);
     expect((await deleting).result).toEqual({ deleted: true });
-    expect(() => s.store.session("a")).toThrow();
+    await expect((async () => await s.store.session("a"))()).rejects.toThrow();
     expect((await s.call("sessions.list", { projectId: s.project.id })).result).toEqual([]);
   });
 
@@ -298,9 +306,9 @@ describe("desktop sessions on the host", () => {
   it("keeps adopted history when desktop deletion fails", async () => {
     const s = await setup();
     s.seed({ id: "a", cwd: s.project.cwd });
-    s.engine.adoptSession((await s.call("sessions.sync", { sessionId: "a" })).result.value);
-    const beat = (replies: unknown[] = []) =>
-      s.call("sessions.desktopLive", {
+    await s.engine.adoptSession((await s.call("sessions.sync", { sessionId: "a" })).result.value);
+    const beat = async (replies: unknown[] = []) =>
+      await s.call("sessions.desktopLive", {
         clientId: "desktop",
         sessions: [],
         deletions: { version: 1, replies },
@@ -317,17 +325,17 @@ describe("desktop sessions on the host", () => {
     });
     await beat([{ id: jobs[0].id, error: "Stop this session before deleting it" }]);
     expect((await deleting).error).toMatch(/Stop this session/);
-    expect(s.store.session("a")).toBeDefined();
+    expect(await s.store.session("a")).toBeDefined();
     expect(s.desktopDb.prepare("SELECT id FROM sessions WHERE id='a'").get()).toBeDefined();
   });
 
   it("lists adopted sessions and catches up with later desktop turns", async () => {
     const s = await setup();
     s.seed({ id: "a", cwd: s.project.cwd, updated: 100 });
-    s.engine.adoptSession((await s.call("sessions.sync", { sessionId: "a" })).result.value);
+    await s.engine.adoptSession((await s.call("sessions.sync", { sessionId: "a" })).result.value);
     const adopted = (await s.call("sessions.adopted")).result;
     expect(adopted).toMatchObject([{ id: "a", projectId: s.project.id, status: "idle" }]);
-    expect(s.store.session("a").desktop).toEqual({
+    expect((await s.store.session("a")).desktop).toEqual({
       updatedAt: 100,
       revision: 100,
       base: conversationHead([{ id: "b1", role: "user", text: "hi" }]),
@@ -465,8 +473,8 @@ describe("desktop sessions on the host", () => {
 
     it("reads the base the desktop saved, and an older desktop has none", async () => {
       const s = await seedBlocks();
-      s.engine.adoptSession(desktopSnapshot(s));
-      expect(s.store.session("a").desktop?.base).toEqual(conversationHead(blocks));
+      await s.engine.adoptSession(desktopSnapshot(s));
+      expect((await s.store.session("a")).desktop?.base).toEqual(conversationHead(blocks));
       s.desktopDb.exec("ALTER TABLE sessions ADD COLUMN adopted_base TEXT");
       const base = { count: 1, chain: "0123456789abcdef0123456789abcdef" };
       s.desktopDb
@@ -479,7 +487,7 @@ describe("desktop sessions on the host", () => {
 
     it("tells the desktop's heartbeat which adopted sessions moved on the host", async () => {
       const s = await seedBlocks();
-      s.engine.adoptSession(desktopSnapshot(s));
+      await s.engine.adoptSession(desktopSnapshot(s));
       const beat = async (adoptedSeq?: number) =>
         (
           await s.call("sessions.desktopLive", {
@@ -492,8 +500,8 @@ describe("desktop sessions on the host", () => {
       expect(first).toMatchObject({ ids: [], reset: true });
       expect(await beat(first.seq)).toEqual({ seq: first.seq, ids: [], boot: first.boot });
       // The host runs a turn for another computer: its revision moves.
-      const hosted = s.store.session("a");
-      s.store.save({ ...hosted, revision: hosted.revision + 1 }, { type: "test.remote" });
+      const hosted = await s.store.session("a");
+      await s.store.save({ ...hosted, revision: hosted.revision + 1 }, { type: "test.remote" });
       const moved = await beat(first.seq);
       expect(moved.ids).toEqual(["a"]);
       expect(moved.reset).toBeUndefined();
@@ -505,11 +513,11 @@ describe("desktop sessions on the host", () => {
     it("converges on the desktop's version when its saved base names the host transcript", async () => {
       const s = await seedBlocks();
       s.desktopDb.exec("ALTER TABLE sessions ADD COLUMN adopted_base TEXT");
-      s.engine.adoptSession(desktopSnapshot(s));
+      await s.engine.adoptSession(desktopSnapshot(s));
       // The host ran a turn for another computer.
-      const hosted = s.store.session("a");
+      const hosted = await s.store.session("a");
       const withTurn = [...blocks, { id: "phone", role: "user" as const, text: "From the phone" }];
-      s.store.save(
+      await s.store.save(
         {
           ...hosted,
           revision: hosted.revision + 1,
@@ -548,7 +556,7 @@ describe("desktop sessions on the host", () => {
       approval: { requestId: 7 },
     };
     const question = { requestId: 9, questions: [] };
-    const beat = (body: unknown) => s.call("sessions.desktopLive", body);
+    const beat = async (body: unknown) => await s.call("sessions.desktopLive", body);
     expect(
       (
         await beat({
@@ -561,7 +569,14 @@ describe("desktop sessions on the host", () => {
 
     const first = (await s.call("sessions.sync", { sessionId: "a" })).result;
     expect(first.kind).toBe("snapshot");
-    expect(first.value).toMatchObject({ status: "running", runId: "desktop" });
+    expect(first.value).toMatchObject({
+      status: "running",
+      runId: "desktop",
+      executionOwner: "desktop",
+    });
+    expect(
+      (await s.call("sessions.page", { sessionId: "a" })).result.sync.value.executionOwner,
+    ).toBe("desktop");
     expect(first.value.session).toMatchObject({ busy: true, pendingQuestion: question });
     expect(first.value.session.blocks.map((b: any) => b.id)).toEqual(["b1", "ap1"]);
     expect((await s.call("sessions.list", { projectId: s.project.id })).result[0].status).toBe(
@@ -597,6 +612,7 @@ describe("desktop sessions on the host", () => {
       await s.call("sessions.sync", { sessionId: "a", revision: first.value.revision })
     ).result;
     expect(second.kind).toBe("delta");
+    expect(second.value.executionOwner).toBe("desktop");
     expect(second.blockIds).toEqual(["b1"]);
     expect(second.blocks).toEqual([]);
     const third = (
@@ -608,6 +624,7 @@ describe("desktop sessions on the host", () => {
     s.clock.now += 60_000;
     const stale = (await s.call("sessions.sync", { sessionId: "a" })).result;
     expect(stale.value.status).toBe("idle");
+    expect(stale.value.executionOwner).toBeUndefined();
     expect(stale.value.session.busy).toBeUndefined();
     const refused = await s.call("commands.dispatch", {
       type: "cancel",
@@ -885,15 +902,63 @@ describe("finding the desktop app's session database", () => {
 });
 
 describe("the run lease of a conversation", () => {
-  const lease = (s: Awaited<ReturnType<typeof setup>>, action: string, extra: object = {}) =>
-    s.call("sessions.runLease", {
+  it("projects the host executor despite desktop sync provenance across snapshot, delta and pages", async () => {
+    const s = await setup();
+    const created = (
+      await s.call("commands.dispatch", {
+        type: "create",
+        commandId: "owner-create",
+        projectId: s.project.id,
+        harness: "codex",
+        model: "codex:test",
+        runtimeMode: "supervised",
+      })
+    ).result;
+    const sessionId = created.sessionId;
+    const idle = (await s.call("sessions.sync", { sessionId })).result.value;
+    expect(idle.desktop).toBeDefined();
+    expect(idle.executionOwner).toBeUndefined();
+    expect(
+      (
+        await s.call("commands.dispatch", {
+          type: "send",
+          commandId: "owner-send",
+          sessionId,
+          text: "hello",
+        })
+      ).error,
+    ).toBeUndefined();
+    await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+    const active = (await s.call("sessions.sync", { sessionId })).result.value;
+    expect(active.desktop).toBeDefined();
+    expect(active.executionOwner).toBe("host");
+    expect((await s.call("sessions.get", { sessionId })).result.executionOwner).toBe("host");
+    const delta = (await s.call("sessions.sync", { sessionId, revision: idle.revision })).result;
+    expect(delta.value.executionOwner).toBe("host");
+    const page = (await s.call("sessions.page", { sessionId })).result;
+    expect(page.sync.value.executionOwner).toBe("host");
+    const partial = (
+      await s.call("sessions.sync", { sessionId, partial: true, loadedBlockIds: [] })
+    ).result;
+    expect(partial.value.executionOwner).toBe("host");
+    const hello = (await s.call("environment.describe")).result;
+    expect(hello.capabilities).toContain("sessions.executionOwner");
+  });
+
+  const lease = async (s: Awaited<ReturnType<typeof setup>>, action: string, extra: object = {}) =>
+    await s.call("sessions.runLease", {
       sessionId: "a",
       clientId: "desktop:win",
       action,
       ...extra,
     });
-  const mac = (s: Awaited<ReturnType<typeof setup>>, commandId: string) =>
-    s.call("commands.dispatch", { type: "send", commandId, sessionId: "a", text: "from the mac" });
+  const mac = async (s: Awaited<ReturnType<typeof setup>>, commandId: string) =>
+    await s.call("commands.dispatch", {
+      type: "send",
+      commandId,
+      sessionId: "a",
+      text: "from the mac",
+    });
 
   it("makes a Mac send wait with LEASE_HELD while a desktop window runs a turn, and never adopts", async () => {
     const s = await setup();
@@ -905,9 +970,11 @@ describe("the run lease of a conversation", () => {
     expect(refused.error).toMatch(/Wait for it to finish/);
     // Nothing started, nothing was copied to the host.
     expect(s.send).not.toHaveBeenCalled();
-    expect(() => s.store.session("a")).toThrow();
+    await expect((async () => await s.store.session("a"))()).rejects.toThrow();
     // The turn ends: the window gives the lease back and the same send goes through.
-    expect((await lease(s, "release", { epoch: granted.epoch })).result).toEqual({ released: true });
+    expect((await lease(s, "release", { epoch: granted.epoch })).result).toEqual({
+      released: true,
+    });
     expect((await mac(s, "c1")).error).toBeUndefined();
     await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
   });
@@ -928,8 +995,8 @@ describe("the run lease of a conversation", () => {
     const s = await setup();
     s.seed({ id: "a", cwd: s.project.cwd });
     await lease(s, "acquire");
-    const beat = (busy: boolean) =>
-      s.call("sessions.desktopLive", {
+    const beat = async (busy: boolean) =>
+      await s.call("sessions.desktopLive", {
         clientId: "win",
         sessions: busy ? [{ id: "a", busy: true }] : [],
       });
@@ -952,7 +1019,9 @@ describe("the run lease of a conversation", () => {
     expect((await lease(s, "borrow")).error).toMatch(/Invalid/);
     // A busy app that never asked (database mark only) still holds the conversation.
     s.seed({ id: "legacy", cwd: s.project.cwd });
-    s.desktopDb.prepare("INSERT INTO in_flight_sessions VALUES ('legacy', ?, 0)").run(s.project.cwd);
+    s.desktopDb
+      .prepare("INSERT INTO in_flight_sessions VALUES ('legacy', ?, 0)")
+      .run(s.project.cwd);
     const legacy = await s.call("commands.dispatch", {
       type: "send",
       commandId: "c4",
@@ -974,19 +1043,27 @@ describe("the run lease of a conversation", () => {
   });
 
   it("treats a window whose heartbeat reports the conversation busy as its holder, even if it never asked", async () => {
-    const s = await setup();
-    s.seed({ id: "a", cwd: s.project.cwd });
-    const beat = (busy: boolean) =>
-      s.call("sessions.desktopLive", {
-        clientId: "older-app",
-        sessions: busy ? [{ id: "a", busy: true }] : [],
-      });
-    await beat(true);
-    expect((await mac(s, "c6")).error).toMatch(/^LEASE_HELD: /);
-    // It cannot be taken by another window meanwhile.
-    expect((await lease(s, "acquire")).error).toMatch(/^LEASE_HELD: /);
-    await beat(false);
-    expect((await lease(s, "acquire")).result.lease.holder).toBe("desktop:win");
+    // Every clock read advances: the asynchronous implicit grant is later than
+    // receipt of the beat, so idle must release that grant rather than fence it.
+    let now = Date.now();
+    const time = vi.spyOn(Date, "now").mockImplementation(() => now++);
+    try {
+      const s = await setup();
+      s.seed({ id: "a", cwd: s.project.cwd });
+      const beat = async (busy: boolean) =>
+        await s.call("sessions.desktopLive", {
+          clientId: "older-app",
+          sessions: busy ? [{ id: "a", busy: true }] : [],
+        });
+      await beat(true);
+      expect((await mac(s, "c6")).error).toMatch(/^LEASE_HELD: /);
+      // It cannot be taken by another window meanwhile.
+      expect((await lease(s, "acquire")).error).toMatch(/^LEASE_HELD: /);
+      await beat(false);
+      expect((await lease(s, "acquire")).result.lease.holder).toBe("desktop:win");
+    } finally {
+      time.mockRestore();
+    }
   });
 
   it("fences a window whose lease is not its own", async () => {

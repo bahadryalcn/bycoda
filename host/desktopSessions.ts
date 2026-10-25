@@ -10,6 +10,7 @@ import type {
 } from "../src/features/connections/model/protocol";
 import type { Block, Session } from "../src/features/sessions/model/session";
 import { DesktopLive } from "./desktopLive";
+import { AsyncHostNotes } from "./host-notes-async";
 import { parseHead } from "../src/features/sync/model/conversationHead";
 
 // Must match the desktop app's Tauri identifiers and its session database
@@ -91,6 +92,22 @@ function resolveProjectPath(path: string, platform: NodeJS.Platform): string {
 type Row = Record<string, unknown>;
 /** `stored`: the database's in-flight mark; `inFlight` also weighs the heartbeat. */
 type Found = { row: Row; inFlight: boolean; stored: boolean };
+export type DesktopMetadataList = {
+  key: string;
+  database: string;
+  fingerprint: string;
+  sessions: HostSessionSummary[];
+  stored: boolean[];
+  bytes: number;
+};
+export type DesktopMetadataReply =
+  | DesktopMetadataList
+  | {
+      key: string;
+      database: string;
+      fingerprint: string;
+      unchanged: true;
+    };
 type Handle = {
   db: DatabaseSync;
   /** File identity; a replaced database is a different file. */
@@ -100,7 +117,9 @@ type Handle = {
   timer?: NodeJS.Timeout;
 };
 
-type StampRow = { createdAt: number; updatedAt: number; stored: boolean };
+export type DesktopStampRow = { createdAt: number; updatedAt: number; stored: boolean };
+export type DesktopMetadataRecord = { cwd: string; harness: string; stored: boolean };
+export type DesktopSnapshotRecord = { value: HostSession; stored: boolean };
 
 /** Release and development apps keep separate databases, and either may hold
  * a mirrored copy of a session the other started. The copy created first
@@ -124,9 +143,18 @@ export class DesktopSessions {
     private readonly idleMs = 5000,
   ) {}
 
-  private stamps = new Map<string, { at: number; rows: StampRow[] }>();
+  private stamps = new Map<string, { at: number; rows: DesktopStampRow[] }>();
 
   private handles = new Map<string, Handle>();
+  private metadataReader?: AsyncHostNotes;
+  private transcriptReader?: AsyncHostNotes;
+  private metadataGeneration = 0;
+  private stampFlights = new Map<string, Promise<DesktopStampRow[]>>();
+  private recordFlights = new Map<string, Promise<DesktopMetadataRecord | undefined>>();
+  private snapshotFlights = new Map<string, Promise<DesktopSnapshotRecord | undefined>>();
+  private metadataFlights = new Map<string, Promise<DesktopMetadataReply>>();
+  private metadataKeys = new Map<string, string>();
+  private listMetadataCache = new Map<string, { at: number; value: DesktopMetadataList }>();
   /** Connections opened so far (for tests). */
   opened = 0;
 
@@ -155,8 +183,13 @@ export class DesktopSessions {
         this.drop(path);
         if (attempt > 0) {
           console.error("Could not read desktop sessions:", error);
-          if (required && !["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? ""))
-            throw new Error("Desktop session metadata is temporarily unavailable.", { cause: error });
+          if (
+            required &&
+            !["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")
+          )
+            throw new Error("Desktop session metadata is temporarily unavailable.", {
+              cause: error,
+            });
           return undefined;
         }
       }
@@ -229,10 +262,14 @@ export class DesktopSessions {
       for (const file of [path, `${path}-wal`]) {
         try {
           const stat = statSync(file);
-          parts.push(`${file}:${stat.dev}:${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`);
+          parts.push(
+            `${file}:${stat.dev}:${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`,
+          );
         } catch (error) {
           const code = (error as NodeJS.ErrnoException).code;
-          parts.push(code === "ENOENT" || code === "ENOTDIR" ? "-" : `unavailable:${code ?? "unknown"}`);
+          parts.push(
+            code === "ENOENT" || code === "ENOTDIR" ? "-" : `unavailable:${code ?? "unknown"}`,
+          );
         }
       }
     return parts.join("|");
@@ -240,8 +277,31 @@ export class DesktopSessions {
 
   /** Releases every cached connection (host shutdown). */
   close(): void {
+    this.metadataGeneration++;
+    this.metadataFlights.clear();
+    this.metadataKeys.clear();
+    this.listMetadataCache.clear();
+    void this.metadataReader?.close();
+    this.metadataReader = undefined;
+    void this.transcriptReader?.close();
+    this.transcriptReader = undefined;
+    this.stampFlights.clear();
+    this.recordFlights.clear();
+    this.snapshotFlights.clear();
+    this.stamps.clear();
+    this.metadataCache.clear();
     this.listSnapshots.clear();
     for (const path of [...this.handles.keys()]) this.drop(path);
+  }
+  /** Read workers release OS handles before replying; metadata stays cached. */
+  releaseReadHandles(): void {
+    for (const path of [...this.handles.keys()]) this.drop(path);
+  }
+  async closeAsync(): Promise<void> {
+    const reader = this.metadataReader;
+    const transcripts = this.transcriptReader;
+    this.close();
+    await Promise.all([reader?.close(), transcripts?.close()]);
   }
 
   private rows(
@@ -250,6 +310,7 @@ export class DesktopSessions {
     where: string,
     args: string[],
     blocks = true,
+    required = false,
   ): Found[] {
     if (!columns.has("id") || !columns.has("blocks_json")) return [];
     const optional = (name: string, fallback = "NULL") =>
@@ -271,7 +332,12 @@ export class DesktopSessions {
     try {
       for (const r of db.prepare("SELECT session_id FROM in_flight_sessions").all())
         running.add(String(r.session_id));
-    } catch {
+    } catch (error) {
+      if (
+        required &&
+        !(error instanceof Error && error.message.includes("no such table: in_flight_sessions"))
+      )
+        throw error;
       /* older desktop without the table */
     }
     return db
@@ -333,12 +399,16 @@ export class DesktopSessions {
   ): Found[] {
     const best = new Map<string, Found>();
     for (const path of this.paths()) {
-      for (const found of this.query(path, (db, columns) => {
-        const set = columns();
-        const filter =
-          typeof where === "string" ? ([where, args] as [string, string[]]) : where(db, set);
-        return filter ? this.rows(db, set, filter[0], filter[1], blocks) : [];
-      }, required) ?? []) {
+      for (const found of this.query(
+        path,
+        (db, columns) => {
+          const set = columns();
+          const filter =
+            typeof where === "string" ? ([where, args] as [string, string[]]) : where(db, set);
+          return filter ? this.rows(db, set, filter[0], filter[1], blocks, required) : [];
+        },
+        required,
+      ) ?? []) {
         const id = String(found.row.id);
         const old = best.get(id);
         if (!old) best.set(id, found);
@@ -359,24 +429,37 @@ export class DesktopSessions {
     return [...best.values()];
   }
 
-  private listSnapshots = new Map<string, {
-    database: string;
-    refreshed: number;
-    live: string;
-    ids: string[];
-    stored: boolean[];
-    bytes: number;
-    value: { fingerprint: string; sessions: HostSessionSummary[] };
-  }>();
+  private listSnapshots = new Map<
+    string,
+    {
+      database: string;
+      refreshed: number;
+      live: string;
+      ids: string[];
+      stored: boolean[];
+      content?: string;
+      bytes: number;
+      value: { fingerprint: string; sessions: HostSessionSummary[] };
+    }
+  >();
 
   /** Metadata-only validation is shared by direct lists and change watchers.
    * A database commit in another project may require checking local metadata,
    * but must not invalidate this project's materialized host/branch list. */
   listSnapshot(projectCwd: string, projectId: string, providers: readonly string[]) {
-    const key = JSON.stringify([normalizeProjectPath(projectCwd, this.platform), projectId, providers]);
+    const key = JSON.stringify([
+      normalizeProjectPath(projectCwd, this.platform),
+      projectId,
+      providers,
+    ]);
     const database = this.fingerprint();
     const previous = this.listSnapshots.get(key);
-    if (previous && previous.database === database && Date.now() - previous.refreshed < 30_000 && previous.live === this.live.listVersion(previous.ids, previous.stored)) {
+    if (
+      previous &&
+      previous.database === database &&
+      Date.now() - previous.refreshed < 30_000 &&
+      previous.live === this.live.listVersion(previous.ids, previous.stored)
+    ) {
       this.listSnapshots.delete(key);
       this.listSnapshots.set(key, previous);
       return previous.value;
@@ -385,12 +468,19 @@ export class DesktopSessions {
     const sessions = rows.map((row) => this.summaryOf(row, projectId));
     const json = JSON.stringify(sessions);
     const fingerprint = createHash("sha256").update(json).digest("base64url");
-    const value = previous?.value.fingerprint === fingerprint ? previous.value : { fingerprint, sessions };
+    const value =
+      previous?.value.fingerprint === fingerprint ? previous.value : { fingerprint, sessions };
     const ids = value.sessions.map((session) => session.id);
     const stored = rows.map((row) => row.stored);
     this.listSnapshots.delete(key);
     this.listSnapshots.set(key, {
-      database, refreshed: Date.now(), ids, stored, live: this.live.listVersion(ids, stored), bytes: Buffer.byteLength(json), value,
+      database,
+      refreshed: Date.now(),
+      ids,
+      stored,
+      live: this.live.listVersion(ids, stored),
+      bytes: Buffer.byteLength(json),
+      value,
     });
     let bytes = 0;
     for (const entry of this.listSnapshots.values()) bytes += entry.bytes;
@@ -405,6 +495,135 @@ export class DesktopSessions {
 
   list(projectCwd: string, projectId: string, providers: readonly string[]): HostSessionSummary[] {
     return this.listSnapshot(projectCwd, projectId, providers).sessions;
+  }
+
+  /** Read-only metadata owner entry. Used by the storage worker, never IPC input. */
+  readMetadataList(
+    projectCwd: string,
+    projectId: string,
+    providers: readonly string[],
+  ): DesktopMetadataList {
+    const key = JSON.stringify([
+      normalizeProjectPath(projectCwd, this.platform),
+      projectId,
+      providers,
+    ]);
+    const database = this.fingerprint(),
+      previous = this.listMetadataCache.get(key);
+    if (previous && previous.value.database === database && Date.now() - previous.at < 30_000)
+      return previous.value;
+    const rows = this.listRows(projectCwd, providers);
+    // Running-state authority stays on the host's live heartbeat owner.
+    const sessions = rows.map((entry) => this.summaryOf({ ...entry, inFlight: false }, projectId));
+    const json = JSON.stringify(sessions);
+    const stored = rows.map((entry) => entry.stored);
+    const value = {
+      key,
+      database,
+      sessions,
+      stored,
+      fingerprint: createHash("sha256")
+        .update(json)
+        .update(JSON.stringify(stored))
+        .digest("base64url"),
+      bytes: Buffer.byteLength(json),
+    };
+    this.listMetadataCache.delete(key);
+    this.listMetadataCache.set(key, { at: Date.now(), value });
+    let bytes = [...this.listMetadataCache.values()].reduce(
+      (sum, entry) => sum + entry.value.bytes,
+      0,
+    );
+    while (this.listMetadataCache.size > 32 || bytes > 16 * 1024 * 1024) {
+      const first = this.listMetadataCache.keys().next().value;
+      if (first === undefined) break;
+      bytes -= this.listMetadataCache.get(first)!.value.bytes;
+      this.listMetadataCache.delete(first);
+    }
+    return value;
+  }
+
+  /** The hot project-list path never waits for SQLite on the request event loop. */
+  async listSnapshotAsync(projectCwd: string, projectId: string, providers: readonly string[]) {
+    const requestKey = JSON.stringify([projectCwd, projectId, providers]),
+      generation = this.metadataGeneration;
+    let flight = this.metadataFlights.get(requestKey);
+    if (!flight) {
+      this.metadataReader ??= new AsyncHostNotes(this.paths);
+      const knownKey = this.metadataKeys.get(requestKey),
+        known = knownKey ? this.listSnapshots.get(knownKey)?.content : undefined;
+      flight = this.metadataReader.desktopList(
+        projectCwd,
+        projectId,
+        providers,
+        this.platform,
+        known,
+      );
+      this.metadataFlights.set(requestKey, flight);
+      const current = flight;
+      void flight
+        .finally(() => {
+          if (this.metadataFlights.get(requestKey) === current)
+            this.metadataFlights.delete(requestKey);
+        })
+        .catch(() => {});
+    }
+    let result = await flight;
+    if (generation !== this.metadataGeneration)
+      throw new Error("Desktop session metadata reader closed.");
+    this.metadataKeys.delete(requestKey);
+    this.metadataKeys.set(requestKey, result.key);
+    while (this.metadataKeys.size > 128)
+      this.metadataKeys.delete(this.metadataKeys.keys().next().value!);
+    let previous = this.listSnapshots.get(result.key);
+    if ("unchanged" in result && (!previous || previous.content !== result.fingerprint)) {
+      result = await this.metadataReader!.desktopList(
+        projectCwd,
+        projectId,
+        providers,
+        this.platform,
+      );
+      if (generation !== this.metadataGeneration)
+        throw new Error("Desktop session metadata reader closed.");
+      previous = this.listSnapshots.get(result.key);
+    }
+    const complete = "unchanged" in result ? undefined : result;
+    const base = complete?.sessions ?? previous!.value.sessions,
+      stored = complete?.stored ?? previous!.stored;
+    const ids = complete ? base.map((session) => session.id) : previous!.ids,
+      live = this.live.listVersion(ids, stored);
+    if (previous?.content === result.fingerprint && previous.live === live) {
+      previous.database = result.database;
+      previous.refreshed = Date.now();
+      return previous.value;
+    }
+    const sessions = base.map((session, index) => ({
+      ...session,
+      status: this.isRunning(session.id, stored[index]) ? ("running" as const) : ("idle" as const),
+    }));
+    const value = {
+      sessions,
+      fingerprint: createHash("sha256").update(result.fingerprint).update(live).digest("base64url"),
+    };
+    this.listSnapshots.delete(result.key);
+    this.listSnapshots.set(result.key, {
+      database: result.database,
+      refreshed: Date.now(),
+      ids,
+      stored,
+      live,
+      content: result.fingerprint,
+      bytes: complete?.bytes ?? previous!.bytes,
+      value,
+    });
+    let bytes = [...this.listSnapshots.values()].reduce((sum, entry) => sum + entry.bytes, 0);
+    while (this.listSnapshots.size > 32 || bytes > 16 * 1024 * 1024) {
+      const first = this.listSnapshots.keys().next().value;
+      if (first === undefined) break;
+      bytes -= this.listSnapshots.get(first)!.bytes;
+      this.listSnapshots.delete(first);
+    }
+    return value;
   }
 
   private listRows(projectCwd: string, providers: readonly string[]): Found[] {
@@ -432,12 +651,11 @@ export class DesktopSessions {
       [],
       false,
       true,
-    )
-      .filter(
-        ({ row }) =>
-          providers.includes(String(row.harness)) &&
-          normalizeProjectPath(String(row.cwd), this.platform) === target,
-      );
+    ).filter(
+      ({ row }) =>
+        providers.includes(String(row.harness)) &&
+        normalizeProjectPath(String(row.cwd), this.platform) === target,
+    );
   }
 
   /** When the owning desktop copy last changed, without reading its
@@ -448,9 +666,13 @@ export class DesktopSessions {
     /** Reuse the database rows read this recently; only for pollers. */
     maxAgeMs = 0,
   ): { updatedAt: number; running: boolean } | undefined {
+    return this.stampFromRows(id, this.stampRows(id, maxAgeMs));
+  }
+
+  private stampFromRows(id: string, rows: readonly DesktopStampRow[]) {
     let owner: { createdAt: number; updatedAt: number } | undefined;
     let running = false;
-    for (const row of this.stampRows(id, maxAgeMs)) {
+    for (const row of rows) {
       // The heartbeat is in memory, so it is always evaluated fresh.
       running ||= this.isRunning(id, row.stored);
       if (!owner || ownsBefore(row.createdAt, owner.createdAt)) owner = row;
@@ -458,24 +680,74 @@ export class DesktopSessions {
     return owner && { updatedAt: owner.updatedAt, running };
   }
 
+  /** Polling caches only database rows; heartbeat authority is evaluated after every await. */
+  async stampAsync(id: string, maxAgeMs = 0) {
+    const generation = this.metadataGeneration;
+    const now = Date.now();
+    const cached = this.stamps.get(id);
+    if (cached && now - cached.at < maxAgeMs) return this.stampFromRows(id, cached.rows);
+    let flight = this.stampFlights.get(id);
+    if (!flight) {
+      this.metadataReader ??= new AsyncHostNotes(this.paths);
+      flight = this.metadataReader.desktopStampRows(id, this.platform);
+      this.stampFlights.set(id, flight);
+      const current = flight;
+      void flight
+        .finally(() => {
+          if (this.stampFlights.get(id) === current) this.stampFlights.delete(id);
+        })
+        .catch(() => {});
+    }
+    const rows = await flight;
+    this.assertReadGeneration(generation);
+    if ((this.stamps.get(id)?.at ?? -Infinity) <= now) {
+      this.stamps.delete(id);
+      this.stamps.set(id, { at: now, rows });
+      while (this.stamps.size > 64) this.stamps.delete(this.stamps.keys().next().value!);
+    }
+    return this.stampFromRows(id, rows);
+  }
+
+  private assertReadGeneration(generation: number) {
+    if (generation !== this.metadataGeneration)
+      throw new Error("Desktop session metadata reader closed.");
+  }
+
+  /** Worker-only raw rows. A busy/unavailable database must not become an idle stamp. */
+  readStampRows(id: string): DesktopStampRow[] {
+    return this.stampRows(id, 0, true);
+  }
+
   /** Database reads behind `stamp()`. */
-  private stampRows(id: string, maxAgeMs: number): StampRow[] {
+  private stampRows(id: string, maxAgeMs: number, required = false): DesktopStampRow[] {
     const now = Date.now();
     const cached = this.stamps.get(id);
     if (cached && now - cached.at < maxAgeMs) return cached.rows;
-    const rows: StampRow[] = [];
+    const rows: DesktopStampRow[] = [];
     for (const path of this.paths()) {
-      const found = this.query(path, (db) => {
-        const row = db.prepare("SELECT created_at, updated_at FROM sessions WHERE id=?").get(id);
-        if (!row) return undefined;
-        let stored = false;
-        try {
-          stored = !!db.prepare("SELECT 1 FROM in_flight_sessions WHERE session_id=?").get(id);
-        } catch {
-          /* older desktop without the table */
-        }
-        return { createdAt: Number(row.created_at), updatedAt: Number(row.updated_at), stored };
-      });
+      const found = this.query(
+        path,
+        (db) => {
+          const row = db.prepare("SELECT created_at, updated_at FROM sessions WHERE id=?").get(id);
+          if (!row) return undefined;
+          let stored = false;
+          try {
+            stored = !!db.prepare("SELECT 1 FROM in_flight_sessions WHERE session_id=?").get(id);
+          } catch (error) {
+            if (
+              required &&
+              !(
+                error instanceof Error &&
+                error.message.includes("no such table: in_flight_sessions")
+              )
+            )
+              throw error;
+            /* older desktop without the table */
+          }
+          return { createdAt: Number(row.created_at), updatedAt: Number(row.updated_at), stored };
+        },
+        required,
+      );
       if (found) rows.push(found);
     }
     this.stamps.delete(id);
@@ -491,18 +763,31 @@ export class DesktopSessions {
     return found ? String(found.row.cwd) : undefined;
   }
 
+  async projectCwdAsync(id: string): Promise<string | undefined> {
+    return (await this.metadataAsync(id))?.cwd;
+  }
+
   /** Queue access checks must not materialize a potentially large transcript. */
   /** Queue RPCs ask this per call; rows only change with a desktop commit. */
-  private metadataCache = new Map<
-    string,
-    { fingerprint: string; value?: { cwd: string; harness: string; stored: boolean } }
-  >();
+  private metadataCache = new Map<string, { fingerprint: string; value?: DesktopMetadataRecord }>();
 
   metadata(id: string): { cwd: string; harness: string; running: boolean } | undefined {
+    const value = this.readMetadataRecord(id);
+    return (
+      value && {
+        cwd: value.cwd,
+        harness: value.harness,
+        running: this.isRunning(id, value.stored),
+      }
+    );
+  }
+
+  /** Worker metadata never applies its separate, empty heartbeat registry. */
+  readMetadataRecord(id: string, required = false): DesktopMetadataRecord | undefined {
     const fingerprint = this.fingerprint();
     let cached = this.metadataCache.get(id);
     if (cached?.fingerprint !== fingerprint) {
-      const found = this.collect("id=?", [id], false)[0];
+      const found = this.collect("id=?", [id], false, required)[0];
       cached = {
         fingerprint,
         value: found && {
@@ -516,14 +801,29 @@ export class DesktopSessions {
       while (this.metadataCache.size > 512)
         this.metadataCache.delete(this.metadataCache.keys().next().value!);
     }
-    const value = cached.value;
-    // Running follows the live heartbeat, which moves without a commit.
+    return cached.value;
+  }
+
+  async metadataAsync(
+    id: string,
+  ): Promise<{ cwd: string; harness: string; running: boolean } | undefined> {
+    const generation = this.metadataGeneration;
+    let flight = this.recordFlights.get(id);
+    if (!flight) {
+      this.metadataReader ??= new AsyncHostNotes(this.paths);
+      flight = this.metadataReader.desktopMetadata(id, this.platform);
+      this.recordFlights.set(id, flight);
+      const current = flight;
+      void flight
+        .finally(() => {
+          if (this.recordFlights.get(id) === current) this.recordFlights.delete(id);
+        })
+        .catch(() => {});
+    }
+    const value = await flight;
+    this.assertReadGeneration(generation);
     return (
-      value && {
-        cwd: value.cwd,
-        harness: value.harness,
-        running: this.isRunning(id, value.stored),
-      }
+      value && { cwd: value.cwd, harness: value.harness, running: this.isRunning(id, value.stored) }
     );
   }
 
@@ -533,6 +833,64 @@ export class DesktopSessions {
 
   snapshot(id: string, projectId: string): HostSession | undefined {
     const found = this.collect("id=?", [id])[0];
+    return this.snapshotFromRow(id, projectId, found);
+  }
+
+  /** Worker-only transcript read; base cwd is checked separately from a worktree cwd. */
+  readSnapshotRecord(
+    id: string,
+    projectId: string,
+    expectedProjectCwd?: string,
+  ): DesktopSnapshotRecord | undefined {
+    const found = this.collect("id=?", [id], true, true)[0];
+    if (!found) return undefined;
+    if (
+      expectedProjectCwd !== undefined &&
+      !this.samePath(String(found.row.cwd), expectedProjectCwd)
+    )
+      throw new Error("Desktop session project changed while reading.");
+    const value = this.snapshotFromRow(id, projectId, found);
+    return value && { value, stored: found.stored };
+  }
+
+  async snapshotAsync(
+    id: string,
+    projectId: string,
+    expectedProjectCwd?: string,
+  ): Promise<HostSession | undefined> {
+    const generation = this.metadataGeneration;
+    const key = JSON.stringify([id, projectId, expectedProjectCwd]);
+    let flight = this.snapshotFlights.get(key);
+    if (!flight) {
+      // A large transcript decode cannot hold up the metadata/poller worker.
+      this.transcriptReader ??= new AsyncHostNotes(this.paths);
+      flight = this.transcriptReader.desktopSnapshot(
+        id,
+        projectId,
+        this.platform,
+        expectedProjectCwd,
+      );
+      this.snapshotFlights.set(key, flight);
+      const current = flight;
+      void flight
+        .finally(() => {
+          if (this.snapshotFlights.get(key) === current) this.snapshotFlights.delete(key);
+        })
+        .catch(() => {});
+    }
+    const record = await flight;
+    this.assertReadGeneration(generation);
+    if (!record) return undefined;
+    const running = this.isRunning(id, record.stored);
+    const { busy: _storedBusy, ...session } = record.value.session;
+    return {
+      ...record.value,
+      status: running ? "running" : "idle",
+      session: { ...session, ...(running ? { busy: true } : {}) },
+    };
+  }
+
+  private snapshotFromRow(id: string, projectId: string, found?: Found): HostSession | undefined {
     if (!found) return undefined;
     const { row } = found;
     const updatedAt = Number(row.updated_at);

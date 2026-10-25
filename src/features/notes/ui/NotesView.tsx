@@ -292,6 +292,7 @@ export function NotesView({
     });
   }
   const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
   const logos = useTabGroupLogos();
   const [groupMascots] = useState(loadTabGroupMascots);
   const [groupColors] = useState(loadTabGroupColors);
@@ -483,11 +484,13 @@ export function NotesView({
     note: selected,
     loading: detailLoading,
     error: detailError,
+    retrying: detailRetrying,
     retry: retryDetail,
   } = useNoteDetail(selectedInput);
 
   const onCreate = async () => {
-    if (creating) return;
+    if (creatingRef.current) return;
+    creatingRef.current = true;
     setCreating(true);
     try {
       const note = await createNote({
@@ -510,6 +513,7 @@ export function NotesView({
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
   };
@@ -834,6 +838,7 @@ export function NotesView({
               variant="ghost"
               size="sm"
               type="button"
+              loading={notesQuery.isFetching}
               onClick={() => void refresh()}
               className="underline"
             >
@@ -849,6 +854,7 @@ export function NotesView({
               variant="ghost"
               size="sm"
               type="button"
+              loading={notesQuery.isFetching}
               onClick={() => void refresh()}
               className="underline"
             >
@@ -1056,7 +1062,13 @@ export function NotesView({
             <Alert tone="danger" className="">
               {t("Could not load or update notes: ")}
               {detailError}{" "}
-              <Button variant="ghost" size="sm" type="button" onClick={retryDetail}>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                loading={detailRetrying}
+                onClick={retryDetail}
+              >
                 {t("Retry")}
               </Button>
             </Alert>
@@ -1263,7 +1275,9 @@ function NoteCard({
             </Badge>
           ))}
           {note.tags.length > 3 ? (
-            <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">+{note.tags.length - 3}</span>
+            <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+              +{note.tags.length - 3}
+            </span>
           ) : null}
         </span>
       ) : null}
@@ -1390,6 +1404,7 @@ function NoteEditor({
   const [deleting, setDeleting] = useState(false);
   const [imageDrag, setImageDrag] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
+  const imageBusyRef = useRef(false);
   const editsRef = draftState.edits;
   const bodyRef = useRef(body);
   const projectChangeRef = draftState.project;
@@ -1406,6 +1421,9 @@ function NoteEditor({
   toolbarTargetRef.current = toolbarTarget;
   const [saving, setSaving] = useState(false);
   const [recovering, setRecovering] = useState(false);
+  const recoveringRef = useRef(false);
+  const [saveAction, setSaveAction] = useState<"save" | "retry" | null>(null);
+  const saveActionRef = useRef<"save" | "retry" | null>(null);
   const lastDropAt = useRef(0);
   const skipSave = draftState.skipSave;
   const saveTimer = useRef<number | null>(null);
@@ -1515,6 +1533,18 @@ function NoteEditor({
     return enqueueNoteSave(note.id, persist);
   }, [note.id, persist]);
 
+  const saveFromAction = async (action: "save" | "retry") => {
+    if (saving || recovering || deleting || saveActionRef.current) return;
+    saveActionRef.current = action;
+    setSaveAction(action);
+    try {
+      await saveNow();
+    } finally {
+      saveActionRef.current = null;
+      setSaveAction(null);
+    }
+  };
+
   const scheduleSave = useCallback(() => {
     if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
@@ -1543,10 +1573,13 @@ function NoteEditor({
 
   const addDroppedImages = useCallback(
     async (load: () => Promise<NoteImageAsset[]>, range: { start: number; end: number }) => {
+      if (imageBusyRef.current) return;
+      imageBusyRef.current = true;
       setImageBusy(true);
       setImageDrag(false);
       try {
         const images = await load();
+        if (images.length === 0) return;
         const inserted = insertNoteImagesMarkdown(bodyRef.current, range.start, range.end, images);
         editNote({ body: inserted.value });
         setSaveError(null);
@@ -1565,6 +1598,7 @@ function NoteEditor({
       } catch (err: unknown) {
         setSaveError(err instanceof Error ? err.message : String(err));
       } finally {
+        imageBusyRef.current = false;
         setImageBusy(false);
       }
     },
@@ -1582,15 +1616,10 @@ function NoteEditor({
   const insertImage = useCallback(async () => {
     // Read the caret before the dialog takes focus from the editor.
     const range = insertionRange();
-    let paths: string[] | null;
-    try {
-      paths = await pickImageFiles();
-    } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : String(err));
-      return;
-    }
-    if (!paths) return;
-    await addDroppedImages(() => saveNoteImagesFromPaths(note.id, paths), range);
+    await addDroppedImages(async () => {
+      const paths = await pickImageFiles();
+      return paths?.length ? saveNoteImagesFromPaths(note.id, paths) : [];
+    }, range);
   }, [addDroppedImages, insertionRange, note.id]);
 
   // The editor takes its own pastes; this catches a paste on the preview.
@@ -1808,45 +1837,42 @@ function NoteEditor({
             <Button
               variant={dirty || saveError ? "secondary" : "ghost"}
               size="sm"
-              loading={saving}
-              disabled={deleting}
-              onClick={() => void saveNow()}
+              loading={saveAction === "save" || (saving && saveAction !== "retry")}
+              disabled={deleting || recovering || saveAction === "retry"}
+              onClick={() => void saveFromAction("save")}
             >
               {t("Save")}
             </Button>
             <span className="note-detail-delete">
-            <ConfirmMorph
-              disabled={deleting}
-              label={t("Delete")}
-              icon={<Trash2 className="size-3.5" />}
-              prompt={t("Delete note permanently?")}
-              confirmTimeout={0}
-              onConfirm={async () => {
-                setDeleting(true);
-                skipSave.current = true;
-                if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
-                try {
-                  await enqueueNoteSave(note.id, async () => {
-                    if (!(await onDelete(note.id, noteRef.current.updatedAt)))
-                      throw new Error(t("Delete failed"));
-                  });
-                } catch (reason) {
-                  skipSave.current = false;
-                  setDeleting(false);
-                  scheduleSave();
-                  throw reason;
-                }
-              }}
-            />
+              <ConfirmMorph
+                disabled={deleting}
+                label={t("Delete")}
+                icon={<Trash2 className="size-3.5" />}
+                prompt={t("Delete note permanently?")}
+                confirmTimeout={0}
+                onConfirm={async () => {
+                  setDeleting(true);
+                  skipSave.current = true;
+                  if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
+                  try {
+                    await enqueueNoteSave(note.id, async () => {
+                      if (!(await onDelete(note.id, noteRef.current.updatedAt)))
+                        throw new Error(t("Delete failed"));
+                    });
+                  } catch (reason) {
+                    skipSave.current = false;
+                    setDeleting(false);
+                    scheduleSave();
+                    throw reason;
+                  }
+                }}
+              />
             </span>
           </div>
           <span role="status" className="note-detail-status">
-            {saveError || saving || dirty ? (
-              <Badge
-                tone={saveError ? "danger" : saving ? "info" : "warning"}
-                appearance="subtle"
-              >
-                {saving && !saveError ? t("Saving…") : t("Unsaved changes")}
+            {saveError || (dirty && !saving) ? (
+              <Badge tone={saveError ? "danger" : "warning"} appearance="subtle">
+                {t("Unsaved changes")}
               </Badge>
             ) : null}
             <span className="note-detail-words">
@@ -1863,10 +1889,9 @@ function NoteEditor({
                 variant="ghost"
                 size="sm"
                 type="button"
-                onClick={() => {
-                  setSaveError(null);
-                  void saveNow();
-                }}
+                loading={saveAction === "retry"}
+                disabled={recovering || deleting || (saving && saveAction !== "retry")}
+                onClick={() => void saveFromAction("retry")}
                 className="shrink-0 underline hover:no-underline"
               >
                 {t("Retry")}
@@ -1874,8 +1899,11 @@ function NoteEditor({
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={recovering}
+                loading={recovering}
+                disabled={saving || deleting}
                 onClick={async () => {
+                  if (recoveringRef.current) return;
+                  recoveringRef.current = true;
                   setRecovering(true);
                   try {
                     await createRecoveredNote({ title, body, tags, sourceCwd });
@@ -1887,6 +1915,7 @@ function NoteEditor({
                   } catch (error) {
                     setSaveError(error instanceof Error ? error.message : String(error));
                   } finally {
+                    recoveringRef.current = false;
                     setRecovering(false);
                   }
                 }}
@@ -1985,9 +2014,9 @@ function NoteEditor({
             void addDroppedImages(() => saveNoteImagesFromFiles(note.id, files), range);
           }}
         >
-          {imageDrag || imageBusy ? (
+          {imageDrag && !imageBusy ? (
             <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-background-base/80 text-[12px] text-content/70 backdrop-blur-sm">
-              {imageBusy ? t("Adding images…") : t("Drop images here")}
+              {t("Drop images here")}
             </div>
           ) : null}
           <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>

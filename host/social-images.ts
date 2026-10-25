@@ -16,12 +16,12 @@ import {
 } from "../src/integrations/harness/core/child";
 
 export type ImageRequest = {
-  progress?: (percent: number) => void;
+  progress?: (percent: number) => void | Promise<void>;
   prompt: string;
   model?: string;
   aspectRatio: ProgramConfig["image"]["aspectRatio"];
   signal: AbortSignal;
-  checkpoint: (providerJobId: string) => void;
+  checkpoint: (providerJobId: string) => void | Promise<void>;
   providerJobId?: string;
   id: string;
 };
@@ -173,7 +173,7 @@ function comfyProgress(
 /** Only an installed, authenticated native ImageGen feature qualifies. CLI presence
  * and the system skill alone never advertise image support. All permission asks fail. */
 function codexImages(directory: string): SocialImageAdapter {
-  directory=join(directory,"image-workspace");
+  directory = join(directory, "image-workspace");
   async function connect<T>(
     work: (
       rpc: JsonRpcClient,
@@ -201,7 +201,7 @@ function codexImages(directory: string): SocialImageAdapter {
       () => rpc.close(new Error("ImageGen process exited.")),
     );
     try {
-      await mkdir(directory,{recursive:true,mode:0o700});
+      await mkdir(directory, { recursive: true, mode: 0o700 });
       const binary = await resolveCodexBinary();
       await spawnChild(
         id,
@@ -274,7 +274,10 @@ function codexImages(directory: string): SocialImageAdapter {
             ["imageGeneration", "image_generation"].includes(p?.item?.type)
           ) {
             const item = p.item;
-              outputPath = item.outputPath ?? item.path ?? (typeof item.result==="string"?item.result:item.result?.path);
+            outputPath =
+              item.outputPath ??
+              item.path ??
+              (typeof item.result === "string" ? item.result : item.result?.path);
           }
           if (method === "turn/completed") {
             if (p.turn?.status === "failed")
@@ -300,7 +303,7 @@ function codexImages(directory: string): SocialImageAdapter {
             sandbox: "read-only",
             config: { "features.shell_tool": false, mcp_servers: {} },
           });
-          input.checkpoint(thread.thread.id);
+          await input.checkpoint(thread.thread.id);
           await rpc.request("turn/start", {
             threadId: thread.thread.id,
             approvalPolicy: "never",
@@ -586,7 +589,7 @@ export function createSocialImageAdapters(
             if (!data.prompt_id)
               throw new ImageGenerationError("invalid", "ComfyUI rejected the saved workflow.");
             jobId = String(data.prompt_id);
-            i.checkpoint(jobId);
+            await i.checkpoint(jobId);
           }
           while (true) {
             i.signal.throwIfAborted();
@@ -628,8 +631,8 @@ export async function generateSocialImage(
   adapters: SocialImageAdapters,
   selection: ProgramConfig["image"],
   input: Omit<ImageRequest, "model">,
-  transition: (message: string) => void,
-  beforeAttempt: (provider: Exclude<ImageProvider, "automatic">) => void = () => {},
+  transition: (message: string) => void | Promise<void>,
+  beforeAttempt: (provider: Exclude<ImageProvider, "automatic">) => void | Promise<void> = () => {},
 ): Promise<ImageResult & { provider: Exclude<ImageProvider, "automatic"> }> {
   const order: Exclude<ImageProvider, "automatic">[] =
     selection.provider === "automatic" ? ["codex", "gemini", "comfyui"] : [selection.provider];
@@ -638,17 +641,41 @@ export async function generateSocialImage(
     const adapter = adapters[provider],
       cap = await adapter?.capability();
     if (!adapter || !cap?.available) {
-      transition(`${provider}: unavailable`);
+      await transition(`${provider}: unavailable`);
       continue;
     }
-    beforeAttempt(provider);
+    await beforeAttempt(provider);
+    let acceptingProgress = true;
+    let progress = Promise.resolve();
+    let progressFailed = false;
+    let progressError: unknown;
+    const reportProgress = input.progress;
     try {
       const result = await adapter.generate({
         ...input,
+        progress: reportProgress
+          ? (percent) => {
+              if (!acceptingProgress) return Promise.resolve();
+              const pending = progress.then(() => reportProgress(percent));
+              progress = pending.catch((error) => {
+                if (!progressFailed) {
+                  progressFailed = true;
+                  progressError = error;
+                }
+              });
+              return pending;
+            }
+          : undefined,
         model: selection.provider === "automatic" ? undefined : selection.model,
       });
+      acceptingProgress = false;
+      await progress;
+      if (progressFailed) throw progressError;
       return { ...result, provider };
     } catch (error) {
+      acceptingProgress = false;
+      await progress;
+      if (progressFailed) throw progressError;
       if (
         input.signal.aborted ||
         !(error instanceof ImageGenerationError) ||
@@ -656,7 +683,7 @@ export async function generateSocialImage(
         selection.provider !== "automatic"
       )
         throw error;
-      transition(`${provider}: ${error.kind}`);
+      await transition(`${provider}: ${error.kind}`);
     }
   }
   throw new ImageGenerationError(

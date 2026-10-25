@@ -1,5 +1,5 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -22,20 +22,33 @@ import "./WorkspaceSettings.css";
 
 export function WorkspacePage({ children }: { children?: ReactNode }) {
   useLocale();
-  const [liveAgentsEnabled, setLiveAgentsEnabled] = useStoredPreferenceState(loadLiveAgentsEnabled, subscribeLiveAgentsEnabled);
+  const [liveAgentsEnabled, setLiveAgentsEnabled] = useStoredPreferenceState(
+    loadLiveAgentsEnabled,
+    subscribeLiveAgentsEnabled,
+  );
   const [fileTabMode, setFileTabMode] = useState<FileTabMode>(loadFileTabMode);
 
   const [quickComposerEnabled, setQuickComposerEnabled] = useState(loadQuickComposerEnabled);
   const [quickComposerError, setQuickComposerError] = useState<string | null>(null);
+  const [quickComposerSaving, setQuickComposerSaving] = useState(false);
+  const quickComposerPending = useRef(false);
   const onQuickComposerEnabled = (next: boolean) => {
+    if (quickComposerPending.current) return;
+    quickComposerPending.current = true;
+    setQuickComposerSaving(true);
     saveQuickComposerEnabled(next);
     setQuickComposerEnabled(next);
     setQuickComposerError(null);
-    void setQuickComposerShortcut(next).catch((error: unknown) => {
-      // Another app already owns the combination. Leave the switch where the
-      // user put it so the next launch tries again, but say why it is dead.
-      setQuickComposerError(String(error));
-    });
+    void setQuickComposerShortcut(next)
+      .catch((error: unknown) => {
+        // Another app already owns the combination. Leave the switch where the
+        // user put it so the next launch tries again, but say why it is dead.
+        setQuickComposerError(String(error));
+      })
+      .finally(() => {
+        quickComposerPending.current = false;
+        setQuickComposerSaving(false);
+      });
   };
   const onLiveAgentsEnabled = (next: boolean) => {
     saveLiveAgentsEnabled(next);
@@ -90,6 +103,8 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
             feedback={
               quickComposerError ? (
                 <SettingsFeedback state="error">{quickComposerError}</SettingsFeedback>
+              ) : quickComposerSaving ? (
+                <SettingsFeedback state="loading">{t("Saving…")}</SettingsFeedback>
               ) : undefined
             }
             description={t(
@@ -103,6 +118,7 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
             <Toggle
               label={t("Quick composer")}
               on={quickComposerEnabled}
+              disabled={quickComposerSaving}
               onChange={onQuickComposerEnabled}
             />
           </Row>

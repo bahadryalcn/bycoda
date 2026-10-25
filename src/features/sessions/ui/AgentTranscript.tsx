@@ -4,7 +4,11 @@ import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { shallowArrayEqual } from "../model/stableBlocks";
 import { useFollowBottom } from "../hooks/useFollowBottom";
-import { canOfferTranslation, repromptReference, type TextActionTarget } from "../model/translation";
+import {
+  canOfferTranslation,
+  repromptReference,
+  type TextActionTarget,
+} from "../model/translation";
 import {
   selectedTextOffset,
   translatedSelection,
@@ -1216,7 +1220,9 @@ function AgentTranscriptComponent({
             surroundingText={(() => {
               const { displayed, selection } = translationRequest;
               const start = selectedTextOffset(displayed, selection.text, selection.occurrence);
-              return start < 0 ? undefined : repromptReference(displayed, start, start + selection.text.length);
+              return start < 0
+                ? undefined
+                : repromptReference(displayed, start, start + selection.text.length);
             })()}
             target={translationRequest.target}
             context={translationContext}
@@ -2098,7 +2104,16 @@ function CopyTurnButton({
         disabled={pending}
         title={copied ? t("Copied") : label}
         aria-label={copied ? t("Copied") : label}
-
+        loading={pending}
+        startIcon={
+          showLabel ? (
+            copied ? (
+              <Check className="size-3.5" strokeWidth={1.75} />
+            ) : (
+              <Copy className="size-3.5" strokeWidth={1.75} />
+            )
+          ) : undefined
+        }
         onClick={(event) => {
           event.stopPropagation();
           if (inFlight.current) return;
@@ -2121,11 +2136,12 @@ function CopyTurnButton({
           );
         }}
       >
-        {copied ? (
-          <Check className="size-3.5" strokeWidth={1.75} />
-        ) : (
-          <Copy className="size-3.5" strokeWidth={1.75} />
-        )}
+        {!showLabel &&
+          (copied ? (
+            <Check className="size-3.5" strokeWidth={1.75} />
+          ) : (
+            <Copy className="size-3.5" strokeWidth={1.75} />
+          ))}
         {showLabel ? <span>{copied ? t("Copied") : label}</span> : null}
       </Button>
       {error && (
@@ -2171,7 +2187,16 @@ function SaveNoteButton({
         disabled={pending}
         title={saved ? t("Saved to Notes") : t("Save as note")}
         aria-label={saved ? t("Saved to Notes") : t("Save as note")}
-
+        loading={pending}
+        startIcon={
+          showLabel ? (
+            saved ? (
+              <Check className="size-3.5" strokeWidth={1.75} />
+            ) : (
+              <FilePlusCorner className="size-3.5" strokeWidth={1.75} />
+            )
+          ) : undefined
+        }
         onClick={async () => {
           if (inFlight.current) return;
           inFlight.current = true;
@@ -2190,11 +2215,12 @@ function SaveNoteButton({
           }
         }}
       >
-        {saved ? (
-          <Check className="size-3.5" strokeWidth={1.75} />
-        ) : (
-          <FilePlusCorner className="size-3.5" strokeWidth={1.75} />
-        )}
+        {!showLabel &&
+          (saved ? (
+            <Check className="size-3.5" strokeWidth={1.75} />
+          ) : (
+            <FilePlusCorner className="size-3.5" strokeWidth={1.75} />
+          ))}
         {showLabel ? <span>{saved ? t("Saved to Notes") : t("Save as note")}</span> : null}
       </Button>
       {error && (
@@ -3403,54 +3429,57 @@ function ActivityPhaseGroup({
       <div className="zen-phase-body" data-open={open}>
         {open ? (
           <>
-          {compactCommand ? (
-            <div className="flex min-w-0 items-start gap-1.5 px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
-              <Terminal className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
-              <span className="line-clamp-2 break-all font-mono" title={toolCallLabel(compactCommand, cwd)}>
-                {toolCallLabel(compactCommand, cwd)}
-              </span>
-            </div>
-          ) : null}
-          <div
-            ref={setLiveScroller}
-            className={
-              active && override !== true && !needsAttention
-                ? "zen-phase-live zen-phase-summary"
-                : undefined
-            }
-          >
-            <div className="flex min-w-0 flex-col">
-              {headline ? (
-                <div className="zen-phase-step py-1">
-                  <AgentMarkdown
-                    className={headline.role === "reasoning" ? "agent-reasoning" : undefined}
-                    text={headline.text}
-                    cwd={cwd}
-                    onOpenFile={onOpenFile}
-                  />
-                </div>
-              ) : null}
-              {phase.steps.map((block) => {
-                const arriving = active && !settled.current?.has(block.id);
-                return (
-                  <PhaseStep
-                    key={block.id}
-                    live={active}
-                    turn={arriving ? turnFor(block.id) : undefined}
-                  >
-                    <ActivityRow
-                      block={block}
+            {compactCommand ? (
+              <div className="flex min-w-0 items-start gap-1.5 px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
+                <Terminal className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+                <span
+                  className="line-clamp-2 break-all font-mono"
+                  title={toolCallLabel(compactCommand, cwd)}
+                >
+                  {toolCallLabel(compactCommand, cwd)}
+                </span>
+              </div>
+            ) : null}
+            <div
+              ref={setLiveScroller}
+              className={
+                active && override !== true && !needsAttention
+                  ? "zen-phase-live zen-phase-summary"
+                  : undefined
+              }
+            >
+              <div className="flex min-w-0 flex-col">
+                {headline ? (
+                  <div className="zen-phase-step py-1">
+                    <AgentMarkdown
+                      className={headline.role === "reasoning" ? "agent-reasoning" : undefined}
+                      text={headline.text}
                       cwd={cwd}
-                      live={active}
-                      onApproval={onApproval}
                       onOpenFile={onOpenFile}
-                      onOpenDiff={onOpenDiff}
                     />
-                  </PhaseStep>
-                );
-              })}
+                  </div>
+                ) : null}
+                {phase.steps.map((block) => {
+                  const arriving = active && !settled.current?.has(block.id);
+                  return (
+                    <PhaseStep
+                      key={block.id}
+                      live={active}
+                      turn={arriving ? turnFor(block.id) : undefined}
+                    >
+                      <ActivityRow
+                        block={block}
+                        cwd={cwd}
+                        live={active}
+                        onApproval={onApproval}
+                        onOpenFile={onOpenFile}
+                        onOpenDiff={onOpenDiff}
+                      />
+                    </PhaseStep>
+                  );
+                })}
+              </div>
             </div>
-          </div>
           </>
         ) : null}
       </div>

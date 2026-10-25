@@ -42,7 +42,12 @@ it("waits for note storage, reports failure, and lets the user retry", async () 
     const button = container.querySelector<HTMLButtonElement>('[aria-label="Save as note"]')!;
     await act(async () => button.click());
     expect(container.querySelector('[aria-label="Saved to Notes"]')).toBeNull();
-    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    await act(async () => button.click());
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "notes_upsert"),
+    ).toHaveLength(1);
     await act(async () => rejectSave(new Error("Storage unavailable")));
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Storage unavailable");
     expect(button.disabled).toBe(false);

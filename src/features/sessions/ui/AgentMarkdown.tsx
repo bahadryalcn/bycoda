@@ -43,7 +43,6 @@ import {
   createPerformanceTraceId,
   isPerformanceTracingEnabled,
   recordPerformanceEvent,
-  startPerformanceSpan,
 } from "../../../shared/lib/performanceTrace";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
 import { FileActionError } from "../../files/ui/FileActionError";
@@ -93,7 +92,7 @@ import { loadStreamingTextMode, subscribeStreamingTextMode } from "../../setting
 import { usePresentationVisible } from "./presentationVisibility";
 import { usePrefersReducedMotion } from "../../settings/model/decorativeMotion";
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
-import { parseStreamingMarkdown } from "./streamingMarkdown";
+import { useParsedMarkdown } from "./useParsedMarkdown";
 
 const MERMAID_BASE_CONFIG = {
   startOnLoad: false,
@@ -107,7 +106,6 @@ const mermaid = createLazyMermaidPlugin({
     theme: "dark",
   },
 });
-
 
 const MARKDOWN_REHYPE_PLUGINS: PluggableList = [
   defaultRehypePlugins.raw,
@@ -1138,12 +1136,10 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   // memoized former tail retain its fading plugin after a new block arrives.
   // Each message keeps its own parse, so a growing reply only lexes its open tail.
   const markdownStream = useId();
-  const markdownBlocks = useMemo(() => {
-    const end = startPerformanceSpan("markdown-render", { items: paced.text.length });
-    const blocks = parseStreamingMarkdown(paced.text, markdownStream);
-    end({ blocks: blocks.length });
-    return blocks;
-  }, [paced.text, markdownStream]);
+  const { blocks: markdownBlocks, pending: markdownPending } = useParsedMarkdown(
+    paced.text,
+    markdownStream,
+  );
   const lastBlock = markdownBlocks.length - 1;
   const parseBlocks = useCallback(() => markdownBlocks, [markdownBlocks]);
   const pacedFadeOptions = useWordFadeWindow(paced.text);
@@ -1209,21 +1205,25 @@ export const AgentMarkdown = memo(function AgentMarkdown({
       <LocalMediaContext.Provider value={!!localMedia}>
         <FileOpenContext.Provider value={fileOpen}>
           <BlockPluginContext.Provider value={blockPlugins}>
-            <div ref={fadeRoot} className="min-w-0">
-              <Streamdown
-                BlockComponent={DirectionalBlock}
-                className={`agent-markdown min-w-0 font-sans text-sm leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
-                components={MARKDOWN_COMPONENTS}
-                controls={false}
-                isAnimating={!!streaming || paced.revealing}
-                parseIncompleteMarkdown={false}
-                parseMarkdownIntoBlocksFn={parseBlocks}
-                plugins={markdownPlugins}
-                remarkPlugins={remarkPlugins}
-                rehypePlugins={rehypePlugins}
-              >
-                {paced.text}
-              </Streamdown>
+            <div ref={fadeRoot} className="min-w-0" aria-busy={markdownPending || undefined}>
+              {markdownPending && !markdownBlocks.length ? (
+                <div className="whitespace-pre-wrap">{paced.text}</div>
+              ) : (
+                <Streamdown
+                  BlockComponent={DirectionalBlock}
+                  className={`agent-markdown min-w-0 font-sans text-sm leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
+                  components={MARKDOWN_COMPONENTS}
+                  controls={false}
+                  isAnimating={!!streaming || paced.revealing}
+                  parseIncompleteMarkdown={false}
+                  parseMarkdownIntoBlocksFn={parseBlocks}
+                  plugins={markdownPlugins}
+                  remarkPlugins={remarkPlugins}
+                  rehypePlugins={rehypePlugins}
+                >
+                  {paced.text}
+                </Streamdown>
+              )}
             </div>
             {fileMenu ? (
               <ExplorerMenu

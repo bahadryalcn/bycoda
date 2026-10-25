@@ -602,12 +602,16 @@ export function inspectHarnessBinary(
 }
 
 /** Runs the CLI's own self-update against the binary Bycoda uses. */
-export async function updateHarnessCli(provider: ConfigurableBinaryProvider): Promise<void> {
+export async function updateHarnessCli(
+  provider: ConfigurableBinaryProvider,
+  targetVersion?: string,
+): Promise<void> {
   const resolved = await resolveHarnessBinary(provider);
   await invoke("harness_update", {
     command: resolved.path,
     binaryProvider: provider,
     binaryPath: runtimeProviderBinaryPath(provider),
+    targetVersion,
   });
 }
 

@@ -1,8 +1,11 @@
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import {
+  useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
@@ -14,6 +17,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Modal } from "../../../shared/ui/Modal";
+import { OverlayMenuLayer, OverlayParent } from "../../../shared/ui/overlay";
 import { getLocale, t } from "../../../shared/i18n";
 import {
   AlertCircle,
@@ -226,6 +230,20 @@ export function Empty({
   );
 }
 
+type ComposerSlot = { element: HTMLDivElement | null; parent: symbol | null; layer: number };
+
+function ComposerModalSlot({ onSlot }: { onSlot: (slot: ComposerSlot) => void }) {
+  const parent = useContext(OverlayParent);
+  const layer = useContext(OverlayMenuLayer);
+  const ref = useCallback(
+    (element: HTMLDivElement | null) => {
+      onSlot({ element, parent, layer });
+    },
+    [onSlot, parent, layer],
+  );
+  return <div ref={ref} />;
+}
+
 /**
  * Opens its form in the shared Modal. The form lives in one persistent host element that
  * is parked in the page while closed, so unfinished drafts and refs survive close/reopen.
@@ -243,8 +261,9 @@ export function Composer({
   description?: string;
   onOpen?: () => void;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   const [open, setOpen] = useState(false);
-  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+  const [slot, setSlot] = useState<ComposerSlot>({ element: null, parent: null, layer: 0 });
   const trigger = useRef<HTMLButtonElement>(null);
   const stash = useRef<HTMLDivElement>(null);
   const opened = useRef(onOpen);
@@ -277,13 +296,14 @@ export function Composer({
     return () => host.removeEventListener("social-composer-close", close);
   }, [host]);
   useLayoutEffect(() => {
-    const target = open ? slot : stash.current;
+    const target = open ? slot.element : stash.current;
     if (host && target && host.parentElement !== target) target.appendChild(host);
   });
   useLayoutEffect(() => () => host?.remove(), [host]);
   return (
     <>
       <Button
+        disabled={socialLocked}
         ref={trigger}
         type="button"
         variant="secondary"
@@ -297,21 +317,21 @@ export function Composer({
       <div ref={stash} hidden />
       {open ? (
         <Modal title={title} description={description} size="lg" onClose={() => setOpen(false)}>
-          <div ref={setSlot} />
+          <ComposerModalSlot onSlot={setSlot} />
         </Modal>
       ) : null}
       {host
         ? createPortal(
-            <>
-              {feedback.busy ? (
-                <Notice kind="loading" title={t("Operation in progress…")} />
-              ) : feedback.error ? (
-                <Notice kind="error" title={t("Operation could not be completed")}>
-                  {feedback.error}
-                </Notice>
-              ) : null}
-              {children}
-            </>,
+            <OverlayMenuLayer.Provider value={slot.layer}>
+              <OverlayParent.Provider value={slot.parent}>
+                {feedback.error ? (
+                  <Notice kind="error" title={t("Operation could not be completed")}>
+                    {feedback.error}
+                  </Notice>
+                ) : null}
+                {children}
+              </OverlayParent.Provider>
+            </OverlayMenuLayer.Provider>,
             host,
           )
         : null}

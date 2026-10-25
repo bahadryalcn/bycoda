@@ -216,6 +216,9 @@ describe("onboarding workflow", () => {
     );
     await projects();
     await click("Import 1 projects");
+    expect(button("Import 1 projects").getAttribute("aria-busy")).toBe("true");
+    await click("Import 1 projects");
+    expect(mock.run).toHaveBeenCalledOnce();
     expect(button("Back").disabled).toBe(true);
     expect(button("Skip import").disabled).toBe(true);
     const signal = mock.run.mock.calls[0][0].signal as AbortSignal;

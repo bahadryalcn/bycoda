@@ -16,13 +16,23 @@ for (const theme of ["light", "dark"]) {
       await page.getByRole("option", { name: "Yarı kalın", exact: true }).click();
       await page.locator('[data-setting-id="terminal-line-height"] button').click();
       await page.getByRole("option", { name: "1.35×", exact: true }).click();
-      const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem("bycoda.appearancePreferences.v1") ?? "{}"));
-      await expect.poll(saved).toMatchObject({ terminalFont: "JetBrains Mono", terminalSize: 14,
-        terminalWeight: 600, terminalLineHeight: 1.35, codeSize: 13 });
+      const saved = () =>
+        page.evaluate(() =>
+          JSON.parse(localStorage.getItem("bycoda.appearancePreferences.v1") ?? "{}"),
+        );
+      await expect.poll(saved).toMatchObject({
+        terminalFont: "JetBrains Mono",
+        terminalSize: 14,
+        terminalWeight: 600,
+        terminalLineHeight: 1.35,
+        codeSize: 13,
+      });
       await page.reload();
       await expect(font).toHaveValue("JetBrains Mono");
       await expect(size).toHaveAttribute("aria-valuenow", "14");
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
     });
   }
 }
@@ -34,22 +44,29 @@ for (const theme of ["dark", "light"]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=tr`);
     const row = page.locator('[data-setting-id="code-theme"]');
-    const trigger = row.getByRole("button");
+    const trigger = row.locator('button[aria-haspopup="listbox"]');
     await trigger.scrollIntoViewIfNeeded();
     await trigger.focus();
     await trigger.press("Enter");
     await page.getByRole("option", { name: "Dracula", exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-code-theme", "dracula");
     const keyword = page.locator(".appearance-code-keyword").first();
-    await expect(keyword).toHaveCSS("color", theme === "dark" ? "rgb(255, 121, 198)" : "rgb(207, 34, 46)");
+    await expect(keyword).toHaveCSS(
+      "color",
+      theme === "dark" ? "rgb(255, 121, 198)" : "rgb(207, 34, 46)",
+    );
     await page.reload();
     await expect(trigger).toContainText("Dracula");
     await expect(page.locator("html")).toHaveAttribute("data-code-theme", "dracula");
     await trigger.scrollIntoViewIfNeeded();
     await page.setViewportSize({ width: 390, height: 844 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
     mkdirSync("temp/verification/2026-10-19-code-themes", { recursive: true });
-    await row.screenshot({ path: `temp/verification/2026-10-19-code-themes/${theme}-theme-control.png` });
+    await row.screenshot({
+      path: `temp/verification/2026-10-19-code-themes/${theme}-theme-control.png`,
+    });
   });
 }
 
@@ -86,7 +103,9 @@ for (const theme of ["light", "dark"])
       await awake.click();
       await expect(duration).toContainText("15 minutes");
       await expect(screen).toBeChecked();
-      const language = general.locator('[data-setting-id="git-language"]').getByRole("button");
+      const language = general.locator(
+        '[data-setting-id="git-language"] button[aria-haspopup="listbox"]',
+      );
       await language.focus();
       await language.press("Enter");
       await page.getByRole("option", { name: "English", exact: true }).click();
@@ -513,8 +532,12 @@ for (const lang of languages)
           await page.goto(
             `/tests/browser/settings.html?lang=${lang}&theme=${theme}&section=${section}`,
           );
+          await expect(page.locator(".bycoda-settings-panel")).toBeVisible();
+          const categoryPicker = page.locator(".bycoda-settings-category-picker");
           await expect(
-            page.locator(".bycoda-settings-categories").getByRole("tab", { selected: true }),
+            (await categoryPicker.isVisible())
+              ? categoryPicker.getByRole("button")
+              : page.locator(".bycoda-settings-categories").getByRole("tab", { selected: true }),
           ).toBeVisible();
           await expect(page.locator(".bycoda-settings-panel")).toBeVisible();
           await expect(page.locator("details.settings-advanced")).toHaveCount(0);
@@ -546,7 +569,9 @@ for (const lang of languages)
               ]
                 .filter(
                   (node) =>
-                    node.getClientRects().length > 0 && node.getBoundingClientRect().width < 150,
+                    !node.closest(".sr-only") &&
+                    node.getClientRects().length > 0 &&
+                    node.getBoundingClientRect().width < 150,
                 )
                 .map((node) => node.textContent),
             );

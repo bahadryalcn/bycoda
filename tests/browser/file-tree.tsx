@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import { FileTree } from "../../src/features/files/ui/FileTree";
+import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import {
   handleFilePreviewFindKey,
   FilePreviewSearch,
@@ -9,6 +10,9 @@ import type { FsEntry } from "../../src/platform/tauri/fs";
 import "../../src/styles/index.css";
 
 localStorage.setItem("bycoda.language.technical", "en");
+applyThemePreference(
+  new URLSearchParams(location.search).get("theme") === "light" ? "light" : "dark",
+);
 window.addEventListener("keydown", handleFilePreviewFindKey);
 const entry = (name: string, parent = "/fixture", isDir = false): FsEntry => ({
   name,
@@ -40,7 +44,9 @@ const callbacks = new Map<number, (event: unknown) => void>(),
   listeners = new Map<string, number>();
 let nextId = 0;
 const operations: { command: string; args: Record<string, unknown> }[] = [];
+const operationState = { hold: false, finish: () => {} };
 Object.assign(window, {
+  treeOperationState: operationState,
   treeNativeEmit: (name: string, payload: unknown) =>
     callbacks.get(listeners.get(name) ?? -1)?.({ event: name, id: 0, payload }),
   treeOperations: operations,
@@ -54,6 +60,10 @@ Object.assign(window, {
     },
     unregisterCallback: (id: number) => callbacks.delete(id),
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
+      if (command === "reveal_path" && operationState.hold)
+        await new Promise<void>((resolve) => {
+          operationState.finish = resolve;
+        });
       if (command === "plugin:event|listen") {
         listeners.set(String(args.event), Number(args.handler));
         return ++nextId;

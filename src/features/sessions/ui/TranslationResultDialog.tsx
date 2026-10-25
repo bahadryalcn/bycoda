@@ -11,7 +11,6 @@ import { copyMessage } from "../../../platform/tauri/clipboard";
 import {
   translateSelection,
   canTranslate,
-  canOfferTranslation,
   translationErrorKind,
   type TranslationErrorKind,
   type TranslationContext,
@@ -50,7 +49,7 @@ export function TranslationResultDialog({
   const [translator, setTranslator] = useState(() =>
     translationContextWithDefault(context, reprompt ? "reprompt" : "translation"),
   );
-  const [requested, setRequested] = useState(() => canTranslate(translator));
+  const [requested, setRequested] = useState(true);
   const source = useModelSource();
   useSyncExternalStore(
     subscribeHarnessAvailability,
@@ -66,16 +65,29 @@ export function TranslationResultDialog({
   const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState(() => canTranslate(translator));
   const [applyError, setApplyError] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const runnable = canTranslate(translator);
   useEffect(() => {
-    if (!requested || !canOfferTranslation(translator)) return;
+    if (!pending) return;
+    const started = Date.now();
+    setElapsed(0);
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [pending, attempt, translator]);
+  useEffect(() => {
+    if (!requested || !runnable) return;
     const controller = new AbortController();
     setPending(true);
     setError(null);
     setCopied(false);
     setApplyError(false);
+    setResult("");
+    const onOutput = (output: string) => {
+      if (!controller.signal.aborted) setResult(output);
+    };
     const request = reprompt
-      ? translateSelection(text, target, translator, controller.signal, surroundingText)
-      : translateSelection(text, target, translator, controller.signal);
+      ? translateSelection(text, target, translator, controller.signal, surroundingText, onOutput)
+      : translateSelection(text, target, translator, controller.signal, undefined, onOutput);
     void request
       .then((output) => {
         if (!controller.signal.aborted) setResult(output);
@@ -87,7 +99,7 @@ export function TranslationResultDialog({
         if (!controller.signal.aborted) setPending(false);
       });
     return () => controller.abort();
-  }, [text, target, attempt, translator, requested, reprompt, surroundingText]);
+  }, [text, target, attempt, translator, requested, reprompt, surroundingText, runnable]);
   return (
     <Modal
       title={
@@ -160,7 +172,7 @@ export function TranslationResultDialog({
               <h3 id={`${id}-translation`}>
                 {reprompt ? t("Rewritten prompt") : t("Translation")}
               </h3>
-              <span className={styles.secondary}>
+              <span className={styles.status} role="status">
                 {pending
                   ? reprompt
                     ? t("Rewriting…")
@@ -168,12 +180,16 @@ export function TranslationResultDialog({
                   : result && !error
                     ? t("Ready")
                     : t("Preview")}
+                {pending ? (
+                  <span aria-hidden="true" className={styles.elapsed}>
+                    {elapsed}s
+                  </span>
+                ) : null}
               </span>
             </header>
             <div className={styles.result}>
-              {pending ? (
-                <div role="status" className={styles.placeholder}>
-                  <p>{reprompt ? t("Rewriting…") : t("Translating…")}</p>
+              {pending && !result ? (
+                <div className={styles.placeholder}>
                   <div aria-hidden="true" className={styles.skeleton}>
                     <span />
                     <span />
@@ -207,18 +223,24 @@ export function TranslationResultDialog({
                           : t("Could not translate. Try again.")}
                 </Alert>
               ) : result ? (
-                <div role="status" tabIndex={0} className={styles.text}>
+                <div tabIndex={0} className={styles.text}>
                   {result}
                 </div>
               ) : (
                 <p role="status" className={styles.placeholder}>
-                  {!translator.model?.trim()
+                  {!runnable
                     ? reprompt
-                      ? t("Choose a reprompt model.")
-                      : t("Choose a translation model.")
-                    : reprompt
-                      ? t("Reprompt")
-                      : t("Translate selected text")}
+                      ? t("This provider does not support reprompt requests. Choose another model.")
+                      : t(
+                          "This provider does not support translation requests yet. You can choose another translation model.",
+                        )
+                    : !translator.model?.trim()
+                      ? reprompt
+                        ? t("Choose a reprompt model.")
+                        : t("Choose a translation model.")
+                      : reprompt
+                        ? t("Reprompt")
+                        : t("Translate selected text")}
                 </p>
               )}
             </div>
@@ -233,15 +255,21 @@ export function TranslationResultDialog({
         ) : null}
         <footer className={styles.footer}>
           <p className={styles.hint}>
-            {reprompt
-              ? t("After applying: ↑ original, ↓ rewritten prompt.")
-              : t("After applying: ↑ original, ↓ translation.")}
+            {pending
+              ? elapsed >= 12
+                ? t("Taking longer than usual. You can cancel or choose another model.")
+                : null
+              : result && !error && reprompt
+                ? t("After applying: ↑ original, ↓ rewritten prompt.")
+                : result && !error
+                  ? t("After applying: ↑ original, ↓ translation.")
+                  : null}
           </p>
           <div className={styles.actions}>
             <Button variant="ghost" onClick={onClose}>
               {t("Cancel")}
             </Button>
-            {!requested && canOfferTranslation(translator) && !!translator.model?.trim() ? (
+            {!requested && runnable && !!translator.model?.trim() ? (
               <Button
                 variant="primary"
                 onClick={() => {
@@ -257,20 +285,22 @@ export function TranslationResultDialog({
                 {t("Retry")}
               </Button>
             ) : null}
-            <Button
-              variant="secondary"
-              disabled={!result || pending || !!error}
-              onClick={async () => {
-                try {
-                  await copyMessage(result);
-                  setCopied(true);
-                } catch {
-                  setError("generic");
-                }
-              }}
-            >
-              {copied ? t("Copied") : t("Copy")}
-            </Button>
+            {result && !pending && !error ? (
+              <Button
+                variant="secondary"
+                disabled={!result || pending || !!error}
+                onClick={async () => {
+                  try {
+                    await copyMessage(result);
+                    setCopied(true);
+                  } catch {
+                    setError("generic");
+                  }
+                }}
+              >
+                {copied ? t("Copied") : t("Copy")}
+              </Button>
+            ) : null}
             <Button
               variant={result && !pending && !error ? "primary" : "secondary"}
               disabled={!result || pending || !!error}

@@ -4,12 +4,17 @@ import { TasksView } from "../../src/features/tasks/ui/TasksView";
 import type { BackgroundSessionTarget } from "../../src/features/tasks/model/backgroundSession";
 import {
   canMoveTask,
+  parseHostTask,
   type HostTask,
   type HostTaskInput,
   type TaskStatus,
 } from "../../src/features/tasks/model/hostTasks";
 import type { HostGoal, HostGoalInput } from "../../src/features/tasks/model/hostGoals";
-import type { HostProject, RemoteMachine } from "../../src/features/connections/model/protocol";
+import {
+  requireHostDescriptor,
+  type HostProject,
+  type RemoteMachine,
+} from "../../src/features/connections/model/protocol";
 import { ModelSourceContext } from "../../src/features/sessions/ui/modelSource";
 import {
   modelsFor,
@@ -106,6 +111,49 @@ if (query.has("boardControls")) {
       updatedAt: 3,
     },
   ];
+  if (query.has("acceptanceEvidence")) {
+    const completed = tasks["machine-local"].find((task) => task.id === "review")!;
+    const acceptance = [
+      "Preserve the saved draft when switching tasks.",
+      "Validate the complete flow on a physical Windows installation.",
+    ];
+    completed.prompt = JSON.stringify({
+      schema: "bycoda.task.v1",
+      objective: "Preserve drafts through the task workflow.",
+      deliverables: ["Draft persistence and its verification record"],
+      acceptance,
+      constraints: ["Keep existing drafts"],
+      verification: ["Run focused draft tests"],
+    });
+    completed.verification = {
+      review: { verdict: "pass", note: "Recorded fixture review", sessionId: "evidence-review" },
+      acceptance: {
+        checkedAt: Date.UTC(2026, 9, 24, 9, 30),
+        sessionId: "evidence-review",
+        workspaceFingerprint: "fixture-reviewed-draft-tree",
+        criteria: [
+          {
+            criterionIndex: 0,
+            criterion: acceptance[0],
+            verdict: "verified",
+            evidence: [
+              `https://evidence.invalid/${"long-unbroken-reference-".repeat(24)}`,
+              "javascript:window.acceptanceEvidenceExecuted=true",
+              '<img src="invalid" onerror="window.acceptanceEvidenceExecuted=true">',
+            ],
+            note: "The focused draft check passed for the recorded working copy.",
+          },
+          {
+            criterionIndex: 1,
+            criterion: acceptance[1],
+            verdict: "unresolved",
+            evidence: [],
+            note: "Physical-device acceptance has not been performed.",
+          },
+        ],
+      },
+    };
+  }
   goals["machine-local"] = [
     {
       id: "controls-goal",
@@ -126,6 +174,52 @@ if (query.has("boardControls")) {
       updatedAt: 1,
     },
   ];
+  if (query.has("harness")) {
+    const completed = tasks["machine-local"].find((task) => task.id === "review")!;
+    completed.status = "done";
+    completed.completedAt = Date.now() - 1000;
+    completed.budgetUsage = {
+      historyComplete: true,
+      agentMinutes: 3,
+      attempts: 4,
+      completedRuns: 4,
+      runningRuns: 0,
+      reportedTokens: 1200,
+      tokens: 1200,
+      tokensComplete: true,
+      unknownTokenRuns: 0,
+      reportedCostUsd: 0.12,
+      estimatedCostUsd: null,
+      measuredAt: Date.now(),
+    };
+    delete completed.mergeError;
+  }
+  if (query.has("customReviewer")) {
+    const task = tasks["machine-local"].find((entry) => entry.id === "first")!;
+    task.review = true;
+    task.reviewerConfig = {
+      harness: "claude",
+      model: "claude:fixture",
+      modelSettings: { effort: "high" },
+      instructions: "Stored custom reviewer instructions.",
+    };
+  }
+  if (query.has("finalPending") || query.has("finalFailure")) {
+    for (const task of tasks["machine-local"]) {
+      task.status = "done";
+      delete task.mergeError;
+    }
+    const goal = goals["machine-local"][0];
+    goal.finalReview = true;
+    goal.status = query.has("finalFailure") ? "blocked" : "running";
+    goal.finalAcceptance = {
+      status: query.has("finalFailure") ? "failed" : "pending",
+      taskFingerprint: "fixture-delivered-result",
+      ...(query.has("finalFailure")
+        ? { sessionId: "final-review", note: "The integrated user flow still needs verification." }
+        : {}),
+    };
+  }
   if (query.has("uiFilters"))
     tasks["machine-local"].push({
       ...defaults,
@@ -139,10 +233,36 @@ if (query.has("boardControls")) {
 }
 if (query.has("bulk")) {
   const base = tasks["machine-local"][0];
-  tasks["machine-local"] = Array.from({ length: 100 }, (_, index) => ({ ...base, id: `bulk-${index}`, title: `Cleanup task ${index}`, status: "done", goalId: undefined, createdAt: index + 1, updatedAt: index + 1 }));
+  tasks["machine-local"] = Array.from({ length: 100 }, (_, index) => ({
+    ...base,
+    id: `bulk-${index}`,
+    title: `Cleanup task ${index}`,
+    status: "done",
+    goalId: undefined,
+    createdAt: index + 1,
+    updatedAt: index + 1,
+  }));
   tasks["machine-local"].push(
-    { ...base, id: "protected", title: "Protected unmerged work", status: "review", goalId: undefined, branch: "mc/protected", merged: false, createdAt: 101, updatedAt: 101 },
-    { ...base, id: "active", title: "Active work", status: "running", goalId: undefined, createdAt: 102, updatedAt: 102 },
+    {
+      ...base,
+      id: "protected",
+      title: "Protected unmerged work",
+      status: "review",
+      goalId: undefined,
+      branch: "mc/protected",
+      merged: false,
+      createdAt: 101,
+      updatedAt: 101,
+    },
+    {
+      ...base,
+      id: "active",
+      title: "Active work",
+      status: "running",
+      goalId: undefined,
+      createdAt: 102,
+      updatedAt: 102,
+    },
   );
 }
 const calls: { command: string; args: Record<string, unknown> }[] = [];
@@ -241,23 +361,36 @@ Object.assign(window, {
       if (!machine) throw new Error("Unknown fixture machine");
       const params = (args.params ?? {}) as Record<string, unknown>;
       if (machineId === "machine-remote" && args.method === slowRemoteMethod) await remoteGate;
+      if (args.method === query.get("slowOperation")) await remoteGate;
       switch (args.method) {
         case "environment.describe":
-          return {
+          return requireHostDescriptor({
             protocolVersion: 1,
             environmentId: machine.environmentId,
             name: machine.name,
+            providers: ["claude"],
+            platform: machine.localHost ? "win32" : "darwin",
             capabilities: [
               "tasks",
               "tasks.todo",
               "tasks.workspaces",
               "goals.direct-checkout",
               "goals.settings",
+              "goals.final-review",
+              "tasks.run-budget",
+              "tasks.preflight",
+              "tasks.evaluation",
+              "tasks.reviewer-profile",
               "goals",
               "host.settings",
               "tasks.continue-until-done",
               ...(query.has("changes") ? ["machine.changes"] : []),
             ],
+          });
+        case "models.list":
+          return {
+            models: { claude: structuredClone(modelsFor("claude")) },
+            errors: {},
           };
         case "projects.list":
           if (machineId === "machine-remote" && projectFailure)
@@ -287,6 +420,54 @@ Object.assign(window, {
           return structuredClone(tasks[machineId]);
         case "goals.list":
           return structuredClone(goals[machineId]);
+        case "tasks.preflight": {
+          const input = params.task as HostTaskInput;
+          return {
+            checkedAt: Date.now(),
+            state: "ready",
+            items: [
+              ...["Host", "Project", "Agent", "Model"].map((label) => ({
+                key: label.toLowerCase(),
+                label,
+                state: "ready",
+                required: true,
+                checkedAt: Date.now(),
+              })),
+              ...(input.preflightRequirements ?? []).map((requirement) => ({
+                key: JSON.stringify([requirement.kind, requirement.id]),
+                label: requirement.id,
+                required: requirement.required !== false,
+                state: "ready",
+                checkedAt: Date.now(),
+                detail: "Checked by the in-memory fixture; no external connection was opened.",
+              })),
+            ],
+          };
+        }
+        case "tasks.evaluation.save": {
+          const task = tasks[machineId].find((entry) => entry.id === params.taskId)!;
+          if (task.updatedAt !== params.expectedUpdatedAt)
+            throw new Error("Task changed before evaluation.");
+          task.evaluation = {
+            ...(params.evaluation as {
+              accepted: boolean;
+              reviewMinutes: number;
+              corrections: number;
+            }),
+            recordedAt: Date.now(),
+          };
+          task.updatedAt++;
+          return structuredClone(task);
+        }
+        case "goals.final-review.recheck": {
+          const goal = goals[machineId].find((entry) => entry.id === params.goalId)!;
+          if (goal.updatedAt !== params.expectedUpdatedAt)
+            throw new Error("Goal changed before recheck.");
+          goal.finalAcceptance = { status: "pending", taskFingerprint: "fixture-rechecked-result" };
+          goal.status = "running";
+          goal.updatedAt++;
+          return structuredClone(goal);
+        }
         case "goals.update": {
           if (query.has("goalSaveError")) throw new Error("Fixture goal save failed");
           const goal = goals[machineId].find((entry) => entry.id === params.goalId)!;
@@ -378,19 +559,26 @@ Object.assign(window, {
           return null;
         }
         case "tasks.save": {
-          const input = params.task as HostTaskInput & {
+          const raw = params.task as HostTaskInput & {
             status?: "todo" | "queued";
           };
+          const input = parseHostTask(raw);
           if (!projects[machineId].some((project) => project.id === input.projectId))
             throw new Error("Task project belongs to another machine");
           const now = Date.now();
+          const previous = tasks[machineId].find((entry) => entry.id === input.id);
           const task: HostTask = {
+            ...previous,
             ...input,
-            status: input.status ?? "queued",
-            createdAt: now,
-            updatedAt: now,
+            status: previous?.status ?? raw.status ?? "queued",
+            createdAt: previous?.createdAt ?? now,
+            updatedAt: Math.max(now, (previous?.updatedAt ?? 0) + 1),
           };
-          tasks[machineId].push(task);
+          if (previous)
+            tasks[machineId] = tasks[machineId].map((entry) =>
+              entry.id === task.id ? task : entry,
+            );
+          else tasks[machineId].push(task);
           return structuredClone(task);
         }
         case "goals.create": {
@@ -418,7 +606,29 @@ Object.assign(window, {
     },
   },
 });
-setHarnessModels("claude", [{ id: "claude:fixture", harness: "claude", name: "Demo agent" }]);
+setHarnessModels("claude", [
+  {
+    id: "claude:fixture",
+    harness: "claude",
+    name: "Demo agent",
+    ...(query.has("harness")
+      ? {
+          settings: [
+            {
+              id: "effort",
+              label: "Effort",
+              kind: "select" as const,
+              value: "medium",
+              options: [
+                { value: "medium", label: "Medium" },
+                { value: "high", label: "High" },
+              ],
+            },
+          ],
+        }
+      : {}),
+  },
+]);
 saveLastModelChoice("claude", "claude:fixture");
 const source = {
   modelsFor,

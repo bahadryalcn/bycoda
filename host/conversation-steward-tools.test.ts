@@ -43,7 +43,10 @@ function setup() {
       requested: true as const,
       run: records.find((item) => item.id === id)?.run ?? { runId, startedAt: 1 },
     })),
-    delete: vi.fn(async (id: string) => { const at = records.findIndex((entry) => entry.id === id); if (at >= 0) records.splice(at, 1); }),
+    delete: vi.fn(async (id: string) => {
+      const at = records.findIndex((entry) => entry.id === id);
+      if (at >= 0) records.splice(at, 1);
+    }),
     decline: vi.fn(async (_taskId: string) => {}),
   };
   const tools = new ConversationStewardTools(
@@ -52,10 +55,10 @@ function setup() {
     { get: (id) => proposals.get(id) },
   );
   let authorized = true;
-  const call = (action: StewardConversationTool, input: Record<string, unknown>) =>
-    tools.call(action, input, principal, session, () => authorized);
-  const create = () =>
-    call("stewards.create", {
+  const call = async (action: StewardConversationTool, input: Record<string, unknown>) =>
+    await tools.call(action, input, principal, session, () => authorized);
+  const create = async () =>
+    await call("stewards.create", {
       stewardId: "steward",
       scheduleKind: "daily",
       focus: "token=private",
@@ -80,11 +83,20 @@ describe("steward conversation lifecycle", () => {
     records[0].run = { runId: "active", sessionId: "worker", startedAt: 1 };
     await expect(call("stewards.delete", input)).rejects.toThrow("settlement");
     records[0].run = undefined;
-    proposals.set("proposal", { id: "proposal", projectId: "other", stewardId: "steward", source: "steward", status: "todo", updatedAt: 2 } as HostTask);
+    proposals.set("proposal", {
+      id: "proposal",
+      projectId: "other",
+      stewardId: "steward",
+      source: "steward",
+      status: "todo",
+      updatedAt: 2,
+    } as HostTask);
     const decline = { ...input, taskId: "proposal", expectedTaskUpdatedAt: 2 };
     await expect(call("stewards.decline", decline)).rejects.toThrow("this project");
     proposals.get("proposal")!.projectId = "project";
-    await expect(call("stewards.decline", { ...decline, expectedTaskUpdatedAt: 0 })).rejects.toThrow("changed");
+    await expect(
+      call("stewards.decline", { ...decline, expectedTaskUpdatedAt: 0 }),
+    ).rejects.toThrow("changed");
     expect(await call("stewards.decline", decline)).toMatchObject({ declined: true });
     expect(service.decline).toHaveBeenCalledWith("proposal");
     expect(await call("stewards.delete", input)).toMatchObject({ deleted: true });

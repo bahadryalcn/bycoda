@@ -1,3 +1,6 @@
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { Alert } from "../../../shared/ui/Alert";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -53,6 +56,8 @@ function Draft({
   run: Run;
   snapshot?: SocialSnapshot;
 }) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(draft.text);
@@ -190,26 +195,30 @@ function Draft({
             if (mediaBusy) return;
             void (async () => {
               if (
-                await run(async () => {
-                  const { effective } = await client.request<{ effective: SocialPolicy }>(
-                    "policy.get",
-                    { accountId: draft.accountId },
-                  );
-                  const latestLimit = socialLimit(
-                    effective,
-                    draft.kind === "message" || thread?.kind === "message" ? "message" : "comment",
-                  );
-                  if (latestLimit !== undefined && socialCharacterCount(text) > latestLimit)
-                    throw new Error(
-                      t("The text exceeds the {p0} character limit.", { p0: latestLimit }),
+                await pendingUi.run("draft.save-changes", () =>
+                  run(async () => {
+                    const { effective } = await client.request<{ effective: SocialPolicy }>(
+                      "policy.get",
+                      { accountId: draft.accountId },
                     );
-                  return client.request("drafts.update", {
-                    id: draft.id,
-                    text,
-                    factIds,
-                    ...(account?.platform === "x" ? { media } : {}),
-                  });
-                }, t("Draft updated. The new content must be approved again before sending."))
+                    const latestLimit = socialLimit(
+                      effective,
+                      draft.kind === "message" || thread?.kind === "message"
+                        ? "message"
+                        : "comment",
+                    );
+                    if (latestLimit !== undefined && socialCharacterCount(text) > latestLimit)
+                      throw new Error(
+                        t("The text exceeds the {p0} character limit.", { p0: latestLimit }),
+                      );
+                    return client.request("drafts.update", {
+                      id: draft.id,
+                      text,
+                      factIds,
+                      ...(account?.platform === "x" ? { media } : {}),
+                    });
+                  }, t("Draft updated. The new content must be approved again before sending.")),
+                )
               )
                 setEditing(false);
             })();
@@ -220,7 +229,7 @@ function Draft({
             required
             rows={4}
             value={text}
-            disabled={!!account && !editPolicy}
+            disabled={socialLocked || (!!account && !editPolicy)}
             onChange={(event) => setText(event.target.value)}
           />
           <details className="social-settings">
@@ -228,6 +237,7 @@ function Draft({
             {facts.map((fact) => (
               <label className="social-inline-check" key={fact.id}>
                 <Checkbox
+                  disabled={socialLocked}
                   checked={factIds.includes(fact.id)}
                   onChange={(event) =>
                     setFactIds((current) =>
@@ -248,7 +258,12 @@ function Draft({
               </p>
             ) : null}
             {factIds.length ? (
-              <Button variant="secondary" type="button" onClick={() => setFactIds([])}>
+              <Button
+                disabled={socialLocked}
+                variant="secondary"
+                type="button"
+                onClick={() => setFactIds([])}
+              >
                 {t("Remove fact links")}
               </Button>
             ) : (
@@ -262,6 +277,7 @@ function Draft({
               {policyError || t("Loading account limits…")}
               {policyError ? (
                 <Button
+                  disabled={socialLocked}
                   variant="secondary"
                   type="button"
                   onClick={() => setPolicyAttempt((attempt) => attempt + 1)}
@@ -294,10 +310,12 @@ function Draft({
           ) : null}
           <div className="social-actions">
             <Button
+              loading={pendingUi.is("draft.save-changes")}
               type="submit"
               variant="primary"
 
               disabled={
+                socialLocked ||
                 mediaBusy ||
                 !text.trim() ||
                 (!!limit && count > limit) ||
@@ -307,7 +325,12 @@ function Draft({
             >
               {t("Save changes")}
             </Button>
-            <Button variant="secondary" type="button" onClick={() => setEditing(false)}>
+            <Button
+              disabled={socialLocked}
+              variant="secondary"
+              type="button"
+              onClick={() => setEditing(false)}
+            >
               {t("Cancel editing")}
             </Button>
           </div>
@@ -345,7 +368,7 @@ function Draft({
             <Button
               type="button"
               variant="secondary"
-              disabled={!!job || draft.generation?.status === "running"}
+              disabled={socialLocked || !!job || draft.generation?.status === "running"}
               onClick={() => {
                 setText(draft.text);
                 setFactIds(draft.factIds);
@@ -356,35 +379,40 @@ function Draft({
               {t("Edit")}
             </Button>
             <Button
+              loading={pendingUi.is("draft.approve")}
               type="button"
               variant="primary"
-              disabled={!!disabledReason || !draft.text.trim()}
+              disabled={socialLocked || !!disabledReason || !draft.text.trim()}
               onClick={() =>
-                void run(async () => {
-                  const reviewedDraft = structuredClone(draft);
-                  const { effective } = await client.request<{ effective: SocialPolicy }>(
-                    "policy.get",
-                    { accountId: draft.accountId },
-                  );
-                  const latestLimit = socialLimit(
-                    effective,
-                    draft.kind === "message" || thread?.kind === "message" ? "message" : "comment",
-                  );
-                  if (latestLimit !== undefined && socialCharacterCount(draft.text) > latestLimit)
-                    throw new Error(
-                      t("The text exceeds the {p0} character limit. Edit the draft.", {
-                        p0: latestLimit,
-                      }),
+                void pendingUi.run("draft.approve", () =>
+                  run(async () => {
+                    const reviewedDraft = structuredClone(draft);
+                    const { effective } = await client.request<{ effective: SocialPolicy }>(
+                      "policy.get",
+                      { accountId: draft.accountId },
                     );
-                  await client.request("drafts.approve", {
-                    id: reviewedDraft.id,
-                    reviewedDraft,
-                  } satisfies SocialDraftApprovalInput);
-                  await client.request(
-                    `${draft.kind === "reply" ? "replies" : draft.kind === "message" ? "messages" : "comments"}.send`,
-                    { id: draft.id },
-                  );
-                }, t("Draft approved and added to the send queue."))
+                    const latestLimit = socialLimit(
+                      effective,
+                      draft.kind === "message" || thread?.kind === "message"
+                        ? "message"
+                        : "comment",
+                    );
+                    if (latestLimit !== undefined && socialCharacterCount(draft.text) > latestLimit)
+                      throw new Error(
+                        t("The text exceeds the {p0} character limit. Edit the draft.", {
+                          p0: latestLimit,
+                        }),
+                      );
+                    await client.request("drafts.approve", {
+                      id: reviewedDraft.id,
+                      reviewedDraft,
+                    } satisfies SocialDraftApprovalInput);
+                    await client.request(
+                      `${draft.kind === "reply" ? "replies" : draft.kind === "message" ? "messages" : "comments"}.send`,
+                      { id: draft.id },
+                    );
+                  }, t("Draft approved and added to the send queue.")),
+                )
               }
             >
               {t("Approve and add to send queue")}

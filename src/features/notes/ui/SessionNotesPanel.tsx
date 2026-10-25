@@ -117,7 +117,14 @@ export function SessionNotesPanel({ sessionId, cwd }: Props) {
 function SessionNotesContent({ sessionId, cwd }: Props) {
   useLocale();
   const project = looksLikeProject(cwd) ? cwd : "";
-  const { width: panelWidth, setPaneRef, dragging, separatorProps, onPointerDown, onDoubleClick } = useDragResize({
+  const {
+    width: panelWidth,
+    setPaneRef,
+    dragging,
+    separatorProps,
+    onPointerDown,
+    onDoubleClick,
+  } = useDragResize({
     direction: "left",
     min: NOTES_PANEL_MIN_WIDTH,
     max: () => notesPanelMaxWidth(window.innerWidth),
@@ -169,7 +176,12 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
 
   const offered = useMemo(() => panelNotes(notes, sessionId, project), [notes, sessionId, project]);
   const selected = pickPanelNote(offered, selectedId);
-  const { note: selectedDetail, error: detailError, retry: retryDetail } = useNoteDetail(selected);
+  const {
+    note: selectedDetail,
+    error: detailError,
+    retry: retryDetail,
+    retrying: detailRetrying,
+  } = useNoteDetail(selected);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -408,7 +420,13 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
       {detailError ? (
         <Alert tone="danger">
           {detailError}{" "}
-          <Button variant="ghost" size="sm" type="button" onClick={retryDetail}>
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            loading={detailRetrying}
+            onClick={retryDetail}
+          >
             {t("Retry")}
           </Button>
         </Alert>

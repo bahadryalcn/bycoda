@@ -27,21 +27,22 @@ async function setup(controlOrigin?: string) {
       answer: () => {},
     },
   });
+  await engine.ready;
   const project = await engine.openProject(directory);
   const oldOrigin = process.env.BYCODA_WEB_CONTROL_ORIGIN;
   if (controlOrigin) process.env.BYCODA_WEB_CONTROL_ORIGIN = controlOrigin;
   else delete process.env.BYCODA_WEB_CONTROL_ORIGIN;
   let server: ReturnType<typeof createHostServer>;
   try {
-    server = createHostServer(engine, ["codex"]);
+    server = await createHostServer(engine, ["codex"]);
   } finally {
     if (oldOrigin === undefined) delete process.env.BYCODA_WEB_CONTROL_ORIGIN;
     else process.env.BYCODA_WEB_CONTROL_ORIGIN = oldOrigin;
   }
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as AddressInfo).port;
-  const first = store.issueDevice("First");
-  const second = store.issueDevice("Second");
+  const first = await store.issueDevice("First");
+  const second = await store.issueDevice("Second");
   async function http(
     path: string,
     method: "POST" | "GET",
@@ -95,21 +96,24 @@ async function setup(controlOrigin?: string) {
     );
     return { ...res, value: JSON.parse(res.body) as { result?: any; error?: string } };
   }
-  function createSession(projectId = project.id) {
-    return engine.command({
-      type: "create",
-      commandId: randomUUID(),
-      projectId,
-      harness: "codex",
-      model: "codex:test",
-      runtimeMode: "supervised",
-    }).sessionId!;
+  async function createSession(projectId = project.id) {
+    return (
+      await engine.command({
+        type: "create",
+        commandId: randomUUID(),
+        projectId,
+        harness: "codex",
+        model: "codex:test",
+        runtimeMode: "supervised",
+      })
+    ).sessionId!;
   }
   cleanups.push(async () => {
-    await engine.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close();
+    await server.closeResources();
+    await engine.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
   return { directory, project, engine, store, first, second, http, call, createSession };

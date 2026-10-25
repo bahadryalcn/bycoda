@@ -23,7 +23,7 @@ function props(
 ): ComponentProps<typeof ActivityDock> {
   return {
     sessionId: "s1",
-    blocks: [user],
+    blocks: [user, { id: "answer", role: "assistant", text: "Finished response" }],
     busy: false,
     pendingQuestion: false,
     atEnd: true,
@@ -67,7 +67,7 @@ describe("ActivityDock", () => {
   });
 
   it("keeps Done up after work finishes until the composer is focused", () => {
-    render({ busy: true });
+    render({ busy: true, atEnd: false });
     expect(dock()?.getAttribute("data-activity-dock")).toBe("working");
     expect(dock()?.querySelector("[data-pacing-uncle]")).not.toBeNull();
     expect(
@@ -80,7 +80,7 @@ describe("ActivityDock", () => {
     ).toBe(false);
     expect(dock()?.querySelector("[data-pacing-uncle]")?.classList.contains("h-8")).toBe(true);
 
-    render({ busy: false });
+    render({ busy: false, atEnd: false });
     expect(dock()?.getAttribute("data-activity-dock")).toBe("done");
     expect(dock()?.querySelector("[data-pacing-uncle]")).toBeNull();
 
@@ -101,12 +101,35 @@ describe("ActivityDock", () => {
   });
 
   it("names the finished turn separately while a queued send has unknown delivery", () => {
-    render({ busy: true, deliveryUnconfirmed: true });
-    render({ busy: false, deliveryUnconfirmed: true });
+    render({ busy: true, deliveryUnconfirmed: true, atEnd: false });
+    render({ busy: false, deliveryUnconfirmed: true, atEnd: false });
     expect(visibleSessionTestText(dock())).toContain("Turn activity: Finished");
-    expect(container.querySelector("[aria-live='polite']")?.textContent).toBe("Turn activity: Finished");
-    render({ busy: false, deliveryUnconfirmed: false });
+    expect(container.querySelector("[aria-live='polite']")?.textContent).toBe(
+      "Turn activity: Finished",
+    );
+    render({ busy: false, deliveryUnconfirmed: false, atEnd: false });
     expect(visibleSessionTestText(dock())).toContain("Done");
+  });
+
+  it("does not flash Done when the completed response is already visible", () => {
+    render({ busy: true });
+    render({ busy: false });
+    expect(dock()).toBeNull();
+    expect(container.querySelector("[aria-live='polite']")?.textContent).toBe("");
+  });
+
+  it("does not carry previous Done into a newly submitted message before busy acknowledgement", () => {
+    render({ busy: true, atEnd: false });
+    render({ busy: false, atEnd: false });
+    expect(dock()?.getAttribute("data-activity-dock")).toBe("done");
+    const next: Block = { id: "u2", role: "user", text: "next" };
+    render({ busy: false, atEnd: false, blocks: [user, next] });
+    expect(dock()).toBeNull();
+    render({ busy: true, atEnd: false, blocks: [user, next] });
+    expect(dock()?.getAttribute("data-activity-dock")).toBe("working");
+    // The old transport may briefly settle before the new turn acknowledges.
+    render({ busy: false, atEnd: false, blocks: [user, next] });
+    expect(dock()).toBeNull();
   });
 
   it("announces the state in a polite live region", () => {

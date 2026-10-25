@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -9,16 +8,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
-import {
-  AiIdea,
-  Bot,
-  ChevronLeft,
-  ChevronRight,
-  CodeBlock,
-  Plus,
-  Shield,
-  Trash2,
-} from "../../../shared/ui/icons";
+import { ChevronLeft, Plus, Trash2 } from "../../../shared/ui/icons";
 import { Group, Row, Toggle } from "../../settings/ui/settingsControls";
 import {
   defaultCrewPolicy,
@@ -136,18 +126,6 @@ export function CrewEditDialog({ cwd, ...focus }: { cwd: string } & EditorFocus)
       {...focus}
     />
   );
-}
-
-function roleIcon(role: CrewRole) {
-  const Icon =
-    role === "reviewer"
-      ? Shield
-      : role === "specialist"
-        ? CodeBlock
-        : role === "advisor"
-          ? AiIdea
-          : Bot;
-  return <Icon className="icon-md" aria-hidden />;
 }
 
 function issueText(
@@ -485,8 +463,7 @@ function ConnectedCrewEditor({
     : "";
 
   const header = (
-    <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-end gap-3 @min-[36rem]/crew-editor:grid-cols-[auto_minmax(0,1fr)_auto]">
-      <CrewAppearancePicker crewId={draft.id} look={look} onChange={setLook} disabled={pending} />
+    <div className="grid min-w-0 items-end gap-3 @min-[36rem]/crew-editor:grid-cols-[minmax(0,1fr)_auto]">
       <TextField
         label={t("Crew name")}
         placeholder={t("e.g. Mobile app")}
@@ -497,7 +474,7 @@ function ConnectedCrewEditor({
         onChange={(event) => update({ name: event.target.value })}
       />
       {isNew ? (
-        <div className="col-span-2 flex min-w-0 flex-col items-start gap-1 @min-[36rem]/crew-editor:col-span-1">
+        <div className="flex min-w-0 flex-col items-start gap-1">
           <span className="text-ui-body font-medium">{t("Available in")}</span>
           <SegmentedControl
             label={t("Available in")}
@@ -514,9 +491,7 @@ function ConnectedCrewEditor({
           />
         </div>
       ) : (
-        <Badge size="md" className="col-span-2 mb-2 w-fit @min-[36rem]/crew-editor:col-span-1">
-          {scopeLabel}
-        </Badge>
+        <span className="pb-2 text-ui-caption text-(--ui-text-secondary)">{scopeLabel}</span>
       )}
     </div>
   );
@@ -524,7 +499,7 @@ function ConnectedCrewEditor({
   const roster = (
     <div className="flex min-w-0 flex-col gap-4">
       {draft.agents.length === 0 ? (
-        <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed border-(--ui-tone-neutral-border) p-4">
+        <div className="flex flex-col items-start gap-3 py-2">
           <p className="text-ui-body text-(--ui-text-secondary)">
             {t(
               "A crew needs a coordinator, at least one specialist and a reviewer. Pick members from your library or start with one of each.",
@@ -532,7 +507,7 @@ function ConnectedCrewEditor({
           </p>
           <div className="flex flex-wrap gap-2">
             <Button
-              variant="primary"
+              variant="secondary"
               startIcon={<Plus className="icon-sm" />}
               onClick={() => openAdd()}
             >
@@ -557,13 +532,14 @@ function ConnectedCrewEditor({
               className="flex min-w-0 flex-col gap-1.5"
             >
               <div className="flex min-w-0 items-baseline gap-2">
-                <h4 className="text-ui-body font-medium">{section.title}</h4>
-                <span className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)">
-                  {section.hint}
+                <h4 className="text-ui-body font-medium" title={section.hint}>
+                  {section.title}
+                </h4>
+                <span className="min-w-0 flex-1 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+                  {members.length || ""}
                 </span>
-                {section.role === "specialist" ||
-                section.role === "advisor" ||
-                members.length === 0 ? (
+                {members.length > 0 &&
+                (section.role === "specialist" || section.role === "advisor") ? (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -580,23 +556,27 @@ function ConnectedCrewEditor({
                 </p>
               ) : null}
               {members.length ? (
-                <ul className="flex flex-col divide-y divide-(--ui-tone-neutral-border) overflow-hidden rounded-lg border border-(--ui-tone-neutral-border)">
+                <ul className="flex min-w-0 flex-col divide-y divide-(--ui-tone-neutral-border)">
                   {members.map((agent) => {
                     const problem = issues.members[agent.id];
                     const detail =
                       agent.groups?.join(", ") || agent.instructions.split(/\r?\n/)[0]?.trim();
                     return (
-                      <li key={agent.id} className="group flex min-w-0 items-center">
+                      <li key={agent.id} className="flex min-w-0 items-center gap-1">
                         <Button
                           variant="item"
                           motion="none"
                           className="min-w-0 flex-1"
                           data-member-row={agent.id}
                           onClick={() => openMember(agent)}
+                          title={[
+                            agent.name,
+                            detail,
+                            candidateLabel(data.catalog, agent.candidates[0]),
+                          ]
+                            .filter(Boolean)
+                            .join("\n")}
                         >
-                          <span className="grid size-7 shrink-0 place-items-center rounded-md bg-(--ui-surface) text-(--ui-text-secondary)">
-                            {roleIcon(agent.role)}
-                          </span>
                           <span className="min-w-0 flex-1 text-start">
                             <span className="block truncate text-ui-body font-medium">
                               {agent.name || t("Unnamed member")}
@@ -616,7 +596,9 @@ function ConnectedCrewEditor({
                                 ? t("Add a name")
                                 : `${agent.selection === "automatic" ? `${t("Automatic")} · ` : ""}${candidateLabel(data.catalog, agent.candidates[0])}`}
                           </span>
-                          <ChevronRight className="icon-sm shrink-0" aria-hidden />
+                          <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+                            {t("Edit")}
+                          </span>
                         </Button>
                         <Button
                           variant="ghost"
@@ -624,7 +606,7 @@ function ConnectedCrewEditor({
                           label={t("Remove {p0} from crew", {
                             p0: agent.name || t("member"),
                           })}
-                          className="me-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100"
+                          className="shrink-0"
                           onClick={() =>
                             update({
                               agents: draft.agents.filter((a) => a.id !== agent.id),
@@ -744,6 +726,16 @@ function ConnectedCrewEditor({
   };
   const settings = (
     <div className="flex min-w-0 flex-col gap-4">
+      <Group title={t("Appearance")}>
+        <Row label={t("Crew")}>
+          <CrewAppearancePicker
+            crewId={draft.id}
+            look={look}
+            onChange={setLook}
+            disabled={pending}
+          />
+        </Row>
+      </Group>
       <Group
         title={t("Automatic model choice")}
         description={

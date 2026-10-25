@@ -1,4 +1,4 @@
-"""Regression checks only: never builds, installs, contacts SSH, or stops processes."""
+"""No live build/install/SSH or app/provider stop. Windows job fixture owns its test children."""
 import io
 import os
 from contextlib import closing
@@ -8,6 +8,7 @@ import plistlib
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -15,12 +16,474 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from local_update import UPDATER_FEED, archive_package, dependency_action, dependency_key, fingerprint, sync_source, queue_install, validate_versions, validate_product_identity, finish_build, host_key, install_job_active, snapshot
+from local_update import UPDATER_FEED, archive_package, dependency_action, dependency_key, fingerprint, sync_source, queue_install, validate_versions, validate_product_identity, finish_build, host_key, install_job_active, snapshot, bundled_host_key, worker
 from local_update_lib import backup, count, safe_child, write_json, read_json, alive, digest, windows_binary_digest, PRODUCT_IDENTITY, package_identity
 from local_install import wait_idle, stop_windows_host, host_install, verify_windows_host_process
 from local_install import app_install, windows_app_process_filter, desktop_db, mac_app_update_paths
+from local_install import windows_app_snapshot
+from local_install import verify_desktop_backup, wait_broker_launch
+from local_update import install_job_status
+from local_update_lib import spawn_windows_updater, tree_hashes, UpdaterLaunchRefused, windows_installer_idle
 
 class LocalUpdateTests(unittest.TestCase):
+    def test_dead_helper_does_not_allow_a_still_running_installer_or_unknown_nsis_child(self):
+        release = pathlib.Path('C:/build/run')
+        app = pathlib.Path('C:/local/bycoda/bycoda.exe')
+        normal = {'ProcessId': 1, 'ParentProcessId': 0, 'Name': 'other.exe', 'ExecutablePath': 'C:/other.exe', 'CommandLine': 'other.exe'}
+        windows_installer_idle([normal], release, app, 900)
+        for candidate in (
+            {**normal, 'ExecutablePath': 'C:/build/run/setup.exe'},
+            {**normal, 'ExecutablePath': 'C:/local/bycoda/uninstall.exe'},
+            {**normal, 'ParentProcessId': 900},
+            {**normal, 'Name': 'Au_.exe', 'ExecutablePath': 'C:/Temp/nsF3B.tmp/Au_.exe'},
+            {**normal, 'Name': 'setup.exe', 'ExecutablePath': None, 'CommandLine': None},
+            {**normal, 'Name': 'bycoda_0.6.75_x64-setup.exe'},
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(RuntimeError, 'still running or ambiguous'):
+                windows_installer_idle([candidate], release, app, 900)
+        with self.assertRaisesRegex(RuntimeError, 'Cannot verify'):
+            windows_installer_idle([{}], release, app)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows unknown launch recovery')
+    def test_windows_launch_failure_preserves_child_state_and_blocks_unknown_retry(self):
+        for outcome in ('child', 'unknown', 'refused'):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as folder:
+                root = pathlib.Path(folder)
+                release = root / 'release'
+                release.mkdir()
+                write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY)})
+                record = root / '.bycoda-host/update-jobs/app.json'
+                def launch(args, cwd, receipt, launch_key):
+                    if outcome == 'child':
+                        write_json(record, {'id': 'same', 'pid': 123, 'state': 'waiting', 'launchKey': launch_key})
+                    if outcome == 'refused':
+                        raise UpdaterLaunchRefused('known refusal')
+                    raise RuntimeError('unknown verification outcome')
+                with patch('local_update.pathlib.Path.home', return_value=root), \
+                     patch('local_update.alive', return_value=True), \
+                     patch('local_update.spawn_windows_updater', side_effect=launch) as broker:
+                    with self.assertRaises(RuntimeError):
+                        queue_install(release, ('app',))
+                    current = install_job_status(read_json(record))
+                    self.assertEqual(current['state'], {'child': 'waiting', 'unknown': 'launch-unknown', 'refused': 'failed'}[outcome])
+                    if outcome == 'child':
+                        self.assertEqual(current['pid'], 123)
+                    if outcome == 'unknown':
+                        with self.assertRaisesRegex(RuntimeError, 'outcome is unknown'):
+                            queue_install(release, ('app',))
+                        self.assertEqual(broker.call_count, 1)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows late publication reconciliation')
+    def test_launch_exception_sidecar_cannot_overwrite_a_late_completed_helper_report(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            release = root / 'release'
+            release.mkdir()
+            record = root / '.bycoda-host/update-jobs/app.json'
+            write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY)})
+            def publish(path, value):
+                if path.name.endswith('.error.json'):
+                    write_json(record, {'id': 'same', 'pid': 123, 'state': 'installed'})
+                write_json(path, value)
+            with patch('local_update.pathlib.Path.home', return_value=root), \
+                 patch('local_update.write_json', side_effect=publish), \
+                 patch('local_update.spawn_windows_updater', side_effect=RuntimeError('verification timed out')):
+                with self.assertRaisesRegex(RuntimeError, 'timed out'):
+                    queue_install(release, ('app',))
+            self.assertEqual(read_json(record), {'id': 'same', 'pid': 123, 'state': 'installed'})
+
+    def test_status_uses_only_the_current_attempt_receipt_before_first_helper_report(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            receipt = root / 'launch-app.json'
+            launch_key = 'a' * 32
+            record = {'state': 'launching', 'pid': None, 'launchKey': launch_key,
+                      'launchReceipt': str(receipt), 'component': 'app', 'releaseDirectory': str(root)}
+            write_json(receipt, {'pid': 123, 'verified': True, 'launchKey': 'b' * 32})
+            self.assertIsNone(install_job_status(record)['pid'])
+            self.assertTrue(install_job_active(record))
+            write_json(receipt, {'pid': 123, 'verified': True, 'launchKey': launch_key})
+            with patch('local_update.alive', return_value=False):
+                projected = install_job_status(record)
+                self.assertEqual(projected['pid'], 123)
+                self.assertEqual(projected['state'], 'interrupted')
+                self.assertFalse(install_job_active(record))
+            with patch('local_update.alive', return_value=True):
+                self.assertTrue(install_job_active(record))
+            self.assertIsNone(record['pid'])
+
+    def test_helper_launch_handshake_requires_matching_pid_key_and_verification(self):
+        with tempfile.TemporaryDirectory() as folder:
+            receipt = pathlib.Path(folder) / 'launch-app.json'
+            write_json(receipt, {'pid': os.getpid(), 'launchKey': 'a' * 32, 'verified': True})
+            wait_broker_launch(receipt, 'a' * 32)
+            for state in ({'pid': os.getpid(), 'launchKey': 'b' * 32, 'verified': True},
+                          {'pid': os.getpid(), 'launchKey': 'a' * 32, 'verified': False}):
+                write_json(receipt, state)
+                with self.assertRaisesRegex(RuntimeError, 'installation did not start'):
+                    wait_broker_launch(receipt, 'a' * 32, seconds=0)
+
+    def test_headless_helper_owns_its_log_for_startup_validation_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            manifest = root / 'manifest.json'
+            write_json(manifest, {'id': 'invalid', 'version': '0.6.75', 'identity': dict(PRODUCT_IDENTITY)})
+            log = root / 'install-app.log'
+            options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+            result = subprocess.run([sys.executable, '-B', str(pathlib.Path(__file__).with_name('local_install.py')),
+                                     str(manifest), 'app', '--log', str(log)], capture_output=True, **options)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Invalid package id/version', log.read_text())
+
+    @unittest.skipUnless(os.name == 'nt', 'Real isolated Windows job lifetime')
+    def test_windows_broker_survives_kill_on_close_job(self):
+        import ctypes
+        import _winapi
+        from ctypes import wintypes
+        class Limits(ctypes.Structure):
+            _fields_ = [('processTime', ctypes.c_int64), ('jobTime', ctypes.c_int64),
+                        ('flags', wintypes.DWORD), ('minimum', ctypes.c_size_t),
+                        ('maximum', ctypes.c_size_t), ('count', wintypes.DWORD),
+                        ('affinity', ctypes.c_size_t), ('priority', wintypes.DWORD),
+                        ('scheduling', wintypes.DWORD)]
+        class ExtendedLimits(ctypes.Structure):
+            _fields_ = [('basic', Limits), ('io', ctypes.c_uint64 * 6),
+                        ('processMemory', ctypes.c_size_t), ('jobMemory', ctypes.c_size_t),
+                        ('peakProcess', ctypes.c_size_t), ('peakJob', ctypes.c_size_t)]
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        kernel.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel.ResumeThread.argtypes = [wintypes.HANDLE]
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            library = str(pathlib.Path(__file__).resolve().parent)
+            leaf_start = (
+                'import ctypes,os,pathlib,time,json,subprocess,sys;from ctypes import wintypes;'
+                'k=ctypes.WinDLL("kernel32");k.GetConsoleWindow.restype=ctypes.c_void_p;'
+                'k.GetCurrentProcess.restype=wintypes.HANDLE;'
+                'a=ctypes.WinDLL("advapi32");a.OpenProcessToken.argtypes=[wintypes.HANDLE,wintypes.DWORD,ctypes.POINTER(wintypes.HANDLE)];'
+                'token=wintypes.HANDLE();assert a.OpenProcessToken(k.GetCurrentProcess(),8,ctypes.byref(token));'
+                'e=wintypes.DWORD();n=wintypes.DWORD();assert a.GetTokenInformation(token,20,ctypes.byref(e),4,ctypes.byref(n));'
+                'p=pathlib.Path(' + repr(str(root)) + ');'
+                'p.joinpath(str(os.getpid())+".ready").write_text(json.dumps({"console":k.GetConsoleWindow() or 0,"elevated":bool(e.value)}));'
+                'deadline=time.monotonic()+30;'
+            )
+            descendant = leaf_start + (
+                '\nwhile not p.joinpath("finish").exists() and time.monotonic()<deadline: time.sleep(.02)'
+            )
+            leaf = leaf_start + 'spawned=False;childCode=' + repr(descendant) + (
+                '\nwhile not p.joinpath("finish").exists() and time.monotonic()<deadline:'
+                '\n if p.joinpath("restart").exists() and not spawned:'
+                '\n  child=subprocess.Popen([sys.executable,"-B","-c",childCode],creationflags=subprocess.CREATE_NO_WINDOW);spawned=True;'
+                'p.joinpath("descendant.pid").write_text(str(child.pid))'
+                '\n time.sleep(.02)'
+            )
+            root_code = (
+                'import json,pathlib,subprocess,sys,time;'
+                'sys.stdout=open(' + repr(str(root / 'parent.log')) + ',"w",buffering=1);sys.stderr=sys.stdout;'
+                'sys.path.insert(0,' + repr(library) + ');'
+                'from local_update_lib import spawn_windows_updater;'
+                'p=pathlib.Path(' + repr(str(root)) + ');'
+                'args=[sys.executable,"-B","-c",' + repr(leaf) + '];'
+                'direct=subprocess.Popen(args,creationflags=subprocess.CREATE_NO_WINDOW);'
+                '\ntry:\n broker=spawn_windows_updater(args,p)\n'
+                'except subprocess.CalledProcessError as error:\n print(error.stderr,flush=True)\n raise\n'
+                'p.joinpath("pids.json").write_text(json.dumps({"direct":direct.pid,"broker":broker}));'
+                'time.sleep(30)'
+            )
+            job = kernel.CreateJobObjectW(None, None)
+            self.assertTrue(job)
+            limits = ExtendedLimits()
+            limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, no breakaway.
+            self.assertTrue(kernel.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)))
+            process = thread = None
+            handles = []
+            try:
+                process, thread, pid, _ = _winapi.CreateProcess(
+                    sys.executable, subprocess.list2cmdline([sys.executable, '-B', '-c', root_code]),
+                    None, None, False, subprocess.CREATE_NO_WINDOW | 4, None, str(root), subprocess.STARTUPINFO())
+                self.assertTrue(kernel.AssignProcessToJobObject(job, process))
+                self.assertNotEqual(kernel.ResumeThread(thread), -1)
+                _winapi.CloseHandle(thread)
+                thread = None
+                deadline = time.monotonic() + 20
+                while not (root / 'pids.json').exists():
+                    self.assertEqual(_winapi.WaitForSingleObject(process, 0), 258,
+                                     (root / 'parent.log').read_text() if (root / 'parent.log').exists() else 'Isolated job parent exited before broker launch')
+                    self.assertLess(time.monotonic(), deadline, 'Broker launch timed out')
+                    time.sleep(.02)
+                pids = read_json(root / 'pids.json')
+                elevations = []
+                for name in ('direct', 'broker'):
+                    while not (root / (str(pids[name]) + '.ready')).exists():
+                        self.assertLess(time.monotonic(), deadline, 'Marker child did not start')
+                        time.sleep(.02)
+                    handle = kernel.OpenProcess(0x100000 | 0x1000, False, pids[name])
+                    self.assertTrue(handle)
+                    handles.append(handle)
+                    member = wintypes.BOOL()
+                    self.assertTrue(kernel.IsProcessInJob(handle, job, ctypes.byref(member)))
+                    self.assertEqual(bool(member.value), name == 'direct')
+                    info = read_json(root / (str(pids[name]) + '.ready'))
+                    self.assertEqual(info['console'], 0, 'Fixture console must remain hidden')
+                    elevations.append(info['elevated'])
+                    if name == 'broker':
+                        self.assertTrue(kernel.IsProcessInJob(handle, None, ctypes.byref(member)))
+                        self.assertFalse(member.value, 'Broker must also escape the WMI provider quota job')
+                self.assertEqual(elevations[0], elevations[1], 'Broker must not elevate the caller')
+                kernel.CloseHandle(job)
+                job = None
+                self.assertEqual(_winapi.WaitForSingleObject(process, 5000), 0)
+                self.assertEqual(_winapi.WaitForSingleObject(handles[0], 5000), 0)
+                self.assertEqual(_winapi.WaitForSingleObject(handles[1], 0), 258, 'Brokered helper died with the managed parent')
+                (root / 'restart').touch()
+                while not (root / 'descendant.pid').exists():
+                    self.assertLess(time.monotonic(), deadline, 'Brokered descendant did not launch')
+                    time.sleep(.02)
+                descendant_pid = int((root / 'descendant.pid').read_text())
+                handle = kernel.OpenProcess(0x100000 | 0x1000, False, descendant_pid)
+                self.assertTrue(handle)
+                handles.append(handle)
+                self.assertTrue(kernel.IsProcessInJob(handle, None, ctypes.byref(member)))
+                self.assertFalse(member.value, 'Restarted descendant inherited a job quota')
+                (root / 'finish').touch()
+                self.assertEqual(_winapi.WaitForSingleObject(handles[1], 5000), 0)
+                print(json.dumps({'proof': 'isolated Windows updater lifetime', 'managedParentAndChildStopped': True,
+                                  'brokerSurvived': True, 'brokerAndDescendantOutsideAllJobs': True,
+                                  'sameElevation': True, 'sameUserAndSessionVerified': True, 'hiddenConsole': True}))
+            finally:
+                (root / 'finish').touch()
+                if job:
+                    kernel.CloseHandle(job)
+                if process:
+                    _winapi.WaitForSingleObject(process, 5000)
+                    _winapi.CloseHandle(process)
+                if thread:
+                    _winapi.CloseHandle(thread)
+                for handle in handles:
+                    _winapi.WaitForSingleObject(handle, 5000)
+                    kernel.CloseHandle(handle)
+                for marker in root.glob('*.ready'):
+                    handle = kernel.OpenProcess(0x100000, False, int(marker.stem))
+                    if handle:
+                        _winapi.WaitForSingleObject(handle, 5000)
+                        kernel.CloseHandle(handle)
+
+    def test_existing_database_backup_is_verified_without_replacing_corruption(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / 'desktop.db'
+            for content in (b'', b'partial SQLite backup'):
+                path.write_bytes(content)
+                with self.assertRaisesRegex(RuntimeError, 'requires recovery'):
+                    verify_desktop_backup(path)
+                self.assertEqual(path.read_bytes(), content)
+            path.unlink()
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute('CREATE TABLE in_flight_sessions(id TEXT)')
+            with self.assertRaisesRegex(RuntimeError, 'requires recovery'):
+                verify_desktop_backup(path)
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute('CREATE TABLE sessions(id TEXT)')
+            verify_desktop_backup(path)
+            with self.assertRaisesRegex(RuntimeError, 'requires recovery'):
+                verify_desktop_backup(path, seconds=0)
+
+    def test_job_status_reports_dead_helpers_without_mutating_records(self):
+        original = {'state': 'installing', 'pid': 123, 'id': 'same'}
+        with patch('local_update.alive', return_value=False):
+            self.assertEqual(install_job_status(original), {**original, 'state': 'interrupted',
+                             'recordedState': 'installing', 'helperAlive': False})
+            self.assertEqual(original['state'], 'installing')
+            self.assertEqual(install_job_status({'state': 'launching', 'pid': None}),
+                             {'state': 'launching', 'pid': None, 'helperAlive': None})
+        with patch('local_update.alive', return_value=True) as alive:
+            self.assertTrue(install_job_status(original)['helperAlive'])
+            for state in ('installed', 'failed'):
+                self.assertEqual(install_job_status({'state': state, 'pid': 123}),
+                                 {'state': state, 'pid': 123, 'helperAlive': None})
+            self.assertEqual(alive.call_count, 1)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows broker contract')
+    def test_windows_queue_retries_dead_same_package_via_hidden_broker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            release = root / 'release'
+            release.mkdir()
+            write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY)})
+            record = root / '.bycoda-host/update-jobs/app.json'
+            write_json(record, {'id': 'same', 'pid': 456, 'state': 'installing'})
+            def launch(args, cwd, receipt, launch_key):
+                self.assertEqual(cwd, release)
+                self.assertEqual(args[-6:-4], ['--log', str(release / 'install-app.log')])
+                self.assertEqual(args[:3], [sys.executable, '-B', str(release / 'local_install.py')])
+                write_json(record, {'id': 'same', 'pid': 123, 'state': 'starting'})
+                return 123
+            with patch('local_update.pathlib.Path.home', return_value=root), \
+                 patch('local_update.alive', return_value=False), \
+                 patch('local_update.spawn_windows_updater', side_effect=launch) as broker, \
+                 patch('local_update.assert_windows_installer_idle') as installer_guard, \
+                 patch('local_update.subprocess.Popen') as direct:
+                queue_install(release, ('app',))
+            broker.assert_called_once()
+            installer_guard.assert_called_once()
+            direct.assert_not_called()
+            self.assertEqual(read_json(record)['state'], 'starting')
+            self.assertEqual(read_json(release / 'launch-app.json')['pid'], 123)
+
+    def test_windows_broker_checks_result_pid_and_current_user_without_elevation(self):
+        with patch('local_update_lib.ps', return_value='123') as powershell, \
+             patch('local_update_lib.alive', return_value=True):
+            self.assertEqual(spawn_windows_updater(['python.exe', "a path's/entry.py", 'app'], "C:/a path's"), 123)
+        script = powershell.call_args.args[0]
+        self.assertIn('Win32_ProcessStartup', script)
+        self.assertIn('ShowWindow=[uint16]0;CreateFlags=[uint32]150994944', script)
+        self.assertIn('GetOwnerSid', script)
+        self.assertIn('WindowsIdentity]::GetCurrent().User.Value', script)
+        self.assertNotIn('RunAs', script)
+        for value, running in [('bad', True), ('0', True), ('123', False)]:
+            with patch('local_update_lib.ps', return_value=value), patch('local_update_lib.alive', return_value=running):
+                with self.assertRaisesRegex(RuntimeError, 'process id|exited'):
+                    spawn_windows_updater(['python.exe'], 'C:/fixture')
+
+    def test_interrupted_windows_snapshot_is_reused_only_for_known_installation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            app = root / 'app/bycoda.exe'
+            app.parent.mkdir()
+            app.write_bytes(b'old exe-__TAURI_BUNDLE_TYPE_VAR_UNK')
+            (app.parent / 'sidecar.dll').write_bytes(b'old sidecar')
+            rollback = root / 'rollback'
+            rollback.mkdir()
+            manifest = {'binaryHash': 'new hash', 'version': '0.6.75'}
+            hashes, complete = windows_app_snapshot(app, rollback, manifest)
+            before = tree_hashes(rollback)
+            self.assertFalse(complete)
+            self.assertEqual(windows_app_snapshot(app, rollback, manifest), (hashes, False))
+            self.assertEqual(tree_hashes(rollback), before)
+            (app.parent / 'sidecar.dll').write_bytes(b'unknown partial installation')
+            with self.assertRaisesRegex(RuntimeError, 'unknown installation'):
+                windows_app_snapshot(app, rollback, manifest)
+            self.assertEqual(tree_hashes(rollback), before)
+            with patch('local_install.windows_binary_digest', return_value='new hash'), \
+                 patch('local_install.ps', return_value='0.6.75'):
+                with self.assertRaisesRegex(RuntimeError, 'unknown installation'):
+                    windows_app_snapshot(app, rollback, manifest)
+                (app.parent / 'sidecar.dll').unlink()
+                with self.assertRaisesRegex(RuntimeError, 'unknown installation'):
+                    windows_app_snapshot(app, rollback, manifest)
+            (rollback / 'installation/sidecar.dll').write_bytes(b'corrupt backup')
+            with self.assertRaisesRegex(RuntimeError, 'integrity'):
+                windows_app_snapshot(app, rollback, manifest)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows worker package layout')
+    def test_worker_repackages_changed_host_without_rebuilding_unchanged_web(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            workspace = root / 'source'
+            workspace.mkdir()
+            files = {'package.json': b'{"packageManager":"pnpm@12.0.0"}',
+                     'host/cli.ts': b'old host', 'src-tauri/src/lib.rs': b'unchanged Rust'}
+            (workspace / 'package.json').write_bytes(files['package.json'])
+            (workspace / 'node_modules').mkdir()
+            helpers = workspace / 'scripts/local-update'
+            helpers.mkdir(parents=True)
+            for name in ('local_update.py', 'local_update_lib.py', 'local_install.py'):
+                (helpers / name).write_text('# fixture only')
+            source_archive = root / 'source.tar.gz'
+            source_archive.write_bytes(b'fixture source archive')
+            artifacts = root / 'cargo/release'
+            native = artifacts / 'bycoda.exe'
+            setup = artifacts / 'bundle/nsis/bycoda_0.0.1_x64-setup.exe'
+            host = workspace / 'build/host-packages/win32-x64'
+            archive = host.parent / 'bycoda-host-win32-x64.zip'
+            stages = []
+
+            def build_stage(name, command, cwd, env, release, timings):
+                stages.append(name)
+                if name == 'host':
+                    host.mkdir(parents=True, exist_ok=True)
+                    (host / 'host.mjs').write_bytes(files['host/cli.ts'])
+                    archive.write_bytes(files['host/cli.ts'])
+                    pathlib.Path(f'{archive}.sha256').write_text(digest(archive))
+                elif name == 'web':
+                    (workspace / 'dist').mkdir(exist_ok=True)
+                    (workspace / 'dist/index.html').write_text('unchanged web')
+                elif name == 'native':
+                    setup.parent.mkdir(parents=True, exist_ok=True)
+                    native.write_bytes(b'MZ-__TAURI_BUNDLE_TYPE_VAR_UNK-unchanged-native')
+                    # Model the installer bundling the generated host resource.
+                    setup.write_bytes(b'installer:' + archive.read_bytes())
+                else:
+                    self.fail('Unexpected build stage: ' + name)
+
+            request = {'stateRoot': str(root), 'cargoTarget': str(root / 'cargo'),
+                       'archive': str(source_archive), 'archiveHash': digest(source_archive),
+                       'source': 'fixture', 'mode': 'local', 'buildOnly': True}
+            with patch('local_update.sync_source', return_value=files), \
+                 patch('local_update.validate_versions', return_value='0.0.1'), \
+                 patch('local_update.validate_product_identity'), \
+                 patch('local_update.legacy_updaters', return_value=[]), \
+                 patch('local_update.status', return_value={}), \
+                 patch('local_update.run', side_effect=lambda args, **kwargs: '12.0.0' if args[0] == 'pnpm' else 'rustc fixture'), \
+                 patch('local_update.stage', side_effect=build_stage), \
+                 patch('local_update.archive_package', return_value=setup), \
+                 patch('local_update.finish_build'):
+                worker(dict(request, id='baseline'))
+                self.assertEqual(stages, ['host', 'web', 'native'])
+                stages.clear()
+                worker(dict(request, id='unchanged'))
+                self.assertEqual(stages, [])
+                files['host/cli.ts'] = b'new host'
+                worker(dict(request, id='host-changed'))
+                self.assertEqual(stages, ['host', 'native'])
+                self.assertEqual((root / 'runs/host-changed/setup.exe').read_bytes(), b'installer:new host')
+                stages.clear()
+                worker(dict(request, id='host-unchanged'))
+                self.assertEqual(stages, [])
+
+    def test_installer_cache_tracks_bundled_host_bytes_and_checksum(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive = pathlib.Path(folder) / 'bycoda-host-win32-x64.zip'
+            checksum = pathlib.Path(f'{archive}.sha256')
+            archive.write_bytes(b'old host package')
+            checksum.write_text('old checksum')
+            previous = bundled_host_key(archive)
+            self.assertEqual(previous, bundled_host_key(archive))
+            archive.write_bytes(b'new host package')
+            changed = bundled_host_key(archive)
+            self.assertNotEqual(previous, changed)
+            checksum.write_text('new checksum')
+            self.assertNotEqual(changed, bundled_host_key(archive))
+
+    def test_completed_host_job_requires_running_runtime_health_before_reuse(self):
+        for healthy in (True, False):
+            with self.subTest(healthy=healthy), tempfile.TemporaryDirectory() as folder:
+                root = pathlib.Path(folder)
+                release = root / 'release'
+                release.mkdir()
+                runtime = root / '.bycoda-host/runtime/selected'
+                runtime.mkdir(parents=True)
+                (runtime / 'host.mjs').write_text('selected host')
+                (root / '.bycoda-host/runtime-path').write_text(str(runtime))
+                write_json(release / 'manifest.json', {
+                    'id': 'same', 'identity': dict(PRODUCT_IDENTITY),
+                    'hostHashes': {'host.mjs': digest(runtime / 'host.mjs')}})
+                record = root / '.bycoda-host/update-jobs/host.json'
+                write_json(record, {'id': 'same', 'state': 'installed'})
+                with patch('local_update.pathlib.Path.home', return_value=root), \
+                     patch('local_update.verify_host', side_effect=None if healthy else RuntimeError('Wrong running runtime')) as verify, \
+                     patch('local_update.subprocess.Popen', return_value=SimpleNamespace(pid=123)) as direct_spawn, \
+                     patch('local_update.spawn_windows_updater', return_value=123) as broker_spawn:
+                    queue_install(release, ('host',))
+                self.assertEqual((broker_spawn if os.name == 'nt' else direct_spawn).call_count, 0 if healthy else 1)
+                verify.assert_called_once_with(runtime)
+
     def test_mac_update_migrates_legacy_and_stable_services_and_restores_engine_on_failure(self):
         for stable_service in (False, True):
             for fail in (False, True):

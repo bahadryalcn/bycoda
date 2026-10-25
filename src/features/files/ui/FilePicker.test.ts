@@ -96,6 +96,34 @@ function inputText(input: HTMLInputElement, value: string) {
   });
 }
 
+it("reports a failed refresh without hiding cached files and retries without losing the query", async () => {
+  loadProjectFiles.mockRejectedValueOnce(new Error("File index unavailable"));
+  renderPicker();
+  await act(async () => {});
+  const field = document.querySelector<HTMLInputElement>('input[aria-label="Go to File"]')!;
+  inputText(field, "App");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain("File index unavailable");
+  expect(document.querySelector("[data-file-picker]")?.textContent).toContain("App.tsx");
+  let finish!: (files: typeof projectFiles) => void;
+  loadProjectFiles.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const retry = [...document.querySelectorAll("button")].find(
+    (button) => button.textContent === "Retry",
+  )!;
+  retry.focus();
+  await act(async () => retry.click());
+  expect(retry.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(retry);
+  expect(field.value).toBe("App");
+  await act(async () => finish(projectFiles));
+  expect(field.value).toBe("App");
+  expect(document.querySelector('[role="alert"]')).toBeNull();
+});
+
 it("does not open a file while Enter is committing IME text", () => {
   const { onOpenFile, onClose } = renderPicker();
   const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Go to File"]')!;
@@ -298,4 +326,76 @@ describe("file picker on a remote project", () => {
     );
     expect(document.body.textContent).toContain("Machine is not connected");
   });
+});
+
+it("keeps file result IDs connected to the focused search through navigation and empty filtering", async () => {
+  loadProjectFiles.mockResolvedValueOnce([
+    ...projectFiles,
+    { path: "/repo/src/Beta.tsx", relative: "src/Beta.tsx", name: "Beta.tsx" },
+  ]);
+  const { onOpenFile } = renderPicker();
+  await act(async () => {});
+  const field = document.querySelector<HTMLInputElement>(
+    '[role="combobox"][aria-label="Go to File"]',
+  )!;
+  field.focus();
+  const list = document.getElementById(field.getAttribute("aria-controls")!)!;
+  expect(list.getAttribute("role")).toBe("listbox");
+  expect(
+    document.getElementById(field.getAttribute("aria-activedescendant")!)?.textContent,
+  ).toContain("App.tsx");
+  act(() =>
+    field.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(document.activeElement).toBe(field);
+  const active = document.getElementById(field.getAttribute("aria-activedescendant")!)!;
+  expect(active.textContent).toContain("Beta.tsx");
+  expect(active.getAttribute("aria-selected")).toBe("true");
+  expect(active.tabIndex).toBe(-1);
+  act(() =>
+    field.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(onOpenFile).toHaveBeenCalledWith("/repo/src/Beta.tsx", undefined, { exact: true });
+  inputText(field, "no-result");
+  expect(field.hasAttribute("aria-activedescendant")).toBe(false);
+  expect(field.hasAttribute("aria-controls")).toBe(false);
+  expect(field.getAttribute("aria-expanded")).toBe("false");
+  expect(document.querySelector('[role="status"]')?.textContent).toContain("No matching files");
+});
+
+it("connects command results to the same search composite without a stale active ID", () => {
+  renderPicker(">");
+  const field = document.querySelector<HTMLInputElement>(
+    '[role="combobox"][aria-label="Command Palette"]',
+  )!;
+  const list = document.getElementById(field.getAttribute("aria-controls")!)!;
+  expect(list.getAttribute("aria-label")).toBe("Commands");
+  expect(
+    document.getElementById(field.getAttribute("aria-activedescendant")!)?.textContent,
+  ).toContain("Reload");
+  inputText(field, ">no-such-command-xyz");
+  expect(field.hasAttribute("aria-activedescendant")).toBe(false);
+  expect(document.querySelector('[role="status"]')?.textContent).toContain("No matching commands");
+});
+
+it("keeps long diagnostics readable behind a disclosure without hiding recovery or cached files", async () => {
+  const diagnostic = "Remote listing failed: " + "Detailed transport information. ".repeat(30);
+  loadProjectFiles.mockRejectedValueOnce(new Error(diagnostic));
+  renderPicker();
+  await act(async () => {});
+  const details = document.querySelector("details")!;
+  expect(details.open).toBe(false);
+  expect(details.querySelector('summary [role="alert"]')?.textContent).toContain(
+    "Remote listing failed:",
+  );
+  expect(details.querySelector("p")?.textContent).toBe(diagnostic);
+  expect(details.querySelector("p")?.tabIndex).toBe(0);
+  expect(document.querySelector("[data-file-picker]")?.textContent).toContain("App.tsx");
+  expect(
+    [...document.querySelectorAll("button")].some((button) => button.textContent === "Retry"),
+  ).toBe(true);
 });

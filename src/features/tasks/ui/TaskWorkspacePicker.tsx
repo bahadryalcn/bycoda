@@ -39,7 +39,10 @@ export function TaskWorkspacePicker({
   const [inventory, setInventory] = useState<Inventory>();
   const [error, setError] = useState("");
   const [newName, setNewName] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [creation, setCreation] = useState<"existing" | "new" | null>(null);
+  const busy = creation !== null;
+  const [fetching, setFetching] = useState(false);
+  const fetchedContext = useRef("");
   const creating = useRef(false);
   const [revision, setRevision] = useState(0);
   const [supported, setSupported] = useState<boolean | null>(null);
@@ -62,10 +65,17 @@ export function TaskWorkspacePicker({
   }, [valid, onValidityChange]);
   useEffect(() => {
     let live = true;
-    setInventory(undefined);
-    setError("");
-    setSupported(null);
-    if (!machine || !cwd) return;
+    if (fetchedContext.current !== context.current) {
+      setInventory(undefined);
+      setError("");
+      setSupported(null);
+    }
+    fetchedContext.current = context.current;
+    if (!machine || !cwd) {
+      setFetching(false);
+      return;
+    }
+    setFetching(true);
     (async () => {
       if (!(await machineCapabilities(machine)).includes(HOST_TASK_WORKSPACES)) {
         if (live) setSupported(false);
@@ -81,26 +91,32 @@ export function TaskWorkspacePicker({
           projectId: project.id,
         }),
       ]);
-      if (live)
+      if (live) {
+        setError("");
         setInventory({
           projectId: project.id,
           trees: trees.worktrees.filter((tree) => !tree.missing),
           ...branches,
         });
-    })().catch((reason) => {
-      if (live) setError(reason instanceof Error ? reason.message : String(reason));
-    });
+      }
+    })()
+      .catch((reason) => {
+        if (live) setError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => {
+        if (live) setFetching(false);
+      });
     return () => {
       live = false;
     };
   }, [machineId, cwd, revision]);
 
   const create = async (existing: boolean) => {
-    if (!machine || !inventory || busy || creating.current) return;
+    if (!machine || !inventory || busy || disabled || fetching || creating.current) return;
     const branch = existing ? value?.baseBranch : newName.trim();
     if (!branch) return;
     creating.current = true;
-    setBusy(true);
+    setCreation(existing ? "existing" : "new");
     setError("");
     onBusyChange?.(true);
     const origin = context.current;
@@ -125,13 +141,13 @@ export function TaskWorkspacePicker({
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       creating.current = false;
-      setBusy(false);
+      setCreation(null);
       onBusyChange?.(false);
     }
   };
 
   return (
-    <fieldset disabled={disabled || busy} className="task-workspace-fields">
+    <fieldset aria-busy={busy || fetching} className="task-workspace-fields">
       <legend>{t("Working branch and worktree")}</legend>
       {supported === false ? (
         <p>{t("Update the selected host to choose a branch or worktree.")}</p>
@@ -139,7 +155,13 @@ export function TaskWorkspacePicker({
       {error ? (
         <Alert tone="danger" role="alert">
           {error}
-          <Button variant="ghost" type="button" onClick={() => setRevision((count) => count + 1)}>
+          <Button
+            variant="ghost"
+            type="button"
+            loading={fetching}
+            disabled={disabled || busy}
+            onClick={() => setRevision((count) => count + 1)}
+          >
             {t("Retry")}
           </Button>
         </Alert>
@@ -149,7 +171,7 @@ export function TaskWorkspacePicker({
           <label>
             {t("Base branch")}
             <SearchableSelect
-              disabled={disabled || busy}
+              disabled={disabled || busy || fetching}
               label={t("Base branch")}
               value={value?.baseBranch ?? ""}
               options={[
@@ -170,7 +192,7 @@ export function TaskWorkspacePicker({
           <label>
             {t("Worktree")}
             <SearchableSelect
-              disabled={disabled || busy}
+              disabled={disabled || busy || fetching}
               label={t("Worktree")}
               value={value?.checkoutCwd ?? ""}
               options={[
@@ -196,7 +218,8 @@ export function TaskWorkspacePicker({
             <Button
               variant="secondary"
               type="button"
-              loading={busy}
+              loading={creation === "existing"}
+              disabled={disabled || busy || fetching}
               onClick={() => void create(true)}
             >
               {t("Create worktree for this branch")}
@@ -208,6 +231,7 @@ export function TaskWorkspacePicker({
               hideLabel
               label=""
               value={newName}
+              disabled={disabled || busy || fetching}
               onChange={(event) => setNewName(event.target.value)}
               placeholder="goal/settings"
               spellCheck={false}
@@ -216,10 +240,11 @@ export function TaskWorkspacePicker({
           <Button
             variant="ghost"
             type="button"
-            disabled={!newName.trim()}
+            disabled={disabled || busy || fetching || !newName.trim()}
+            loading={creation === "new"}
             onClick={() => void create(false)}
           >
-            {busy ? t("Creating…") : t("Create a separate worktree")}
+            {t("Create a separate worktree")}
           </Button>
           <p>
             {t(
@@ -235,6 +260,7 @@ export function TaskWorkspacePicker({
                 hideLabel
                 label=""
                 value={value?.branchName ?? ""}
+                disabled={disabled || busy || fetching}
                 onChange={(event) =>
                   onChange({ ...value, branchName: event.target.value || undefined })
                 }

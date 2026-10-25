@@ -3194,6 +3194,7 @@ function Workspace({
                   onCloseSettings={onCloseSettings}
                   onSelectSettingsSection={onSelectSettingsSection}
                   onOpenArchivedSession={onOpenArchivedSession}
+                  onOpenBackgroundSession={onOpenBackgroundSession}
                   onArchiveHistorySession={onArchiveHistorySession}
                   onDeleteHistorySession={onDeleteHistorySession}
                   onRestoreProject={onRestoreProject}

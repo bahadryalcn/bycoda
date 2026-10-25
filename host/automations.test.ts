@@ -7,18 +7,42 @@ import type { HostProvider } from "./providers";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { HostAutomations, MISSED_RUN_SKIP, PREVIOUS_RUN_SKIP } from "./automations";
-
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-
 const at = (value: string) => new Date(value).getTime();
-const MINUTE = 60_000;
-
+const MINUTE = 60000;
+it("drains a held manual launch on close and prevents dispatch after preparation", async () => {
+  const f = await setup();
+  await f.automations.save(f.input());
+  const entered = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  const original = f.engine.updateSession.bind(f.engine);
+  vi.spyOn(f.engine, "updateSession").mockImplementation(async (...args) => {
+    const updated = await original(...args);
+    entered.resolve();
+    await released.promise;
+    return updated;
+  });
+  const running = f.automations.runNow("nightly");
+  await entered.promise;
+  let closed = false;
+  const closing = f.automations.close().then(() => {
+    closed = true;
+  });
+  await Promise.resolve();
+  expect(closed).toBe(false);
+  released.resolve();
+  const run = await running;
+  await closing;
+  expect(run.status).toBe("skipped");
+  expect(f.turns).toHaveLength(0);
+  await expect(f.automations.runNow("nightly")).rejects.toThrow("closing");
+});
 it.each(["UTC", "Europe/Istanbul", "America/New_York", "Europe/Berlin"])(
   "previews the same instant save schedules in host timezone %s across DST dates",
-  (zone) => {
+  async (zone) => {
     const priorZone = process.env.TZ;
     process.env.TZ = zone;
     try {
@@ -27,11 +51,11 @@ it.each(["UTC", "Europe/Istanbul", "America/New_York", "Europe/Berlin"])(
         "2026-03-29T00:00:00Z",
         "2026-11-01T05:00:00Z",
       ]) {
-        const s = setup(at(instant));
-        const input = s.input({ time: "02:30" });
+        const s = await setup(at(instant));
+        const input = await s.input({ time: "02:30" });
         const preview = s.automations.preview(input);
         expect(preview.timeZone).toBe(zone);
-        expect(preview.nextRunAt).toBe(s.automations.save(input).nextRunAt);
+        expect(preview.nextRunAt).toBe((await s.automations.save(input)).nextRunAt);
       }
     } finally {
       if (priorZone === undefined) delete process.env.TZ;
@@ -39,11 +63,10 @@ it.each(["UTC", "Europe/Istanbul", "America/New_York", "Europe/Berlin"])(
     }
   },
 );
-
-function setup(start = at("2026-10-05T08:00:00")) {
+async function setup(start = at("2026-10-05T08:00:00")) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-automations-test-"));
   const store = new HostStore(join(directory, "host.db"));
-  const project = store.addProject(directory, "Test");
+  const project = await store.addProject(directory, "Test");
   const turns: Array<{
     input: SendTurnInput;
     finish: () => void;
@@ -71,7 +94,7 @@ function setup(start = at("2026-10-05T08:00:00")) {
   const automations = new HostAutomations(store, engine, () => clock.now);
   cleanups.push(async () => {
     await engine.close();
-    store.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
   const input = (overrides: Record<string, unknown> = {}) => ({
@@ -93,133 +116,160 @@ function setup(start = at("2026-10-05T08:00:00")) {
     ...overrides,
   });
   const settled = (sessionId: string) =>
-    vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"));
+    vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"));
   return { store, engine, provider, turns, clock, automations, input, settled };
 }
-
 describe("host automations", () => {
-  it("rejects stale configuration edits and toggles while preserving newer automation prompts", () => {
-    const { automations, input } = setup();
-    const opening = automations.save(input({ enabled: false }));
-    const newer = automations.save({
+  it("accepts only one concurrent edit of the same configuration", async () => {
+    const f = await setup();
+    const opening = await f.automations.save(f.input({ enabled: false }));
+    const results = await Promise.allSettled([
+      f.automations.save({ ...opening, name: "First", expectedConfiguration: opening }),
+      f.automations.save({ ...opening, name: "Second", expectedConfiguration: opening }),
+    ]);
+    expect(results.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((item) => item.status === "rejected")).toHaveLength(1);
+  });
+  it("reserves an automation before an awaited manual launch preparation", async () => {
+    const f = await setup();
+    await f.automations.save(f.input());
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    const original = f.engine.updateSession.bind(f.engine);
+    vi.spyOn(f.engine, "updateSession").mockImplementation(async (...args) => {
+      const updated = await original(...args);
+      entered.resolve();
+      await released.promise;
+      return updated;
+    });
+    const first = f.automations.runNow("nightly");
+    try {
+      await entered.promise;
+      const second = await f.automations.runNow("nightly");
+      expect(second).toMatchObject({ status: "skipped", error: PREVIOUS_RUN_SKIP });
+    } finally {
+      released.resolve();
+    }
+    await first;
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+  });
+  it("rejects stale configuration edits and toggles while preserving newer automation prompts", async () => {
+    const { automations, input } = await setup();
+    const opening = await automations.save(input({ enabled: false }));
+    const newer = await automations.save({
       ...opening,
       prompt: "Newer prompt",
       expectedConfiguration: opening,
     });
-    expect(() =>
-      automations.save({ ...opening, name: "My name", expectedConfiguration: opening }),
-    ).toThrow("Configuration changed in another client");
-    expect(() =>
-      automations.save({ ...opening, enabled: true, expectedConfiguration: opening }),
-    ).toThrow("Configuration changed in another client");
-    expect(automations.list()[0]).toEqual(newer);
+    await expect(
+      (async () =>
+        await automations.save({ ...opening, name: "My name", expectedConfiguration: opening }))(),
+    ).rejects.toThrow("Configuration changed in another client");
+    await expect(
+      (async () =>
+        await automations.save({ ...opening, enabled: true, expectedConfiguration: opening }))(),
+    ).rejects.toThrow("Configuration changed in another client");
+    expect((await automations.list())[0]).toEqual(newer);
     expect(
-      automations.save({ ...newer, name: "Reconciled", expectedConfiguration: newer }),
+      await automations.save({ ...newer, name: "Reconciled", expectedConfiguration: newer }),
     ).toMatchObject({ prompt: "Newer prompt", name: "Reconciled", enabled: false });
   });
   it("keeps an active automation tracked until its session finishes", async () => {
-    const { automations, input, turns, settled } = setup();
-    automations.save(input());
-    const run = automations.runNow("nightly");
+    const { automations, input, turns, settled } = await setup();
+    await automations.save(input());
+    const run = await automations.runNow("nightly");
     await vi.waitFor(() => expect(turns).toHaveLength(1));
-    expect(() => automations.delete("nightly")).toThrow("still running");
-    expect(automations.list()).toHaveLength(1);
+    await expect((async () => await automations.delete("nightly"))()).rejects.toThrow(
+      "still running",
+    );
+    expect(await automations.list()).toHaveLength(1);
     turns[0].finish();
     await settled(run.sessionId!);
-    automations.tick();
-    expect(automations.runs("nightly")[0].status).toBe("succeeded");
-    automations.delete("nightly");
-    expect(automations.list()).toEqual([]);
+    await automations.tick();
+    expect((await automations.runs("nightly"))[0].status).toBe("succeeded");
+    await automations.delete("nightly");
+    expect(await automations.list()).toEqual([]);
   });
-  it("schedules a saved automation for its next occurrence", () => {
-    const { automations, input } = setup();
-    const saved = automations.save(input());
+  it("schedules a saved automation for its next occurrence", async () => {
+    const { automations, input } = await setup();
+    const saved = await automations.save(input());
     expect(saved.nextRunAt).toBe(at("2026-10-05T09:00:00"));
-    expect(automations.list()).toEqual([saved]);
+    expect(await automations.list()).toEqual([saved]);
   });
-
-  it("rejects an automation for an unknown project", () => {
-    const { automations, input } = setup();
-    expect(() => automations.save(input({ projectId: "missing" }))).toThrow(
-      "Project is not registered on this machine",
-    );
+  it("rejects an automation for an unknown project", async () => {
+    const { automations, input } = await setup();
+    await expect(
+      (async () => await automations.save(input({ projectId: "missing" })))(),
+    ).rejects.toThrow("Project is not registered on this machine");
   });
-
   it("starts a due run in a session named after the automation", async () => {
-    const { automations, input, clock, store, turns, settled } = setup();
-    automations.save(input());
-    automations.tick();
-    expect(automations.runs("nightly")).toEqual([]);
-
+    const { automations, input, clock, store, turns, settled } = await setup();
+    await automations.save(input());
+    await automations.tick();
+    expect(await automations.runs("nightly")).toEqual([]);
     clock.now = at("2026-10-05T09:00:10");
-    automations.tick();
-    const [run] = automations.runs("nightly");
+    await automations.tick();
+    const [run] = await automations.runs("nightly");
     expect(run).toMatchObject({ status: "running", trigger: "scheduled" });
-    expect(store.session(run.sessionId!).session.title).toBe("Nightly audit");
+    expect((await store.session(run.sessionId!)).session.title).toBe("Nightly audit");
     await vi.waitFor(() => expect(turns).toHaveLength(1));
     expect(turns[0].input.text).toBe("Review the repository");
-    expect(automations.list()[0].nextRunAt).toBe(at("2026-10-06T09:00:00"));
-
+    expect((await automations.list())[0].nextRunAt).toBe(at("2026-10-06T09:00:00"));
     turns[0].finish();
     await settled(run.sessionId!);
     clock.now += MINUTE;
-    automations.tick();
-    expect(automations.runs("nightly")[0]).toMatchObject({
+    await automations.tick();
+    expect((await automations.runs("nightly"))[0]).toMatchObject({
       status: "succeeded",
       completedAt: clock.now,
     });
-    expect(automations.list()[0]).toMatchObject({
+    expect((await automations.list())[0]).toMatchObject({
       lastRunStatus: "succeeded",
       lastSessionId: run.sessionId,
     });
   });
-
   it("records a failed turn with the agent error", async () => {
-    const { automations, input, clock, turns, settled } = setup();
-    automations.save(input());
-    const run = automations.runNow("nightly");
+    const { automations, input, clock, turns, settled } = await setup();
+    await automations.save(input());
+    const run = await automations.runNow("nightly");
     await vi.waitFor(() => expect(turns).toHaveLength(1));
     turns[0].fail(new Error("Not signed in"));
     await settled(run.sessionId!);
     clock.now += MINUTE;
-    automations.tick();
-    expect(automations.runs("nightly")[0]).toMatchObject({
+    await automations.tick();
+    expect((await automations.runs("nightly"))[0]).toMatchObject({
       status: "failed",
       error: "Not signed in",
     });
   });
-
   it("stops a run that passes its time limit", async () => {
-    const { automations, input, clock, provider, turns, settled } = setup();
-    automations.save(input({ maxRunMinutes: 30 }));
-    const run = automations.runNow("nightly");
+    const { automations, input, clock, provider, turns, settled } = await setup();
+    await automations.save(input({ maxRunMinutes: 30 }));
+    const run = await automations.runNow("nightly");
     await vi.waitFor(() => expect(turns).toHaveLength(1));
-
     clock.now += 29 * MINUTE;
-    automations.tick();
+    await automations.tick();
     expect(provider.cancel).not.toHaveBeenCalled();
-
     clock.now += MINUTE;
-    automations.tick();
+    await automations.tick();
     expect(provider.cancel).toHaveBeenCalledTimes(1);
     await settled(run.sessionId!);
     clock.now += MINUTE;
-    automations.tick();
-    expect(automations.runs("nightly")[0]).toMatchObject({
+    await automations.tick();
+    expect((await automations.runs("nightly"))[0]).toMatchObject({
       status: "failed",
       error: "Stopped: reached the 30-minute time limit.",
     });
   });
-
   it("skips a due run while the previous one is still going", async () => {
-    const { automations, input, clock, turns } = setup();
-    automations.save(input({ scheduleKind: "hourly" }));
+    const { automations, input, clock, turns } = await setup();
+    await automations.save(input({ scheduleKind: "hourly" }));
     clock.now = at("2026-10-05T09:00:10");
-    automations.tick();
+    await automations.tick();
     await vi.waitFor(() => expect(turns).toHaveLength(1));
     clock.now = at("2026-10-05T10:00:10");
-    automations.tick();
-    const [latest, first] = automations.runs("nightly");
+    await automations.tick();
+    const [latest, first] = await automations.runs("nightly");
     expect(first.status).toBe("running");
     expect(latest).toMatchObject({
       status: "skipped",
@@ -227,79 +277,74 @@ describe("host automations", () => {
     });
     turns[0].finish();
   });
-
   it("skips scheduled runs past the daily limit but not manual ones", async () => {
-    const { automations, input, clock, turns, settled } = setup();
-    automations.save(input({ scheduleKind: "hourly", maxRunsPerDay: 1 }));
+    const { automations, input, clock, turns, settled } = await setup();
+    await automations.save(input({ scheduleKind: "hourly", maxRunsPerDay: 1 }));
     clock.now = at("2026-10-05T09:00:10");
-    automations.tick();
+    await automations.tick();
     await vi.waitFor(() => expect(turns).toHaveLength(1));
     turns[0].finish();
-    await settled(automations.runs("nightly")[0].sessionId!);
-
+    await settled((await automations.runs("nightly"))[0].sessionId!);
     clock.now = at("2026-10-05T10:00:10");
-    automations.tick();
-    expect(automations.runs("nightly")[0]).toMatchObject({
+    await automations.tick();
+    expect((await automations.runs("nightly"))[0]).toMatchObject({
       status: "skipped",
       error: "Skipped: reached the limit of 1 run per day.",
     });
-
-    const manual = automations.runNow("nightly");
+    const manual = await automations.runNow("nightly");
     expect(manual.status).toBe("running");
     await vi.waitFor(() => expect(turns).toHaveLength(2));
     turns[1].finish();
   });
-
-  it("skips a run missed while the machine was off and reschedules", () => {
-    const { automations, input, clock, provider } = setup();
-    automations.save(input());
+  it("skips a run missed while the machine was off and reschedules", async () => {
+    const { automations, input, clock, provider } = await setup();
+    await automations.save(input());
     clock.now = at("2026-10-07T12:00:00");
-    automations.tick();
-    expect(automations.runs("nightly")).toMatchObject([
+    await automations.tick();
+    expect(await automations.runs("nightly")).toMatchObject([
       { status: "skipped", error: MISSED_RUN_SKIP },
     ]);
     expect(provider.send).not.toHaveBeenCalled();
-    expect(automations.list()[0].nextRunAt).toBe(at("2026-10-08T09:00:00"));
+    expect((await automations.list())[0].nextRunAt).toBe(at("2026-10-08T09:00:00"));
   });
-
-  it("does not run a disabled automation and forgets a deleted one", () => {
-    const { automations, input, clock } = setup();
-    automations.save(input({ enabled: false }));
+  it("does not run a disabled automation and forgets a deleted one", async () => {
+    const { automations, input, clock } = await setup();
+    await automations.save(input({ enabled: false }));
     clock.now = at("2026-10-05T09:00:10");
-    automations.tick();
-    expect(automations.runs("nightly")).toEqual([]);
-    automations.delete("nightly");
-    expect(automations.list()).toEqual([]);
-    expect(() => automations.runNow("nightly")).toThrow("Automation not found.");
+    await automations.tick();
+    expect(await automations.runs("nightly")).toEqual([]);
+    await automations.delete("nightly");
+    expect(await automations.list()).toEqual([]);
+    await expect((async () => await automations.runNow("nightly"))()).rejects.toThrow(
+      "Automation not found.",
+    );
   });
-
   it("records a run as failed when the host restarted during it", async () => {
-    const { automations, input, clock, store, turns } = setup();
-    automations.save(input());
-    const run = automations.runNow("nightly");
+    const { automations, input, clock, store, turns } = await setup();
+    await automations.save(input());
+    const run = await automations.runNow("nightly");
     await vi.waitFor(() => expect(turns).toHaveLength(1));
-    const session = store.session(run.sessionId!);
-    store.save(
+    const session = await store.session(run.sessionId!);
+    await store.save(
       { ...session, revision: session.revision + 1, status: "interrupted" },
       { type: "interrupted" },
     );
     clock.now += MINUTE;
-    automations.tick();
-    expect(automations.runs("nightly")[0]).toMatchObject({
+    await automations.tick();
+    expect((await automations.runs("nightly"))[0]).toMatchObject({
       status: "failed",
       error: "The host stopped during this run.",
     });
     turns[0].finish();
   });
-
   it("mirrors whether a running session is waiting on the user", async () => {
-    const { automations, input, clock, store, turns, settled } = setup();
-    automations.save(input());
-    const run = automations.runNow("nightly");
+    const { automations, input, clock, store, turns, settled } = await setup();
+    await automations.save(input());
+    const run = await automations.runNow("nightly");
     await vi.waitFor(() => expect(turns).toHaveLength(1));
-    const ask = (pendingQuestion?: { requestId: number; questions: [] }) => {
-      const session = store.session(run.sessionId!);
-      store.save(
+    const ask = async (pendingQuestion?: { requestId: number; questions: [] }) => {
+      const session = await store.session(run.sessionId!);
+      await store.save(
         {
           ...session,
           revision: session.revision + 1,
@@ -308,53 +353,51 @@ describe("host automations", () => {
         { type: "question" },
       );
       clock.now += MINUTE;
-      automations.tick();
+      await automations.tick();
     };
-    ask({ requestId: 1, questions: [] });
-    expect(automations.runs("nightly")[0]).toMatchObject({
+    await ask({ requestId: 1, questions: [] });
+    expect((await automations.runs("nightly"))[0]).toMatchObject({
       status: "running",
       needsInput: true,
     });
-    expect(automations.list()[0].needsInput).toBe(true);
-
-    expect(automations.runNow("nightly").status).toBe("skipped");
-    automations.tick();
-    expect(automations.list()[0].needsInput).toBe(true);
-
-    ask(undefined);
-    expect(automations.runs("nightly")[0].needsInput).toBeUndefined();
-    expect(automations.list()[0].needsInput).toBeUndefined();
-
-    ask({ requestId: 2, questions: [] });
+    expect((await automations.list())[0].needsInput).toBe(true);
+    expect((await automations.runNow("nightly")).status).toBe("skipped");
+    await automations.tick();
+    expect((await automations.list())[0].needsInput).toBe(true);
+    await ask(undefined);
+    expect((await automations.runs("nightly"))[0].needsInput).toBeUndefined();
+    expect((await automations.list())[0].needsInput).toBeUndefined();
+    await ask({ requestId: 2, questions: [] });
     turns[0].finish();
     await settled(run.sessionId!);
     clock.now += MINUTE;
-    automations.tick();
-    expect(automations.runs("nightly")[0].status).not.toBe("running");
-    expect(automations.runs("nightly")[0].needsInput).toBeUndefined();
-    expect(automations.list()[0].needsInput).toBeUndefined();
+    await automations.tick();
+    expect((await automations.runs("nightly"))[0].status).not.toBe("running");
+    expect((await automations.runs("nightly"))[0].needsInput).toBeUndefined();
+    expect((await automations.list())[0].needsInput).toBeUndefined();
   });
 });
-
 it("retains active runs across overlapping history pruning and remains stoppable", async () => {
-  const { automations, input, turns, settled } = setup();
-  automations.save(input());
-  const run = automations.runNow("nightly");
+  const { automations, input, turns, settled } = await setup();
+  await automations.save(input());
+  const run = await automations.runNow("nightly");
   await vi.waitFor(() => expect(turns).toHaveLength(1));
-  for (let i = 0; i < 110; i++) expect(automations.runNow("nightly").status).toBe("skipped");
-  expect(automations.runs("nightly").find((entry) => entry.id === run.id)?.status).toBe("running");
-  automations.stopRun("nightly", run.id);
+  for (let i = 0; i < 110; i++)
+    expect((await automations.runNow("nightly")).status).toBe("skipped");
+  expect((await automations.runs("nightly")).find((entry) => entry.id === run.id)?.status).toBe(
+    "running",
+  );
+  await automations.stopRun("nightly", run.id);
   await settled(run.sessionId!);
-  automations.tick();
-  expect(automations.runs("nightly").find((entry) => entry.id === run.id)?.status).not.toBe(
+  await automations.tick();
+  expect((await automations.runs("nightly")).find((entry) => entry.id === run.id)?.status).not.toBe(
     "running",
   );
 });
-
 it("retains same-day usage above the history limit and resets allowance the next day", async () => {
-  const { automations, input, store, clock, turns, settled } = setup();
-  automations.save(input({ maxRunsPerDay: 101 }));
-  const run = automations.runNow("nightly");
+  const { automations, input, store, clock, turns, settled } = await setup();
+  await automations.save(input({ maxRunsPerDay: 101 }));
+  const run = await automations.runNow("nightly");
   await vi.waitFor(() => expect(turns).toHaveLength(1));
   const insert = store.db.prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)");
   for (let i = 0; i < 100; i++) {
@@ -366,15 +409,15 @@ it("retains same-day usage above the history limit and resets allowance the next
       createdAt: clock.now - 1000 + i,
       startedAt: clock.now - 1000 + i,
     };
-    insert.run(row.id, "nightly", row.createdAt, JSON.stringify(row));
+    await insert.run(row.id, "nightly", row.createdAt, JSON.stringify(row));
   }
   turns[0].finish();
   await settled(run.sessionId!);
-  automations.tick();
+  await automations.tick();
   clock.now = at("2026-10-05T09:00:10");
-  automations.tick();
-  expect(automations.runs("nightly")[0].status).toBe("skipped");
+  await automations.tick();
+  expect((await automations.runs("nightly"))[0].status).toBe("skipped");
   clock.now = at("2026-10-06T09:00:10");
-  automations.tick();
-  expect(automations.runs("nightly")[0].status).toBe("running");
+  await automations.tick();
+  expect((await automations.runs("nightly"))[0].status).toBe("running");
 });

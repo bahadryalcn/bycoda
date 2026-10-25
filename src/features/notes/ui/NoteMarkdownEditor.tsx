@@ -364,7 +364,7 @@ export function NoteMarkdownToolbar({
         type="button"
         title={t("Insert image · or paste ({p0}V) / drop one", { p0: MOD })}
         aria-label={t("Insert image")}
-        disabled={imageBusy}
+        loading={imageBusy}
         onClick={onInsertImage}
       >
         <ImagePlus className="size-3.5" />

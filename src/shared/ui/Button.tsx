@@ -85,7 +85,7 @@ export function Button({
   shape = "default",
   type = "button",
   selected,
-  loading = false,
+  loading: loadingProp,
   loadingLabel,
   iconOnly = false,
   label,
@@ -113,6 +113,7 @@ export function Button({
   onAnimationStart,
   ...props
 }: ButtonProps) {
+  const loading = loadingProp ?? false;
   const hintId = useId();
   const [hintAnchor, setHintAnchor] = useState<HTMLButtonElement | null>(null);
   // Keep legacy aliases at this boundary; render one hierarchy/tone implementation.
@@ -120,6 +121,10 @@ export function Button({
   const resolvedTone: ButtonTone =
     tone === "error" ? "danger" : (tone ?? (variant === "danger" ? "danger" : "neutral"));
   const structural = variant === "item" || variant === "tab";
+  // Text actions retain their name and data while pending. An explicit loading
+  // contract reserves one icon slot, so the spinner never shifts nearby actions.
+  const inlineProgress =
+    loadingProp !== undefined && !iconOnly && !structural && layout !== "media";
   const native =
     structural ||
     variant === "link" ||
@@ -180,7 +185,9 @@ export function Button({
   const attributes = {
     ...props,
     type,
-    disabled,
+    // Pending is already guarded and aria-disabled. Keep the initiating control
+    // focusable even when its owner also passes disabled={pending}.
+    disabled: loading ? undefined : disabled,
     title: hintText,
     "aria-describedby":
       [props["aria-describedby"], hintVisible ? hintId : undefined].filter(Boolean).join(" ") ||
@@ -238,7 +245,16 @@ export function Button({
   };
   const content = (
     <>
-      {startIcon != null ? (
+      {inlineProgress ? (
+        <span
+          className={styles.progressIcon}
+          data-pending={loading || undefined}
+          aria-hidden="true"
+        >
+          {startIcon != null ? <span className={styles.icon}>{startIcon}</span> : null}
+          <span hidden={!loading} className={`${arcStyles.spinner} ${styles.progressSpinner}`} />
+        </span>
+      ) : startIcon != null ? (
         <span className={styles.icon} aria-hidden="true">
           {startIcon}
         </span>
@@ -262,6 +278,7 @@ export function Button({
           side="bottom"
           restoreFocus={false}
           passive
+          motion="none"
           onDismiss={() => setHintAnchor(null)}
           className="pointer-events-none max-w-60 break-words p-2 text-(length:--ui-font-caption) text-content"
         >
@@ -288,7 +305,7 @@ export function Button({
             className={[
               arcStyles.labelSlot,
               styles.nativeContent,
-              loading ? arcStyles.loadingLabel : "",
+              loading && !inlineProgress ? arcStyles.loadingLabel : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -296,7 +313,7 @@ export function Button({
             {content}
           </span>
         )}
-        {loading ? (
+        {loading && !inlineProgress ? (
           <span
             className={structural ? styles.structuralLoader : arcStyles.loader}
             aria-hidden="true"
@@ -312,7 +329,7 @@ export function Button({
       {...attributes}
       variant={arcVariant}
       size={size}
-      loading={loading}
+      loading={loading && !inlineProgress}
       className={classes}
     >
       {content}

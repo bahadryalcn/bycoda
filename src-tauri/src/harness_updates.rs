@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::harness::{exec_output, is_resolved_harness_binary};
+use crate::harness::{exec_output_with_env, is_resolved_harness_binary};
 
 const REGISTRY_URL: &str = "https://registry.npmjs.org";
 const CURSOR_INSTALL_URL: &str = "https://cursor.com/install";
@@ -39,6 +39,20 @@ fn version_feed(provider: &str) -> Option<VersionFeed> {
     }
 }
 
+fn version_feed_for_installed(
+    provider: &str,
+    installed_version: Option<&str>,
+) -> Option<VersionFeed> {
+    // OpenCode 1's updater stays on its own package/install channel. Comparing
+    // it with V2 would offer a migration that a regular `upgrade` cannot do.
+    if provider == "opencode"
+        && installed_version.is_some_and(|version| version.trim().starts_with("1."))
+    {
+        return Some(VersionFeed::Npm("opencode-ai"));
+    }
+    version_feed(provider)
+}
+
 /// Each CLI's own updater, which knows how it was installed (native, npm,
 /// Homebrew) better than Bycoda could guess from the binary path.
 fn update_args(provider: &str) -> Option<&'static [&'static str]> {
@@ -67,6 +81,27 @@ fn update_args_for_command(provider: &str, command: &str) -> Option<&'static [&'
     update_args(provider)
 }
 
+/// npm's Unix global layout identifies both the package manager and its prefix.
+/// A ~/.local/bin symlink alone is ambiguous: OpenCode V1 mistakes it for curl.
+fn opencode_npm_prefix(binary: &std::path::Path) -> Option<&std::path::Path> {
+    let bin = binary.parent()?;
+    if bin.file_name()? != "bin" {
+        return None;
+    }
+    let package = bin.parent()?;
+    let modules = if package.file_name()? == "opencode-ai" {
+        package.parent()?
+    } else if package.file_name()? == "cli" && package.parent()?.file_name()? == "@opencode" {
+        package.parent()?.parent()?
+    } else {
+        return None;
+    };
+    if modules.file_name()? != "node_modules" || modules.parent()?.file_name()? != "lib" {
+        return None;
+    }
+    modules.parent()?.parent()
+}
+
 /// A download plus, for npm installs, a full dependency install.
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -80,9 +115,12 @@ pub fn harness_update_check_claim() -> bool {
 }
 
 #[tauri::command]
-pub async fn harness_latest_version(provider: String) -> Result<String, String> {
-    let feed =
-        version_feed(&provider).ok_or_else(|| format!("No update feed for harness: {provider}"))?;
+pub async fn harness_latest_version(
+    provider: String,
+    installed_version: Option<String>,
+) -> Result<String, String> {
+    let feed = version_feed_for_installed(&provider, installed_version.as_deref())
+        .ok_or_else(|| format!("No update feed for harness: {provider}"))?;
     tauri::async_runtime::spawn_blocking(move || match feed {
         VersionFeed::Npm(package) => {
             let text = fetch_text(
@@ -125,6 +163,7 @@ pub async fn harness_update(
     command: String,
     binary_provider: String,
     binary_path: Option<String>,
+    target_version: Option<String>,
 ) -> Result<(), String> {
     let args: Vec<String> = update_args_for_command(&binary_provider, &command)
         .ok_or_else(|| format!("No updater for harness: {binary_provider}"))?
@@ -135,7 +174,35 @@ pub async fn harness_update(
         if !is_resolved_harness_binary(&command, Some(&binary_provider), binary_path.as_deref()) {
             return Err("harness_update: not a resolved harness CLI".to_string());
         }
-        let output = exec_output(&command, &args, None, UPDATE_TIMEOUT)?;
+        let resolved = std::fs::canonicalize(&command).ok();
+        let npm_prefix = (binary_provider == "opencode")
+            .then(|| resolved.as_deref().and_then(opencode_npm_prefix))
+            .flatten()
+            .map(|prefix| prefix.to_string_lossy().into_owned());
+        let mut args = if npm_prefix.is_some() {
+            vec![
+                "upgrade".to_string(),
+                "--method".to_string(),
+                "npm".to_string(),
+            ]
+        } else {
+            args
+        };
+        if binary_provider == "opencode" {
+            if let Some(target) = target_version.as_deref() {
+                validate_update_target(target)?;
+                // V1's implicit latest lookup may point at V2. Update exactly
+                // the release checked and displayed by this window instead.
+                args.insert(1, target.to_string());
+            }
+        }
+        // Updating with the machine's default prefix can install a second copy
+        // while leaving the binary Bycoda actually uses unchanged.
+        let env: Vec<_> = npm_prefix
+            .as_deref()
+            .map(|prefix| vec![("NPM_CONFIG_PREFIX", prefix)])
+            .unwrap_or_default();
+        let output = exec_output_with_env(&command, &args, None, UPDATE_TIMEOUT, &env)?;
         if output.status.success() {
             return Ok(());
         }
@@ -147,6 +214,19 @@ pub async fn harness_update(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn validate_update_target(target: &str) -> Result<(), String> {
+    let version = target.strip_prefix('v').unwrap_or(target);
+    if version.len() > 128
+        || !version.starts_with(|c: char| c.is_ascii_digit())
+        || !version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'))
+    {
+        return Err("harness_update: invalid target version".to_string());
+    }
+    Ok(())
 }
 
 /// Keep both streams: OpenCode ends with a generic "Failed" after printing the
@@ -245,6 +325,26 @@ mod tests {
     }
 
     #[test]
+    fn opencode_keeps_the_installed_major_release_channel() {
+        for version in ["1.18.33", "1.19.0"] {
+            assert_eq!(
+                version_feed_for_installed("opencode", Some(version)),
+                Some(VersionFeed::Npm("opencode-ai"))
+            );
+        }
+        for version in [Some("2.1.4"), None] {
+            assert_eq!(
+                version_feed_for_installed("opencode", version),
+                Some(VersionFeed::Npm("@opencode/cli"))
+            );
+        }
+        assert_eq!(
+            version_feed_for_installed("codex", Some("1.0.0")),
+            Some(VersionFeed::Npm("@openai/codex"))
+        );
+    }
+
+    #[test]
     fn updates_only_through_each_cli_own_updater() {
         assert_eq!(update_args("pi"), Some(&["update", "--self"][..]));
         assert_eq!(update_args("opencode"), Some(&["upgrade"][..]));
@@ -294,6 +394,38 @@ mod tests {
         );
         let long = "é".repeat(5000);
         assert_eq!(update_failure(long.as_bytes(), b"").chars().count(), 4000);
+    }
+
+    #[test]
+    fn npm_global_binary_layout_preserves_the_install_prefix() {
+        use std::path::Path;
+        for binary in [
+            "/Users/owner/.local/lib/node_modules/opencode-ai/bin/opencode.exe",
+            "/Users/owner/.local/lib/node_modules/@opencode/cli/bin/opencode",
+        ] {
+            assert_eq!(
+                opencode_npm_prefix(Path::new(binary)),
+                Some(Path::new("/Users/owner/.local"))
+            );
+        }
+        for binary in [
+            "/Users/owner/.local/bin/opencode",
+            "/Users/owner/.bun/install/global/node_modules/@opencode/cli/bin/opencode",
+            "/project/node_modules/opencode-ai/bin/opencode",
+            "/opt/lib/node_modules/other-cli/bin/opencode",
+        ] {
+            assert_eq!(opencode_npm_prefix(Path::new(binary)), None);
+        }
+    }
+
+    #[test]
+    fn update_targets_cannot_be_options_or_commands() {
+        for target in ["1.19.4", "v2.1.4", "2.1.4-beta.1+build"] {
+            assert!(validate_update_target(target).is_ok());
+        }
+        for target in ["", "--major", "latest", "2.1.4; echo bad", "../2.1.4"] {
+            assert!(validate_update_target(target).is_err());
+        }
     }
 
     #[test]

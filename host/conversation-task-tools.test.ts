@@ -70,19 +70,19 @@ describe("conversation task configuration", () => {
       ).toThrow();
   });
 
-  it("preserves authoritative scheduler cycle detection after normalization", () => {
+  it("preserves authoritative scheduler cycle detection after normalization", async () => {
     const store = new HostStore(":memory:");
     try {
-      const project = store.addProject("/conversation-task-config", "Fixture");
+      const project = await store.addProject("/conversation-task-config", "Fixture");
       const tasks = new HostTasks(store, {} as ConstructorParameters<typeof HostTasks>[1]);
-      const first = tasks.save(task("first", { projectId: project.id }));
-      const second = tasks.save({
+      const first = await tasks.save(task("first", { projectId: project.id }));
+      const second = await tasks.save({
         ...task("second", { projectId: project.id }),
         ...normalizeConversationTaskConfiguration(
           { dependsOn: [first.id], verifyCommand: "pnpm test" },
           "second",
           project.id,
-          tasks.list(),
+          await tasks.list(),
         ),
       });
       expect(second).toMatchObject({ dependsOn: ["first"], verifyCommand: "pnpm test" });
@@ -90,23 +90,25 @@ describe("conversation task configuration", () => {
         { dependsOn: [second.id] },
         first.id,
         project.id,
-        tasks.list(),
+        await tasks.list(),
       );
-      expect(() => tasks.save({ ...first, ...patch })).toThrow("dependency cycle");
-      expect(tasks.get(first.id)?.dependsOn).toBeUndefined();
-      const cleared = tasks.save({
+      await expect((async () => await tasks.save({ ...first, ...patch }))()).rejects.toThrow(
+        "dependency cycle",
+      );
+      expect((await tasks.get(first.id))?.dependsOn).toBeUndefined();
+      const cleared = await tasks.save({
         ...second,
         ...normalizeConversationTaskConfiguration(
           { dependsOn: [], verifyCommand: "" },
           second.id,
           project.id,
-          tasks.list(),
+          await tasks.list(),
         ),
       });
       expect(cleared.dependsOn).toEqual([]);
       expect(cleared.verifyCommand).toBeUndefined();
     } finally {
-      store.close();
+      await store.close();
     }
   });
 });

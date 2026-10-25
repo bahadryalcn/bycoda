@@ -74,7 +74,7 @@ it("resends the original text, attachments and intent once without needing a pro
     blocks[0].attachments,
     expect.objectContaining({ intent: "plan", onSendRejected: expect.any(Function) }),
   );
-  expect(button.disabled).toBe(true);
+  expect(button.getAttribute("aria-busy")).toBe("true");
 });
 
 it("allows retry again after immediate or asynchronous rejection", () => {
@@ -88,7 +88,7 @@ it("allows retry again after immediate or asynchronous rejection", () => {
   act(() => button.click());
   expect(button.disabled).toBe(false);
   act(() => button.click());
-  expect(button.disabled).toBe(true);
+  expect(button.getAttribute("aria-busy")).toBe("true");
   act(() => {
     options?.onSendRejected?.();
   });
@@ -132,7 +132,7 @@ it("enables retry for a new failure without letting an old rejection unlock it",
   act(() => {
     options[0].onSendRejected?.();
   });
-  expect(button.disabled).toBe(true);
+  expect(button.getAttribute("aria-busy")).toBe("true");
   act(() => {
     options[1].onSendRejected?.();
   });

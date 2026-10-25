@@ -77,25 +77,27 @@ async function setup() {
       answer: () => {},
     },
   });
+  await engine.ready;
   const project = await engine.openProject(directory);
-  const server = createHostServer(engine, ["codex"]);
+  const server = await createHostServer(engine, ["codex"]);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
   desktop.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/rpc`;
-  desktop.token = store.issueDevice("Laptop").token;
+  desktop.token = (await store.issueDevice("Laptop")).token;
   desktop.environmentId = store.environmentId;
   desktop.methods = [];
   desktop.largest = 0;
   cleanups.push(async () => {
-    await engine.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close();
+    await server.closeResources();
+    await engine.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  const { sessionId } = engine.command({
+  const { sessionId } = await engine.command({
     type: "create",
     commandId: "create",
     projectId: project.id,
@@ -126,33 +128,34 @@ it(
   "reopens and updates a session whose transcript exceeds 16 MiB",
   async () => {
     const s = await setup();
-    const created = s.store.session(s.sessionId);
-    s.store.transaction(() =>
-      s.store.save(
-        {
-          ...created,
-          revision: created.revision + 1,
-          session: {
-            ...created.session,
-            blocks: [
-              ...Array.from({ length: 40 }, (_, index) => ({
-                id: `history-${index}`,
-                role: "assistant" as const,
-                text: text(600_000, `turn ${index}`),
-              })),
-              // One block alone is larger than the desktop's response cap.
-              {
-                id: "huge",
-                role: "tool" as const,
-                text: text(17_500_000, "log"),
-              },
-            ],
+    const created = await s.store.session(s.sessionId);
+    await s.store.transaction(
+      async () =>
+        await s.store.save(
+          {
+            ...created,
+            revision: created.revision + 1,
+            session: {
+              ...created.session,
+              blocks: [
+                ...Array.from({ length: 40 }, (_, index) => ({
+                  id: `history-${index}`,
+                  role: "assistant" as const,
+                  text: text(600_000, `turn ${index}`),
+                })),
+                // One block alone is larger than the desktop's response cap.
+                {
+                  id: "huge",
+                  role: "tool" as const,
+                  text: text(17_500_000, "log"),
+                },
+              ],
+            },
           },
-        },
-        { type: "fixture" },
-      ),
+          { type: "fixture" },
+        ),
     );
-    const full = s.store.session(s.sessionId);
+    const full = await s.store.session(s.sessionId);
     expect(Buffer.byteLength(JSON.stringify(visible(full)))).toBeGreaterThan(DESKTOP_LIMIT * 2);
 
     const reopened = await loadRemoteSession("machine", s.sessionId, undefined, {
@@ -184,7 +187,7 @@ it(
     // A follow-up turn streams into the large session; only new blocks move.
     desktop.methods = [];
     desktop.largest = 0;
-    s.engine.command({
+    const sent = await s.engine.command({
       type: "send",
       commandId: "follow-up",
       sessionId: s.sessionId,
@@ -193,11 +196,12 @@ it(
     await vi.waitFor(() => expect(s.turn()).toBeTruthy());
     s.turn().onEvent({ type: "message.delta", text: "Summary" });
     s.finish();
-    await vi.waitFor(() => expect(s.store.session(s.sessionId).status).toBe("idle"));
+    await s.engine.waitForRun(s.sessionId, sent.runId);
+    expect((await s.store.session(s.sessionId)).status).toBe("idle");
     const updated = await loadRemoteSession("machine", s.sessionId, reopened, {
       partialHistory: true,
     });
-    const latest = s.store.session(s.sessionId);
+    const latest = await s.store.session(s.sessionId);
     expect(updated.revision).toBe(latest.revision);
     expect(updated.session.blocks.map((block) => block.id)).toEqual(
       latest.session.blocks.slice(updated.history?.before ?? 0).map((block) => block.id),
@@ -214,23 +218,24 @@ it(
   async () => {
     const s = await setup();
     const base = await loadRemoteSession("machine", s.sessionId);
-    const current = s.store.session(s.sessionId);
-    s.store.transaction(() =>
-      s.store.save(
-        {
-          ...current,
-          revision: current.revision + 1,
-          session: {
-            ...current.session,
-            blocks: [{ id: "huge", role: "tool", text: text(17_000_000, "out") }],
+    const current = await s.store.session(s.sessionId);
+    await s.store.transaction(
+      async () =>
+        await s.store.save(
+          {
+            ...current,
+            revision: current.revision + 1,
+            session: {
+              ...current.session,
+              blocks: [{ id: "huge", role: "tool", text: text(17_000_000, "out") }],
+            },
           },
-        },
-        { type: "fixture" },
-      ),
+          { type: "fixture" },
+        ),
     );
     desktop.methods = [];
     const next = await loadRemoteSession("machine", s.sessionId, base);
-    expect(next).toEqual(visible(s.store.session(s.sessionId)));
+    expect(next).toEqual(visible(await s.store.session(s.sessionId)));
     expect(desktop.methods[0]).toBe("sessions.sync");
     expect(desktop.methods).toContain("sessions.syncChunk");
     expect(desktop.largest).toBeLessThanOrEqual(DESKTOP_LIMIT);

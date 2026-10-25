@@ -28,64 +28,79 @@ export class RuntimeLogAccess {
     return this.identity.store.environmentId;
   }
 
-  hasSession(sessionId: string): boolean {
-    try {
-      const session = this.identity.sessionIdentity(sessionId);
-      this.identity.store.project(session.projectId);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  issueSessionGrant(sessionId: string, deviceHash?: string): { token: string; expiresAt: number } {
-    if (!sessionId || sessionId.length > 300)
-      throw new Error("Verified session identity required.");
-    const session = this.identity.sessionIdentity(sessionId);
-    this.identity.store.project(session.projectId);
-    const now = this.now();
-    for (const [key, grant] of this.grants) if (grant.expiresAt <= now) this.grants.delete(key);
-    // Concurrent provider children may have different grants for one session.
-    // Bound memory without revoking one child's still-current sibling grant.
-    if (this.grants.size >= 4096) throw new Error("Runtime log grant capacity reached.");
-    const token = randomBytes(32).toString("base64url");
-    const expiresAt = now + 12 * 60 * 60_000;
-    this.grants.set(digest(token), {
-      principal: {
-        kind: "session",
-        sessionId,
-        projectId: session.projectId,
-        provider: session.session.harness,
-      },
-      expiresAt,
-      deviceHash,
+  async hasSession(sessionId: string): Promise<Awaited<boolean>> {
+    await this.identity.store.ready;
+    return await this.identity.store.db.scope(async () => {
+      try {
+        const session = await this.identity.sessionIdentity(sessionId);
+        await this.identity.store.project(session.projectId);
+        return true;
+      } catch {
+        return false;
+      }
     });
-    return { token, expiresAt };
   }
 
-  principalForToken(token: string): RuntimeLogPrincipal | undefined {
-    const key = digest(token);
-    const grant = this.grants.get(key);
-    if (!grant) return undefined;
-    try {
-      if (grant.expiresAt <= this.now()) throw new Error("Expired grant.");
-      if (
-        grant.deviceHash &&
-        !this.identity.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(grant.deviceHash)
-      )
-        throw new Error("Device revoked.");
-      const current = this.identity.sessionIdentity(grant.principal.sessionId);
-      this.identity.store.project(current.projectId);
-      if (
-        current.projectId !== grant.principal.projectId ||
-        current.session.harness !== grant.principal.provider
-      )
-        throw new Error("Session identity changed.");
-      return { ...grant.principal };
-    } catch {
-      this.grants.delete(key);
-      return undefined;
-    }
+  async issueSessionGrant(
+    sessionId: string,
+    deviceHash?: string,
+  ): Promise<Awaited<{ token: string; expiresAt: number }>> {
+    await this.identity.store.ready;
+    return await this.identity.store.db.scope(async () => {
+      if (!sessionId || sessionId.length > 300)
+        throw new Error("Verified session identity required.");
+      const session = await this.identity.sessionIdentity(sessionId);
+      await this.identity.store.project(session.projectId);
+      const now = this.now();
+      for (const [key, grant] of this.grants) if (grant.expiresAt <= now) this.grants.delete(key);
+      // Concurrent provider children may have different grants for one session.
+      // Bound memory without revoking one child's still-current sibling grant.
+      if (this.grants.size >= 4096) throw new Error("Runtime log grant capacity reached.");
+      const token = randomBytes(32).toString("base64url");
+      const expiresAt = now + 12 * 60 * 60_000;
+      this.grants.set(digest(token), {
+        principal: {
+          kind: "session",
+          sessionId,
+          projectId: session.projectId,
+          provider: session.session.harness,
+        },
+        expiresAt,
+        deviceHash,
+      });
+      return { token, expiresAt };
+    });
+  }
+
+  async principalForToken(token: string): Promise<Awaited<RuntimeLogPrincipal | undefined>> {
+    await this.identity.store.ready;
+    return await this.identity.store.db.scope(async () => {
+      const key = digest(token);
+      const grant = this.grants.get(key);
+      if (!grant) return undefined;
+      try {
+        if (grant.expiresAt <= this.now()) throw new Error("Expired grant.");
+        if (
+          grant.deviceHash &&
+          !(await this.identity.store.db
+            .prepare("SELECT id FROM devices WHERE hash=?")
+            .get(grant.deviceHash))
+        )
+          throw new Error("Device revoked.");
+        const current = await this.identity.sessionIdentity(grant.principal.sessionId);
+        await this.identity.store.project(current.projectId);
+        if (
+          grant.expiresAt <= this.now() ||
+          current.projectId !== grant.principal.projectId ||
+          current.session.harness !== grant.principal.provider
+        )
+          throw new Error("Session identity changed.");
+        return { ...grant.principal };
+      } catch {
+        this.grants.delete(key);
+        return undefined;
+      }
+    });
   }
 }
 

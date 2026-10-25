@@ -21,3 +21,13 @@ await build({
   outfile: "build/host/host.mjs",
 });
 await copyFile("host/provider-guard.mjs", "build/host/provider-guard.mjs");
+await build({
+  ...options,
+  entryPoints: ["host/host-notes-worker.mjs"],
+  outfile: "build/host/host-notes-worker.mjs",
+});
+await build({
+  ...options,
+  entryPoints: ["host/store-worker.mjs"],
+  outfile: "build/host/store-worker.mjs",
+});

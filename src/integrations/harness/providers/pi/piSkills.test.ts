@@ -46,7 +46,9 @@ import {
   ompCommandsFromRpcData,
   piSkillsFromRpcData,
   allowedPiSkillPathsFromData,
+  allowedPiSkillPaths,
 } from "./piSkills";
+import { PI_FLAVOR } from "./piFlavor";
 
 it("keeps enabled native/package skills and refuses an incomplete restricted catalog", () => {
   const policy = { disabledNames: ["good-css"], disabledPaths: [] };
@@ -298,6 +300,67 @@ describe("piSkillsFromRpcData", () => {
 });
 
 describe("discoverPiSkills", () => {
+  it("cancels a held restricted catalog RPC and cleans up its isolated child", async () => {
+    const response = deferred<Record<string, unknown>>();
+    const controller = new AbortController();
+    mocks.request.mockReturnValue(response.promise);
+    const discovery = allowedPiSkillPaths(
+      PI_FLAVOR,
+      "/repo",
+      { disabledNames: ["fixture-disabled"], disabledPaths: [] },
+      controller.signal,
+    );
+    const rejected = expect(discovery).rejects.toThrow("fixture probe cancelled");
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
+    const childId = mocks.spawnChild.mock.calls[0][0];
+    controller.abort(new Error("fixture probe cancelled"));
+    await rejected;
+    expect(mocks.close).toHaveBeenCalledOnce();
+    expect(mocks.killChild).toHaveBeenCalledWith(childId);
+    expect(mocks.releaseBridge).toHaveBeenCalledOnce();
+    response.resolve({ data: { commands: [] } });
+  });
+
+  it("releases a bridge acquired after restricted discovery has been cancelled", async () => {
+    const bridge = deferred<() => void>();
+    const controller = new AbortController();
+    mocks.acquireHarnessBridge.mockReturnValue(bridge.promise);
+    const discovery = allowedPiSkillPaths(
+      PI_FLAVOR,
+      "/repo",
+      { disabledNames: ["fixture-disabled"], disabledPaths: [] },
+      controller.signal,
+    );
+    const rejected = expect(discovery).rejects.toThrow("fixture bridge cancelled");
+    await vi.waitFor(() => expect(mocks.acquireHarnessBridge).toHaveBeenCalledOnce());
+    controller.abort(new Error("fixture bridge cancelled"));
+    await rejected;
+    expect(mocks.spawnChild).not.toHaveBeenCalled();
+    bridge.resolve(mocks.releaseBridge);
+    await vi.waitFor(() => expect(mocks.releaseBridge).toHaveBeenCalledOnce());
+  });
+
+  it("does not issue a catalog request after a cancelled spawn finishes late", async () => {
+    const launch = deferred<void>();
+    const controller = new AbortController();
+    mocks.spawnChild.mockReturnValue(launch.promise);
+    const discovery = allowedPiSkillPaths(
+      PI_FLAVOR,
+      "/repo",
+      { disabledNames: ["fixture-disabled"], disabledPaths: [] },
+      controller.signal,
+    );
+    const rejected = expect(discovery).rejects.toThrow("fixture spawn cancelled");
+    await vi.waitFor(() => expect(mocks.spawnChild).toHaveBeenCalledOnce());
+    controller.abort(new Error("fixture spawn cancelled"));
+    await rejected;
+    launch.resolve();
+    await Promise.resolve();
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.killChild).toHaveBeenCalledWith(mocks.spawnChild.mock.calls[0][0]);
+    expect(mocks.releaseBridge).toHaveBeenCalledOnce();
+  });
+
   it("loads skills through an isolated sessionless Pi probe", async () => {
     mocks.request.mockResolvedValue({
       data: {

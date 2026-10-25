@@ -1,5 +1,8 @@
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { Progress } from "../../../shared/ui/Progress";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n";
 import type { SocialMedia } from "../model/social";
@@ -19,14 +22,16 @@ export function XMediaFields({
   onBusyChange?: (busy: boolean) => void;
   message?: boolean;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState<number>();
   const [error, setError] = useState("");
   return (
-    <fieldset disabled={busy}>
+    <fieldset>
       <legend>{t("X attachments")}</legend>
       <TextField
+        disabled={busy || socialLocked}
         label={t("Image or video file")}
         type="file"
         multiple
@@ -47,7 +52,7 @@ export function XMediaFields({
           setBusy(true);
           onBusyChange?.(true);
           setError("");
-          setProgress(0);
+          setProgress(video ? 0 : undefined);
           void (async () => {
             try {
               const next: SocialMedia[] = [];
@@ -69,7 +74,17 @@ export function XMediaFields({
           })();
         }}
       />
-      {busy ? <p role="status">{t("Uploading to host · {p0}%", { p0: progress })}</p> : null}
+      {busy ? (
+        <Progress
+          value={progress}
+          max={100}
+          label={
+            progress === undefined
+              ? t("Image or video file")
+              : t("Uploading to host · {p0}%", { p0: progress })
+          }
+        />
+      ) : null}
       {error ? <p role="alert">{error}</p> : null}
       {value.length ? (
         <>
@@ -84,6 +99,7 @@ export function XMediaFields({
             {value.map((item, index) =>
               item.kind === "image" ? (
                 <TextField
+                  disabled={busy || socialLocked}
                   key={index}
                   label={`${t("Image alt text")} ${index + 1}`}
                   value={item.alt ?? ""}
@@ -99,7 +115,13 @@ export function XMediaFields({
               ) : null,
             )}
           </div>
-          <Button type="button" variant="secondary" tone="danger" onClick={() => onChange([])}>
+          <Button
+            disabled={busy || socialLocked}
+            type="button"
+            variant="secondary"
+            tone="danger"
+            onClick={() => onChange([])}
+          >
             {t("Remove attachments")}
           </Button>
         </>

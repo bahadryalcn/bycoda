@@ -175,24 +175,21 @@ export async function runMcpProxy(
   let queuedBytes = 0;
   let barrier = Promise.resolve();
   let failure: unknown;
-  const enqueue = async (line: string) => {
-    if (!line.trim()) return;
-    const bytes = Buffer.byteLength(line);
-    if (bytes > maxBytes) throw new Error("MCP request too large.");
-    while (pendingCalls.size >= 32 || queuedBytes + bytes > 4 * maxBytes)
-      await Promise.race(pendingCalls);
-    let message: Message | null;
-    try {
-      message = JSON.parse(line);
-    } catch {
-      await emit({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
-      return;
-    }
-    const cancellation = message?.method === "notifications/cancelled";
+  const waiting: { message: Message | null; bytes: number }[] = [];
+  const capacityChanged = new Set<() => void>();
+  let normalPending = 0;
+  let controlPending = 0;
+  const wake = () => {
+    for (const resolve of capacityChanged) resolve();
+    capacityChanged.clear();
+  };
+  const changed = () => new Promise<void>((resolve) => capacityChanged.add(resolve));
+  const start = (message: Message | null, bytes: number, cancellation: boolean) => {
     const read = independent(message);
     const before = cancellation ? Promise.resolve() : read ? barrier : Promise.all(pendingCalls);
     const pool = cancellation ? control : normal;
-    queuedBytes += bytes;
+    if (cancellation) controlPending++;
+    else normalPending++;
     const job = (async () => {
       await before;
       await pool.take();
@@ -207,12 +204,50 @@ export async function runMcpProxy(
     const done = () => {
       pendingCalls.delete(job);
       queuedBytes -= bytes;
+      if (cancellation) controlPending--;
+      else normalPending--;
+      drain();
+      wake();
     };
     void job.then(done, (error) => {
       failure ??= error;
       lifetime.abort();
       done();
     });
+  };
+  const drain = () => {
+    while (normalPending < 32 && waiting.length) {
+      const next = waiting.shift()!;
+      start(next.message, next.bytes, false);
+    }
+  };
+  const enqueue = async (line: string) => {
+    if (!line.trim()) return;
+    const bytes = Buffer.byteLength(line);
+    if (bytes > maxBytes) throw new Error("MCP request too large.");
+    let message: Message | null;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      await emit({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+      return;
+    }
+    const cancellation = message?.method === "notifications/cancelled";
+    // Parse bounded look-ahead before waiting for normal execution capacity, so
+    // cancellation can use its reserved lane even behind a saturated read burst.
+    // Both buffered normal messages and control jobs retain explicit bounds.
+    while (
+      cancellation
+        ? controlPending >= 8 || queuedBytes + bytes > 5 * maxBytes
+        : waiting.length >= 1024 || queuedBytes + bytes > 4 * maxBytes
+    )
+      await changed();
+    queuedBytes += bytes;
+    if (cancellation) start(message, bytes, true);
+    else {
+      waiting.push({ message, bytes });
+      drain();
+    }
   };
   input.setEncoding("utf8");
   let pending = "";
@@ -228,7 +263,10 @@ export async function runMcpProxy(
       if (Buffer.byteLength(pending) > maxBytes) throw new Error("MCP request too large.");
     }
     await enqueue(pending);
-    await Promise.all(pendingCalls);
+    while (waiting.length || pendingCalls.size) {
+      drain();
+      if (pendingCalls.size) await Promise.race(pendingCalls);
+    }
     if (failure) throw failure;
   } finally {
     lifetime.abort();

@@ -447,7 +447,10 @@ describe("a queue restored after a restart", () => {
       send.click();
     });
     expect(steer).toHaveBeenCalledOnce();
-    expect(send.disabled).toBe(true);
+    expect(send.disabled).toBe(false);
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    act(() => send.click());
+    expect(steer).toHaveBeenCalledOnce();
     expect(
       container.querySelector('[role="status"]:not([class*="srOnly"])')?.textContent,
     ).toContain("Waiting for confirmation");
@@ -475,7 +478,10 @@ describe("a queue restored after a restart", () => {
     expect(button.disabled).toBe(false);
     act(() => button.click());
     expect(button.textContent).toContain("Resuming");
-    expect(button.disabled).toBe(true);
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    act(() => button.click());
+    expect(resume).toHaveBeenCalledOnce();
     await act(async () =>
       finish({
         kind: "waiting",

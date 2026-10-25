@@ -28,7 +28,7 @@ import {
 } from "react";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { MatchText } from "../../../shared/ui/MatchText";
+import { MatchText, matchPositions } from "../../../shared/ui/MatchText";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
@@ -312,7 +312,10 @@ export function SearchView({
     () => hitsFromContentMatches(projectSearch.result.matches),
     [projectSearch.result.matches],
   );
-  const error = projectSearch.error ?? (fileIndexError?.cwd === cwd ? fileIndexError.error : null);
+  const error =
+    scope === "all" || scope === "files"
+      ? (projectSearch.error ?? (fileIndexError?.cwd === cwd ? fileIndexError.error : null))
+      : null;
   const contentTruncated = projectSearch.result.truncated;
   const loading = projectSearch.loading || conversation.loading || deferredTrimmed !== trimmed;
   const truncated = contentTruncated || conversation.result.truncated;
@@ -408,7 +411,7 @@ export function SearchView({
     </p>
   ) : null;
   const indexNotice =
-    pendingIndex > 0 && scope !== "files" && scope !== "projects" ? (
+    pendingIndex > 0 && !conversation.error && scope !== "files" && scope !== "projects" ? (
       <p className="px-2.5 py-1 text-ui-micro text-(--ui-text-muted)">
         {t("Indexing ")}
         {pendingIndex}
@@ -752,13 +755,7 @@ function rowCopy(
 
 function Highlight({ text, query }: { text: string; query: string }) {
   useLocale();
-  const needle = query.trim().toLowerCase();
-  const haystack = text.toLowerCase();
-  const positions: number[] = [];
-  for (let from = needle ? haystack.indexOf(needle) : -1; from >= 0;) {
-    for (let i = 0; i < needle.length; i++) positions.push(from + i);
-    from = haystack.indexOf(needle, from + needle.length);
-  }
+  const positions = matchPositions(text, query);
   return <MatchText text={text} positions={positions} active={positions.length > 0} />;
 }
 

@@ -413,6 +413,7 @@ export function UsageOverview({
   const showAnalytics = !firstLoad && !unavailable;
   const metricUnavailable = metric === "duration" && load.turns === null;
   const refreshData = () => {
+    if (refreshing) return;
     if (preset !== "custom") setInterval(presetWindow(preset, Date.now()));
     setReload((v) => v + 1);
   };
@@ -477,7 +478,7 @@ export function UsageOverview({
           >
             <ListFilter className="icon-sm" />
           </Button>
-          {!limitsOnly && (
+          {!limitsOnly && view !== "limits" && !unavailable && !partial && (
             <Button
               variant="ghost"
               iconOnly

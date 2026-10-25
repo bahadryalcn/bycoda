@@ -120,12 +120,42 @@ type Resume = {
   cwd: string;
 };
 
+type Startup = {
+  key: string;
+  controller: AbortController;
+  promise: Promise<Live>;
+  live?: Live;
+  skillProbe?: Promise<string[]>;
+};
+
+function startupWait<T>(attempt: Startup, pending: Promise<T>): Promise<T> {
+  const signal = attempt.controller.signal;
+  return new Promise<T>((resolve, reject) => {
+    const cancelled = () => reject(signal.reason);
+    if (signal.aborted) cancelled();
+    else signal.addEventListener("abort", cancelled, { once: true });
+    pending.then(
+      (value) => {
+        signal.removeEventListener("abort", cancelled);
+        if (signal.aborted) cancelled();
+        else resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", cancelled);
+        reject(signal.aborted ? signal.reason : error);
+      },
+    );
+  });
+}
+
 const INIT_TIMEOUT_MS = 45_000;
 const STATS_TIMEOUT_MS = 4_000;
 const COMPACT_TIMEOUT_MS = 30 * 60_000;
 
 type FlavorState = {
   liveByThread: Map<string, Live>;
+  startingByThread: Map<string, Startup>;
+  stoppingByThread: Map<string, Promise<void>>;
   resumeByThread: Map<string, Resume>;
   cancelledThreads: Set<string>;
   resolveBinary: () => Promise<{ path: string }>;
@@ -143,6 +173,8 @@ function stateFor(flavor: PiFlavor): FlavorState {
   if (!state) {
     state = {
       liveByThread: new Map(),
+      startingByThread: new Map(),
+      stoppingByThread: new Map(),
       resumeByThread: new Map(),
       cancelledThreads: new Set(),
       resolveBinary: flavor.resolveBinary,
@@ -349,7 +381,11 @@ export function respondQuestion(
 }
 
 export async function cancelTurn(flavor: PiFlavor, sessionId: string): Promise<void> {
-  const { liveByThread, cancelledThreads } = stateFor(flavor);
+  const { liveByThread, startingByThread, cancelledThreads } = stateFor(flavor);
+  if (startingByThread.has(sessionId)) {
+    await stopSession(flavor, sessionId);
+    return;
+  }
   const live = liveByThread.get(sessionId);
   if (!live) {
     cancelledThreads.add(sessionId);
@@ -367,12 +403,34 @@ export async function cancelTurn(flavor: PiFlavor, sessionId: string): Promise<v
   finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
 }
 
-export async function stopSession(flavor: PiFlavor, sessionId: string): Promise<void> {
-  const { liveByThread, cancelledThreads } = stateFor(flavor);
+export function stopSession(flavor: PiFlavor, sessionId: string): Promise<void> {
+  const { liveByThread, startingByThread, stoppingByThread, cancelledThreads } = stateFor(flavor);
   cancelledThreads.delete(sessionId);
+  const starting = startingByThread.get(sessionId);
+  startingByThread.delete(sessionId);
+  starting?.controller.abort(new Error(`${flavor.label} startup cancelled`));
   const live = liveByThread.get(sessionId);
   liveByThread.delete(sessionId);
+  if (live) closeLive(live);
+  if (starting?.live && starting.live !== live) closeLive(starting.live);
+  const pending = stoppingByThread.get(sessionId);
+  if (pending) return pending;
+  unwatchChild(sessionId);
+  const stopping = Promise.all([
+    killChild(sessionId).catch(() => undefined),
+    starting?.skillProbe?.catch(() => undefined),
+  ])
+    .then(() => undefined)
+    .finally(() => {
+      if (stoppingByThread.get(sessionId) === stopping) stoppingByThread.delete(sessionId);
+    });
+  stoppingByThread.set(sessionId, stopping);
+  return stopping;
+}
+
+function closeLive(live: Live): void {
   if (live) {
+    live.cancelled = true;
     live.muteUpdates = true;
     live.settleToken += 1;
     for (const [, pending] of live.approvals) pending.resolve("deny");
@@ -385,8 +443,6 @@ export async function stopSession(flavor: PiFlavor, sessionId: string): Promise<
     live.turnFailed = null;
     live.rpc.close();
   }
-  unwatchChild(sessionId);
-  await killChild(sessionId).catch(() => undefined);
 }
 
 export async function forgetSession(flavor: PiFlavor, sessionId: string): Promise<void> {
@@ -406,7 +462,28 @@ export function bindSession(
 }
 
 async function ensureLive(flavor: PiFlavor, input: HarnessSessionInput): Promise<Live> {
-  const { liveByThread, resumeByThread } = stateFor(flavor);
+  const state = stateFor(flavor);
+  const { liveByThread, resumeByThread, startingByThread, stoppingByThread } = state;
+  const key = JSON.stringify([
+    input.cwd,
+    input.intent,
+    input.model,
+    input.modelSettings,
+    input.skillPolicy,
+  ]);
+  const starting = startingByThread.get(input.sessionId);
+  if (starting) {
+    if (starting.key !== key) {
+      // Stop establishes its cleanup barrier synchronously. Register the new
+      // attempt before awaiting that barrier so a later stop can cancel it too.
+      void stopSession(flavor, input.sessionId);
+    } else {
+      const live = await starting.promise;
+      live.onEvent = input.onEvent;
+      return live;
+    }
+  }
+  const stopping = stoppingByThread.get(input.sessionId);
   const existing = liveByThread.get(input.sessionId);
   const wantPlanning = input.intent === "plan";
   if (
@@ -419,35 +496,54 @@ async function ensureLive(flavor: PiFlavor, input: HarnessSessionInput): Promise
     await applyModel(flavor, existing, input);
     return existing;
   }
-  if (existing) {
-    if (existing.cwd !== input.cwd) resumeByThread.delete(input.sessionId);
-    await stopSession(flavor, input.sessionId);
-  }
-
-  const resume = resumeByThread.get(input.sessionId);
-  const canResume = resume != null && resume.cwd === input.cwd;
-  if (resume && resume.cwd !== input.cwd) {
-    resumeByThread.delete(input.sessionId);
-  }
-
-  try {
-    return await startLive(flavor, input, canResume ? resume?.sessionId : undefined);
-  } catch (error) {
-    if (!canResume) throw error;
-    resumeByThread.delete(input.sessionId);
-    await stopSession(flavor, input.sessionId);
-    return startLive(flavor, input, undefined);
-  }
+  const attempt: Startup = { key, controller: new AbortController(), promise: undefined! };
+  startingByThread.set(input.sessionId, attempt);
+  attempt.promise = Promise.resolve()
+    .then(async () => {
+      attempt.controller.signal.throwIfAborted();
+      if (stopping) await startupWait(attempt, stopping);
+      attempt.controller.signal.throwIfAborted();
+      if (existing) {
+        if (existing.cwd !== input.cwd) resumeByThread.delete(input.sessionId);
+        if (liveByThread.get(input.sessionId) === existing) liveByThread.delete(input.sessionId);
+        closeLive(existing);
+        unwatchChild(input.sessionId);
+        await startupWait(
+          attempt,
+          killChild(input.sessionId).catch(() => undefined),
+        );
+      }
+      attempt.controller.signal.throwIfAborted();
+      const resume = resumeByThread.get(input.sessionId);
+      const canResume = resume != null && resume.cwd === input.cwd;
+      if (resume && !canResume) resumeByThread.delete(input.sessionId);
+      try {
+        return await startLive(flavor, input, canResume ? resume?.sessionId : undefined, attempt);
+      } catch (error) {
+        attempt.controller.signal.throwIfAborted();
+        if (!canResume) throw error;
+        resumeByThread.delete(input.sessionId);
+        return startLive(flavor, input, undefined, attempt);
+      }
+    })
+    .finally(() => {
+      if (startingByThread.get(input.sessionId) === attempt)
+        startingByThread.delete(input.sessionId);
+    });
+  return attempt.promise;
 }
 
 async function startLive(
   flavor: PiFlavor,
   input: HarnessSessionInput,
   resume: string | undefined,
+  attempt: Startup,
 ): Promise<Live> {
   const state = stateFor(flavor);
   const { liveByThread } = state;
-  const { path } = await state.resolveBinary();
+  attempt.controller.signal.throwIfAborted();
+  const { path } = await startupWait(attempt, state.resolveBinary());
+  attempt.controller.signal.throwIfAborted();
   const native = nativeModelId(input.model);
   const modelRef = parsePiModelRef(native);
   const liveRef: { current: Live | null } = { current: null };
@@ -495,56 +591,76 @@ async function startLive(
     emittedReasoning: "",
     turnError: null,
   };
+  attempt.live = live;
   liveRef.current = live;
-
-  watchChild(
-    input.sessionId,
-    (line) => rpc.pushLine(line),
-    (code) => {
-      rpc.close(new Error(`${flavor.label} exited`));
-      liveByThread.delete(input.sessionId);
-      const current = liveRef.current;
-      if (!current?.muteUpdates) {
-        (current?.onEvent ?? input.onEvent)({ type: "session.ended", code });
-      }
-      if (current) {
-        for (const question of current.questions.values()) question.resolve({ kind: "skipped" });
-        for (const approval of current.approvals.values()) approval.resolve("deny");
-      }
-      current?.turnFailed?.(new Error(`${flavor.label} exited`));
-      if (current) {
-        current.turnDone = null;
-        current.turnFailed = null;
-      }
-    },
-    (line) => {
-      console.debug(`[${flavor.id}]`, line);
-    },
-  );
-
-  await spawnChild(
-    input.sessionId,
-    path,
-    buildPiSpawnArgs(flavor, {
-      resume,
-      model: modelRef ? native : undefined,
-      plan: input.intent === "plan",
-      ...(input.skillPolicy &&
-      (input.skillPolicy.disabledNames.length || input.skillPolicy.disabledPaths.length)
-        ? { skillPaths: await allowedPiSkillPaths(flavor, input.cwd, input.skillPolicy) }
-        : {}),
-    }),
-    input.cwd,
-    undefined,
-    flavor.id,
-  );
-
-  liveByThread.set(input.sessionId, live);
-
   try {
-    const stateFrame = await rpc.request({ type: "get_state" }, INIT_TIMEOUT_MS);
+    let skillPaths: string[] | undefined;
+    if (
+      input.skillPolicy &&
+      (input.skillPolicy.disabledNames.length || input.skillPolicy.disabledPaths.length)
+    ) {
+      attempt.skillProbe = allowedPiSkillPaths(
+        flavor,
+        input.cwd,
+        input.skillPolicy,
+        attempt.controller.signal,
+      );
+      skillPaths = await startupWait(attempt, attempt.skillProbe);
+    }
+    attempt.controller.signal.throwIfAborted();
+    watchChild(
+      input.sessionId,
+      (line) => rpc.pushLine(line),
+      (code) => {
+        rpc.close(new Error(`${flavor.label} exited`));
+        if (liveByThread.get(input.sessionId) === live) liveByThread.delete(input.sessionId);
+        const current = liveRef.current;
+        if (!current?.muteUpdates) {
+          (current?.onEvent ?? input.onEvent)({ type: "session.ended", code });
+        }
+        if (current) {
+          for (const question of current.questions.values()) question.resolve({ kind: "skipped" });
+          for (const approval of current.approvals.values()) approval.resolve("deny");
+        }
+        current?.turnFailed?.(new Error(`${flavor.label} exited`));
+        if (current) {
+          current.turnDone = null;
+          current.turnFailed = null;
+        }
+      },
+      (line) => {
+        console.debug(`[${flavor.id}]`, line);
+      },
+    );
+
+    await startupWait(
+      attempt,
+      spawnChild(
+        input.sessionId,
+        path,
+        buildPiSpawnArgs(flavor, {
+          resume,
+          model: modelRef ? native : undefined,
+          plan: input.intent === "plan",
+          ...(skillPaths ? { skillPaths } : {}),
+        }),
+        input.cwd,
+        undefined,
+        flavor.id,
+      ),
+    );
+    attempt.controller.signal.throwIfAborted();
+
+    liveByThread.set(input.sessionId, live);
+
+    const stateFrame = await startupWait(
+      attempt,
+      rpc.request({ type: "get_state" }, INIT_TIMEOUT_MS),
+    );
+    attempt.controller.signal.throwIfAborted();
     bindState(flavor, input.sessionId, live, stateFrame.data);
-    await applyModel(flavor, live, input);
+    await startupWait(attempt, applyModel(flavor, live, input));
+    attempt.controller.signal.throwIfAborted();
     if (live.providerSessionId) {
       live.onEvent({
         type: "session.providerBound",
@@ -554,7 +670,14 @@ async function startLive(
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
-    await stopSession(flavor, input.sessionId);
+    closeLive(live);
+    // A public stop owns keyed cleanup after invalidating this attempt. Old
+    // continuations must never unwatch or kill a replacement startup.
+    if (state.startingByThread.get(input.sessionId) === attempt) {
+      if (liveByThread.get(input.sessionId) === live) liveByThread.delete(input.sessionId);
+      unwatchChild(input.sessionId);
+      await killChild(input.sessionId).catch(() => undefined);
+    }
     throw error;
   }
 }
@@ -742,9 +865,10 @@ function handleFrame(
         live.nativeModel = native;
         // Capacity belongs to the active model, never the previous model.
         const capacity = model?.contextWindow;
-        live.contextWindow = typeof capacity === "number" && Number.isFinite(capacity) && capacity > 0
-          ? capacity
-          : undefined;
+        live.contextWindow =
+          typeof capacity === "number" && Number.isFinite(capacity) && capacity > 0
+            ? capacity
+            : undefined;
       }
       if (isPiThinkingLevel(thinking)) live.thinking = thinking;
       if (fastModeEnabled != null) {

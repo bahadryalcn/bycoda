@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { HostStore } from "./store";
-import { HostNotes } from "./host-notes";
+import type { HostNotesAccess } from "./host-notes-async";
 import type { HostAutomations } from "./automations";
 import type { ProviderInboxBridge } from "./provider-inbox";
 import type { RuntimeLogPrincipal } from "./runtime-log-tools";
@@ -28,7 +28,7 @@ export class ConversationWorkspaceTools {
   private pendingWrites = new Map<string, { signature: string; promise: Promise<unknown> }>();
   constructor(
     private readonly store: HostStore,
-    private readonly notes: HostNotes,
+    private readonly notes: HostNotesAccess,
     private readonly automations: HostAutomations,
     private readonly inbox: ProviderInboxBridge,
     private readonly attentionInbox: (
@@ -39,7 +39,7 @@ export class ConversationWorkspaceTools {
       operation: Record<string, unknown>,
       cwd: string,
       principal: RuntimeLogPrincipal,
-      authorized: () => boolean,
+      authorized: () => boolean | Promise<boolean>,
     ) => Promise<unknown>,
   ) {}
 
@@ -48,27 +48,29 @@ export class ConversationWorkspaceTools {
     input: Record<string, unknown>,
     principal: RuntimeLogPrincipal,
     session: Session,
-    authorized: () => boolean,
+    authorized: () => boolean | Promise<boolean>,
   ): Promise<unknown> {
-    if (!authorized()) throw new Error("Session authority revoked.");
-    const project = this.store.project(principal.projectId);
+    if (!(await authorized())) throw new Error("Session authority revoked.");
+    const project = await this.store.project(principal.projectId);
     if (action.startsWith("notes.")) {
       if (action === "notes.list") {
-        const list = this.notes.list(project.cwd);
+        const list = await this.notes.list(project.cwd);
+        if (!(await authorized())) throw new Error("Session authority revoked.");
         return {
           ...page(list.notes, input, list.total),
           truncated: list.total > list.notes.length,
         };
       }
       const id = String(input.id);
-      const existing = this.notes.get(id, project.cwd);
+      const existing = await this.notes.get(id, project.cwd);
+      if (!(await authorized())) throw new Error("Session authority revoked.");
       if (action === "notes.read") {
         if (!existing) throw new Error("Note not found.");
         return existing;
       }
       if (action === "notes.create") {
         if (existing) throw new Error("Note ID already exists. Read it before retrying creation.");
-        return this.notes.save(
+        return await this.notes.save(
           {
             id,
             title: input.title ?? "Untitled",
@@ -79,14 +81,15 @@ export class ConversationWorkspaceTools {
           },
           0,
           project.cwd,
+          authorized,
         );
       }
       if (!existing) throw new Error("Note not found.");
       if (action === "notes.delete")
-        return this.notes.delete(id, input.expectedUpdatedAt, project.cwd);
+        return await this.notes.delete(id, input.expectedUpdatedAt, project.cwd, authorized);
       if (input.title === undefined && input.body === undefined && input.tags === undefined)
         throw new Error("Supply note content to update.");
-      return this.notes.save(
+      return await this.notes.save(
         {
           ...existing,
           ...(input.title === undefined ? {} : { title: input.title }),
@@ -96,10 +99,11 @@ export class ConversationWorkspaceTools {
         },
         input.expectedUpdatedAt,
         project.cwd,
+        authorized,
       );
     }
     if (action.startsWith("automations.")) {
-      const list = this.automations.list();
+      const list = await this.automations.list();
       if (action === "automations.list")
         return page(
           list.filter((entry) => entry.projectId === project.id),
@@ -118,10 +122,10 @@ export class ConversationWorkspaceTools {
           input.model === undefined
         )
           throw new Error("Choose a model when selecting a different automation provider.");
-        return this.store.transaction(() => {
-          if (this.automations.list().some((entry) => entry.id === id))
+        return await this.store.transaction(async () => {
+          if ((await this.automations.list()).some((entry) => entry.id === id))
             throw new Error("Automation ID already exists.");
-          return this.automations.save({
+          return await this.automations.save({
             ...input,
             id,
             projectId: project.id,
@@ -138,14 +142,14 @@ export class ConversationWorkspaceTools {
       }
       if (!existing) throw new Error("Automation not found.");
       if (action === "automations.get") return existing;
-      if (action === "automations.runs") return page(this.automations.runs(id), input);
-      if (this.automations.runs(id).some((run) => run.sessionId === principal.sessionId))
+      if (action === "automations.runs") return page(await this.automations.runs(id), input);
+      if ((await this.automations.runs(id)).some((run) => run.sessionId === principal.sessionId))
         throw new Error("An automation agent cannot manage its own automation.");
-      if (action === "automations.runNow") return this.automations.runNow(id);
+      if (action === "automations.runNow") return await this.automations.runNow(id);
       if (action === "automations.stopRun")
-        return this.automations.stopRun(id, String(input.runId));
-      return this.store.transaction(() => {
-        const current = this.automations.list().find((entry) => entry.id === id);
+        return await this.automations.stopRun(id, String(input.runId));
+      return await this.store.transaction(async () => {
+        const current = (await this.automations.list()).find((entry) => entry.id === id);
         if (
           !current ||
           current.projectId !== project.id ||
@@ -153,14 +157,17 @@ export class ConversationWorkspaceTools {
         )
           throw new Error("Automation changed. Read it before updating.");
         if (action === "automations.delete") {
-          this.automations.delete(id);
+          await this.automations.delete(id);
           return { deleted: true };
         }
         if (action === "automations.pause" || action === "automations.resume")
-          return this.automations.save({ ...current, enabled: action === "automations.resume" });
+          return await this.automations.save({
+            ...current,
+            enabled: action === "automations.resume",
+          });
         const { automationId: _id, expectedUpdatedAt: _expected, ...patch } = input;
         if (!Object.keys(patch).length) throw new Error("Supply automation fields to update.");
-        return this.automations.save({
+        return await this.automations.save({
           ...current,
           ...patch,
           modelSettings:
@@ -173,7 +180,7 @@ export class ConversationWorkspaceTools {
     }
     if (action === "inbox.list")
       return page(await this.attentionInbox(project.id, principal), input);
-    if (action === "inbox.providers.status") return this.inbox.availability();
+    if (action === "inbox.providers.status") return await this.inbox.availability();
     const owner = createHash("sha256")
       .update(
         JSON.stringify([
@@ -184,7 +191,7 @@ export class ConversationWorkspaceTools {
         ]),
       )
       .digest("hex");
-    if (action === "inbox.result") return this.inbox.result(owner, input.requestId);
+    if (action === "inbox.result") return await this.inbox.result(owner, input.requestId);
     const operation = parseRemoteInboxOperation(
       {
         ...input,
@@ -205,11 +212,12 @@ export class ConversationWorkspaceTools {
       },
       [project],
     );
-    const receipt = this.inbox.existingRequest(owner, input.requestId, operation);
+    const receipt = await this.inbox.existingRequest(owner, input.requestId, operation);
     if (receipt) return receipt;
-    if ("item" in operation) this.inbox.assertListedTarget(owner, operation.item, project.cwd);
+    if ("item" in operation)
+      await this.inbox.assertListedTarget(owner, operation.item, project.cwd);
     if (!inboxOperationWrites(operation))
-      return this.inbox.request(owner, input.requestId, operation);
+      return await this.inbox.request(owner, input.requestId, operation);
     const key = `${owner}:${input.requestId}`;
     const signature = JSON.stringify(operation);
     const pending = this.pendingWrites.get(key);
@@ -220,7 +228,7 @@ export class ConversationWorkspaceTools {
     }
     if (this.pendingWrites.size >= 16)
       throw new Error("Too many inbox owner approvals are pending.");
-    const available = this.inbox.availability();
+    const available = await this.inbox.availability();
     if (!available.available) throw new Error(available.reason);
     const promise = (async () => {
       const result = (await this.approveInboxWrite(
@@ -229,9 +237,9 @@ export class ConversationWorkspaceTools {
         principal,
         authorized,
       )) as { approved?: boolean };
-      if (!authorized()) throw new Error("Session authority revoked.");
+      if (!(await authorized())) throw new Error("Session authority revoked.");
       if (result?.approved !== true) throw new Error("Owner declined this inbox operation.");
-      return this.inbox.request(owner, input.requestId, operation);
+      return await this.inbox.request(owner, input.requestId, operation);
     })();
     this.pendingWrites.set(key, { signature, promise });
     try {

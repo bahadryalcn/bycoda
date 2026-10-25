@@ -307,6 +307,38 @@ describe("FileTree render isolation", () => {
     expect(invoke).toHaveBeenCalledWith("reveal_path", { path: cwd });
   });
 
+  it("shows tree-local progress while an operation is pending and ignores repeated requests", async () => {
+    await act(async () => render());
+    const reveal = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      /Finder|File Explorer|File Manager|Containing Folder/i.test(
+        button.getAttribute("aria-label") ?? "",
+      ),
+    )!;
+    let finish!: () => void;
+    vi.mocked(invoke).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    act(() => {
+      reveal.click();
+      reveal.click();
+    });
+    expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === "reveal_path")).toHaveLength(1);
+    expect(
+      [...container.querySelectorAll('[role="status"]')].some((status) =>
+        status.textContent?.includes("Working…"),
+      ),
+    ).toBe(true);
+    await act(async () => finish());
+    expect(
+      [...container.querySelectorAll('[role="status"]')].some((status) =>
+        status.textContent?.includes("Working…"),
+      ),
+    ).toBe(false);
+  });
+
   it("shows an initial read failure separately from an empty directory and retries the root", async () => {
     forgetDir(cwd);
     failures.set(cwd, "host unavailable");

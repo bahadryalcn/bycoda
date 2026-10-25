@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { SocialBusyContext } from "./socialContext";
 import { PublishingPlans } from "./SocialPublishingPlans";
 import type { SocialPublishingPlan, SocialSnapshot } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
@@ -82,26 +83,30 @@ function snapshot(change: Partial<SocialSnapshot> = {}): SocialSnapshot {
     ...change,
   };
 }
-async function render(value: SocialSnapshot, extraProject = false) {
+async function render(value: SocialSnapshot, extraProject = false, busy = false) {
   await act(async () =>
     root.render(
-      createElement(PublishingPlans, {
-        snapshot: value,
-        client: { request } as unknown as SocialClient,
-        projects: [
-          { id: "project", name: "Product", cwd: "/product" },
-          ...(extraProject ? [{ id: "other", name: "Other project", cwd: "/other" }] : []),
-        ],
-        initialProject: "project",
-        run: async (work) => {
-          try {
-            await work();
-            return true;
-          } catch {
-            return false;
-          }
-        },
-      }),
+      createElement(
+        SocialBusyContext.Provider,
+        { value: busy },
+        createElement(PublishingPlans, {
+          snapshot: value,
+          client: { request } as unknown as SocialClient,
+          projects: [
+            { id: "project", name: "Product", cwd: "/product" },
+            ...(extraProject ? [{ id: "other", name: "Other project", cwd: "/other" }] : []),
+          ],
+          initialProject: "project",
+          run: async (work) => {
+            try {
+              await work();
+              return true;
+            } catch {
+              return false;
+            }
+          },
+        }),
+      ),
     ),
   );
 }
@@ -256,7 +261,9 @@ it("keeps the published prefix fixed while an owner edits the remaining pool", a
   expect(moves[1].disabled).toBe(true);
   expect(moves[2].disabled).toBe(true);
   expect(moves[3].disabled).toBe(false);
-  expect(form.textContent).toContain("The order of sent content, the account and the project are kept");
+  expect(form.textContent).toContain(
+    "The order of sent content, the account and the project are kept",
+  );
 });
 
 it("clears the selected campaign pool when its searchable account changes", async () => {
@@ -285,4 +292,24 @@ it("clears the selected campaign pool when its searchable project changes", asyn
   );
   expect(Array.from(form.querySelectorAll("select")).at(1)?.value).toBe("other");
   expect(form.textContent).not.toContain("Yeni özellik");
+});
+
+it("locks searchable plan scope while preserving the open draft during another operation", async () => {
+  const value = snapshot();
+  await render(value, true);
+  await act(async () => button("Edit plan").click());
+  const selected = () =>
+    ["Sharing account", "Project"].map((name) =>
+      [...document.body.querySelectorAll("label")]
+        .find((label) => label.textContent?.trim().startsWith(name))
+        ?.querySelector("button"),
+    );
+  await render(value, true, true);
+  const locked = selected();
+  expect(locked).toHaveLength(2);
+  locked.forEach((item) => expect(item?.disabled).toBe(true));
+  await render(value, true, false);
+  selected().forEach((item) => expect(item?.disabled).toBe(false));
+  expect(document.body.querySelector("form")).toBeTruthy();
+  expect(request).not.toHaveBeenCalled();
 });

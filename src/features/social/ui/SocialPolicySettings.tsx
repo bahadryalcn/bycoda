@@ -1,3 +1,6 @@
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { NativeSelect } from "../../../shared/ui/Select";
@@ -78,6 +81,8 @@ export function SocialPolicySettings({
   policies?: SocialPolicies;
   run: (action: () => Promise<unknown>) => Promise<boolean>;
 }) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [scope, setScope] = useState<Scope>("global");
   const [drafts, setDrafts] = useState<Partial<Record<Scope, Draft>>>({});
@@ -139,7 +144,7 @@ export function SocialPolicySettings({
         {t("Settings scope")}
         <NativeSelect
           value={scope}
-          disabled={saving}
+          disabled={saving || socialLocked || saving}
           onChange={(event) => {
             setScope(event.target.value as Scope);
             setError("");
@@ -216,24 +221,27 @@ export function SocialPolicySettings({
           setError("");
           setNotice("");
           let started = false;
-          void run(async () => {
-            started = true;
-            try {
-              await client.request("policy.save", { policies: next });
-              setDrafts((current) => ({
-                ...current,
-                [savedScope]: draftFor(policy),
-              }));
-              setNotice(
-                savedScope === "global"
-                  ? t("Shared settings saved.")
-                  : t("{p0} settings saved.", { p0: platforms[savedScope] }),
-              );
-            } catch (error) {
-              setError(t("Settings could not be saved: {p0}", { p0: errorText(error) }));
-              throw error;
-            }
-          })
+          void pendingUi
+            .run("policy.save", () =>
+              run(async () => {
+                started = true;
+                try {
+                  await client.request("policy.save", { policies: next });
+                  setDrafts((current) => ({
+                    ...current,
+                    [savedScope]: draftFor(policy),
+                  }));
+                  setNotice(
+                    savedScope === "global"
+                      ? t("Shared settings saved.")
+                      : t("{p0} settings saved.", { p0: platforms[savedScope] }),
+                  );
+                } catch (error) {
+                  setError(t("Settings could not be saved: {p0}", { p0: errorText(error) }));
+                  throw error;
+                }
+              }),
+            )
             .then((success) => {
               if (!success && !started)
                 setError(t("Another operation is in progress. Try saving again."));
@@ -247,10 +255,11 @@ export function SocialPolicySettings({
             });
         }}
       >
-        <fieldset className="social-workspace" disabled={saving}>
+        <fieldset className="social-workspace">
           <label>
             {t("AI agent")}
             <NativeSelect
+              disabled={saving || socialLocked}
               value={draft.provider}
               onChange={(event) => update({ provider: event.target.value, model: "" })}
             >
@@ -269,7 +278,7 @@ export function SocialPolicySettings({
             <TextField
               label={t("AI model")}
               value={draft.model}
-              disabled={!draft.provider}
+              disabled={saving || socialLocked || !draft.provider}
               maxLength={200}
               placeholder={t("Empty: the agent's default model")}
               onChange={(event) => update({ model: event.target.value })}
@@ -280,6 +289,7 @@ export function SocialPolicySettings({
             <div className="social-field-grid">
               {SOCIAL_LIMIT_FIELDS.map((field) => (
                 <TextField
+                  disabled={saving || socialLocked}
                   key={field}
                   label={labels[field]}
                   name={field}
@@ -309,11 +319,21 @@ export function SocialPolicySettings({
             </div>
           </section>
           <div className="social-actions">
-            <Button variant="primary" type="submit" disabled={conflict} loading={saving}>
+            <Button
+              variant="primary"
+              type="submit"
+              disabled={saving || socialLocked || conflict}
+              loading={pendingUi.is("policy.save")}
+            >
               {saving ? t("Saving…") : t("Save settings")}
             </Button>
             {isEdited(draft) || conflict ? (
-              <Button variant="secondary" type="button" onClick={reset}>
+              <Button
+                disabled={saving || socialLocked}
+                variant="secondary"
+                type="button"
+                onClick={reset}
+              >
                 {t("Load saved settings")}
               </Button>
             ) : null}

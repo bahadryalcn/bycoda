@@ -327,7 +327,11 @@ export function GitGraphWorkspace({
             }}
           />
         ) : null}
-        {busy ? (
+        {busy &&
+        !(
+          conflict &&
+          (busy === t("Saving conflict resolution…") || busy === t("Resolving conflict…"))
+        ) ? (
           <span
             role="status"
             className="flex items-center gap-2 text-[12px] text-[var(--ui-text-secondary)]"

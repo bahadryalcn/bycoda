@@ -141,6 +141,10 @@ it("does not save a connection receipt after its provider was changed", async ()
       }),
   );
   await click("Connect");
+  expect(document.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
+  expect(document.querySelector('button[aria-busy="true"]')?.textContent).toBe("Connect");
+  await click("Connect");
+  expect(invoke).toHaveBeenCalledTimes(2);
   await act(async () =>
     root.render(createElement(TerminalProfileDiscovery, { provider: "codex", disabled: false })),
   );

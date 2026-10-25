@@ -16,97 +16,117 @@ export const tokenDigest = (token: string) => createHash("sha256").update(token)
 
 /** Only the owner RPC can mint grants. Secrets are returned once, never persisted. */
 export class McpTokens {
+  readonly ready: Promise<void>;
   constructor(
     private readonly store: HostStore,
     private readonly now = Date.now,
   ) {
-    store.db.exec(`CREATE TABLE IF NOT EXISTS mcp_tokens (
+    this.ready = store.ready.then(
+      async () =>
+        await store.db.exec(`CREATE TABLE IF NOT EXISTS mcp_tokens (
       id TEXT PRIMARY KEY, hash TEXT NOT NULL UNIQUE, value TEXT NOT NULL
-    )`);
+    )`),
+    );
   }
 
-  create(input: Record<string, unknown>): McpGrant & { token: string } {
-    if (
-      Object.keys(input).some((key) => !["name", "projectId", "scopes", "expiresAt"].includes(key))
-    )
-      throw new Error("Unknown token field.");
-    const { name, projectId, scopes, expiresAt } = input;
-    if (
-      typeof name !== "string" ||
-      !name.trim() ||
-      name.length > 200 ||
-      typeof projectId !== "string" ||
-      !Number.isSafeInteger(expiresAt) ||
-      (expiresAt as number) <= this.now() ||
-      (expiresAt as number) > this.now() + 366 * 86400_000 ||
-      !scopes ||
-      typeof scopes !== "object" ||
-      Array.isArray(scopes)
-    )
-      throw new Error("A name, project, explicit scopes and expiry within one year are required.");
-    this.store.project(projectId);
-    const entries = Object.entries(scopes);
-    if (
-      !entries.length ||
-      entries.some(
-        ([group, modes]) =>
-          !(MCP_GROUPS as readonly string[]).includes(group) ||
-          !Array.isArray(modes) ||
-          !modes.length ||
-          modes.length > 2 ||
-          new Set(modes).size !== modes.length ||
-          modes.some((mode) => mode !== "read" && mode !== "write"),
+  async create(input: Record<string, unknown>): Promise<Awaited<McpGrant & { token: string }>> {
+    await this.ready;
+    return await this.store.db.scope(async () => {
+      if (
+        Object.keys(input).some(
+          (key) => !["name", "projectId", "scopes", "expiresAt"].includes(key),
+        )
       )
-    )
-      throw new Error("Invalid MCP scopes.");
-    const grant: McpGrant = {
-      id: randomUUID(),
-      name: name.trim(),
-      projectId,
-      scopes: structuredClone(scopes) as McpGrant["scopes"],
-      createdAt: this.now(),
-      expiresAt: expiresAt as number,
-    };
-    const token = randomBytes(32).toString("base64url");
-    this.store.db
-      .prepare("INSERT INTO mcp_tokens VALUES (?,?,?)")
-      .run(grant.id, tokenDigest(token), JSON.stringify(grant));
-    return { ...grant, token };
+        throw new Error("Unknown token field.");
+      const { name, projectId, scopes, expiresAt } = input;
+      if (
+        typeof name !== "string" ||
+        !name.trim() ||
+        name.length > 200 ||
+        typeof projectId !== "string" ||
+        !Number.isSafeInteger(expiresAt) ||
+        (expiresAt as number) <= this.now() ||
+        (expiresAt as number) > this.now() + 366 * 86400_000 ||
+        !scopes ||
+        typeof scopes !== "object" ||
+        Array.isArray(scopes)
+      )
+        throw new Error(
+          "A name, project, explicit scopes and expiry within one year are required.",
+        );
+      await this.store.project(projectId);
+      const entries = Object.entries(scopes);
+      if (
+        !entries.length ||
+        entries.some(
+          ([group, modes]) =>
+            !(MCP_GROUPS as readonly string[]).includes(group) ||
+            !Array.isArray(modes) ||
+            !modes.length ||
+            modes.length > 2 ||
+            new Set(modes).size !== modes.length ||
+            modes.some((mode) => mode !== "read" && mode !== "write"),
+        )
+      )
+        throw new Error("Invalid MCP scopes.");
+      const grant: McpGrant = {
+        id: randomUUID(),
+        name: name.trim(),
+        projectId,
+        scopes: structuredClone(scopes) as McpGrant["scopes"],
+        createdAt: this.now(),
+        expiresAt: expiresAt as number,
+      };
+      const token = randomBytes(32).toString("base64url");
+      await this.store.db
+        .prepare("INSERT INTO mcp_tokens VALUES (?,?,?)")
+        .run(grant.id, tokenDigest(token), JSON.stringify(grant));
+      return { ...grant, token };
+    });
   }
 
-  list(): McpGrant[] {
-    return this.store.db
-      .prepare("SELECT value FROM mcp_tokens ORDER BY rowid DESC")
-      .all()
-      .map((row) => JSON.parse(String(row.value)) as McpGrant);
+  async list(): Promise<Awaited<McpGrant[]>> {
+    await this.ready;
+    return await this.store.db.scope(async () => {
+      return (
+        await this.store.db.prepare("SELECT value FROM mcp_tokens ORDER BY rowid DESC").all()
+      ).map((row) => JSON.parse(String(row.value)) as McpGrant);
+    });
   }
 
-  revoke(id: unknown): { revoked: boolean } {
-    if (typeof id !== "string") throw new Error("Token ID required.");
-    const row = this.store.db.prepare("SELECT value FROM mcp_tokens WHERE id=?").get(id);
-    if (!row) return { revoked: false };
-    const grant = JSON.parse(String(row.value)) as McpGrant;
-    if (!grant.revokedAt) {
-      grant.revokedAt = this.now();
-      this.store.db
-        .prepare("UPDATE mcp_tokens SET value=? WHERE id=?")
-        .run(JSON.stringify(grant), id);
-    }
-    return { revoked: true };
+  async revoke(id: unknown): Promise<Awaited<{ revoked: boolean }>> {
+    await this.ready;
+    return await this.store.db.scope(async () => {
+      if (typeof id !== "string") throw new Error("Token ID required.");
+      const row = await this.store.db.prepare("SELECT value FROM mcp_tokens WHERE id=?").get(id);
+      if (!row) return { revoked: false };
+      const grant = JSON.parse(String(row.value)) as McpGrant;
+      if (!grant.revokedAt) {
+        grant.revokedAt = this.now();
+        await this.store.db
+          .prepare("UPDATE mcp_tokens SET value=? WHERE id=?")
+          .run(JSON.stringify(grant), id);
+      }
+      return { revoked: true };
+    });
   }
 
-  get(token: string): McpGrant | undefined {
-    const row = this.store.db
-      .prepare("SELECT value FROM mcp_tokens WHERE hash=?")
-      .get(tokenDigest(token));
-    if (!row) return;
-    const grant = JSON.parse(String(row.value)) as McpGrant;
-    if (grant.revokedAt !== undefined || grant.expiresAt <= this.now()) return;
-    try {
-      this.store.project(grant.projectId);
-    } catch {
-      return;
-    }
-    return grant;
+  async get(token: string): Promise<Awaited<McpGrant | undefined>> {
+    await this.ready;
+    return await this.store.db.scope(async () => {
+      const row = await this.store.db
+        .prepare("SELECT value FROM mcp_tokens WHERE hash=?")
+        .get(tokenDigest(token));
+      if (!row) return;
+      const grant = JSON.parse(String(row.value)) as McpGrant;
+      if (grant.revokedAt !== undefined || grant.expiresAt <= this.now()) return;
+      try {
+        await this.store.project(grant.projectId);
+      } catch {
+        return;
+      }
+      if (grant.expiresAt <= this.now()) return;
+      return grant;
+    });
   }
 }

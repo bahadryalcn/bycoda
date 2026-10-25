@@ -139,6 +139,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
   const [highlight, setHighlight] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const attachmentsSupported = harnessSupportsAttachments(choice.harness);
   const attachments = useQuickAttachments(
     attachmentsSupported && !busy,
@@ -365,7 +366,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
     if (
       (!text && !attachments.files.length) ||
       !cwd ||
-      busy ||
+      submitting.current ||
       attachments.loading ||
       gitOpen ||
       !resolvedModel ||
@@ -378,6 +379,8 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
       setError(refusal);
       return;
     }
+    submitting.current = true;
+    const submittedPrompt = prompt;
     setBusy(true);
     setError(null);
     const picked = { harness: model.harness, model: model.id };
@@ -402,13 +405,14 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
       rememberQuickProject(cwd);
       saveLastModelSettings(settings);
       saveRecentModelChoice(picked.harness, picked.model);
-      setPrompt("");
+      setPrompt((current) => (current === submittedPrompt ? "" : current));
       setPicker(null);
       setSlash(null);
       attachments.clear();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
@@ -661,6 +665,11 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           {t("Choose a provider that supports attachments, or remove the attached files.")}
         </Alert>
       ) : null}
+      {error ? (
+        <Alert tone="danger" role="alert" className="mx-3 mb-2 min-w-0 break-words">
+          {error}
+        </Alert>
+      ) : null}
       <div className="flex shrink-0 items-center gap-1.5 border-t border-stroke px-3 py-2">
         <Button
           iconOnly
@@ -720,10 +729,6 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
         <span className="ml-auto flex shrink-0 items-center gap-3 text-[11px] text-(--ui-text-secondary)">
           {attachments.loading ? (
             <span role="status">{t("Adding attachment…")}</span>
-          ) : error ? (
-            <span className="max-w-72 truncate text-danger" title={error}>
-              {error}
-            </span>
           ) : (
             <>
               <span className="max-[600px]:hidden">
@@ -743,6 +748,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
             type="button"
             onClick={() => void submit(false)}
             disabled={!canSubmit}
+            loading={busy}
             className=""
           >
             {leadingMode?.name === DRAFT_COMMAND.name ? t("Save draft") : t("Start")}

@@ -22,7 +22,7 @@ async function setup() {
     credential: vi.fn(async () => ({ saved: true })),
     close: vi.fn(async () => {}),
   };
-  const server = createHostServer(
+  const server = await createHostServer(
     engine,
     [],
     undefined,
@@ -36,7 +36,7 @@ async function setup() {
   );
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as { port: number }).port;
-  const device = store.issueDevice("Owner desktop");
+  const device = await store.issueDevice("Owner desktop");
   const call = async (
     method: string,
     options: { token?: string; environmentId?: string; origin?: string; params?: unknown } = {},
@@ -60,10 +60,11 @@ async function setup() {
     };
   };
   cleanups.push(async () => {
-    await engine.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close();
+    await server.closeResources();
+    await engine.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
   return { tunnels, store, device, call };
@@ -86,7 +87,7 @@ describe("external tunnels use existing authenticated RPC", () => {
         (await s.call(method, { token: s.device.token, environmentId: "other-host" })).status,
       ).toBe(400);
     }
-    s.store.revokeToken(s.device.token);
+    await s.store.revokeToken(s.device.token);
     expect((await s.call("tunnels.start", { token: s.device.token })).status).toBe(401);
     for (const method of ["status", "start", "stop", "credential"] as const)
       expect(s.tunnels[method]).not.toHaveBeenCalled();

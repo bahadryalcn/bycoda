@@ -25,14 +25,15 @@ async function host() {
   const store = new HostStore(join(directory, "host.db"));
   const engine = new HostEngine(store, {});
   const project = await engine.openProject(directory);
-  const token = store.issueDevice("Test desktop").token;
-  const server = createHostServer(engine, []);
+  const token = (await store.issueDevice("Test desktop")).token;
+  const server = await createHostServer(engine, []);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   cleanup.push(async () => {
-    await engine.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    store.close();
+    await server.closeResources();
+    await engine.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
   const call = async (method: string, params: Record<string, unknown> = {}, credential = token) => {

@@ -43,6 +43,7 @@ function fixture(mode: "archive" | "delete") {
   state.activeTabId = state.tabs[0].id;
   const confirmClose = vi.fn(async () => true);
   const stop = vi.fn(async () => {});
+  const progress = vi.fn();
   const commit = vi.fn((removal: SessionWorkspaceRemoval) => {
     state = { ...state, ...removal };
   });
@@ -60,6 +61,7 @@ function fixture(mode: "archive" | "delete") {
     },
     confirmClose,
     stop,
+    progress,
     commit,
     run: () => {
       const remover = createSessionRemover({
@@ -83,6 +85,7 @@ function fixture(mode: "archive" | "delete") {
         },
         confirm: confirmClose,
         stop,
+        onProgress: progress,
       });
       return remover.remove(closing.id);
     },
@@ -92,6 +95,31 @@ function fixture(mode: "archive" | "delete") {
 afterEach(() => mocks.invoke.mockReset());
 
 describe.each(["archive", "delete"] as const)("%s lifecycle", (mode) => {
+  it("reports the pending step while shutdown is blocked and does not remove early", async () => {
+    const f = fixture(mode);
+    const shutdown = deferred();
+    f.stop.mockImplementation(() => shutdown.promise);
+    const pending = f.run();
+    await vi.waitFor(() => expect(f.stop).toHaveBeenCalled());
+    expect(f.progress).toHaveBeenLastCalledWith("stopping");
+    expect(f.commit).not.toHaveBeenCalled();
+    shutdown.resolve();
+    expect(await pending).toBe(true);
+    expect(f.progress.mock.calls.map(([stage]) => stage)).toEqual(
+      mode === "delete"
+        ? ["stopping", "provider", "checkpoint", "deleting"]
+        : ["stopping", "checkpoint"],
+    );
+  });
+
+  it("does not announce shutdown or deletion after confirmation is cancelled", async () => {
+    const f = fixture(mode);
+    f.confirmClose.mockResolvedValue(false);
+    expect(await f.run()).toBe(false);
+    expect(f.progress).not.toHaveBeenCalled();
+    expect(f.stop).not.toHaveBeenCalled();
+  });
+
   it("creates the replacement session behind the removal interface", async () => {
     const f = fixture(mode);
     const onlyTab = f.read().tabs[0];

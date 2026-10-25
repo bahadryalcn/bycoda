@@ -106,6 +106,36 @@ it("keeps discovery retry available when the running host finds no devices", asy
   expect(devicePicker().textContent).toContain(device.name);
 });
 
+it("shows capture progress in its button and identifies capture failure without discovery advice", async () => {
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  let reject!: (error: Error) => void;
+  vi.mocked(api.capture).mockReturnValueOnce(
+    new Promise((_, fail) => {
+      reject = fail;
+    }),
+  );
+  const captureButton = button("Capture");
+  captureButton.focus();
+  await act(async () => {
+    captureButton.click();
+    captureButton.click();
+  });
+  expect(api.capture).toHaveBeenCalledTimes(2); // initial live frame plus one explicit capture
+  expect(captureButton.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(captureButton);
+  expect(button("Refresh devices").hasAttribute("aria-busy")).toBe(false);
+  await act(async () => reject(new Error("Device screenshot exceeds 4 MiB")));
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Device screenshot exceeds 4 MiB",
+  );
+  expect(container.textContent).not.toContain("Could not load devices");
+  expect(container.textContent).not.toContain("Reconnect the device");
+  expect(captureButton.hasAttribute("aria-busy")).toBe(false);
+  await act(async () => captureButton.click());
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
 it("adds the selected device to a draft only on request and blocks duplicate attachment", async () => {
   const api = makeApi();
   let finish!: () => void;
@@ -123,7 +153,9 @@ it("adds the selected device to a draft only on request and blocks duplicate att
   });
   expect(onAddDevice).toHaveBeenCalledOnce();
   expect(onAddDevice).toHaveBeenCalledWith(device);
-  expect(button("Add device to conversation").disabled).toBe(true);
+  expect(button("Add device to conversation").getAttribute("aria-busy")).toBe("true");
+  expect(button("Add device to conversation").getAttribute("aria-disabled")).toBe("true");
+  expect(button("Add device to conversation").disabled).toBe(false);
   await act(async () => finish());
   expect(container.textContent).toContain("Device added to draft.");
   expect(api.capture).toHaveBeenCalledWith(device.id);
@@ -199,10 +231,25 @@ it("does not request an old host's screenshot after an action finishes in a diff
 
 it("loads devices from an already-running host and offers status retry", async () => {
   const api = makeApi();
-  vi.mocked(api.status).mockRejectedValueOnce(new Error("Host unavailable"));
+  let finish!: (value: DeviceHostStatus) => void;
+  vi.mocked(api.status)
+    .mockRejectedValueOnce(new Error("Host unavailable"))
+    .mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
   await act(async () => root.render(createElement(DevicePanel, { api })));
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host unavailable");
-  await act(async () => button("Retry").click());
+  const retry = button("Retry");
+  retry.focus();
+  await act(async () => retry.click());
+  expect(button("Retry")).toBe(retry);
+  expect(retry.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(retry);
+  await act(async () => retry.click());
+  expect(api.status).toHaveBeenCalledTimes(2);
+  await act(async () => finish(status));
   expect(api.list).toHaveBeenCalledOnce();
   expect(devicePicker().textContent).toContain("Android emulator");
 });
@@ -259,7 +306,9 @@ it("opens only an explicitly chosen iOS app and captures its screen after the ac
   expect(button("Open app")).toBeUndefined();
   await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
   expect(button("Open app").disabled).toBe(true);
-  expect(container.textContent).toContain("open the target app before interacting");
+  await act(async () => button("Help").click());
+  expect(document.body.textContent).toContain("open the target app before interacting");
+  await act(async () => button("Help").click());
   expect(api.action).not.toHaveBeenCalled();
   vi.mocked(api.capture).mockClear();
   const input = (
@@ -333,7 +382,7 @@ it("clears the app target when selecting another device or changing the host", a
   expect(api.action).not.toHaveBeenCalled();
 });
 
-it("shows native Windows Android app and text limitations only after control is enabled", async () => {
+it("keeps platform-specific control help available without filling the device panel", async () => {
   const renderDevice = async (hostPlatform: string, devicePlatform: "android" | "ios") => {
     const api = makeApi();
     vi.mocked(api.status).mockResolvedValue({ ...status, platform: hostPlatform });
@@ -347,8 +396,10 @@ it("shows native Windows Android app and text limitations only after control is 
   const api = await renderDevice("win32", "android");
   expect(container.textContent).not.toContain("Android text input supports");
   await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
-  expect(container.textContent).toContain("For Android, enter Settings or an app package ID");
-  expect(container.textContent).toContain(
+  expect(container.textContent).not.toContain("Android text input supports");
+  await act(async () => button("Help").click());
+  expect(document.body.textContent).toContain("For Android, enter Settings or an app package ID");
+  expect(document.body.textContent).toContain(
     "Android text input supports printable ASCII characters.",
   );
   expect(button("Open app").disabled).toBe(true);
@@ -362,4 +413,36 @@ it("shows native Windows Android app and text limitations only after control is 
     expect(container.textContent).not.toContain("For Android, enter Settings");
     expect(container.textContent).not.toContain("Android text input supports");
   }
+});
+
+it("retires the old device capture error after selecting a healthy device", async () => {
+  const api = makeApi();
+  vi.mocked(api.list).mockResolvedValue({
+    devices: [device, { ...device, id: "healthy", name: "Healthy phone" }],
+    errors: [],
+  });
+  vi.mocked(api.capture).mockImplementation(async (id) => {
+    if (id === device.id) throw new Error("Old device capture failed");
+    return { mime: "image/png", base64: "healthy", capturedAt: "now" };
+  });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  expect(container.textContent).toContain("Old device capture failed");
+  await act(async () => devicePicker().click());
+  const options = document.body.querySelectorAll<HTMLButtonElement>('[role="option"]');
+  await act(async () => options[1].click());
+  expect(api.capture).toHaveBeenCalledWith("healthy");
+  expect(container.textContent).not.toContain("Old device capture failed");
+});
+
+it("preserves a new discovery warning when refresh replaces a device with an old capture error", async () => {
+  const api = makeApi();
+  vi.mocked(api.capture).mockRejectedValue(new Error("Old capture failed"));
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  vi.mocked(api.list).mockResolvedValue({
+    devices: [{ ...device, id: "replacement", booted: false }],
+    errors: ["Discovery incomplete"],
+  });
+  await act(async () => button("Refresh devices").click());
+  expect(container.textContent).toContain("Discovery incomplete");
+  expect(container.textContent).not.toContain("Old capture failed");
 });

@@ -10,6 +10,13 @@ import { HostCrews } from "./crews";
 import type { HostProvider } from "./providers";
 import { defaultCrewPolicy } from "../src/features/crews/model/crew";
 
+// Exercise real Git and crew state transitions without Windows' intentional
+// one-second launch spacing; the gate's timing has its own dedicated tests.
+vi.mock("./git-start-gate", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./git-start-gate")>();
+  return { ...original, hostGitStarts: new original.GitStartGate(0) };
+});
+
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
@@ -24,7 +31,7 @@ async function setup() {
   writeFileSync(join(cwd, "backend.ts"), "export const value = 1;\n");
   writeFileSync(join(cwd, "ui.ts"), "export const view = 1;\n");
   const store = new HostStore(join(directory, "host.db"));
-  const project = store.addProject(cwd, "Crew lifecycle");
+  const project = await store.addProject(cwd, "Crew lifecycle");
   const worker: HostProvider = {
     send: vi.fn(async (input) => {
       input.onEvent({ type: "message.delta", text: "Implementation complete" });
@@ -57,7 +64,7 @@ async function setup() {
     tasks.stop();
     await tasks.idle();
     await engine.close();
-    store.close();
+    await store.close();
     if (!resolve(directory).startsWith(`${root}\\`) && !resolve(directory).startsWith(`${root}/`))
       throw new Error("Unexpected fixture path");
     rmSync(directory, { recursive: true, force: true });
@@ -78,7 +85,7 @@ async function setup() {
       },
     ],
   });
-  crews.save({
+  await crews.save({
     id: "crew",
     name: "Crew",
     projectId: project.id,
@@ -90,7 +97,7 @@ async function setup() {
       agent("reviewer", "reviewer"),
     ],
   });
-  const lead = engine.command({
+  const lead = await engine.command({
     type: "create",
     commandId: randomUUID(),
     projectId: project.id,
@@ -117,7 +124,7 @@ async function setup() {
     async () => {
       await tasks.tick();
       await tasks.idle();
-      expect(tasks.list()[0]?.status).toBe("review");
+      expect((await tasks.list())[0]?.status).toBe("review");
     },
     { timeout: 15000, interval: 100 },
   );
@@ -127,9 +134,9 @@ async function setup() {
 it("runs a distinct selected reviewer and accepts scoped results despite unrelated edits", async () => {
   const f = await setup();
   expect(f.reviewer.send).toHaveBeenCalledOnce();
-  expect(f.tasks.list()[0]?.reviewerConfig?.harness).toBe("claude");
+  expect((await f.tasks.list())[0]?.reviewerConfig?.harness).toBe("claude");
   await expect(f.tasks.move(f.assignment.taskId, "done")).rejects.toThrow("crew coordinator");
-  expect(f.tasks.get(f.assignment.taskId)?.status).toBe("review");
+  expect((await f.tasks.get(f.assignment.taskId))?.status).toBe("review");
   writeFileSync(join(f.cwd, "ui.ts"), "export const view = 2;\n");
   await f.crews.call(
     "crews.accept",
@@ -137,14 +144,14 @@ it("runs a distinct selected reviewer and accepts scoped results despite unrelat
     f.project.id,
     f.principal,
   );
-  expect(f.tasks.list()[0]?.status).toBe("done");
+  expect((await f.tasks.list())[0]?.status).toBe("done");
 }, 30000);
 
 it("invalidates stale review when owned content changes and requires an independent recheck", async () => {
   const f = await setup();
   writeFileSync(join(f.cwd, "backend.ts"), "export const value = 2;\n");
   await expect(f.tasks.move(f.assignment.taskId, "done")).rejects.toThrow("crew coordinator");
-  expect(f.tasks.get(f.assignment.taskId)?.status).toBe("review");
+  expect((await f.tasks.get(f.assignment.taskId))?.status).toBe("review");
   await expect(
     f.crews.call(
       "crews.accept",
@@ -153,13 +160,13 @@ it("invalidates stale review when owned content changes and requires an independ
       f.principal,
     ),
   ).rejects.toThrow("changed");
-  expect(f.tasks.list()[0]?.status).toBe("blocked");
-  f.tasks.recheckReview(f.assignment.taskId);
+  expect((await f.tasks.list())[0]?.status).toBe("blocked");
+  await f.tasks.recheckReview(f.assignment.taskId);
   await vi.waitFor(
     async () => {
       await f.tasks.tick();
       await f.tasks.idle();
-      expect(f.tasks.list()[0]?.status).toBe("review");
+      expect((await f.tasks.list())[0]?.status).toBe("review");
     },
     { timeout: 15000 },
   );
@@ -190,10 +197,15 @@ it("starts one independent coordinator on a retried owner launch", async () => {
   );
   expect(first.coordinatorSessionId).toBe(second.coordinatorSessionId);
   expect(first.coordinatorSessionId).not.toBe(f.principal.sessionId);
-  expect(f.store.receiptStatus("crew-new-run:create")?.sessionId).toBe(first.coordinatorSessionId);
-  await vi.waitFor(() => expect(f.store.session(first.coordinatorSessionId!).status).toBe("idle"), {
-    timeout: 15000,
-  });
+  expect((await f.store.receiptStatus("crew-new-run:create"))?.sessionId).toBe(
+    first.coordinatorSessionId,
+  );
+  await vi.waitFor(
+    async () => expect((await f.store.session(first.coordinatorSessionId!)).status).toBe("idle"),
+    {
+      timeout: 15000,
+    },
+  );
   expect(f.worker.send).toHaveBeenCalledTimes(2);
 }, 30000);
 
@@ -225,12 +237,12 @@ it("lets an agent launch a separate coordinator and reuses host-wide crews in an
   await expect(
     f.crews.call("crews.finish", { runId: run.id }, f.project.id, f.principal),
   ).rejects.toThrow();
-  const definition = f.crews.list(f.project.id).definitions[0]!;
-  f.crews.save({ ...definition, id: "shared", projectId: undefined, updatedAt: 0 });
+  const definition = (await f.crews.list(f.project.id)).definitions[0]!;
+  await f.crews.save({ ...definition, id: "shared", projectId: undefined, updatedAt: 0 });
   const otherCwd = join(f.cwd, "other");
   mkdirSync(otherCwd);
-  const other = f.store.addProject(otherCwd, "Other");
-  expect(f.crews.list(other.id).definitions.map((d) => d.id)).toEqual(["shared"]);
+  const other = await f.store.addProject(otherCwd, "Other");
+  expect((await f.crews.list(other.id)).definitions.map((d) => d.id)).toEqual(["shared"]);
   const remoteRun = await f.crews.startRun(
     other.id,
     "shared",
@@ -238,7 +250,7 @@ it("lets an agent launch a separate coordinator and reuses host-wide crews in an
     "other-run",
     "supervised",
   );
-  expect(f.store.session(remoteRun.coordinatorSessionId!).projectId).toBe(other.id);
+  expect((await f.store.session(remoteRun.coordinatorSessionId!)).projectId).toBe(other.id);
 }, 30000);
 
 it("runs crew tasks with one worker slot and completes only after crew acceptance", async () => {
@@ -249,8 +261,8 @@ it("runs crew tasks with one worker slot and completes only after crew acceptanc
     f.project.id,
     f.principal,
   );
-  f.tasks.limits.save({ maxRunningTasks: 1 });
-  f.tasks.save({
+  await f.tasks.limits.save({ maxRunningTasks: 1 });
+  await f.tasks.save({
     id: "parent",
     projectId: f.project.id,
     title: "Team deliverable",
@@ -268,15 +280,18 @@ it("runs crew tasks with one worker slot and completes only after crew acceptanc
   });
   await f.tasks.tick();
   await f.tasks.idle();
-  const parent = f.tasks.get("parent")!;
+  const parent = (await f.tasks.get("parent"))!;
   expect(parent.status).toBe("running");
   expect(parent.crewExecutionId).toBeTruthy();
   expect(parent.sessionId).not.toBe(f.principal.sessionId);
-  await vi.waitFor(() => expect(f.store.session(parent.sessionId!).status).toBe("idle"), {
-    timeout: 15000,
-  });
+  await vi.waitFor(
+    async () => expect((await f.store.session(parent.sessionId!)).status).toBe("idle"),
+    {
+      timeout: 15000,
+    },
+  );
   await f.tasks.tick();
-  expect(f.tasks.get("parent")?.status).toBe("running");
+  expect((await f.tasks.get("parent"))?.status).toBe("running");
   await expect(f.tasks.move("parent", "done")).rejects.toThrow();
   const principal = { projectId: f.project.id, sessionId: parent.sessionId! };
   await expect(
@@ -298,7 +313,7 @@ it("runs crew tasks with one worker slot and completes only after crew acceptanc
     async () => {
       await f.tasks.tick();
       await f.tasks.idle();
-      expect(f.tasks.get(child.taskId)?.status).toBe("review");
+      expect((await f.tasks.get(child.taskId))?.status).toBe("review");
     },
     { timeout: 15000 },
   );
@@ -310,14 +325,14 @@ it("runs crew tasks with one worker slot and completes only after crew acceptanc
   );
   await f.crews.call("crews.finish", { runId: parent.crewExecutionId }, f.project.id, principal);
   await f.tasks.tick();
-  expect(f.tasks.get("parent")?.status).toBe("done");
+  expect((await f.tasks.get("parent"))?.status).toBe("done");
 }, 30000);
 
 it("starts independent crew tasks and retries a stopped task with a fresh run", async () => {
   const f = await setup();
-  f.tasks.limits.save({ maxRunningTasks: 2 });
+  await f.tasks.limits.save({ maxRunningTasks: 2 });
   for (const id of ["one", "two"])
-    f.tasks.save({
+    await f.tasks.save({
       id,
       projectId: f.project.id,
       title: id,
@@ -335,23 +350,23 @@ it("starts independent crew tasks and retries a stopped task with a fresh run", 
     });
   await f.tasks.tick();
   await f.tasks.idle();
-  const first = f.tasks.get("one")!;
-  const second = f.tasks.get("two")!;
+  const first = (await f.tasks.get("one"))!;
+  const second = (await f.tasks.get("two"))!;
   expect(first.status).toBe("running");
   expect(second.status).toBe("running");
   expect(first.crewExecutionId).not.toBe(second.crewExecutionId);
   expect(first.sessionId).not.toBe(second.sessionId);
   await f.tasks.move("one", "blocked");
-  expect(f.tasks.get("one")?.status).toBe("blocked");
-  expect(f.crews.list(f.project.id).runs.find((r) => r.id === first.crewExecutionId)?.status).toBe(
-    "paused",
-  );
-  expect(f.crews.list(f.project.id).runs.find((r) => r.id === second.crewExecutionId)?.status).toBe(
-    "active",
-  );
+  expect((await f.tasks.get("one"))?.status).toBe("blocked");
+  expect(
+    (await f.crews.list(f.project.id)).runs.find((r) => r.id === first.crewExecutionId)?.status,
+  ).toBe("paused");
+  expect(
+    (await f.crews.list(f.project.id)).runs.find((r) => r.id === second.crewExecutionId)?.status,
+  ).toBe("active");
   await f.tasks.move("one", "queued");
   await f.tasks.tick();
   await f.tasks.idle();
-  expect(f.tasks.get("one")?.crewExecutionId).not.toBe(first.crewExecutionId);
-  expect(f.tasks.get("one")?.status).toBe("running");
+  expect((await f.tasks.get("one"))?.crewExecutionId).not.toBe(first.crewExecutionId);
+  expect((await f.tasks.get("one"))?.status).toBe("running");
 }, 30000);

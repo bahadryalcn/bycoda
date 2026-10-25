@@ -10,6 +10,92 @@ import {
 
 vi.mock("./connections", () => ({ remoteRequest: vi.fn() }));
 
+it("does not let a late short refresh replace a newer delivered response", async () => {
+  vi.useFakeTimers();
+  const replies: ((value: unknown) => void)[] = [];
+  vi.mocked(remoteRequest).mockImplementation(
+    () => new Promise((resolve) => replies.push(resolve)),
+  );
+  const stopFirst = subscribeRemoteMachineChannel(
+    "ordered",
+    { sessions: [{ sessionId: "a", revision: 1 }] },
+    vi.fn(),
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  const listener = vi.fn();
+  const stopNext = subscribeRemoteMachineChannel(
+    "ordered",
+    { sessions: [{ sessionId: "b", revision: 1 }] },
+    listener,
+  );
+  const reply = {
+    instanceId: "boot",
+    sessions: [],
+    projects: [],
+    reset: false,
+    checkedSessions: ["a", "b"],
+    checkedProjects: [],
+  };
+  replies[0](reply);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(replies).toHaveLength(3);
+  replies[2]({ ...reply, sequenceTag: "newer" });
+  await vi.advanceTimersByTimeAsync(0);
+  replies[1]({ ...reply, sequenceTag: "older" });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(listener).toHaveBeenCalledOnce();
+  expect(listener.mock.lastCall?.[0]).toMatchObject({ sequenceTag: "newer" });
+  stopFirst();
+  stopNext();
+});
+
+it("delivers changed demand without waiting for an unrelated held poll", async () => {
+  vi.useFakeTimers();
+  let release!: (value: unknown) => void;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  const reply = {
+    instanceId: "boot",
+    reset: false,
+    sessions: [],
+    projects: [],
+    checkedSessions: ["new"],
+    checkedProjects: [],
+  };
+  vi.mocked(remoteRequest).mockImplementation((_machine, _method, params) =>
+    params?.waitMs === 0 ? (Promise.resolve(reply) as never) : (held as never),
+  );
+  const stopFirst = subscribeRemoteMachineChannel(
+    "changed-demand",
+    { sessions: [{ sessionId: "old", revision: 1 }] },
+    vi.fn(),
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  const listener = vi.fn();
+  const stopNext = subscribeRemoteMachineChannel(
+    "changed-demand",
+    { sessions: [{ sessionId: "new", revision: 2 }] },
+    listener,
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  expect(vi.mocked(remoteRequest).mock.calls[1]?.[2]).toMatchObject({
+    waitMs: 0,
+    sessions: [
+      { sessionId: "old", revision: 1 },
+      { sessionId: "new", revision: 2 },
+    ],
+  });
+  expect(listener).toHaveBeenCalledOnce();
+  // The old response is obsolete and must not replace the immediately refreshed state.
+  release({ ...reply, checkedSessions: ["old"], reset: true });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(listener).toHaveBeenCalledOnce();
+  stopFirst();
+  stopNext();
+});
+
 it("only requests inline bodies for currently visible demand while keeping hidden revision subscriptions", async () => {
   vi.useFakeTimers();
   vi.mocked(remoteRequest).mockResolvedValue({

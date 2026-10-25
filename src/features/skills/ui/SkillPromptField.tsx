@@ -86,6 +86,31 @@ export function SkillPromptField({
     }
   }, [value]);
 
+  useEffect(() => {
+    const field = fieldRef.current;
+    if (!field) return;
+    let width = field.clientWidth;
+    let frame = 0;
+    const resize = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => resizeComposer(field, Number.POSITIVE_INFINITY));
+    };
+    // Panel resizing changes line wrapping without changing the draft. Ignore
+    // height-only observations from our own measurement to avoid resize loops.
+    const observer = new ResizeObserver(() => {
+      if (field.clientWidth === width) return;
+      width = field.clientWidth;
+      resize();
+    });
+    observer.observe(field);
+    window.addEventListener("resize", resize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", resize);
+      window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
   const syncSlashToken = useCallback(
     (field: HTMLTextAreaElement) => {
       const cursor = field.selectionStart ?? 0;

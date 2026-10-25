@@ -157,7 +157,7 @@ export class HostCheckpoints {
   private sessionTails = new Map<string, Promise<unknown>>();
   private operations = new Set<{ roots: string[]; settled: Promise<void> }>();
   private canonicalRoots = new Map<string, Promise<string>>();
-  private discovery: Promise<unknown> = Promise.resolve();
+  private discovery?: Promise<void>;
   private knownSessions = new Map<string, string>();
   private legacyActive = new Map<string, string>();
   private leases: CheckpointLeases;
@@ -270,6 +270,7 @@ export class HostCheckpoints {
    * than repeatedly opening/parsing every archived payload. Unknown/changed
    * records and all stat/read failures retain the original fail-closed path. */
   private refreshActiveIndex(): Promise<void> {
+    if (this.discovery) return this.discovery;
     const refresh = async () => {
       const entries = await readdir(this.root, { withFileTypes: true }).catch(
         (error: NodeJS.ErrnoException) => {
@@ -308,8 +309,13 @@ export class HostCheckpoints {
       for (const session of this.legacyActive.keys())
         if (!existing.has(session)) this.legacyActive.delete(session);
     };
-    const result = this.discovery.then(refresh, refresh);
-    this.discovery = result.catch(() => undefined);
+    const result = refresh();
+    this.discovery = result;
+    void result
+      .finally(() => {
+        if (this.discovery === result) this.discovery = undefined;
+      })
+      .catch(() => {});
     return result;
   }
   private async active(session: string, cwd: string) {

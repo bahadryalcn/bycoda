@@ -58,6 +58,7 @@ export class HostNotes {
   constructor(
     private readonly paths = desktopDatabasePaths,
     private readonly now = Date.now,
+    private readonly authorizeWrite?: () => boolean,
   ) {}
   // Distinguishes a new host instance from an older instance with the same write count.
   private version = Date.now();
@@ -92,8 +93,14 @@ export class HostNotes {
     if (sourceSessionId !== undefined) identifier(sourceSessionId);
     const clauses: string[] = [];
     const bindings: string[] = [];
-    if (sourceCwd !== undefined) { clauses.push("source_cwd=?"); bindings.push(sourceCwd); }
-    if (sourceSessionId !== undefined) { clauses.push("source_session_id=?"); bindings.push(sourceSessionId); }
+    if (sourceCwd !== undefined) {
+      clauses.push("source_cwd=?");
+      bindings.push(sourceCwd);
+    }
+    if (sourceSessionId !== undefined) {
+      clauses.push("source_session_id=?");
+      bindings.push(sourceSessionId);
+    }
     const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
     const results = this.databases((db) => {
       const orderColumn = db
@@ -105,9 +112,12 @@ export class HostNotes {
         total: Number(
           db.prepare(`SELECT count(*) AS total FROM notes${where}`).get(...bindings)?.total ?? 0,
         ),
-        notes: db.prepare(
-          `SELECT id,slug,title,substr(body,1,500) AS body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at,${orderColumn} AS content_updated_at FROM notes${where} ORDER BY ${orderColumn} DESC,id ASC LIMIT 500`,
-        ).all(...bindings).map(noteFromRow),
+        notes: db
+          .prepare(
+            `SELECT id,slug,title,substr(body,1,500) AS body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at,${orderColumn} AS content_updated_at FROM notes${where} ORDER BY ${orderColumn} DESC,id ASC LIMIT 500`,
+          )
+          .all(...bindings)
+          .map(noteFromRow),
       };
     });
     const notes = results.flatMap((result) => result.notes);
@@ -120,7 +130,11 @@ export class HostNotes {
       seen.add(note.id);
     }
     const filtered = notes
-      .filter((note) => (sourceCwd === undefined || note.sourceCwd === sourceCwd) && (sourceSessionId === undefined || note.sourceSessionId === sourceSessionId))
+      .filter(
+        (note) =>
+          (sourceCwd === undefined || note.sourceCwd === sourceCwd) &&
+          (sourceSessionId === undefined || note.sourceSessionId === sourceSessionId),
+      )
       .sort((a, b) => (b.contentUpdatedAt ?? b.updatedAt) - (a.contentUpdatedAt ?? a.updatedAt));
     return {
       notes: filtered
@@ -160,6 +174,8 @@ export class HostNotes {
     const db = new DatabaseSync(location.path);
     try {
       db.exec("PRAGMA busy_timeout=2000; BEGIN IMMEDIATE");
+      if (this.authorizeWrite && !this.authorizeWrite())
+        throw new Error("Session authority revoked.");
       if (
         !db
           .prepare("SELECT 1 FROM pragma_table_info('notes') WHERE name='content_updated_at'")

@@ -47,6 +47,7 @@ export function AddRemoteProjectDialog({
   const requestVersion = useRef(0);
   const requestedPath = useRef<string | undefined>(undefined);
   const browsing = useRef(false);
+  const mutation = useRef(false);
   const [browseError, setBrowseError] = useState("");
   const [verifiedAt, setVerifiedAt] = useState<number>();
   const cancel = () => {
@@ -139,8 +140,18 @@ export function AddRemoteProjectDialog({
   }, [machine?.id, machine?.environmentId, browseError, loading]);
 
   const open = async () => {
-    if (!machine || !path.trim() || opening || creating || loading || browseError || machinesError)
+    if (
+      mutation.current ||
+      !machine ||
+      !path.trim() ||
+      opening ||
+      creating ||
+      loading ||
+      browseError ||
+      machinesError
+    )
       return;
+    mutation.current = true;
     const version = ++requestVersion.current;
     setOpening(true);
     setLoading(false);
@@ -156,12 +167,15 @@ export function AddRemoteProjectDialog({
       if (alive.current && version === requestVersion.current)
         setError(String(reason).replace(/^Error: /, ""));
     } finally {
+      mutation.current = false;
       if (alive.current && version === requestVersion.current) setOpening(false);
     }
   };
 
   const createFolder = async () => {
-    if (!machine || !directory || creating || loading || !newName?.trim()) return;
+    if (mutation.current || !machine || !directory || creating || loading || !newName?.trim())
+      return;
+    mutation.current = true;
     const version = ++requestVersion.current;
     setCreating(true);
     setError("");
@@ -182,6 +196,7 @@ export function AddRemoteProjectDialog({
       if (alive.current && version === requestVersion.current)
         setError(String(reason).replace(/^Error: /, ""));
     } finally {
+      mutation.current = false;
       if (alive.current && version === requestVersion.current) setCreating(false);
     }
   };
@@ -251,7 +266,10 @@ export function AddRemoteProjectDialog({
                   label: entry.name,
                   keywords: entry.ssh?.target ?? entry.endpoint,
                 }))}
-                onChange={setMachineId}
+                disabled={creating || opening}
+                onChange={(id) => {
+                  if (!mutation.current) setMachineId(id);
+                }}
                 searchable={false}
               />
             ) : (
@@ -339,7 +357,8 @@ export function AddRemoteProjectDialog({
                 />
                 <Button
                   type="button"
-                  disabled={creating || !newName.trim()}
+                  loading={creating}
+                  disabled={!newName.trim()}
                   onClick={() => void createFolder()}
                   variant="secondary"
                 >
@@ -424,8 +443,8 @@ export function AddRemoteProjectDialog({
               </Button>
               <Button
                 type="submit"
+                loading={opening}
                 disabled={
-                  opening ||
                   creating ||
                   newName !== null ||
                   loading ||

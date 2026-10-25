@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { DatabaseSync } from "node:sqlite";
+import { StoreDatabase } from "./store-db";
 import { ProviderInboxBridge } from "./provider-inbox";
 import type { RemoteInboxOperation } from "../src/features/inbox/model/remoteInbox";
-
-const databases: DatabaseSync[] = [];
+const databases: StoreDatabase[] = [];
 const read: RemoteInboxOperation = { action: "providers" };
 const write: RemoteInboxOperation = {
   action: "comment",
@@ -18,9 +17,9 @@ const write: RemoteInboxOperation = {
   body: "A comment",
 };
 function setup() {
-  const db = new DatabaseSync(":memory:");
+  const db = new StoreDatabase(":memory:");
   databases.push(db);
-  let time = 100_000;
+  let time = 100000;
   const bridge = new ProviderInboxBridge(db, () => time);
   return {
     db,
@@ -31,158 +30,165 @@ function setup() {
     now: () => time,
   };
 }
-afterEach(() => {
-  for (const db of databases.splice(0)) db.close();
+afterEach(async () => {
+  for (const db of databases.splice(0)) await db.close();
 });
-
 describe("desktop provider inbox job bridge", () => {
-  it.each([21_000, 121_000])(
+  it.each([21000, 121000])(
     "stores same-client late success after %i ms before acknowledging",
-    (elapsed) => {
+    async (elapsed) => {
       const { bridge, advance } = setup();
-      bridge.beat("native", "desktop", { version: 1 });
-      const receipt = bridge.request("client", "review-late", write);
-      bridge.beat("native", "desktop", { version: 1 });
+      await bridge.beat("native", "desktop", { version: 1 });
+      const receipt = await bridge.request("client", "review-late", write);
+      await bridge.beat("native", "desktop", { version: 1 });
       advance(elapsed);
-      expect(bridge.result("client", "review-late").state).toBe("uncertain");
+      expect((await bridge.result("client", "review-late")).state).toBe("uncertain");
       const result = { url: "https://example.invalid/review/1" };
       expect(
-        bridge.beat("other-owner", "desktop", {
-          version: 1,
-          replies: [{ id: receipt.id, result }],
-        }).acked,
+        (
+          await bridge.beat("other-owner", "desktop", {
+            version: 1,
+            replies: [{ id: receipt.id, result }],
+          })
+        ).acked,
       ).toEqual([]);
       expect(
-        bridge.beat("native", "other-desktop", {
-          version: 1,
-          replies: [{ id: receipt.id, result }],
-        }).acked,
+        (
+          await bridge.beat("native", "other-desktop", {
+            version: 1,
+            replies: [{ id: receipt.id, result }],
+          })
+        ).acked,
       ).toEqual([]);
       const reply = { version: 1, replies: [{ id: receipt.id, result }] };
-      expect(bridge.beat("native", "desktop", reply)).toEqual({ jobs: [], acked: [receipt.id] });
-      expect(bridge.result("client", "review-late")).toEqual({
+      expect(await bridge.beat("native", "desktop", reply)).toEqual({
+        jobs: [],
+        acked: [receipt.id],
+      });
+      expect(await bridge.result("client", "review-late")).toEqual({
         id: receipt.id,
         state: "completed",
         result,
       });
       expect(
-        bridge.beat("native", "desktop", {
-          version: 1,
-          replies: [{ id: receipt.id, result: "duplicate cannot replace result" }],
-        }).acked,
+        (
+          await bridge.beat("native", "desktop", {
+            version: 1,
+            replies: [{ id: receipt.id, result: "duplicate cannot replace result" }],
+          })
+        ).acked,
       ).toEqual([receipt.id]);
-      expect(bridge.result("client", "review-late").result).toEqual(result);
+      expect((await bridge.result("client", "review-late")).result).toEqual(result);
     },
   );
-
-  it("retains a successful write reply after host restart without redispatch", () => {
+  it("retains a successful write reply after host restart without redispatch", async () => {
     const { bridge, db, now } = setup();
-    bridge.beat("native", "desktop", { version: 1 });
-    const receipt = bridge.request("client", "review-restart", write);
-    bridge.beat("native", "desktop", { version: 1 });
+    await bridge.beat("native", "desktop", { version: 1 });
+    const receipt = await bridge.request("client", "review-restart", write);
+    await bridge.beat("native", "desktop", { version: 1 });
     const restarted = new ProviderInboxBridge(db, now);
     expect(
-      restarted.beat("native", "desktop", {
+      await restarted.beat("native", "desktop", {
         version: 1,
         replies: [{ id: receipt.id, result: { url: "https://example.invalid/review/2" } }],
       }),
     ).toEqual({ jobs: [], acked: [receipt.id] });
-    expect(restarted.result("client", "review-restart")).toMatchObject({
+    expect(await restarted.result("client", "review-restart")).toMatchObject({
       state: "completed",
       result: { url: "https://example.invalid/review/2" },
     });
   });
-
-  it("reports unavailable instead of inventing an empty inbox when desktop is absent", () => {
+  it("reports unavailable instead of inventing an empty inbox when desktop is absent", async () => {
     const { bridge } = setup();
-    expect(bridge.availability()).toMatchObject({ available: false });
-    expect(() => bridge.request("client", "read-1", read)).toThrow("Open the updated");
-    bridge.beat("native", "desktop", { version: 1 });
-    expect(bridge.availability()).toEqual({ available: true });
+    expect(await bridge.availability()).toMatchObject({ available: false });
+    await expect((async () => await bridge.request("client", "read-1", read))()).rejects.toThrow(
+      "Open the updated",
+    );
+    await bridge.beat("native", "desktop", { version: 1 });
+    expect(await bridge.availability()).toEqual({ available: true });
   });
-
-  it("deduplicates device request IDs and rejects a changed payload under the same ID", () => {
+  it("deduplicates device request IDs and rejects a changed payload under the same ID", async () => {
     const { bridge } = setup();
-    bridge.beat("native", "desktop", { version: 1 });
-    const receipt = bridge.request("client", "request-1", read);
-    expect(bridge.request("client", "request-1", read)).toEqual(receipt);
-    expect(() => bridge.request("client", "request-1", write)).toThrow("another operation");
-    expect(() => bridge.result("other-client", "request-1")).toThrow("not found");
+    await bridge.beat("native", "desktop", { version: 1 });
+    const receipt = await bridge.request("client", "request-1", read);
+    expect(await bridge.request("client", "request-1", read)).toEqual(receipt);
+    await expect(
+      (async () => await bridge.request("client", "request-1", write))(),
+    ).rejects.toThrow("another operation");
+    await expect((async () => await bridge.result("other-client", "request-1"))()).rejects.toThrow(
+      "not found",
+    );
   });
-
-  it("claims each job to one desktop client and accepts results only from that client", () => {
+  it("claims each job to one desktop client and accepts results only from that client", async () => {
     const { bridge } = setup();
-    bridge.beat("native", "window-a", { version: 1 });
-    const receipt = bridge.request("client", "request-1", read);
-    expect(bridge.beat("native", "window-a", { version: 1 }).jobs.map((job) => job.id)).toEqual([
-      receipt.id,
-    ]);
+    await bridge.beat("native", "window-a", { version: 1 });
+    const receipt = await bridge.request("client", "request-1", read);
     expect(
-      bridge.beat("native", "window-b", {
+      (await bridge.beat("native", "window-a", { version: 1 })).jobs.map((job) => job.id),
+    ).toEqual([receipt.id]);
+    expect(
+      await bridge.beat("native", "window-b", {
         version: 1,
         replies: [{ id: receipt.id, result: ["forged"] }],
       }),
     ).toEqual({ jobs: [], acked: [] });
-    expect(bridge.result("client", "request-1").state).toBe("running");
+    expect((await bridge.result("client", "request-1")).state).toBe("running");
     expect(
-      bridge.beat("native", "window-a", {
-        version: 1,
-        replies: [{ id: receipt.id, result: ["real"] }],
-      }).acked,
+      (
+        await bridge.beat("native", "window-a", {
+          version: 1,
+          replies: [{ id: receipt.id, result: ["real"] }],
+        })
+      ).acked,
     ).toEqual([receipt.id]);
-    expect(bridge.result("client", "request-1")).toMatchObject({
+    expect(await bridge.result("client", "request-1")).toMatchObject({
       state: "completed",
       result: ["real"],
     });
   });
-
-  it("does not overload a native client with more than two simultaneous provider jobs", () => {
+  it("does not overload a native client with more than two simultaneous provider jobs", async () => {
     const { bridge } = setup();
-    bridge.beat("native", "desktop", { version: 1 });
-    for (let index = 0; index < 5; index++) bridge.request("client", `read-${index}`, read);
-    expect(bridge.beat("native", "desktop", { version: 1 }).jobs).toHaveLength(2);
-    expect(bridge.beat("native", "desktop", { version: 1 }).jobs).toHaveLength(0);
+    await bridge.beat("native", "desktop", { version: 1 });
+    for (let index = 0; index < 5; index++) await bridge.request("client", `read-${index}`, read);
+    expect((await bridge.beat("native", "desktop", { version: 1 })).jobs).toHaveLength(2);
+    expect((await bridge.beat("native", "desktop", { version: 1 })).jobs).toHaveLength(0);
   });
-
-  it("marks a dispatched send uncertain after disconnect and never reclaims it", () => {
+  it("marks a dispatched send uncertain after disconnect and never reclaims it", async () => {
     const { bridge, advance } = setup();
-    bridge.beat("native", "desktop", { version: 1 });
-    const receipt = bridge.request("client", "send-1", write);
-    bridge.beat("native", "desktop", { version: 1 });
-    advance(21_000);
-    expect(bridge.result("client", "send-1").state).toBe("uncertain");
-    expect(bridge.beat("native", "desktop", { version: 1 }).jobs).toHaveLength(0);
-    expect(bridge.request("client", "send-1", write)).toMatchObject({
+    await bridge.beat("native", "desktop", { version: 1 });
+    const receipt = await bridge.request("client", "send-1", write);
+    await bridge.beat("native", "desktop", { version: 1 });
+    advance(21000);
+    expect((await bridge.result("client", "send-1")).state).toBe("uncertain");
+    expect((await bridge.beat("native", "desktop", { version: 1 })).jobs).toHaveLength(0);
+    expect(await bridge.request("client", "send-1", write)).toMatchObject({
       id: receipt.id,
       state: "uncertain",
     });
   });
-
-  it("preserves uncertain write receipts across host restart without replay", () => {
+  it("preserves uncertain write receipts across host restart without replay", async () => {
     const { bridge, db, now } = setup();
-    bridge.beat("native", "desktop", { version: 1 });
-    bridge.request("client", "send-1", write);
-    bridge.beat("native", "desktop", { version: 1 });
+    await bridge.beat("native", "desktop", { version: 1 });
+    await bridge.request("client", "send-1", write);
+    await bridge.beat("native", "desktop", { version: 1 });
     const restarted = new ProviderInboxBridge(db, now);
-    expect(restarted.result("client", "send-1").state).toBe("uncertain");
-    expect(restarted.beat("native", "desktop", { version: 1 }).jobs).toHaveLength(0);
+    expect((await restarted.result("client", "send-1")).state).toBe("uncertain");
+    expect((await restarted.beat("native", "desktop", { version: 1 })).jobs).toHaveLength(0);
   });
-
-  it("expires an unstarted send rather than publishing later when the desktop returns", () => {
+  it("expires an unstarted send rather than publishing later when the desktop returns", async () => {
     const { bridge, advance } = setup();
-    bridge.beat("native", "desktop", { version: 1 });
-    bridge.request("client", "send-1", write);
-    advance(61_000);
-    expect(bridge.beat("native", "desktop", { version: 1 }).jobs).toHaveLength(0);
-    expect(bridge.result("client", "send-1").state).toBe("failed");
+    await bridge.beat("native", "desktop", { version: 1 });
+    await bridge.request("client", "send-1", write);
+    advance(61000);
+    expect((await bridge.beat("native", "desktop", { version: 1 })).jobs).toHaveLength(0);
+    expect((await bridge.result("client", "send-1")).state).toBe("failed");
   });
-
-  it("redacts native authentication errors and treats rejected sends conservatively", () => {
+  it("redacts native authentication errors and treats rejected sends conservatively", async () => {
     const { bridge } = setup();
-    bridge.beat("native", "desktop", { version: 1 });
-    const receipt = bridge.request("client", "send-1", write);
-    bridge.beat("native", "desktop", { version: 1 });
-    bridge.beat("native", "desktop", {
+    await bridge.beat("native", "desktop", { version: 1 });
+    const receipt = await bridge.request("client", "send-1", write);
+    await bridge.beat("native", "desktop", { version: 1 });
+    await bridge.beat("native", "desktop", {
       version: 1,
       replies: [
         {
@@ -191,7 +197,7 @@ describe("desktop provider inbox job bridge", () => {
         },
       ],
     });
-    const result = bridge.result("client", "send-1");
+    const result = await bridge.result("client", "send-1");
     expect(result.state).toBe("uncertain");
     expect(result.error).not.toContain("private-key");
   });

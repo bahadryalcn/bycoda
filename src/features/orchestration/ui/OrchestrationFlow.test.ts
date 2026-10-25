@@ -304,6 +304,18 @@ describe("orchestration composer and card", () => {
     expect(document.activeElement).toBe(
       document.querySelector('[aria-label="Search assignment models"]'),
     );
+    const modelSearch = document.querySelector<HTMLInputElement>(
+      '[aria-label="Search assignment models"]',
+    )!;
+    expect(modelSearch.getAttribute("role")).toBe("combobox");
+    expect(
+      document.getElementById(modelSearch.getAttribute("aria-controls")!)?.getAttribute("role"),
+    ).toBe("listbox");
+    const activeModel = () =>
+      document.getElementById(modelSearch.getAttribute("aria-activedescendant") ?? "");
+    expect(activeModel()?.getAttribute("role")).toBe("option");
+    await input(modelSearch, "No such model");
+    expect(modelSearch.hasAttribute("aria-activedescendant")).toBe(false);
     // Marks the surface as a picker, which is what keeps the composer from
     // pulling focus straight back out of the search field.
     expect(
@@ -324,10 +336,18 @@ describe("orchestration composer and card", () => {
     );
     expect(document.querySelector('[role="menu"][aria-label="Worker One effort"]')).toBeNull();
     await press(document.querySelector('[aria-label="Search assignment models"]')!, "ArrowDown");
+    expect(activeModel()?.textContent).toContain("Worker Two");
     await press(document.querySelector('[aria-label="Search assignment models"]')!, "Enter");
     expect(document.querySelector('[role="menu"][aria-label="Worker Two effort"]')).not.toBeNull();
-    await press(document.querySelector('[aria-label="Search assignment models"]')!, "ArrowUp");
-    await press(document.querySelector('[aria-label="Search assignment models"]')!, "Enter");
+    expect(document.activeElement?.getAttribute("role")).toBe("menuitemradio");
+    await press(document.activeElement!, "Escape");
+    expect(document.activeElement).toBe(modelSearch);
+    expect(document.querySelector('[role="menu"][aria-label="Worker Two effort"]')).toBeNull();
+    await press(modelSearch, "ArrowRight");
+    expect(document.activeElement?.getAttribute("role")).toBe("menuitemradio");
+    await press(document.activeElement!, "ArrowUp");
+    expect(document.activeElement?.textContent).toBe("Extra High");
+    await press(document.activeElement!, "Enter");
     expect(container.textContent).toContain("Worker Two · Extra High");
     // The pointer reaches the same rows.
     await click(document.querySelector('[aria-label="Model for Settings UI"]')!);
@@ -444,7 +464,8 @@ describe("orchestration composer and card", () => {
       start.click();
     });
     expect(confirm).toHaveBeenCalledOnce();
-    expect(start.disabled).toBe(true);
+    expect(start.getAttribute("aria-disabled")).toBe("true");
+    expect(start.getAttribute("aria-busy")).toBe("true");
     await act(async () => fail(new Error("Approval unavailable")));
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Approval unavailable",
@@ -928,7 +949,8 @@ describe("orchestration composer and card", () => {
       ),
     );
 
-    expect(container.textContent).toContain(
+    await click(document.querySelector('button[aria-label="Help"]')!);
+    expect(document.querySelector('[role="dialog"][aria-label="Help"]')?.textContent).toContain(
       "Resume continues interrupted workers from their retained checkouts",
     );
     expect(container.textContent).toContain(

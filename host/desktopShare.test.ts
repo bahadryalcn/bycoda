@@ -5,16 +5,19 @@ import { join } from "node:path";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 
-const cleanups: Array<() => void> = [];
-afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) cleanup();
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
 function store() {
   const dir = mkdtempSync(join(tmpdir(), "bycoda-share-"));
   const path = join(dir, "host.db");
   const opened = new HostStore(path);
-  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  cleanups.push(async () => {
+    await opened.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
   return { dir, path, opened };
 }
 
@@ -27,11 +30,12 @@ const provider = {
   answer: () => {},
 };
 
-it("lists a session started from another computer for this machine's desktop app", () => {
+it("lists a session started from another computer for this machine's desktop app", async () => {
   const { dir, opened } = store();
-  const project = opened.addProject(dir, "shop");
+  const project = await opened.addProject(dir, "shop");
   const engine = new HostEngine(opened, { claude: provider });
-  const { sessionId } = engine.command({
+  await engine.ready;
+  const { sessionId } = await engine.command({
     type: "create",
     commandId: "create",
     projectId: project.id,
@@ -39,16 +43,18 @@ it("lists a session started from another computer for this machine's desktop app
     model: "claude:test",
     runtimeMode: "supervised",
   });
-  expect(opened.session(sessionId).desktop).toEqual({ updatedAt: 0 });
-  expect(opened.adopted().map((entry) => entry.id)).toEqual([sessionId]);
-  opened.close();
+  expect((await opened.session(sessionId)).desktop).toEqual({ updatedAt: 0 });
+  expect((await opened.adopted()).map((entry) => entry.id)).toEqual([sessionId]);
+  await engine.close();
+  await opened.close();
 });
 
-it("shares sessions started before this version once the host restarts", () => {
+it("shares sessions started before this version once the host restarts", async () => {
   const { dir, path, opened } = store();
-  const project = opened.addProject(dir, "shop");
+  const project = await opened.addProject(dir, "shop");
   const engine = new HostEngine(opened, { claude: provider });
-  const { sessionId } = engine.command({
+  await engine.ready;
+  const { sessionId } = await engine.command({
     type: "create",
     commandId: "create",
     projectId: project.id,
@@ -57,13 +63,16 @@ it("shares sessions started before this version once the host restarts", () => {
     runtimeMode: "supervised",
   });
   // As an older host wrote it: no desktop marker.
-  const { desktop: _shared, ...older } = opened.session(sessionId);
-  opened.save({ ...older, revision: older.revision + 1 }, { type: "test" });
-  expect(opened.adopted()).toEqual([]);
-  opened.close();
+  const { desktop: _shared, ...older } = await opened.session(sessionId);
+  await opened.save({ ...older, revision: older.revision + 1 }, { type: "test" });
+  expect(await opened.adopted()).toEqual([]);
+  await engine.close();
+  await opened.close();
 
   const reopened = new HostStore(path);
-  new HostEngine(reopened, { claude: provider });
-  expect(reopened.adopted().map((entry) => entry.id)).toEqual([sessionId]);
-  reopened.close();
+  const restarted = new HostEngine(reopened, { claude: provider });
+  await restarted.ready;
+  expect((await reopened.adopted()).map((entry) => entry.id)).toEqual([sessionId]);
+  await restarted.close();
+  await reopened.close();
 });

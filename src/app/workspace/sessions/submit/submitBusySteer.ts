@@ -34,6 +34,12 @@ import {
   readDeliveryProgress,
   updateDeliveryProgress,
 } from "../../../../features/sessions/model/deliveryProgress";
+import {
+  adoptedFollowUpPending,
+  sendAdoptedFollowUp,
+} from "../../../../features/connections/model/adoptedSessionCommands";
+import { wakeSharedLocalQueues } from "../../../../features/connections/model/useSharedLocalQueues";
+import { sameQueueValue } from "../../../../features/connections/model/sharedQueue";
 
 /** Parks the submitted message in the conversation's queue: it is sent when the
  * conversation is free. A queue-row action already owns retained content, so it
@@ -96,15 +102,106 @@ export function steerBusySubmit(
     pendingSwitch,
   } = pre;
   const queueFollowUp = (): SubmissionAcceptance => queueSubmittedFollowUp(ctx, input, pre);
-  // The host runs this conversation for another computer, or two versions of it
-  // await the user's choice. The queue takes the message; it starts here once the
-  // host's turn has arrived or the choice is made, and never extends the conflict.
-  if (
-    (current.continuingElsewhere || current.adoptedSyncConflict) &&
-    !current.busy &&
-    !pendingSwitch
-  )
-    return queueFollowUp();
+  // A conflict never grows another branch. A host-owned run, however, accepts
+  // ordinary follow-ups through that host rather than this desktop's provider.
+  if (current.adoptedSyncConflict && !current.busy && !pendingSwitch) return queueFollowUp();
+  if (current.continuingElsewhere && !current.busy && !pendingSwitch) {
+    if (adoptedFollowUpPending(sessionId)) return false;
+    if (
+      options?.followUpBehavior === "queue" ||
+      intent !== "default" ||
+      rawCommand ||
+      operatorCommand.matched ||
+      noteCard ||
+      handoffCard ||
+      !canSteerHarness(current.harness)
+    )
+      return queueFollowUp();
+    const messageId = options?.queuedMessageId ?? crypto.randomUUID();
+    const progress = beginDeliveryProgress(sessionId, messageId, "preparing");
+    const generation = turnGen.current.get(sessionId);
+    const selected = options?.queuedMessageId
+      ? storedCurrent.queuedMessages?.find((row) => row.id === options.queuedMessageId)
+      : undefined;
+    const retain = (unknown = false) =>
+      setSessions((prev) =>
+        prev.map((entry) =>
+          entry.id === sessionId &&
+          (!options?.queuedMessageId || entry.queuedMessages?.some((row) => row.id === messageId))
+            ? holdUndeliveredFollowUp(entry, {
+                id: messageId,
+                text,
+                attachments,
+                intent,
+                ...(unknown ? { deliveryUnknown: true as const } : {}),
+                modelTarget: queuedModelTarget(storedCurrent),
+              })
+            : entry,
+        ),
+      );
+    return (async () => {
+      try {
+        const accepted = await sendAdoptedFollowUp({
+          sessionId,
+          text,
+          attachments,
+          queuedMessageId: options?.queuedMessageId,
+          isCurrent: () => {
+            const latest = sessionsRef.current.find((entry) => entry.id === sessionId);
+            return (
+              turnGen.current.get(sessionId) === generation &&
+              !!latest &&
+              !latest.adoptedSyncConflict &&
+              (!options?.queuedMessageId ||
+                (!!selected &&
+                  sameQueueValue(
+                    latest.queuedMessages?.find((row) => row.id === selected.id),
+                    selected,
+                  ) &&
+                  latest.queueStatus === storedCurrent.queueStatus &&
+                  latest.editingQueuedMessageId === storedCurrent.editingQueuedMessageId))
+            );
+          },
+          onDispatch: () => updateDeliveryProgress(sessionId, progress, "confirming"),
+        });
+        if (!accepted) {
+          retain();
+          updateDeliveryProgress(
+            sessionId,
+            progress,
+            "rejected",
+            t("The selected message or turn changed while waiting. The message remains queued."),
+          );
+          return false;
+        }
+        if (options?.queuedMessageId) {
+          setSessions((prev) =>
+            prev.map((entry) =>
+              entry.id === sessionId &&
+              sameQueueValue(
+                entry.queuedMessages?.find((row) => row.id === options.queuedMessageId),
+                selected,
+              )
+                ? sentQueuedMessage(entry, options.queuedMessageId!)
+                : entry,
+            ),
+          );
+          wakeSharedLocalQueues([sessionId]);
+        }
+        dismissNoticesForContinuedSession(sessionId);
+        updateDeliveryProgress(sessionId, progress, "accepted");
+        return true;
+      } catch (error) {
+        const unknown = error instanceof DeliveryUnknownError;
+        const detail = error instanceof Error ? error.message : String(error);
+        retain(unknown);
+        updateDeliveryProgress(sessionId, progress, unknown ? "unknown" : "rejected", detail);
+        // onSubmit accepts deferred work immediately. Preserve every refusal,
+        // including Stop during upload, before its cleared composer can lose it.
+        return !options?.queuedMessageId;
+      }
+    })();
+  }
   if (current.busy && !pendingSwitch) {
     if (
       operatorCommand.matched &&

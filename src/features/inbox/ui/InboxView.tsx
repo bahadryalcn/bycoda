@@ -274,13 +274,20 @@ export function InboxView({
     () => peekInboxForRail(recents, cwd)?.items ?? [],
   );
   const [loading, setLoading] = useState(() => peekInboxForRail(recents, cwd) == null);
-  const [revalidating, setRevalidating] = useState(false);
+  const [refreshAction, setRefreshAction] = useState<"toolbar" | "retry" | null>(null);
+  const refreshActionRef = useRef<"toolbar" | "retry" | null>(null);
   const [readStatusError, setReadStatusError] = useState<string | null>(null);
   const [failedReadItem, setFailedReadItem] = useState<InboxItem | null>(null);
   const [providerErrors, setProviderErrors] = useState<InboxProviderErrors>(
     () => peekInboxForRail(recents, cwd)?.errors ?? {},
   );
   const [refresh, setRefresh] = useState(0);
+  const requestRefresh = (action: "toolbar" | "retry") => {
+    if (refreshActionRef.current) return;
+    refreshActionRef.current = action;
+    setRefreshAction(action);
+    setRefresh((value) => value + 1);
+  };
   const [detailOpen, setDetailOpen] = useState(false);
   const [jiraView, setJiraView] = useRetainedState<"list" | "board">(
     `${viewStateKey}:jira-view`,
@@ -542,12 +549,17 @@ export function InboxView({
   );
   const inboxQuery = useQuery({
     queryKey: inboxQueryKey,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const force = forceRead.current;
       forceRead.current = false;
       const cached = peekInboxList(projects, fetchQuery);
       try {
-        return await listInboxItems(projects, fetchQuery, { force });
+        return await listInboxItems(projects, fetchQuery, {
+          force,
+          onProgress: (result) => {
+            if (!signal.aborted) queryClient.setQueryData(inboxQueryKey, result);
+          },
+        });
       } catch (reason) {
         if (cached) return cached;
         const message = reason instanceof Error ? reason.message : String(reason);
@@ -586,13 +598,17 @@ export function InboxView({
     setItems(inboxQuery.data?.items ?? []);
     setProviderErrors(inboxQuery.data?.errors ?? {});
     setLoading(inboxQuery.isPending);
-    setRevalidating(inboxQuery.isFetching && !!inboxQuery.data);
   }, [inboxQuery.data, inboxQuery.isPending, inboxQuery.isFetching]);
   useEffect(() => {
     if (refresh === prevRefresh.current) return;
     prevRefresh.current = refresh;
     forceRead.current = true;
-    void queryClient.invalidateQueries({ queryKey: inboxQueryKey });
+    void queryClient.invalidateQueries({ queryKey: inboxQueryKey }).finally(() => {
+      if (prevRefresh.current === refresh) {
+        refreshActionRef.current = null;
+        setRefreshAction(null);
+      }
+    });
   }, [refresh, inboxQueryKey, queryClient]);
 
   useEffect(() => {
@@ -937,17 +953,17 @@ export function InboxView({
             <CheckCheck className="icon-sm" strokeWidth={1.75} />
           </Button>
           <Button
+            iconOnly
+            label={t("Refresh")}
             variant="ghost"
             type="button"
             aria-label={t("Refresh")}
-            onClick={() => setRefresh((value) => value + 1)}
+            loading={refreshAction === "toolbar"}
+            disabled={refreshAction === "retry"}
+            onClick={() => requestRefresh("toolbar")}
             className="shrink-0"
           >
-            {loading || revalidating ? (
-              <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} />
-            ) : (
-              <RefreshCw className="icon-sm" strokeWidth={1.75} />
-            )}
+            <RefreshCw className="icon-sm" strokeWidth={1.75} />
           </Button>
         </div>
       )}
@@ -995,7 +1011,9 @@ export function InboxView({
               <Button
                 variant="secondary"
                 type="button"
-                onClick={() => setRefresh((value) => value + 1)}
+                loading={refreshAction === "retry"}
+                disabled={refreshAction === "toolbar"}
+                onClick={() => requestRefresh("retry")}
               >
                 {t("Refresh")}
               </Button>
@@ -1221,7 +1239,10 @@ export function InboxView({
           </div>
         </>
       ) : (
-        <div className="inbox-list-detail flex min-h-0 min-w-0 flex-1" data-detail-open={detailOpen}>
+        <div
+          className="inbox-list-detail flex min-h-0 min-w-0 flex-1"
+          data-detail-open={detailOpen}
+        >
           {list}
           <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="inbox-detail-back shrink-0 border-b border-(--ui-tone-neutral-border) px-2 py-1">
@@ -1231,31 +1252,31 @@ export function InboxView({
               </Button>
             </div>
             <div className="relative flex min-h-0 min-w-0 flex-1">
-            <div className="min-h-0 min-w-0 flex-1">
-              <InboxDetailBody
-                item={selected}
-                cwd={cwd}
-                projects={projectOptions}
-                revision={refresh}
-                relatedSessions={selected ? relatedSessionsForInboxItem(selected, sessions) : []}
-                onDiscuss={() => setDiscussionOpen(true)}
-                onStart={onStart}
-                repairSessions={repairSessions}
-                onRepairChecks={onRepairChecks}
-                onOpenSession={onOpenSession}
-                onItemChange={updateInboxItem}
-              />
-            </div>
-            {discussionOpen && selected ? (
-              <InboxDiscussionPanel
-                onOpen={onAsk}
-                onRestart={onAskRestart}
-                onMount={onAskMount}
-                key={inboxAskKey(selected)}
-                item={selected}
-                onClose={() => setDiscussionOpen(false)}
-              />
-            ) : null}
+              <div className="min-h-0 min-w-0 flex-1">
+                <InboxDetailBody
+                  item={selected}
+                  cwd={cwd}
+                  projects={projectOptions}
+                  revision={refresh}
+                  relatedSessions={selected ? relatedSessionsForInboxItem(selected, sessions) : []}
+                  onDiscuss={() => setDiscussionOpen(true)}
+                  onStart={onStart}
+                  repairSessions={repairSessions}
+                  onRepairChecks={onRepairChecks}
+                  onOpenSession={onOpenSession}
+                  onItemChange={updateInboxItem}
+                />
+              </div>
+              {discussionOpen && selected ? (
+                <InboxDiscussionPanel
+                  onOpen={onAsk}
+                  onRestart={onAskRestart}
+                  onMount={onAskMount}
+                  key={inboxAskKey(selected)}
+                  item={selected}
+                  onClose={() => setDiscussionOpen(false)}
+                />
+              ) : null}
             </div>
           </div>
         </div>

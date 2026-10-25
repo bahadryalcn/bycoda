@@ -4,15 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   full: vi.fn(),
   files: vi.fn(),
-  listeners: new Set<() => void>(),
+  listeners: new Set<(change?: { cwd?: string; scope: string }) => void>(),
 }));
 vi.mock("../../../platform/tauri/fs", () => ({
   gitDiffIndex: api.full,
   gitDiffFiles: api.files,
-  notifyGitChanged: () => {
-    for (const listener of [...api.listeners]) listener();
+  notifyGitChanged: (cwd?: string, scope = "refs") => {
+    for (const listener of [...api.listeners]) listener({ cwd, scope });
   },
-  subscribeGitChanged: (listener: () => void) => {
+  subscribeGitChanged: (listener: (change?: { cwd?: string; scope: string }) => void) => {
     api.listeners.add(listener);
     return () => api.listeners.delete(listener);
   },
@@ -166,5 +166,33 @@ describe("invalidation", () => {
     await fetchGitIndex("/r");
     expect(api.full).toHaveBeenCalledTimes(1);
     expect(api.files).not.toHaveBeenCalled();
+  });
+
+  it("retains another checkout's fresh result after a scoped change", async () => {
+    await fetchGitIndex("/a");
+    const other = await fetchGitIndex("/b");
+    notifyGitChangedWith("/a", "index", {});
+    expect(await fetchGitIndex("/b")).toBe(other);
+    expect(api.files).toHaveBeenCalledTimes(2);
+    await fetchGitIndex("/a");
+    expect(api.files).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps sharing an unrelated pending checkout read", async () => {
+    const gate = deferred<unknown>();
+    api.files.mockReturnValue(gate.promise);
+    const first = fetchGitIndex("/b");
+    notifyGitChangedWith("/a", "checkout", {});
+    const second = fetchGitIndex("/b");
+    gate.resolve(index("same"));
+    expect(await second).toBe(await first);
+    expect(api.files).toHaveBeenCalledOnce();
+  });
+
+  it("preserves global refs invalidation for shared-worktree metadata", async () => {
+    await fetchGitIndex("/b", { full: true });
+    notifyGitChangedWith("/a", "refs", {});
+    await fetchGitIndex("/b", { full: true });
+    expect(api.full).toHaveBeenCalledTimes(2);
   });
 });

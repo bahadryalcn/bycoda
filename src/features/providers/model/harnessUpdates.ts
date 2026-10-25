@@ -35,7 +35,7 @@ export type HarnessUpdateDeps = {
   /** Installed harnesses to check. */
   harnesses: HarnessId[];
   installedVersion: (harness: HarnessId) => Promise<string | undefined>;
-  latestVersion: (harness: HarnessId) => Promise<string>;
+  latestVersion: (harness: HarnessId, installed: string) => Promise<string>;
 };
 
 /** Every window keeps its own model catalog, so each has to hear about it. */
@@ -63,8 +63,11 @@ export function claimLaunchHarnessUpdateCheck(): Promise<boolean> {
   return invoke<boolean>("harness_update_check_claim");
 }
 
-export function fetchLatestHarnessVersion(harness: HarnessId): Promise<string> {
-  return invoke<string>("harness_latest_version", { provider: harness });
+export function fetchLatestHarnessVersion(harness: HarnessId, installed?: string): Promise<string> {
+  return invoke<string>("harness_latest_version", {
+    provider: harness,
+    installedVersion: installed,
+  });
 }
 
 /** Cursor names a build by date and commit, such as `2026.09.28-64d2043`. */
@@ -114,10 +117,7 @@ export async function checkHarnessVersions({
       .filter((harness) => UPDATABLE_HARNESSES.has(harness))
       .map(async (harness): Promise<HarnessVersionCheck> => {
         try {
-          const [installedOutput, latestOutput] = await Promise.all([
-            installedVersion(harness),
-            latestVersion(harness),
-          ]);
+          const installedOutput = await installedVersion(harness);
           const installed = parseHarnessVersion(harness, installedOutput ?? "");
           if (!installed) {
             return {
@@ -126,6 +126,9 @@ export async function checkHarnessVersions({
               error: "The CLI reported no version.",
             };
           }
+          // OpenCode 1 and 2 publish separately. Resolve the installed channel
+          // before asking for the release its own updater can install.
+          const latestOutput = await latestVersion(harness, installed);
           const latest = parseHarnessVersion(harness, latestOutput);
           if (!latest) {
             return {

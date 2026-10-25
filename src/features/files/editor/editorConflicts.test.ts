@@ -2,7 +2,8 @@
 import { history, undo } from "@codemirror/commands";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { findConflictBlocks } from "../../source-control/model/conflictMarkers";
 import { normalizeLineBreaks, restoreLineEnding } from "./editorDoc";
 import {
   conflictBlocks,
@@ -46,6 +47,30 @@ afterEach(() => {
 });
 
 describe("editorConflicts", () => {
+  it("maps ordinary edits inside and outside conflicts without a whole-document copy", () => {
+    let state = EditorState.create({
+      doc: `${"ordinary content\n".repeat(10000)}${TWO}`,
+      extensions: editorConflicts,
+    });
+    expect(conflictBlocks(state)).toHaveLength(2);
+    for (const edit of [
+      () => ({ from: 0, insert: "new line\n" }),
+      () => ({ from: state.doc.length - 1, insert: "x" }),
+    ]) {
+      const prototype = Object.getPrototypeOf(state.doc);
+      const copy = vi.spyOn(prototype, "toString");
+      const next = state.update({ changes: edit() }).state;
+      expect(
+        copy.mock.contexts.some((doc) => (doc as { length: number }).length >= state.doc.length),
+      ).toBe(false);
+      copy.mockRestore();
+      expect(conflictBlocks(next)).toEqual(findConflictBlocks(next.doc.toString()));
+      state = next;
+    }
+    const ours = conflictBlocks(state)[0].ours.from;
+    state = state.update({ changes: { from: ours + 1, insert: "extra\ncontent\n" } }).state;
+    expect(conflictBlocks(state)).toEqual(findConflictBlocks(state.doc.toString()));
+  });
   it("tracks blocks as the document changes", () => {
     const view = open(TWO);
     expect(conflictBlocks(view.state)).toHaveLength(2);

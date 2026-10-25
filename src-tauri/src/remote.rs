@@ -1019,6 +1019,7 @@ fn shareable_remote_read(method: &str, params: &Value) -> bool {
             | "sessions.list"
             | "environment.describe"
             | "models.list"
+            | "tasks.preflight"
             | "git.diff"
             | "git.index"
             | "git.fileDiff"
@@ -1505,6 +1506,8 @@ fn supported_remote_method(method: &str) -> bool {
             | "crews.accept"
             | "crews.finish"
             | "tasks.list"
+            | "tasks.preflight"
+            | "tasks.evaluation.save"
             | "tasks.save"
             | "tasks.move"
             | "tasks.start"
@@ -1515,6 +1518,7 @@ fn supported_remote_method(method: &str) -> bool {
             | "tasks.review.recheck"
             | "tasks.delete"
             | "goals.list"
+            | "goals.final-review.recheck"
             | "goals.create"
             | "goals.update"
             | "goals.approve"
@@ -2240,6 +2244,18 @@ mod tests {
         ));
     }
     use super::*;
+
+    #[test]
+    fn task_preparation_and_review_methods_preserve_read_and_mutation_boundaries() {
+        assert!(supported_remote_method("tasks.preflight"));
+        assert!(shareable_remote_read("tasks.preflight", &json!({})));
+        for method in ["tasks.evaluation.save", "goals.final-review.recheck"] {
+            assert!(supported_remote_method(method));
+            assert!(!shareable_remote_read(method, &json!({})));
+        }
+        assert!(!supported_remote_method("tasks.preflight.install"));
+        assert!(!supported_remote_method("tasks.evaluation.delete"));
+    }
 
     #[test]
     fn review_note_commands_are_supported_without_allowing_arbitrary_note_methods() {

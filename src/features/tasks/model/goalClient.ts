@@ -18,10 +18,14 @@ import {
 } from "../../automations/model/machineResults";
 import { machineCapabilities, machineProjects } from "../../automations/model/machineSnapshot";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
-import { defaultProviderAccountId, supportsProviderAccounts } from "../../providers/model/providerAccounts";
+import {
+  defaultProviderAccountId,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
 import { projectName } from "../../../shared/lib/paths";
 import {
   HOST_DIRECT_GOALS,
+  HOST_GOAL_FINAL_REVIEW,
   HOST_GOALS,
   MAX_GOAL_PROJECTS,
   type HostGoal,
@@ -33,8 +37,10 @@ import {
   requireTaskAccount,
   requireTaskWorkspaces,
   taskMachineFor,
+  requireTaskHarnessCapabilities,
 } from "./taskClient";
 import type { TaskWorkspace } from "./taskWorkspace";
+import type { TaskRunBudget } from "./taskBudget";
 
 export const GOAL_MACHINE_ERROR = "A goal’s projects must all be on one machine.";
 
@@ -43,6 +49,7 @@ export type BoardGoalProject = { id: string; cwd: string; name: string };
 
 /** A host goal as this desktop shows it: on its machine, with its projects. */
 export type BoardGoal = HostGoal & {
+  finalReviewSupported?: boolean;
   machineId: string;
   machineName: string;
   /** The goal's projects the host still has, in the goal's order. */
@@ -54,6 +61,8 @@ export type BoardGoal = HostGoal & {
 
 /** What the goal form edits. */
 export type GoalDraft = {
+  finalReview?: boolean;
+  budget?: TaskRunBudget;
   isolate: boolean;
   workspaces?: Record<string, TaskWorkspace>;
   maxRunningTasks?: number;
@@ -85,13 +94,18 @@ export function goalMachines(fresh = false): Promise<RemoteMachine[]> {
 
 export function newGoalDraft(cwd: string, harness: HarnessId, model: string): GoalDraft {
   return {
+    finalReview: true,
     title: "",
     prompt: "",
     cwds: [cwd],
     leadCwd: cwd,
     harness,
     model,
-    ...(!parseRemotePath(cwd) && supportsProviderAccounts(harness) && defaultProviderAccountId(harness) !== "default" ? { providerAccountId: defaultProviderAccountId(harness) } : {}),
+    ...(!parseRemotePath(cwd) &&
+    supportsProviderAccounts(harness) &&
+    defaultProviderAccountId(harness) !== "default"
+      ? { providerAccountId: defaultProviderAccountId(harness) }
+      : {}),
     modelSettings: {},
     runtimeMode: "auto",
     maxRunMinutes: 0,
@@ -141,12 +155,16 @@ export function hostGoalFromDraft(
   if (!isRemoteProvider(draft.harness)) throw new Error(TASK_AGENT_ERROR);
   return {
     id,
+    ...(draft.finalReview ? { finalReview: true } : {}),
+    ...(draft.budget ? { budget: draft.budget } : {}),
     title: draft.title,
     prompt: draft.prompt,
     projectIds,
     leadProjectId,
     harness: draft.harness,
-    ...(draft.providerAccountId === undefined ? {} : { providerAccountId: draft.providerAccountId }),
+    ...(draft.providerAccountId === undefined
+      ? {}
+      : { providerAccountId: draft.providerAccountId }),
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
@@ -214,6 +232,7 @@ export function listBoardGoalResults(
       return boardGoalsFromHost(machine, projects, goals).map((goal) => ({
         ...goal,
         settingsSupported: capabilities.includes("goals.settings"),
+        finalReviewSupported: capabilities.includes(HOST_GOAL_FINAL_REVIEW),
       }));
     },
     (goal) => ({ ...goal, stale: true }),
@@ -237,6 +256,9 @@ export async function createGoal(
     throw new Error(GOAL_MACHINE_ERROR);
   const machine = taskMachineFor(machines, draft.cwds[0], draft.machineId);
   await requireTaskAccount(machine, draft.providerAccountId);
+  await requireTaskHarnessCapabilities(machine, draft);
+  if (draft.finalReview && !(await machineCapabilities(machine)).includes(HOST_GOAL_FINAL_REVIEW))
+    throw new Error("Update the selected host to verify the completed goal.");
   if (draft.isolate === false && !(await machineCapabilities(machine)).includes(HOST_DIRECT_GOALS))
     throw new Error(
       "Update the selected host to run goal tasks directly in the selected checkout.",
@@ -288,12 +310,17 @@ async function updatedGoal(
     machineName: goal.machineName,
     projects: goal.projects,
     settingsSupported: goal.settingsSupported,
+    finalReviewSupported: goal.finalReviewSupported,
     stale: undefined,
   };
 }
 
 export function approveGoal(goal: BoardGoal): Promise<BoardGoal> {
   return updatedGoal(goal, "goals.approve");
+}
+
+export function recheckGoalFinalReview(goal: BoardGoal): Promise<BoardGoal> {
+  return updatedGoal(goal, "goals.final-review.recheck", { expectedUpdatedAt: goal.updatedAt });
 }
 
 export function updateGoal(

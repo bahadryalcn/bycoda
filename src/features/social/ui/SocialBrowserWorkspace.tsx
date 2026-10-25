@@ -1,3 +1,6 @@
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { useContext, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
@@ -52,6 +55,8 @@ export function SocialBrowserWorkspace({
   account: SocialAccount;
   client: SocialClient;
 }) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const active = useContext(SocialPanelActiveContext);
   const visible = useQueryVisible();
@@ -177,21 +182,21 @@ export function SocialBrowserWorkspace({
         value={intent}
         options={options}
         onValueChange={(value) => setIntent(value as SocialBrowserIntent)}
-        disabled={busy || !!current}
+        disabled={socialLocked || busy || !!current}
       />
       {intent === "comments" ? (
         <TextField
           label={t("Post link")}
           value={target}
           onChange={(event) => setTarget(event.target.value)}
-          disabled={busy || !!current}
+          disabled={socialLocked || busy || !!current}
         />
       ) : null}
       <label className="social-inline-check">
         <Checkbox
           checked={acknowledged}
           onChange={(event) => setAcknowledged(event.target.checked)}
-          disabled={busy}
+          disabled={socialLocked || busy}
         />
         {t("Open a separate browser profile for this account")}
       </label>
@@ -221,8 +226,10 @@ export function SocialBrowserWorkspace({
       {openBlocker ? <p className="social-muted">{openBlocker}</p> : null}
       <div className="social-actions">
         <Button
+          loading={pendingUi.is("browser-workspace.open-in-browser")}
           type="button"
           disabled={
+            socialLocked ||
             busy ||
             !!current ||
             !acknowledged ||
@@ -230,11 +237,13 @@ export function SocialBrowserWorkspace({
             (intent === "comments" && !target.trim())
           }
           onClick={() =>
-            void perform(() =>
-              client.browserWorkflowBegin(
-                account.id,
-                intent,
-                intent === "comments" ? target : undefined,
+            void pendingUi.run("browser-workspace.open-in-browser", () =>
+              perform(() =>
+                client.browserWorkflowBegin(
+                  account.id,
+                  intent,
+                  intent === "comments" ? target : undefined,
+                ),
               ),
             )
           }
@@ -245,21 +254,31 @@ export function SocialBrowserWorkspace({
           {t("Account: {p0}", { p0: account.name })}
         </Badge>
         <Button
+          loading={pendingUi.is("browser-workspace.refresh-status")}
           type="button"
           variant="secondary"
-          disabled={busy || query.isFetching}
-          onClick={() => void perform(async () => undefined)}
+          disabled={socialLocked || busy || query.isFetching}
+          onClick={() =>
+            void pendingUi.run("browser-workspace.refresh-status", () =>
+              perform(async () => undefined),
+            )
+          }
         >
           {t("Refresh status")}
         </Button>
         {current ? (
           <Button
+            loading={pendingUi.is("browser-workspace.cancel-action")}
             type="button"
             variant="secondary"
             tone="danger"
             className="ml-auto"
-            disabled={busy}
-            onClick={() => void perform(() => client.browserWorkflowCancel(account.id))}
+            disabled={socialLocked || busy}
+            onClick={() =>
+              void pendingUi.run("browser-workspace.cancel-action", () =>
+                perform(() => client.browserWorkflowCancel(account.id)),
+              )
+            }
           >
             {t("Cancel action")}
           </Button>

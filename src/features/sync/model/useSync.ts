@@ -15,6 +15,7 @@ import {
   SYNC_UNSUPPORTED_MESSAGE,
 } from "./syncClient";
 import { setLocalHostEnvironmentId } from "./syncProjects";
+import { createSyncWindowOwner } from "./syncWindowOwner";
 import { setRemoteOpenTargets } from "./syncRemoteProjects";
 import {
   readRemoteConnection,
@@ -173,10 +174,13 @@ export function startAppSync(): () => void {
       });
     return refreshing;
   };
+  const ownership = createSyncWindowOwner(() => wake());
   const loop = startSyncLoop(
     () => collectSyncMachineIds(machines),
     (machineId) => (method, params) => remoteRequest(machineId, method, params),
     (machineId) => machines.find((machine) => machine.id === machineId)?.environmentId,
+    ownership.isOwner,
+    refreshMachines,
   );
   // A host that was not up yet at launch is linked on a later refresh.
   let localLinked = false;
@@ -186,22 +190,34 @@ export function startAppSync(): () => void {
         if (machine) localLinked = true;
       })
       .catch(() => undefined);
-  void connectLocalHost()
-    .then(refreshMachines)
-    .then(() => {
-      if (!stopped) loop.nudge();
-    });
   const nudger = createDebouncer(() => loop.nudge(), NUDGE_DEBOUNCE_MS);
-  const onLocalChange = createLocalChangeHandler(nudger.trigger);
+  const channel = (() => {
+    try {
+      return typeof BroadcastChannel === "undefined"
+        ? undefined
+        : new BroadcastChannel("bycoda-library-sync");
+    } catch {
+      return undefined;
+    }
+  })();
+  const onLocalChange = createLocalChangeHandler(() => {
+    nudger.trigger();
+    channel?.postMessage("changed");
+  });
+  if (channel)
+    channel.onmessage = (event) => {
+      if (event.data === "changed" && ownership.isOwner()) nudger.trigger();
+    };
   const unsubscribePaths = subscribeProjectPathsChanged(onLocalChange);
   const unsubscribeLock = subscribeLockRecordChanges(onLocalChange);
   const wake = () => {
-    if (stopped) return;
+    if (stopped || !ownership.isOwner()) return;
     void (localLinked ? refreshMachines() : connectLocalHost().then(refreshMachines)).then(() => {
       if (!stopped) loop.nudge();
     });
   };
   const unsubscribeRecovered = subscribeRemoteRecovered(() => {
+    if (!ownership.isOwner()) return;
     void refreshMachines().then(() => {
       if (stopped) return;
       for (const machine of machines) {
@@ -217,6 +233,7 @@ export function startAppSync(): () => void {
   window.addEventListener("online", wake);
   document.addEventListener("visibilitychange", onVisibility);
   const interval = setInterval(() => {
+    if (!ownership.isOwner()) return;
     if (localLinked) void refreshMachines();
     else void connectLocalHost().then(refreshMachines);
   }, 30_000);
@@ -224,6 +241,8 @@ export function startAppSync(): () => void {
     started = false;
     stopped = true;
     loop.stop();
+    ownership.stop();
+    channel?.close();
     nudger.cancel();
     unsubscribePaths();
     unsubscribeLock();

@@ -25,6 +25,7 @@ import { SOCIAL_TOOLS, socialToolName } from "../src/features/social/model/socia
 import { SOCIAL_TOOL_SCHEMAS, runSocialMcp } from "./social-tools";
 import { McpTokens, MCP_GROUPS, type McpGrant, type McpGroup } from "./mcp-tokens";
 import type { HostStore } from "./store";
+import { RequestAuthorizationError } from "./store-db";
 import type { SocialService } from "./social";
 import type { RuntimeLogsService } from "./runtime-logs";
 import type { ConversationWorkspaceTools } from "./conversation-workspace-tools";
@@ -148,34 +149,38 @@ export class McpHttp {
   }
 
   /** Registered after the ordinary owner RPC authentication and protocol checks. */
-  rpc(
+  async rpc(
     method: unknown,
     input: Record<string, unknown>,
     token: string,
     response: ServerResponse,
-  ): boolean {
+  ): Promise<Awaited<boolean>> {
     if (typeof method !== "string" || !method.startsWith("mcp.tokens.")) return false;
-    if (!this.options.store.authenticated(token))
+    if (!(await this.options.store.authenticated(token)))
       throw new Error("Owner device credential required.");
-    let result: unknown;
-    if (method === "mcp.tokens.create") result = this.tokens.create(input);
-    else if (method === "mcp.tokens.list") result = { tokens: this.tokens.list() };
-    else if (method === "mcp.tokens.revoke") result = this.tokens.revoke(input.id);
-    else throw new Error("Unsupported token operation.");
+    const result = await this.options.store.db.withAuthorization(
+      () => this.options.store.authenticated(token),
+      async () => {
+        if (method === "mcp.tokens.create") return await this.tokens.create(input);
+        if (method === "mcp.tokens.list") return { tokens: await this.tokens.list() };
+        if (method === "mcp.tokens.revoke") return await this.tokens.revoke(input.id);
+        throw new Error("Unsupported token operation.");
+      },
+    );
     response.end(JSON.stringify({ result }));
     return true;
   }
 
-  private identity(token: string, group: McpGroup) {
+  private async identity(token: string, group: McpGroup) {
     const o = this.options;
     const principal =
       group === "conversation"
-        ? o.conversationAccess.principalForToken(token)
+        ? await o.conversationAccess.principalForToken(token)
         : group === "runtime-logs"
-          ? o.runtimeLogAccess.principalForToken(token)
-          : o.social.principalForToken(token);
+          ? await o.runtimeLogAccess.principalForToken(token)
+          : await o.social.principalForToken(token);
     if (principal) return { principal, grant: undefined };
-    const grant = this.tokens.get(token);
+    const grant = await this.tokens.get(token);
     if (grant?.scopes[group]?.length) return { principal: undefined, grant };
     return undefined;
   }
@@ -231,7 +236,10 @@ export class McpHttp {
     const token = request.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
     if (!token) return reject(401, "MCP credential required.");
     const groups = selected ? [selected as McpGroup] : [...MCP_GROUPS];
-    const allowed = groups.filter((group) => this.identity(token, group));
+    const groupIdentities = await Promise.all(
+      groups.map(async (group) => await this.identity(token, group)),
+    );
+    const allowed = groups.filter((_group, index) => !!groupIdentities[index]);
     if (!allowed.length)
       return reject(401, "MCP credential is invalid, expired or outside this scope.");
     const now = this.now();
@@ -252,8 +260,10 @@ export class McpHttp {
     const protocol = request.headers["mcp-protocol-version"];
     if (protocol !== undefined && (typeof protocol !== "string" || !VERSIONS.includes(protocol)))
       return reject(400, "Unsupported MCP protocol version.");
-    const maxBytes = allowed.includes("conversation") && this.identity(token, "conversation")?.principal
-      ? CONVERSATION_MAX_INPUT_BYTES : MAX_BYTES;
+    const maxBytes =
+      allowed.includes("conversation") && (await this.identity(token, "conversation"))?.principal
+        ? CONVERSATION_MAX_INPUT_BYTES
+        : MAX_BYTES;
     if (Number(request.headers["content-length"] ?? 0) > maxBytes)
       return reject(413, "MCP request too large.");
     this.window.active++;
@@ -308,7 +318,11 @@ export class McpHttp {
       }
       id = message.id ?? null;
       // Recheck after the yielding body read, including revocation and expiry.
-      const identities = new Map(allowed.map((group) => [group, this.identity(token, group)]));
+      const identities = new Map(
+        await Promise.all(
+          allowed.map(async (group) => [group, await this.identity(token, group)] as const),
+        ),
+      );
       const current = allowed.filter((group) => identities.get(group));
       if (!current.length) return reject(401, "MCP credential is invalid or revoked.");
       if (message.id === undefined) {
@@ -345,7 +359,7 @@ export class McpHttp {
         const args = message.params?.arguments ?? {};
         if (!args || typeof args !== "object" || Array.isArray(args))
           throw new Error("Tool arguments must be an object.");
-        const identity = this.identity(token, group);
+        const identity = await this.identity(token, group);
         if (!identity) return reject(401, "MCP credential is invalid or revoked.");
         try {
           if (
@@ -375,8 +389,9 @@ export class McpHttp {
               },
             }),
             async (action, input, requestId?: string | NodeJS.ProcessEnv) => {
-              if (identity.grant) return this.external(group, action, input, identity.grant, token);
-              return this.sessionRpc(
+              if (identity.grant)
+                return await this.external(group, action, input, identity.grant, token);
+              return await this.sessionRpc(
                 server,
                 token,
                 group,
@@ -389,11 +404,15 @@ export class McpHttp {
           const reply = JSON.parse(output);
           if (reply.error) throw new Error("Invalid MCP tool request.");
           result = reply.result;
+          if (!(await this.identity(token, group)))
+            return reject(401, "MCP credential is invalid or revoked.");
           // Existing adapters return errors as tool content, not thrown errors.
           if ((result as { isError?: boolean })?.isError) {
             result = JSON.parse(JSON.stringify(result).replaceAll(token, "[credential redacted]"));
           }
         } catch (error) {
+          if (error instanceof RequestAuthorizationError)
+            return reject(401, "MCP credential is invalid or revoked.");
           result = {
             isError: true,
             content: [{ type: "text", text: this.safeError(error, token) }],
@@ -410,7 +429,9 @@ export class McpHttp {
         return true;
       }
       response.end(JSON.stringify({ jsonrpc: "2.0", id, result }));
-    } catch {
+    } catch (error) {
+      if (error instanceof RequestAuthorizationError)
+        return reject(401, "MCP credential is invalid or revoked.");
       if (!response.destroyed && !response.writableEnded)
         response.end(
           JSON.stringify({
@@ -471,85 +492,89 @@ export class McpHttp {
     token: string,
   ): Promise<unknown> {
     const o = this.options;
-    const authorized = () => !!this.tokens.get(token);
-    if (!authorized()) throw new Error("External credential revoked.");
-    if (!externalMcpCatalog(group, grant).some((tool) => tool.action === action))
-      throw new Error(
-        group === "social" && externalOwnerActions.has(action)
-          ? "Owner approval required. Submit the draft to the owner in bycoda."
-          : "This tool requires a bycoda session, owner approval, or additional token scope.",
-      );
-    const project = o.store.project(grant.projectId);
-    if (group === "social") {
-      // External tokens never consume active-rule send authority. Exact owner
-      // approval continues to be managed by the existing SocialService.
-      if (["replies.send", "messages.send", "comments.send", "campaigns.schedule"].includes(action))
-        throw new Error("Owner approval required. Submit the draft to the owner in bycoda.");
-      return o.social.call(
-        {
-          kind: "external",
-          actorId: `external:${grant.id}`,
-          projectId: project.id,
-          provider: "external",
-        },
-        action,
-        input,
-      );
-    }
-    const principal = {
-      kind: "session" as const,
-      projectId: project.id,
-      sessionId: `external_${grant.id}`,
-      provider: "external",
-    };
-    if (group === "runtime-logs" || action === "logs.read" || action === "logs.sources") {
-      const logAction = action.replace(/^logs\./, "");
-      const query = runtimeLogToolQuery(logAction, input, principal);
-      o.refreshLogSources();
-      return logAction === "read" ? o.runtimeLogs.read(query) : o.runtimeLogs.sources(query);
-    }
-    validateConversationTool(action, input);
-    if (action === "tools.list")
-      return {
-        environmentId: o.store.environmentId,
+    const authorized = async () => !!(await this.tokens.get(token));
+    if (!(await authorized())) throw new Error("External credential revoked.");
+    return await o.store.db.withAuthorization(authorized, async () => {
+      if (!externalMcpCatalog(group, grant).some((tool) => tool.action === action))
+        throw new Error(
+          group === "social" && externalOwnerActions.has(action)
+            ? "Owner approval required. Submit the draft to the owner in bycoda."
+            : "This tool requires a bycoda session, owner approval, or additional token scope.",
+        );
+      const project = await o.store.project(grant.projectId);
+      if (group === "social") {
+        // External tokens never consume active-rule send authority. Exact owner
+        // approval continues to be managed by the existing SocialService.
+        if (
+          ["replies.send", "messages.send", "comments.send", "campaigns.schedule"].includes(action)
+        )
+          throw new Error("Owner approval required. Submit the draft to the owner in bycoda.");
+        return await o.social.call(
+          {
+            kind: "external",
+            actorId: `external:${grant.id}`,
+            projectId: project.id,
+            provider: "external",
+          },
+          action,
+          input,
+        );
+      }
+      const principal = {
+        kind: "session" as const,
         projectId: project.id,
-        tools: externalMcpCatalog("conversation", grant),
+        sessionId: `external_${grant.id}`,
+        provider: "external",
       };
-    if (action === "sessions.list")
-      return { cwd: project.cwd, sessions: (await o.projectSessions(project.id)).list };
-    if (action === "sessions.read") {
-      // Use the shared host/desktop catalog to prove project membership before reading.
-      const sessions = (await o.projectSessions(project.id)).list;
-      if (!sessions.some((session) => session.id === input.sessionId))
-        throw new Error("Conversation is not in this project.");
-      const snapshot = o.social.sessionIdentity(String(input.sessionId));
-      if (snapshot.projectId !== project.id)
-        throw new Error("Conversation is not in this project.");
-      return sessionConversationPage(
-        { ...snapshot.session, busy: snapshot.status === "running" },
-        input,
+      if (group === "runtime-logs" || action === "logs.read" || action === "logs.sources") {
+        const logAction = action.replace(/^logs\./, "");
+        const query = runtimeLogToolQuery(logAction, input, principal);
+        o.refreshLogSources();
+        return logAction === "read" ? o.runtimeLogs.read(query) : o.runtimeLogs.sources(query);
+      }
+      validateConversationTool(action, input);
+      if (action === "tools.list")
+        return {
+          environmentId: o.store.environmentId,
+          projectId: project.id,
+          tools: externalMcpCatalog("conversation", grant),
+        };
+      if (action === "sessions.list")
+        return { cwd: project.cwd, sessions: (await o.projectSessions(project.id)).list };
+      if (action === "sessions.read") {
+        // Use the shared host/desktop catalog to prove project membership before reading.
+        const sessions = (await o.projectSessions(project.id)).list;
+        if (!sessions.some((session) => session.id === input.sessionId))
+          throw new Error("Conversation is not in this project.");
+        const snapshot = await o.social.sessionIdentity(String(input.sessionId));
+        if (snapshot.projectId !== project.id)
+          throw new Error("Conversation is not in this project.");
+        return sessionConversationPage(
+          { ...snapshot.session, busy: snapshot.status === "running" },
+          input,
+        );
+      }
+      if (/^(notes|automations|inbox)\./.test(action)) {
+        // Automation defaults and native approval routing belong to an actual session.
+        if (
+          action === "automations.create" ||
+          action === "inbox.list" ||
+          ["inbox.comment", "inbox.review", "inbox.prAction"].includes(action)
+        )
+          throw new Error("A bycoda session and owner approval are required for this operation.");
+        return await o.conversationWorkspace.call(
+          action as Parameters<ConversationWorkspaceTools["call"]>[0],
+          input,
+          principal,
+          {} as Session,
+          authorized,
+        );
+      }
+      // UI, terminal, browser, device and task execution APIs are session-owned.
+      // Never fabricate a session to gain their runtime/approval context.
+      throw new Error(
+        "This tool requires an active bycoda session; external project tokens have no session context.",
       );
-    }
-    if (/^(notes|automations|inbox)\./.test(action)) {
-      // Automation defaults and native approval routing belong to an actual session.
-      if (
-        action === "automations.create" ||
-        action === "inbox.list" ||
-        ["inbox.comment", "inbox.review", "inbox.prAction"].includes(action)
-      )
-        throw new Error("A bycoda session and owner approval are required for this operation.");
-      return o.conversationWorkspace.call(
-        action as Parameters<ConversationWorkspaceTools["call"]>[0],
-        input,
-        principal,
-        {} as Session,
-        authorized,
-      );
-    }
-    // UI, terminal, browser, device and task execution APIs are session-owned.
-    // Never fabricate a session to gain their runtime/approval context.
-    throw new Error(
-      "This tool requires an active bycoda session; external project tokens have no session context.",
-    );
+    });
   }
 }

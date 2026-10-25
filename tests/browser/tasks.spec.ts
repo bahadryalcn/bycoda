@@ -11,8 +11,482 @@ type HostCall = {
   };
 };
 const fixture = "/tests/browser/tasks.html";
+test("worktree creation keeps the active button visible and focused", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 950 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const form = await start(page, "goal", "?slowOperation=git.worktreeCreate");
+  await fillGoal(form);
+  const workspaceDisclosure = form
+    .locator("summary")
+    .filter({ hasText: "Working branch and worktree" });
+  await workspaceDisclosure.focus();
+  await workspaceDisclosure.press("Enter");
+  const branch = form.getByPlaceholder("goal/settings", { exact: true });
+  await branch.fill("ui-feedback");
+  const create = form.getByRole("button", { name: "Create a separate worktree", exact: true });
+  await create.focus();
+  await create.press("Enter");
+  await expect(create).toHaveAttribute("aria-busy", "true");
+  await expect(create).toBeFocused();
+  await expect(branch).toBeDisabled();
+  await create.evaluate((node: HTMLButtonElement) => node.click());
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { taskFixtureCalls: HostCall[] }).taskFixtureCalls.filter(
+          (call) => call.args.method === "git.worktreeCreate",
+        ).length,
+    ),
+  ).toBe(1);
+  await page.screenshot({
+    path: "temp/verification/2026-10-25-full-ui/tasks-crews/pending-worktree-390.png",
+    fullPage: true,
+  });
+  await page.evaluate(() =>
+    (window as unknown as { taskFixtureReleaseRemote: () => void }).taskFixtureReleaseRemote(),
+  );
+  await expect(branch).toHaveValue("");
+  await expect(create).not.toHaveAttribute("aria-busy", "true");
+});
+for (const kind of ["task", "goal"] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`local ${kind} submit feedback retains focus and draft in ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 950 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const method = kind === "task" ? "tasks.save" : "goals.create";
+      const form = await start(page, kind, `?slowOperation=${method}`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      if (kind === "task") await fillTask(form);
+      else await fillGoal(form);
+      const action = form.getByRole("button", {
+        name: kind === "task" ? "Add and start" : "Plan it",
+        exact: true,
+      });
+      await action.focus();
+      await action.press("Enter");
+      await expect(action).toHaveAttribute("aria-busy", "true");
+      await expect(action).toBeFocused();
+      expect(await action.evaluate((node) => !!node.closest("[inert]"))).toBe(false);
+      if (kind === "task")
+        await expect(
+          form.getByRole("button", { name: "Add to To do", exact: true }),
+        ).not.toHaveAttribute("aria-busy", "true");
+      await action.evaluate((node: HTMLButtonElement) => node.click());
+      await expect
+        .poll(
+          async () => (await mutations(page)).filter((call) => call.args.method === method).length,
+        )
+        .toBe(1);
+      await expect(form.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
+      await page.screenshot({
+        path: `temp/verification/2026-10-25-full-ui/tasks-crews/pending-${kind}-390-${theme}.png`,
+        fullPage: true,
+      });
+      await page.evaluate(() =>
+        (window as unknown as { taskFixtureReleaseRemote: () => void }).taskFixtureReleaseRemote(),
+      );
+      await expect(form).toHaveCount(0);
+    });
+  }
+}
+const harnessPageErrors = new WeakMap<Page, string[]>();
+test.beforeEach(({ page }, testInfo) => {
+  if (
+    /^(harness |editing a saved custom reviewer|final acceptance |acceptance evidence )/.test(
+      testInfo.title,
+    )
+  ) {
+    const errors: string[] = [];
+    harnessPageErrors.set(page, errors);
+    page.on("pageerror", (error) => errors.push(error.message));
+  }
+});
+test.afterEach(({ page }) => {
+  const errors = harnessPageErrors.get(page);
+  if (errors) expect(errors, "Uncaught browser errors in the harness flow").toEqual([]);
+});
 
-test("bulk cleanup uses one confirmation, preserves code and retries only failed deletions", async ({ page }) => {
+const harnessCaptures = resolve("temp/verification/2026-10-24-task-harness");
+for (const { width, theme } of [
+  { width: 390, theme: "light" },
+  { width: 1440, theme: "dark" },
+] as const) {
+  test(`harness workflow, preparation and run budget preserve the draft at ${width}px ${theme}`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 950 });
+    await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+    const form = await start(page, "task", "?boardControls&harness");
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
+      theme,
+    );
+    await fillTask(form);
+    const objective = "Keep this exact user objective while reusing the workflow.";
+    await form.getByRole("textbox", { name: "Description", exact: true }).fill(objective);
+    const summary = form.locator("summary").filter({ hasText: /^Workflow and preparation$/ });
+    await summary.focus();
+    await page.keyboard.press("Enter");
+    await choose(page, form.getByRole("button", { name: /^Workflow:/ }), "Source research");
+    await form.getByRole("button", { name: "Apply workflow", exact: true }).click();
+    const applied = JSON.parse(
+      await form.getByRole("textbox", { name: "Description", exact: true }).inputValue(),
+    );
+    expect(applied.objective).toBe(objective);
+    expect(applied.acceptance).toContain(
+      "Factual claims are checked against opened primary sources",
+    );
+    await form.getByRole("button", { name: "Agent settings", exact: true }).click();
+    const reviewer = form
+      .locator("details")
+      .filter({ has: page.locator("summary").filter({ hasText: /^Reviewer profile$/ }) });
+    await reviewer.locator("summary").click();
+    await reviewer
+      .getByRole("checkbox", { name: "Use a separate reviewer profile", exact: true })
+      .check();
+    const reviewerInstructions = "Check every source and preserve unresolved acceptance evidence.";
+    await reviewer
+      .getByRole("textbox", { name: "Reviewer instructions", exact: true })
+      .fill(reviewerInstructions);
+    await reviewer.getByRole("button", { name: /^Claude Code/ }).click();
+    await page
+      .getByRole("menu", { name: "Model and settings", exact: true })
+      .getByRole("menuitem", { name: /^(Effort|Reasoning)/ })
+      .click();
+    await page.getByRole("menuitemradio", { name: "High", exact: true }).click();
+    await form
+      .locator("summary")
+      .filter({ hasText: /^Required resources/ })
+      .click();
+    await form.getByRole("button", { name: "Add resource", exact: true }).click();
+    await form
+      .getByRole("textbox", { name: "Resource reference", exact: true })
+      .fill("sources/report.md");
+    await form.getByRole("button", { name: "Check preparation", exact: true }).click();
+    await expect(form).toContainText("Checked by the in-memory fixture");
+    expect(await mutations(page)).toHaveLength(0);
+    await form.getByRole("textbox", { name: "Workflow name", exact: true }).fill("My checked flow");
+    await form.getByRole("button", { name: "Save workflow", exact: true }).click();
+    await expect(form).toContainText("Workflow saved for this project.");
+    await form
+      .locator("summary")
+      .filter({ hasText: /^Total run budget$/ })
+      .click();
+    await form.getByRole("spinbutton", { name: "Agent minutes", exact: true }).fill("15.5");
+    await form.getByRole("spinbutton", { name: "Maximum agent runs", exact: true }).fill("12");
+    await form
+      .getByRole("spinbutton", { name: "Reported token limit", exact: true })
+      .fill("100000");
+    await mkdir(harnessCaptures, { recursive: true });
+    await form
+      .getByRole("spinbutton", { name: "Reported token limit", exact: true })
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: resolve(
+        harnessCaptures,
+        `workflow-budget-${testInfo.project.name}-${width}-${theme}.png`,
+      ),
+      animations: "disabled",
+    });
+    await form.getByRole("button", { name: "Add to To do", exact: true }).click();
+    await expect.poll(() => mutations(page)).toHaveLength(1);
+    const input = (await mutations(page))[0].args.params!.task!;
+    expect(input).toMatchObject({
+      budget: { maxAgentMinutes: 15.5, maxAttempts: 12, maxTokens: 100000 },
+      preflightRequirements: [{ kind: "source", id: "sources/report.md", required: true }],
+      review: true,
+      reviewerConfig: {
+        harness: "claude",
+        model: "claude:fixture",
+        modelSettings: { effort: "high" },
+        instructions: reviewerInstructions,
+      },
+    });
+    expect(JSON.parse(String(input.prompt)).objective).toBe(objective);
+    await page.reload();
+    await openCreate(page, "task");
+    const reopened = page.getByRole("form", { name: "New task", exact: true });
+    await reopened
+      .locator("summary")
+      .filter({ hasText: /^Workflow and preparation$/ })
+      .click();
+    await choose(page, reopened.getByRole("button", { name: /^Workflow:/ }), "My checked flow");
+    await reopened.getByRole("button", { name: "Apply workflow", exact: true }).click();
+    const restored = JSON.parse(
+      await reopened.getByRole("textbox", { name: "Description", exact: true }).inputValue(),
+    );
+    expect(restored.acceptance).toContain(
+      "Factual claims are checked against opened primary sources",
+    );
+    await reopened.getByRole("button", { name: "Agent settings", exact: true }).click();
+    const restoredReviewer = reopened
+      .locator("details")
+      .filter({ has: page.locator("summary").filter({ hasText: /^Reviewer profile$/ }) });
+    await restoredReviewer.locator("summary").click();
+    await expect(
+      restoredReviewer.getByRole("checkbox", {
+        name: "Use a separate reviewer profile",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await expect(
+      restoredReviewer.getByRole("textbox", { name: "Reviewer instructions", exact: true }),
+    ).toHaveValue(reviewerInstructions);
+    await expect(
+      restoredReviewer.getByRole("button", { name: /^Claude Code/ }),
+    ).toHaveAccessibleName(/effort High/);
+    expect(await mutations(page)).toHaveLength(0);
+  });
+
+  test(`harness quality comparison records explicit owner evaluation at ${width}px ${theme}`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 950 });
+    await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+    await page.goto(`${fixture}?boardControls&harness`);
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
+      theme,
+    );
+    await page.getByRole("article", { name: "Completed task", exact: true }).click();
+    const details = page.getByRole("complementary", { name: "Task details", exact: true });
+    const summary = details.locator("summary").filter({ hasText: /^Run quality and usage$/ });
+    await summary.focus();
+    await page.keyboard.press("Enter");
+    await details
+      .getByRole("checkbox", { name: "I accept this result for quality comparison", exact: true })
+      .check();
+    await details
+      .getByRole("spinbutton", { name: "My review time (minutes)", exact: true })
+      .fill("2.5");
+    await details.getByRole("spinbutton", { name: "Corrections I needed", exact: true }).fill("1");
+    await details.getByRole("button", { name: "Save evaluation", exact: true }).click();
+    await expect(
+      details.getByRole("status").filter({ hasText: /^Evaluation saved$/ }),
+    ).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as any).taskFixtureCalls.filter(
+              (call: any) => call.args.method === "tasks.evaluation.save",
+            ).length,
+        ),
+      )
+      .toBe(1);
+    const saved = await page.evaluate(() =>
+      (window as any).taskFixtureCalls.find(
+        (call: any) => call.args.method === "tasks.evaluation.save",
+      ),
+    );
+    expect(saved.args.params).toMatchObject({
+      taskId: "review",
+      expectedUpdatedAt: 3,
+      evaluation: { accepted: true, reviewMinutes: 2.5, corrections: 1 },
+    });
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+    await page.getByRole("menuitem", { name: "Compare accepted results", exact: true }).click();
+    const comparison = page.getByRole("dialog", { name: "Compare accepted results", exact: true });
+    await expect(comparison).toContainText("claude · claude:fixture");
+    await expect(comparison).toContainText("not a controlled model benchmark");
+    await expect(comparison).toContainText("2.5");
+    expect(await comparison.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    await mkdir(harnessCaptures, { recursive: true });
+    await page.screenshot({
+      path: resolve(harnessCaptures, `quality-${testInfo.project.name}-${width}-${theme}.png`),
+      animations: "disabled",
+    });
+  });
+}
+
+test("editing a saved custom reviewer can restore the worker profile", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 950 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(`${fixture}?boardControls&harness&customReviewer`);
+  const card = page.getByRole("article", { name: "First queued task", exact: true });
+  await taskMenuAction(page, card, "Edit");
+  const form = page.getByRole("form", { name: "Edit task", exact: true });
+  await form.getByRole("button", { name: "Agent settings", exact: true }).click();
+  const reviewer = form
+    .locator("details")
+    .filter({ has: page.locator("summary").filter({ hasText: /^Reviewer profile$/ }) });
+  await reviewer.locator("summary").click();
+  const separate = reviewer.getByRole("checkbox", {
+    name: "Use a separate reviewer profile",
+    exact: true,
+  });
+  await expect(separate).toBeChecked();
+  await expect(
+    reviewer.getByRole("textbox", { name: "Reviewer instructions", exact: true }),
+  ).toHaveValue("Stored custom reviewer instructions.");
+  await separate.uncheck();
+  await form.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(form).toHaveCount(0);
+  await expect.poll(() => mutations(page)).toHaveLength(1);
+  expect((await mutations(page))[0].args.params!.task).toMatchObject({
+    id: "first",
+    review: true,
+    reviewerConfig: null,
+  });
+  await taskMenuAction(page, card, "Edit");
+  await form.getByRole("button", { name: "Agent settings", exact: true }).click();
+  await reviewer.locator("summary").click();
+  await expect(separate).not.toBeChecked();
+  await expect(
+    reviewer.getByRole("textbox", { name: "Reviewer instructions", exact: true }),
+  ).toHaveCount(0);
+  const captures = resolve(
+    "temp/verification/2026-10-24-task-harness-local/browser/current-captures",
+  );
+  await mkdir(captures, { recursive: true });
+  await page.screenshot({
+    path: resolve(captures, `reviewer-reset-${testInfo.project.name}-390.png`),
+    animations: "disabled",
+  });
+});
+
+for (const state of ["finalPending", "finalFailure"] as const) {
+  for (const { width, theme } of [
+    { width: 390, theme: "light" },
+    { width: 1440, theme: "dark" },
+  ] as const) {
+    test(`final acceptance ${state} stays visible and supports owner recheck at ${width}px ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 950 });
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      await page.goto(`${fixture}?boardControls&${state}`);
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
+        theme,
+      );
+      await expect(
+        page.getByText(`Final goal acceptance: ${state === "finalFailure" ? "Failed" : "Queued"}`, {
+          exact: true,
+        }),
+      ).toBeVisible();
+      if (state === "finalFailure") {
+        await mkdir(harnessCaptures, { recursive: true });
+        await page.screenshot({
+          path: resolve(
+            harnessCaptures,
+            `goal-failed-${test.info().project.name}-${width}-${theme}.png`,
+          ),
+          animations: "disabled",
+        });
+        const recheck = page.getByRole("button", { name: "Recheck final acceptance", exact: true });
+        await recheck.focus();
+        await page.keyboard.press("Enter");
+        await expect(
+          page.getByText("Final goal acceptance: Queued", { exact: true }),
+        ).toBeVisible();
+        expect(
+          await page.evaluate(
+            () =>
+              (window as any).taskFixtureCalls.filter(
+                (call: any) => call.args.method === "goals.final-review.recheck",
+              ).length,
+          ),
+        ).toBe(1);
+      }
+      await mkdir(harnessCaptures, { recursive: true });
+      await page.screenshot({
+        path: resolve(
+          harnessCaptures,
+          `goal-pending-${state}-${test.info().project.name}-${width}-${theme}.png`,
+        ),
+        animations: "disabled",
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });
+  }
+}
+
+for (const width of [390, 1440]) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`acceptance evidence stays inspectable at ${width}px in ${theme} theme`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      await page.goto(`${fixture}?boardControls&acceptanceEvidence`);
+      await page.evaluate(
+        (selected) =>
+          document.documentElement.classList.toggle("theme-light", selected === "light"),
+        theme,
+      );
+      await page.getByRole("article", { name: "Completed task", exact: true }).click();
+      const details = page.getByRole("complementary", { name: "Task details", exact: true });
+      await expect(details).toBeVisible();
+      const summary = details.locator("summary").filter({ hasText: "Acceptance evidence" });
+      await expect(summary).toContainText("1/2 verified");
+      await expect(summary).toContainText("1 unresolved");
+      const evidence = summary.locator("..");
+      await expect(evidence).not.toHaveAttribute("open", "");
+      await summary.focus();
+      await page.keyboard.press("Enter");
+      await expect(evidence).toHaveAttribute("open", "");
+      await expect(summary).toBeFocused();
+      await expect(evidence.locator('[data-acceptance-verdict="verified"]')).toHaveCount(1);
+      await expect(evidence.locator('[data-acceptance-verdict="unresolved"]')).toHaveCount(1);
+      await expect(evidence).toContainText("Physical-device acceptance has not been performed.");
+      await expect(evidence).toContainText(
+        "Recorded reviewer evidence. Files may have changed since this review.",
+      );
+      await expect(evidence.locator("time")).toHaveAttribute(
+        "datetime",
+        "2026-10-24T09:30:00.000Z",
+      );
+      await expect(
+        evidence.getByRole("button", { name: "Open review session", exact: true }),
+      ).toBeVisible();
+      await expect(evidence).toContainText("javascript:window.acceptanceEvidenceExecuted=true");
+      await expect(evidence).toContainText('<img src="invalid"');
+      await expect(evidence.locator("a, script, img")).toHaveCount(0);
+      expect(
+        await page.evaluate(
+          () =>
+            (window as unknown as { acceptanceEvidenceExecuted?: boolean })
+              .acceptanceEvidenceExecuted,
+        ),
+      ).toBeUndefined();
+      expect(await evidence.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      expect(await details.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+      const bounds = await details.boundingBox();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      const captures = resolve("temp/verification/2026-10-24-task-evidence");
+      await mkdir(captures, { recursive: true });
+      await evidence.locator('[data-acceptance-verdict="unresolved"]').scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: resolve(
+          captures,
+          `acceptance-evidence-${testInfo.project.name}-${width}-${theme}.png`,
+        ),
+        animations: "disabled",
+      });
+      await summary.focus();
+      await page.keyboard.press("Space");
+      await expect(evidence).not.toHaveAttribute("open", "");
+      await expect(summary).toBeFocused();
+    });
+  }
+}
+
+test("bulk cleanup uses one confirmation, preserves code and retries only failed deletions", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 768, height: 900 });
   await page.goto(`${fixture}?boardControls&bulk&bulkFailure`);
   await page.getByRole("button", { name: "Select tasks", exact: true }).click();
@@ -25,15 +499,24 @@ test("bulk cleanup uses one confirmation, preserves code and retries only failed
   await confirm.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(actions).toContainText("99 succeeded, 2 skipped, 1 failed");
   await actions.getByRole("button", { name: "Retry failed tasks", exact: true }).click();
-  await page.getByRole("dialog", { name: "Delete selected tasks", exact: true }).getByRole("button", { name: "Delete", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Delete selected tasks", exact: true })
+    .getByRole("button", { name: "Delete", exact: true })
+    .click();
   await expect(actions).toContainText("1 succeeded, 0 skipped, 0 failed");
-  const calls = await page.evaluate(() => (window as unknown as { taskFixtureCalls: HostCall[] }).taskFixtureCalls.filter((call) => call.args.method === "tasks.delete"));
+  const calls = await page.evaluate(() =>
+    (window as unknown as { taskFixtureCalls: HostCall[] }).taskFixtureCalls.filter(
+      (call) => call.args.method === "tasks.delete",
+    ),
+  );
   expect(calls).toHaveLength(101);
   const ids = calls.map((call) => (call.args.params as { taskId?: string }).taskId);
   expect(ids.filter((id) => id === "bulk-42")).toHaveLength(2);
   expect(ids).not.toContain("protected");
   expect(ids).not.toContain("active");
-  await expect(page.getByRole("button", { name: "Protected unmerged work", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Protected unmerged work", exact: true }),
+  ).toBeVisible();
 });
 
 test("search-scoped selection never includes hidden tasks", async ({ page }) => {
@@ -165,7 +648,7 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await page.emulateMedia({ reducedMotion: "reduce" });
     const form = await start(page, "goal");
-    await form.getByRole("button", { name: /Demo agent/ }).click();
+    await form.getByRole("button", { name: /^Claude Code/ }).click();
     const settings = page.getByRole("menu", { name: "Model and settings", exact: true });
     await expect(settings).toBeVisible();
     // A normal click checks hit testing: a menu behind the modal cannot receive it.
@@ -193,6 +676,7 @@ test("goal dialog keeps workspace, manual start and concurrency choices together
     "Manually from To do",
   );
   await choose(page, form.getByRole("button", { name: /^Concurrent tasks in this goal:/ }), "3");
+  await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
   await form
     .getByRole("textbox", { name: "New integration branch", exact: true })
     .fill("goal/settings");
@@ -244,10 +728,11 @@ test("board cards support reorder, explicit start and reviewed delivery choices"
       .locator('[data-task-column="running"]')
       .getByRole("article", { name: "First queued task", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("article", { name: "Completed task", exact: true })
-    .getByRole("button", { name: "Choose delivery target", exact: true })
-    .click();
+  await taskMenuAction(
+    page,
+    page.getByRole("article", { name: "Completed task", exact: true }),
+    "Choose delivery target",
+  );
   const dialog = page.getByRole("dialog", { name: "Choose delivery target", exact: true });
   await dialog
     .getByRole("textbox", { name: "New integration branch", exact: true })
@@ -302,6 +787,10 @@ const project = (form: Locator) => form.getByRole("button", { name: /^Project:/ 
 async function choose(page: Page, trigger: Locator, name: string) {
   await trigger.click();
   await page.getByRole("option", { name, exact: true }).click();
+}
+async function taskMenuAction(page: Page, card: Locator, name: string) {
+  await card.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name, exact: true }).click();
 }
 async function mutations(page: Page) {
   return page.evaluate(() =>
@@ -482,7 +971,8 @@ test("task and goal controls stay inside a narrow viewport", async ({ page }, te
     await page.setViewportSize({ width, height: 900 });
     for (const kind of ["task", "goal"] as const) {
       await page.goto(fixture);
-      await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Tasks", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
       await expect(page.getByText("No task board", { exact: true })).toHaveCount(0);
       for (const label of ["More actions", "New task"]) {
         const control = page.getByRole("button", { name: label, exact: true });
@@ -637,7 +1127,13 @@ for (const method of ["environment.describe", "goals.list"]) {
       exact: true,
     });
     await expect(localCard).toBeVisible();
-    await localCard.getByRole("button", { name: "Delete", exact: true }).click();
+    await taskMenuAction(page, localCard, "Delete");
+    const confirmation = page
+      .getByRole("dialog")
+      .filter({ has: page.getByRole("heading", { name: "Delete task", exact: true }) });
+    await expect(confirmation).toContainText("Run on the selected computer");
+    await expect(localCard).toHaveCount(1);
+    await confirmation.getByRole("button", { name: "Delete", exact: true }).click();
     await expect(localCard).toHaveCount(0);
     await page.getByRole("button", { name: "New task", exact: true }).click();
     await expect(form.getByRole("button", { name: "Add to To do", exact: true })).toBeDisabled();
@@ -687,9 +1183,9 @@ test("task worker, running reviewer and retained attempts navigate to their own 
       exact: true,
     });
     await expect(taskCard).toBeVisible();
-    await taskCard.getByRole("button", { name: "Open worker session", exact: true }).click();
+    await taskMenuAction(page, taskCard, "Open worker session");
     await page.getByRole("button", { name: "Open in Sessions", exact: true }).click();
-    await taskCard.getByRole("button", { name: "Open review session", exact: true }).click();
+    await taskMenuAction(page, taskCard, "Open review session");
     await page.getByRole("button", { name: "Open in Sessions", exact: true }).click();
     await expect(
       page.getByRole("complementary", { name: "Task details", exact: true }),
@@ -749,7 +1245,7 @@ test("task worker, running reviewer and retained attempts navigate to their own 
 
 for (const width of [390, 768, 1440]) {
   for (const theme of ["light", "dark"]) {
-    test(`redesigned task board previews and direct actions at ${width}px ${theme}`, async ({
+    test(`redesigned task board previews and secondary actions at ${width}px ${theme}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
@@ -761,15 +1257,16 @@ for (const width of [390, 768, 1440]) {
       );
       const complete = page.getByRole("article", { name: "Completed task", exact: true });
       await complete.scrollIntoViewIfNeeded();
-      await expect(complete.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
-      await expect(complete.getByRole("button", { name: "More actions", exact: true })).toHaveCount(
-        0,
-      );
+      const actions = complete.getByRole("button", { name: "More actions", exact: true });
+      await actions.click();
+      await expect(page.getByRole("menuitem", { name: "Delete", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(actions).toBeFocused();
       await complete.getByRole("button", { name: "Delivery is blocked", exact: true }).click();
       const error = page.getByRole("dialog", { name: "Task details", exact: true });
       await expect(error).toContainText("The project has uncommitted changes.");
       await page.keyboard.press("Escape");
-      await complete.getByRole("button", { name: "Open worker session", exact: true }).click();
+      await taskMenuAction(page, complete, "Open worker session");
       const sheet = page.getByRole("dialog", { name: "Preview completed-worker", exact: true });
       await expect(sheet).toContainText("Task transcript preview on its original host.");
       await expect(
@@ -783,9 +1280,7 @@ for (const width of [390, 768, 1440]) {
         path: resolve("temp/verification/2026-10-18-tasks-redesign", `sheet-${width}-${theme}.png`),
       });
       await page.keyboard.press("Escape");
-      await expect(
-        complete.getByRole("button", { name: "Open worker session", exact: true }),
-      ).toBeFocused();
+      await expect(actions).toBeFocused();
       await page.screenshot({
         animations: "disabled",
         path: resolve("temp/verification/2026-10-18-tasks-redesign", `board-${width}-${theme}.png`),

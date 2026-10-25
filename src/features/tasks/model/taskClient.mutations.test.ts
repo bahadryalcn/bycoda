@@ -3,8 +3,21 @@ import { remoteRequest } from "../../connections/model/connections";
 import { machineCapabilities, machineProjects } from "../../automations/model/machineSnapshot";
 import { invoke } from "@tauri-apps/api/core";
 import type { RemoteMachine } from "../../connections/model/protocol";
-import { HOST_TASKS_TODO, HOST_TASK_CONTINUATION } from "./hostTasks";
-import { moveTask, newTaskDraft, saveTask, type BoardTask } from "./taskClient";
+import {
+  HOST_TASKS_TODO,
+  HOST_TASK_CONTINUATION,
+  HOST_TASK_REVIEWER_PROFILE,
+  parseHostTask,
+} from "./hostTasks";
+import {
+  moveTask,
+  newTaskDraft,
+  saveTask,
+  preflightTaskDraft,
+  recordTaskEvaluation,
+  TASK_MACHINE_ERROR,
+  type BoardTask,
+} from "./taskClient";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../connections/model/connections", () => ({ remoteRequest: vi.fn() }));
@@ -67,6 +80,144 @@ it("saves a local to-do item while an unrelated remote host cannot answer", asyn
   expect(
     vi.mocked(machineCapabilities).mock.calls.every(([machine]) => machine.id === local.id),
   ).toBe(true);
+});
+
+it.each([
+  { option: { budget: { maxAgentMinutes: 5 } }, message: "total run budget" },
+  {
+    option: {
+      preflightRequirements: [{ kind: "source" as const, id: "sources/input.md", required: true }],
+    },
+    message: "preparation requirements",
+  },
+])(
+  "rejects unsupported harness options before registering a project: $message",
+  async ({ option, message }) => {
+    vi.mocked(machineCapabilities).mockResolvedValue([HOST_TASK_CONTINUATION]);
+    const draft = {
+      ...newTaskDraft("G:/app", "codex", "codex:test"),
+      title: "Checked work",
+      ...option,
+    };
+    await expect(saveTask([local], draft)).rejects.toThrow(message);
+    expect(remoteRequest).not.toHaveBeenCalled();
+    expect(machineProjects).not.toHaveBeenCalled();
+  },
+);
+
+it("serializes a cleared budget explicitly and preserves reviewer configuration", async () => {
+  vi.mocked(machineCapabilities).mockResolvedValue([
+    HOST_TASK_CONTINUATION,
+    "tasks.run-budget",
+    "tasks.preflight",
+  ]);
+  vi.mocked(remoteRequest).mockImplementation(async (_id, _method, params) => ({
+    ...(params as { task: object }).task,
+    status: "todo",
+    createdAt: 1,
+    updatedAt: 3,
+  }));
+  const reviewerConfig = {
+    harness: "codex" as const,
+    model: "review",
+    modelSettings: { effort: "high" },
+    instructions: "Check each criterion",
+  };
+  const draft = {
+    ...newTaskDraft("G:/app", "codex", "codex:test"),
+    id: "existing",
+    title: "Checked work",
+    budget: undefined,
+    reviewerConfig,
+  };
+  await saveTask([local], draft);
+  expect(remoteRequest).toHaveBeenCalledWith(
+    local.id,
+    "tasks.save",
+    { task: expect.objectContaining({ budget: {}, reviewerConfig }) },
+    false,
+    true,
+  );
+});
+
+it("rejects a reviewer clear on an older host before project registration or any write", async () => {
+  vi.mocked(machineCapabilities).mockResolvedValue([HOST_TASK_CONTINUATION]);
+  const draft = {
+    ...newTaskDraft("G:/app", "codex", "codex:test"),
+    id: "existing",
+    title: "Checked work",
+    reviewerConfig: undefined,
+  };
+  await expect(saveTask([local], draft)).rejects.toThrow(TASK_MACHINE_ERROR);
+  expect(remoteRequest).not.toHaveBeenCalled();
+  expect(machineProjects).not.toHaveBeenCalled();
+});
+
+it("sends an explicit reviewer clear only to a host that advertises support", async () => {
+  vi.mocked(machineCapabilities).mockResolvedValue([
+    HOST_TASK_CONTINUATION,
+    HOST_TASK_REVIEWER_PROFILE,
+  ]);
+  vi.mocked(remoteRequest).mockImplementation(async (_id, _method, params) => ({
+    ...parseHostTask((params as { task: object }).task),
+    status: "todo",
+    createdAt: 1,
+    updatedAt: 3,
+  }));
+  const draft = {
+    ...newTaskDraft("G:/app", "codex", "codex:test"),
+    id: "existing",
+    title: "Checked work",
+    reviewerConfig: undefined,
+  };
+  const saved = await saveTask([local], draft);
+  expect(remoteRequest).toHaveBeenCalledWith(
+    local.id,
+    "tasks.save",
+    { task: expect.objectContaining({ reviewerConfig: null }) },
+    false,
+    true,
+  );
+  expect(saved.reviewerConfig).toBeUndefined();
+});
+
+it("checks preparation read-only and records owner evaluation against the current revision", async () => {
+  vi.mocked(machineCapabilities).mockResolvedValue([HOST_TASK_CONTINUATION, "tasks.preflight"]);
+  vi.mocked(remoteRequest).mockResolvedValue({ ready: true, checkedAt: 1, items: [] });
+  const draft = { ...newTaskDraft("G:/app", "codex", "codex:test"), title: "Check preparation" };
+  await expect(preflightTaskDraft([local], draft)).resolves.toMatchObject({ ready: true });
+  expect(remoteRequest).toHaveBeenCalledWith(
+    local.id,
+    "tasks.preflight",
+    expect.objectContaining({ task: expect.any(Object) }),
+  );
+  expect(vi.mocked(remoteRequest).mock.calls.some(([, method]) => method === "tasks.save")).toBe(
+    false,
+  );
+  const task: BoardTask = {
+    ...draft,
+    id: "checked",
+    projectId: "p",
+    status: "done",
+    createdAt: 1,
+    updatedAt: 2,
+    machineId: local.id,
+    machineName: "this computer",
+  };
+  const evaluation = { accepted: true, reviewMinutes: 2, corrections: 1 };
+  vi.mocked(remoteRequest).mockResolvedValue({
+    ...task,
+    evaluation: { ...evaluation, recordedAt: 3 },
+    updatedAt: 3,
+  });
+  await recordTaskEvaluation(task, evaluation);
+  expect(remoteRequest).toHaveBeenLastCalledWith(
+    local.id,
+    "tasks.evaluation.save",
+    { taskId: task.id, expectedUpdatedAt: 2, evaluation },
+    false,
+    true,
+  );
 });
 
 it("refuses to queue a to-do item on an older selected host", async () => {

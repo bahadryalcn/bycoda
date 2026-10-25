@@ -95,7 +95,7 @@ setComposerAttachments(sessionId, [
   },
 ]);
 const events = { sends: 0, stops: 0, approvals: 0, queueAttempts: 0 };
-type Mode = "idle" | "working" | "approval" | "unknown";
+type Mode = "idle" | "working" | "approval" | "unknown" | "tools" | "long";
 type FixtureControl = { mode: (mode: Mode) => void; remount: () => void; events: typeof events };
 declare global {
   interface Window {
@@ -130,7 +130,46 @@ function Fixture() {
                     approval: { requestId: 7 },
                   },
                 ]
-              : baseBlocks,
+              : mode === "tools"
+                ? [
+                    ...baseBlocks,
+                    {
+                      id: "failed-command",
+                      role: "tool",
+                      text: "pnpm test",
+                      tool: {
+                        kind: "shell",
+                        status: "failed",
+                        detail:
+                          "Test runner exited before completion. Retry after fixing the configuration.",
+                        output: Array.from(
+                          { length: 80 },
+                          (_, index) =>
+                            `Saved output line ${index + 1}: workspace-validation-result-${"path/".repeat(20)}`,
+                        ).join("\n"),
+                        preview: { kind: "shell", title: "pnpm test --workspace" },
+                      },
+                    },
+                  ]
+                : mode === "long"
+                  ? [
+                      ...baseBlocks,
+                      {
+                        id: "long-answer",
+                        role: "assistant",
+                        text:
+                          "## Review results\n\n" +
+                          "This saved response keeps the explanation readable while retaining the complete report. ".repeat(
+                            14,
+                          ) +
+                          "\n\n| File | Result |\n| --- | --- |\n| " +
+                          "very-long-project-directory/".repeat(12) +
+                          "report.json | Ready for review |\n\n```text\n" +
+                          "saved-output/".repeat(60) +
+                          "\n```",
+                      },
+                    ]
+                  : baseBlocks,
           queuedMessages:
             mode === "unknown"
               ? [

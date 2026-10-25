@@ -1303,7 +1303,7 @@ it("keeps a sent message visible until the host sync confirms it", async () => {
   expect(secondMessages()).toHaveLength(1);
 });
 
-it("does not flash a status banner while an ordinary message is in flight", async () => {
+it("shows confirmation progress while an ordinary message is in flight", async () => {
   await render();
   await send("First");
   let releaseDispatch = () => {};
@@ -1314,7 +1314,7 @@ it("does not flash a status banner while an ordinary message is in flight", asyn
   await type("Second");
   await act(async () => byLabel("Send")!.click());
   expect(container.textContent).toContain("Second");
-  expect(container.textContent).not.toContain("Waiting for the host to confirm");
+  expect(container.textContent).toContain("Waiting for the host to confirm");
 
   await act(async () => {
     releaseDispatch();
@@ -2445,8 +2445,9 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
     "Your messages were kept",
   );
   expect(container.textContent).toContain("local edit");
-  expect(byLabel("Stop")).toBeNull();
+  expect(byLabel("Stop")).not.toBeNull();
   await render({ ...session, continuingElsewhere: undefined });
+  expect(byLabel("Stop")).toBeNull();
   expect(container.textContent).not.toContain("running in the background");
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Your messages were kept",
@@ -2782,6 +2783,87 @@ slow(
     expect(queueWrites).toEqual([]);
   },
 );
+
+it.each([undefined, "host" as const])(
+  "steers a host-owned remote turn with desktop sync provenance (owner=%s)",
+  async (executionOwner) => {
+    steerSupported = true;
+    openRunningChat();
+    host = { ...host!, desktop: { updatedAt: 0 }, executionOwner };
+    await renderRemoteProbe();
+    expect(remoteOverrides.remoteFeatures.steer).toBe(true);
+    await act(async () => {
+      expect(remoteOverrides.onSubmit!("shell", "Redirect the host turn", [])).toBe(true);
+    });
+    await settle();
+    expect(commands.filter((command) => command.type === "steer")).toHaveLength(1);
+    expect(remoteOverrides.session?.queuedMessages ?? []).toHaveLength(0);
+  },
+);
+
+it.each([undefined, "desktop" as const])(
+  "explains that a desktop-owned turn queues remote follow-ups (owner=%s)",
+  async (executionOwner) => {
+    steerSupported = true;
+    openRunningChat();
+    host = { ...host!, desktop: { updatedAt: 1 }, runId: "desktop", executionOwner };
+    await renderRemoteProbe();
+    expect(remoteOverrides.remoteFeatures.steer).toBe(false);
+    expect(container.textContent).toContain("New messages are queued until it finishes");
+    await act(async () => {
+      expect(remoteOverrides.onSubmit!("shell", "After the desktop turn", [])).toBe(true);
+    });
+    await settle();
+    expect(commands.filter((command) => command.type === "steer")).toHaveLength(0);
+    expect(remoteOverrides.session?.queuedMessages?.map((row) => row.text)).toEqual([
+      "After the desktop turn",
+    ]);
+  },
+);
+
+it("shows follow-up attachment preparation and refuses repeated Send while keeping explicit Queue", async () => {
+  steerSupported = true;
+  openRunningChat();
+  await renderRemoteProbe();
+  let release!: () => void;
+  attachmentReadDelay = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await act(async () => {
+    expect(
+      remoteOverrides.onSubmit!("shell", "Follow-up with file", [
+        {
+          id: "preparing-file",
+          name: "note.txt",
+          kind: "file",
+          mimeType: "text/plain",
+          size: 1,
+          path: "C:/fictional/note.txt",
+        },
+      ]),
+    ).toBe(true);
+  });
+  expect(container.textContent).toContain("Preparing the message and attachments");
+  await act(async () => {
+    expect(remoteOverrides.onSubmit!("shell", "Follow-up with file", [])).toBe(false);
+    expect(
+      remoteOverrides.onSubmit!("shell", "Explicitly queued", [], {
+        followUpBehavior: "queue",
+      }),
+    ).toBe(true);
+  });
+  expect(commands.filter((command) => command.type === "steer")).toHaveLength(0);
+  await act(async () => {
+    attachmentReadDelay = undefined;
+    release();
+  });
+  await settle();
+  expect(container.textContent).not.toContain("Preparing the message and attachments");
+  expect(commands.filter((command) => command.type === "steer")).toHaveLength(1);
+  expect(remoteOverrides.session?.queuedMessages?.map((row) => row.text)).toEqual([
+    "Explicitly queued",
+  ]);
+});
 
 slow("steers an implicit remote follow-up despite the retired queue preference", async () => {
   localStorage.setItem("bycoda.followUpBehavior", "queue");

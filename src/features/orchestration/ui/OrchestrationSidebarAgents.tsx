@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { findModel } from "../../sessions/model/models";
@@ -27,7 +28,8 @@ export function OrchestrationSidebarAgents({
     orchestrator.snapshot,
   );
   const [error, setError] = useState<string>();
-  const [pending, setPending] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const pending = pendingAction !== null;
   const inFlight = useRef(false);
   // Rows expand independently, so several agents can be watched side by side.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
@@ -53,10 +55,10 @@ export function OrchestrationSidebarAgents({
   );
   const resumeBlocker = run?.status === "paused" ? orchestrator.resumeBlocker(leadId) : undefined;
   const leadBusy = run?.status === "paused" && orchestrator.resumeLeadBusy(leadId);
-  const perform = async (operation: () => Promise<void>) => {
+  const perform = async (key: string, operation: () => Promise<void>) => {
     if (inFlight.current) return;
     inFlight.current = true;
-    setPending(true);
+    setPendingAction(key);
     setError(undefined);
     try {
       await operation();
@@ -64,7 +66,7 @@ export function OrchestrationSidebarAgents({
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       inFlight.current = false;
-      setPending(false);
+      setPendingAction(null);
     }
   };
   const done = summary.tasks.filter((task) => task.status === "completed").length;
@@ -199,7 +201,12 @@ export function OrchestrationSidebarAgents({
                         type="button"
 
                         disabled={pending}
-                        onClick={() => void perform(() => orchestrator.cancelTask(leadId, live.id))}
+                        loading={pendingAction === `cancel:${live.id}`}
+                        onClick={() =>
+                          void perform(`cancel:${live.id}`, () =>
+                            orchestrator.cancelTask(leadId, live.id),
+                          )
+                        }
                       >
                         {t("Cancel task")}
                       </Button>
@@ -220,15 +227,19 @@ export function OrchestrationSidebarAgents({
           agents together. Resume has no other home, so it stays. */}
       {run?.status === "paused" && (
         <div className="mt-1.5 space-y-1.5 border-t border-(--ui-tone-neutral-border) pt-1.5">
-          <p className="px-0.5 text-ui-micro leading-relaxed text-(--ui-text-secondary)">
-            {stopping
-              ? t("Stopping interrupted work before this run can resume.")
-              : leadBusy
-                ? t("Waiting for the lead's interrupted turn to finish before this run can resume.")
-                : t(
-                    "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
-                  )}
-          </p>
+          {stopping || leadBusy ? (
+            <p className="px-0.5 text-ui-micro leading-relaxed text-(--ui-text-secondary)">
+              {stopping
+                ? t("Stopping interrupted work before this run can resume.")
+                : leadBusy
+                  ? t(
+                      "Waiting for the lead's interrupted turn to finish before this run can resume.",
+                    )
+                  : t(
+                      "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
+                    )}
+            </p>
+          ) : null}
           {resumeBlocker && (
             <p className="px-0.5 text-ui-micro leading-relaxed text-(--ui-tone-warning-fg)">
               {resumeBlocker.title || t("Another conversation")}
@@ -236,6 +247,13 @@ export function OrchestrationSidebarAgents({
             </p>
           )}
           <div className="-mr-1.5 flex items-center justify-end gap-1">
+            {!stopping && !leadBusy ? (
+              <InfoPopover>
+                {t(
+                  "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
+                )}
+              </InfoPopover>
+            ) : null}
             {resumeBlocker && actions && (
               <Button
                 variant="ghost"
@@ -252,6 +270,7 @@ export function OrchestrationSidebarAgents({
               type="button"
 
               disabled={pending || stopping || leadBusy || !!resumeBlocker}
+              loading={pendingAction === "resume"}
               title={
                 stopping
                   ? t("Wait for interrupted agents to stop")
@@ -264,7 +283,9 @@ export function OrchestrationSidebarAgents({
                       : t("Continue interrupted and queued work")
               }
               onClick={() =>
-                void perform(() => orchestrator.start(leadId, run.allowedHarnesses, run.maxWorkers))
+                void perform("resume", () =>
+                  orchestrator.start(leadId, run.allowedHarnesses, run.maxWorkers),
+                )
               }
             >
               {t("Resume")}

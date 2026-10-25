@@ -2,11 +2,14 @@ import type { SessionSync } from "../src/features/connections/model/protocol";
 import type { RemoteChangesInput, RemoteChangesValue } from "./remoteChanges";
 
 /** Opportunistic deltas only. Oversized, missing and snapshot reads stay on the content lane. */
-export function inlineSessionSync(
+export async function inlineSessionSync(
   input: RemoteChangesInput,
   changes: RemoteChangesValue,
-  read: (id: string, revision: number) => SessionSync | undefined,
-): RemoteChangesValue {
+  read: (
+    id: string,
+    revision: number,
+  ) => SessionSync | undefined | Promise<SessionSync | undefined>,
+): Promise<RemoteChangesValue> {
   if (!input.inlineSync || changes.reset) return changes;
   const selected =
     input.inlineSessionIds === undefined ? undefined : new Set(input.inlineSessionIds);
@@ -16,7 +19,7 @@ export function inlineSessionSync(
     const cursor = input.sessions.find((value) => value.sessionId === entry.sessionId);
     if (!cursor || cursor.revision <= 0) continue;
     try {
-      const sync = read(entry.sessionId, cursor.revision);
+      const sync = await read(entry.sessionId, cursor.revision);
       if (
         !sync ||
         sync.kind !== "delta" ||

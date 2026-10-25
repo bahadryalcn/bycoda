@@ -10,28 +10,50 @@ import { HostStore } from "./store";
 import { HostTasks } from "./tasks";
 import { HostStewards, PREVIOUS_RUN_SKIP, openLimitSkip } from "./stewards";
 import { DAILY_LIMIT_SKIP } from "../src/features/tasks/model/hostSettings";
-
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-
-const MINUTE = 60_000;
+const MINUTE = 60000;
 const HOUR = 60 * MINUTE;
-
+it("drains a held steward launch on close without dispatching its prepared session", async () => {
+  const f = await setup();
+  await f.stewards.save(f.input());
+  const entered = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  const original = f.engine.updateSession.bind(f.engine);
+  vi.spyOn(f.engine, "updateSession").mockImplementation(async (...args) => {
+    const updated = await original(...args);
+    entered.resolve();
+    await released.promise;
+    return updated;
+  });
+  const running = f.stewards.runNow("steward");
+  await entered.promise;
+  let closed = false;
+  const closing = f.stewards.close().then(() => {
+    closed = true;
+  });
+  await Promise.resolve();
+  expect(closed).toBe(false);
+  released.resolve();
+  await Promise.all([running, closing]);
+  expect((await f.steward()).run).toBeUndefined();
+  expect(f.turns).toHaveLength(0);
+  expect(f.worktrees()).toBe(1);
+  await expect(f.stewards.runNow("steward")).rejects.toThrow("closing");
+});
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8", stdio: "pipe" }).trim();
-
 const reply = (proposals: unknown) =>
   `Here is what I found.\n\n\`\`\`json\n${JSON.stringify({ proposals })}\n\`\`\``;
-
-function setup() {
+async function setup() {
   const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-stewards-test-")));
   const store = new HostStore(join(directory, "host.db"));
-  const repo = (() => {
+  const repo = await (async () => {
     const cwd = join(directory, "repo");
     mkdirSync(cwd);
-    const added = store.addProject(cwd, "repo");
+    const added = await store.addProject(cwd, "repo");
     git(cwd, "init", "-q");
     git(cwd, "checkout", "-q", "-b", "main");
     git(cwd, "config", "user.name", "Test");
@@ -41,10 +63,10 @@ function setup() {
     git(cwd, "commit", "-q", "-m", "initial");
     return added;
   })();
-  const plain = (() => {
+  const plain = await (async () => {
     const cwd = join(directory, "plain");
     mkdirSync(cwd);
-    return store.addProject(cwd, "plain");
+    return await store.addProject(cwd, "plain");
   })();
   const turns: Array<{
     input: SendTurnInput;
@@ -78,7 +100,7 @@ function setup() {
     await tasks.idle();
     await stewards.idle();
     await engine.close();
-    store.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true, maxRetries: 5 });
   });
   const input = (overrides: Record<string, unknown> = {}) => ({
@@ -96,7 +118,8 @@ function setup() {
     focus: "follow docs/ROADMAP.md",
     ...overrides,
   });
-  const steward = (id = "steward") => stewards.list().find((entry) => entry.id === id)!;
+  const steward = async (id = "steward") =>
+    (await stewards.list()).find((entry) => entry.id === id)!;
   const taskInput = (overrides: Record<string, unknown> = {}) => ({
     id: "existing",
     title: "Existing work",
@@ -113,10 +136,10 @@ function setup() {
   /** Moves the clock past the steward's time and starts its run. */
   const startDue = async () => {
     // A minute past its next scheduled time.
-    clock.now = Math.max(clock.now, steward().nextRunAt) + MINUTE;
+    clock.now = Math.max(clock.now, (await steward()).nextRunAt) + MINUTE;
     const started = turns.length + 1;
     await stewards.tick();
-    await vi.waitFor(() => expect(turns).toHaveLength(started), { timeout: 10_000 });
+    await vi.waitFor(() => expect(turns).toHaveLength(started), { timeout: 10000 });
     return turns.at(-1)!;
   };
   /** Ends the latest turn with `text` and lets the next tick settle it. */
@@ -125,9 +148,12 @@ function setup() {
     turn.input.onEvent({ type: "message.delta", text });
     turn.input.onEvent({ type: "message.completed" });
     turn.finish();
-    await vi.waitFor(() => expect(store.session(turn.input.sessionId).status).toBe("idle"), {
-      timeout: 10_000,
-    });
+    await vi.waitFor(
+      async () => expect((await store.session(turn.input.sessionId)).status).toBe("idle"),
+      {
+        timeout: 10000,
+      },
+    );
     clock.now += MINUTE;
     await stewards.tick();
     await stewards.idle();
@@ -153,66 +179,89 @@ function setup() {
     worktrees,
   };
 }
-
 describe("host stewards", () => {
-  it("rejects stale configuration edits and toggles while preserving newer steward focus", () => {
-    const { stewards, input } = setup();
-    const opening = stewards.save(input({ enabled: false }));
-    const newer = stewards.save({
+  it("accepts only one concurrent edit of the same configuration", async () => {
+    const f = await setup();
+    const opening = await f.stewards.save(f.input({ enabled: false }));
+    const results = await Promise.allSettled([
+      f.stewards.save({ ...opening, focus: "First", expectedConfiguration: opening }),
+      f.stewards.save({ ...opening, focus: "Second", expectedConfiguration: opening }),
+    ]);
+    expect(results.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((item) => item.status === "rejected")).toHaveLength(1);
+  });
+  it("reserves a steward before awaited run and budget reads", async () => {
+    const f = await setup();
+    await f.stewards.save(f.input());
+    const [first, second] = await Promise.all([
+      f.stewards.runNow("steward"),
+      f.stewards.runNow("steward"),
+    ]);
+    expect(first.run ?? second.run).toBeDefined();
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 10000 });
+    expect(f.worktrees()).toBe(2);
+  });
+  it("rejects stale configuration edits and toggles while preserving newer steward focus", async () => {
+    const { stewards, input } = await setup();
+    const opening = await stewards.save(input({ enabled: false }));
+    const newer = await stewards.save({
       ...opening,
       focus: "Newer focus",
       expectedConfiguration: opening,
     });
-    expect(() =>
-      stewards.save({ ...opening, model: "claude:other", expectedConfiguration: opening }),
-    ).toThrow("Configuration changed in another client");
-    expect(() =>
-      stewards.save({ ...opening, enabled: true, expectedConfiguration: opening }),
-    ).toThrow("Configuration changed in another client");
-    expect(stewards.list()[0]).toEqual(newer);
+    await expect(
+      (async () =>
+        await stewards.save({
+          ...opening,
+          model: "claude:other",
+          expectedConfiguration: opening,
+        }))(),
+    ).rejects.toThrow("Configuration changed in another client");
+    await expect(
+      (async () =>
+        await stewards.save({ ...opening, enabled: true, expectedConfiguration: opening }))(),
+    ).rejects.toThrow("Configuration changed in another client");
+    expect((await stewards.list())[0]).toEqual(newer);
     expect(
-      stewards.save({ ...newer, model: "claude:other", expectedConfiguration: newer }),
+      await stewards.save({ ...newer, model: "claude:other", expectedConfiguration: newer }),
     ).toMatchObject({ focus: "Newer focus", model: "claude:other", enabled: false });
   });
   it("keeps an active run attached to the project that owns its checkout", async () => {
-    const { stewards, repo, plain, input, startDue, steward } = setup();
-    stewards.save(input());
+    const { stewards, repo, plain, input, startDue, steward } = await setup();
+    await stewards.save(input());
     await startDue();
-    expect(() => stewards.save(input({ projectId: plain.id }))).toThrow(
-      "Wait for the steward run to finish before changing its project.",
-    );
-    expect(steward().projectId).toBe(repo.id);
-    expect(steward().run?.worktreeCwd).toBeTruthy();
+    await expect(
+      (async () => await stewards.save(input({ projectId: plain.id })))(),
+    ).rejects.toThrow("Wait for the steward run to finish before changing its project.");
+    expect((await steward()).projectId).toBe(repo.id);
+    expect((await steward()).run?.worktreeCwd).toBeTruthy();
   });
   it("runs a due steward in a throwaway worktree and proposes to-do tasks", async () => {
     const { stewards, tasks, repo, input, startDue, finish, steward, worktrees, turns, store } =
-      setup();
-    stewards.save(input());
-    expect(steward().nextRunAt).toBe(new Date("2026-10-05T09:00:00").getTime());
-
+      await setup();
+    await stewards.save(input());
+    expect((await steward()).nextRunAt).toBe(new Date("2026-10-05T09:00:00").getTime());
     const turn = await startDue();
     expect(turn.input.cwd).not.toBe(repo.cwd);
     expect(existsSync(turn.input.cwd)).toBe(true);
     expect(worktrees()).toBe(2);
-    expect(steward()).toMatchObject({ lastRunStatus: "running" });
-    expect(store.session(turn.input.sessionId).session.title).toBe("Steward: repo");
-
+    expect(await steward()).toMatchObject({ lastRunStatus: "running" });
+    expect((await store.session(turn.input.sessionId)).session.title).toBe("Steward: repo");
     await finish(
       reply([
         { title: "Add retry tests", description: "In src/retry.ts cover backoff." },
         { title: "Fix flaky login", description: "Seen in auth.test.ts." },
       ]),
     );
-
-    expect(steward()).toMatchObject({
+    expect(await steward()).toMatchObject({
       lastRunStatus: "succeeded",
       lastProposed: 2,
       lastSessionId: turn.input.sessionId,
     });
-    expect(steward().run).toBeUndefined();
+    expect((await steward()).run).toBeUndefined();
     // The next scheduled run moved on to tomorrow.
-    expect(steward().nextRunAt).toBeGreaterThan(steward().lastRunAt!);
-    const created = tasks.list();
+    expect((await steward()).nextRunAt).toBeGreaterThan((await steward()).lastRunAt!);
+    const created = await tasks.list();
     expect(created.map((task) => task.title)).toEqual(["Add retry tests", "Fix flaky login"]);
     expect(created[0]).toMatchObject({
       status: "todo",
@@ -229,18 +278,18 @@ describe("host stewards", () => {
     expect(git(repo.cwd, "branch", "--list", "mc/*")).toBe("");
     expect(turns).toHaveLength(1);
   });
-
   it("queues proposals when the steward starts them automatically", async () => {
-    const { stewards, tasks, input, startDue, finish } = setup();
-    stewards.save(input({ autoStart: true }));
+    const { stewards, tasks, input, startDue, finish } = await setup();
+    await stewards.save(input({ autoStart: true }));
     await startDue();
     await finish(reply([{ title: "Do it", description: "Specific work." }]));
-    expect(tasks.list()).toMatchObject([{ title: "Do it", status: "queued", source: "steward" }]);
+    expect(await tasks.list()).toMatchObject([
+      { title: "Do it", status: "queued", source: "steward" },
+    ]);
   });
-
   it("keeps at most maxProposals", async () => {
-    const { stewards, tasks, input, startDue, finish } = setup();
-    stewards.save(input({ maxProposals: 2 }));
+    const { stewards, tasks, input, startDue, finish } = await setup();
+    await stewards.save(input({ maxProposals: 2 }));
     await startDue();
     await finish(
       reply([
@@ -249,46 +298,45 @@ describe("host stewards", () => {
         { title: "Three", description: "c" },
       ]),
     );
-    expect(tasks.list().map((task) => task.title)).toEqual(["One", "Two"]);
+    expect((await tasks.list()).map((task) => task.title)).toEqual(["One", "Two"]);
   });
-
   it("skips a run while maxOpen proposals wait, and still moves on", async () => {
-    const { stewards, tasks, input, taskInput, clock, steward, turns, repo } = setup();
-    stewards.save(input({ maxOpen: 2 }));
+    const { stewards, tasks, input, taskInput, clock, steward, turns, repo } = await setup();
+    await stewards.save(input({ maxOpen: 2 }));
     for (const id of ["a", "b"])
-      tasks.save(taskInput({ id, title: `Open ${id}`, source: "steward", stewardId: "steward" }));
+      await tasks.save(
+        taskInput({ id, title: `Open ${id}`, source: "steward", stewardId: "steward" }),
+      );
     clock.now += 2 * HOUR;
     await stewards.tick();
     expect(turns).toHaveLength(0);
-    expect(steward()).toMatchObject({
+    expect(await steward()).toMatchObject({
       lastRunStatus: "skipped",
       lastRunError: openLimitSkip(2),
     });
-    expect(steward().nextRunAt).toBeGreaterThan(clock.now);
+    expect((await steward()).nextRunAt).toBeGreaterThan(clock.now);
     expect(git(repo.cwd, "worktree", "list")).not.toContain("wt-mc");
   });
-
   it("skips a run while the previous one is still going", async () => {
-    const { stewards, input, startDue, steward, turns } = setup();
-    stewards.save(input());
+    const { stewards, input, startDue, steward, turns } = await setup();
+    await stewards.save(input());
     await startDue();
     await stewards.runNow("steward");
     expect(turns).toHaveLength(1);
-    expect(steward()).toMatchObject({
+    expect(await steward()).toMatchObject({
       lastRunStatus: "skipped",
       lastRunError: PREVIOUS_RUN_SKIP,
     });
     // The run itself is untouched.
-    expect(steward().run).toBeDefined();
+    expect((await steward()).run).toBeDefined();
   });
-
   it("leaves out proposals that match open, done or declined work", async () => {
-    const { stewards, tasks, input, taskInput, startDue, finish } = setup();
-    stewards.save(input({ maxProposals: 10 }));
-    tasks.save(taskInput({ id: "open", title: "Add  Retry Tests." }));
-    tasks.save(taskInput({ id: "done", title: "Fix the login" }));
+    const { stewards, tasks, input, taskInput, startDue, finish } = await setup();
+    await stewards.save(input({ maxProposals: 10 }));
+    await tasks.save(taskInput({ id: "open", title: "Add  Retry Tests." }));
+    await tasks.save(taskInput({ id: "done", title: "Fix the login" }));
     await tasks.move("done", "done");
-    tasks.save(
+    await tasks.save(
       taskInput({
         id: "mine",
         title: "Rename module",
@@ -308,51 +356,51 @@ describe("host stewards", () => {
       ]),
     );
     expect(
-      tasks
-        .list()
-        .filter((task) => task.source === "steward")
-        .map((task) => task.title),
+      (await tasks.list()).filter((task) => task.source === "steward").map((task) => task.title),
     ).toEqual(["Brand new idea"]);
   });
-
   it("fails the run when the reply has no usable proposals", async () => {
-    const { stewards, tasks, input, startDue, finish, steward, worktrees } = setup();
-    stewards.save(input());
+    const { stewards, tasks, input, startDue, finish, steward, worktrees } = await setup();
+    await stewards.save(input());
     await startDue();
     await finish("I looked around but forgot the json block.");
-    expect(steward()).toMatchObject({ lastRunStatus: "failed" });
-    expect(steward().lastRunError).toContain("json");
-    expect(tasks.list()).toEqual([]);
+    expect(await steward()).toMatchObject({ lastRunStatus: "failed" });
+    expect((await steward()).lastRunError).toContain("json");
+    expect(await tasks.list()).toEqual([]);
     expect(worktrees()).toBe(1);
-
     await startDue();
     await finish("```json\n{not json\n```");
-    expect(steward().lastRunStatus).toBe("failed");
-    expect(steward().lastRunError).toContain("not valid JSON");
+    expect((await steward()).lastRunStatus).toBe("failed");
+    expect((await steward()).lastRunError).toContain("not valid JSON");
   });
-
   it("succeeds with no tasks when the steward proposes nothing", async () => {
-    const { stewards, tasks, input, startDue, finish, steward } = setup();
-    stewards.save(input());
+    const { stewards, tasks, input, startDue, finish, steward } = await setup();
+    await stewards.save(input());
     await startDue();
     await finish(reply([]));
-    expect(steward()).toMatchObject({ lastRunStatus: "succeeded", lastProposed: 0 });
-    expect(tasks.list()).toEqual([]);
+    expect(await steward()).toMatchObject({ lastRunStatus: "succeeded", lastProposed: 0 });
+    expect(await tasks.list()).toEqual([]);
   });
-
   it("keeps a proposal and its suppression list when dependent work prevents declining", async () => {
-    const { stewards, tasks, input, taskInput, steward } = setup();
-    stewards.save(input());
-    tasks.save(taskInput({ id: "protected-proposal", title: "Keep me", source: "steward", stewardId: "steward" }));
-    tasks.save(taskInput({ id: "dependent-proposal", dependsOn: ["protected-proposal"] }));
+    const { stewards, tasks, input, taskInput, steward } = await setup();
+    await stewards.save(input());
+    await tasks.save(
+      taskInput({
+        id: "protected-proposal",
+        title: "Keep me",
+        source: "steward",
+        stewardId: "steward",
+      }),
+    );
+    await tasks.save(taskInput({ id: "dependent-proposal", dependsOn: ["protected-proposal"] }));
     await expect(stewards.decline("protected-proposal")).rejects.toThrow("depend");
-    expect(tasks.get("protected-proposal")).toBeTruthy();
-    expect(steward().declined).not.toContain("keep me");
+    expect(await tasks.get("protected-proposal")).toBeTruthy();
+    expect((await steward()).declined).not.toContain("keep me");
   });
   it("declines a to-do suggestion: deletes it and remembers its title", async () => {
-    const { stewards, tasks, input, taskInput, steward } = setup();
-    stewards.save(input());
-    tasks.save(
+    const { stewards, tasks, input, taskInput, steward } = await setup();
+    await stewards.save(input());
+    await tasks.save(
       taskInput({
         id: "mine",
         title: "  Rename   Module. ",
@@ -361,27 +409,25 @@ describe("host stewards", () => {
       }),
     );
     await stewards.decline("mine");
-    expect(tasks.get("mine")).toBeUndefined();
-    expect(steward().declined).toEqual(["rename module"]);
+    expect(await tasks.get("mine")).toBeUndefined();
+    expect((await steward()).declined).toEqual(["rename module"]);
   });
-
   it("only declines to-do steward suggestions", async () => {
-    const { stewards, tasks, input, taskInput } = setup();
-    stewards.save(input());
-    tasks.save(taskInput({ id: "manual" }));
-    tasks.save(
+    const { stewards, tasks, input, taskInput } = await setup();
+    await stewards.save(input());
+    await tasks.save(taskInput({ id: "manual" }));
+    await tasks.save(
       taskInput({ id: "queued", source: "steward", stewardId: "steward", status: "queued" }),
     );
     await expect(stewards.decline("manual")).rejects.toThrow("Only a to-do suggestion");
     await expect(stewards.decline("queued")).rejects.toThrow("Only a to-do suggestion");
     await expect(stewards.decline("missing")).rejects.toThrow("Task not found");
   });
-
   it("caps the declined list at 200 titles", async () => {
-    const { stewards, tasks, input, taskInput, steward } = setup();
-    stewards.save(input());
+    const { stewards, tasks, input, taskInput, steward } = await setup();
+    await stewards.save(input());
     for (let index = 0; index < 202; index++) {
-      tasks.save(
+      await tasks.save(
         taskInput({
           id: `t${index}`,
           title: `Idea ${index}`,
@@ -391,39 +437,36 @@ describe("host stewards", () => {
       );
       await stewards.decline(`t${index}`);
     }
-    expect(steward().declined).toHaveLength(200);
-    expect(steward().declined.at(-1)).toBe("idea 201");
-    expect(steward().declined).not.toContain("idea 0");
+    expect((await steward()).declined).toHaveLength(200);
+    expect((await steward()).declined.at(-1)).toBe("idea 201");
+    expect((await steward()).declined).not.toContain("idea 0");
   });
-
-  it("allows one steward per project", () => {
-    const { stewards, input, plain } = setup();
-    stewards.save(input());
-    expect(() => stewards.save(input({ id: "second" }))).toThrow(
+  it("allows one steward per project", async () => {
+    const { stewards, input, plain } = await setup();
+    await stewards.save(input());
+    await expect((async () => await stewards.save(input({ id: "second" })))()).rejects.toThrow(
       "This project already has a steward.",
     );
     // Editing it is fine, and so is a steward for another project.
-    expect(stewards.save(input({ focus: "new focus" })).focus).toBe("new focus");
-    stewards.save(input({ id: "other", projectId: plain.id }));
-    expect(stewards.list()).toHaveLength(2);
+    expect((await stewards.save(input({ focus: "new focus" }))).focus).toBe("new focus");
+    await stewards.save(input({ id: "other", projectId: plain.id }));
+    expect(await stewards.list()).toHaveLength(2);
   });
-
   it("keeps declined titles and last run across an edit", async () => {
-    const { stewards, tasks, input, taskInput, steward } = setup();
-    stewards.save(input());
-    tasks.save(taskInput({ id: "mine", source: "steward", stewardId: "steward" }));
+    const { stewards, tasks, input, taskInput, steward } = await setup();
+    await stewards.save(input());
+    await tasks.save(taskInput({ id: "mine", source: "steward", stewardId: "steward" }));
     await stewards.decline("mine");
-    stewards.save(input({ maxOpen: 3 }));
-    expect(steward()).toMatchObject({ declined: ["existing work"], maxOpen: 3 });
+    await stewards.save(input({ maxOpen: 3 }));
+    expect(await steward()).toMatchObject({ declined: ["existing work"], maxOpen: 3 });
   });
-
   it("puts the read-only rule, focus and existing titles in the prompt", async () => {
-    const { stewards, tasks, input, taskInput, startDue, finish } = setup();
-    stewards.save(input());
-    tasks.save(taskInput({ id: "o", title: "Open item" }));
-    tasks.save(taskInput({ id: "d", title: "Finished item" }));
+    const { stewards, tasks, input, taskInput, startDue, finish } = await setup();
+    await stewards.save(input());
+    await tasks.save(taskInput({ id: "o", title: "Open item" }));
+    await tasks.save(taskInput({ id: "d", title: "Finished item" }));
     await tasks.move("d", "done");
-    tasks.save(
+    await tasks.save(
       taskInput({ id: "x", title: "Declined idea", source: "steward", stewardId: "steward" }),
     );
     await stewards.decline("x");
@@ -440,74 +483,78 @@ describe("host stewards", () => {
     expect(prompt).toContain('{"proposals":[');
     await finish(reply([]));
   });
-
   it("runs a project that is not a git repository in place", async () => {
-    const { stewards, input, plain, startDue, finish, steward } = setup();
-    stewards.save(input({ projectId: plain.id }));
+    const { stewards, input, plain, startDue, finish, steward } = await setup();
+    await stewards.save(input({ projectId: plain.id }));
     const turn = await startDue();
     expect(turn.input.cwd).toBe(plain.cwd);
     expect(turn.input.text).toContain("the project folder itself");
     await finish(reply([{ title: "Idea", description: "Do it." }]));
-    expect(steward().lastRunStatus).toBe("succeeded");
+    expect((await steward()).lastRunStatus).toBe("succeeded");
   });
-
   it("does not run a disabled steward, but runNow does", async () => {
-    const { stewards, input, clock, turns, steward } = setup();
-    stewards.save(input({ enabled: false }));
+    const { stewards, input, clock, turns, steward } = await setup();
+    await stewards.save(input({ enabled: false }));
     clock.now += 2 * HOUR;
     await stewards.tick();
     expect(turns).toHaveLength(0);
     await stewards.runNow("steward");
-    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 10_000 });
-    expect(steward().run).toBeDefined();
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 10000 });
+    expect((await steward()).run).toBeDefined();
   });
-
   it("stops a run past its time limit and removes its checkout", async () => {
-    const { stewards, input, startDue, clock, steward, worktrees } = setup();
-    stewards.save(input());
+    const { stewards, input, startDue, clock, steward, worktrees } = await setup();
+    await stewards.save(input());
     await startDue();
     clock.now += 21 * MINUTE;
     await stewards.tick();
-    await vi.waitFor(() => expect(steward().run?.error).toBeDefined());
+    await vi.waitFor(async () => expect((await steward()).run?.error).toBeDefined());
     clock.now += MINUTE;
     // Settling removes a worktree, which takes git a while.
     await vi.waitFor(
       async () => {
         await stewards.tick();
-        expect(steward().lastRunStatus).toBe("failed");
+        expect((await steward()).lastRunStatus).toBe("failed");
       },
-      { timeout: 30_000, interval: 200 },
+      { timeout: 30000, interval: 200 },
     );
-    expect(steward().lastRunError).toContain("20");
+    expect((await steward()).lastRunError).toContain("20");
     expect(worktrees()).toBe(1);
   });
-
   it("cancels only the exact steward turn and settles through normal cleanup", async () => {
-    const { stewards, input, startDue, steward, store, worktrees } = setup();
-    stewards.save(input());
+    const { stewards, input, startDue, steward, store, worktrees } = await setup();
+    await stewards.save(input());
     const turn = await startDue();
-    const runId = steward().run!.runId!;
-    expect(() => stewards.stopRun("steward", "stale-turn")).toThrow("no longer active");
-    expect(store.session(turn.input.sessionId).status).toBe("running");
-    expect(stewards.stopRun("steward", runId)).toMatchObject({ requested: true, run: { runId } });
-    await vi.waitFor(() => expect(store.session(turn.input.sessionId).status).toBe("idle"), { timeout: 10_000 });
+    const runId = (await steward()).run!.runId!;
+    await expect((async () => await stewards.stopRun("steward", "stale-turn"))()).rejects.toThrow(
+      "no longer active",
+    );
+    expect((await store.session(turn.input.sessionId)).status).toBe("running");
+    expect(await stewards.stopRun("steward", runId)).toMatchObject({
+      requested: true,
+      run: { runId },
+    });
+    await vi.waitFor(
+      async () => expect((await store.session(turn.input.sessionId)).status).toBe("idle"),
+      { timeout: 10000 },
+    );
     await stewards.tick();
-    expect(steward().run).toBeUndefined();
-    expect(steward().lastRunStatus).toBe("cancelled");
+    expect((await steward()).run).toBeUndefined();
+    expect((await steward()).lastRunStatus).toBe("cancelled");
     expect(worktrees()).toBe(1);
-    expect(() => stewards.stopRun("steward", runId)).toThrow("no longer active");
+    await expect((async () => await stewards.stopRun("steward", runId))()).rejects.toThrow(
+      "no longer active",
+    );
   });
-
-  it("increments the configuration revision for same-clock saves", () => {
-    const { stewards, input } = setup();
-    const first = stewards.save(input());
-    const second = stewards.save(input({ focus: "new focus" }));
+  it("increments the configuration revision for same-clock saves", async () => {
+    const { stewards, input } = await setup();
+    const first = await stewards.save(input());
+    const second = await stewards.save(input({ focus: "new focus" }));
     expect(second.updatedAt).toBeGreaterThan(first.updatedAt);
   });
-
   it("removes the checkout when the steward is deleted mid-run", async () => {
-    const { stewards, engine, input, startDue, worktrees, steward } = setup();
-    stewards.save(input());
+    const { stewards, engine, input, startDue, worktrees, steward } = await setup();
+    await stewards.save(input());
     const turn = await startDue();
     const capture = engine.checkpoints.finish.bind(engine.checkpoints);
     let releaseCapture!: () => void;
@@ -532,64 +579,58 @@ describe("host stewards", () => {
       releaseCapture();
       await deletion;
     }
-    expect(stewards.list()).toEqual([]);
+    expect(await stewards.list()).toEqual([]);
     expect(worktrees()).toBe(1);
     expect(existsSync(turn.input.cwd)).toBe(false);
     expect(steward).toBeDefined();
   });
 });
-
 describe("steward work limits and merging", () => {
   it("gives the tasks it creates the steward autoMerge setting", async () => {
-    const { stewards, tasks, input, startDue, finish } = setup();
-    stewards.save(input({ autoMerge: true }));
+    const { stewards, tasks, input, startDue, finish } = await setup();
+    await stewards.save(input({ autoMerge: true }));
     await startDue();
     await finish(reply([{ title: "Do it", description: "Specific work." }]));
-    expect(tasks.list()).toMatchObject([{ title: "Do it", autoMerge: true }]);
+    expect(await tasks.list()).toMatchObject([{ title: "Do it", autoMerge: true }]);
   });
-
   it("leaves autoMerge off by default", async () => {
-    const { stewards, tasks, input, startDue, finish } = setup();
-    stewards.save(input());
+    const { stewards, tasks, input, startDue, finish } = await setup();
+    await stewards.save(input());
     await startDue();
     await finish(reply([{ title: "Do it", description: "Specific work." }]));
-    expect(tasks.list()[0].autoMerge).toBeUndefined();
+    expect((await tasks.list())[0].autoMerge).toBeUndefined();
   });
-
   it("counts the run toward the day", async () => {
-    const { stewards, tasks, input, startDue, finish } = setup();
-    stewards.save(input());
+    const { stewards, tasks, input, startDue, finish } = await setup();
+    await stewards.save(input());
     await startDue();
     await finish(reply([]));
-    expect(tasks.limits.usedMinutes()).toBeCloseTo(1, 1);
+    expect(await tasks.limits.usedMinutes()).toBeCloseTo(1, 1);
   });
-
   it("records a skipped run once the day is used up, and runs again tomorrow", async () => {
-    const { stewards, tasks, input, startDue, steward, turns, clock } = setup();
-    stewards.save(input());
-    tasks.limits.save({ dailyAgentMinutes: 1 });
-    clock.now = steward().nextRunAt + MINUTE;
-    tasks.limits.record(clock.now - 2 * MINUTE, clock.now);
+    const { stewards, tasks, input, startDue, steward, turns, clock } = await setup();
+    await stewards.save(input());
+    await tasks.limits.save({ dailyAgentMinutes: 1 });
+    clock.now = (await steward()).nextRunAt + MINUTE;
+    await tasks.limits.record(clock.now - 2 * MINUTE, clock.now);
     await stewards.tick();
     await stewards.idle();
-    expect(steward()).toMatchObject({
+    expect(await steward()).toMatchObject({
       lastRunStatus: "skipped",
       lastRunError: DAILY_LIMIT_SKIP,
     });
     expect(turns).toHaveLength(0);
-
     await startDue();
-    expect(steward().lastRunStatus).toBe("running");
+    expect((await steward()).lastRunStatus).toBe("running");
     expect(turns).toHaveLength(1);
   });
-
   it("skips runNow too while the day is used up", async () => {
-    const { stewards, tasks, input, steward, turns, clock } = setup();
-    stewards.save(input());
-    tasks.limits.save({ dailyAgentMinutes: 1 });
-    tasks.limits.record(clock.now - 2 * MINUTE, clock.now);
+    const { stewards, tasks, input, steward, turns, clock } = await setup();
+    await stewards.save(input());
+    await tasks.limits.save({ dailyAgentMinutes: 1 });
+    await tasks.limits.record(clock.now - 2 * MINUTE, clock.now);
     await stewards.runNow("steward");
-    expect(steward()).toMatchObject({
+    expect(await steward()).toMatchObject({
       lastRunStatus: "skipped",
       lastRunError: DAILY_LIMIT_SKIP,
     });

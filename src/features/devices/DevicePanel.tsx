@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { Button } from "../../shared/ui/Button";
 import { Switch } from "../../shared/ui/Switch";
+import { InfoPopover } from "../../shared/ui/InfoPopover";
+import { Progress } from "../../shared/ui/Progress";
 import { ImagePlus, MessageSquarePlus, RefreshCw } from "../../shared/ui/icons";
 import "./DevicePanel.css";
 import type {
@@ -15,6 +17,19 @@ import type {
   DevicePanelApi,
   DeviceSummary,
 } from "./types";
+
+type DeviceOperation =
+  | "status"
+  | "connect"
+  | "refresh"
+  | "capture"
+  | "add"
+  | "boot"
+  | "setup"
+  | "setupControl"
+  | "start"
+  | "stop"
+  | DeviceAction["type"];
 
 /** RPC only: opening this panel starts viewing; control remains opt-in. */
 export function DevicePanel({
@@ -33,8 +48,15 @@ export function DevicePanel({
   const [frame, setFrame] = useState<DeviceFrame>();
   const [live, setLive] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<DeviceOperation>();
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [error, setError] = useState<string>();
+  const [errorOperation, setErrorOperationState] = useState<DeviceOperation>("status");
+  const errorOperationRef = useRef<DeviceOperation>("status");
+  const setErrorOperation = useCallback((name: DeviceOperation) => {
+    errorOperationRef.current = name;
+    setErrorOperationState(name);
+  }, []);
   const [control, setControl] = useState(false);
   const [app, setApp] = useState("");
   const [text, setText] = useState("");
@@ -62,8 +84,10 @@ export function DevicePanel({
     pending.current = null;
     capturePending.current = null;
     setBusy(false);
+    setOperation(undefined);
     setLoadingDevices(false);
     setError(undefined);
+    setErrorOperation("status");
     setStatus(undefined);
     setDevices([]);
     setSelected("");
@@ -96,19 +120,25 @@ export function DevicePanel({
     };
   }, [api]);
   const execute = useCallback(
-    async <T,>(operation: (isCurrent: () => boolean) => Promise<T>, commit: (value: T) => void) => {
+    async <T,>(
+      name: DeviceOperation,
+      work: (isCurrent: () => boolean) => Promise<T>,
+      commit: (value: T) => void,
+    ) => {
       if (pending.current) return;
       const token = {};
       const requestScope = scope;
       pending.current = token;
       const current = () => mounted.current && currentScope.current === requestScope;
       setBusy(true);
+      setOperation(name);
       setError(undefined);
+      setErrorOperation(name);
       try {
         // A live capture must finish before boot/stop/input or another capture.
         await capturePending.current?.catch(() => {});
         if (!current()) return;
-        const value = await operation(current);
+        const value = await work(current);
         if (current()) commit(value);
       } catch (cause) {
         if (current()) setError(String(cause));
@@ -116,6 +146,7 @@ export function DevicePanel({
         if (current() && pending.current === token) {
           pending.current = null;
           setBusy(false);
+          setOperation(undefined);
         }
       }
     },
@@ -134,21 +165,33 @@ export function DevicePanel({
     },
     [api],
   );
-  const selectDevice = useCallback((deviceId: string, booted = false) => {
-    setSelected(deviceId);
-    setApp("");
-    setFrame(undefined);
-    setLive(booted);
-    setControl(false);
-    setText("");
-    setOutput("");
-    setDeviceNotice(undefined);
-  }, []);
+  const selectDevice = useCallback(
+    (deviceId: string, booted = false, preserveDiscoveryError = false) => {
+      setSelected(deviceId);
+      setApp("");
+      setFrame(undefined);
+      setLive(booted);
+      setControl(false);
+      setText("");
+      setOutput("");
+      setDeviceNotice(undefined);
+      // Host/discovery failures remain relevant across selections. Device action
+      // and capture failures belong only to the device that produced them.
+      if (
+        !preserveDiscoveryError &&
+        errorOperationRef.current !== "status" &&
+        errorOperationRef.current !== "refresh"
+      )
+        setError(undefined);
+    },
+    [],
+  );
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const applyDevices = useCallback(
     (value: Awaited<ReturnType<DevicePanelApi["list"]>>) => {
       setDevices(value.devices);
+      setErrorOperation("refresh");
       setError(value.errors.length ? value.errors.join("\n") : undefined);
       const current = value.devices.find((device) => device.id === selectedRef.current);
       if (!current) {
@@ -157,7 +200,7 @@ export function DevicePanel({
           value.devices.find((device) => device.booted && device.physical) ??
           value.devices.find((device) => device.booted) ??
           value.devices[0];
-        selectDevice(preferred?.id ?? "", !!preferred?.booted);
+        selectDevice(preferred?.id ?? "", !!preferred?.booted, true);
       } else if (!current.booted) {
         setApp("");
         setFrame(undefined);
@@ -209,6 +252,7 @@ export function DevicePanel({
           if (!cancelled) setFrame(value);
         } catch (cause) {
           if (!cancelled) {
+            setErrorOperation("capture");
             setError(String(cause));
             setLive(false);
           }
@@ -228,6 +272,7 @@ export function DevicePanel({
   }, [live, selected, capture, status?.running]);
   const action = (command: DeviceAction) =>
     void execute(
+      command.type,
       async (isCurrent) => {
         const output = await api.action(selected, command);
         if (!isCurrent()) return { output, frame: undefined, error: undefined };
@@ -247,12 +292,19 @@ export function DevicePanel({
         else if (command.type === "home" && device?.platform === "ios")
           setApp("com.apple.springboard");
         setFrame(value.frame);
-        if (value.error) setError(value.error);
+        if (value.error) {
+          setErrorOperation("capture");
+          setError(value.error);
+        }
       },
     );
   const device = devices.find((item) => item.id === selected);
-  const canView = !!device?.booted && !busy && !loadingDevices;
-  const canControl = canView && control && !!status?.agentInstalled;
+  const canViewDevice = !!device?.booted && !loadingDevices;
+  const canControlDevice = canViewDevice && control && !!status?.agentInstalled;
+  const canView = canViewDevice && !busy;
+  const canControl = canControlDevice && !busy;
+  const unavailable = (name: DeviceOperation, enabled = true) =>
+    !enabled || (busy && operation !== name);
   const windowsAndroid = status?.platform === "win32" && device?.platform === "android";
   const coordinatesValid =
     Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= 20000 && y <= 20000;
@@ -261,7 +313,8 @@ export function DevicePanel({
   const kindLabel = (item: DeviceSummary) =>
     item.physical ? t("Physical device") : item.platform === "ios" ? t("Simulator") : t("Emulator");
   const sdkAvailable = !!status?.platforms.some((item) => item.available);
-  const refreshDevices = () => void execute(api.list, applyDevices);
+  const refreshDevices = () => void execute("refresh", api.list, applyDevices);
+  const discoveryError = errorOperation === "status" || errorOperation === "refresh";
   return (
     <section
       className="host-tool-panel device-panel bycoda-arc"
@@ -269,28 +322,38 @@ export function DevicePanel({
       aria-busy={busy || loadingDevices}
     >
       {error && (
-        <Alert role="alert" tone="danger">
-          <p>
-            <strong>{t("Could not load devices")}</strong>{" "}
-            {status?.running
-              ? t(
-                  "Reconnect the device, unlock its screen, and allow USB debugging if prompted. Then refresh devices.",
-                )
-              : t("Check that the selected computer is connected, then retry.")}
-          </p>
-          <details>
-            <summary>{t("Details")}</summary>
-            <pre>{error}</pre>
-          </details>
+        <Alert role="alert" tone="danger" className="device-panel-error">
+          {discoveryError ? (
+            <p>
+              <strong>{t("Could not load devices")}</strong>{" "}
+              {status?.running
+                ? t(
+                    "Reconnect the device, unlock its screen, and allow USB debugging if prompted. Then refresh devices.",
+                  )
+                : t("Check that the selected computer is connected, then retry.")}
+            </p>
+          ) : (
+            <p>{error}</p>
+          )}
+          {discoveryError && (
+            <details>
+              <summary>{t("Details")}</summary>
+              <pre>{error}</pre>
+            </details>
+          )}
         </Alert>
       )}
-      {!status && !error && (
+      {!status && !error && operation !== "status" && (
         <p role="status" className="device-panel-state">
           {t("Checking device support…")}
         </p>
       )}
-      {!status && error && (
-        <Button disabled={busy} onClick={() => void execute(api.status, setStatus)}>
+      {!status && (error || operation === "status") && (
+        <Button
+          loading={operation === "status"}
+          disabled={unavailable("status")}
+          onClick={() => void execute("status", api.status, setStatus)}
+        >
           {t("Retry")}
         </Button>
       )}
@@ -306,12 +369,17 @@ export function DevicePanel({
           </p>
           <Button
             variant="primary"
-            disabled={busy || !sdkAvailable}
+            loading={operation === "connect"}
+            disabled={unavailable("connect", sdkAvailable)}
             onClick={() =>
-              void execute(async (isCurrent) => {
-                if (!status.installed) await api.setup(false);
-                return isCurrent() ? api.start() : status;
-              }, setStatus)
+              void execute(
+                "connect",
+                async (isCurrent) => {
+                  if (!status.installed) await api.setup(false);
+                  return isCurrent() ? api.start() : status;
+                },
+                setStatus,
+              )
             }
           >
             {status.installed ? t("Connect devices") : t("Set up and connect")}
@@ -360,10 +428,12 @@ export function DevicePanel({
                 <Button
                   variant="primary"
                   className="device-panel-boot"
+                  loading={operation === "boot"}
                   hidden={device.physical}
-                  disabled={busy || loadingDevices || device.physical}
+                  disabled={unavailable("boot", !loadingDevices && !device.physical)}
                   onClick={() =>
                     void execute(
+                      "boot",
                       () => api.boot(selected),
                       (device) => {
                         setSelected(device.id);
@@ -382,7 +452,8 @@ export function DevicePanel({
                 variant="ghost"
                 iconOnly
                 label={t("Refresh devices")}
-                disabled={busy || loadingDevices}
+                loading={operation === "refresh" || loadingDevices}
+                disabled={unavailable("refresh", !loadingDevices)}
                 onClick={refreshDevices}
               >
                 <RefreshCw className="icon-md" aria-hidden />
@@ -392,8 +463,9 @@ export function DevicePanel({
                   variant="ghost"
                   iconOnly
                   label={t("Capture")}
-                  disabled={!canView}
-                  onClick={() => void execute(() => capture(selected), setFrame)}
+                  loading={operation === "capture"}
+                  disabled={unavailable("capture", canViewDevice)}
+                  onClick={() => void execute("capture", () => capture(selected), setFrame)}
                 >
                   <ImagePlus className="icon-md" aria-hidden />
                 </Button>
@@ -403,24 +475,29 @@ export function DevicePanel({
                   variant="ghost"
                   iconOnly
                   label={t("Add device to conversation")}
-                  disabled={busy || loadingDevices || !device}
+                  loading={operation === "add"}
+                  disabled={unavailable("add", !loadingDevices && !!device)}
                   onClick={() => {
                     if (!device) return;
                     setDeviceNotice(undefined);
-                    void execute(async () => {
-                      try {
-                        await onAddDevice(device);
-                        return {
-                          text: t("Device added to draft."),
-                          error: false,
-                        };
-                      } catch (cause) {
-                        return {
-                          text: cause instanceof Error ? cause.message : String(cause),
-                          error: true,
-                        };
-                      }
-                    }, setDeviceNotice);
+                    void execute(
+                      "add",
+                      async () => {
+                        try {
+                          await onAddDevice(device);
+                          return {
+                            text: t("Device added to draft."),
+                            error: false,
+                          };
+                        } catch (cause) {
+                          return {
+                            text: cause instanceof Error ? cause.message : String(cause),
+                            error: true,
+                          };
+                        }
+                      },
+                      setDeviceNotice,
+                    );
                   }}
                 >
                   <MessageSquarePlus className="icon-md" aria-hidden />
@@ -463,8 +540,9 @@ export function DevicePanel({
               <span>{t("Run setup with control enabled to install the control tools.")}</span>
               <Button
                 variant="primary"
-                disabled={busy || !sdkAvailable}
-                onClick={() => void execute(() => api.setup(true), setStatus)}
+                loading={operation === "setupControl"}
+                disabled={unavailable("setupControl", sdkAvailable)}
+                onClick={() => void execute("setupControl", () => api.setup(true), setStatus)}
               >
                 {t("Set up device control")}
               </Button>
@@ -515,59 +593,84 @@ export function DevicePanel({
                       : null}
             </div>
           ) : null}
+          {operation === "press" && (
+            <Progress compact tone="neutral" aria-label={t("Working on the host…")} />
+          )}
           {control && status.agentInstalled && selected && (
             <div className="device-panel-manual host-tool-controls">
-              <div className="host-tool-toolbar">
-                <TextField
-                  label={t("App name or bundle ID")}
-                  disabled={!canControl}
-                  value={app}
-                  maxLength={256}
-                  placeholder={windowsAndroid ? "com.example.app" : undefined}
-                  onChange={(event) => setApp(event.target.value)}
-                  fieldClassName="host-tool-grow min-w-0 flex-1"
-                />
+              <div className="device-panel-command-grid">
+                <div className="device-panel-command">
+                  <TextField
+                    label={t("App name or bundle ID")}
+                    disabled={!canControl}
+                    value={app}
+                    maxLength={256}
+                    placeholder={windowsAndroid ? "com.example.app" : undefined}
+                    onChange={(event) => setApp(event.target.value)}
+                    fieldClassName="host-tool-grow min-w-0 flex-1"
+                  />
+                  <Button
+                    disabled={unavailable("openApp", canControlDevice && !!app.trim())}
+                    loading={operation === "openApp"}
+                    onClick={() => action({ type: "openApp", app: app.trim() })}
+                  >
+                    {t("Open app")}
+                  </Button>
+                </div>
+                <div className="device-panel-command">
+                  <TextField
+                    label={t("Text to type on device")}
+                    disabled={!canControl}
+                    value={text}
+                    maxLength={4096}
+                    onChange={(event) => setText(event.target.value)}
+                    fieldClassName="host-tool-grow min-w-0 flex-1"
+                  />
+                  <Button
+                    disabled={unavailable("type", canControlDevice && !!text)}
+                    loading={operation === "type"}
+                    onClick={() => action({ type: "type", text })}
+                  >
+                    {t("Type text")}
+                  </Button>
+                </div>
+              </div>
+              <div className="host-tool-actions">
                 <Button
-                  disabled={!canControl || !app.trim()}
-                  onClick={() => action({ type: "openApp", app: app.trim() })}
+                  loading={operation === "home"}
+                  disabled={unavailable("home", canControlDevice)}
+                  onClick={() => action({ type: "home" })}
                 >
-                  {t("Open app")}
-                </Button>
-                <TextField
-                  label={t("Text to type on device")}
-                  disabled={!canControl}
-                  value={text}
-                  maxLength={4096}
-                  onChange={(event) => setText(event.target.value)}
-                  fieldClassName="host-tool-grow min-w-0 flex-1"
-                />
-                <Button
-                  disabled={!canControl || !text}
-                  onClick={() => action({ type: "type", text })}
-                >
-                  {t("Type text")}
-                </Button>
-                <Button disabled={!canControl} onClick={() => action({ type: "home" })}>
                   {t("Home")}
                 </Button>
-                <Button disabled={!canControl} onClick={() => action({ type: "snapshot" })}>
+                <Button
+                  loading={operation === "snapshot"}
+                  disabled={unavailable("snapshot", canControlDevice)}
+                  onClick={() => action({ type: "snapshot" })}
+                >
                   {t("Accessibility snapshot")}
                 </Button>
+                {(device?.platform === "ios" || windowsAndroid) && (
+                  <InfoPopover>
+                    {device?.platform === "ios" ? (
+                      <p className="host-tool-muted">
+                        {t(
+                          "iOS: open the target app before interacting with it, or use {p0} to select the Home screen. Controls may bring the selected app to the foreground.",
+                          { p0: t("Home") },
+                        )}
+                      </p>
+                    ) : null}
+                    {windowsAndroid ? (
+                      <p className="host-tool-muted">
+                        {t(
+                          "For Android, enter Settings or an app package ID such as com.example.app.",
+                        )}{" "}
+                        {t("Android text input supports printable ASCII characters.")}
+                      </p>
+                    ) : null}
+                  </InfoPopover>
+                )}
               </div>
-              {device?.platform === "ios" ? (
-                <p className="host-tool-muted">
-                  {t(
-                    "iOS: open the target app before interacting with it, or use {p0} to select the Home screen. Controls may bring the selected app to the foreground.",
-                    { p0: t("Home") },
-                  )}
-                </p>
-              ) : null}
-              {windowsAndroid ? (
-                <p className="host-tool-muted">
-                  {t("For Android, enter Settings or an app package ID such as com.example.app.")}{" "}
-                  {t("Android text input supports printable ASCII characters.")}
-                </p>
-              ) : null}
               <details className="host-tool-help">
                 <summary>{t("Coordinate controls")}</summary>
                 <div className="host-tool-toolbar">
@@ -594,7 +697,8 @@ export function DevicePanel({
                     fieldClassName="min-w-0 flex-1"
                   />
                   <Button
-                    disabled={!canControl || !coordinatesValid}
+                    disabled={unavailable("press", canControlDevice && coordinatesValid)}
+                    loading={operation === "press"}
                     onClick={() => action({ type: "press", x, y })}
                   >
                     {t("Press coordinate")}
@@ -641,28 +745,32 @@ export function DevicePanel({
             ) : null}
             <div className="host-tool-actions">
               <Button
-                disabled={busy || loadingDevices}
-                onClick={() => void execute(api.status, setStatus)}
+                disabled={unavailable("status", !loadingDevices)}
+                loading={operation === "status"}
+                onClick={() => void execute("status", api.status, setStatus)}
               >
                 {t("Status")}
               </Button>
               <Button
-                disabled={busy || !sdkAvailable}
-                onClick={() => void execute(() => api.setup(control), setStatus)}
+                disabled={unavailable("setup", sdkAvailable)}
+                loading={operation === "setup"}
+                onClick={() => void execute("setup", () => api.setup(control), setStatus)}
               >
                 {status.installed ? t("Update setup") : t("Set up device tools")}
               </Button>
               <Button
-                disabled={busy || !status.installed || status.running}
-                onClick={() => void execute(api.start, setStatus)}
+                disabled={unavailable("start", status.installed && !status.running)}
+                loading={operation === "start"}
+                onClick={() => void execute("start", api.start, setStatus)}
               >
                 {t("Start device host")}
               </Button>
               <Button
-                disabled={busy || !status.running}
+                disabled={unavailable("stop", status.running)}
+                loading={operation === "stop"}
                 onClick={() => {
                   setLive(false);
-                  void execute(api.stop, (value) => {
+                  void execute("stop", api.stop, (value) => {
                     setStatus(value);
                     setFrame(undefined);
                     setSelected("");
@@ -682,11 +790,6 @@ export function DevicePanel({
             </p>
           </div>
         </details>
-      )}
-      {busy && (
-        <p role="status" className="host-tool-muted device-panel-note">
-          {t("Working on the host…")}
-        </p>
       )}
     </section>
   );

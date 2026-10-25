@@ -91,6 +91,11 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SkillPromptField } from "../../skills/ui/SkillPromptField";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { TaskReviewNotes } from "./TaskReviewNotes";
+import { TaskAcceptanceEvidence } from "./TaskAcceptanceEvidence";
+import { TaskWorkflowControls } from "./TaskWorkflowControls";
+import { TaskBudgetControls, TaskBudgetUsage } from "./TaskBudgetControls";
+import { TaskRunInsights, TaskMetricsComparison } from "./TaskRunInsights";
+import type { TaskPreflightReport } from "../model/taskPreflight";
 import { TaskAttemptHistory, repairStopLabel } from "./TaskAttemptHistory";
 import { unreadReviewNotes } from "../model/taskReviewNotes";
 import { OverlayNav } from "../../../app/shell/TitleBar";
@@ -98,7 +103,7 @@ import { WindowControls } from "../../../app/shell/WindowControls";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { backgroundMachineFor, hostProjectCwd } from "../../automations/model/hostAutomationClient";
 import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { RemoteMachine } from "../../connections/model/protocol";
+import { REMOTE_PROVIDERS, type RemoteMachine } from "../../connections/model/protocol";
 import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
 import { LAYER } from "../../../shared/lib/layers";
 import { TaskSessionSheet } from "./TaskSessionSheet";
@@ -146,6 +151,7 @@ import { taskInstructionsMarkdown, taskInstructionsSummary } from "../model/task
 import {
   MAX_GOAL_PROJECTS,
   goalProgress,
+  GOAL_FINAL_ACCEPTANCE_CRITERIA,
   type GoalStatus,
   type GoalSettings,
 } from "../model/hostGoals";
@@ -157,6 +163,7 @@ import {
   goalKey,
   newGoalDraft,
   replanGoal,
+  recheckGoalFinalReview,
   updateGoal,
   toggleGoalProject,
   type BoardGoal,
@@ -172,6 +179,8 @@ import {
   resolveTaskNote,
   newTaskDraft,
   saveTask,
+  preflightTaskDraft,
+  recordTaskEvaluation,
   formatTaskSpan,
   taskTimeLabel,
   tasksInColumn,
@@ -423,6 +432,7 @@ function TasksContent({
   const [boardActionMenu, setBoardActionMenu] = useState<HTMLElement | null>(null);
   const filterTrigger = useRef<HTMLButtonElement>(null);
   const [goalSessions, setGoalSessions] = useState<BoardGoal | null>(null);
+  const [metricsOpen, setMetricsOpen] = useState(false);
   // Machines whose host runs project stewards, and their stewards.
   const [stewardCapable, setStewardCapable] = useState<RemoteMachine[]>([]);
   const [storedStewards, setStewards] = useState<BoardSteward[]>([]);
@@ -731,12 +741,12 @@ function TasksContent({
   };
 
   const act = async <T,>(
-    task: Pick<BoardTask, "id">,
+    task: Pick<BoardTask, "id"> & Partial<Pick<BoardTask, "machineId">>,
     action: () => Promise<T>,
     commit?: (saved: T) => void,
   ) => {
     if (acting) return;
-    setActing(task.id);
+    setActing(task.machineId ? JSON.stringify([task.machineId, task.id]) : task.id);
     try {
       const saved = await action();
       commit?.(saved);
@@ -962,6 +972,19 @@ function TasksContent({
       openingSessions.has(JSON.stringify([task.machineId, sessionId]));
     return {
       busy: acting != null,
+      pending: acting === JSON.stringify([task.machineId, task.id]),
+      onSaveEvaluation:
+        task.evaluationSupported === false
+          ? undefined
+          : async (evaluation: {
+              accepted: boolean;
+              reviewMinutes: number;
+              corrections: number;
+            }) => {
+              const saved = await recordTaskEvaluation(task, evaluation);
+              putTask(saved);
+              setTasks((current) => upsertBoardItem(current, saved));
+            },
       onRecheckReview: () => void actOnTask(task, () => recheckTaskReview(task)),
       onMove: (to: TaskStatus) => onMove(task, to),
       onStart: () => void actOnTask(task, () => startTask(task)),
@@ -1198,6 +1221,12 @@ function TasksContent({
                 checked: summaryOpen,
                 icon: <DashboardSquare className="icon-sm" strokeWidth={1.75} />,
               },
+              {
+                kind: "item",
+                id: "metrics",
+                label: t("Compare accepted results"),
+                icon: <Gauge className="icon-sm" />,
+              },
               ...(stewardCapable.length > 0
                 ? [
                     {
@@ -1230,6 +1259,7 @@ function TasksContent({
             ]}
             onClose={() => setBoardActionMenu(null)}
             onPick={(id) => {
+              if (id === "metrics") setMetricsOpen(true);
               if (id === "summary") setSummaryOpen((open) => !open);
               if (id === "stewards") setStewardsOpen((open) => !open);
               if (id === "limits") setLimitsOpen((open) => !open);
@@ -1297,6 +1327,17 @@ function TasksContent({
         />
       ) : null}
       {confirmDialog}
+      {metricsOpen ? (
+        <Modal
+          title={t("Compare accepted results")}
+          size="lg"
+          onClose={() => setMetricsOpen(false)}
+        >
+          <div className="min-w-0 p-4">
+            <TaskMetricsComparison tasks={visibleTasks.filter((task) => !task.stale)} />
+          </div>
+        </Modal>
+      ) : null}
       {statusDetails ? (
         <Modal title={t("Task board status")} onClose={() => setStatusDetails(false)}>
           <div className="task-status-details">
@@ -1573,6 +1614,7 @@ function TasksContent({
                     goal={goal}
                     tasks={storedTasks.filter((task) => task.machineId === goal.machineId)}
                     busy={acting != null}
+                    pending={acting === `goal:${key}`}
                     onApprove={() => void actOnGoal(goal, () => approveGoal(goal))}
                     onEdit={() => {
                       setGoalSettingsError(null);
@@ -1596,6 +1638,19 @@ function TasksContent({
                     onOpenPlanner={
                       goal.plannerSessionId ? () => void onOpenPlanner(goal) : undefined
                     }
+                    onRecheckFinal={() => void actOnGoal(goal, () => recheckGoalFinalReview(goal))}
+                    onOpenFinal={() => {
+                      const lead = goal.projects.find(
+                        (project) => project.id === goal.leadProjectId,
+                      );
+                      if (lead && goal.finalAcceptance?.sessionId)
+                        setSessionPreview({
+                          machineId: goal.machineId,
+                          cwd: lead.cwd,
+                          projectId: lead.id,
+                          sessionId: goal.finalAcceptance.sessionId,
+                        });
+                    }}
                   />
                 </li>
               );
@@ -1706,7 +1761,18 @@ function TasksContent({
                   onChange={(value) => setCompactColumn(value as TaskColumn | "all")}
                 />
               </div>
-              <div className="task-board-columns">
+              {visibleTasks.length === 0 ? (
+                <EmptyState
+                  icon={null}
+                  description={t(
+                    tasks.length ? "No tasks match your search or filters." : "Nothing to do yet",
+                  )}
+                />
+              ) : null}
+              <div
+                className="task-board-columns"
+                data-all-empty={visibleTasks.length === 0 || undefined}
+              >
                 {TASK_COLUMNS.map((status) => {
                   const column = boardIndexes.columns.get(status)!;
                   return (
@@ -1714,6 +1780,7 @@ function TasksContent({
                       key={status}
                       aria-label={t(COLUMN_LABELS[status])}
                       data-task-column={status}
+                      data-empty={column.length === 0 || undefined}
                       data-compact-selected={
                         compactColumn === "all" || compactColumn === status || undefined
                       }
@@ -1822,9 +1889,13 @@ function TasksContent({
                             />
                           </li>
                         ))}
-                        {column.length === 0 ? (
+                        {column.length === 0 && visibleTasks.length > 0 ? (
                           <li>
-                            <EmptyState description={t(COLUMN_EMPTY[status])} />
+                            <EmptyState
+                              className="task-column-empty"
+                              icon={null}
+                              description={t(COLUMN_EMPTY[status])}
+                            />
                           </li>
                         ) : null}
                       </ul>
@@ -1960,6 +2031,7 @@ function TaskCardBody({
     // A click anywhere on the card but its buttons opens the detail panel.
     <article
       aria-label={task.title}
+      aria-busy={actions.pending || undefined}
       aria-current={selected || undefined}
       tabIndex={0}
       onClick={onOpen}
@@ -1983,6 +2055,12 @@ function TaskCardBody({
         title={description}
         className="line-clamp-2 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)"
       >
+        {actions.pending ? (
+          <LoaderCircle
+            aria-label={t("Loading…")}
+            className="mr-1 inline-block icon-xs animate-spin"
+          />
+        ) : null}
         <GripVertical aria-hidden="true" className="task-drag-grip icon-xs" strokeWidth={1.75} />
         {task.title}
       </h3>
@@ -2090,6 +2168,12 @@ function TaskCardBody({
 }
 
 type TaskActionHandlers = {
+  pending?: boolean;
+  onSaveEvaluation?: (evaluation: {
+    accepted: boolean;
+    reviewMinutes: number;
+    corrections: number;
+  }) => Promise<void>;
   busy: boolean;
   onStart: () => void;
   onDelivery: () => void;
@@ -2503,9 +2587,13 @@ function TaskDetail({
       <aside
         ref={detailRoot}
         aria-label={t("Task details")}
+        aria-busy={actions.pending || undefined}
         className="flex min-h-0 w-[380px] max-w-[45%] shrink-0 flex-col border-l border-(--ui-tone-neutral-border) @max-[640px]/task-area:w-full @max-[640px]/task-area:max-w-none @max-[640px]/task-area:border-is-0"
       >
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3">
+          {actions.pending ? (
+            <LoaderCircle aria-label={t("Loading…")} className="icon-xs animate-spin" />
+          ) : null}
           <Badge tone="neutral" className="">
             {t(STATUS_LABELS[task.status])}
           </Badge>
@@ -2562,8 +2650,7 @@ function TaskDetail({
                 className="resize-y"
               />
               <div className="flex items-center gap-2">
-                <Button variant="primary" type="submit" disabled={!canSave}>
-                  {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
+                <Button variant="primary" type="submit" loading={saving} disabled={!canSave}>
                   {t("Save")}
                 </Button>
                 <Button
@@ -2626,6 +2713,15 @@ function TaskDetail({
             </p>
           ) : null}
           <TaskActions task={task} {...actions} />
+          <TaskAcceptanceEvidence
+            task={task}
+            onOpenReview={actions.onOpenReview}
+            isOpeningSession={actions.isOpeningSession}
+          />
+          <TaskBudgetUsage usage={task.budgetUsage} stop={task.budgetStop} budget={task.budget} />
+          {actions.onSaveEvaluation ? (
+            <TaskRunInsights task={task} onSaveEvaluation={actions.onSaveEvaluation} />
+          ) : null}
           <TaskAttemptHistory
             task={task}
             onOpenSession={actions.onOpenReview}
@@ -2639,6 +2735,7 @@ function TaskDetail({
               onRead={actions.onReadNotes}
               onResolve={actions.onResolveNote}
               onOpenReview={actions.onOpenReview}
+              isOpeningSession={actions.isOpeningSession}
             />
           ) : null}
           {goal ? (
@@ -2873,8 +2970,21 @@ function TaskForm({
 }) {
   useLocale();
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [submitMode, setSubmitMode] = useState<"todo" | "queued" | "save">("todo");
   const [workspaceValid, setWorkspaceValid] = useState(true);
   const [crewValid, setCrewValid] = useState(true);
+  const [preflightResult, setPreflightResult] = useState<{
+    key: string;
+    report: TaskPreflightReport;
+  }>();
+  const preflightKey = JSON.stringify([
+    draft.cwd,
+    draft.machineId,
+    draft.harness,
+    draft.model,
+    draft.workspace,
+    draft.preflightRequirements,
+  ]);
   const targetId = draft.machineId ?? backgroundMachineFor(machines, draft.cwd)?.id ?? "";
   const target = machines.find((entry) => entry.id === targetId);
   const lock = useLockSnapshot();
@@ -2919,8 +3029,14 @@ function TaskForm({
         event.preventDefault();
         if (saving) return;
         if (draft.id) {
-          if (canSave) onSubmit("save");
-        } else if (canTodo) onSubmit("todo");
+          if (canSave) {
+            setSubmitMode("save");
+            onSubmit("save");
+          }
+        } else if (canTodo) {
+          setSubmitMode("todo");
+          onSubmit("todo");
+        }
       }}
       className="shrink-0 px-4 py-3"
     >
@@ -3019,6 +3135,45 @@ function TaskForm({
             label={t("Description")}
             placeholder={t("Details, acceptance criteria, links…")}
             focusOwner="group"
+          />
+        </div>
+        <div className="mt-2 space-y-2">
+          <TaskWorkflowControls
+            scope={{ machineId: targetId, projectId: draft.cwd }}
+            draft={{
+              prompt: draft.prompt,
+              verifyCommand: draft.verifyCommand,
+              review: draft.review,
+              reviewerConfig: draft.reviewerConfig,
+              modelSettings: draft.modelSettings,
+              requirements: draft.preflightRequirements,
+            }}
+            busy={saving}
+            preflight={preflightResult?.key === preflightKey ? preflightResult.report : undefined}
+            onCheck={async () =>
+              setPreflightResult({
+                key: preflightKey,
+                report: await preflightTaskDraft(machines, draft),
+              })
+            }
+            onApply={(value, profile) =>
+              onChange({
+                ...draft,
+                prompt: value.prompt,
+                verifyCommand: value.verifyCommand ?? draft.verifyCommand,
+                review: value.review ?? draft.review,
+                reviewerConfig: value.reviewerConfig ?? draft.reviewerConfig,
+                modelSettings: value.modelSettings ?? draft.modelSettings,
+                preflightRequirements: value.requirements ?? draft.preflightRequirements,
+                ...(profile
+                  ? { workflowId: profile.id, workflowVersion: Math.max(1, profile.updatedAt) }
+                  : {}),
+              })
+            }
+          />
+          <TaskBudgetControls
+            budget={draft.budget}
+            onChange={(budget) => update("budget", budget)}
           />
         </div>
         <CrewTaskPicker
@@ -3163,38 +3318,105 @@ function TaskForm({
                 />
               </label>
             </div>
+            {draft.review ? (
+              <details className="min-w-0 space-y-2 text-ui-caption">
+                <summary className="cursor-pointer">{t("Reviewer profile")}</summary>
+                <label className="flex items-center gap-2">
+                  <Checkbox
+                    checked={Boolean(draft.reviewerConfig)}
+                    onChange={(event) =>
+                      update(
+                        "reviewerConfig",
+                        event.target.checked
+                          ? {
+                              harness:
+                                draft.harness as import("../../connections/model/protocol").RemoteProvider,
+                              model: draft.model,
+                              modelSettings: { ...draft.modelSettings },
+                              instructions: "",
+                            }
+                          : undefined,
+                      )
+                    }
+                  />
+                  {t("Use a separate reviewer profile")}
+                </label>
+                {draft.reviewerConfig ? (
+                  <div className="min-w-0 space-y-2">
+                    <ModelPicker
+                      harness={draft.reviewerConfig.harness}
+                      model={draft.reviewerConfig.model}
+                      allowedHarnesses={REMOTE_PROVIDERS}
+                      values={draft.reviewerConfig.modelSettings}
+                      project={draft.cwd}
+                      onChange={(harness, model) =>
+                        update("reviewerConfig", {
+                          ...draft.reviewerConfig!,
+                          harness:
+                            harness as import("../../connections/model/protocol").RemoteProvider,
+                          model,
+                          modelSettings: {},
+                        })
+                      }
+                      onSettingsChange={(modelSettings) =>
+                        update("reviewerConfig", { ...draft.reviewerConfig!, modelSettings })
+                      }
+                    />
+                    <TextareaField
+                      label={t("Reviewer instructions")}
+                      rows={2}
+                      maxLength={8000}
+                      value={draft.reviewerConfig.instructions}
+                      onChange={(event) =>
+                        update("reviewerConfig", {
+                          ...draft.reviewerConfig!,
+                          instructions: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                ) : null}
+              </details>
+            ) : null}
           </div>
         ) : null}
-        <div className="task-form-footer">
-          <Button variant="ghost" type="button" onClick={onCancel}>
-            {t("Cancel")}
-          </Button>
-          {draft.id ? (
-            <Button variant="primary" type="submit" disabled={!canSave || saving}>
-              {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
-              {t("Save")}
-            </Button>
-          ) : (
-            <>
-              <Button
-                variant="secondary"
-                type="button"
-                disabled={!ready || !hasDescription || saving}
-                title={
-                  hasDescription ? undefined : t("Add a description to start this with an agent.")
-                }
-                onClick={() => onSubmit("queued")}
-              >
-                {t(draft.crewDefinitionId ? "Start with crew" : "Add and start")}
-              </Button>
-              <Button variant="primary" type="submit" disabled={!canTodo || saving}>
-                {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
-                {t("Add to To do")}
-              </Button>
-            </>
-          )}
-        </div>
       </fieldset>
+      <div className="task-form-footer">
+        <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
+          {t("Cancel")}
+        </Button>
+        {draft.id ? (
+          <Button variant="primary" type="submit" loading={saving} disabled={!canSave || saving}>
+            {t("Save")}
+          </Button>
+        ) : (
+          <>
+            <Button
+              variant="secondary"
+              type="button"
+              disabled={!ready || !hasDescription || saving}
+              loading={saving && submitMode === "queued"}
+              title={
+                hasDescription ? undefined : t("Add a description to start this with an agent.")
+              }
+              onClick={() => {
+                setSubmitMode("queued");
+                onSubmit("queued");
+              }}
+            >
+              {t(draft.crewDefinitionId ? "Start with crew" : "Add and start")}
+            </Button>
+            <Button
+              variant="primary"
+              type="submit"
+              loading={saving && submitMode === "todo"}
+              disabled={!canTodo || saving}
+            >
+              {t("Add to To do")}
+            </Button>
+          </>
+        )}
+      </div>
     </form>
   );
 }
@@ -3385,8 +3607,14 @@ function SummaryPanel({
               })
             : t("No summary yet. One is sent every day at the time set in Settings.")}
         </p>
-        <Button variant="secondary" type="button" onClick={onRefresh} disabled={busy}>
-          <RefreshCw className="icon-sm" strokeWidth={1.75} />
+        <Button
+          variant="secondary"
+          type="button"
+          onClick={onRefresh}
+          disabled={busy}
+          loading={busy}
+          startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} />}
+        >
           {busy ? t("Refreshing…") : t("Refresh now")}
         </Button>
       </div>
@@ -3492,7 +3720,7 @@ function CustomDailyLimit({
           fieldClassName="w-24 max-w-24"
         />
       </label>
-      <Button variant="secondary" type="submit" disabled={!valid || saving}>
+      <Button variant="secondary" type="submit" loading={saving} disabled={!valid || saving}>
         {t("Save")}
       </Button>
       <span className="text-ui-micro text-(--ui-text-secondary)">{t("0 = no limit")}</span>
@@ -3509,10 +3737,12 @@ function MachineConcurrency({
   limits: readonly MachineLimits[];
   onChange: (machineId: string, settings: Partial<HostSettings>) => void;
 }) {
+  const [saving, setSaving] = useState(false);
+  const pending = useRef(false);
   const limit = limits.find((entry) => entry.machineId === machineId);
   if (!limit) return null;
   return (
-    <label className="flex flex-wrap items-center gap-2 text-ui-caption">
+    <label className="flex flex-wrap items-center gap-2 text-ui-caption" aria-busy={saving}>
       {t("Machine task limit")}
       <SearchableSelect
         label={t("Machine task limit")}
@@ -3522,8 +3752,20 @@ function MachineConcurrency({
           value: String(index + 1),
           label: String(index + 1),
         }))}
-        onChange={(value) => onChange(machineId, { maxRunningTasks: Number(value) })}
+        disabled={saving}
+        onChange={async (value) => {
+          if (pending.current) return;
+          pending.current = true;
+          setSaving(true);
+          try {
+            await onChange(machineId, { maxRunningTasks: Number(value) });
+          } finally {
+            pending.current = false;
+            setSaving(false);
+          }
+        }}
       />
+      {saving ? <LoaderCircle className="icon-sm animate-spin" aria-hidden="true" /> : null}
       <span>{t("Applies to all goals and tasks on this machine.")}</span>
     </label>
   );
@@ -3537,6 +3779,19 @@ function LimitsPanel({
   onChange: (machineId: string, settings: Partial<HostSettings>) => void;
 }) {
   useLocale();
+  const [savingMachine, setSavingMachine] = useState<string | null>(null);
+  const pending = useRef(false);
+  const save = async (machineId: string, settings: Partial<HostSettings>) => {
+    if (pending.current) return;
+    pending.current = true;
+    setSavingMachine(machineId);
+    try {
+      await onChange(machineId, settings);
+    } finally {
+      pending.current = false;
+      setSavingMachine(null);
+    }
+  };
   // A limit set some other way stays selectable.
   const choices = (current: number) =>
     [...new Set([...DAILY_LIMIT_CHOICES, current])]
@@ -3553,10 +3808,14 @@ function LimitsPanel({
       {limits.map((entry) => (
         <li
           key={entry.machineId}
+          aria-busy={savingMachine === entry.machineId}
           className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-ui-caption text-(--ui-text-secondary)"
         >
           <span className="min-w-24 font-medium text-(--ui-text-secondary)">
             {entry.machineName}
+            {savingMachine === entry.machineId ? (
+              <LoaderCircle className="ml-1 inline icon-xs animate-spin" aria-hidden="true" />
+            ) : null}
           </span>
           <span className="flex items-center gap-2">
             {t("Max concurrent tasks")}
@@ -3569,7 +3828,8 @@ function LimitsPanel({
                 value: String(i + 1),
                 label: String(i + 1),
               }))}
-              onChange={(value) => onChange(entry.machineId, { maxRunningTasks: Number(value) })}
+              disabled={savingMachine !== null}
+              onChange={(value) => save(entry.machineId, { maxRunningTasks: Number(value) })}
             />
           </span>
           <span className="flex items-center gap-2">
@@ -3580,7 +3840,8 @@ function LimitsPanel({
               label={t("Daily agent time on {p0}", { p0: entry.machineName })}
               value={String(entry.dailyAgentMinutes)}
               options={choices(entry.dailyAgentMinutes)}
-              onChange={(value) => onChange(entry.machineId, { dailyAgentMinutes: Number(value) })}
+              disabled={savingMachine !== null}
+              onChange={(value) => save(entry.machineId, { dailyAgentMinutes: Number(value) })}
             />
           </span>
           <CustomDailyLimit entry={entry} onChange={onChange} />
@@ -3601,24 +3862,30 @@ function GoalCard({
   goal,
   tasks,
   busy,
+  pending,
   onApprove,
   onEdit,
   onReplan,
   onCancel,
   onDelete,
   onOpenPlanner,
+  onRecheckFinal,
+  onOpenFinal,
   onSessions,
 }: {
   goal: BoardGoal;
   /** The tasks on the goal's machine. */
   tasks: readonly BoardTask[];
   busy: boolean;
+  pending: boolean;
   onApprove: () => void;
   onEdit: () => void;
   onReplan: (feedback: string) => Promise<unknown>;
   onCancel: () => void;
   onDelete: () => void;
   onOpenPlanner?: () => void;
+  onRecheckFinal?: () => void;
+  onOpenFinal?: () => void;
   onSessions: () => void;
 }) {
   useLocale();
@@ -3637,13 +3904,14 @@ function GoalCard({
     <article
       aria-label={goal.title}
       data-goal-status={goal.status}
-      className="rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2"
+      aria-busy={pending || undefined}
+      className="task-goal-card rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 py-2"
     >
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="task-goal-heading flex min-w-0 flex-wrap items-center gap-2">
         <Sparkles className="icon-sm shrink-0 text-(--ui-text-secondary)" />
         <h3
           title={goal.prompt}
-          className="min-w-0 truncate text-ui-secondary font-medium text-(--ui-tone-neutral-fg)"
+          className="task-goal-title min-w-0 truncate text-ui-secondary font-medium text-(--ui-tone-neutral-fg)"
         >
           {goal.title}
         </h3>
@@ -3670,13 +3938,13 @@ function GoalCard({
             </span>
           </span>
         ) : null}
-        <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
+        <span className="task-goal-context min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
           {goal.projects.map((project) => project.name).join(", ")}
           {t(" · on")} {goal.machineName}
           {goal.stale ? t(" (offline, last known)") : ""}
         </span>
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {busy ? (
+        <div className="task-goal-actions ml-auto flex flex-wrap items-center gap-0.5">
+          {pending ? (
             <LoaderCircle className="mx-1.5 icon-xs animate-spin text-(--ui-text-secondary)" />
           ) : null}
           {goal.status !== "done" && goal.status !== "cancelled" ? (
@@ -3780,6 +4048,58 @@ function GoalCard({
           {reason}
         </p>
       ) : null}
+      {goal.finalReview ? (
+        <div className="mt-2 min-w-0 space-y-2 text-ui-caption">
+          <p role="status">
+            {t("Final goal acceptance")}:{" "}
+            {t(
+              goal.finalAcceptance?.status === "passed"
+                ? "Verified"
+                : goal.finalAcceptance?.status === "failed"
+                  ? "Failed"
+                  : goal.finalAcceptance?.status === "running"
+                    ? "Running"
+                    : "Queued",
+            )}
+          </p>
+          {goal.finalAcceptance?.note ? (
+            <p className="break-words text-(--ui-text-secondary)">{goal.finalAcceptance.note}</p>
+          ) : null}
+          <div className="flex flex-wrap gap-1">
+            {goal.finalAcceptance?.sessionId && onOpenFinal ? (
+              <Button variant="ghost" onClick={onOpenFinal}>
+                {t("Open final review")}
+              </Button>
+            ) : null}
+            {goal.finalAcceptance?.status === "failed" && onRecheckFinal ? (
+              <Button
+                variant="ghost"
+                disabled={busy || goal.stale || !goal.finalReviewSupported}
+                onClick={onRecheckFinal}
+              >
+                {t("Recheck final acceptance")}
+              </Button>
+            ) : null}
+          </div>
+          {goal.finalAcceptance?.acceptance ? (
+            <TaskAcceptanceEvidence
+              task={{
+                prompt: JSON.stringify({
+                  schema: "bycoda.task.v1",
+                  objective: goal.prompt,
+                  deliverables: [],
+                  acceptance: GOAL_FINAL_ACCEPTANCE_CRITERIA,
+                  constraints: [],
+                  verification: [],
+                }),
+                verification: { acceptance: goal.finalAcceptance.acceptance },
+              }}
+              onOpenReview={() => onOpenFinal?.()}
+            />
+          ) : null}
+        </div>
+      ) : null}
+      <TaskBudgetUsage usage={goal.budgetUsage} stop={goal.budgetStop} budget={goal.budget} />
       {goal.status === "awaiting-approval" && goal.plan ? (
         <ol aria-label={t("Plan")} className="mt-1.5 space-y-1">
           {goal.plan.tasks.map((task) => (
@@ -3852,6 +4172,7 @@ function GoalSettingsForm({
 }) {
   useLocale();
   const [settings, setSettings] = useState<GoalSettings>(() => ({
+    budget: goal.budget,
     autoMerge: Boolean(goal.autoMerge),
     continueUntilDone: Boolean(goal.continueUntilDone),
     maxRunningTasks: goal.maxRunningTasks ?? 0,
@@ -3879,6 +4200,10 @@ function GoalSettingsForm({
         )}
       </p>
       <fieldset disabled={saving} className="grid min-w-0 gap-3">
+        <TaskBudgetControls
+          budget={settings.budget}
+          onChange={(budget) => update("budget", budget ?? {})}
+        />
         <AutoMergeField
           checked={settings.autoMerge}
           disabled={goal.isolate === false}
@@ -4028,15 +4353,6 @@ function GoalForm({
             placeholder={t("Name the main job")}
             fieldClassName="task-title-field"
           />
-          <div className="flex shrink-0 items-center gap-2">
-            <Button variant="secondary" type="button" onClick={onCancel}>
-              {t("Cancel")}
-            </Button>
-            <Button variant="primary" type="submit" disabled={!valid || saving}>
-              {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
-              {t("Plan it")}
-            </Button>
-          </div>
         </div>
         <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
           <SearchableSelect
@@ -4197,6 +4513,19 @@ function GoalForm({
             </span>
           </div>
         </div>
+        <div className="mt-2 space-y-2">
+          <TaskBudgetControls
+            budget={draft.budget}
+            onChange={(budget) => update("budget", budget)}
+          />
+          <label className="flex items-center gap-2 text-ui-caption">
+            <Checkbox
+              checked={draft.finalReview === true}
+              onChange={(event) => update("finalReview", event.target.checked)}
+            />
+            {t("Verify the integrated result before completing this goal")}
+          </label>
+        </div>
         <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-ui-caption text-(--ui-text-secondary)">
           <label
             title={t("The planned tasks are created only once you approve the plan.")}
@@ -4271,28 +4600,39 @@ function GoalForm({
           </label>
           <MachineConcurrency machineId={targetId} limits={limits} onChange={onChangeLimits} />
         </div>
-        {draft.cwds.map((cwd) => (
-          <div key={cwd}>
-            <p className="font-medium text-ui-caption">{projectDisplayName(cwd)}</p>
-            <TaskWorkspacePicker
-              machine={target}
-              cwd={cwd}
-              isolate={draft.isolate !== false}
-              value={draft.workspaces?.[cwd]}
-              disabled={saving || workspaceBusy}
-              onBusyChange={setWorkspaceBusy}
-              onValidityChange={(valid) =>
-                setWorkspaceValidity((current) =>
-                  current[cwd] === valid ? current : { ...current, [cwd]: valid },
-                )
-              }
-              onChange={(workspace) =>
-                update("workspaces", { ...draft.workspaces, [cwd]: workspace ?? {} })
-              }
-            />
-          </div>
-        ))}
+        <details className="task-advanced-options">
+          <summary>{t("Working branch and worktree")}</summary>
+          {draft.cwds.map((cwd) => (
+            <div key={cwd}>
+              <p className="font-medium text-ui-caption">{projectDisplayName(cwd)}</p>
+              <TaskWorkspacePicker
+                machine={target}
+                cwd={cwd}
+                isolate={draft.isolate !== false}
+                value={draft.workspaces?.[cwd]}
+                disabled={saving || workspaceBusy}
+                onBusyChange={setWorkspaceBusy}
+                onValidityChange={(valid) =>
+                  setWorkspaceValidity((current) =>
+                    current[cwd] === valid ? current : { ...current, [cwd]: valid },
+                  )
+                }
+                onChange={(workspace) =>
+                  update("workspaces", { ...draft.workspaces, [cwd]: workspace ?? {} })
+                }
+              />
+            </div>
+          ))}
+        </details>
       </fieldset>
+      <div className="task-form-footer">
+        <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
+          {t("Cancel")}
+        </Button>
+        <Button variant="primary" type="submit" loading={saving} disabled={!valid || saving}>
+          {t("Plan it")}
+        </Button>
+      </div>
     </form>
   );
 }
@@ -4405,15 +4745,17 @@ function StewardsPanel({
       <ul aria-label={t("Steward list")} className="flex flex-col gap-1.5">
         {stewards.map((steward) => {
           const busy = acting != null;
+          const pending = acting === `steward:${steward.machineId}:${steward.id}`;
           const running = steward.run != null;
           return (
             <li key={`${steward.machineId}:${steward.id}`}>
               <article
                 aria-label={t("Steward for {p0}", { p0: stewardProjectName(steward) })}
                 data-steward-status={steward.lastRunStatus}
+                aria-busy={pending || undefined}
                 className="rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2"
               >
-                <div className="flex min-w-0 items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Bot className="icon-sm shrink-0 text-(--ui-text-secondary)" />
                   <h3
                     title={steward.focus || undefined}
@@ -4427,8 +4769,8 @@ function StewardsPanel({
                     {steward.stale ? t(" (offline, last known)") : ""} ·{" "}
                     {automationScheduleLabel(steward)}
                   </span>
-                  <div className="ml-auto flex shrink-0 items-center gap-0.5">
-                    {busy ? (
+                  <div className="ml-auto flex flex-wrap items-center gap-0.5">
+                    {pending ? (
                       <LoaderCircle className="mx-1.5 icon-xs animate-spin text-(--ui-text-secondary)" />
                     ) : null}
                     <span className="flex items-center gap-1.5 px-1.5 text-ui-micro text-(--ui-text-secondary)">
@@ -4630,15 +4972,6 @@ function StewardForm({
               {TASK_MACHINE_ERROR}
             </span>
           )}
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="secondary" type="button" onClick={onCancel}>
-              {t("Cancel")}
-            </Button>
-            <Button variant="primary" type="submit" disabled={!valid || saving}>
-              {saving ? <LoaderCircle className="icon-sm animate-spin" /> : null}
-              {t("Save")}
-            </Button>
-          </div>
         </div>
         <TextareaField
           hideLabel
@@ -4737,6 +5070,14 @@ function StewardForm({
           ) : null}
         </div>
       </fieldset>
+      <div className="task-form-footer">
+        <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
+          {t("Cancel")}
+        </Button>
+        <Button variant="primary" type="submit" loading={saving} disabled={!valid || saving}>
+          {t("Save")}
+        </Button>
+      </div>
     </form>
   );
 }

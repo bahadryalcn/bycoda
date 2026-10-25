@@ -718,6 +718,32 @@ describe("per-machine scheduling", () => {
 
   const ok = { rev: 1, records: [], applied: [], rejected: [] };
 
+  it("pauses automatic capture for an inactive workspace while explicit sync still works", async () => {
+    let automatic = false;
+    const request = vi.fn(async () => ok);
+    const loop = startSyncLoop(
+      () => ["focus-peer"],
+      () => request,
+      undefined,
+      () => automatic,
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS);
+      expect(request).not.toHaveBeenCalled();
+      await syncNow("focus-peer");
+      expect(request).toHaveBeenCalled();
+      request.mockClear();
+      await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS);
+      expect(request).not.toHaveBeenCalled();
+      automatic = true;
+      loop.nudge();
+      await vi.advanceTimersByTimeAsync(MIN_CYCLE_SPACING_MS);
+      expect(request).toHaveBeenCalled();
+    } finally {
+      loop.stop();
+    }
+  });
+
   it("an offline machine does not delay a healthy one", async () => {
     let fail: (error: Error) => void = () => undefined;
     const hang = new Promise<never>((_, reject) => (fail = reject));

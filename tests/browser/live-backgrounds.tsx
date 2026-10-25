@@ -72,7 +72,7 @@ function Fixture() {
         >
           <p className="mb-5 text-ui-primary leading-relaxed">
             Keep the conversation easy to read. The assistant can explain a complex change while the
-            artwork stays in the unused outer margin. This paragraph deliberately occupies several
+            artwork stays behind the conversation. This paragraph deliberately occupies several
             lines so the preview exercises the actual reading area on both narrow and wide panes.
           </p>
           <pre className="overflow-x-auto rounded-md border border-stroke bg-(--ui-surface-raised) p-4 text-ui-secondary">
@@ -80,7 +80,7 @@ function Fixture() {
           </pre>
           <p className="mt-5 text-ui-primary leading-relaxed">
             The same layout must remain clear when a reply is streaming, when motion is reduced, and
-            when the pane is resized. No decorative thread or character should cross these lines.
+            when the pane is resized. Artwork must never obscure these lines.
           </p>
         </article>
       </section>

@@ -11,13 +11,15 @@ import { HostStore } from "./store";
 import type { SocialCredential } from "./social-credentials";
 import type { SocialAdapters } from "../src/integrations/social/adapter";
 import type { SocialAccount, SocialPlatform } from "../src/features/social/model/social";
-const cleanup: (() => void)[] = [];
-afterEach(() => cleanup.splice(0).forEach((fn) => fn()));
+const cleanup: (() => void | Promise<void>)[] = [];
+afterEach(async () => {
+  for (const action of cleanup.splice(0).reverse()) await action();
+});
 const owner = { kind: "owner", actorId: "device", provider: "owner" } as const;
 async function fixture(platform: SocialPlatform = "x") {
   const path = mkdtempSync(join(tmpdir(), "social-oauth-"));
   const store = new HostStore(join(path, "host.db"));
-  const project = store.addProject(path, "Project");
+  const project = await store.addProject(path, "Project");
   const tokens = new Map<string, SocialCredential>();
   const vault = {
     get: async (id: string) => tokens.get(id),
@@ -29,9 +31,9 @@ async function fixture(platform: SocialPlatform = "x") {
     },
   };
   const social = new SocialService(store, vault, {} as SocialAdapters, path);
-  cleanup.push(() => {
-    social.stop();
-    store.close();
+  cleanup.push(async () => {
+    await social.dispose();
+    await store.close();
     rmSync(path, { recursive: true, force: true });
   });
   const account = (await social.call(owner, "accounts.create", {
@@ -81,14 +83,14 @@ describe("Sosyal OAuth güven sınırı", () => {
         );
       });
       const oauth = new SocialOAuth(s.social, { [platform]: s.config }, fetcher);
-      const auth = new URL(oauth.begin(owner, s.account.id).url);
+      const auth = new URL((await oauth.begin(owner, s.account.id)).url);
       expect(auth.searchParams.get("scope")).toBe(scope);
       await oauth.callback(
         platform,
         new URLSearchParams({ state: auth.searchParams.get("state")!, code: "code" }),
       );
       expect(s.tokens.size).toBe(0);
-      expect(oauth.status(owner, s.account.id).candidates).toEqual([
+      expect((await oauth.status(owner, s.account.id)).candidates).toEqual([
         { id: "profile-1", name: "Creator" },
       ]);
       const connected = await oauth.select(owner, s.account.id, "profile-1");
@@ -213,16 +215,18 @@ describe("Sosyal OAuth güven sınırı", () => {
           }),
     );
     const oauth = new SocialOAuth(s.social, { youtube: s.config }, fetcher);
-    const state = new URL(oauth.begin(owner, s.account.id).url).searchParams.get("state")!;
+    const state = new URL((await oauth.begin(owner, s.account.id)).url).searchParams.get("state")!;
     await expect(
       oauth.callback("youtube", new URLSearchParams({ state, code: "code" })),
     ).rejects.toThrow("exactly one");
-    expect(oauth.status(owner, s.account.id)).toMatchObject({
+    expect(await oauth.status(owner, s.account.id)).toMatchObject({
       status: "failed",
       candidates: [],
     });
     expect(s.tokens.size).toBe(0);
-    expect(JSON.stringify(oauth.status(owner, s.account.id))).not.toContain("synthetic-secret");
+    expect(JSON.stringify(await oauth.status(owner, s.account.id))).not.toContain(
+      "synthetic-secret",
+    );
   });
   it.each(["x", "instagram", "facebook", "linkedin", "youtube"] as const)(
     "%s akışında doğrulanan hesap seçilir; token yalnız host kasasına gider",
@@ -272,7 +276,7 @@ describe("Sosyal OAuth güven sınırı", () => {
         });
       }) as unknown as typeof fetch;
       const oauth = new SocialOAuth(s.social, { [platform]: s.config }, fetcher);
-      const start = oauth.begin(owner, s.account.id);
+      const start = await oauth.begin(owner, s.account.id);
       const state = new URL(start.url).searchParams.get("state")!;
       if (platform === "youtube") {
         expect(new URL(start.url).hostname).toBe("accounts.google.com");
@@ -281,7 +285,7 @@ describe("Sosyal OAuth güven sınırı", () => {
       if (platform === "x")
         expect(new URL(start.url).searchParams.get("code_challenge_method")).toBe("S256");
       await oauth.callback(platform, new URLSearchParams({ state, code: "synthetic-code" }));
-      const status = oauth.status(owner, s.account.id);
+      const status = await oauth.status(owner, s.account.id);
       expect(status.status).toBe("selection");
       expect(JSON.stringify(status)).not.toContain("synthetic-secret");
       expect(JSON.stringify(status)).not.toContain("page-secret");
@@ -305,12 +309,12 @@ describe("Sosyal OAuth güven sınırı", () => {
     const fetcher = vi.fn();
     let now = Date.now();
     const oauth = new SocialOAuth(s.social, { x: s.config }, fetcher, () => now);
-    const start = oauth.begin(owner, s.account.id);
+    const start = await oauth.begin(owner, s.account.id);
     const state = new URL(start.url).searchParams.get("state")!;
     await expect(
       oauth.callback("instagram", new URLSearchParams({ state, code: "code" })),
     ).rejects.toThrow("invalid");
-    now += 11 * 60_000;
+    now += 11 * 60000;
     await expect(oauth.callback("x", new URLSearchParams({ state, code: "code" }))).rejects.toThrow(
       "expired",
     );

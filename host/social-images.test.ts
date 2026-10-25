@@ -26,6 +26,47 @@ const request = () => ({
   checkpoint: vi.fn(),
 });
 describe("image provider routing", () => {
+  it("drains asynchronous progress before settling and ignores later provider notifications", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const progressEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const progress = vi.fn(async () => {
+      entered();
+      await held;
+    });
+    let notify: NonNullable<Parameters<SocialImageAdapter["generate"]>[0]["progress"]>;
+    const provider = adapter("codex");
+    provider.generate = async (input) => {
+      notify = input.progress!;
+      void notify(50);
+      return { bytes: new Uint8Array([1]), model: "fixture" };
+    };
+    let settled = false;
+    const pending = generateSocialImage(
+      { codex: provider },
+      defaultProgram("project", 1).image,
+      { ...request(), progress },
+      () => {},
+    );
+    void pending.then(() => {
+      settled = true;
+    });
+    try {
+      await progressEntered;
+      await Promise.resolve();
+      expect(settled).toBe(false);
+    } finally {
+      release();
+    }
+    await pending;
+    await notify!(100);
+    expect(progress).toHaveBeenCalledOnce();
+  });
   it("discovers owner-workflow model choices and follows ComfyUI progress/results", async () => {
     const folder = mkdtempSync(join(tmpdir(), "bycoda-comfy-test-")),
       path = join(folder, "workflow.json");

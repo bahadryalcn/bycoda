@@ -37,8 +37,16 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
 export const CONVERSATION_FILE_TOOLS = {
   "files.inspect": object({ path }, ["path"]),
   "files.rename": object({ path, name: path, expectedHash }, ["path", "name", "expectedHash"]),
-  "files.move": object({ path, destinationParent: path, expectedHash }, ["path", "destinationParent", "expectedHash"]),
-  "files.copy": object({ path, destinationParent: path, expectedHash }, ["path", "destinationParent", "expectedHash"]),
+  "files.move": object({ path, destinationParent: path, expectedHash }, [
+    "path",
+    "destinationParent",
+    "expectedHash",
+  ]),
+  "files.copy": object({ path, destinationParent: path, expectedHash }, [
+    "path",
+    "destinationParent",
+    "expectedHash",
+  ]),
   "files.delete": object({ path, expectedHash }, ["path", "expectedHash"]),
   "files.create": object({ parent: path, name: path, isDir: { type: "boolean" } }, [
     "parent",
@@ -78,13 +86,23 @@ export const CONVERSATION_FILE_TOOLS = {
   "git.worktrees": object({}),
 } as const;
 export const FILE_CONVERSATION_READS = Object.keys(CONVERSATION_FILE_TOOLS).filter(
-  (action) => !["files.create", "files.write", "files.rename", "files.move", "files.copy", "files.delete"].includes(action),
+  (action) =>
+    ![
+      "files.create",
+      "files.write",
+      "files.rename",
+      "files.move",
+      "files.copy",
+      "files.delete",
+    ].includes(action),
 );
 export const isFileConversationTool = (action: string) =>
   Object.hasOwn(CONVERSATION_FILE_TOOLS, action);
 export function describeFileConversationTool(action: string) {
   if (!isFileConversationTool(action)) return undefined;
-  if (["files.inspect", "files.rename", "files.move", "files.copy", "files.delete"].includes(action))
+  if (
+    ["files.inspect", "files.rename", "files.move", "files.copy", "files.delete"].includes(action)
+  )
     return "Inspect or mutate a file/directory in this conversation's verified working copy. Read files.inspect first and pass its exact expectedHash; the shared host editor queue rechecks it before commit and rejects observed changes. Arbitrary external filesystem writes are not an atomic tree transaction. Inspection is bounded to 2000 entries/32 MiB and rejects Git internals, links and special files. rename takes one name; move/copy take an existing destinationParent in the same checkout and refuse collisions. delete removes the inspected tree. No root deletion, arbitrary paths, Git actions or cross-project operations. Mutations reuse the editor filesystem service.";
   if (action === "files.create" || action === "files.write")
     return "Create or save a file in the calling session's verified working copy through the existing editor service. Read before write and pass files.read's hash as expectedHash; concurrent changes reject the save. No cwd/project override, deletion, Git operation or publishing. Creation refuses an existing target. File content is bounded; writes do not execute it.";
@@ -119,10 +137,10 @@ export async function callFileConversationTool(
   input: Record<string, unknown>,
   execute?: WorkspaceCommands["run"],
 ) {
-  if (action === "files.inspect") return inspectConversationPath(root, input.path);
+  if (action === "files.inspect") return await inspectConversationPath(root, input.path);
   if (["files.rename", "files.move", "files.copy", "files.delete"].includes(action)) {
     if (!execute) throw new Error("Editor filesystem mutations unavailable.");
-    return mutateConversationPath(root, action, input, execute);
+    return await mutateConversationPath(root, action, input, execute);
   }
   if (action === "files.create")
     return {
@@ -185,7 +203,7 @@ export async function callFileConversationTool(
     );
     return { ...state, original: text(original, input), current: text(current, input) };
   }
-  if (action === "git.branches") return hostBranches(root);
-  if (action === "git.worktrees") return hostWorktrees(root);
+  if (action === "git.branches") return await hostBranches(root);
+  if (action === "git.worktrees") return await hostWorktrees(root);
   throw new Error("Unsupported file conversation tool.");
 }

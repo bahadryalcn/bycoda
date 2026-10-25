@@ -121,11 +121,11 @@ describe("sparse block revisions", () => {
     expect(middle.blockRevisions[withTool.blocks[1].id]).toBe(2);
   });
 
-  it("persists sparse snapshots, returns deltas and preserves restart-compatible full JSON", () => {
+  it("persists sparse snapshots, returns deltas and preserves restart-compatible full JSON", async () => {
     const store = new HostStore(":memory:");
     try {
-      const project = store.addProject("/project", "test");
-      const initial = store.save(
+      const project = await store.addProject("/project", "test");
+      const initial = await store.save(
         {
           ...value([
             { id: "a", role: "user", text: "prompt" },
@@ -140,26 +140,27 @@ describe("sparse block revisions", () => {
         { ...initial.session.blocks[1], text: "second" },
       ];
       registerStreamingTextUpdate(initial.session.blocks, nextBlocks, 1);
-      const next = store.save(
+      const next = await store.save(
         { ...initial, session: { ...initial.session, blocks: nextBlocks }, revision: 2 },
         {},
         { deferred: true },
       );
       expect(next.blockRevisions).toEqual({ a: 1, b: 2 });
-      const delta = store.sync(initial.session.id, 1);
+      const delta = await store.sync(initial.session.id, 1);
       expect(delta.kind).toBe("delta");
       if (delta.kind === "delta") expect(delta.blocks.map((block) => block.id)).toEqual(["b"]);
-      store.flushAll();
+      await store.flushAll();
       const persisted = JSON.parse(
         String(
-          store.db.prepare("SELECT snapshot FROM sessions WHERE id=?").get(initial.session.id)!
-            .snapshot,
+          (await store.db
+            .prepare("SELECT snapshot FROM sessions WHERE id=?")
+            .get(initial.session.id))!.snapshot,
         ),
       );
       expect(persisted.blockRevisions).toEqual({ a: 1, b: 2 });
       expect(persisted.session.blocks[1].text).toBe("second");
     } finally {
-      store.close();
+      await store.close();
     }
   });
 });

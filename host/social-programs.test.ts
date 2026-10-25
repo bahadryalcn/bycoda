@@ -14,7 +14,6 @@ import {
 import type { SocialAdapters } from "../src/integrations/social/adapter";
 import type { SocialTextGenerator } from "./social-generation";
 import { ImageGenerationError, type SocialImageAdapters } from "./social-images";
-
 const owner: SocialPrincipal = { kind: "owner", actorId: "test-owner", provider: "owner" };
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -28,10 +27,11 @@ async function fixture(
       factIds: [],
     }),
   images: SocialImageAdapters = {},
+  disposalFailure?: (error: unknown) => void,
 ) {
   const directory = mkdtempSync(join(tmpdir(), "social-program-test-")),
     store = new HostStore(join(directory, "host.db"));
-  const project = store.addProject(directory, "Test project"),
+  const project = await store.addProject(directory, "Test project"),
     clock = { at: Date.parse("2026-10-14T09:00:00Z") };
   const send = vi.fn(async () => ({
     platformId: "external-test-id",
@@ -64,13 +64,16 @@ async function fixture(
     images,
   );
   cleanups.push(async () => {
-    service.stop();
+    await service.dispose().catch((error) => {
+      if (!disposalFailure) throw error;
+      disposalFailure(error);
+    });
     await service.programs.idle();
-    store.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  const call = <T>(action: string, input: Record<string, unknown> = {}, principal = owner) =>
-    service.call(principal, action, input) as Promise<T>;
+  const call = async <T>(action: string, input: Record<string, unknown> = {}, principal = owner) =>
+    (await service.call(principal, action, input)) as Promise<T>;
   const account = async (platform: SocialAccount["platform"] = "x") => {
     const a = await call<SocialAccount>("accounts.create", {
       platform,
@@ -126,14 +129,15 @@ async function fixture(
     totalPosts: 1,
   };
   config.schedule.timeZone = "UTC";
-  const create = () => call<SocialProgram>("programs.configure", { config });
-  const activate = (p: SocialProgram) =>
-    call<SocialProgram>("programs.activate", {
+  const create = async () => await call<SocialProgram>("programs.configure", { config });
+  const activate = async (p: SocialProgram) =>
+    await call<SocialProgram>("programs.activate", {
       id: p.id,
       expectedRevision: p.revision,
       confirm: true,
     });
-  const detail = (p: SocialProgram) => call<ProgramDetail>("programs.status", { id: p.id });
+  const detail = async (p: SocialProgram) =>
+    await call<ProgramDetail>("programs.status", { id: p.id });
   return {
     service,
     store,
@@ -149,8 +153,24 @@ async function fixture(
     tokens,
   };
 }
-
 describe("AI campaign programs through SocialService", () => {
+  it("keeps generation stopped when an older asynchronous start resumes after Stop", async () => {
+    const generate = vi.fn(async () => JSON.stringify({ text: "Prepared content", factIds: [] }));
+    const f = await fixture(generate);
+    const program = await f.create();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    Object.defineProperty(f.service.programs, "ready", { value: held });
+    const starting = f.service.programs.start();
+    const stopping = f.service.programs.stop();
+    release();
+    await Promise.all([starting, stopping]);
+    await f.call("programs.generate", { id: program.id });
+    await f.service.programs.idle();
+    expect(generate).not.toHaveBeenCalled();
+  });
   it("keeps owner pause/status controls after project draft grants are revoked", async () => {
     const f = await fixture(),
       p = await f.create();
@@ -166,11 +186,12 @@ describe("AI campaign programs through SocialService", () => {
   it("does not persist repeated status reads as large idempotency receipts", async () => {
     const f = await fixture(),
       p = await f.create();
-    const count = () => f.store.db.prepare("SELECT count(*) AS n FROM social_receipts").get()!.n;
-    const before = count();
+    const count = async () =>
+      (await f.store.db.prepare("SELECT count(*) AS n FROM social_receipts").get())!.n;
+    const before = await count();
     await f.service.call(owner, "programs.status", { id: p.id }, "read-request-one");
     await f.service.call(owner, "programs.status", { id: p.id }, "read-request-two");
-    expect(count()).toBe(before);
+    expect(await count()).toBe(before);
   });
   it("measures interval plans from the actual dispatch rather than their original slot", async () => {
     const f = await fixture(),
@@ -214,7 +235,7 @@ describe("AI campaign programs through SocialService", () => {
         generate: async (input) => {
           attempts++;
           if (attempts === 1) {
-            input.checkpoint("known-image-job");
+            await input.checkpoint("known-image-job");
             throw new ImageGenerationError("uncertain", "Interrupted.");
           }
           expect(input.providerJobId).toBe("known-image-job");
@@ -242,31 +263,40 @@ describe("AI campaign programs through SocialService", () => {
   });
   it("stops generation durably and safely ignores a late model response", async () => {
     let resolve!: (value: string) => void;
+    let entered!: () => void;
+    const started = new Promise<void>((done) => {
+      entered = done;
+    });
     const f = await fixture(
         () =>
           new Promise<string>((yes) => {
             resolve = yes;
+            entered();
           }),
       ),
       p = await f.create();
     await f.call("programs.generate", { id: p.id });
-    f.service.stop();
-    expect((await f.detail(p)).occurrences[0].targets[0].status).toBe("review");
-    resolve(JSON.stringify({ text: "A late response", factIds: [] }));
-    await f.service.programs.idle();
+    await started;
+    try {
+      await f.service.stop();
+      expect((await f.detail(p)).occurrences[0].targets[0].status).toBe("review");
+    } finally {
+      resolve(JSON.stringify({ text: "A late response", factIds: [] }));
+      await f.service.programs.idle();
+    }
     expect((await f.detail(p)).occurrences[0].targets[0].variant).toBeUndefined();
   });
   it("refreshes an expiring supported connection without invalidating program authority", async () => {
     const f = await fixture();
     const a = JSON.parse(
       String(
-        f.store.db
+        (await f.store.db
           .prepare("SELECT value FROM social_records WHERE kind='account' AND id=?")
-          .get(f.a.id)!.value,
+          .get(f.a.id))!.value,
       ),
     );
     a.expiresAt = f.clock.at + 500;
-    f.store.db
+    await f.store.db
       .prepare("UPDATE social_records SET value=? WHERE kind='account' AND id=?")
       .run(JSON.stringify(a), a.id);
     f.tokens.set(a.id, {
@@ -291,6 +321,10 @@ describe("AI campaign programs through SocialService", () => {
   });
   it("preserves another target's approvals while a second account is generating", async () => {
     let resolve!: (value: string) => void;
+    let entered!: () => void;
+    const secondStarted = new Promise<void>((done) => {
+      entered = done;
+    });
     let count = 0;
     const f = await fixture(async () => {
       count++;
@@ -298,6 +332,7 @@ describe("AI campaign programs through SocialService", () => {
         return JSON.stringify({ text: "An owner-provided practical workflow", factIds: [] });
       return new Promise<string>((yes) => {
         resolve = yes;
+        entered();
       });
     });
     const second = await f.account("facebook");
@@ -306,18 +341,21 @@ describe("AI campaign programs through SocialService", () => {
     const p = await f.create();
     await f.call("programs.generate", { id: p.id });
     // The first output has completed and the chained second target is now awaiting AI.
-    await new Promise((yes) => setTimeout(yes, 0));
+    await secondStarted;
     const o = (await f.detail(p)).occurrences[0];
-    await f.call("programs.approve", {
-      id: p.id,
-      occurrenceId: o.id,
-      accountId: f.a.id,
-      expectedRevision: o.revision,
-      confirm: true,
-      steps: ["text"],
-    });
-    resolve(JSON.stringify({ text: "A different workflow perspective", factIds: [] }));
-    await f.service.programs.idle();
+    try {
+      await f.call("programs.approve", {
+        id: p.id,
+        occurrenceId: o.id,
+        accountId: f.a.id,
+        expectedRevision: o.revision,
+        confirm: true,
+        steps: ["text"],
+      });
+    } finally {
+      resolve(JSON.stringify({ text: "A different workflow perspective", factIds: [] }));
+      await f.service.programs.idle();
+    }
     expect((await f.detail(p)).occurrences[0].targets[0].approvals.text).toBeTruthy();
   });
   it("saves paused, generates through the chosen model and publishes an exact occurrence once", async () => {
@@ -465,19 +503,28 @@ describe("AI campaign programs through SocialService", () => {
   });
   it("does not block publication ticks while generation is pending", async () => {
     let resolve!: (value: string) => void;
+    let entered!: () => void;
+    const started = new Promise<void>((done) => {
+      entered = done;
+    });
     const f = await fixture(
         () =>
           new Promise<string>((yes) => {
             resolve = yes;
+            entered();
           }),
       ),
       p = await f.create();
     await f.activate(p);
     await f.call("programs.generate", { id: p.id });
-    await f.service.tick();
-    expect((await f.detail(p)).occurrences[0].targets[0].status).toBe("generating");
-    resolve(JSON.stringify({ text: "An owner-provided practical workflow", factIds: [] }));
-    await f.service.programs.idle();
+    await started;
+    try {
+      await f.service.tick();
+      expect((await f.detail(p)).occurrences[0].targets[0].status).toBe("generating");
+    } finally {
+      resolve(JSON.stringify({ text: "An owner-provided practical workflow", factIds: [] }));
+      await f.service.programs.idle();
+    }
   });
   it("enforces generation budgets and platform model overrides", async () => {
     const generate = vi.fn(async () =>
@@ -494,7 +541,10 @@ describe("AI campaign programs through SocialService", () => {
     const p = await f.create();
     await f.call("programs.generate", { id: p.id });
     await f.service.programs.idle();
-    expect(generate.mock.calls[0][0]).toEqual({ provider: "antigravity", model: "platform-override" });
+    expect(generate.mock.calls[0][0]).toEqual({
+      provider: "antigravity",
+      model: "platform-override",
+    });
     const o = (await f.detail(p)).occurrences[0];
     await f.call("programs.regenerate", { id: p.id, occurrenceId: o.id, accountId: f.a.id });
     await f.service.programs.idle();
@@ -546,10 +596,10 @@ describe("AI campaign programs through SocialService", () => {
     const d = await f.detail(p),
       o = d.occurrences[0];
     o.targets[0].status = "generating";
-    f.store.db
+    await f.store.db
       .prepare("UPDATE social_occurrences SET value=? WHERE id=?")
       .run(JSON.stringify(o), o.id);
-    f.service.programs.recover();
+    await f.service.programs.recover();
     expect((await f.detail(p)).occurrences[0].targets[0].status).toBe("review");
     await expect(
       f.call("programs.edit", {
@@ -584,4 +634,265 @@ describe("AI campaign programs through SocialService", () => {
     });
     await expect(f.activate(updated)).rejects.toThrow("sample");
   });
+});
+
+it("rejects a stale activation after an acknowledged configuration replacement", async () => {
+  const f = await fixture();
+  const program = await f.create();
+  const programs = f.service.programs as unknown as { checkConfig(config: unknown): Promise<void> };
+  const original = programs.checkConfig.bind(programs);
+  let entered!: () => void;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  let hold = true;
+  const check = vi.spyOn(programs, "checkConfig").mockImplementation(async (config) => {
+    await original(config);
+    if (hold && (config as SocialProgram).id === program.id) {
+      hold = false;
+      entered();
+      await held;
+    }
+  });
+  const activating = f.activate(program);
+  try {
+    await started;
+    const updated = await f.call<SocialProgram>("programs.configure", {
+      id: program.id,
+      expectedRevision: program.revision,
+      config: { ...f.config, name: "Newer paused campaign" },
+    });
+    release();
+    await expect(activating).rejects.toThrow("Campaign was changed by another session");
+    expect((await f.detail(program)).program).toMatchObject({
+      revision: updated.revision,
+      name: "Newer paused campaign",
+      enabled: false,
+    });
+  } finally {
+    release();
+    await activating.catch(() => {});
+    check.mockRestore();
+  }
+});
+
+it("discards a stale publication tick after an acknowledged configuration replacement", async () => {
+  const f = await fixture();
+  const program = await f.create();
+  await f.activate(program);
+  await f.call("programs.generate", { id: program.id });
+  await f.service.programs.idle();
+  const hooks = (
+    f.service.programs as unknown as { hooks: { prepareMedia(variant: any): Promise<any> } }
+  ).hooks;
+  const original = hooks.prepareMedia.bind(hooks);
+  let entered!: () => void;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  let hold = true;
+  const media = vi.spyOn(hooks, "prepareMedia").mockImplementation(async (variant) => {
+    const prepared = await original(variant);
+    if (hold) {
+      hold = false;
+      entered();
+      await held;
+    }
+    return prepared;
+  });
+  const ticking = f.service.programs.tick();
+  try {
+    await started;
+    const updated = await f.call<SocialProgram>("programs.configure", {
+      id: program.id,
+      expectedRevision: program.revision,
+      config: { ...f.config, name: "Newer paused campaign" },
+    });
+    release();
+    await ticking;
+    const detail = await f.detail(program);
+    expect(detail.program).toMatchObject({
+      revision: updated.revision,
+      name: "Newer paused campaign",
+      enabled: false,
+    });
+    expect(detail.occurrences[0].programRevision).toBe(updated.revision);
+    expect(detail.occurrences[0].targets[0]).toMatchObject({ status: "pending" });
+    expect((await f.store.db.prepare("SELECT count(*) AS n FROM social_jobs").get())!.n).toBe(0);
+    expect(f.send).not.toHaveBeenCalled();
+  } finally {
+    release();
+    await ticking.catch(() => {});
+    media.mockRestore();
+  }
+});
+
+it("rejects a held earlier edit after a newer program configuration acknowledges", async () => {
+  const f = await fixture();
+  const program = await f.create();
+  const programs = f.service.programs as unknown as {
+    occurrences(id: string, limit?: number): Promise<unknown[]>;
+  };
+  const original = programs.occurrences.bind(programs);
+  let release!: () => void;
+  let entered!: () => void;
+  let hold = true;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const read = vi.spyOn(programs, "occurrences").mockImplementation(async (...args) => {
+    if (hold && args[0] === program.id) {
+      hold = false;
+      entered();
+      await gate;
+    }
+    return await original(...args);
+  });
+  const first = f.call<SocialProgram>("programs.configure", {
+    id: program.id,
+    expectedRevision: program.revision,
+    config: { ...f.config, name: "Earlier slow edit" },
+  });
+  try {
+    await started;
+    const second = await f.call<SocialProgram>("programs.configure", {
+      id: program.id,
+      expectedRevision: program.revision,
+      config: { ...f.config, name: "Newer acknowledged edit" },
+    });
+    expect(second.revision).toBe(program.revision + 1);
+    release();
+    await expect(first).rejects.toThrow("Campaign was changed by another session");
+    expect((await f.detail(program)).program.name).toBe("Newer acknowledged edit");
+  } finally {
+    release();
+    await first.catch(() => {});
+    read.mockRestore();
+  }
+});
+it("keeps failed generation cleanup atomic with an acknowledged configuration replacement", async () => {
+  let rejectModel!: (error: Error) => void;
+  let modelEntered!: () => void;
+  const modelStarted = new Promise<void>((resolve) => {
+    modelEntered = resolve;
+  });
+  const f = await fixture(
+    () =>
+      new Promise<string>((_resolve, reject) => {
+        rejectModel = reject;
+        modelEntered();
+      }),
+  );
+  const program = await f.create();
+  await f.call("programs.generate", { id: program.id });
+  await modelStarted;
+  const occurrenceId = (await f.detail(program)).occurrences[0].id;
+  const programs = f.service.programs as unknown as { occurrence(id: unknown): Promise<any> };
+  const original = programs.occurrence.bind(programs);
+  let release!: () => void;
+  let entered!: () => void;
+  let hold = true;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const read = vi.spyOn(programs, "occurrence").mockImplementation(async (id) => {
+    const item = await original(id);
+    if (hold && id === occurrenceId) {
+      hold = false;
+      entered();
+      await gate;
+    }
+    return item;
+  });
+  rejectModel(new Error("fixture model failure"));
+  try {
+    await started;
+    let configureSettled = false;
+    const configuring = f.call<SocialProgram>("programs.configure", {
+      id: program.id,
+      expectedRevision: program.revision,
+      config: { ...f.config, name: "Reconfigured after generation failure" },
+    });
+    void configuring.then(() => {
+      configureSettled = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(configureSettled).toBe(false);
+    release();
+    const updated = await configuring;
+    await f.service.programs.idle();
+    const after = await original(occurrenceId);
+    expect(after.programRevision).toBe(updated.revision);
+    expect(after.targets[0].status).toBe("pending");
+  } finally {
+    release();
+    await f.service.programs.idle();
+    read.mockRestore();
+  }
+});
+
+it("drains accepted Social operations before reporting a Stop failure during disposal", async () => {
+  let releaseModel!: (value: string) => void;
+  let modelEntered!: () => void;
+  const modelStarted = new Promise<void>((resolve) => {
+    modelEntered = resolve;
+  });
+  const stopFailure = new Error("fixture stop SQLite failure");
+  const f = await fixture(
+    () =>
+      new Promise<string>((resolve) => {
+        releaseModel = resolve;
+        modelEntered();
+      }),
+    {},
+    (error) => {
+      expect(error).toBeInstanceOf(AggregateError);
+      expect((error as AggregateError).errors).toContain(stopFailure);
+    },
+  );
+  const operation = f.call("programs.suggest", { config: f.config, instructions: "retain config" });
+  const caught = operation.catch((error) => error);
+  await modelStarted;
+  const stop = vi.spyOn(f.service.programs, "stop").mockRejectedValueOnce(stopFailure);
+  let operationSettled = false;
+  void caught.then(() => {
+    operationSettled = true;
+  });
+  const disposing = f.service.dispose();
+  let disposed = false;
+  void disposing.then(
+    () => {
+      disposed = true;
+    },
+    () => {
+      disposed = true;
+    },
+  );
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(disposed).toBe(false);
+    expect(operationSettled).toBe(false);
+    releaseModel(JSON.stringify({ config: f.config, questions: [] }));
+    await caught;
+    await expect(disposing).rejects.toThrow("Social shutdown failed after draining accepted work");
+  } finally {
+    releaseModel(JSON.stringify({ config: f.config, questions: [] }));
+    await caught;
+    await disposing.catch(() => {});
+    stop.mockRestore();
+  }
 });

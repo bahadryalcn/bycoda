@@ -52,19 +52,19 @@ export class ConversationRuntimeReadTools {
     private readonly limits: Pick<HostLimits, "state">,
     private readonly shells: typeof listShellProfiles = listShellProfiles,
     private readonly read: typeof readAttachmentChunk = readAttachmentChunk,
-    private readonly session: HostStore["session"] = (id) => store.session(id),
+    private readonly session: HostStore["session"] = async (id) => await store.session(id),
   ) {}
 
   async call(
     action: RuntimeReadConversationTool,
     input: Record<string, unknown>,
     principal: RuntimeLogPrincipal,
-    authorized: () => boolean,
+    authorized: () => boolean | Promise<boolean>,
   ): Promise<unknown> {
-    const check = () => {
-      if (!authorized()) throw new Error("Session authority revoked.");
+    const check = async () => {
+      if (!(await authorized())) throw new Error("Session authority revoked.");
     };
-    check();
+    await check();
     if (!isRuntimeReadConversationTool(action)) throw new Error("Unsupported runtime read tool.");
     if (
       Object.keys(input).some(
@@ -72,9 +72,9 @@ export class ConversationRuntimeReadTools {
       )
     )
       throw new Error("Unknown or protected runtime read field.");
-    this.store.project(principal.projectId);
+    await this.store.project(principal.projectId);
     if (action === "host.limits.status") {
-      const state = this.limits.state();
+      const state = await this.limits.state();
       return {
         scope: "host-scheduler",
         maxRunningTasks: state.maxRunningTasks,
@@ -96,7 +96,7 @@ export class ConversationRuntimeReadTools {
         chosenId: installed.has(profiles.chosenId ?? "") ? profiles.chosenId : null,
       };
     }
-    const session = this.session(principal.sessionId);
+    const session = await this.session(principal.sessionId);
     if (session.projectId !== principal.projectId)
       throw new Error("Session belongs to another project.");
     if (action === "attachments.read") {
@@ -112,7 +112,7 @@ export class ConversationRuntimeReadTools {
         },
         this.session,
       );
-      check();
+      await check();
       const cap = 3 * Math.floor(Number(input.maxBytes ?? 12288) / 3);
       const bytes = Buffer.from(chunk.data, "base64").subarray(0, cap);
       const next = offset + bytes.length;

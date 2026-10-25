@@ -47,47 +47,55 @@ export type SessionRunState =
 
 /** Starts the prompt in a new session. A failure is returned, not thrown, with
  * the session when one was already created. */
-export function launchSessionRun(
+export async function launchSessionRun(
   store: HostStore,
   engine: SessionRunEngine,
   spec: SessionRunSpec,
-): { sessionId?: string; runId?: string; error?: string } {
+  admitted: () => boolean = () => true,
+): Promise<{ sessionId?: string; runId?: string; error?: string; deferred?: boolean }> {
   let sessionId: string | undefined;
   try {
-    sessionId = engine.command({
-      type: "create",
-      commandId: spec.requestId ? `${spec.requestId}:create` : randomUUID(),
-      projectId: spec.projectId,
-      ...(spec.worktreeCwd ? { worktreeCwd: spec.worktreeCwd } : {}),
-      harness: spec.harness,
-      ...(spec.providerAccountId === undefined ? {} : { providerAccountId: spec.providerAccountId }),
-      model: spec.model,
-      modelSettings: spec.modelSettings,
-      runtimeMode: spec.runtimeMode,
-    }).sessionId;
-    engine.updateSession(sessionId, { title: spec.title });
-    engine.command({
+    if (!admitted()) return { deferred: true };
+    sessionId = (
+      await engine.command({
+        type: "create",
+        commandId: spec.requestId ? `${spec.requestId}:create` : randomUUID(),
+        projectId: spec.projectId,
+        ...(spec.worktreeCwd ? { worktreeCwd: spec.worktreeCwd } : {}),
+        harness: spec.harness,
+        ...(spec.providerAccountId === undefined
+          ? {}
+          : { providerAccountId: spec.providerAccountId }),
+        model: spec.model,
+        modelSettings: spec.modelSettings,
+        runtimeMode: spec.runtimeMode,
+      })
+    ).sessionId;
+    if (!admitted()) return { sessionId, deferred: true };
+    await engine.updateSession(sessionId, { title: spec.title });
+    if (!admitted()) return { sessionId, deferred: true };
+    await engine.command({
       type: "send",
       commandId: spec.requestId ? `${spec.requestId}:send` : randomUUID(),
       sessionId,
       text: spec.prompt,
     });
-    return { sessionId, runId: store.session(sessionId).runId };
+    return { sessionId, runId: (await store.session(sessionId)).runId };
   } catch (error) {
     return { sessionId, error: errorMessage(error) };
   }
 }
 
 /** Where a started run stands. `maxRunMinutes` of zero means no time limit. */
-export function sessionRunState(
+export async function sessionRunState(
   store: HostStore,
   run: SessionRun,
   maxRunMinutes: number,
   now: number,
-): SessionRunState {
+): Promise<SessionRunState> {
   let session;
   try {
-    session = store.session(run.sessionId ?? "");
+    session = await store.session(run.sessionId ?? "");
   } catch {
     return {
       state: "finished",
@@ -118,11 +126,11 @@ export function sessionRunState(
   return { state: "finished", status: "failed", error: note };
 }
 
-export function cancelSessionRun(
+export async function cancelSessionRun(
   engine: SessionRunEngine,
   run: Pick<SessionRun, "sessionId" | "runId">,
-): void {
-  engine.command({
+): Promise<void> {
+  await engine.command({
     type: "cancel",
     commandId: randomUUID(),
     sessionId: run.sessionId ?? "",

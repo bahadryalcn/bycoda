@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import { StoreDatabase } from "./store-db";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SessionQueues } from "./session-queue";
 import {
@@ -10,7 +10,7 @@ import {
   reorderRemoteMessages,
 } from "../src/features/connections/model/remoteQueue";
 
-const databases: DatabaseSync[] = [];
+const databases: StoreDatabase[] = [];
 const row = (id: string) => ({ id, text: id, attachments: [] });
 beforeEach(() => {
   const storage = new Map<string, string>();
@@ -28,9 +28,11 @@ beforeEach(() => {
     },
   });
 });
-afterEach(() => databases.splice(0).forEach((db) => db.close()));
+afterEach(async () => {
+  for (const db of databases.splice(0)) await db.close();
+});
 function setup() {
-  const db = new DatabaseSync(":memory:");
+  const db = new StoreDatabase(":memory:");
   databases.push(db);
   let queues = new SessionQueues(db);
   let offline = false;
@@ -50,8 +52,10 @@ function setup() {
           ),
       ).toBe(true);
     }
-    const action = method.slice(method.lastIndexOf(".") + 1) as Parameters<SessionQueues["serve"]>[0];
-    const result = queues.serve(action, id, String(params.clientId), params, {
+    const action = method.slice(method.lastIndexOf(".") + 1) as Parameters<
+      SessionQueues["serve"]
+    >[0];
+    const result = await queues.serve(action, id, String(params.clientId), params, {
       before: params.before,
       after: params.after,
     });
@@ -97,13 +101,16 @@ it("retains unknown delivery without a legacy backup and retries cannot acknowle
   expect(restored.snapshot().recovery).toBe("a");
   expect(restored.canDrain()).toBe(false);
   await expect(restored.retry()).rejects.toThrow(/unknown/);
-  expect(f.queues.get("chat").messages.map((message) => message.id)).toEqual(["a", "b"]);
+  expect((await f.queues.get("chat")).messages.map((message) => message.id)).toEqual(["a", "b"]);
   expect(f.calls.some((method) => method.endsWith(".finish"))).toBe(false);
   await restored.resolveRecovery(false);
-  expect(f.queues.get("chat")).toMatchObject({ status: "paused", drain: { holder: "desktop:old" } });
-  expect(f.queues.get("chat").claim).toBeUndefined();
+  expect(await f.queues.get("chat")).toMatchObject({
+    status: "paused",
+    drain: { holder: "desktop:old" },
+  });
+  expect((await f.queues.get("chat")).claim).toBeUndefined();
   expect(restored.snapshot().recovery).toBeUndefined();
-  expect(f.queues.get("chat").messages.map((message) => message.id)).toEqual(["a", "b"]);
+  expect((await f.queues.get("chat")).messages.map((message) => message.id)).toEqual(["a", "b"]);
 });
 
 it("explicitly confirms delivery while keeping unrelated queued work paused", async () => {
@@ -114,8 +121,8 @@ it("explicitly confirms delivery while keeping unrelated queued work paused", as
   const restored = f.client("desktop:old");
   await restored.initialize({ messages: [] });
   await restored.resolveRecovery(true);
-  expect(f.queues.get("chat").messages.map((message) => message.id)).toEqual(["b"]);
-  expect(f.queues.get("chat").status).toBe("paused");
+  expect((await f.queues.get("chat")).messages.map((message) => message.id)).toEqual(["b"]);
+  expect((await f.queues.get("chat")).status).toBe("paused");
 });
 
 it("does not let another window adopt or settle an in-flight send", async () => {
@@ -129,8 +136,8 @@ it("does not let another window adopt or settle an in-flight send", async () => 
   expect(other.snapshot().recovery).toBeUndefined();
   expect(other.canDrain()).toBe(false);
   await other.resolveRecovery(true);
-  expect(f.queues.get("chat").claim?.token).toBe(token);
-  expect(f.queues.get("chat").messages.map((message) => message.id)).toEqual(["a"]);
+  expect((await f.queues.get("chat")).claim?.token).toBe(token);
+  expect((await f.queues.get("chat")).messages.map((message) => message.id)).toEqual(["a"]);
   expect(f.calls.some((method) => method.endsWith(".finish"))).toBe(false);
 });
 
@@ -143,14 +150,14 @@ it("reconciles a lost claim reply after client and queue-service restart without
   f.restart();
   const restored = f.client("desktop:old");
   await restored.initialize();
-  expect(f.queues.get("chat")).toMatchObject({
+  expect(await f.queues.get("chat")).toMatchObject({
     messages: [row("a")],
     // Only the claim reply was lost: no provider send started, so the queue
     // keeps its active state after releasing that reservation.
     status: "active",
     drain: { holder: "desktop:old" },
   });
-  expect(f.queues.get("chat").claim).toBeUndefined();
+  expect((await f.queues.get("chat")).claim).toBeUndefined();
   expect(restored.snapshot().error).toBeUndefined();
   expect(restored.snapshot().recovery).toBeUndefined();
   expect(restored.canDrain()).toBe(true);
@@ -165,11 +172,15 @@ it("preserves offline append-and-reorder and unrelated concurrent rows through r
   original.update((queue) => enqueueRemoteMessage(queue, row("b")));
   original.update((queue) => reorderRemoteMessages(queue, ["b", "a"]));
   await expect(original.sync()).rejects.toThrow("offline");
-  const current = f.queues.get("chat");
-  f.queues.change("chat", current, { ...current, messages: [...current.messages, row("c")] });
+  const current = await f.queues.get("chat");
+  await f.queues.change("chat", current, { ...current, messages: [...current.messages, row("c")] });
   f.offline(false);
   const restored = f.client("remote:new");
   await restored.initialize();
-  expect(f.queues.get("chat").messages.map((message) => message.id)).toEqual(["b", "a", "c"]);
+  expect((await f.queues.get("chat")).messages.map((message) => message.id)).toEqual([
+    "b",
+    "a",
+    "c",
+  ]);
   expect(restored.snapshot().queue.messages.map((message) => message.id)).toEqual(["b", "a", "c"]);
 });

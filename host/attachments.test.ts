@@ -12,16 +12,14 @@ import {
   collectAttachmentGarbage,
 } from "./attachments";
 import { createHash } from "node:crypto";
-
-const cleanups: Array<() => void> = [];
-
+const cleanups: Array<() => void | Promise<void>> = [];
 it.skipIf(process.platform !== "win32")(
   "serializes UUID case aliases before accepting a conflicting retry",
   async () => {
     const directory = mkdtempSync(join(tmpdir(), "remote-upload-alias-"));
     const store = new HostStore(join(directory, "host.db"));
-    cleanups.push(() => {
-      store.close();
+    cleanups.push(async () => {
+      await store.close();
       rmSync(directory, { recursive: true, force: true });
     });
     const id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -46,7 +44,6 @@ it.skipIf(process.platform !== "win32")(
     expect(readFileSync(attachmentPath(store, id), "utf8")).toBe("before");
   },
 );
-
 it("reports a durable offset and prefix hash after a host store reopen", async () => {
   const directory = mkdtempSync(join(tmpdir(), "remote-resume-test-"));
   const path = join(directory, "host.db");
@@ -58,10 +55,10 @@ it("reports a durable offset and prefix hash after a host store reopen", async (
     size: 6,
     data: Buffer.from("abc").toString("base64"),
   });
-  store.close();
+  await store.close();
   const reopened = new HostStore(path);
-  cleanups.push(() => {
-    reopened.close();
+  cleanups.push(async () => {
+    await reopened.close();
     rmSync(directory, { recursive: true, force: true });
   });
   expect(await attachmentUploadStatus(reopened, { id, size: 6 })).toEqual({
@@ -79,9 +76,8 @@ it("reports a durable offset and prefix hash after a host store reopen", async (
 });
 afterEach(() => {
   vi.restoreAllMocks();
-  cleanups.splice(0).forEach((cleanup) => cleanup());
+  cleanups.splice(0).forEach(async (cleanup) => await cleanup());
 });
-
 it("reads non-image files only after session acceptance and ignores client-supplied paths", async () => {
   const { store, id } = fixture();
   const bytes = Buffer.from("# Saved note\n");
@@ -128,7 +124,6 @@ it("reads non-image files only after session acceptance and ignores client-suppl
     readAttachmentChunk(store, { sessionId: "owner", id: "../secret", offset: 0 }),
   ).rejects.toThrow("not found");
 });
-
 it("preserves generated-image ownership and metadata size bounds", async () => {
   const { store, id } = fixture();
   const image = {
@@ -148,12 +143,11 @@ it("preserves generated-image ownership and metadata size bounds", async () => {
     readAttachmentChunk(store, { sessionId: "owner", id: "generated", offset: 0 }),
   ).rejects.toThrow("size");
 });
-
 it("accepts ordered chunks and an identical retry while rejecting changes", async () => {
   const directory = mkdtempSync(join(tmpdir(), "remote-upload-test-"));
   const store = new HostStore(join(directory, "host.db"));
-  cleanups.push(() => {
-    store.close();
+  cleanups.push(async () => {
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
   const id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -178,17 +172,15 @@ it("accepts ordered chunks and an identical retry while rejecting changes", asyn
     }),
   ).rejects.toThrow("Invalid attachment ID");
 });
-
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "remote-attachment-async-test-"));
   const store = new HostStore(join(directory, "host.db"));
-  cleanups.push(() => {
-    store.close();
+  cleanups.push(async () => {
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
   return { directory, store, id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
 }
-
 it("serializes simultaneous identical retries, status and later chunks without poisoning the queue", async () => {
   const { store, id } = fixture();
   const chunk = (offset: number, text: string) =>
@@ -213,7 +205,6 @@ it("serializes simultaneous identical retries, status and later chunks without p
   expect(await last).toEqual({ offset: 6 });
   expect(readFileSync(attachmentPath(store, id)).toString()).toBe("abcdef");
 });
-
 it("streams a large prefix and bounds concurrent session image reads", async () => {
   const { store, id } = fixture();
   const bytes = Buffer.alloc(5 * 1024 * 1024 + 2, 91);
@@ -277,7 +268,6 @@ it("streams a large prefix and bounds concurrent session image reads", async () 
     readAttachmentChunk(store, { sessionId: "allowed", id, offset: bytes.length + 1 }),
   ).rejects.toThrow("offset");
 });
-
 it("accepts an empty attachment and rejects declared-size, path and chunk limit violations", async () => {
   const { store, id } = fixture();
   expect(await attachmentUploadStatus(store, { id, size: 0 })).toEqual({ offset: 0 });
@@ -309,12 +299,11 @@ it("accepts an empty attachment and rejects declared-size, path and chunk limit 
     writeAttachmentChunk(store, { id, offset: 0, size: 5, data: "YWJj" }),
   ).rejects.toThrow("size mismatch");
 });
-
 it("collects old orphans only with complete references and preserves queue, other consumers and current uploads", async () => {
   const directory = mkdtempSync(join(tmpdir(), "attachment-gc-"));
   const store = new HostStore(join(directory, "host.db"));
-  cleanups.push(() => {
-    store.close();
+  cleanups.push(async () => {
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
   const ids = [
@@ -330,13 +319,13 @@ it("collects old orphans only with complete references and preserves queue, othe
       size: 6,
       data: Buffer.from("abc").toString("base64"),
     });
-  store.db.exec("CREATE TABLE gc_other_consumer (payload TEXT)");
-  store.db
+  await store.db.exec("CREATE TABLE gc_other_consumer (payload TEXT)");
+  await store.db
     .prepare("INSERT INTO gc_other_consumer VALUES (?)")
     .run(JSON.stringify({ attachment: ids[1] }));
   const { SessionQueues } = await import("./session-queue");
   new SessionQueues(store.db);
-  store.db
+  await store.db
     .prepare("INSERT INTO session_queues VALUES (?, ?)")
     .run("session", JSON.stringify({ messages: [{ attachments: [{ id: ids[2] }] }] }));
   const future = Date.now() + 8 * 24 * 60 * 60 * 1000;

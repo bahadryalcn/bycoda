@@ -211,13 +211,11 @@ export function withHead(value: HostSession): Pick<HostSession, "head"> {
 }
 
 /** Projects the archive for transport only; the stored host transcript is unchanged. */
-export function previewRewindHistory(session: Pick<HostSession["session"], "rewindHistory" | "rewindHistoryTruncated">): Pick<
-  HostSession["session"],
-  "rewindHistory" | "rewindHistoryTruncated"
-> {
+export function previewRewindHistory(
+  session: Pick<HostSession["session"], "rewindHistory" | "rewindHistoryTruncated">,
+): Pick<HostSession["session"], "rewindHistory" | "rewindHistoryTruncated"> {
   const history = session.rewindHistory;
-  if (!history?.length)
-    return { rewindHistory: history, rewindHistoryTruncated: undefined };
+  if (!history?.length) return { rewindHistory: history, rewindHistoryTruncated: undefined };
   let truncated = false;
   const projected: ConversationRewindEntry[] = [];
   const projectBlock = (block: Block): Block => {
@@ -230,9 +228,14 @@ export function previewRewindHistory(session: Pick<HostSession["session"], "rewi
     if (
       text.length < block.text.length ||
       (block.attachments?.length ?? 0) > 12 ||
-      block.attachments?.some((attachment) => Object.keys(attachment).some((key) => key !== "name")) ||
-      Object.keys(block).some((key) => !["id", "role", "text", "attachments", "internal", "draft"].includes(key))
-    ) truncated = true;
+      block.attachments?.some((attachment) =>
+        Object.keys(attachment).some((key) => key !== "name"),
+      ) ||
+      Object.keys(block).some(
+        (key) => !["id", "role", "text", "attachments", "internal", "draft"].includes(key),
+      )
+    )
+      truncated = true;
     return {
       id: truncateJsonString(block.id, 256),
       role: block.role,
@@ -267,7 +270,9 @@ export function previewRewindHistory(session: Pick<HostSession["session"], "rewi
       }
       boundedEntry.blocks.unshift(projectedBlock);
     }
-    if (Buffer.byteLength(JSON.stringify([...projected, boundedEntry])) > REWIND_ARCHIVE_PREVIEW_BYTES) {
+    if (
+      Buffer.byteLength(JSON.stringify([...projected, boundedEntry])) > REWIND_ARCHIVE_PREVIEW_BYTES
+    ) {
       truncated = true;
       break;
     }
@@ -321,8 +326,8 @@ export function partialSessionSync(
 }
 export class TranscriptPages {
   private snapshots = new Map<string, { value: HostSession; expires: number; bytes: number }>();
-  page(
-    read: () => HostSession,
+  async page(
+    read: () => HostSession | Promise<HostSession>,
     id: string,
     before?: number,
     revision?: number,
@@ -331,7 +336,7 @@ export class TranscriptPages {
   ) {
     const key = `${id}:${revision}`;
     const captured = revision === undefined ? undefined : this.snapshots.get(key);
-    const value = captured && captured.expires > Date.now() ? captured.value : read();
+    const value = captured && captured.expires > Date.now() ? captured.value : await read();
     const page = transcriptPage(value, before, revision, preview, digests);
     const captureKey = `${id}:${value.revision}`;
     this.snapshots.delete(captureKey);

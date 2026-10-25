@@ -66,6 +66,42 @@ it("hesap geçişi başarısızsa pencereyi açık tutar", async () => {
   expect(onClose).not.toHaveBeenCalled();
 });
 
+it("shows pending only on the selected account and keeps retry available on failure", async () => {
+  saveProviderAccount({ id: "second", provider: "claude", label: "Personal", isDefault: false });
+  let reject!: (cause: Error) => void;
+  const onSelect = vi.fn(
+    () =>
+      new Promise<boolean>((_resolve, failure) => {
+        reject = failure;
+      }),
+  );
+  act(() =>
+    root.render(
+      createElement(ProviderAccountRecoveryDialog, {
+        provider: "claude",
+        onSelect,
+        onClose: vi.fn(),
+        onManage: vi.fn(),
+      }),
+    ),
+  );
+  const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (item) => item.textContent === "Work",
+  )!;
+  button.focus();
+  act(() => {
+    button.click();
+    button.click();
+  });
+  expect(onSelect).toHaveBeenCalledOnce();
+  expect(document.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(button);
+  await act(async () => reject(new Error("Transfer unavailable")));
+  expect(button.hasAttribute("aria-busy")).toBe(false);
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Transfer unavailable");
+});
+
 it("silinen hesap kullanılırken tek hesap olsa da seçiciyi gösterir", () => {
   act(() =>
     root.render(

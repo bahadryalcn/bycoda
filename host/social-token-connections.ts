@@ -33,7 +33,7 @@ export class SocialTokenConnections {
   }
 
   async connect(p: SocialPrincipal, accountId: string) {
-    const account = this.social.accountForOAuth(p, accountId);
+    const account = await this.social.accountForOAuth(p, accountId);
     const platform: SocialPlatform = account.platform;
     if (platform !== "telegram" && platform !== "whatsapp")
       throw new Error("This platform requires OAuth.");
@@ -69,7 +69,7 @@ export class SocialTokenConnections {
           : []),
       ];
     }
-    return this.social.connectAccount(
+    return await this.social.connectAccount(
       accountId,
       {
         platformId,

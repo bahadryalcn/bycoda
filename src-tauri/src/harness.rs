@@ -2162,12 +2162,23 @@ pub(crate) fn exec_output(
     cwd: Option<&str>,
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
+    exec_output_with_env(command, args, cwd, timeout, &[])
+}
+
+pub(crate) fn exec_output_with_env(
+    command: &str,
+    args: &[String],
+    cwd: Option<&str>,
+    timeout: Duration,
+    env: &[(&str, &str)],
+) -> Result<std::process::Output, String> {
     let mut cmd = Command::new(command);
     cmd.args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     prepare_child(&mut cmd, command);
+    cmd.envs(env.iter().copied());
     if let Some(dir) = cwd {
         let workdir = expand_home(dir);
         if workdir.is_dir() {
@@ -2207,7 +2218,21 @@ fn exec_command_output(
         Ok(Err(e)) => Err(format!("Failed to run {command}: {e}")),
         Err(_) => {
             terminate(pid);
-            Err(format!("{command} timed out"))
+            let mut error = format!("{command} timed out after {} seconds", timeout.as_secs());
+            // Reap the terminated tree and retain diagnostics printed before it stalled.
+            if let Ok(Ok(output)) = rx.recv_timeout(KILL_ESCALATE * 2) {
+                for (label, bytes) in [("stdout", output.stdout), ("stderr", output.stderr)] {
+                    let text = String::from_utf8_lossy(&bytes);
+                    let tail: String = text
+                        .chars()
+                        .skip(text.chars().count().saturating_sub(2000))
+                        .collect();
+                    if !tail.trim().is_empty() {
+                        error.push_str(&format!("\n{label}:\n{}", tail.trim()));
+                    }
+                }
+            }
+            Err(error)
         }
     }
 }
@@ -2316,6 +2341,33 @@ fn run_shell_command_sync(
 #[cfg(test)]
 mod shell_command_tests {
     use super::*;
+
+    #[test]
+    fn exec_timeout_retains_both_diagnostic_streams() {
+        let mut cmd = if cfg!(windows) {
+            let mut command = Command::new("cmd.exe");
+            command.args([
+                "/D",
+                "/C",
+                "echo checking & echo download-stalled 1>&2 & ping -n 30 127.0.0.1 >nul",
+            ]);
+            command
+        } else {
+            let mut command = Command::new("sh");
+            command.args(["-c", "echo checking; echo download-stalled >&2; sleep 30"]);
+            command
+        };
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        isolate_child(&mut cmd);
+        let started = Instant::now();
+        let error = exec_command_output(cmd, "test updater", Duration::from_secs(1)).unwrap_err();
+        assert!(error.contains("timed out after 1 seconds"), "{error}");
+        assert!(error.contains("checking"), "{error}");
+        assert!(error.contains("download-stalled"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
 
     fn cwd() -> String {
         std::env::temp_dir().to_string_lossy().into_owned()

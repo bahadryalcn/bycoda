@@ -210,6 +210,27 @@
 .nativeContent {
   gap: var(--space-2);
 }
+.progressIcon {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1em;
+  block-size: 1em;
+  flex: none;
+}
+.progressIcon > * {
+  grid-area: 1 / 1;
+}
+.progressIcon[data-pending] > .icon {
+  visibility: hidden;
+}
+.progressSpinner {
+  inline-size: 100%;
+  block-size: 100%;
+}
+.progressSpinner[hidden] {
+  display: none;
+  animation: none;
+}
 
 /* Let full-width native actions distribute and truncate their own content. */
 .control.fullWidth > .nativeContent {
@@ -349,6 +370,17 @@
   color: var(--button-on-solid);
   background: var(--button-solid);
   border-color: var(--button-solid);
+}
+.control[data-button-hierarchy][aria-busy="true"]:not([data-button-selected]):is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="link"],
+    [data-button-hierarchy="item"],
+    [data-button-hierarchy="tab"]
+  ) {
+  /* Progress belongs to the action; it must not promote every toolbar icon or
+     row into a new outlined control while work is running. */
+  background: transparent;
+  border-color: transparent;
 }
 .control[data-button-selected][aria-busy="true"] {
   background: var(--button-subtle);

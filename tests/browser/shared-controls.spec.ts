@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
 test("modal background dismisses and restores focus while inside controls stay open", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "2028-02-21", exact: true }).click();
+  await page.getByRole("button", { name: "Monday, February 21, 2028", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Shared controls" })).toBeVisible();
   await page.mouse.click(8, 8);
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -23,10 +23,9 @@ test("controlled calendar follows dates and fits a narrow viewport", async ({ pa
   await page.setViewportSize({ width: 460, height: 640 });
   await page.getByRole("button", { name: "Change date externally" }).click();
   await expect(page.getByRole("gridcell", { selected: true })).toContainText("4");
-  await expect(page.getByRole("button", { name: "2029-03-04", exact: true })).toHaveAttribute(
-    "tabindex",
-    "0",
-  );
+  await expect(
+    page.getByRole("button", { name: "Sunday, March 4, 2029", exact: true }),
+  ).toHaveAttribute("tabindex", "0");
   const dialog = page.getByRole("dialog", { name: "Shared controls" });
   const bounds = await dialog.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);

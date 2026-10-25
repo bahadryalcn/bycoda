@@ -99,6 +99,7 @@ export function TerminalPage() {
             variant="ghost"
             size="sm"
             type="button"
+            loading={scanning}
             disabled={scanning || saving}
             onClick={() => scan(true)}
           >

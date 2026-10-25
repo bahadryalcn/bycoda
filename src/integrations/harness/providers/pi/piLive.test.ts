@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   resolveBinary: vi.fn(),
   spawnChild: vi.fn(),
   killChild: vi.fn(),
+  acquireHarnessBridge: vi.fn(),
   frames: [] as Array<(record: Record<string, unknown>) => void>,
 }));
 
@@ -17,6 +18,7 @@ vi.mock("../../core/child", () => ({
   unwatchChild: vi.fn(),
   watchChild: vi.fn(),
   writeChild: vi.fn(),
+  acquireHarnessBridge: mocks.acquireHarnessBridge,
 }));
 
 vi.mock("./piClient", () => ({
@@ -35,6 +37,23 @@ vi.mock("./piClient", () => ({
 import { compactPiContext, stopPiSession, sendPiTurn, cancelPiTurn, rewindPiLastTurn } from "./pi";
 import type { HarnessEvent } from "../../core/types";
 import { compactOmpContext, stopOmpSession } from "../omp/omp";
+import {
+  bindSession,
+  cancelTurn,
+  compactContext,
+  forgetSession,
+  sendTurn,
+  stopSession,
+} from "./piFamily";
+import { OMP_FLAVOR, PI_FLAVOR } from "./piFlavor";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 describe("Pi live session", () => {
   beforeEach(() => {
@@ -47,6 +66,7 @@ describe("Pi live session", () => {
     mocks.resolveBinary.mockResolvedValue({ path: "/fake/pi" });
     mocks.spawnChild.mockResolvedValue(undefined);
     mocks.killChild.mockResolvedValue(undefined);
+    mocks.acquireHarnessBridge.mockResolvedValue(() => undefined);
     mocks.request.mockImplementation(async (command: Record<string, unknown>) => {
       if (command.type === "get_state") {
         return {
@@ -63,17 +83,254 @@ describe("Pi live session", () => {
     });
   });
 
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "cancels %s binary preparation before launch and preserves a replacement",
+    async (flavor) => {
+      const binary = deferred<{ path: string }>();
+      mocks.resolveBinary.mockReturnValueOnce(binary.promise);
+      const sessionId = `${flavor.id}-held-binary`;
+      const events: HarnessEvent[] = [];
+      const input = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        onEvent: (event: HarnessEvent) => events.push(event),
+      };
+      const work = sendTurn(flavor, { ...input, text: "never sent", attachments: [] });
+      const rejected = expect(work).rejects.toThrow("startup cancelled");
+      await vi.waitFor(() => expect(mocks.resolveBinary).toHaveBeenCalledTimes(1));
+      await stopSession(flavor, sessionId);
+      await rejected; // Cancellation settles before the resolver is released.
+      expect(mocks.spawnChild).not.toHaveBeenCalled();
+      try {
+        await compactContext(flavor, { ...input, onEvent: () => undefined });
+        const kills = mocks.killChild.mock.calls.length;
+        binary.resolve({ path: "/late/pi" });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+        expect(mocks.killChild).toHaveBeenCalledTimes(kills);
+        expect(events).toEqual([]);
+        expect(mocks.request.mock.calls.some(([command]) => command.type === "prompt")).toBe(false);
+      } finally {
+        binary.resolve({ path: "/late/pi" });
+        await stopSession(flavor, sessionId);
+      }
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "cancels %s pending spawn without registering late state or killing its replacement",
+    async (flavor) => {
+      const launched = deferred<void>();
+      mocks.spawnChild.mockReturnValueOnce(launched.promise);
+      const sessionId = `${flavor.id}-held-spawn`;
+      const events: HarnessEvent[] = [];
+      const input = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        onEvent: (event: HarnessEvent) => events.push(event),
+      };
+      const work = sendTurn(flavor, { ...input, text: "never sent", attachments: [] });
+      const rejected = expect(work).rejects.toThrow("startup cancelled");
+      await vi.waitFor(() => expect(mocks.spawnChild).toHaveBeenCalledTimes(1));
+      await cancelTurn(flavor, sessionId);
+      await rejected;
+      try {
+        await compactContext(flavor, { ...input, onEvent: () => undefined });
+        const kills = mocks.killChild.mock.calls.length;
+        launched.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(mocks.killChild).toHaveBeenCalledTimes(kills);
+        expect(
+          mocks.request.mock.calls.filter(([command]) => command.type === "get_state"),
+        ).toHaveLength(1);
+        expect(events).toEqual([]);
+      } finally {
+        launched.resolve();
+        await stopSession(flavor, sessionId);
+      }
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "cancels %s requests queued behind an earlier stop before preparation begins",
+    async (flavor) => {
+      const kill = deferred<void>();
+      mocks.killChild.mockReturnValueOnce(kill.promise);
+      const sessionId = `${flavor.id}-held-stop`;
+      const firstStop = stopSession(flavor, sessionId);
+      const work = sendTurn(flavor, {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised",
+        onEvent: () => undefined,
+        text: "never sent",
+        attachments: [],
+      });
+      const rejected = expect(work).rejects.toThrow("startup cancelled");
+      const secondStop = stopSession(flavor, sessionId);
+      await rejected;
+      expect(mocks.resolveBinary).not.toHaveBeenCalled();
+      kill.resolve();
+      await Promise.all([firstStop, secondStop]);
+      expect(mocks.spawnChild).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "shares one %s startup between concurrent same-session requests",
+    async (flavor) => {
+      const state = deferred<Record<string, unknown>>();
+      mocks.request.mockReturnValueOnce(state.promise);
+      const sessionId = `${flavor.id}-shared-startup`;
+      const input = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        onEvent: () => undefined,
+      };
+      const first = compactContext(flavor, input);
+      const second = compactContext(flavor, input);
+      await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+      state.resolve({ data: { sessionId: "shared-native" } });
+      await Promise.all([first, second]);
+      expect(
+        mocks.request.mock.calls.filter(([command]) => command.type === "compact"),
+      ).toHaveLength(2);
+      await stopSession(flavor, sessionId);
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "does not restart a cancelled %s resume as a fresh session",
+    async (flavor) => {
+      const state = deferred<Record<string, unknown>>();
+      mocks.request.mockReturnValueOnce(state.promise);
+      const sessionId = `${flavor.id}-held-resume`;
+      bindSession(flavor, sessionId, "resume-native", "/repo");
+      const events: HarnessEvent[] = [];
+      const input = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        onEvent: (event: HarnessEvent) => events.push(event),
+      };
+      const work = sendTurn(flavor, { ...input, text: "never sent", attachments: [] });
+      const rejected = expect(work).rejects.toThrow("startup cancelled");
+      await vi.waitFor(() =>
+        expect(mocks.request).toHaveBeenCalledWith({ type: "get_state" }, 45_000),
+      );
+      await forgetSession(flavor, sessionId);
+      await rejected;
+      state.resolve({ data: { sessionId: "stale-resume" } });
+      await Promise.resolve();
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+      expect(events).toEqual([]);
+      await compactContext(flavor, input);
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(2);
+      expect(mocks.spawnChild.mock.calls[0][2]).toContain(flavor.resumeFlag);
+      expect(mocks.spawnChild.mock.calls[1][2]).not.toContain(flavor.resumeFlag);
+      await stopSession(flavor, sessionId);
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])("retains genuine %s resume failure fallback", async (flavor) => {
+    const sessionId = `${flavor.id}-resume-failure`;
+    bindSession(flavor, sessionId, "invalid-resume", "/repo");
+    mocks.request.mockRejectedValueOnce(new Error("Unknown native session"));
+    await compactContext(flavor, {
+      sessionId,
+      cwd: "/repo",
+      model: `${flavor.id}:default`,
+      runtimeMode: "supervised",
+      onEvent: () => undefined,
+    });
+    expect(mocks.spawnChild).toHaveBeenCalledTimes(2);
+    expect(mocks.spawnChild.mock.calls[0][2]).toContain(flavor.resumeFlag);
+    expect(mocks.spawnChild.mock.calls[1][2]).not.toContain(flavor.resumeFlag);
+    await stopSession(flavor, sessionId);
+  });
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "cancels %s restricted skill preparation and its isolated probe",
+    async (flavor) => {
+      const catalog = deferred<Record<string, unknown>>();
+      mocks.request.mockReturnValueOnce(catalog.promise);
+      const sessionId = `${flavor.id}-held-skills`;
+      const events: HarnessEvent[] = [];
+      const work = sendTurn(flavor, {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised",
+        onEvent: (event) => events.push(event),
+        text: "never sent",
+        attachments: [],
+        skillPolicy: { disabledNames: ["fixture-disabled"], disabledPaths: [] },
+      });
+      const rejected = expect(work).rejects.toThrow("startup cancelled");
+      await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
+      const probe = mocks.spawnChild.mock.calls[0][0];
+      expect(probe).toMatch(/^bycoda-.*-skills-/);
+      const killed = deferred<void>();
+      mocks.killChild.mockImplementation((id: string) =>
+        id === probe ? killed.promise : Promise.resolve(),
+      );
+      let stopped = false;
+      const stop = stopSession(flavor, sessionId).then(() => {
+        stopped = true;
+      });
+      try {
+        await rejected;
+        await vi.waitFor(() => expect(mocks.killChild).toHaveBeenCalledWith(probe));
+        expect(stopped).toBe(false);
+      } finally {
+        killed.resolve();
+        await stop;
+      }
+      catalog.resolve({ data: { commands: [] } });
+      await Promise.resolve();
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+      expect(events).toEqual([]);
+    },
+  );
+
   it("does not reuse the old context window after an OMP provider config model change", async () => {
     const events: HarnessEvent[] = [];
-    await compactOmpContext({ sessionId: "pi-model-context", cwd: "/repo", model: "omp:default", runtimeMode: "supervised", onEvent: (event) => events.push(event) });
+    await compactOmpContext({
+      sessionId: "pi-model-context",
+      cwd: "/repo",
+      model: "omp:default",
+      runtimeMode: "supervised",
+      onEvent: (event) => events.push(event),
+    });
     expect(events).toContainEqual({ type: "context", used: 32_000, window: 200_000 });
     const frame = mocks.frames[0]!;
     frame({ type: "config_update", model: { provider: "new-provider", id: "new-model" } });
     frame({ type: "message_update", usage: { totalTokens: 100_000 } });
-    expect(events.filter((event) => event.type === "context").at(-1)).toEqual({ type: "context", used: 100_000 });
-    frame({ type: "config_update", model: { provider: "new-provider", id: "another-model", contextWindow: 400_000 } });
+    expect(events.filter((event) => event.type === "context").at(-1)).toEqual({
+      type: "context",
+      used: 100_000,
+    });
+    frame({
+      type: "config_update",
+      model: { provider: "new-provider", id: "another-model", contextWindow: 400_000 },
+    });
     frame({ type: "message_update", usage: { totalTokens: 100_000 } });
-    expect(events.filter((event) => event.type === "context").at(-1)).toEqual({ type: "context", used: 100_000, window: 400_000 });
+    expect(events.filter((event) => event.type === "context").at(-1)).toEqual({
+      type: "context",
+      used: 100_000,
+      window: 400_000,
+    });
     await stopOmpSession("pi-model-context");
   });
 

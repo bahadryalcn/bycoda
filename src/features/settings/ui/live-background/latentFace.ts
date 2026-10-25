@@ -46,11 +46,9 @@ const STROKES: readonly Stroke[] = [
   curve([0.02, -0.31], [-0.02, -0.05], [-0.08, 0.15], [-0.11, 0.3], 1, true),
   curve([-0.11, 0.3], [-0.04, 0.38], [0.13, 0.38], [0.2, 0.29], 0.9),
   curve([0.2, 0.29], [0.22, 0.2], [0.18, 0.08], [0.14, -0.02], 0.4),
-  // Cheek planes, a resting mouth and lower lip. These paths never speak.
+  // Cheek planes. The lips are drawn separately so the portrait can speak.
   curve([-0.6, 0.1], [-0.49, 0.12], [-0.32, 0.25], [-0.23, 0.4], 0.55),
   curve([0.53, 0.12], [0.4, 0.16], [0.3, 0.31], [0.3, 0.44], 0.35),
-  curve([-0.28, 0.65], [-0.1, 0.59], [0.12, 0.64], [0.27, 0.6], 0.9),
-  curve([-0.2, 0.72], [-0.04, 0.79], [0.12, 0.77], [0.2, 0.69], 0.45),
   curve([-0.18, 1], [-0.03, 1.04], [0.11, 1.03], [0.2, 0.97], 0.45),
   // A few contour fragments suggest depth without filling the face with noise.
   curve([-0.55, -0.7], [-0.43, -1.06], [-0.03, -1.17], [0.29, -1.02], 0.35),
@@ -85,6 +83,9 @@ export function createLatentFaceScene(palette: LiveBackgroundPalette): LiveBackg
   let height = 0;
   let fontSize = 5;
   let glyphs: Glyph[] = [];
+  let scale = 0;
+  let centerX = 0;
+  let centerY = 0;
 
   return {
     resize(nextWidth, nextHeight) {
@@ -93,12 +94,13 @@ export function createLatentFaceScene(palette: LiveBackgroundPalette): LiveBackg
       glyphs = [];
       if (width === 0 || height === 0) return;
 
-      const scale = Math.min(width / 2.3, height / 3.1);
-      fontSize = Math.max(3, Math.min(8, scale * 0.105));
+      scale = Math.min(width / 2.3, height / 3.1);
+      // A fixed relative cell size bounds resize work even on very large panes.
+      fontSize = Math.max(3, scale * 0.065);
       const stepX = fontSize * 0.66;
       const stepY = fontSize * 1.14;
-      const centerX = width * 0.49;
-      const centerY = height * 0.51;
+      centerX = width * 0.5;
+      centerY = height * 0.51;
       const cols = Math.ceil((scale * 2.1) / stepX);
       const rows = Math.ceil((scale * 2.9) / stepY);
       const thickness = Math.max(0.036, stepY / scale / 1.5);
@@ -145,18 +147,59 @@ export function createLatentFaceScene(palette: LiveBackgroundPalette): LiveBackg
       // the canvas loop settles. A second filter would leave a residual pose.
       const presence = Math.max(0, Math.min(1, signal.presence));
       ctx.save();
+      // Sparse signal contours connect the portrait to the pane edges rather
+      // than leaving a small illustration floating inside an empty background.
+      ctx.strokeStyle = palette.content;
+      ctx.lineWidth = 0.75;
+      for (let row = 0; row < 7; row++) {
+        const y = height * (0.18 + row * 0.105);
+        const lift = presence * Math.sin(time * 1.6 + row * 0.75) * height * 0.008;
+        ctx.globalAlpha = 0.08 + presence * 0.05;
+        for (const side of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(side < 0 ? 0 : width, y);
+          ctx.bezierCurveTo(
+            centerX + side * scale * 1.5,
+            y + lift,
+            centerX + side * scale,
+            y - lift,
+            centerX + side * scale * 0.88,
+            centerY + (y - centerY) * 0.68,
+          );
+          ctx.stroke();
+        }
+      }
       ctx.font = `${fontSize}px ${palette.monoFont}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       for (const glyph of glyphs) {
-        // A 28-second breath is confined to the lit facial features while the
-        // AI replies. At rest, the artwork is identical at every timestamp.
+        // A reply sends a slow light wave through the fixed facial features.
         const breath = glyph.accent
-          ? presence * 0.035 * Math.sin(time * 0.22 + glyph.y / Math.max(height, 1))
+          ? presence * 0.12 * Math.sin(time * 1.8 + (glyph.y / Math.max(height, 1)) * 5)
           : 0;
         ctx.globalAlpha = glyph.alpha * (0.88 + presence * 0.08 + breath);
         ctx.fillStyle = glyph.accent ? palette.accent : palette.content;
         ctx.fillText(glyph.char, glyph.x, glyph.y);
+      }
+      // Deterministic syllables open, round and close the lips. The entire mouth
+      // returns to the same resting pose when presence reaches zero.
+      const syllable = time * 3.4;
+      const opening = presence * Math.max(0, Math.sin(syllable * Math.PI)) ** 0.7;
+      const roundness = (0.5 + 0.5 * Math.sin(time * 2.3)) * opening;
+      const mouthWidth = scale * (0.27 - roundness * 0.09);
+      const mouthHeight = scale * (0.025 + opening * 0.145);
+      ctx.fillStyle = palette.accent;
+      ctx.globalAlpha = 0.68 + presence * 0.2;
+      for (let lip = 0; lip < 2; lip++) {
+        for (let point = 0; point <= 18; point++) {
+          const across = point / 18;
+          const arc = Math.sin(across * Math.PI);
+          ctx.fillText(
+            point % 3 === 0 ? ":" : "=",
+            centerX + (across * 2 - 1) * mouthWidth,
+            centerY + scale * 0.67 + (lip === 0 ? -1 : 1) * mouthHeight * arc,
+          );
+        }
       }
       ctx.restore();
     },

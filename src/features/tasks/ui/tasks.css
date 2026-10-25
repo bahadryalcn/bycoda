@@ -186,6 +186,15 @@
 .task-board-column-picker {
   display: none;
 }
+
+.task-board-columns[data-all-empty] {
+  block-size: auto;
+  align-items: start;
+}
+.task-board-columns[data-all-empty] > section > ul {
+  min-block-size: 0;
+  padding-block: 0;
+}
 /* Adapt to the actual task pane, including a narrow pane in a wide window. */
 @container task-area (max-width: 640px) {
   .task-board-column-picker {
@@ -201,6 +210,30 @@
   }
   .task-board-columns > section > ul {
     overflow-y: visible;
+  }
+  .task-column-empty {
+    padding-block: 0.75rem;
+    text-align: start;
+    align-items: start;
+  }
+}
+.task-goal-card {
+  container-type: inline-size;
+  container-name: task-goal;
+}
+@container task-goal (max-width: 600px) {
+  .task-goal-title {
+    flex: 1;
+    min-inline-size: 6rem;
+  }
+  .task-goal-context {
+    flex-basis: 100%;
+    order: 2;
+  }
+  .task-goal-actions {
+    flex-basis: 100%;
+    order: 3;
+    margin-inline-start: 0;
   }
 }
 .task-board-card {

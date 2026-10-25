@@ -117,6 +117,7 @@ export const WORKSPACE_COMMANDS = [
   "git_worktrees",
   "git_submodules",
   "search_project",
+  "cancel_project_search",
   "list_skills",
   "list_claude_commands",
   "skill_export",
@@ -146,6 +147,9 @@ const alreadyExists = (name: string) =>
 type Located = { root: string; relative: string };
 
 export class WorkspaceCommands {
+  private searches = new Map<string, { owner: string; controller: AbortController }>();
+  private cancelledSearches = new Map<string, number>();
+  private revokedSearchOwners = new Map<string, number>();
   private roots = new Map<string, { at: number; roots: string[] }>();
   private rootsGeneration = 0;
 
@@ -165,7 +169,7 @@ export class WorkspaceCommands {
     ),
   ) {}
 
-  run(command: unknown, args: unknown): Promise<unknown> {
+  async run(command: unknown, args: unknown, owner = "local"): Promise<Awaited<Promise<unknown>>> {
     if (!WORKSPACE_COMMANDS.includes(command as WorkspaceCommand))
       throw new Error("Unsupported workspace command");
     const input =
@@ -173,78 +177,102 @@ export class WorkspaceCommands {
         ? (args as Record<string, unknown>)
         : {};
     if (isHostGitMutation(command as string)) {
-      return this.gitRoot(input.cwd).then((root) =>
-        withHostGitMutation(
-          root,
-          async () => {
-            try {
-              return await this.runCommand(command as WorkspaceCommand, input);
-            } finally {
-              invalidateHostGitIndex(root);
-            }
-          },
-          undefined,
-          gitMutationScope(command as string),
-        ),
+      return this.gitRoot(input.cwd).then(
+        async (root) =>
+          await withHostGitMutation(
+            root,
+            async () => {
+              try {
+                return await this.runCommand(command as WorkspaceCommand, input, owner);
+              } finally {
+                invalidateHostGitIndex(root);
+              }
+            },
+            undefined,
+            gitMutationScope(command as string),
+          ),
       );
     }
     if (["rename_path", "delete_path", "copy_path", "move_path"].includes(String(command))) {
-      return this.locate(input.path ?? input.from).then(({ root }) =>
-        withWorkspaceMutation(root, () => this.runCommand(command as WorkspaceCommand, input)));
+      return this.locate(input.path ?? input.from).then(
+        async ({ root }) =>
+          await withWorkspaceMutation(
+            root,
+            async () => await this.runCommand(command as WorkspaceCommand, input, owner),
+          ),
+      );
     }
-    return this.runCommand(command as WorkspaceCommand, input);
+    return await this.runCommand(command as WorkspaceCommand, input, owner);
   }
 
-  private runCommand(command: WorkspaceCommand, input: Record<string, unknown>): Promise<unknown> {
+  cancelSearches(owner: string): void {
+    this.rememberSearchCancellation(this.revokedSearchOwners, owner);
+    for (const entry of this.searches.values()) if (entry.owner === owner) entry.controller.abort();
+  }
+
+  private rememberSearchCancellation(cache: Map<string, number>, key: string) {
+    const now = Date.now();
+    for (const [entry, until] of cache) if (until < now) cache.delete(entry);
+    cache.delete(key);
+    cache.set(key, now + 5 * 60_000);
+    while (cache.size > 1024) cache.delete(cache.keys().next().value!);
+  }
+
+  private async runCommand(
+    command: WorkspaceCommand,
+    input: Record<string, unknown>,
+    owner: string,
+  ): Promise<Awaited<Promise<unknown>>> {
     if (GIT_ACTION_COMMANDS.includes(command as GitActionCommand))
-      return this.gitActionCommand(command as GitActionCommand, input);
+      return await this.gitActionCommand(command as GitActionCommand, input);
     switch (command as Exclude<WorkspaceCommand, GitActionCommand>) {
       case "session_checkpoint_status":
       case "session_checkpoint_file_diff":
       case "session_checkpoint_undo":
       case "session_checkpoint_keep":
-        return this.checkpoint(command as string, input);
+        return await this.checkpoint(command as string, input);
       case "list_dir":
-        return this.listDir(input.path);
+        return await this.listDir(input.path);
       case "browse_dir":
-        return this.browseDir(input.path, input.containing);
+        return await this.browseDir(input.path, input.containing);
       case "list_project_files":
-        return this.listProjectFiles(input.cwd);
+        return await this.listProjectFiles(input.cwd);
       case "read_text_file":
-        return this.readText(input.path);
+        return await this.readText(input.path);
       case "format_text_file": {
-        return this.existing(input.path).then(({ root, path }) =>
-          formatWorkspaceText(root, path, input.source, input.cursorOffset),
+        return this.existing(input.path).then(
+          async ({ root, path }) =>
+            await formatWorkspaceText(root, path, input.source, input.cursorOffset),
         );
       }
       case "read_binary_file":
-        return this.readBinary(input.path);
+        return await this.readBinary(input.path);
       case "read_file_info":
-        return this.readFileInfo(input.path, input.root, input.rootIdentity);
+        return await this.readFileInfo(input.path, input.root, input.rootIdentity);
       case "read_folder_entry":
-        return this.readFolderEntry(input);
+        return await this.readFolderEntry(input);
       case "read_file_chunk":
-        return this.readFileChunk(input);
+        return await this.readFileChunk(input);
       case "read_file_preview":
-        return this.preview(input.path, input.maxLines, input.startLine);
+        return await this.preview(input.path, input.maxLines, input.startLine);
       case "write_text_file":
-        return this.writeText(input.path, input.content);
+        return await this.writeText(input.path, input.content);
       case "stat_files":
-        return this.statFiles(input.paths);
+        return await this.statFiles(input.paths);
       case "create_path":
-        return this.create(input.parent, input.name, input.isDir);
+        return await this.create(input.parent, input.name, input.isDir);
       case "rename_path":
-        return this.rename(input.path, input.name, input.expectedHash);
+        return await this.rename(input.path, input.name, input.expectedHash);
       case "delete_path":
-        return this.delete(input.path, input.expectedHash);
+        return await this.delete(input.path, input.expectedHash);
       case "copy_path":
-        return this.copy(input.from, input.destParent, input.expectedHash);
+        return await this.copy(input.from, input.destParent, input.expectedHash);
       case "move_path":
-        return this.move(input.from, input.destParent, input.expectedHash);
+        return await this.move(input.from, input.destParent, input.expectedHash);
       case "git_diff_index":
-        return this.gitIndex(input.cwd);
+        return await this.gitIndex(input.cwd);
       case "git_diff_files":
-        return this.gitIndex(input.cwd, false);
+        return await this.gitIndex(input.cwd, false);
       case "git_diff_stats":
         return this.gitIndex(input.cwd, false).then((index) => ({
           files: index.files.length + (index.conflicts?.length ?? 0),
@@ -252,9 +280,9 @@ export class WorkspaceCommands {
           deletions: index.deletions,
         }));
       case "git_file_diff":
-        return this.gitFileDiff(input.cwd, input.relative, input.staged);
+        return await this.gitFileDiff(input.cwd, input.relative, input.staged);
       case "git_stage_contents":
-        return this.gitAction(
+        return await this.gitAction(
           input.cwd,
           "stageContents",
           input.relative,
@@ -265,85 +293,108 @@ export class WorkspaceCommands {
           input.expectedSnapshot,
         );
       case "git_stage_file":
-        return this.gitAction(input.cwd, "stage", input.relative);
+        return await this.gitAction(input.cwd, "stage", input.relative);
       case "git_stage_files":
-        return this.gitAction(input.cwd, "stageFiles", input.relatives);
+        return await this.gitAction(input.cwd, "stageFiles", input.relatives);
       case "git_unstage_files":
-        return this.gitAction(input.cwd, "unstageFiles", input.relatives);
+        return await this.gitAction(input.cwd, "unstageFiles", input.relatives);
       case "git_unstage_file":
-        return this.gitAction(input.cwd, "unstage", input.relative);
+        return await this.gitAction(input.cwd, "unstage", input.relative);
       case "git_discard_file":
-        return this.gitAction(input.cwd, "discard", input.relative);
+        return await this.gitAction(input.cwd, "discard", input.relative);
       case "git_discard_files":
-        return this.gitAction(input.cwd, "discardFiles", input.relatives);
+        return await this.gitAction(input.cwd, "discardFiles", input.relatives);
       case "git_discard_all":
-        return this.gitAction(input.cwd, "discardAll");
+        return await this.gitAction(input.cwd, "discardAll");
       case "git_stage_all":
-        return this.gitAction(input.cwd, "stageAll");
+        return await this.gitAction(input.cwd, "stageAll");
       case "git_unstage_all":
-        return this.gitAction(input.cwd, "unstageAll");
+        return await this.gitAction(input.cwd, "unstageAll");
       case "git_commit":
-        return this.gitCommit(input.cwd, input.message, input.amend, input.signoff);
+        return await this.gitCommit(input.cwd, input.message, input.amend, input.signoff);
       case "git_head_message":
-        return this.gitCommand(input.cwd, ["log", "-1", "--format=%B"]);
+        return await this.gitCommand(input.cwd, ["log", "-1", "--format=%B"]);
       case "git_push":
-        return this.gitAction(input.cwd, "push");
+        return await this.gitAction(input.cwd, "push");
       case "git_pull":
-        return this.gitRoot(input.cwd).then((root) =>
-          this.withIdleGitProject(root, () =>
-            this.gitCommand(root, ["pull", input.rebase === true ? "--rebase" : "--ff-only"]).then(
-              () => undefined,
+        return this.gitRoot(input.cwd).then(
+          async (root) =>
+            await this.withIdleGitProject(root, async () =>
+              this.gitCommand(root, [
+                "pull",
+                input.rebase === true ? "--rebase" : "--ff-only",
+              ]).then(() => undefined),
             ),
-          ),
         );
       case "git_sync":
-        return this.gitRoot(input.cwd).then((root) =>
-          this.withIdleGitProject(root, () => this.gitSync(root)),
+        return this.gitRoot(input.cwd).then(
+          async (root) => await this.withIdleGitProject(root, async () => await this.gitSync(root)),
         );
       case "git_pr_status":
-        return this.gitPrStatus(input.cwd);
+        return await this.gitPrStatus(input.cwd);
       case "git_pr_destination":
-        return this.ghCommand(input.cwd, ["repo", "view", "--json", "nameWithOwner,url"]).then((json) => JSON.parse(json));
+        return this.ghCommand(input.cwd, ["repo", "view", "--json", "nameWithOwner,url"]).then(
+          (json) => JSON.parse(json),
+        );
       case "git_pr_create":
-        if (input.expectedSnapshot !== undefined) return this.gitRoot(input.cwd).then(async (root) => {
-          await verifyGitManagementSnapshot(root, input.expectedSnapshot);
-          return this.gitPrCreate(root, input.title, input.body, input.base, input.head, input.repository);
-        });
-        return this.gitPrCreate(input.cwd, input.title, input.body, input.base, input.head, input.repository);
+        if (input.expectedSnapshot !== undefined)
+          return this.gitRoot(input.cwd).then(async (root) => {
+            await verifyGitManagementSnapshot(root, input.expectedSnapshot);
+            return await this.gitPrCreate(
+              root,
+              input.title,
+              input.body,
+              input.base,
+              input.head,
+              input.repository,
+            );
+          });
+        return await this.gitPrCreate(
+          input.cwd,
+          input.title,
+          input.body,
+          input.base,
+          input.head,
+          input.repository,
+        );
       case "git_history":
-        return this.gitHistory(input.cwd, input.limit, input.all === true);
+        return await this.gitHistory(input.cwd, input.limit, input.all === true);
       case "git_commit_files":
-        return this.gitCommitFiles(input.cwd, input.sha);
+        return await this.gitCommitFiles(input.cwd, input.sha);
       case "git_commit_file_diff":
-        return this.gitCommitFileDiff(input.cwd, input.sha, input.relative);
+        return await this.gitCommitFileDiff(input.cwd, input.sha, input.relative);
       case "git_staged_context":
-        return this.gitStagedContext(input.cwd);
+        return await this.gitStagedContext(input.cwd);
       case "git_range_context":
-        return this.gitRangeContext(input.cwd);
+        return await this.gitRangeContext(input.cwd);
       case "git_branches":
-        return this.gitBranches(input.cwd);
+        return await this.gitBranches(input.cwd);
       case "git_checkout":
-        return this.gitCheckout(input.cwd, input.name, input.remote);
+        return await this.gitCheckout(input.cwd, input.name, input.remote);
       case "git_create_branch":
-        return this.gitCreateBranch(input.cwd, input.name);
+        return await this.gitCreateBranch(input.cwd, input.name);
       case "git_worktrees":
-        return this.gitWorktrees(input.cwd);
+        return await this.gitWorktrees(input.cwd);
       case "git_submodules":
         return this.gitRoot(input.cwd).then(hostGitSubmodules);
       case "search_project":
-        return this.searchProject(input.options);
+        return await this.searchProject(input.options, owner);
+      case "cancel_project_search":
+        return await this.cancelProjectSearch(input.cwd, input.searchId, owner);
       case "list_skills":
-        return this.listSkills(input.cwd, input.disabledPaths);
+        return await this.listSkills(input.cwd, input.disabledPaths);
       case "skill_policy_get":
         return Promise.resolve().then(() => migrateSkillPolicy(input.legacyDisabledPaths));
       case "skill_policy_set":
         return Promise.resolve().then(() => setSkillEnabled(input.name, input.enabled));
       case "list_claude_commands":
-        return this.existing(input.cwd, true).then(({ path }) => listHostClaudeCommands(path));
+        return this.existing(input.cwd, true).then(
+          async ({ path }) => await listHostClaudeCommands(path),
+        );
       case "skill_export":
-        return this.exportSkill(input.path, input.cwd);
+        return await this.exportSkill(input.path, input.cwd);
       case "skill_delete":
-        return this.deleteSkill(input.path, input.cwd);
+        return await this.deleteSkill(input.path, input.cwd);
       case "skill_import":
         // `cwd` only routes the call here; skills land in this machine's home.
         return Promise.resolve().then(() => importHostSkill(input));
@@ -354,7 +405,7 @@ export class WorkspaceCommands {
   private async allowedRoots(): Promise<string[]> {
     const generation = this.rootsGeneration;
     const out: string[] = [];
-    const projects = this.store.projects();
+    const projects = await this.store.projects();
     let cursor = 0;
     // hostWorktrees bounds each listing subprocess with a 10 s timeout.
     await Promise.all(
@@ -417,7 +468,7 @@ export class WorkspaceCommands {
         if (!found || rel.length < found.relative.length) found = { root, relative: rel };
       }
     };
-    find(this.store.projects().map((project) => project.cwd));
+    find((await this.store.projects()).map((project) => project.cwd));
     if (found) return found;
     find(await this.allowedRoots());
     if (found) return found;
@@ -653,7 +704,10 @@ export class WorkspaceCommands {
       }
       invalidateHostFilePaths(root);
     };
-    const pending = (textFileSaves.get(key) ?? Promise.resolve()).then(() => withWorkspaceMutation(root, save), () => withWorkspaceMutation(root, save));
+    const pending = (textFileSaves.get(key) ?? Promise.resolve()).then(
+      async () => await withWorkspaceMutation(root, save),
+      async () => await withWorkspaceMutation(root, save),
+    );
     textFileSaves.set(key, pending);
     try {
       await pending;
@@ -690,12 +744,19 @@ export class WorkspaceCommands {
     return joined(parent as string, name as string);
   }
 
-  private async verifyExpectedPath(root: string, input: unknown, path: string, expectedHash: unknown) {
+  private async verifyExpectedPath(
+    root: string,
+    input: unknown,
+    path: string,
+    expectedHash: unknown,
+  ) {
     if (expectedHash === undefined) return;
-    if (typeof expectedHash !== "string" || !/^[a-f0-9]{64}$/.test(expectedHash)) throw new Error("Invalid path fingerprint.");
+    if (typeof expectedHash !== "string" || !/^[a-f0-9]{64}$/.test(expectedHash))
+      throw new Error("Invalid path fingerprint.");
     const inspected = await inspectConversationPath(root, input);
     const actual = await existingPath(root, input);
-    if (inspected.hash !== expectedHash || actual !== path || actual !== workspacePath(root, input)) throw new Error("Path changed before commit; inspect it again.");
+    if (inspected.hash !== expectedHash || actual !== path || actual !== workspacePath(root, input))
+      throw new Error("Path changed before commit; inspect it again.");
   }
 
   private async rename(input: unknown, name: unknown, expectedHash?: unknown): Promise<string> {
@@ -795,17 +856,25 @@ export class WorkspaceCommands {
     if (typeof input.sessionId !== "string") throw new Error("Invalid checkpoint session");
     const path = input.relative == null ? undefined : String(input.relative);
     if (command === "session_checkpoint_status")
-      return this.checkpoints.status(input.sessionId, cwd);
+      return await this.checkpoints.status(input.sessionId, cwd);
     if (command === "session_checkpoint_file_diff") {
       if (path === undefined) throw new Error("Choose a checkpoint file");
-      return this.checkpoints.fileDiff(input.sessionId, cwd, path);
+      return await this.checkpoints.fileDiff(input.sessionId, cwd, path);
     }
     const session = input.sessionId;
     if (input.expectedCheckpoint !== undefined && typeof input.expectedCheckpoint !== "string")
       throw new Error("Invalid expected checkpoint");
-    const change = () =>
-      this.checkpoints.change(session, cwd, path, command === "session_checkpoint_undo", input.expectedCheckpoint as string | undefined);
-    return command === "session_checkpoint_undo" ? withHostGitMutation(cwd, change) : change();
+    const change = async () =>
+      await this.checkpoints.change(
+        session,
+        cwd,
+        path,
+        command === "session_checkpoint_undo",
+        input.expectedCheckpoint as string | undefined,
+      );
+    return command === "session_checkpoint_undo"
+      ? await withHostGitMutation(cwd, change)
+      : await change();
   }
 
   /** This machine's skills for a project folder here; the desktop drops
@@ -839,19 +908,48 @@ export class WorkspaceCommands {
     return deleteHostSkill(skill, path);
   }
 
-  private async searchProject(input: unknown) {
+  private searchKey(root: string, id: unknown, owner: string) {
+    if (typeof id !== "string" || !id || id.length > 200 || id.includes("\0"))
+      throw new Error("Invalid search owner");
+    return JSON.stringify([owner, root, id]);
+  }
+
+  private async cancelProjectSearch(cwd: unknown, id: unknown, owner: string) {
+    const root = await this.gitRoot(cwd);
+    const key = this.searchKey(root, id, owner);
+    this.rememberSearchCancellation(this.cancelledSearches, key);
+    this.searches.get(key)?.controller.abort();
+  }
+
+  private async searchProject(input: unknown, owner: string) {
     if (!input || typeof input !== "object" || Array.isArray(input))
       throw new Error("Invalid search");
     const options = input as Record<string, unknown>;
-    return searchHostContent(await this.gitRoot(options.cwd), options);
+    const root = await this.gitRoot(options.cwd);
+    if ((this.revokedSearchOwners.get(owner) ?? 0) > Date.now())
+      throw new Error("Search authority was revoked");
+    // Older clients without an owner id still get bounded search, but cannot cancel a peer.
+    if (options.searchId === undefined) return await searchHostContent(root, options);
+    const key = this.searchKey(root, options.searchId, owner);
+    if ((this.cancelledSearches.get(key) ?? 0) > Date.now()) throw new Error("Search cancelled");
+    if (!this.searches.has(key) && this.searches.size >= 64)
+      throw new Error("Too many active project searches");
+    this.searches.get(key)?.controller.abort();
+    const entry = { owner, controller: new AbortController() };
+    this.searches.set(key, entry);
+    try {
+      return await searchHostContent(root, options, entry.controller.signal);
+    } finally {
+      if (this.searches.get(key) === entry) this.searches.delete(key);
+    }
   }
 
   private async gitIndex(input: unknown, full = true) {
-    return hostGitIndex(await this.gitRoot(input), full);
+    return await hostGitIndex(await this.gitRoot(input), full);
   }
 
   private async gitFileDiff(cwd: unknown, relative: unknown, staged: unknown) {
-    return hostFileDiff(await this.gitRoot(cwd), relative, staged === true);
+    return await hostFileDiff(await this.gitRoot(cwd), relative, staged === true);
   }
 
   private async gitAction(
@@ -865,7 +963,7 @@ export class WorkspaceCommands {
     expectedSnapshot?: unknown,
   ) {
     const root = await this.gitRoot(cwd);
-    return hostGitAction(
+    return await hostGitAction(
       root,
       action,
       relative,
@@ -873,7 +971,9 @@ export class WorkspaceCommands {
       contents,
       expectedOriginal,
       expectedCurrent,
-      expectedSnapshot === undefined ? undefined : () => verifyGitManagementSnapshot(root, expectedSnapshot),
+      expectedSnapshot === undefined
+        ? undefined
+        : async () => await verifyGitManagementSnapshot(root, expectedSnapshot),
     );
   }
 
@@ -957,8 +1057,13 @@ export class WorkspaceCommands {
       [title, body, base, head].some((value) => typeof value !== "string" || value.length > 100_000)
     )
       throw new Error("Invalid pull request");
-    if (repository !== undefined && (typeof repository !== "string" || !/^[a-z0-9.-]+\/[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(repository))) throw new Error("Invalid pull request repository");
-    return this.ghCommand(cwd, [
+    if (
+      repository !== undefined &&
+      (typeof repository !== "string" ||
+        !/^[a-z0-9.-]+\/[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(repository))
+    )
+      throw new Error("Invalid pull request repository");
+    return await this.ghCommand(cwd, [
       "pr",
       "create",
       ...(typeof repository === "string" ? ["--repo", repository] : []),
@@ -1085,7 +1190,7 @@ export class WorkspaceCommands {
     );
     const [original, current] = await Promise.all([
       parent
-        ? this.gitBlob(root, `${parent.trim()}:${path}`)
+        ? await this.gitBlob(root, `${parent.trim()}:${path}`)
         : Promise.resolve({ bytes: Buffer.alloc(0), tooLarge: false }),
       this.gitBlob(root, `${sha}:${path}`),
     ]);
@@ -1167,32 +1272,37 @@ export class WorkspaceCommands {
 
   private async gitCheckout(cwd: unknown, name: unknown, remote: unknown) {
     const root = await this.gitRoot(cwd);
-    const state = await this.withIdleGitProject(root, () => switchHostBranch(root, name, remote));
+    const state = await this.withIdleGitProject(
+      root,
+      async () => await switchHostBranch(root, name, remote),
+    );
     return state.current ?? "HEAD";
   }
 
   private async gitCreateBranch(cwd: unknown, name: unknown) {
     const root = await this.gitRoot(cwd);
-    const state = await this.withIdleGitProject(root, () => createHostBranch(root, name));
+    const state = await this.withIdleGitProject(
+      root,
+      async () => await createHostBranch(root, name),
+    );
     return state.current ?? "HEAD";
   }
 
   private async withIdleGitProject<T>(cwd: string, action: () => Promise<T>): Promise<T> {
     const { root } = await this.locate(cwd);
-    const project = this.store
-      .projects()
-      .find(
-        (candidate) =>
-          candidate.cwd === root || this.roots.get(candidate.cwd)?.roots.includes(root),
-      );
+    const project = (await this.store.projects()).find(
+      (candidate) => candidate.cwd === root || this.roots.get(candidate.cwd)?.roots.includes(root),
+    );
     if (!project) throw new Error("Project is unavailable");
-    return this.withIdleProject(project.id, action);
+    return await this.withIdleProject(project.id, action);
   }
 
   private async gitActionCommand(command: GitActionCommand, input: Record<string, unknown>) {
     const root = await this.gitRoot(input.cwd);
-    const run = () => runGitAction(command, root, input);
-    return GIT_ACTIONS_NEEDING_IDLE.has(command) ? this.withIdleGitProject(root, run) : run();
+    const run = async () => await runGitAction(command, root, input);
+    return GIT_ACTIONS_NEEDING_IDLE.has(command)
+      ? await this.withIdleGitProject(root, run)
+      : await run();
   }
 
   private async gitWorktrees(cwd: unknown) {

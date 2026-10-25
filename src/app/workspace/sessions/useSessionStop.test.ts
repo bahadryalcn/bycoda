@@ -6,10 +6,14 @@ import { newSession, type Session } from "../../../features/sessions/model/sessi
 import { useSessionStop, type SessionStopDeps } from "./useSessionStop";
 import { isSessionErrorBlock, sessionIssue } from "../../../features/sessions/model/sessionIssue";
 
-const { cancel, notify, noteStop } = vi.hoisted(() => ({
+const { cancel, notify, noteStop, cancelAdopted } = vi.hoisted(() => ({
   cancel: vi.fn(),
+  cancelAdopted: vi.fn(),
   notify: vi.fn(),
   noteStop: vi.fn(),
+}));
+vi.mock("../../../features/connections/model/adoptedSessionCommands", () => ({
+  cancelAdoptedTurn: cancelAdopted,
 }));
 vi.mock("../../../features/connections/model/useSharedLocalQueues", () => ({
   noteSharedLocalStop: noteStop,
@@ -36,6 +40,7 @@ beforeEach(() => {
   cancel.mockReset();
   notify.mockReset();
   noteStop.mockReset();
+  cancelAdopted.mockReset().mockResolvedValue(undefined);
   const session: Session = {
     ...newSession("claude", "/repo"),
     busy: true,
@@ -96,6 +101,20 @@ it("pauses the queue immediately and keeps events and Stop actionable after deli
   expect(sessionIssue(current())).toBeUndefined();
   expect(deps.turnGen.current.get(current().id)).toBe(2);
   expect(cancel).toHaveBeenCalledTimes(2);
+});
+
+it("stops only the mirrored host run and fences follow-ups preparing on the desktop", async () => {
+  const id = current().id;
+  deps.sessionsRef.current = [
+    { ...current(), busy: false, continuingElsewhere: true, adoptedRunId: "seen-host-run" },
+  ];
+  stop(id);
+  expect(current().queueStatus).toBe("paused");
+  expect(deps.turnGen.current.get(id)).toBe(2);
+  expect(cancelAdopted).toHaveBeenCalledWith(id, "seen-host-run");
+  expect(cancel).not.toHaveBeenCalled();
+  // Only the host mirror may announce that its turn actually finished.
+  expect(current().continuingElsewhere).toBe(true);
 });
 
 it.each(["success", "failure"])(

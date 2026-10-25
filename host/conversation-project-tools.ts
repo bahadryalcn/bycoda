@@ -142,8 +142,10 @@ export class ConversationProjectTools {
       checkpoints?: (
         sessionId: string,
         principal: RuntimeLogPrincipal,
-        authorized: () => boolean,
-      ) => Pick<HostCheckpoints, "status" | "fileDiff">;
+        authorized: () => boolean | Promise<boolean>,
+      ) =>
+        | Pick<HostCheckpoints, "status" | "fileDiff">
+        | Promise<Pick<HostCheckpoints, "status" | "fileDiff">>;
     } = {},
   ) {}
 
@@ -151,13 +153,13 @@ export class ConversationProjectTools {
     action: ProjectConversationTool,
     input: Record<string, unknown>,
     principal: RuntimeLogPrincipal,
-    authorized: () => boolean,
+    authorized: () => boolean | Promise<boolean>,
   ): Promise<unknown> {
-    const check = () => {
-      if (!authorized()) throw new Error("Session authority revoked.");
+    const check = async () => {
+      if (!(await authorized())) throw new Error("Session authority revoked.");
     };
-    check();
-    this.store.project(principal.projectId);
+    await check();
+    await this.store.project(principal.projectId);
     if (action === "automations.preview") {
       if (!this.optional.automations) throw new Error("Automation previews unavailable.");
       return this.optional.automations.preview({
@@ -169,9 +171,9 @@ export class ConversationProjectTools {
     }
     if (action === "stewards.list" || action === "stewards.get") {
       if (!this.optional.stewards) throw new Error("Steward reads unavailable.");
-      const visible = this.optional.stewards
-        .list()
-        .filter((steward) => steward.projectId === principal.projectId);
+      const visible = (await this.optional.stewards.list()).filter(
+        (steward) => steward.projectId === principal.projectId,
+      );
       if (action === "stewards.list")
         return page(
           visible.map((steward) => ({
@@ -192,17 +194,15 @@ export class ConversationProjectTools {
       return { stewardId: steward.id, ...jsonPage(steward, input) };
     }
     if (action === "usage.sessions.read")
-      return readSessionUsage(this.store as HostStore, {
+      return await readSessionUsage(this.store as HostStore, {
         ...input,
         projectId: principal.projectId,
       });
     if (action === "providers.list") return { providers: [...this.providers] };
     if (action === "goals.list" || action === "goals.get") {
-      const visible = this.goals
-        .list()
-        .filter(
-          (goal) => goal.projectIds.length === 1 && goal.projectIds[0] === principal.projectId,
-        );
+      const visible = (await this.goals.list()).filter(
+        (goal) => goal.projectIds.length === 1 && goal.projectIds[0] === principal.projectId,
+      );
       if (action === "goals.list")
         return page(
           visible.map((goal) => ({
@@ -224,7 +224,7 @@ export class ConversationProjectTools {
     }
     if (action === "models.list") {
       const catalog = await this.models(principal.projectId, true);
-      check();
+      await check();
       const providers = this.providers.filter(
         (provider) => input.provider === undefined || input.provider === provider,
       );
@@ -244,22 +244,20 @@ export class ConversationProjectTools {
     if (action !== "checkpoints.status" && action !== "checkpoints.diff")
       throw new Error("Unsupported project conversation tool.");
     const sessionId = String(input.sessionId ?? principal.sessionId);
-    const session = (this.optional.session ?? ((id) => this.store.session(id)))(sessionId);
+    const session = await (this.optional.session ?? (async (id) => await this.store.session(id)))(
+      sessionId,
+    );
     if (session.projectId !== principal.projectId)
       throw new Error("Session not found in this project scope.");
     const checkpoints =
-      this.optional.checkpoints?.(sessionId, principal, authorized) ?? this.checkpoints;
+      (await this.optional.checkpoints?.(sessionId, principal, authorized)) ?? this.checkpoints;
     if (action === "checkpoints.status") {
       const status = await checkpoints.status(sessionId, session.session.cwd);
-      check();
+      await check();
       return { ...page(status.files, input), expectedCheckpoint: status.expectedCheckpoint };
     }
-    const diff = await checkpoints.fileDiff(
-      sessionId,
-      session.session.cwd,
-      String(input.relative),
-    );
-    check();
+    const diff = await checkpoints.fileDiff(sessionId, session.session.cwd, String(input.relative));
+    await check();
     const original = scrubRuntimeLogText(diff.original, Number.MAX_SAFE_INTEGER);
     const current = scrubRuntimeLogText(diff.current, Number.MAX_SAFE_INTEGER);
     const offset = Number(input.offset ?? 0),

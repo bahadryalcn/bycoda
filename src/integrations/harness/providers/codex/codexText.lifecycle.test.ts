@@ -12,6 +12,8 @@ let output = "Generated text";
 let threadCount = 0;
 let failTurn = false;
 let missingResume = false;
+let stallTurn = false;
+let stallInterrupt = false;
 
 function receive(message: unknown) {
   onLine?.(JSON.stringify(message));
@@ -45,6 +47,7 @@ vi.mock("../../core/child", () => ({
       );
     } else if (request.method === "turn/start") {
       receive({ id: request.id, result: { turn: { id: "turn_1" } } });
+      if (stallTurn) return;
       setTimeout(() => {
         receive({
           method: "item/agentMessage/delta",
@@ -61,7 +64,7 @@ vi.mock("../../core/child", () => ({
           },
         });
       }, 0);
-    } else {
+    } else if (request.method !== "turn/interrupt" || !stallInterrupt) {
       receive({ id: request.id, result: {} });
     }
   },
@@ -98,11 +101,51 @@ beforeEach(() => {
   threadCount = 0;
   failTurn = false;
   missingResume = false;
+  stallTurn = false;
+  stallInterrupt = false;
 });
 
 afterEach(async () => {
   await stopCodexTextPrompt();
+  vi.useRealTimers();
 });
+
+it.each(["timeout", "abort"] as const)(
+  "releases the helper queue after %s even if the provider never acknowledges interrupt",
+  async (outcome) => {
+    vi.useFakeTimers();
+    stallTurn = true;
+    stallInterrupt = true;
+    const controller = new AbortController();
+    const first = runCodexTextPrompt({
+      cwd: "/repo",
+      prompt: "First request",
+      timeoutMs: 100,
+      signal: controller.signal,
+    }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+    for (let i = 0; i < 100; i++) await Promise.resolve();
+    expect(sent.filter((request) => request.method === "turn/start")).toHaveLength(1);
+    if (outcome === "abort") controller.abort();
+    else await vi.advanceTimersByTimeAsync(100);
+    for (let i = 0; i < 100; i++) await Promise.resolve();
+    expect(sent.some((request) => request.method === "turn/interrupt")).toBe(true);
+
+    stallTurn = false;
+    const second = runCodexTextPrompt({ cwd: "/repo", prompt: "Next request" });
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(sent.filter((request) => request.method === "turn/start")).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(await first).toBeInstanceOf(Error);
+    await expect(second).resolves.toBe(output);
+    expect(sent.filter((request) => request.method === "turn/start")).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
 
 it.each([
   {

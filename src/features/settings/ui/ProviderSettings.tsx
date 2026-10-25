@@ -4,7 +4,7 @@ import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
-import { ArrowDownCircle, Check, Globe, Loader, RefreshCw } from "../../../shared/ui/icons";
+import { ArrowDownCircle, Check, Globe, RefreshCw } from "../../../shared/ui/icons";
 import {
   useContext,
   useEffect,
@@ -571,12 +571,9 @@ export function HarnessUpdatesGroup() {
               void checkInstalledHarnessVersions({ force: true }).catch(() => undefined)
             }
             disabled={checking}
+            loading={checking}
+            startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />}
           >
-            {checking ? (
-              <Loader className="icon-sm animate-spin" aria-hidden />
-            ) : (
-              <RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />
-            )}
             {t("Check for updates")}
           </Button>
         </div>
@@ -679,17 +676,13 @@ export function HarnessUpdateSettingsRow({
           onClick={() => onUpdate(check)}
           disabled={state.status === "updating"}
           loading={state.status === "updating"}
+          startIcon={<ArrowDownCircle className="icon-sm text-accent" aria-hidden />}
           aria-label={
             state.status === "failed"
               ? t("Retry updating {p0}", { p0: title })
               : t("Update {p0} to {p1}", { p0: title, p1: check.latest })
           }
         >
-          {state.status === "updating" ? (
-            <Loader className="icon-sm animate-spin" aria-hidden />
-          ) : (
-            <ArrowDownCircle className="icon-sm text-accent" aria-hidden />
-          )}
           {state.status === "failed" ? t("Retry") : t("Update")}
         </Button>
       ) : check.status === "current" ? (

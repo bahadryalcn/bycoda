@@ -52,6 +52,7 @@ export function desktopCopyOf(
     historyLoading: undefined,
     historyLoadError: undefined,
     continuingElsewhere: host.status === "running" || undefined,
+    adoptedRunId: host.status === "running" ? host.runId : undefined,
     // The copy is the host's transcript, so that is where both last agreed.
     adoptedBase: hostHead(host),
   };
@@ -393,6 +394,7 @@ export function mergeAdoptedSession(
     pendingContextReplay: fromHost("pendingContextReplay"),
     ...(remote.context ? { context: remote.context } : {}),
     continuingElsewhere: host.status === "running" || undefined,
+    adoptedRunId: host.status === "running" ? host.runId : undefined,
     retryMessage: host.status === "running" ? remote.retryMessage : undefined,
     adoptedSyncConflict: undefined,
     adoptedDivergence: undefined,
@@ -877,7 +879,7 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
           }
           // Another window may have written since: the save then refuses and
           // the next pass starts over from the newer stored copy.
-          const saved = await deps.save({ ...merged, continuingElsewhere: undefined }, stamp);
+          const saved = await deps.save({ ...merged, continuingElsewhere: undefined, adoptedRunId: undefined }, stamp);
           if (saved === false) continue;
           remember(entry.id, host);
           // Opening during the save may have loaded the previous stored copy.

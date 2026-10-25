@@ -105,7 +105,7 @@ afterAll(async () => {
   await engine?.close();
   await backend?.close();
   release?.();
-  store?.close();
+  await store?.close();
   server?.closeAllConnections();
   await new Promise<void>((resolve) => server?.close(() => resolve()));
   if (directory) rmSync(directory, { recursive: true, force: true });
@@ -113,7 +113,7 @@ afterAll(async () => {
 
 it("runs an OpenCode 2.x session through the host service commands and bridge", async () => {
   const project = await engine.openProject(directory);
-  const { sessionId } = engine.command({
+  const { sessionId } = await engine.command({
     type: "create",
     commandId: "create-opencode-v2",
     projectId: project.id,
@@ -121,20 +121,20 @@ it("runs an OpenCode 2.x session through the host service commands and bridge", 
     model: "opencode:openai/fixture-model",
     runtimeMode: "supervised",
   });
-  engine.command({
+  await engine.command({
     type: "send",
     commandId: "send-opencode-v2",
     sessionId,
     text: "hello",
   });
   await vi.waitFor(
-    () => {
-      const state = store.session(sessionId).session;
+    async () => {
+      const state = (await store.session(sessionId)).session;
       expect(state.blocks.at(-1)?.text).toContain("Headless OpenCode 2 completed");
-      expect(store.session(sessionId).status).toBe("idle");
+      expect((await store.session(sessionId)).status).toBe("idle");
     },
     { timeout: 8_000 },
   );
-  expect(store.session(sessionId).session.providerSessionId).toBe("ses_v2");
+  expect((await store.session(sessionId)).session.providerSessionId).toBe("ses_v2");
   expect(unauthorized).toEqual([]);
 });

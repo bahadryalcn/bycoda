@@ -33,6 +33,7 @@ export function TaskBulkToolbar({
   const { confirm, dialog } = useConfirm();
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState<TaskBulkAction | "retry-failed" | null>(null);
   const [results, setResults] = useState<TaskBulkResult[]>([]);
   const [progress, setProgress] = useState<{ completed: number; total: number }>();
   const [lastAction, setLastAction] = useState<TaskBulkAction>("delete");
@@ -66,6 +67,7 @@ export function TaskBulkToolbar({
       )
         return;
       setLastAction(action);
+      setActiveAction(retry ? "retry-failed" : action);
       setResults([]);
       setProgress({ completed: 0, total: batch.length });
       await runTaskBulkAction(
@@ -91,6 +93,7 @@ export function TaskBulkToolbar({
     } finally {
       pending.current = false;
       setBusy(false);
+      setActiveAction(null);
       onBusy(false);
     }
   };
@@ -122,6 +125,7 @@ export function TaskBulkToolbar({
             key={action}
             variant="ghost"
             tone={action === "delete" ? "danger" : "neutral"}
+            loading={activeAction === action}
             disabled={busy || disabled || !chosen.length}
             onClick={() => void run(action)}
           >
@@ -131,7 +135,7 @@ export function TaskBulkToolbar({
       </div>
       {progress ? (
         <div role="status" aria-live="polite">
-          {busy
+          {activeAction
             ? t("Processed {p0} of {p1}", { p0: progress.completed, p1: progress.total })
             : t("{p0} succeeded, {p1} skipped, {p2} failed", {
                 p0: results.filter((row) => row.status === "succeeded").length,
@@ -156,9 +160,10 @@ export function TaskBulkToolbar({
           </ul>
         </details>
       ) : null}
-      {failures.length ? (
+      {failures.length || activeAction === "retry-failed" ? (
         <Button
           variant="secondary"
+          loading={activeAction === "retry-failed"}
           disabled={busy || disabled}
           onClick={() => void run(lastAction, true)}
         >

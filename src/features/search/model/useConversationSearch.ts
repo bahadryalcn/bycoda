@@ -5,7 +5,7 @@ import {
   type SessionContentResult,
 } from "../../sessions/data/sessionStore";
 
-type Options = Omit<Parameters<typeof searchSessionContent>[0], "searchOwner">;
+type Options = Omit<Parameters<typeof searchSessionContent>[0], "searchOwner" | "retryIndex">;
 const EMPTY: SessionContentResult = {
   sessions: [],
   truncated: false,
@@ -32,6 +32,7 @@ export function useConversationSearch(enabled: boolean, options: Options, revisi
     let owner: string | null = null;
     let timer: ReturnType<typeof setTimeout>;
     const requestOptions = optionsRef.current;
+    let retryIndex = retryTick > 0;
     const run = async () => {
       const searchOwner = crypto.randomUUID();
       owner = searchOwner;
@@ -42,13 +43,16 @@ export function useConversationSearch(enabled: boolean, options: Options, revisi
         loading: true,
       }));
       try {
+        const retryCurrentIndex = retryIndex;
+        retryIndex = false;
         const result = await searchSessionContent({
           ...requestOptions,
           searchOwner,
+          ...(retryCurrentIndex ? { retryIndex: true } : {}),
         });
         if (cancelled) return;
-        setState({ key, result, error: null, loading: false });
-        if (result.pending > 0) timer = setTimeout(() => void run(), 2000);
+        setState({ key, result, error: result.indexError ?? null, loading: false });
+        if (result.pending > 0 && !result.indexError) timer = setTimeout(() => void run(), 2000);
       } catch (reason) {
         if (cancelled) return;
         setState((previous) => ({

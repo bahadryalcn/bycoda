@@ -1,4 +1,12 @@
 import { NO_VERDICT } from "./taskRules";
+import type { TaskAcceptanceReport } from "./taskAcceptance";
+import { parseTaskRunBudget, type TaskRunBudget, type TaskRunBudgetUsage } from "./taskBudget";
+import {
+  parseTaskPreflightRequirements,
+  type TaskPreflightRequirement,
+  type TaskPreflightReport,
+} from "./taskPreflight";
+export type { TaskAcceptanceCriterion, TaskAcceptanceReport } from "./taskAcceptance";
 import { parseProviderAccountId } from "../../providers/model/providerAccountId";
 import { parseTaskWorkspace, type TaskWorkspace } from "./taskWorkspace";
 import { parseCrewScopes } from "../../crews/model/crew";
@@ -22,6 +30,8 @@ import { RUNTIME_MODES, type RuntimeMode } from "../../sessions/model/session";
 export const HOST_TASKS = "tasks";
 /** Explicit local account profiles for unattended task and goal runs. */
 export const HOST_TASK_ACCOUNTS = "tasks.provider-accounts";
+/** Explicitly clear an independently configured task reviewer on edit. */
+export const HOST_TASK_REVIEWER_PROFILE = "tasks.reviewer-profile";
 
 /** The host keeps manual to-do items: tasks the owner adds by hand that no
  * agent starts until they are moved to the queue. The host advertises this
@@ -60,6 +70,7 @@ export function taskColumn(status: TaskStatus): TaskColumn {
 export type TaskVerification = {
   command?: { exitCode: number | null; output: string; timedOut: boolean };
   review?: { verdict: "pass" | "fail"; note: string; sessionId: string };
+  acceptance?: TaskAcceptanceReport;
 };
 
 export type TaskReviewNote = {
@@ -85,6 +96,10 @@ export const TASK_SOURCES = ["manual", "goal", "steward"] as const;
 export type TaskSource = (typeof TASK_SOURCES)[number];
 
 export type HostTaskInput = {
+  budget?: TaskRunBudget;
+  preflightRequirements?: TaskPreflightRequirement[];
+  workflowId?: string;
+  workflowVersion?: number;
   /** Reusable team selected to execute this task. Its workers are separate tasks. */
   crewDefinitionId?: string;
   /** Host-owned Crew assignment and its independently selected reviewer. */
@@ -138,7 +153,21 @@ export type HostTaskInput = {
   dependsOn?: string[];
 };
 
+/** Wire-only clear sentinel; persisted tasks keep a normalized optional profile. */
+export type HostTaskWireInput = Omit<HostTaskInput, "reviewerConfig"> & {
+  reviewerConfig?: HostTaskInput["reviewerConfig"] | null;
+};
+
 export type HostTask = HostTaskInput & {
+  evaluation?: {
+    accepted: boolean;
+    reviewMinutes: number;
+    corrections: number;
+    recordedAt: number;
+  };
+  budgetUsage?: TaskRunBudgetUsage;
+  budgetStop?: string;
+  preflight?: TaskPreflightReport;
   /** Durable, host-owned identity of this task's current crew execution. */
   crewExecutionId?: string;
   status: TaskStatus;
@@ -216,6 +245,10 @@ export type HostTask = HostTaskInput & {
     sessionId?: string;
     runId?: string;
     startedAt: number;
+    /** New reviews must explicitly report evidence for every acceptance criterion. */
+    acceptanceRequired?: boolean;
+    /** Working-copy contents inspected by this reviewer, when available. */
+    workspaceFingerprint?: string;
     error?: string;
     /** Format-only follow-ups; these do not launch another implementation worker. */
     verdictRepairAttempts?: number;
@@ -306,6 +339,16 @@ export function parseHostTask(input: unknown): HostTaskInput {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid task");
   const v = input as Record<string, unknown>;
   if (
+    v.workflowId !== undefined &&
+    (typeof v.workflowId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(v.workflowId))
+  )
+    throw new Error("Invalid task workflow identity.");
+  if (
+    v.workflowVersion !== undefined &&
+    (!Number.isSafeInteger(v.workflowVersion) || Number(v.workflowVersion) < 1)
+  )
+    throw new Error("Invalid task workflow version.");
+  if (
     v.crewDefinitionId !== undefined &&
     (typeof v.crewDefinitionId !== "string" || !ID.test(v.crewDefinitionId))
   )
@@ -320,7 +363,7 @@ export function parseHostTask(input: unknown): HostTaskInput {
   if (v.crewRunId !== undefined && (typeof v.crewRunId !== "string" || !ID.test(v.crewRunId)))
     throw new Error("Invalid crew run");
   let reviewerConfig: HostTaskInput["reviewerConfig"];
-  if (v.reviewerConfig !== undefined) {
+  if (v.reviewerConfig !== undefined && v.reviewerConfig !== null) {
     const r = v.reviewerConfig as Record<string, unknown>;
     if (
       !r ||
@@ -394,15 +437,27 @@ export function parseHostTask(input: unknown): HostTaskInput {
     throw new Error("Invalid task dependencies");
   return {
     id: v.id,
+    ...(v.budget === undefined ? {} : { budget: parseTaskRunBudget(v.budget) }),
+    ...(v.preflightRequirements === undefined
+      ? {}
+      : { preflightRequirements: parseTaskPreflightRequirements(v.preflightRequirements) }),
+    ...(typeof v.workflowId === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(v.workflowId)
+      ? { workflowId: v.workflowId }
+      : {}),
+    ...(Number.isSafeInteger(v.workflowVersion) && Number(v.workflowVersion) > 0
+      ? { workflowVersion: Number(v.workflowVersion) }
+      : {}),
     ...(typeof v.crewDefinitionId === "string" ? { crewDefinitionId: v.crewDefinitionId } : {}),
     ...(typeof v.crewRunId === "string" ? { crewRunId: v.crewRunId } : {}),
     ...(v.crewScopes === undefined ? {} : { crewScopes: parseCrewScopes(v.crewScopes) }),
-    ...(reviewerConfig ? { reviewerConfig } : {}),
+    ...(reviewerConfig || v.reviewerConfig === null ? { reviewerConfig } : {}),
     title: v.title.trim(),
     prompt: v.prompt,
     projectId: v.projectId,
     harness: v.harness,
-    ...(v.providerAccountId === undefined ? {} : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
+    ...(v.providerAccountId === undefined
+      ? {}
+      : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
     model: v.model,
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,
@@ -417,9 +472,7 @@ export function parseHostTask(input: unknown): HostTaskInput {
     ...(typeof v.goalId === "string" ? { goalId: v.goalId } : {}),
     ...(typeof v.source === "string" ? { source: v.source as TaskSource } : {}),
     ...(typeof v.stewardId === "string" ? { stewardId: v.stewardId } : {}),
-    ...(Array.isArray(v.dependsOn)
-      ? { dependsOn: [...new Set(v.dependsOn as string[])] }
-      : {}),
+    ...(Array.isArray(v.dependsOn) ? { dependsOn: [...new Set(v.dependsOn as string[])] } : {}),
   };
 }
 

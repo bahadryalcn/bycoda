@@ -140,3 +140,57 @@ it("does not show an empty list before loading finishes or replace a new machine
   expect(container.textContent).toContain("No ACP agents configured");
   expect(container.textContent).not.toContain(config.name);
 });
+
+it("reveals a collapsed agent form without discarding its draft", async () => {
+  await render();
+  act(() => button("Edit").click());
+  const disclosure = () =>
+    container.querySelector<HTMLButtonElement>("#acp-agent-form-disclosure button[aria-expanded]")!;
+  act(() => disclosure().click());
+  expect(container.querySelector("#acp-agent-form-disclosure input")).toBeNull();
+  await act(async () => {
+    button("Add agent").click();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+  const field = container.querySelector<HTMLInputElement>("#acp-agent-form-disclosure input")!;
+  expect(field.value).toBe(config.id);
+  expect(document.activeElement).toBe(field);
+});
+
+it.each([false, true])(
+  "reports removal outcome independently of a later refresh failure (%s)",
+  async (removed) => {
+    await render();
+    let now = 1000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    let reject!: (reason: Error) => void;
+    mock.invoke.mockImplementation(async (command) => {
+      if (command === "generic_acp_remove") {
+        if (!removed)
+          return new Promise((_resolve, fail) => {
+            reject = fail;
+          });
+        return;
+      }
+      if (removed && command === "generic_acp_list") throw new Error("List refresh failed");
+      return [config];
+    });
+    try {
+      await act(async () => button("Remove").click());
+      now += 400;
+      await act(async () => button("Confirm delete").click());
+      if (!removed) {
+        expect(container.querySelector('[data-state="pending"]')).not.toBeNull();
+        await act(async () => reject(new Error("Remove failed")));
+        expect(container.querySelector('[data-state="error"]')).not.toBeNull();
+        expect(container.querySelector('[data-state="done"]')).toBeNull();
+        expect(container.textContent).toContain("Remove failed");
+      } else {
+        expect(container.querySelector('[data-state="done"]')?.textContent).toContain("Removed");
+        expect(container.textContent).toContain("List refresh failed");
+      }
+    } finally {
+      clock.mockRestore();
+    }
+  },
+);

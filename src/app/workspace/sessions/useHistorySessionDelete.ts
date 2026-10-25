@@ -2,6 +2,12 @@ import { message } from "@tauri-apps/plugin-dialog";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { confirmSessionDelete } from "../../../features/sessions/model/confirmSessionDelete";
 import { createSessionRemover } from "../../../features/sessions/model/sessionRemoval";
+import {
+  dismissSessionDeletionStatus,
+  setSessionDeletionStatus,
+  type SessionDeletionStatus,
+  type SessionDeletionStage,
+} from "../../../features/sessions/model/sessionDeletionStatus";
 import { type SessionDeleteChoice } from "../../../features/sessions/ui/DeleteSessionDialog";
 import { type Session, sessionDisplayTitle } from "../../../features/sessions/model/session";
 import { rememberLoadedSession } from "../../../features/sessions/data/sessionCache";
@@ -15,7 +21,10 @@ import {
 } from "../../../features/sessions/data/sessionStore";
 import { releaseOrchestrationWorker } from "../../../features/orchestration/model/orchestrationWorkspace";
 import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
-import { listWorktrees, worktreeSessionIds } from "../../../features/source-control/model/worktrees";
+import {
+  listWorktrees,
+  worktreeSessionIds,
+} from "../../../features/source-control/model/worktrees";
 import { worktreeFocus } from "../../../features/source-control/model/worktreeFocus";
 import { confirmCloseTerminals } from "../../../features/terminal/model/terminalClose";
 import {
@@ -107,7 +116,7 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
   const {
     removingSessionIds,
     switchingWorktrees,
-    deleteConfirmationPending,
+    deleteConfirmationPending: deleteConfirmationPendingRef,
     setSessionDeleteDialog,
     stopSessionForRemoval,
     onRemoveWorktree,
@@ -124,7 +133,7 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
       if (
         removingSessionIds.current.has(sessionId) ||
         switchingWorktrees.current.has(sessionId) ||
-        deleteConfirmationPending.current
+        deleteConfirmationPendingRef.current
       )
         return false;
       const open = sessionsRef.current.find((session) => session.id === sessionId);
@@ -132,47 +141,68 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
       const seed = open ?? summary;
       const label = seed ? sessionDisplayTitle(seed.title, seed.harness) : "this session";
       removingSessionIds.current.add(sessionId);
+      let deletionStatus: SessionDeletionStatus | undefined =
+        mode === "delete"
+          ? {
+              sessionId,
+              cwd: seed?.cwd ?? sidebarCwd,
+              title: label,
+              stage: "preparing",
+              startedAt: Date.now(),
+            }
+          : undefined;
+      const progress = (stage: SessionDeletionStage) => {
+        if (!deletionStatus) return;
+        deletionStatus = { ...deletionStatus, stage };
+        setSessionDeletionStatus(deletionStatus);
+      };
+      progress("preparing");
       let deleteWorktreePath: string | undefined;
-      if (mode === "delete" && !skipDeleteConfirm) {
-        deleteConfirmationPending.current = true;
-        let unusedWorktree: string | undefined;
-        if (seed?.worktreeCwd) {
-          try {
-            const { worktrees } = await listWorktrees(seed.cwd);
-            const tree = worktrees.find(
-              (entry) => pathKey(entry.path) === pathKey(seed.worktreeCwd!),
-            );
-            if (
-              tree &&
-              !tree.isMain &&
-              !tree.locked &&
-              tree.branch &&
-              worktreeSessionIds(tree, sessionsRef.current).every((id) => id === sessionId)
-            )
-              unusedWorktree = tree.path;
-          } catch {
-            // A failed lookup must never offer filesystem cleanup.
-          }
-        }
-        if (!unusedWorktree) {
-          deleteConfirmationPending.current = false;
-        } else {
-          const choice = await new Promise<SessionDeleteChoice>((resolve) => {
-            setSessionDeleteDialog({ title: label, unusedWorktree, resolve });
-          });
-          deleteConfirmationPending.current = false;
-          if (!choice.confirmed) {
-            removingSessionIds.current.delete(sessionId);
-            return false;
-          }
-          if (choice.deleteWorktree) deleteWorktreePath = unusedWorktree;
-        }
-      }
-      invalidateLoadedSession(sessionId);
-      pendingPersist.current.delete(sessionId);
+      let ownsDeleteConfirmation = false;
       try {
+        if (mode === "delete" && !skipDeleteConfirm) {
+          deleteConfirmationPendingRef.current = true;
+          ownsDeleteConfirmation = true;
+          let unusedWorktree: string | undefined;
+          if (seed?.worktreeCwd) {
+            try {
+              const { worktrees } = await listWorktrees(seed.cwd);
+              const tree = worktrees.find(
+                (entry) => pathKey(entry.path) === pathKey(seed.worktreeCwd!),
+              );
+              if (
+                tree &&
+                !tree.isMain &&
+                !tree.locked &&
+                tree.branch &&
+                worktreeSessionIds(tree, sessionsRef.current).every((id) => id === sessionId)
+              )
+                unusedWorktree = tree.path;
+            } catch {
+              // A failed lookup must never offer filesystem cleanup.
+            }
+          }
+          if (!unusedWorktree) {
+            deleteConfirmationPendingRef.current = false;
+            ownsDeleteConfirmation = false;
+          } else {
+            const choice = await new Promise<SessionDeleteChoice>((resolve) => {
+              setSessionDeleteDialog({ title: label, unusedWorktree, resolve });
+            });
+            deleteConfirmationPendingRef.current = false;
+            ownsDeleteConfirmation = false;
+            if (!choice.confirmed) {
+              removingSessionIds.current.delete(sessionId);
+              return false;
+            }
+            if (choice.deleteWorktree) deleteWorktreePath = unusedWorktree;
+          }
+        }
+        invalidateLoadedSession(sessionId);
+        pendingPersist.current.delete(sessionId);
         const remover = createSessionRemover({
           mode,
+          onProgress: progress,
           scope: tabCloseScope,
           worktreeOf: tabWorktreeOf,
           // The blank replacement stays in the tab's worktree, unless that
@@ -311,19 +341,30 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
           stop: stopSessionForRemoval,
         });
         const removed = await remover.remove(sessionId);
+        let worktreeError: string | undefined;
         if (removed && deleteWorktreePath && seed) {
+          progress("worktree");
           try {
             await onRemoveWorktree(seed.cwd, deleteWorktreePath, false);
           } catch (error) {
+            worktreeError = String(error);
             void message(
               `The session was deleted. Its worktree was kept.\n\n${String(error)}\n\nYou can manage it in Settings → Worktrees.`,
               { title: appName(), kind: "warning" },
             );
           }
         }
+        if (removed && deletionStatus) {
+          deletionStatus = { ...deletionStatus, outcome: "deleted", error: worktreeError };
+          setSessionDeletionStatus(deletionStatus);
+        }
         return removed;
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
+        if (deletionStatus) {
+          deletionStatus = { ...deletionStatus, outcome: "failed", error: detail };
+          setSessionDeletionStatus(deletionStatus);
+        }
         if (onError) {
           onError(detail);
           return false;
@@ -334,6 +375,8 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
         });
         return false;
       } finally {
+        if (ownsDeleteConfirmation) deleteConfirmationPendingRef.current = false;
+        if (deletionStatus && !deletionStatus.outcome) dismissSessionDeletionStatus(sessionId);
         removingSessionIds.current.delete(sessionId);
       }
     },

@@ -185,6 +185,38 @@ it("reports a rejected native window and permits retry", async () => {
   expect(button.disabled).toBe(false);
 });
 
+it.each([false, true])(
+  "shows progress only on the initiating window action (grouped=%s)",
+  async (grouped) => {
+    let resolve!: () => void;
+    vi.mocked(invoke).mockReturnValueOnce(
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
+    );
+    const { container } = await mount();
+    const single = container.querySelector<HTMLButtonElement>('[aria-label="Open in new window"]')!;
+    const combined = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Open all tools in one window"]',
+    )!;
+    const selected = grouped ? combined : single;
+    const other = grouped ? single : combined;
+    selected.focus();
+    await act(async () => {
+      selected.click();
+      selected.click();
+    });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(selected.getAttribute("aria-busy")).toBe("true");
+    expect(other.hasAttribute("aria-busy")).toBe(false);
+    expect(other.disabled).toBe(true);
+    expect(document.activeElement).toBe(selected);
+    await act(async () => resolve());
+    expect(selected.hasAttribute("aria-busy")).toBe(false);
+    expect(other.disabled).toBe(false);
+  },
+);
+
 it("reveals the existing combined tools window instead of opening a duplicate", async () => {
   vi.mocked(routeWindowDestination).mockResolvedValueOnce(true);
   const { container } = await mount();

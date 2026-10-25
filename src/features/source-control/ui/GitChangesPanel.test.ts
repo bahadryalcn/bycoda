@@ -29,6 +29,7 @@ vi.mock("../../../platform/tauri/fs", () => ({
   gitConflicts: vi.fn(async () => []),
   gitOperationStatus: vi.fn(async () => ({ operation: null, conflicts: [] })),
   gitStashList: vi.fn(async () => []),
+  gitStashAction: vi.fn(async () => {}),
   gitBranches: vi.fn(async () => ({
     current: "main",
     detached: false,
@@ -85,6 +86,10 @@ import {
   gitCommit,
   gitHeadMessage,
   gitFetch,
+  gitSync,
+  gitStash,
+  gitStashList,
+  gitStashAction,
   gitDiffIndex,
   gitTrustRepository,
   gitPrCreate,
@@ -244,6 +249,10 @@ beforeEach(() => {
   vi.mocked(gitDiffIndex).mockReset();
   vi.mocked(gitPull).mockReset();
   vi.mocked(gitFetch).mockReset().mockResolvedValue(undefined);
+  vi.mocked(gitSync).mockReset().mockResolvedValue(undefined);
+  vi.mocked(gitStash).mockReset().mockResolvedValue(undefined);
+  vi.mocked(gitStashList).mockReset().mockResolvedValue([]);
+  vi.mocked(gitStashAction).mockReset().mockResolvedValue(undefined);
   vi.mocked(generateCommitMessage).mockReset();
   vi.mocked(gitStageFile).mockReset().mockResolvedValue(undefined);
   vi.mocked(gitStageFiles).mockReset().mockResolvedValue(undefined);
@@ -495,13 +504,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function renderPanel(cwd = "/repo") {
+async function renderPanel(cwd = "/repo", expanded?: boolean) {
   act(() =>
     root.render(
       createElement(GitChangesPanel, {
         key: cwd,
         cwd,
         enabled: true,
+        embedded: expanded !== undefined,
+        repository:
+          expanded !== undefined ? { name: "api", expanded, onToggle: vi.fn() } : undefined,
         onOpenFile: vi.fn(),
         onOpenAllChanges: vi.fn(),
         onOpenCommit: vi.fn(),
@@ -510,6 +522,72 @@ async function renderPanel(cwd = "/repo") {
   );
   await act(async () => {});
 }
+
+it("keeps Sync progress on its action through remount and prevents duplicate requests", async () => {
+  let finish!: () => void;
+  vi.mocked(gitSync).mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  vi.mocked(gitDiffIndex).mockResolvedValue(
+    index({ remote: "origin", upstream: "origin/feature/pull", ahead: 2 }),
+  );
+  await renderPanel("/sync-feedback");
+  const action = () =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Sync Changes"),
+    )!;
+  await act(async () => {
+    action().click();
+    action().click();
+  });
+  expect(gitSync).toHaveBeenCalledTimes(1);
+  expect(action().getAttribute("aria-busy")).toBe("true");
+  expect(action().disabled).toBe(false);
+  expect(container.querySelector('header [role="status"]')).toBeNull();
+  await renderPanel("/sync-feedback", false);
+  expect(container.querySelector('header [role="status"]')?.textContent).toBe("Syncing…");
+  await renderPanel("/sync-feedback", true);
+  expect(container.querySelector('header [role="status"]')).toBeNull();
+  expect(action().getAttribute("aria-busy")).toBe("true");
+  await renderPanel("/other-checkout");
+  expect(action().getAttribute("aria-busy")).toBeNull();
+  await renderPanel("/sync-feedback");
+  expect(action().getAttribute("aria-busy")).toBe("true");
+  await act(async () => finish());
+  expect(action().getAttribute("aria-busy")).toBeNull();
+});
+
+it("retains stash action feedback across checkout switches and recovers after failure", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(gitStash).mockImplementationOnce(
+    () =>
+      new Promise<void>((_, fail) => {
+        reject = fail;
+      }),
+  );
+  vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [changedFile("keep.ts")] }));
+  await renderPanel("/stash-feedback");
+  const action = () => container.querySelector<HTMLButtonElement>('[title^="Stash all changes"]')!;
+  await act(async () => {
+    action().click();
+    action().click();
+  });
+  expect(gitStash).toHaveBeenCalledTimes(1);
+  expect(action().getAttribute("aria-busy")).toBe("true");
+  await renderPanel("/other-checkout");
+  expect(action().getAttribute("aria-busy")).toBeNull();
+  await renderPanel("/stash-feedback");
+  expect(action().getAttribute("aria-busy")).toBe("true");
+  await act(async () => reject(new Error("index.lock exists")));
+  expect(action().getAttribute("aria-busy")).toBeNull();
+  expect(container.textContent).toContain("Couldn’t update stash");
+  expect(container.textContent).toContain("keep.ts");
+  await act(async () => action().click());
+  expect(gitStash).toHaveBeenCalledTimes(2);
+});
 
 it.each([
   { grouped: false, ahead: 1, behind: 0 },
@@ -867,7 +945,8 @@ describe("GitChangesPanel action feedback", () => {
 
     await act(async () => commitButton().click());
     expect(commitButton().textContent?.trim()).toBe("Committing…");
-    expect(statusText()).toBe("Committing…");
+    expect(commitButton().getAttribute("aria-busy")).toBe("true");
+    expect(statusText()).toBeNull();
 
     await act(async () => finishCommit());
     await act(async () => {});
@@ -907,7 +986,8 @@ describe("GitChangesPanel action feedback", () => {
     await act(async () => {});
 
     // Still pushing, and the poll still reads the old index.
-    expect(statusText()).toBe("Pushing…");
+    expect(container.querySelector('button[aria-busy="true"]')?.textContent).toBe("Pushing…");
+    expect(statusText()).toBeNull();
     expect(sections()).toEqual([]);
     expect(container.querySelector("textarea")?.value).toBe("");
 
@@ -1064,10 +1144,12 @@ describe("GitChangesPanel navigation", () => {
     expect(status()).toBeUndefined();
     await typeMessage("Other draft");
     await renderPanel(cwd);
-    expect(status()).toBe("Committing…");
+    expect(status()).toBeUndefined();
+    expect(container.querySelector('button[aria-busy="true"]')?.textContent).toBe("Committing…");
     expect(container.querySelector("textarea")?.disabled).toBe(true);
     await act(async () => finishCommit());
-    expect(status()).toBe("Pushing…");
+    expect(status()).toBeUndefined();
+    expect(container.querySelector('button[aria-busy="true"]')?.textContent).toBe("Pushing…");
     expect(container.querySelector("textarea")?.value).toBe("");
     await renderPanel("/other-navigation");
     await act(async () => finishPush());

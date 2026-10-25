@@ -8,7 +8,6 @@ import {
   GitPullRequest,
   GitPullRequestClosed,
   GitPullRequestDraft,
-  LoaderCircle,
   MoreHorizontal,
 } from "../../../shared/ui/icons";
 import { useRef, useState } from "react";
@@ -361,11 +360,11 @@ export function GithubPrActions({
             <Button
               variant={confirmation.action === "close" ? "danger" : "primary"}
               type="button"
-              disabled={busy}
+              loading={busy}
+              loadingLabel={t(confirmCopy.progress)}
               onClick={() => void runAction()}
             >
-              {busy ? <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} /> : null}
-              {busy ? confirmCopy.progress : confirmCopy.confirm}
+              {t(confirmCopy.confirm)}
             </Button>
           </div>
         </Popover>

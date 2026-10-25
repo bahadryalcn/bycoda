@@ -51,7 +51,7 @@ export function InboxConnectionStatus({
               ? t("Configured")
               : t("Not configured")}
       </Badge>
-      <Button className="shrink-0" disabled={busy || checking} onClick={onCheck}>
+      <Button className="shrink-0" loading={checking} disabled={busy} onClick={onCheck}>
         {error ? t("Retry") : t("Check saved configuration")}
       </Button>
     </Row>

@@ -49,6 +49,8 @@ export function GitGraphConflictEditor({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  const [operation, setOperation] = useState<"ours" | "theirs" | "save" | null>(null);
+  const pending = useRef(false);
   const expectedDisk = useRef<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -108,11 +110,26 @@ export function GitGraphConflictEditor({
       },
     ];
   }, [loaded, path, relative]);
+  const runConflict = async (
+    name: "ours" | "theirs" | "save",
+    label: string,
+    action: () => Promise<unknown>,
+  ) => {
+    if (disabled || pending.current) return false;
+    pending.current = true;
+    setOperation(name);
+    try {
+      return await run(label, action);
+    } finally {
+      pending.current = false;
+      setOperation(null);
+    }
+  };
   const take = (side: "ours" | "theirs") => {
-    if (!loaded) return;
+    if (!loaded || disabled || pending.current) return;
     const value = loaded.stages[side];
     if (loaded.disk === null || value === null) {
-      void run("Resolving conflict…", async () => {
+      void runConflict(side, "Resolving conflict…", async () => {
         await gitResolveConflict(cwd, relative, side);
         onResolved();
       });
@@ -120,7 +137,7 @@ export function GitGraphConflictEditor({
   };
   const save = async () => {
     if (!loaded || loaded.disk === null || hasConflictMarkers(draft)) return;
-    const success = await run("Saving conflict resolution…", async () => {
+    const success = await runConflict("save", "Saving conflict resolution…", async () => {
       if ((await readTextFile(path)) !== loaded.disk)
         throw new Error(t("The file changed on disk. Reopen it before saving your resolution."));
       const serialized = restoreLineEnding(
@@ -188,7 +205,8 @@ export function GitGraphConflictEditor({
           variant="ghost"
           motion="none"
           type="button"
-          disabled={disabled}
+          loading={operation === "ours"}
+          disabled={operation !== "ours" && (disabled || operation !== null)}
           onClick={() => take("ours")}
         >
           {t("Use current")}
@@ -197,7 +215,8 @@ export function GitGraphConflictEditor({
           variant="ghost"
           motion="none"
           type="button"
-          disabled={disabled}
+          loading={operation === "theirs"}
+          disabled={operation !== "theirs" && (disabled || operation !== null)}
           onClick={() => take("theirs")}
         >
           {t("Use incoming")}
@@ -207,7 +226,7 @@ export function GitGraphConflictEditor({
             variant="ghost"
             motion="none"
             type="button"
-            disabled={disabled}
+            disabled={disabled || operation !== null}
             onClick={() => setDraft(resolveConflictMarkers(draft, "both"))}
           >
             {t("Use both")}
@@ -224,7 +243,11 @@ export function GitGraphConflictEditor({
               variant="primary"
               motion="none"
               type="button"
-              disabled={disabled || hasConflictMarkers(draft)}
+              loading={operation === "save"}
+              disabled={
+                (operation !== "save" && (disabled || operation !== null)) ||
+                hasConflictMarkers(draft)
+              }
               onClick={() => void save()}
               className="shrink-0"
             >
@@ -252,7 +275,7 @@ export function GitGraphConflictEditor({
               id="graph-conflict-output"
               aria-label={t("Resolved output")}
               value={draft}
-              disabled={disabled}
+              disabled={disabled || operation !== null}
               spellCheck={false}
               onChange={(e) => setDraft(e.target.value)}
               className="min-h-0 flex-1 resize-none font-mono leading-5"

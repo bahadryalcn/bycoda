@@ -26,8 +26,13 @@ let automation: Automation = {
   updatedAt: 1,
 };
 const calls: { command: string; args: Record<string, unknown> }[] = [];
+const control = {
+  holdSave: false,
+  finishSave: null as null | ((error?: string) => void),
+};
 Object.assign(window, {
   automationFixtureCalls: calls,
+  automationFixtureControl: control,
   __TAURI_INTERNALS__: {
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
     transformCallback: () => 1,
@@ -38,6 +43,15 @@ Object.assign(window, {
       if (command === "plugin:event|listen") return 1;
       if (command === "automations_list") return [structuredClone(automation)];
       if (command === "automations_upsert") {
+        if (control.holdSave) {
+          await new Promise<void>((resolve, reject) => {
+            control.finishSave = (error) => {
+              control.finishSave = null;
+              if (error) reject(new Error(error));
+              else resolve();
+            };
+          });
+        }
         automation = { ...(args.automation as Automation), createdAt: 1, updatedAt: 2 };
         return structuredClone(automation);
       }

@@ -1,3 +1,7 @@
+import { Progress } from "../../../shared/ui/Progress";
+import { useSocialPending } from "./useSocialPending";
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { SocialFilters } from "./SocialFilters";
 import { Alert } from "../../../shared/ui/Alert";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -43,6 +47,8 @@ export function Audience({
   run,
   onFilterChange,
 }: Props) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [selectedProjects, setSelectedProjects] = useState<string[]>(
     initialProject ? [initialProject] : [],
@@ -98,18 +104,20 @@ export function Audience({
               const data = field(event);
               void (async () => {
                 if (
-                  await run(
-                    () =>
-                      client.request("segments.create", {
-                        name: data.get("name"),
-                        projectIds: selectedProjects,
-                        tags: String(data.get("tags") ?? "")
-                          .split(",")
-                          .map((item) => item.trim())
-                          .filter(Boolean),
-                        ...(data.get("language") ? { language: data.get("language") } : {}),
-                      }),
-                    t("Contact group created. You can pick it from the segment filter."),
+                  await pendingUi.run("audience.save-segment", () =>
+                    run(
+                      () =>
+                        client.request("segments.create", {
+                          name: data.get("name"),
+                          projectIds: selectedProjects,
+                          tags: String(data.get("tags") ?? "")
+                            .split(",")
+                            .map((item) => item.trim())
+                            .filter(Boolean),
+                          ...(data.get("language") ? { language: data.get("language") } : {}),
+                        }),
+                      t("Contact group created. You can pick it from the segment filter."),
+                    ),
                   )
                 ) {
                   form.reset();
@@ -119,22 +127,37 @@ export function Audience({
             }}
           >
             <h3>{t("Create segment")}</h3>
-            <TextField label={t("Name")} name="name" maxLength={200} required />
             <TextField
+              disabled={socialLocked}
+              label={t("Name")}
+              name="name"
+              maxLength={200}
+              required
+            />
+            <TextField
+              disabled={socialLocked}
               label={t("User-provided tags")}
               name="tags"
               placeholder={t("Separate with commas")}
             />
-            <TextField label={t("Language")} name="language" maxLength={30} placeholder="tr" />
+            <TextField
+              disabled={socialLocked}
+              label={t("Language")}
+              name="language"
+              maxLength={30}
+              placeholder="tr"
+            />
             <Projects
               projects={projects}
               selected={selectedProjects}
               onChange={setSelectedProjects}
             />
             <Button
+              loading={pendingUi.is("audience.save-segment")}
               type="submit"
               variant="secondary"
               disabled={
+                socialLocked ||
                 !selectedProjects.length ||
                 selectedProjects.some((id) => !projects.some((project) => project.id === id))
               }
@@ -156,6 +179,7 @@ export function Audience({
             <label>
               {t("Search contacts or tags")}
               <SearchInput
+                disabled={socialLocked}
                 appearance="field"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -171,6 +195,7 @@ export function Audience({
               <label>
                 {t("Segment")}
                 <SearchableSelect
+                  disabled={socialLocked}
                   value={segment}
                   label={t("Segment")}
                   options={[
@@ -187,6 +212,7 @@ export function Audience({
               <label>
                 {t("Account")}
                 <SearchableSelect
+                  disabled={socialLocked}
                   value={accountFilter}
                   label={t("Account")}
                   options={[
@@ -208,7 +234,7 @@ export function Audience({
               checked={
                 contacts.length > 0 && contacts.every((contact) => checkedIds.includes(contact.id))
               }
-              disabled={!contacts.length}
+              disabled={socialLocked || !contacts.length}
               onChange={(event) =>
                 setCheckedIds(event.target.checked ? contacts.map((contact) => contact.id) : [])
               }
@@ -221,7 +247,7 @@ export function Audience({
               <Button
                 variant="secondary"
                 type="button"
-                disabled={!checkedIds.length}
+                disabled={socialLocked || !checkedIds.length}
                 onClick={() => setCheckedIds([])}
               >
                 {t("Clear selection")}
@@ -244,7 +270,7 @@ export function Audience({
             <Button
               variant="secondary"
               type="button"
-              disabled={!contacts.length}
+              disabled={socialLocked || !contacts.length}
               onClick={() => setCheckedIds(contacts.map((contact) => contact.id))}
             >
               {t("Select all contacts in this group ({p0})", { p0: contacts.length })}
@@ -256,6 +282,7 @@ export function Audience({
                 <div className="social-selection-row" key={contact.id}>
                   <label>
                     <Checkbox
+                      disabled={socialLocked}
                       aria-label={t("Select contact {p0}", { p0: contact.name })}
                       checked={checkedIds.includes(contact.id)}
                       onChange={(event) =>
@@ -268,6 +295,7 @@ export function Audience({
                     />
                   </label>
                   <Button
+                    disabled={socialLocked}
                     type="button"
                     variant="tab"
                     layout="stacked"
@@ -328,22 +356,28 @@ export function Audience({
           <details className="social-settings">
             <summary>{t("Import contacts")}</summary>
             <TextField
+              disabled={socialLocked}
               label={t("JSON contact list")}
               type="file"
               accept="application/json,.json"
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 if (file)
-                  void run(async () => {
-                    if (file.size > 1024 * 1024)
-                      throw new Error(t("The import can be at most 1 MiB."));
-                    const contacts = JSON.parse(await file.text());
-                    if (!Array.isArray(contacts))
-                      throw new Error(t("The file must contain a JSON contact list."));
-                    await client.request("contacts.import", { contacts });
-                  });
+                  void pendingUi.run("contacts.import", () =>
+                    run(async () => {
+                      if (file.size > 1024 * 1024)
+                        throw new Error(t("The import can be at most 1 MiB."));
+                      const contacts = JSON.parse(await file.text());
+                      if (!Array.isArray(contacts))
+                        throw new Error(t("The file must contain a JSON contact list."));
+                      await client.request("contacts.import", { contacts });
+                    }),
+                  );
               }}
             />
+            {pendingUi.is("contacts.import") ? (
+              <Progress label={t("Operation in progress…")} />
+            ) : null}
             <p>
               {t(
                 "The accountId, platformId, name, projectIds, tags and language fields can be used. Importing does not create sending permission.",
@@ -418,13 +452,16 @@ export function Audience({
               />
               <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) pt-3">
                 <Button
+                  loading={pendingUi.is("contact.optout")}
                   type="button"
                   variant="danger"
-                  disabled={selected.optedOut}
+                  disabled={socialLocked || selected.optedOut}
                   onClick={() =>
-                    void run(
-                      () => client.request("contacts.optout", { id: selected.id }),
-                      t("Contact with this person was stopped and pending jobs were cancelled."),
+                    void pendingUi.run("contact.optout", () =>
+                      run(
+                        () => client.request("contacts.optout", { id: selected.id }),
+                        t("Contact with this person was stopped and pending jobs were cancelled."),
+                      ),
                     )
                   }
                 >
@@ -469,6 +506,8 @@ function ContactForm({
   run,
   contact,
 }: Props & { contact?: SocialContact }) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [projectIds, setProjectIds] = useState<string[]>(
     contact?.projectIds ?? (initialProject ? [initialProject] : []),
@@ -485,45 +524,47 @@ function ContactForm({
         const data = field(event);
         void (async () => {
           if (
-            await run(
-              async () => {
-                if (!validProjects)
-                  throw new Error(t("Select at least one existing project for the contact."));
-                const consentAt = new Date(String(data.get("date"))).getTime();
-                if (
-                  addConsent &&
-                  (!Number.isFinite(consentAt) || consentAt <= 0 || consentAt > Date.now())
-                )
-                  throw new Error(t("Enter a valid past date and a source for the consent."));
-                return client.request("contacts.upsert", {
-                  ...(contact ? { id: contact.id } : {}),
-                  accountId: data.get("account"),
-                  platformId: data.get("identity"),
-                  name: data.get("name"),
-                  source: contact?.source ?? "manual",
-                  projectIds,
-                  tags: String(data.get("tags") ?? "")
-                    .split(",")
-                    .map((item) => item.trim())
-                    .filter(Boolean),
-                  ...(data.get("url") ? { profileUrl: data.get("url") } : {}),
-                  ...(data.get("language") ? { language: data.get("language") } : {}),
-                  replyEligible: !contact?.optedOut && data.get("reply") === "on",
-                  commentEligible: !contact?.optedOut && data.get("comment") === "on",
-                  ...(addConsent
-                    ? {
-                        consent: {
-                          allowed: true,
-                          source: data.get("source"),
-                          at: consentAt,
-                        },
-                      }
-                    : {}),
-                });
-              },
-              contact
-                ? t("Contact details updated.")
-                : t("Contact added. Select it from the list to prepare a message or comment."),
+            await pendingUi.run("contact-form.save-contact", () =>
+              run(
+                async () => {
+                  if (!validProjects)
+                    throw new Error(t("Select at least one existing project for the contact."));
+                  const consentAt = new Date(String(data.get("date"))).getTime();
+                  if (
+                    addConsent &&
+                    (!Number.isFinite(consentAt) || consentAt <= 0 || consentAt > Date.now())
+                  )
+                    throw new Error(t("Enter a valid past date and a source for the consent."));
+                  return client.request("contacts.upsert", {
+                    ...(contact ? { id: contact.id } : {}),
+                    accountId: data.get("account"),
+                    platformId: data.get("identity"),
+                    name: data.get("name"),
+                    source: contact?.source ?? "manual",
+                    projectIds,
+                    tags: String(data.get("tags") ?? "")
+                      .split(",")
+                      .map((item) => item.trim())
+                      .filter(Boolean),
+                    ...(data.get("url") ? { profileUrl: data.get("url") } : {}),
+                    ...(data.get("language") ? { language: data.get("language") } : {}),
+                    replyEligible: !contact?.optedOut && data.get("reply") === "on",
+                    commentEligible: !contact?.optedOut && data.get("comment") === "on",
+                    ...(addConsent
+                      ? {
+                          consent: {
+                            allowed: true,
+                            source: data.get("source"),
+                            at: consentAt,
+                          },
+                        }
+                      : {}),
+                  });
+                },
+                contact
+                  ? t("Contact details updated.")
+                  : t("Contact added. Select it from the list to prepare a message or comment."),
+              ),
             )
           ) {
             if (!contact) {
@@ -548,11 +589,12 @@ function ContactForm({
           name="account"
           required
           defaultValue={contact?.accountId}
-          disabled={!!contact || !snapshot.accounts.length}
+          disabled={socialLocked || !!contact || !snapshot.accounts.length}
         />
       </label>
       {contact ? <input type="hidden" name="account" value={contact.accountId} /> : null}
       <TextField
+        disabled={socialLocked}
         label={t("Platform ID")}
         description={t(
           "For contacts from the inbox this ID is taken automatically. When adding manually, use the recipient ID the platform gave you.",
@@ -565,6 +607,7 @@ function ContactForm({
         placeholder={t("Recipient ID issued by the platform")}
       />
       <TextField
+        disabled={socialLocked}
         label={t("Name")}
         name="name"
         required
@@ -572,6 +615,7 @@ function ContactForm({
         defaultValue={contact?.name}
       />
       <TextField
+        disabled={socialLocked}
         label={t("Profile URL")}
         name="url"
         type="url"
@@ -579,12 +623,14 @@ function ContactForm({
         placeholder="https://"
       />
       <TextField
+        disabled={socialLocked}
         label={t("Tags")}
         name="tags"
         defaultValue={contact?.tags.join(", ")}
         placeholder={t("Separate with commas")}
       />
       <TextField
+        disabled={socialLocked}
         label={t("Language")}
         name="language"
         maxLength={30}
@@ -602,15 +648,24 @@ function ContactForm({
         <fieldset className="social-checks" disabled={contact?.optedOut}>
           <legend>{t("Verify eligibilities separately")}</legend>
           <label>
-            <Checkbox name="reply" defaultChecked={contact?.replyEligible} />
+            <Checkbox
+              disabled={socialLocked}
+              name="reply"
+              defaultChecked={contact?.replyEligible}
+            />
             {t("Eligible for replies")}
           </label>
           <label>
-            <Checkbox name="comment" defaultChecked={contact?.commentEligible} />
+            <Checkbox
+              disabled={socialLocked}
+              name="comment"
+              defaultChecked={contact?.commentEligible}
+            />
             {t("Eligible for comments on their posts")}
           </label>
           <label>
             <Checkbox
+              disabled={socialLocked}
               name="consent"
               checked={addConsent}
               onChange={(event) => setAddConsent(event.target.checked)}
@@ -621,13 +676,20 @@ function ContactForm({
         {addConsent ? (
           <>
             <TextField
+              disabled={socialLocked}
               label={t("Consent source")}
               name="source"
               maxLength={1000}
               required
               placeholder={t("Person who gave consent and verification source")}
             />
-            <TextField label={t("Consent date")} name="date" type="datetime-local" required />
+            <TextField
+              disabled={socialLocked}
+              label={t("Consent date")}
+              name="date"
+              type="datetime-local"
+              required
+            />
           </>
         ) : null}
       </details>
@@ -642,9 +704,10 @@ function ContactForm({
         <p className="social-muted">{t("Select a project to save the contact.")}</p>
       ) : null}
       <Button
+        loading={pendingUi.is("contact-form.save-contact")}
         type="submit"
         variant="secondary"
-        disabled={!snapshot.accounts.length || !validProjects}
+        disabled={socialLocked || !snapshot.accounts.length || !validProjects}
       >
         {t("Save contact")}
       </Button>
@@ -652,6 +715,8 @@ function ContactForm({
   );
 }
 export function Rules({ client, snapshot, projects, initialProject, run }: Props) {
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [selectedRuleId, setSelectedRuleId] = useState(snapshot.rules[0]?.id ?? "");
   const [ruleQuery, setRuleQuery] = useState("");
@@ -701,42 +766,44 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
               const fact = facts.find((item) => item.id === factId);
               void (async () => {
                 if (
-                  await run(async () => {
-                    if (
-                      !accountId ||
-                      !projectId ||
-                      !fact ||
-                      (mode === "automatic" && !canAutomate) ||
-                      triggerCapability?.status === "unsupported"
-                    )
-                      throw new Error(
-                        t(
-                          "Select a suitable account, project, trigger and verified fact for the rule.",
-                        ),
-                      );
-                    return client.request("automations.create", {
-                      name: data.get("name"),
-                      accountId,
-                      projectId,
-                      mode,
-                      trigger,
-                      topics: fact ? [fact.topic] : [],
-                      dailyLimit: Number(data.get("limit")),
-                      stopWords: String(data.get("stop") ?? "")
-                        .split(",")
-                        .map((item) => item.trim())
-                        .filter(Boolean),
-                      answers: [{ keyword: data.get("keyword"), factId }],
-                      ...(agent
-                        ? {
-                            agent: {
-                              provider: agent,
-                              ...(agentModel.trim() ? { model: agentModel.trim() } : {}),
-                            },
-                          }
-                        : {}),
-                    });
-                  })
+                  await pendingUi.run("rules.save-paused-rule", () =>
+                    run(async () => {
+                      if (
+                        !accountId ||
+                        !projectId ||
+                        !fact ||
+                        (mode === "automatic" && !canAutomate) ||
+                        triggerCapability?.status === "unsupported"
+                      )
+                        throw new Error(
+                          t(
+                            "Select a suitable account, project, trigger and verified fact for the rule.",
+                          ),
+                        );
+                      return client.request("automations.create", {
+                        name: data.get("name"),
+                        accountId,
+                        projectId,
+                        mode,
+                        trigger,
+                        topics: fact ? [fact.topic] : [],
+                        dailyLimit: Number(data.get("limit")),
+                        stopWords: String(data.get("stop") ?? "")
+                          .split(",")
+                          .map((item) => item.trim())
+                          .filter(Boolean),
+                        answers: [{ keyword: data.get("keyword"), factId }],
+                        ...(agent
+                          ? {
+                              agent: {
+                                provider: agent,
+                                ...(agentModel.trim() ? { model: agentModel.trim() } : {}),
+                              },
+                            }
+                          : {}),
+                      });
+                    }),
+                  )
                 ) {
                   form.reset();
                   setFactId("");
@@ -754,6 +821,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
               <label>
                 {t("AI agent for this rule")}
                 <NativeSelect
+                  disabled={socialLocked}
                   value={agent}
                   onChange={(event) => {
                     setAgent(event.target.value);
@@ -770,6 +838,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
               </label>
               {agent ? (
                 <TextField
+                  disabled={socialLocked}
                   label={t("AI model for this rule")}
                   value={agentModel}
                   maxLength={200}
@@ -778,10 +847,17 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                 />
               ) : null}
             </details>
-            <TextField label={t("Name")} name="name" required maxLength={200} />
+            <TextField
+              disabled={socialLocked}
+              label={t("Name")}
+              name="name"
+              required
+              maxLength={200}
+            />
             <label>
               {t("Account")}
               <SearchableSelect
+                disabled={socialLocked}
                 value={accountId}
                 label={t("Account")}
                 options={[
@@ -805,6 +881,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
             <label>
               {t("Project")}
               <SearchableSelect
+                disabled={socialLocked}
                 value={projectId}
                 label={t("Project")}
                 options={projects.map((project) => ({
@@ -820,7 +897,11 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
             </label>
             <label>
               {t("Mode")}
-              <NativeSelect value={mode} onChange={(event) => setMode(event.target.value)}>
+              <NativeSelect
+                disabled={socialLocked}
+                value={mode}
+                onChange={(event) => setMode(event.target.value)}
+              >
                 <option value="draft">{t("Draft only")}</option>
                 <option value="approval">{t("Send with user approval")}</option>
                 <option value="automatic" disabled={!canAutomate}>
@@ -831,6 +912,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
             <label>
               {t("Trigger")}
               <NativeSelect
+                disabled={socialLocked}
                 name="trigger"
                 value={trigger}
                 onChange={(event) => setTrigger(event.target.value)}
@@ -854,6 +936,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
               </NativeSelect>
             </label>
             <TextField
+              disabled={socialLocked}
               label={t("Incoming phrase to match exactly")}
               name="keyword"
               required
@@ -868,6 +951,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
             <label>
               {t("Allowed reply fact")}
               <NativeSearchableSelect
+                disabled={socialLocked}
                 label={t("Allowed reply fact")}
                 options={[
                   { value: "", label: t("Select a verified fact"), disabled: true },
@@ -884,6 +968,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
             <details className="social-settings">
               <summary>{t("Advanced options: daily limit and stop phrases")}</summary>
               <TextField
+                disabled={socialLocked}
                 label={t("Daily limit")}
                 name="limit"
                 type="number"
@@ -893,6 +978,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                 required
               />
               <TextField
+                disabled={socialLocked}
                 label={t("Stop phrases")}
                 name="stop"
                 placeholder={t("Separate with commas")}
@@ -920,9 +1006,11 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
               )}
             </p>
             <Button
+              loading={pendingUi.is("rules.save-paused-rule")}
               type="submit"
               variant="secondary"
               disabled={
+                socialLocked ||
                 !accountId ||
                 !projectId ||
                 !validFact ||
@@ -946,6 +1034,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
           <label className="social-collection-search">
             <span className="sr-only">{t("Search rules")}</span>
             <SearchInput
+              disabled={socialLocked}
               appearance="field"
               value={ruleQuery}
               onChange={(event) => setRuleQuery(event.target.value)}
@@ -955,6 +1044,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
           <div className="social-list">
             {visibleRules.map((rule) => (
               <Button
+                disabled={socialLocked}
                 key={rule.id}
                 type="button"
                 variant="tab"
@@ -1036,27 +1126,38 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                     ) : null}
                     <div className="social-actions">
                       <Button
+                        loading={pendingUi.is(`rules.pause-rule:${rule.id}`)}
                         type="button"
                         variant="secondary"
-                        disabled={!rule.enabled}
+                        disabled={socialLocked || !rule.enabled}
                         onClick={() =>
-                          void run(() => client.request("automations.pause", { id: rule.id }))
+                          void pendingUi.run(`rules.pause-rule:${rule.id}`, () =>
+                            run(() => client.request("automations.pause", { id: rule.id })),
+                          )
                         }
                       >
                         {t("Pause rule")}
                       </Button>
                       {!rule.enabled ? (
                         <Button
+                          loading={pendingUi.is(
+                            `rules.enable-automatic-sending-for-this-rule:${rule.id}`,
+                          )}
+                          disabled={socialLocked}
                           type="button"
                           variant="secondary"
                           onClick={() =>
-                            void run(() =>
-                              client.request("automations.activate", {
-                                id: rule.id,
-                                ...(rule.mode === "automatic"
-                                  ? { confirm: "ENABLE_AUTOMATIC_REPLIES" }
-                                  : {}),
-                              }),
+                            void pendingUi.run(
+                              `rules.enable-automatic-sending-for-this-rule:${rule.id}`,
+                              () =>
+                                run(() =>
+                                  client.request("automations.activate", {
+                                    id: rule.id,
+                                    ...(rule.mode === "automatic"
+                                      ? { confirm: "ENABLE_AUTOMATIC_REPLIES" }
+                                      : {}),
+                                  }),
+                                ),
                             )
                           }
                         >
