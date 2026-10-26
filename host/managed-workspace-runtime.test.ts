@@ -6,13 +6,14 @@ import { afterEach, expect, it, vi } from "vitest";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { createManagedWorkspaceRuntime } from "./managed-workspace-runtime";
+import { createManagedNativeRewind } from "./managed-native-rewind";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-async function fixture() {
+async function fixture(options: Parameters<typeof createManagedWorkspaceRuntime>[2] = {}) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "managed-runtime-")));
   const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true }).trim();
@@ -37,7 +38,7 @@ async function fixture() {
     },
   });
   const project = await engine.openProject(root);
-  const runtime = createManagedWorkspaceRuntime(store, engine);
+  const runtime = createManagedWorkspaceRuntime(store, engine, options);
   cleanups.push(async () => {
     runtime.retention.stop();
     await engine.close();
@@ -68,6 +69,87 @@ async function fixture() {
   };
   return { root, git, store, engine, runtime, project, request, send };
 }
+
+it("recovers a native receipt saved before Host finalization after reconstructing its adapter", async () => {
+  const f = await fixture({
+    afterNativeReceiptSaved: async () => {
+      throw new Error("simulated crash after native receipt");
+    },
+  });
+  await f.runtime.recover();
+  const { workspace } = await f.runtime.registry.prepare(f.request);
+  const turn = {
+    workspaceId: workspace.id,
+    sessionId: "owned-session",
+    userBlockId: "native-user",
+    runId: "native-run",
+    conversationRevision: 1,
+  };
+  await f.runtime.withOwner("native-device", async (owner) => {
+    await f.runtime.nativeRewind.bindTurn(turn, owner);
+    await f.runtime.nativeTurns.begin(turn, owner);
+    writeFileSync(join(workspace.path, "source.txt"), "native changed\n");
+    await f.runtime.nativeTurns.end(turn, owner);
+    const conversation = { revision: 2, userBlockIds: [turn.userBlockId] };
+    const plan = await f.runtime.nativeRewind.plan(
+      {
+        request: {
+          workspaceId: workspace.id,
+          sessionId: turn.sessionId,
+          expectedRevision: workspace.revision,
+          expectedConversationRevision: 2,
+          direction: "rewind",
+          userBlockId: turn.userBlockId,
+        },
+        conversation,
+      },
+      owner,
+    );
+    const request = {
+      workspaceId: workspace.id,
+      sessionId: turn.sessionId,
+      expectedRevision: workspace.revision,
+      expectedConversationRevision: 2,
+      planToken: plan.token,
+      idempotencyKey: "native-crash",
+    };
+    const prepared = await f.runtime.nativeRewind.prepare(
+      { request, conversation, direction: "rewind" },
+      owner,
+    );
+    await f.runtime.nativeRewind.apply(
+      {
+        operationId: prepared.operationId,
+        request,
+        direction: "rewind",
+        transcriptRescueId: prepared.operationId,
+      },
+      owner,
+    );
+    await expect(
+      f.runtime.nativeRewind.ack(
+        { operationId: prepared.operationId, receipt: { revision: 3 } },
+        owner,
+      ),
+    ).rejects.toThrow("simulated crash");
+    await expect(f.runtime.assertWritable(workspace.id)).rejects.toThrow("recovery");
+    const recovered = createManagedNativeRewind({
+      ...f.runtime.rewind.options,
+      authorize: async (candidate) => candidate === owner,
+      isHostSession: async (id) => !!(await f.store.sessionAuthority(id)),
+    });
+    const status = await recovered.status({ operationId: prepared.operationId }, owner);
+    expect(status).toMatchObject({
+      phase: "complete",
+      finalized: true,
+      receipt: { conversationRevision: 3 },
+    });
+    await expect(f.runtime.assertWritable(workspace.id)).resolves.toBeUndefined();
+    await expect(
+      recovered.ack({ operationId: prepared.operationId, receipt: { revision: 3 } }, owner),
+    ).resolves.toMatchObject({ acknowledged: true, finalized: true });
+  });
+}, 120_000);
 
 it("recovers an interrupted materialization before enabling managed writes without replaying its request", async () => {
   const f = await fixture();

@@ -2097,6 +2097,38 @@ export async function createHostServer(
                 case "workspaces.get":
                   result = await workspaceForOwnerRpc(params.workspaceId);
                   break;
+                case "native.activity.start":
+                case "native.activity.end":
+                case "native.buffers.update": {
+                  const action =
+                    input.method === "native.buffers.update"
+                      ? "updateBuffers"
+                      : input.method === "native.activity.start"
+                        ? "start"
+                        : "end";
+                  result = await withWorkspaceOwner<unknown>(token, (owner) =>
+                    managed.nativeActivity[action](params as never, owner),
+                  );
+                  break;
+                }
+                case "native.rewind.plan":
+                case "native.rewind.prepare":
+                case "native.rewind.apply":
+                case "native.rewind.status":
+                case "native.rewind.ack": {
+                  const action = String(input.method).slice("native.rewind.".length) as
+                    | "plan"
+                    | "prepare"
+                    | "apply"
+                    | "status"
+                    | "ack";
+                  result = await withWorkspaceOwner<unknown>(token, (owner) =>
+                    managed.nativeRewind[action](params as never, owner),
+                  );
+                  break;
+                }
+                case "native.turn.begin":
+                case "native.turn.end":
                 case "sessions.managedTurn.begin":
                 case "sessions.managedTurn.end":
                 case "sessions.managedTurn.status": {
@@ -2107,14 +2139,25 @@ export async function createHostServer(
                     value.owner.id !== params.sessionId
                   )
                     throw new Error("Session does not own this workspace");
-                  result = await withWorkspaceOwner<unknown>(token, (owner) => {
-                    if (input.method === "sessions.managedTurn.begin")
+                  result = await withWorkspaceOwner<unknown>(token, async (owner) => {
+                    if (input.method === "native.turn.begin")
+                      await managed.nativeRewind.bindTurn(
+                        params as unknown as Parameters<typeof managed.nativeRewind.bindTurn>[0],
+                        owner,
+                      );
+                    if (
+                      input.method === "sessions.managedTurn.begin" ||
+                      input.method === "native.turn.begin"
+                    )
                       return managed.nativeTurns.begin(
                         params as unknown as Parameters<typeof managed.nativeTurns.begin>[0],
                         owner,
                       );
                     return managed.nativeTurns[
-                      input.method === "sessions.managedTurn.end" ? "end" : "status"
+                      input.method === "sessions.managedTurn.end" ||
+                      input.method === "native.turn.end"
+                        ? "end"
+                        : "status"
                     ](params as unknown as Parameters<typeof managed.nativeTurns.end>[0], owner);
                   });
                   if (input.method !== "sessions.managedTurn.status")
@@ -2723,6 +2766,10 @@ export async function createHostServer(
                       "workspaces.pinning.v1",
                       "sessions.git-rewind.v1",
                       "sessions.git-rewind-undo.v1",
+                      "sessions.managedCreation.v1",
+                      "sessions.native-execution.v1",
+                      "sessions.native-rewind.v1",
+                      "workspaces.native-activity.v1",
                       ...(buildIdentity ? ["build.identity.v1"] : []),
                       "terminals.v1",
                       "mobile.pairing",

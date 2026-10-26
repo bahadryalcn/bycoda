@@ -21,10 +21,11 @@ import {
 import { managedWorkspaceRoot } from "./git-worktrees";
 import { hostGitRepositoryKey } from "./git-mutations";
 import { GitTurnHistory, gitText } from "./turn-git-history";
-import { GitSessionRewindService } from "./session-rewind";
 import { HostBranchDeliveryService } from "./branch-delivery";
 import { WorkspaceBootstrapService } from "./workspace-bootstrap";
 import { createManagedNativeTurns } from "./managed-native-turns";
+import { createManagedNativeRewind } from "./managed-native-rewind";
+import { createManagedNativeActivity } from "./managed-native-activity";
 
 export const workspacePathKey = (path: string) =>
   process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
@@ -40,6 +41,7 @@ export function createManagedWorkspaceRuntime(
     probe?(workspace: ManagedWorkspace): Promise<WorkspaceActivity[]>;
     artifactPending?(workspaceId: string, completedDeliveryOperationId?: string): Promise<boolean>;
     canReconcileActivity?(activity: WorkspaceActivity): Promise<boolean>;
+    afterNativeReceiptSaved?(): Promise<void>;
   } = {},
 ) {
   const root = join(dirname(store.attachmentDir), "managed-workspaces");
@@ -63,7 +65,10 @@ export function createManagedWorkspaceRuntime(
         ),
       )
     ).flat();
-  const probe = async (workspaceId: string) => options.probe?.(await get(workspaceId)) ?? [];
+  const probe = async (workspaceId: string) => [
+    ...((await options.probe?.(await get(workspaceId))) ?? []),
+    ...(await nativeActivity.probe(workspaceId)),
+  ];
   const pending = async (workspaceId: string, except?: string) => {
     const operations = await store.workspaceOperations(workspaceId);
     const completedDelivery = operations.find(
@@ -177,6 +182,14 @@ export function createManagedWorkspaceRuntime(
     return value;
   };
   const history = new GitTurnHistory({ root, workspace });
+  const nativeActivity = createManagedNativeActivity({
+    root,
+    workspace,
+    listWorkspaces: list,
+    activity,
+    assertWritable,
+    authorize: async (owner) => authorized(owner),
+  });
   const nativeTurns = createManagedNativeTurns({
     workspace,
     history,
@@ -184,13 +197,17 @@ export function createManagedWorkspaceRuntime(
     assertWritable,
     authorize: async (owner) => authorized(owner),
   });
-  const rewind = new GitSessionRewindService({
+  const nativeRewind = createManagedNativeRewind({
     root,
     history,
     registry,
     activity,
     conversation: engine.conversationRewindAdapter(join(root, "transcripts")),
+    authorize: async (owner) => authorized(owner),
+    isHostSession: async (id) => !!(await store.sessionAuthority(id)),
+    afterReceiptSaved: options.afterNativeReceiptSaved,
   });
+  const rewind = nativeRewind.service;
   const delivery = new HostBranchDeliveryService({
     registry,
     reservations: activity,
@@ -262,6 +279,8 @@ export function createManagedWorkspaceRuntime(
     workspaceForCreate: async (request) => {
       await assertWritable(request.workspaceId);
       const value = await workspace(request.workspaceId);
+      if (value.owner.kind === "session" && (await nativeRewind.isNativeSession(value.owner.id)))
+        throw new Error("This workspace already belongs to a native transcript");
       if (
         value.projectId !== request.projectId ||
         (request.worktreeCwd &&
@@ -321,6 +340,8 @@ export function createManagedWorkspaceRuntime(
     retention,
     bootstrap,
     nativeTurns,
+    nativeRewind,
+    nativeActivity,
     claims: createWorkspaceFeatureClaims(store),
     workspace,
     get,

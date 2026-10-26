@@ -25,6 +25,7 @@ const git = (cwd: string, ...args: string[]) =>
     windowsHide: true,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
   }).trim();
 
 async function fixture(buildIdentity: BuildIdentity | null = null) {
@@ -103,6 +104,173 @@ async function fixture(buildIdentity: BuildIdentity | null = null) {
   return { root, target, store, projectScope, server, device, request, call };
 }
 
+it("coordinates native Git rewind through rescue, restored status and durable transcript acknowledgement", async () => {
+  const f = await fixture();
+  const sessionId = randomUUID();
+  const prepared = await f.call("workspaces.prepare", {
+    ...f.projectScope,
+    owner: { kind: "session", id: sessionId },
+    idempotencyKey: "native-prepare",
+    slug: "native",
+    mode: "worktree",
+  });
+  const workspace = prepared.workspace as ManagedWorkspace;
+  const descriptor = await f.call("environment.describe");
+  expect(descriptor.capabilities).toEqual(
+    expect.arrayContaining([
+      "sessions.managedCreation.v1",
+      "sessions.native-execution.v1",
+      "sessions.native-rewind.v1",
+      "workspaces.native-activity.v1",
+    ]),
+  );
+  const boundary = {
+    workspaceId: workspace.id,
+    sessionId,
+    userBlockId: "native-user-1",
+    runId: "native-run-1",
+    conversationRevision: 4,
+  };
+  const head = git(workspace.path, "rev-parse", "HEAD");
+  await f.call("native.turn.begin", boundary);
+  await f.call("native.activity.start", {
+    activityId: "native-provider",
+    cwd: workspace.path,
+    kind: "provider",
+    sessionId,
+  });
+  writeFileSync(join(workspace.path, "source.txt"), "native committed\n");
+  git(workspace.path, "add", "source.txt");
+  git(workspace.path, "commit", "-qm", "native turn commit");
+  writeFileSync(join(workspace.path, "owner.txt"), "native staged\n");
+  git(workspace.path, "add", "owner.txt");
+  writeFileSync(join(workspace.path, "owner.txt"), "native unstaged\n");
+  writeFileSync(join(workspace.path, "untracked.txt"), "native untracked\n");
+  expect((await f.request("native.turn.end", boundary)).value.error).toMatch(/activity|writer/i);
+  await f.call("native.activity.end", { activityId: "native-provider" });
+  await f.call("native.turn.end", boundary);
+  const changedHead = git(workspace.path, "rev-parse", "HEAD");
+  const beforeStatus = git(workspace.path, "status", "--porcelain=v1");
+  const fresh = await f.call("workspaces.get", { workspaceId: workspace.id });
+  const conversation = { revision: 5, userBlockIds: [boundary.userBlockId] };
+  const plan = await f.call("native.rewind.plan", {
+    request: {
+      workspaceId: workspace.id,
+      sessionId,
+      expectedRevision: fresh.revision,
+      expectedConversationRevision: 5,
+      direction: "rewind",
+      userBlockId: boundary.userBlockId,
+    },
+    conversation,
+  });
+  const request = {
+    workspaceId: workspace.id,
+    sessionId,
+    expectedRevision: fresh.revision,
+    expectedConversationRevision: 5,
+    planToken: plan.token,
+    idempotencyKey: "native-rewind",
+  };
+  const pending = await f.call("native.rewind.prepare", {
+    request,
+    direction: "rewind",
+    conversation,
+  });
+  expect(git(workspace.path, "rev-parse", "HEAD")).toBe(changedHead);
+  expect(git(workspace.path, "status", "--porcelain=v1")).toBe(beforeStatus);
+  expect((await f.call("native.rewind.status", pending)).phase).toBe("prepared");
+  expect(
+    (
+      await f.request("native.turn.begin", {
+        ...boundary,
+        userBlockId: "blocked",
+        runId: "blocked",
+      })
+    ).value.error,
+  ).toBeTruthy();
+  const secondDevice = await f.store.issueDevice("Different native device");
+  expect(
+    (await f.request("native.rewind.status", pending, secondDevice.token)).value.error,
+  ).toBeTruthy();
+  await f.call("native.rewind.apply", {
+    operationId: pending.operationId,
+    request,
+    direction: "rewind",
+    transcriptRescueId: pending.operationId,
+  });
+  const restored = await f.call("native.rewind.status", pending);
+  expect(restored.phase).toBe("git-restored");
+  expect(restored.finalized).toBe(false);
+  expect(restored.restoreRequest).toMatchObject({
+    operationId: pending.operationId,
+    sessionId,
+    userBlockId: boundary.userBlockId,
+    expectedRevision: 5,
+  });
+  expect(git(workspace.path, "rev-parse", "HEAD")).toBe(head);
+  expect(git(workspace.path, "status", "--porcelain=v1")).toBe("");
+  const ack = await f.call("native.rewind.ack", {
+    operationId: pending.operationId,
+    receipt: { revision: 6 },
+  });
+  expect(ack).toMatchObject({
+    acknowledged: true,
+    finalized: true,
+    receipt: { conversationRevision: 6 },
+  });
+  expect(
+    await f.call("native.rewind.ack", {
+      operationId: pending.operationId,
+      receipt: { revision: 6 },
+    }),
+  ).toEqual(ack);
+  expect(
+    (
+      await f.request("native.rewind.ack", {
+        operationId: pending.operationId,
+        receipt: { revision: 7 },
+      })
+    ).value.error,
+  ).toBeTruthy();
+  const undoPlan = await f.call("native.rewind.plan", {
+    request: {
+      workspaceId: workspace.id,
+      sessionId,
+      expectedRevision: ack.receipt.workspaceRevision,
+      expectedConversationRevision: 6,
+      direction: "undo",
+      operationId: pending.operationId,
+    },
+    conversation: { revision: 6, userBlockIds: [] },
+  });
+  const undoRequest = {
+    ...request,
+    expectedRevision: ack.receipt.workspaceRevision,
+    expectedConversationRevision: 6,
+    planToken: undoPlan.token,
+    idempotencyKey: "native-undo",
+  };
+  const undo = await f.call("native.rewind.prepare", {
+    request: undoRequest,
+    direction: "undo",
+    conversation: { revision: 6, userBlockIds: [] },
+  });
+  await f.call("native.rewind.apply", {
+    operationId: undo.operationId,
+    request: undoRequest,
+    direction: "undo",
+    transcriptRescueId: undo.operationId,
+  });
+  expect((await f.call("native.rewind.status", undo)).restoreRequest.transcriptRescueId).toBe(
+    pending.operationId,
+  );
+  await f.call("native.rewind.ack", { operationId: undo.operationId, receipt: { revision: 7 } });
+  expect(git(workspace.path, "rev-parse", "HEAD")).toBe(changedHead);
+  expect(git(workspace.path, "status", "--porcelain=v1")).toBe(beforeStatus);
+  expect(readFileSync(join(workspace.path, "untracked.txt"), "utf8")).toBe("native untracked\n");
+});
+
 it("dispatches revision-bound pin, host rewind/Undo, approved delivery and cleanup over authenticated HTTP", async () => {
   const f = await fixture();
   const descriptor = await f.call("environment.describe");
@@ -153,7 +321,7 @@ it("dispatches revision-bound pin, host rewind/Undo, approved delivery and clean
     idempotencyKey: "unpin-workspace",
     pinned: false,
   });
-  const created = await f.call("commands.dispatch", {
+  const createRequest = {
     type: "create",
     commandId: "rpc-create-session",
     workspaceId,
@@ -161,8 +329,15 @@ it("dispatches revision-bound pin, host rewind/Undo, approved delivery and clean
     harness: "codex",
     model: "codex:test",
     runtimeMode: "supervised",
-  });
+    sessionId,
+  };
+  expect(
+    (await f.request("commands.dispatch", { ...createRequest, sessionId: randomUUID() })).value
+      .error,
+  ).toMatch(/identity|own/i);
+  const created = await f.call("commands.dispatch", createRequest);
   expect(created.sessionId).toBe(sessionId);
+  expect(await f.call("commands.dispatch", createRequest)).toEqual(created);
   const grant = await f.call("conversation.access.issue", { sessionId });
   for (const method of [
     "workspaces.pin",
@@ -415,14 +590,12 @@ it("resumes the same owner-approved publication journal without pushing again an
   git(f.target, "remote", "add", "origin", "https://example.invalid/owner/repo.git");
   // External effects are stand-ins; real owner transport, journal, reservation
   // and retry logic run. The test never publishes or contacts GitHub.
-  const push = vi
-    .spyOn(GitHubDeliveryPublication.prototype, "push")
-    .mockResolvedValue({
-      remote: "origin",
-      branchRef: prepared.workspace.branchRef,
-      sourceHead,
-      pushedAt: 1,
-    });
+  const push = vi.spyOn(GitHubDeliveryPublication.prototype, "push").mockResolvedValue({
+    remote: "origin",
+    branchRef: prepared.workspace.branchRef,
+    sourceHead,
+    pushedAt: 1,
+  });
   vi.spyOn(GitHubDeliveryPublication.prototype, "findPush").mockResolvedValue({
     remote: "origin",
     branchRef: prepared.workspace.branchRef,

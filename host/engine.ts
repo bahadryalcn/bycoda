@@ -226,6 +226,7 @@ export function parseCommand(input: unknown): HostCommand {
       type: "create",
       commandId,
       projectId: text(v.projectId, "project ID"),
+      ...(v.sessionId !== undefined ? { sessionId: text(v.sessionId, "session ID", 128) } : {}),
       ...(v.workspaceId !== undefined ? { workspaceId: text(v.workspaceId, "workspace ID") } : {}),
       ...(v.worktreeCwd !== undefined
         ? { worktreeCwd: text(v.worktreeCwd, "working copy", 4096) }
@@ -1519,8 +1520,14 @@ export class HostEngine {
                   "Managed session creation requires authoritative workspace ownership",
                 );
               if (managed) await this.managedTurns!.assertWritable(managed.workspaceId);
+              if (
+                command.sessionId &&
+                managed?.sessionId &&
+                command.sessionId !== managed.sessionId
+              )
+                throw new Error("Requested session identity does not own this workspace");
               const cwd = managed?.path ?? resolveHostWorktree(project.cwd, command.worktreeCwd);
-              const sessionId = managed?.sessionId ?? randomUUID();
+              const sessionId = managed?.sessionId ?? command.sessionId ?? randomUUID();
               if (await this.store.sessionAuthority(sessionId))
                 throw new Error(
                   "This managed workspace already has its session; resume it instead",
