@@ -12,6 +12,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 mod content_search;
 pub(crate) mod incremental;
 pub mod usage;
+#[path = "session_rewind.rs"]
+pub(crate) mod rewind;
 pub use content_search::{ContentSearchOptions, ContentSearchResult};
 
 const MIGRATION_V1: &str = r#"
@@ -1645,6 +1647,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::automations::ensure_tables(conn)?;
     ensure_orchestration_history(conn)?;
     incremental::ensure_schema(conn)?;
+    rewind::ensure_schema(conn)?;
     // Source-revision/dirty metadata requires all current session columns.
     // Only metadata is reconciled here; transcripts remain lazily indexed.
     content_search::ensure_schema(conn)?;
