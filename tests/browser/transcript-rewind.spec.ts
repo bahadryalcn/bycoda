@@ -118,3 +118,166 @@ test("blocked capture keeps rewind unavailable and cancellation preserves histor
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.locator('[data-block="second"]')).toBeVisible();
 });
+
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`real SessionPane routes managed rewind through its file preview at ${width}px ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/workspace-rewind.html?pane");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const message = page.locator('[data-prompt-anchor="second"]');
+      await expect(message).toBeVisible();
+      await message.getByRole("button", { name: "Message actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Return before this message", exact: true }).click();
+      const preview = page.getByRole("dialog", {
+        name: "Rewind conversation and files",
+        exact: true,
+      });
+      await expect(preview).toBeVisible();
+      await expect(page.getByText("File changes stay unchanged.", { exact: false })).toHaveCount(0);
+      await mkdir("temp/verification/i2a", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/i2a/session-pane-rewind-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      await preview
+        .getByRole("button", { name: "Rewind conversation and files", exact: true })
+        .click();
+      await expect(message).toHaveCount(0);
+      await page.reload();
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "Undo rewind", exact: true }).click();
+      const undo = page.getByRole("dialog", { name: "Undo rewind", exact: true });
+      await expect(undo).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/i2a/session-pane-undo-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      await undo.getByRole("button", { name: "Undo rewind", exact: true }).click();
+      await expect(message).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });
+
+    test(`real remote composer creates a managed workspace at ${width}px ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/workspace-rewind.html?remoteCreate");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await expect(
+        page.getByRole("button", { name: "Workspace New worktree", exact: true }),
+      ).toBeVisible();
+      await page.locator("textarea").fill("Keep this work isolated from main");
+      const send = page.getByRole("button", { name: "Send", exact: true });
+      await expect(send).toBeEnabled();
+      await mkdir("temp/verification/i2a", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/i2a/remote-managed-create-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      await send.click();
+      await expect(page.locator("[data-prompt-anchor]")).toContainText(
+        "Keep this work isolated from main",
+      );
+      const calls = await page.evaluate(() => (window as any).rewindFixtureCalls);
+      const prepared = calls.find((call: any) => call.method === "workspaces.prepare");
+      const created = calls.find(
+        (call: any) => call.method === "commands.dispatch" && call.params.type === "create",
+      );
+      expect(prepared.params.owner.id).toBe(created.params.sessionId);
+      expect(created.params.workspaceId).toBe("workspace");
+      expect(created.params.worktreeCwd).toBe("C:/fixture/rewind-worktrees/session");
+      await page.screenshot({
+        path: `temp/verification/i2a/remote-managed-created-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });
+  }
+
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`real RemoteSession uses managed rewind and reloadable Undo at ${width}px ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/workspace-rewind.html?remoteRewind");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const message = page.locator('[data-prompt-anchor="second"]');
+      await message.getByRole("button", { name: "Message actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Return before this message", exact: true }).click();
+      const preview = page.getByRole("dialog", {
+        name: "Rewind conversation and files",
+        exact: true,
+      });
+      await expect(preview).toBeVisible();
+      expect(await page.evaluate(() => (window as any).tryRemoteSend())).toBe(false);
+      await mkdir("temp/verification/i2a", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/i2a/remote-managed-rewind-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      await preview
+        .getByRole("button", { name: "Rewind conversation and files", exact: true })
+        .click();
+      await expect(message).toHaveCount(0);
+      await page.reload();
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "Undo rewind", exact: true }).click();
+      const undo = page.getByRole("dialog", { name: "Undo rewind", exact: true });
+      await expect(undo).toBeVisible();
+      expect(await page.evaluate(() => (window as any).tryRemoteSend())).toBe(false);
+      await page.screenshot({
+        path: `temp/verification/i2a/remote-managed-undo-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      await undo.getByRole("button", { name: "Undo rewind", exact: true }).click();
+      await expect(message).toBeVisible();
+      const commands = await page.evaluate(() =>
+        (window as any).rewindFixtureCalls.filter(
+          (call: any) => call.method === "commands.dispatch",
+        ),
+      );
+      expect(commands).toEqual([]);
+    });
+  }
+
+test("managed native rewind refuses an unconfirmed provider retirement", async ({ page }) => {
+  await page.goto("/tests/browser/workspace-rewind.html?pane&retireUnknown");
+  const message = page.locator('[data-prompt-anchor="second"]');
+  await message.getByRole("button", { name: "Message actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Return before this message", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("The conversation could not be rewound");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(message).toBeVisible();
+  const methods = await page.evaluate(() =>
+    (window as any).rewindFixtureCalls.map((call: any) => call.method),
+  );
+  expect(methods).toContain("provider.stop");
+  expect(methods).not.toContain("sessions.rewind.plan");
+  expect(methods).not.toContain("sessions.rewind.apply");
+});

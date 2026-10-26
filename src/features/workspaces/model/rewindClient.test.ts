@@ -7,6 +7,11 @@ const request = vi.hoisted(() => vi.fn());
 const remote = vi.hoisted(() => vi.fn());
 const capabilities = vi.hoisted(() => vi.fn());
 const binding = vi.hoisted(() => vi.fn());
+const native = vi.hoisted(() => vi.fn());
+const persist = vi.hoisted(() => vi.fn());
+const load = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/api/core", () => ({ invoke: native }));
+vi.mock("../../sessions/data/sessionStore", () => ({ upsertSession: persist, getSession: load }));
 vi.mock("./workspaceClient", () => ({
   workspaceRequest: request,
   getWorkspaceCapabilities: capabilities,
@@ -18,7 +23,7 @@ vi.mock("../../connections/model/connections", () => ({
 }));
 const session = {
   id: "session",
-  cwd: "/repo",
+  cwd: "remote://env/repo",
   blocks: [{ id: "owner", role: "user", text: "Hello" }],
 } as Session;
 const plan: SessionRewindPlan = {
@@ -43,6 +48,7 @@ const plan: SessionRewindPlan = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  persist.mockResolvedValue({ id: "session" });
   binding.mockReturnValue(undefined);
   capabilities.mockResolvedValue(["sessions.git-rewind.v1", "sessions.git-rewind-undo.v1"]);
   remote.mockResolvedValue({ revision: 12, session });
@@ -64,7 +70,7 @@ it("binds a rewind preview to fresh workspace and conversation revisions", async
       direction: "rewind",
       userBlockId: "owner",
     },
-    { cwd: "/repo" },
+    { cwd: "remote://env/repo" },
   );
 });
 it("requires the undo capability before requesting an undo preview", async () => {
@@ -99,7 +105,7 @@ it("reconciles only the receipt revision and resets provider binding", async () 
       expectedConversationRevision: 12,
       idempotencyKey: "stable-key",
     }),
-    { cwd: "/repo" },
+    { cwd: "remote://env/repo" },
   );
   expect(result.session.blocks).toEqual([]);
   expect(result.session.providerSessionId).toBeUndefined();
@@ -116,7 +122,7 @@ it("uses the host conversation identity while preserving the local shell and rem
   expect(request).toHaveBeenLastCalledWith(
     "sessions.rewind.plan",
     expect.objectContaining({ sessionId: "host-session" }),
-    { cwd: "/repo" },
+    { cwd: "remote://env/repo" },
   );
   request.mockResolvedValue({ conversationRevision: 13 });
   remote.mockResolvedValue({
@@ -136,5 +142,44 @@ it("uses the host conversation identity while preserving the local shell and rem
     true,
   );
   expect(result.session.id).toBe("session");
-  expect(result.session.cwd).toBe("/repo");
+  expect(result.session.cwd).toBe("remote://env/repo");
+});
+
+it("uses native conversation revisions and native receipt reconciliation for local sessions", async () => {
+  const local = { ...session, cwd: "/repo", workspaceId: "workspace" };
+  capabilities.mockResolvedValue(["sessions.git-rewind.v1", "sessions.native-rewind.v1"]);
+  native.mockImplementation(async (command: string) => {
+    if (command === "session_get") return { transcriptRevision: 12 };
+    if (command === "managed_rewind_plan") return plan;
+    return { conversationRevision: 13, operationId: "op" };
+  });
+  expect(await planWorkspaceRewind(local, "workspace", { userBlockId: "owner" })).toEqual(plan);
+  expect(persist).toHaveBeenCalledWith({ ...local, workspaceRevision: 8 });
+  expect(native).toHaveBeenCalledWith("managed_rewind_plan", {
+    request: expect.objectContaining({
+      sessionId: "session",
+      expectedConversationRevision: 12,
+      expectedRevision: 8,
+    }),
+  });
+  expect(remote).not.toHaveBeenCalled();
+  native.mockImplementation(async (command: string) =>
+    command === "session_get"
+      ? { transcriptRevision: 13 }
+      : { conversationRevision: 13, operationId: "op" },
+  );
+  load.mockResolvedValue({ ...local, blocks: [] });
+  const applied = await applyWorkspaceRewind(local, plan, "stable-native-key");
+  expect(native).toHaveBeenCalledWith("managed_rewind_apply", {
+    request: expect.objectContaining({ idempotencyKey: "stable-native-key", planToken: "plan" }),
+  });
+  expect(applied.session.blocks).toEqual([]);
+  expect(remote).not.toHaveBeenCalled();
+});
+
+it("keeps local managed rewind unavailable without native receipt capability", async () => {
+  await expect(
+    planWorkspaceRewind({ ...session, cwd: "/repo" }, "workspace", { userBlockId: "owner" }),
+  ).rejects.toThrow("Update bycoda Host");
+  expect(native).not.toHaveBeenCalled();
 });

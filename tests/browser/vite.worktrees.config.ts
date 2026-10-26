@@ -12,6 +12,7 @@ export default defineConfig({
         "tests/browser/worktrees.html",
         "tests/browser/workspace-creation.html",
         "tests/browser/workspace-actions.html",
+        "tests/browser/build-identity.html",
       ],
     },
   },

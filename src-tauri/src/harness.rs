@@ -1057,6 +1057,8 @@ pub fn harness_spawn(
         return Err("harness_spawn: not a resolved harness CLI".to_string());
     }
 
+    let mut workspace_activity =
+        crate::native_workspace::Activity::start(&app, &workdir, "provider", Some(&session_id))?;
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     let (epoch, kill_all, prev) = host.begin_spawn(&session_id);
     let mut tool_spawn =
@@ -1107,6 +1109,9 @@ pub fn harness_spawn(
         format!("Failed to start {command}: {e}")
     })?;
     let pid = child.id();
+    if let Some(activity) = workspace_activity.as_mut() {
+        activity.started();
+    }
 
     let stdin = child
         .stdin
@@ -1138,7 +1143,11 @@ pub fn harness_spawn(
         // stream that replaced it. Reap it without emitting anything.
         terminate(rejected.pid);
         thread::spawn(move || {
-            let _ = child.wait();
+            if child.wait().is_ok() {
+                if let Some(activity) = workspace_activity {
+                    activity.settled();
+                }
+            }
         });
         return Err(SPAWN_CANCELLED.to_string());
     }
@@ -1189,7 +1198,13 @@ pub fn harness_spawn(
     let wait_id = session_id;
     let wait_pid = pid;
     thread::spawn(move || {
-        let code = child.wait().ok().and_then(|status| status.code());
+        let exit = child.wait();
+        let code = exit.as_ref().ok().and_then(|status| status.code());
+        if exit.is_ok() {
+            if let Some(activity) = workspace_activity {
+                activity.settled();
+            }
+        }
         if let Some(host) = wait_app.try_state::<HarnessHost>() {
             if host.remove_if_pid(&wait_id, wait_pid).is_some() {
                 host.stop_sse(&wait_id);
@@ -2268,6 +2283,7 @@ const SHELL_COMMAND_MAX_OUTPUT: usize = 512 * 1024;
 /// or when that shell is gone, the default profile runs it.
 #[tauri::command]
 pub async fn run_shell_command(
+    app: AppHandle,
     cwd: String,
     command: String,
     profile: Option<String>,
@@ -2276,7 +2292,18 @@ pub async fn run_shell_command(
         return Err("Enter a command to run".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        run_shell_command_sync(&cwd, &command, profile.as_deref())
+        let mut activity =
+            crate::native_workspace::Activity::start(&app, &expand_home(&cwd), "shell", None)?;
+        if let Some(activity) = activity.as_mut() {
+            activity.started();
+        }
+        let output = run_shell_command_sync(&cwd, &command, profile.as_deref());
+        if output.as_ref().is_ok_and(|result| !result.timed_out) {
+            if let Some(activity) = activity {
+                activity.settled();
+            }
+        }
+        output
     })
     .await
     .map_err(|e| e.to_string())?

@@ -4,6 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { WorkspaceDirectoryRemoval } from "./WorkspaceDirectoryRemoval";
+import { WorkspaceReview } from "./WorkspaceReview";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { Select } from "../../../shared/ui/Select";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -61,6 +62,7 @@ export function WorkspacePolicySettings({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string>();
   const [cleanup, setCleanup] = useState<ManagedWorkspace>();
+  const [review, setReview] = useState<ManagedWorkspace>();
   const [pinning, setPinning] = useState<string>();
   const [pinError, setPinError] = useState<{ id: string; message: string }>();
   const removing = !!cleanup;
@@ -130,6 +132,7 @@ export function WorkspacePolicySettings({
     setStorage(undefined);
     setCapabilities(undefined);
     setCleanup(undefined);
+    setReview(undefined);
     setWorkspaces([]);
     setPinning(undefined);
     setPinError(undefined);
@@ -525,6 +528,14 @@ export function WorkspacePolicySettings({
                   )}
                 </div>
                 <Button
+                  disabled={
+                    !capabilities?.includes("workspaces.delivery.v1") || loading || removing
+                  }
+                  onClick={() => setReview(workspace)}
+                >
+                  {t("Review changes")}
+                </Button>
+                <Button
                   variant="ghost"
                   loading={pinning === workspace.id}
                   loadingLabel={t("Saving…")}
@@ -567,6 +578,23 @@ export function WorkspacePolicySettings({
           onClose={() => setCleanup(undefined)}
           onWorkspaceChange={(next) => {
             setWorkspaces((items) => items.map((item) => (item.id === next.id ? next : item)));
+          }}
+        />
+      )}
+      {review && (
+        <WorkspaceReview
+          workspace={review}
+          context={scope()}
+          onClose={() => {
+            setReview(undefined);
+            void refresh();
+          }}
+          onWorkspaceChange={(next) => {
+            setReview(next);
+            setWorkspaces((items) => items.map((item) => (item.id === next.id ? next : item)));
+            inventoryCallback.current?.(
+              workspaces.map((item) => (item.id === next.id ? next : item)),
+            );
           }}
         />
       )}

@@ -51,6 +51,7 @@ export function startSubmittedTurn(
                 ...(workspace
                   ? {
                       workspaceId: workspace.id,
+                      workspaceRevision: workspace.revision,
                       worktreeCwd: workspace.path,
                       branch: workspace.branchRef.replace(/^refs\/heads\//, ""),
                     }

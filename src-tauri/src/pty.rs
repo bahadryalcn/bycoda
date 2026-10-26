@@ -1048,6 +1048,11 @@ fn spawn_unix(
     http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
 ) -> Result<(), String> {
     let private = ssh_identity.is_some();
+    let mut workspace_activity = if private {
+        None
+    } else {
+        crate::native_workspace::Activity::start(&app, &workdir, "terminal", None)?
+    };
     use std::fs::File;
     use std::os::unix::io::FromRawFd;
     use std::os::unix::process::CommandExt;
@@ -1117,6 +1122,9 @@ fn spawn_unix(
         }
     };
     let pid = child.id();
+    if let Some(activity) = workspace_activity.as_mut() {
+        activity.started();
+    }
 
     let live = Arc::new(LivePty {
         _http_proxy: http_proxy,
@@ -1203,7 +1211,13 @@ fn spawn_unix(
     let wait_app = app;
     let wait_id = id;
     thread::spawn(move || {
-        let code = child.wait().ok().and_then(|status| status.code());
+        let exit = child.wait();
+        let code = exit.as_ref().ok().and_then(|status| status.code());
+        if exit.is_ok() {
+            if let Some(activity) = workspace_activity {
+                activity.settled();
+            }
+        }
         // Only announce this child. A remount/respawn reuses the id, and the
         // previous wait thread must not paint "[process exited]" on the new PTY
         // or yank the replacement out of the host map.
@@ -1251,6 +1265,11 @@ fn spawn_windows(
     http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
 ) -> Result<(), String> {
     let private = ssh_identity.is_some();
+    let mut workspace_activity = if private {
+        None
+    } else {
+        crate::native_workspace::Activity::start(&app, &workdir, "terminal", None)?
+    };
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
     let pty_system = native_pty_system();
@@ -1299,6 +1318,9 @@ fn spawn_windows(
     let mut child = crate::windows::spawn_pty(pair.slave.as_ref(), cmd)
         .map_err(|err| format!("Failed to start {shell}: {err}"))?;
     let pid = child.process_id().unwrap_or(0);
+    if let Some(activity) = workspace_activity.as_mut() {
+        activity.started();
+    }
 
     let live = Arc::new(LivePty {
         _http_proxy: http_proxy,
@@ -1365,7 +1387,13 @@ fn spawn_windows(
     let wait_app = app;
     let wait_id = id;
     thread::spawn(move || {
-        let code = child.wait().ok().map(|status| status.exit_code() as i32);
+        let exit = child.wait();
+        let code = exit.as_ref().ok().map(|status| status.exit_code() as i32);
+        if exit.is_ok() {
+            if let Some(activity) = workspace_activity {
+                activity.settled();
+            }
+        }
         let owner = if let Some(host) = wait_app.try_state::<PtyHost>() {
             release_held_output(&host, &wait_app, &wait_id, pid);
             host.remove_if_pid(&wait_id, pid)

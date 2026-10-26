@@ -13,6 +13,8 @@ it("does not equate finished implementation with delivery", () => {
 });
 it("requires renewed approval for persisted automatic delivery preferences", () => {
   for (const fields of [
+    { deliveryApprovalRequired: true },
+    { deliveryState: "awaitingOwner" as const },
     { autoMerge: true },
     { deliveryRequested: true },
     { autoMergeSuspended: true },
@@ -21,4 +23,18 @@ it("requires renewed approval for persisted automatic delivery preferences", () 
   expect(taskWorkspaceState(task({ autoMerge: true, merged: true })).needsRenewedApproval).toBe(
     false,
   );
+});
+it("uses durable Host finalization and keeps pending artifact delivery blocked", () => {
+  expect(
+    taskWorkspaceState(
+      task({ status: "blocked", finalization: { head: "head" } as HostTask["finalization"] }),
+    ),
+  ).toMatchObject({
+    finished: true,
+    completion: "Implementation finished",
+    delivery: "Not delivered",
+  });
+  expect(taskWorkspaceState(task({ merged: true, artifactDeliveryPending: true }))).toMatchObject({
+    delivery: "Delivery is blocked",
+  });
 });

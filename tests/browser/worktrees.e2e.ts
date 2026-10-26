@@ -240,3 +240,46 @@ test("individual pinning persists and older pinning capability is explicit", asy
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Unpin workspace", exact: true })).toBeDisabled();
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`managed directory review entry point: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/worktrees.html?managed&theme=${theme}`);
+      const list = page.getByRole("region", { name: "Managed workspace directories", exact: true });
+      await list.getByRole("button", { name: "Review changes", exact: true }).first().focus();
+      await page.keyboard.press("Enter");
+      const dialog = page.getByRole("dialog", { name: "Review changes", exact: true });
+      await expect(dialog).toContainText("src/example.ts");
+      await expect(dialog).toContainText("artifacts/acceptance.png");
+      await expect(dialog).toContainText("fixture-artifact-sha256");
+      await expect(
+        dialog.getByRole("button", { name: "Merge into main", exact: true }),
+      ).toBeEnabled();
+      await expect(dialog.getByRole("button", { name: "Create PR", exact: true })).toBeEnabled();
+      await dialog.focus();
+      await page.mouse.move(4, 4);
+      mkdirSync("temp/verification/i2a", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/i2a/managed-review-${theme}-${width}.png`,
+        fullPage: true,
+      });
+      await dialog
+        .getByRole("contentinfo")
+        .getByRole("button", { name: "Close", exact: true })
+        .click();
+      await page
+        .getByRole("dialog", { name: "Worktrees", exact: true })
+        .locator(".overflow-y-auto")
+        .evaluate((element) => {
+          element.scrollTop = 0;
+        });
+      await page.getByRole("dialog", { name: "Worktrees", exact: true }).focus();
+      await page.mouse.move(4, 4);
+      await page.screenshot({
+        path: `temp/verification/i2a/managed-policy-${theme}-${width}.png`,
+        fullPage: true,
+      });
+    });
+  }

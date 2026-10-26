@@ -205,6 +205,9 @@ let lazyHistorySupported = false;
 let inlineSyncSupported = false;
 let inlineDelta: SessionSync | undefined;
 let conversationRewindSupported = false;
+let managedCreationSupported = true;
+let workspaceDefaultMode: "current" | "worktree" = "current";
+let workspacePreparationFailure: string | undefined;
 let machineSessionDeleted = false;
 let machineSessionRevisionHint: number | undefined;
 let machineChangesFailure: string | undefined;
@@ -260,6 +263,9 @@ beforeEach(() => {
   steerSupported = false;
   lazyHistorySupported = false;
   conversationRewindSupported = false;
+  managedCreationSupported = true;
+  workspaceDefaultMode = "current";
+  workspacePreparationFailure = undefined;
   machineSessionDeleted = false;
   machineSessionRevisionHint = undefined;
   inlineSyncSupported = false;
@@ -269,6 +275,7 @@ beforeEach(() => {
   historyReadDelay = undefined;
   tailReadDelay = undefined;
   localStorage.setItem("bycoda.modelControls", "beside");
+  localStorage.setItem("bycoda.managedCreate:env:shell", "host-session");
   commands = [];
   host = undefined;
   syncDelay = undefined;
@@ -355,6 +362,9 @@ beforeEach(() => {
           ...(attachmentOwnershipSupported ? ["attachments.ownership.v1"] : []),
           "sessions.plan",
           "sessions.draft",
+          "workspaces.managed.v1",
+          "workspaces.policy.v1",
+          ...(managedCreationSupported ? ["sessions.managedCreation.v1"] : []),
           ...(steerSupported ? ["sessions.steer"] : []),
           ...(sharedQueueSupported ? ["sessions.queue"] : []),
           ...(harnessSwitchSupported ? ["sessions.harnessSwitch"] : []),
@@ -401,6 +411,32 @@ beforeEach(() => {
       if (catalog instanceof Error) throw catalog.message;
       return catalog;
     }
+    if (method === "projects.list") return [{ id: "project", name: "repo", cwd: "/home/me/repo" }];
+    if (method === "projects.workspacePolicy.get")
+      return {
+        resolved: {
+          policy: { defaultMode: workspaceDefaultMode, integrationBranchRef: "refs/heads/main" },
+        },
+      };
+    if (method === "workspaces.prepare") {
+      if (workspacePreparationFailure) throw new Error(workspacePreparationFailure);
+      createdBranch = "bycoda/session/host-session";
+      createdWorktree = "/home/me/repo-worktrees/managed-session";
+      return {
+        workspace: {
+          id: "workspace-session",
+          revision: 1,
+          owner: { kind: "session", id: params.owner.id },
+          projectId: "project",
+          environmentId: "env",
+          path: createdWorktree,
+          branchRef: `refs/heads/${createdBranch}`,
+          directoryState: "present",
+        },
+      };
+    }
+    if (operation === "git_diff_index")
+      return { head: "abc", branch: "main", files: [], conflicts: [] };
     if (operation === "git.branches" || operation === "git_branches") {
       if (branchFailure) throw new Error(branchFailure);
       if (workspace)
@@ -573,8 +609,9 @@ function dispatch(command: HostCommand) {
       status: "idle",
       updatedAt: 0,
       session: {
-        id: "host-session",
+        id: command.sessionId ?? "host-session",
         cwd: command.worktreeCwd ?? "/home/me/repo",
+        ...(command.workspaceId ? { workspaceId: command.workspaceId, workspaceRevision: 1 } : {}),
         harness: command.harness,
         model: command.model,
         modelSettings: command.modelSettings ?? {},
@@ -1180,13 +1217,14 @@ it("shows an unavailable branch when Git lookup fails", async () => {
     name: "unlisted",
     cwd: "/home/me/unlisted",
   });
-  await render({ ...shell(), cwd: unlisted.key });
+  await render({ ...shell(), cwd: unlisted.key, workspaceMode: "current" });
   const picker = byLabel("No git repository");
   expect(picker).not.toBeNull();
   expect((picker as HTMLButtonElement).disabled).toBe(true);
 });
 
-it("holds new remote creation and drafts at the real pane gate until managed creation is wired", async () => {
+it("holds new remote creation and drafts when the Host lacks managed creation", async () => {
+  managedCreationSupported = false;
   // Supply the new read-only discovery contract so this checks missing creator
   // readiness rather than failing earlier on an obsolete Host fixture.
   const original = vi.mocked(invoke).getMockImplementation()!;
@@ -1602,21 +1640,81 @@ it("creates a host worktree through the composer and selects it", async () => {
   expect(invoke).toHaveBeenCalledWith(
     "remote_request",
     expect.objectContaining({
-      method: "git.worktreeCreate",
+      method: "workspaces.prepare",
       params: expect.objectContaining({
         projectId: "project",
-        cwd: "/home/me/repo",
-        branch: expect.stringMatching(/^mc\/[a-z0-9]+$/),
-        base: "dev",
-        existing: false,
+        owner: { kind: "session", id: "host-session" },
+        baseRef: "dev",
       }),
     }),
   );
   expect(commands[0]).toMatchObject({
     type: "create",
+    sessionId: "host-session",
+    workspaceId: "workspace-session",
     worktreeCwd: createdWorktree,
-    autoWorktreeBranch: createdBranch,
   });
+});
+
+it("uses Host worktree policy and binds preparation to the reserved authoritative creation identity", async () => {
+  workspaceDefaultMode = "worktree";
+  await render();
+  await send("Use the policy default");
+  const prepare = vi
+    .mocked(invoke)
+    .mock.calls.find(
+      ([, input]) => (input as { method?: string })?.method === "workspaces.prepare",
+    );
+  expect(prepare?.[1]).toMatchObject({
+    params: {
+      owner: { kind: "session", id: "host-session" },
+      idempotencyKey: "session:host-session:workspace",
+      baseRef: "refs/heads/main",
+    },
+  });
+  expect(commands[0]).toMatchObject({
+    type: "create",
+    sessionId: "host-session",
+    workspaceId: "workspace-session",
+    worktreeCwd: "/home/me/repo-worktrees/managed-session",
+  });
+  expect(host?.session.workspaceId).toBe("workspace-session");
+});
+
+it("keeps managed preparation failures off the project checkout and retries the same owner", async () => {
+  workspaceDefaultMode = "worktree";
+  workspacePreparationFailure = "Workspace storage is busy";
+  await render();
+  await sendTransport("First attempt");
+  expect(commands).toEqual([]);
+  workspacePreparationFailure = undefined;
+  await sendTransport("Try the same workspace");
+  const prepares = vi
+    .mocked(invoke)
+    .mock.calls.filter(
+      ([, input]) => (input as { method?: string })?.method === "workspaces.prepare",
+    );
+  expect(prepares).toHaveLength(2);
+  expect(prepares[0][1]).toMatchObject({
+    params: {
+      owner: { kind: "session", id: "host-session" },
+      idempotencyKey: "session:host-session:workspace",
+    },
+  });
+  expect(prepares[1][1]).toMatchObject({
+    params: {
+      owner: { kind: "session", id: "host-session" },
+      idempotencyKey: "session:host-session:workspace",
+    },
+  });
+  expect(commands[0]).toMatchObject({
+    workspaceId: "workspace-session",
+    worktreeCwd: "/home/me/repo-worktrees/managed-session",
+  });
+  expect(invoke).not.toHaveBeenCalledWith(
+    "remote_request",
+    expect.objectContaining({ method: "git.worktreeCreate" }),
+  );
 });
 
 it("searches and creates a host branch from the composer picker", async () => {
@@ -2036,7 +2134,7 @@ it("locks remote sends through rewind and waits for an authoritative snapshot be
   let completed = false;
   let rewind!: Promise<boolean>;
   await act(async () => {
-    rewind = Promise.resolve(remoteOverrides.onRewindMessage!("host-session", "latest-user"));
+    rewind = Promise.resolve(remoteOverrides.onRewindMessage!("shell", "latest-user"));
     void rewind.then(() => {
       completed = true;
     });
@@ -2114,12 +2212,12 @@ it("exposes rewind only when supported and permits it after lazy history is full
   await renderRemoteProbe();
   expect(remoteOverrides.session?.historyPartial).toBe(true);
   await act(async () => {
-    expect(await remoteOverrides.onRewindMessage!("host-session", "latest-user")).toBe(false);
+    expect(await remoteOverrides.onRewindMessage!("shell", "latest-user")).toBe(false);
     await remoteOverrides.onLoadRemoteHistory?.();
   });
   expect(remoteOverrides.session?.historyPartial).toBe(false);
   await act(async () => {
-    expect(await remoteOverrides.onRewindMessage!("host-session", "latest-user")).toBe(true);
+    expect(await remoteOverrides.onRewindMessage!("shell", "latest-user")).toBe(true);
   });
   expect(commands.filter((command) => command.type === "rewind")).toHaveLength(1);
 });

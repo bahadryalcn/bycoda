@@ -122,10 +122,10 @@ for (const width of [1280, 800])
       await expect(task.locator("[data-task-delivery]")).toHaveText("Not delivered");
       await expect(task.locator("[data-task-renewed-approval]")).toContainText("renew approval");
       await expect(task.getByRole("button", { name: "Review changes", exact: true })).toBeVisible();
-      await mkdir("temp/verification/s5", { recursive: true });
+      await mkdir("temp/verification/i2a", { recursive: true });
       await task.scrollIntoViewIfNeeded();
       await page.screenshot({
-        path: `temp/verification/s5/tasks-delivery-${width}-${theme}.png`,
+        path: `temp/verification/i2a/tasks-delivery-${width}-${theme}.png`,
         animations: "disabled",
       });
       await task.click();
@@ -133,7 +133,7 @@ for (const width of [1280, 800])
       await expect(details).toContainText("Completion");
       await expect(details).toContainText("Not delivered");
       await page.screenshot({
-        path: `temp/verification/s5/task-detail-delivery-${width}-${theme}.png`,
+        path: `temp/verification/i2a/task-detail-delivery-${width}-${theme}.png`,
         animations: "disabled",
       });
       await details.getByRole("button", { name: "Mark finished", exact: true }).click();

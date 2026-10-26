@@ -37,6 +37,8 @@ import {
   subscribeKeepAwakeScreen,
 } from "../model/settings";
 import { LanguageSettings } from "./LanguageSettings";
+import { BuildIdentityDetails } from "./BuildIdentityDetails";
+import { buildIdentityLabel } from "../../../shared/model/build-info";
 import { DiagnosticsGroup } from "./DiagnosticsSettings";
 import { AdvancedSettings, Group, Row, Toggle } from "./settingsControls";
 import "./GeneralSettings.css";
@@ -348,28 +350,34 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
     <Row
       id="update"
       label={
-        <span className="flex items-baseline gap-2">
+        <span className="flex min-w-0 flex-wrap items-baseline gap-2">
           {t("Version")}
           <span className="general-version">{snapshot.currentVersion}</span>
+          <span className="break-all text-ui-caption text-(--ui-text-secondary)">
+            {t(buildIdentityLabel())}
+          </span>
         </span>
       }
       description={snapshot.phase === "idle" && updatesEnabled === true ? status : undefined}
       feedback={
-        snapshot.phase !== "idle" || updatesEnabled !== true ? (
-          <SettingsFeedback
-            state={
-              snapshot.phase === "error"
-                ? "error"
-                : updatesEnabled === false || hasUpdate
-                  ? "warning"
-                  : snapshot.phase === "current"
-                    ? "success"
-                    : "loading"
-            }
-          >
-            {status}
-          </SettingsFeedback>
-        ) : null
+        <>
+          {snapshot.phase !== "idle" || updatesEnabled !== true ? (
+            <SettingsFeedback
+              state={
+                snapshot.phase === "error"
+                  ? "error"
+                  : updatesEnabled === false || hasUpdate
+                    ? "warning"
+                    : snapshot.phase === "current"
+                      ? "success"
+                      : "loading"
+              }
+            >
+              {status}
+            </SettingsFeedback>
+          ) : null}
+          <BuildIdentityDetails />
+        </>
       }
     >
       <div className="general-update-actions">

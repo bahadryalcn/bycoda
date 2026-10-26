@@ -43,6 +43,8 @@ export type HostStewardInput = AutomationSchedule & {
 
 /** The run a steward is in the middle of. */
 export type StewardRun = {
+  workspaceId?: string;
+  activityId?: string;
   sessionId?: string;
   runId?: string;
   startedAt: number;
@@ -54,6 +56,7 @@ export type StewardRun = {
 };
 
 export type HostSteward = HostStewardInput & {
+  deliveryApprovalRequired?: boolean;
   nextRunAt: number;
   lastRunAt?: number;
   lastRunStatus?: StewardRunStatus;

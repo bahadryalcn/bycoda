@@ -92,6 +92,16 @@ export async function workspaceRequest<K extends WorkspaceRpcMethod>(
     input = { ...input, projectId: project.id };
   }
   if ("environmentId" in input) input.environmentId = machine.environmentId;
+  if (
+    machine.localHost &&
+    (method === "workspaces.cleanup.plan" || method === "workspaces.cleanup.apply")
+  )
+    return invoke<WorkspaceRpcResults[K]>(
+      method === "workspaces.cleanup.plan"
+        ? "managed_worktree_removal_plan"
+        : "managed_worktree_removal_apply",
+      { request: input },
+    );
   return remoteRequest<WorkspaceRpcResults[K]>(machine.id, method, input, false, true);
 }
 

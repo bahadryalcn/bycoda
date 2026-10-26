@@ -197,6 +197,7 @@ export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" 
   branch?: string;
   /** Authoritative workspace identity; older snapshots retain their recorded checkout fields. */
   workspaceId?: string;
+  workspaceRevision?: number;
   worktreeCwd?: string;
   repo?: string;
   draft?: boolean;
@@ -342,6 +343,8 @@ type HostCommandBody =
       type: "create";
       commandId: string;
       projectId: string;
+      /** Reserved creation identity, validated by sessions.managedCreation.v1 Hosts. */
+      sessionId?: string;
       /** S2 validates ownership and derives execution cwd from the Host registry. */
       workspaceId?: string;
       worktreeCwd?: string;

@@ -127,6 +127,8 @@ export type AutomationUpsert = Omit<
 export type AutomationRunTrigger = "scheduled" | "manual" | "event";
 
 export type AutomationRun = {
+  workspaceId?: string;
+  activityId?: string;
   executor?: "agent" | "ssh";
   /** Metadata only; scripts, output and credentials are not run history. */
   sshExecution?: SshRunStatus;
