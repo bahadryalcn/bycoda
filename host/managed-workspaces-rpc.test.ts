@@ -10,6 +10,7 @@ import { HostEngine } from "./engine";
 import type { HostProvider } from "./providers";
 import { createHostServer } from "./server";
 import { HostStore } from "./store";
+import { DeliveryEffectNotAppliedError, GitHubDeliveryPublication } from "./branch-delivery";
 import type { BuildIdentity, ManagedWorkspace, SessionRewindPlan } from "./workspace-contracts";
 
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 60_000 });
@@ -255,6 +256,21 @@ it("dispatches revision-bound pin, host rewind/Undo, approved delivery and clean
   });
   expect(git(prepared.workspace.path, "rev-parse", "HEAD")).toBe(committedHead);
   expect((await f.call("sessions.get", { sessionId })).revision).toBe(undone.conversationRevision);
+  // Reproduce complete Git/transcript receipts whose final acknowledgement was
+  // interrupted. Session deletion must preserve the authoritative rescue target.
+  const completedOperation = await f.store.workspaceOperation(undone.operationId);
+  await f.store.db
+    .prepare("UPDATE workspace_operations SET payload=? WHERE id=?")
+    .run(JSON.stringify({ ...completedOperation, finalized: false }), undone.operationId);
+  const deletion = await f.request("sessions.delete", {
+    sessionId,
+    projectId: f.projectScope.projectId,
+  });
+  expect(deletion.value.error).toMatch(/recovery.*pending|reconcile/i);
+  expect((await f.call("sessions.get", { sessionId })).revision).toBe(undone.conversationRevision);
+  await f.store.db
+    .prepare("UPDATE workspace_operations SET payload=? WHERE id=?")
+    .run(JSON.stringify(completedOperation), undone.operationId);
   await f.call("workspaces.finish", {
     workspaceId,
     expectedRevision: (await workspace()).revision,
@@ -322,4 +338,138 @@ it("advertises the executable build identity capability only when its reader sup
   const descriptor = await f.call("environment.describe");
   expect(descriptor.buildIdentity).toEqual(stamp);
   expect(descriptor.capabilities).toContain("build.identity.v1");
+});
+
+it("binds native turn capture to the authenticated device and retains its writer fence through completion", async () => {
+  const f = await fixture();
+  const prepared = await f.call("workspaces.prepare", {
+    ...f.projectScope,
+    owner: { kind: "session", id: "native-session" },
+    slug: "native",
+    idempotencyKey: "native-workspace",
+  });
+  const boundary = {
+    workspaceId: prepared.workspace.id,
+    sessionId: "native-session",
+    userBlockId: "native-user",
+    runId: "native-run",
+  };
+  const before = await f.call("sessions.managedTurn.begin", {
+    ...boundary,
+    conversationRevision: 3,
+  });
+  expect(before.before.status).toBe("complete");
+  expect(
+    (
+      await f.call("workspaces.cleanup.plan", {
+        workspaceId: boundary.workspaceId,
+        expectedRevision: (await f.call("workspaces.get", { workspaceId: boundary.workspaceId }))
+          .revision,
+      })
+    ).blockers.join(" "),
+  ).toMatch(/use|active/);
+  const other = await f.store.issueDevice("Other native device");
+  expect((await f.request("sessions.managedTurn.end", boundary, other.token)).value.error).toMatch(
+    /another owner device/,
+  );
+  writeFileSync(join(prepared.workspace.path, "source.txt"), "native committed change\n");
+  git(prepared.workspace.path, "add", "source.txt");
+  git(prepared.workspace.path, "commit", "-qm", "Native turn");
+  const ended = await f.call("sessions.managedTurn.end", boundary);
+  expect(ended.after.status).toBe("complete");
+  expect(ended.after.snapshot.head).toBe(git(prepared.workspace.path, "rev-parse", "HEAD"));
+  expect((await f.call("sessions.managedTurn.status", boundary)).activity).toBeNull();
+  expect(await f.call("sessions.managedTurn.end", boundary)).toEqual(ended);
+  expect((await f.call("environment.describe")).gitRewindExecution).toBe("host");
+  expect(
+    (
+      await f.request("sessions.rewind.plan", {
+        workspaceId: boundary.workspaceId,
+        sessionId: boundary.sessionId,
+        expectedRevision: prepared.workspace.revision,
+        expectedConversationRevision: 3,
+        direction: "rewind",
+        userBlockId: boundary.userBlockId,
+      })
+    ).value.error,
+  ).toMatch(/host-executed|native protocol/);
+});
+
+it("resumes the same owner-approved publication journal without pushing again and rejects changed retry bindings", async () => {
+  const f = await fixture();
+  const prepared = await f.call("workspaces.prepare", {
+    ...f.projectScope,
+    owner: { kind: "session", id: "publication-session" },
+    slug: "publication",
+    idempotencyKey: "publication-workspace",
+  });
+  writeFileSync(join(prepared.workspace.path, "source.txt"), "publishable source\n");
+  git(prepared.workspace.path, "add", "source.txt");
+  git(prepared.workspace.path, "commit", "-qm", "Publication change");
+  const sourceHead = git(prepared.workspace.path, "rev-parse", "HEAD");
+  await f.call("workspaces.finish", {
+    workspaceId: prepared.workspace.id,
+    expectedRevision: prepared.workspace.revision,
+    idempotencyKey: "finish-publication",
+  });
+  git(f.target, "remote", "add", "origin", "https://example.invalid/owner/repo.git");
+  // External effects are stand-ins; real owner transport, journal, reservation
+  // and retry logic run. The test never publishes or contacts GitHub.
+  const push = vi
+    .spyOn(GitHubDeliveryPublication.prototype, "push")
+    .mockResolvedValue({
+      remote: "origin",
+      branchRef: prepared.workspace.branchRef,
+      sourceHead,
+      pushedAt: 1,
+    });
+  vi.spyOn(GitHubDeliveryPublication.prototype, "findPush").mockResolvedValue({
+    remote: "origin",
+    branchRef: prepared.workspace.branchRef,
+    sourceHead,
+    pushedAt: 1,
+  });
+  vi.spyOn(GitHubDeliveryPublication.prototype, "findPr").mockResolvedValue(null);
+  const createPr = vi
+    .spyOn(GitHubDeliveryPublication.prototype, "createPr")
+    .mockRejectedValueOnce(new DeliveryEffectNotAppliedError("Known rejected PR request"))
+    .mockResolvedValue({
+      repository: "owner/repo",
+      number: 1,
+      url: "https://example.invalid/owner/repo/pull/1",
+      sourceHead,
+      createdAt: 2,
+    });
+  const current = await f.call<ManagedWorkspace>("workspaces.get", {
+    workspaceId: prepared.workspace.id,
+  });
+  const plan = await f.call("workspaces.delivery.review", {
+    workspaceId: current.id,
+    expectedRevision: current.revision,
+    action: "publish",
+    publication: {
+      repository: "owner/repo",
+      remote: "origin",
+      baseBranchRef: current.targetBranchRef,
+      headBranchRef: current.branchRef,
+      title: "Publication test",
+      body: "Test-only external adapter",
+    },
+  });
+  expect(plan.blockers).toEqual([]);
+  const request = {
+    workspaceId: current.id,
+    expectedRevision: current.revision,
+    planToken: plan.token,
+    idempotencyKey: "owner-publication",
+  };
+  expect((await f.call("workspaces.delivery.publish", request)).status).toBe("blocked");
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(
+    (await f.request("workspaces.delivery.publish", { ...request, planToken: "changed" })).value
+      .error,
+  ).toMatch(/different delivery/);
+  expect((await f.call("workspaces.delivery.publish", request)).status).toBe("complete");
+  expect(push).toHaveBeenCalledTimes(1);
+  expect(createPr).toHaveBeenCalledTimes(2);
 });

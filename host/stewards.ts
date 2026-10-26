@@ -491,6 +491,7 @@ export class HostStewards {
           title: `Steward: ${project.name}`.slice(0, 200),
           prompt,
           worktreeCwd: worktree.path,
+          workspaceId: worktree.workspaceId,
         },
         () => !this.closing,
       );

@@ -164,6 +164,7 @@ type Located = { root: string; relative: string };
 export interface WorkspaceCommandDelivery {
   registry: Pick<WorkspaceRegistry, "list">;
   service: BranchDeliveryService;
+  startMutation?(cwd: string): Promise<() => Promise<void>>;
 }
 
 export class WorkspaceCommands {
@@ -216,6 +217,42 @@ export class WorkspaceCommands {
   }
 
   async run(command: unknown, args: unknown, owner = "local"): Promise<Awaited<Promise<unknown>>> {
+    const input =
+      args && typeof args === "object" && !Array.isArray(args)
+        ? (args as Record<string, unknown>)
+        : {};
+    const mutating =
+      isHostGitMutation(String(command)) ||
+      [
+        "write_text_file",
+        "create_path",
+        "rename_path",
+        "delete_path",
+        "copy_path",
+        "move_path",
+        "session_checkpoint_undo",
+        "session_checkpoint_keep",
+      ].includes(String(command));
+    const paths =
+      isHostGitMutation(String(command)) || String(command).startsWith("session_checkpoint_")
+        ? [input.cwd]
+        : command === "create_path"
+          ? [input.parent]
+          : command === "copy_path" || command === "move_path"
+            ? [input.from, input.destParent]
+            : [input.path];
+    const releases: (() => Promise<void>)[] = [];
+    try {
+      if (mutating && this.delivery?.startMutation)
+        for (const path of new Set(paths))
+          if (typeof path === "string") releases.push(await this.delivery.startMutation(path));
+      return await this.dispatch(command, args, owner);
+    } finally {
+      for (const release of releases.reverse()) await release();
+    }
+  }
+
+  private async dispatch(command: unknown, args: unknown, owner: string): Promise<unknown> {
     if (!WORKSPACE_COMMANDS.includes(command as WorkspaceCommand))
       throw new Error("Unsupported workspace command");
     const input =

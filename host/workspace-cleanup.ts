@@ -280,7 +280,21 @@ export function createExecutionActivityReservations(deps: {
       const activity = { ...input, id: randomUUID(), startedAt: Date.now() };
       activities.set(activity.id, activity);
       try {
-        if (await deps.pending(input.workspaceId))
+        const artifactOperationId =
+          input.kind === "operation" && input.ownerId.startsWith("task-artifacts:")
+            ? input.ownerId.slice("task-artifacts:".length)
+            : undefined;
+        const artifactOperation = artifactOperationId
+          ? await deps.operation?.(artifactOperationId)
+          : undefined;
+        const recoveryOperationId =
+          artifactOperation?.kind === "delivery" &&
+          artifactOperation.phase === "complete" &&
+          artifactOperation.workspaceId === input.workspaceId &&
+          artifactOperation.merge
+            ? artifactOperation.id
+            : undefined;
+        if (await deps.pending(input.workspaceId, recoveryOperationId))
           throw new Error("Workspace recovery is pending.");
         const workspace = await deps.get(input.workspaceId);
         if (workspace.directoryState !== "present")

@@ -333,6 +333,7 @@ export class HostAutomations {
             title: automation.name,
             prompt: `Work only in ${workspace.path} on ${workspace.branchRef}. Commit scoped changes on this branch and leave a clean tree. Integration, push and PR publication require separate owner approval.\n\n${automation.prompt}`,
             worktreeCwd: workspace.path,
+            workspaceId: workspace.id,
           },
           () => !this.closing,
         );

@@ -65,6 +65,8 @@ export type DevServersOptions = {
   queueTimeoutMs?: number;
   runtimeLogs?: RuntimeLogsService;
   portLeases?: DevPortLeases;
+  startActivity?(cwd: string, ownerId: string): Promise<() => Promise<void>>;
+  workspaceIdForDirectory?(cwd: string): Promise<string | undefined>;
 };
 
 const same = (a: DevProcessIdentity | undefined, b: DevProcessIdentity | undefined) =>
@@ -214,6 +216,7 @@ export class DevServersService {
   readonly portLeases: DevPortLeases;
   private readonly serverLeases = new Map<string, string>();
   private readonly workspaceLaunches = new Map<string, WorkspaceDevServerRequest>();
+  private readonly activityReleases = new Map<string, () => Promise<void>>();
   private active = 0;
   private readonly waiting: (() => void)[] = [];
   private cache?: { key: string; until: number; result: DevServerScan };
@@ -303,6 +306,27 @@ export class DevServersService {
         case "devServers.details":
           return await this.details(params, projects);
         case "devServers.start":
+          if (this.options.workspaceIdForDirectory) {
+            const project = projects.find((entry) => entry.id === params.projectId);
+            const cwd =
+              typeof params.cwd === "string" && params.cwd.trim() ? params.cwd : project?.path;
+            const workspaceId = cwd ? await this.options.workspaceIdForDirectory(cwd) : undefined;
+            if (workspaceId && cwd)
+              return (
+                await this.startWorkspace(
+                  {
+                    workspaceId,
+                    cwd,
+                    projectId: project?.id,
+                    runId: randomUUID(),
+                    kinds: ["vite", "hmr", "host", "cdp"],
+                    command: String(params.command ?? ""),
+                    ...(typeof params.name === "string" ? { name: params.name } : {}),
+                  },
+                  projects,
+                )
+              ).result;
+          }
           return await this.exclusive("start", () => this.start(params, projects));
         case "devServers.stop":
         case "devServers.kill":
@@ -422,6 +446,10 @@ export class DevServersService {
         if (!owned.length && root && this.serverLeases.has(record.server.id)) {
           await this.portLeases.release(this.serverLeases.get(record.server.id)!);
           this.serverLeases.delete(record.server.id);
+        }
+        if (!owned.length && root && record.exitCode !== undefined) {
+          await this.activityReleases.get(record.server.id)?.();
+          this.activityReleases.delete(record.server.id);
         }
         record.server.endpoints = this.endpoints(endpoints);
         servers.push({ ...record.server, endpoints: [...record.server.endpoints] });
@@ -679,6 +707,10 @@ export class DevServersService {
         await this.portLeases.release(this.serverLeases.get(selected.server.id)!);
         this.serverLeases.delete(selected.server.id);
       }
+      if (!alive.length) {
+        await this.activityReleases.get(selected.server.id)?.();
+        this.activityReleases.delete(selected.server.id);
+      }
       return {
         state: alive.length ? "running" : "stopped",
         requiresForce: alive.length > 0,
@@ -715,6 +747,28 @@ export class DevServersService {
   }
 
   private async start(
+    params: Record<string, unknown>,
+    projects: DevServerProject[],
+    environment?: Record<string, string>,
+  ): Promise<DevServerStartResult> {
+    const project = projects.find((entry) => entry.id === params.projectId);
+    const cwd = typeof params.cwd === "string" && params.cwd.trim() ? params.cwd : project?.path;
+    const release = cwd
+      ? await this.options.startActivity?.(cwd, `dev-server:${randomUUID()}`)
+      : undefined;
+    try {
+      const result = await this.startAdmitted(params, projects, environment);
+      if (result.server && !["stopped", "error"].includes(result.server.state)) {
+        if (release) this.activityReleases.set(result.server.id, release);
+      } else await release?.();
+      return result;
+    } catch (error) {
+      await release?.();
+      throw error;
+    }
+  }
+
+  private async startAdmitted(
     params: Record<string, unknown>,
     projects: DevServerProject[],
     environment?: Record<string, string>,

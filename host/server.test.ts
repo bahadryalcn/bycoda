@@ -82,9 +82,16 @@ describe("managed workspace owner RPCs", () => {
     expect(capabilities).toEqual(
       expect.arrayContaining(["workspaces.managed.v1", "workspaces.policy.v1"]),
     );
-    expect(capabilities).not.toContain("sessions.git-rewind.v1");
-    expect(capabilities).not.toContain("workspaces.lifecycle.v1");
-    expect(capabilities).not.toContain("workspaces.delivery.v1");
+    expect(capabilities).toEqual(
+      expect.arrayContaining([
+        "sessions.git-rewind.v1",
+        "sessions.git-rewind-undo.v1",
+        "workspaces.lifecycle.v1",
+        "workspaces.delivery.v1",
+        "workspaces.pr-publication.v1",
+        "workspaces.pinning.v1",
+      ]),
+    );
     const project = { projectId: s.project.id, environmentId: s.store.environmentId };
     const policy = await s.call("projects.workspacePolicy.get", project);
     expect(policy.value.error).toBeUndefined();
