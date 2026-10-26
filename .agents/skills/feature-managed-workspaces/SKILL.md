@@ -291,6 +291,19 @@ delivery only; product/runtime acceptance remains as described above.
 - Crew workers commit their owned branches. Acceptance waits for owner-approved
   managed branch delivery and rechecks unapproved commits; directory cleanup
   retains branches. Implemented in `8c386465` and `1c0a2d9a`.
+- F2 `877eef8d` preserves the selected lead's committed base, full branch and
+  target directory through `workspaces.prepare.source`, registry persistence and
+  creation recovery. `orchestratorWorkerBindings.ts` saves the source in the
+  orchestration workspace and verifies both registry and reviewed delivery target
+  before acceptance. A missing, detached or changed target is an error.
+  `6f8d3f7b` adds real-Git Host and binding regressions for a prerequisite absent
+  from integration, owner-approved lead delivery and wrong-target rejection.
+- `e556061d` adds the contextual-session regression in
+  `host/managed-workspace-runtime.test.ts` from a reopened old Host snapshot
+  with neither `workspaceMode` nor `workspaceId`. It verifies independent
+  workspace ownership, committed base, provider execution cwd and source retention.
+  F2 evidence is under `temp/verification/f2/`; the final handoff distinguishes
+  focused source/service checks from installed/native/provider acceptance.
 - Native clean-close retirement and same-device/client predecessor reconciliation
   require authenticated reports and Host-verified process death. Dirty/unknown
   reports and uncertain process identity remain fenced. `10e2ef8d` adds

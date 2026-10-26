@@ -236,8 +236,21 @@ port conflict and preserve that process.
 
 - Inventory baseline: `f26ac112404e326478adb687c23ca9cc032acfef` (s0 contracts).
 - User guide: `docs/guides/crews.md`.
-- Update this section with the actual implementation commit and checks when a
-  future crew change is committed; do not record an uncommitted result as delivered.
+- F2: `877eef8d` pins each local worker's selected lead SHA, branch and directory
+  through managed preparation, retries and delivery acceptance.
+  `src/app/workspace/bridges/orchestratorWorkerBindings.ts`,
+  `src/features/orchestration/model/orchestrationState.ts`,
+  `host/workspace-rpc-contracts.ts` and `host/managed-workspaces.ts` own this flow.
+  Missing targets fail; owner approval remains required, and delivery to a
+  different integration branch cannot satisfy acceptance.
+- `6f8d3f7b` adds actual Git/SQLite/Host service regressions in
+  `host/managed-workspaces-crew.test.ts` and
+  `src/app/workspace/bridges/orchestratorWorkerBindings.realGit.test.ts`.
+  These cover the lead-only prerequisite, owner gate, correct delivery and
+  wrong-target rejection. Frontend orchestration/binding/Crew model checks pass
+  124 tests. Existing orchestration Playwright cases fail at their unchanged
+  assignment-model search locator; a baseline `a5590217` source run reproduces it.
+  This is source/service evidence, separate from installed or live Crew acceptance.
 
 ## Proposals
 
