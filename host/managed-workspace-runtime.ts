@@ -276,6 +276,19 @@ export function createManagedWorkspaceRuntime(
         throw new Error("Session managed workspace identity changed");
       return { workspaceId: id, path: registered.path };
     },
+    prepareWorkspaceForCreate: async (request) => {
+      if (!started && !startupRecovery.getStore())
+        throw new Error("Managed workspace startup recovery is pending");
+      const prepared = await registry.prepare({
+        projectId: request.projectId,
+        environmentId: store.environmentId,
+        owner: { kind: "session", id: request.sessionId },
+        idempotencyKey: request.idempotencyKey,
+        slug: "session",
+        choice: { defaultMode: "worktree" },
+      });
+      return { workspaceId: prepared.workspace.id };
+    },
     workspaceForCreate: async (request) => {
       await assertWritable(request.workspaceId);
       const value = await workspace(request.workspaceId);
@@ -296,15 +309,26 @@ export function createManagedWorkspaceRuntime(
       };
     },
     prepareContextualWorkspace: async (request) => {
-      const source = await workspace(request.source.session.workspaceId!);
-      await assertWritable(source.id);
+      const source = request.source.session.workspaceId
+        ? await workspace(request.source.session.workspaceId)
+        : undefined;
+      if (source) await assertWritable(source.id);
+      const baseRef =
+        source?.branchRef ??
+        (
+          await gitText(request.source.session.worktreeCwd ?? request.source.session.cwd, [
+            "rev-parse",
+            "HEAD",
+          ])
+        ).trim();
       const prepared = await registry.prepare({
-        projectId: source.projectId,
+        projectId: request.source.projectId,
         environmentId: store.environmentId,
         owner: { kind: "session", id: request.sessionId },
         idempotencyKey: request.idempotencyKey,
         slug: request.source.session.title ?? "context",
-        baseRef: source.branchRef,
+        baseRef,
+        choice: { defaultMode: "worktree" },
       });
       return { workspaceId: prepared.workspace.id };
     },

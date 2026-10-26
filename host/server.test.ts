@@ -49,6 +49,33 @@ configureChildBackend(new HostChildBackend(binaries));
 
 const cleanups: Array<() => Promise<void>> = [];
 
+async function enableManagedFixture(s: Awaited<ReturnType<typeof setup>>) {
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: s.directory, windowsHide: true, stdio: "pipe" });
+  git("init", "-q", "-b", "main");
+  writeFileSync(join(s.directory, "source.txt"), "fixture source\n");
+  git("add", "source.txt");
+  git(
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.test",
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "-qm",
+    "Fixture baseline",
+  );
+  const configured = await s.call("projects.workspacePolicy.update", {
+    projectId: s.project.id,
+    environmentId: s.store.environmentId,
+    expectedRevision: 0,
+    idempotencyKey: "managed-fixture-policy",
+    policy: { root: join(s.directory, "managed"), disk: { minimumFreeBytes: 1 } },
+  });
+  expect(configured.value.error).toBeUndefined();
+}
+
 describe("managed workspace owner RPCs", () => {
   it("requires an updated host instead of silently selecting the project checkout", () => {
     expect(() => requireWorkspaceCapability(undefined)).toThrow(/Update the execution Host/);
@@ -518,6 +545,7 @@ it("routes history import only through the authenticated desktop owner with froz
   );
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "history-rpc-source",
     projectId: s.project.id,
     harness: "codex",
@@ -579,6 +607,7 @@ it("routes history import to the registered source worktree and refuses unrelate
   git("worktree", "add", "-qb", "history-source", checkout);
   const opened = await s.call("commands.dispatch", {
     type: "create",
+    workspaceMode: "current",
     commandId: "history-worktree-source",
     projectId: s.project.id,
     worktreeCwd: checkout,
@@ -604,6 +633,7 @@ it("routes history import to the registered source worktree and refuses unrelate
       (
         await s.call("commands.dispatch", {
           type: "create",
+          workspaceMode: "current",
           commandId: "unrelated-history-source",
           projectId: s.project.id,
           worktreeCwd: tmpdir(),
@@ -627,6 +657,7 @@ it("binds organization metadata operations to the authenticated owning conversat
   );
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "organization-source",
     projectId: s.project.id,
     harness: "codex",
@@ -683,6 +714,7 @@ it("keeps new canonical desktop preference, provider and worktree facades finite
     expect(capabilities).toContain(capability);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "desktop-settings-source",
     projectId: s.project.id,
     harness: "codex",
@@ -765,6 +797,7 @@ it("binds a native worktree review and status receipt to its paired device witho
   const s = await setup([]);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "worktree-device-source",
     projectId: s.project.id,
     harness: "codex",
@@ -849,6 +882,7 @@ it("isolates SSH approvals, workspace handles and uncertain receipts per actor a
   const s = await setup([]);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "ssh-owned-source",
     projectId: s.project.id,
     harness: "codex",
@@ -939,6 +973,7 @@ it("seals fresh owned PTY identifiers by role and injects actor identity only af
   const s = await setup([]);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "pty-owned-source",
     projectId: s.project.id,
     harness: "codex",
@@ -1106,6 +1141,7 @@ it("partitions provider metadata and quota receipts without leaking internal ope
   const s = await setup([]);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "account-owned-source",
     projectId: s.project.id,
     harness: "codex",
@@ -1208,6 +1244,7 @@ it("validates note context before special-command side effects and sends only an
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "note-rpc-source",
     projectId: s.project.id,
     harness: "codex",
@@ -1324,8 +1361,10 @@ it("exposes a safe authenticated provider center and applies only reviewed ACP m
 
 it("binds contextual RPC creation to the reviewed source and reconciles the original receipt after source changes", async () => {
   const s = await setup(["codex", "claude"], true);
+  await enableManagedFixture(s);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "context-rpc-source",
     projectId: s.project.id,
     harness: "codex",
@@ -1338,12 +1377,11 @@ it("binds contextual RPC creation to the reviewed source and reconciles the orig
     sessionId: created.sessionId,
     text: "Review search",
   });
-  await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce(), { timeout: 15_000 });
   s.turn().onEvent({ type: "message.delta", text: "Search review complete." });
   s.finish();
-  await vi.waitFor(async () =>
-    expect((await s.store.session(created.sessionId)).status).toBe("idle"),
-  );
+  await s.engine.waitForRun(created.sessionId, (await s.store.session(created.sessionId)).runId);
+  expect((await s.store.session(created.sessionId)).status).toBe("idle");
   const source = await s.store.session(created.sessionId);
   const reply = source.session.blocks.find((block) => block.role === "assistant")!;
   const input = {
@@ -1573,6 +1611,7 @@ it.each(["sessions.update", "commands.dispatch"])(
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: crypto.randomUUID(),
       projectId: s.project.id,
       harness: "codex",
@@ -1670,6 +1709,7 @@ it("scopes note reads to the authoritative session before accessing notes", asyn
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "notes-session",
     projectId: s.project.id,
     harness: "codex",
@@ -1841,6 +1881,7 @@ describe("scoped Conversation Tools RPC", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: crypto.randomUUID(),
       projectId: s.project.id,
       harness: "codex",
@@ -2376,6 +2417,7 @@ describe("scoped Conversation Tools RPC", () => {
     const create = async (projectId: string) =>
       await s.engine.command({
         type: "create",
+        workspaceMode: "current",
         commandId: crypto.randomUUID(),
         projectId,
         harness: "codex",
@@ -2672,6 +2714,7 @@ it("allows explicit local voice setup only with paired desktop credentials", asy
     ).toBe(403);
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: crypto.randomUUID(),
       projectId: s.project.id,
       harness: "codex",
@@ -2880,6 +2923,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "metadata-create",
       projectId: s.project.id,
       harness: "codex",
@@ -2911,6 +2955,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "clear-create",
       projectId: s.project.id,
       harness: "codex",
@@ -2947,6 +2992,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "rewind-create",
       projectId: s.project.id,
       harness: "codex",
@@ -2987,6 +3033,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "selected-create",
       projectId: s.project.id,
       harness: "codex",
@@ -3030,6 +3077,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "queue-wake-create",
       projectId: s.project.id,
       harness: "codex",
@@ -3067,6 +3115,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "queue-create",
       projectId: s.project.id,
       harness: "codex",
@@ -3136,6 +3185,7 @@ describe("shared queued messages", () => {
       (
         await s.engine.command({
           type: "create",
+          workspaceMode: "current",
           commandId,
           projectId: s.project.id,
           harness: "codex",
@@ -3368,6 +3418,7 @@ describe("shared queued messages", () => {
       (
         await s.engine.command({
           type: "create",
+          workspaceMode: "current",
           commandId,
           projectId: s.project.id,
           harness: "codex",
@@ -3667,6 +3718,7 @@ describe("runtime log access", () => {
     const s = await setup();
     const session = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "log-session",
       projectId: s.project.id,
       harness: "codex",
@@ -3740,6 +3792,7 @@ describe("remote host API", () => {
     const s = await setup();
     const session = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "mobile-session-auth",
       projectId: s.project.id,
       harness: "codex",
@@ -3835,6 +3888,7 @@ describe("remote host API", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "status-create",
       projectId: s.project.id,
       harness: "codex",
@@ -3894,6 +3948,7 @@ describe("remote host API", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "partial-create",
       projectId: s.project.id,
       harness: "codex",
@@ -3971,6 +4026,7 @@ describe("remote host API", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "large-block-create",
       projectId: s.project.id,
       harness: "codex",
@@ -4039,6 +4095,7 @@ describe("remote host API", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "longpoll-create",
       projectId: s.project.id,
       harness: "codex",
@@ -4091,6 +4148,7 @@ describe("remote host API", () => {
       method: "commands.dispatch",
       params: {
         type: "create",
+        workspaceMode: "current",
         commandId: "revoked-create",
         projectId: s.project.id,
         harness: "codex",
@@ -4139,6 +4197,7 @@ describe("remote host API", () => {
     });
     const created = await s.call("commands.dispatch", {
       type: "create",
+      workspaceMode: "current",
       commandId: "upload-create",
       projectId: s.project.id,
       harness: "codex",
@@ -4170,6 +4229,7 @@ describe("remote host API", () => {
     const s = await setup();
     const create = await s.call("commands.dispatch", {
       type: "create",
+      workspaceMode: "current",
       commandId: "card-session",
       projectId: s.project.id,
       harness: "codex",
@@ -4291,6 +4351,7 @@ describe("remote host API", () => {
 
     const opened = await s.call("commands.dispatch", {
       type: "create",
+      workspaceMode: "current",
       commandId: "in-worktree",
       projectId: s.project.id,
       worktreeCwd: tree.path,
@@ -4312,6 +4373,7 @@ describe("remote host API", () => {
       (
         await s.call("commands.dispatch", {
           type: "create",
+          workspaceMode: "current",
           commandId: "outside-worktree",
           projectId: s.project.id,
           worktreeCwd: tmpdir(),
@@ -4424,6 +4486,7 @@ describe("remote host API", () => {
     const s = await setup();
     const create = await s.call("commands.dispatch", {
       type: "create",
+      workspaceMode: "current",
       commandId: "create",
       projectId: s.project.id,
       harness: "codex",
@@ -4481,6 +4544,7 @@ describe("remote host API", () => {
     const s = await setup();
     const create = await s.call("commands.dispatch", {
       type: "create",
+      workspaceMode: "current",
       commandId: "create",
       projectId: s.project.id,
       harness: "codex",
@@ -5209,6 +5273,7 @@ describe("remote host API", () => {
 
   it("answers the goal commands, advertised as a capability", async () => {
     const s = await setup();
+    await enableManagedFixture(s);
     expect((await s.call("environment.describe")).value.result.capabilities).toContain("goals");
     expect((await s.call("environment.describe")).value.result.capabilities).toContain(
       "goals.direct-checkout",
@@ -5295,6 +5360,7 @@ it("previews a transcript above 16 MiB with revision-only unchanged polls and bo
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "large-task-preview",
     projectId: s.project.id,
     harness: "codex",
@@ -5416,6 +5482,7 @@ it("claims host queue attachment exports before returning an offline-editable sn
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "owned-queue",
     projectId: s.project.id,
     harness: "codex",
@@ -5561,6 +5628,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
     const sessionId = (
       await engine.command({
         type: "create",
+        workspaceMode: "current",
         commandId: "adopted-create",
         projectId: project.id,
         harness: "codex",
@@ -5741,6 +5809,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
     const sessionId = (
       await first.command({
         type: "create",
+        workspaceMode: "current",
         commandId: "restart-create",
         projectId: project.id,
         harness: "codex",

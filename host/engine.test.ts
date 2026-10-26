@@ -1121,6 +1121,7 @@ async function setup(
   const created = await engine.command({
     type: "create",
     commandId: "create",
+    workspaceMode: "current",
     projectId: project.id,
     harness,
     model: `${harness}:test`,
@@ -1435,6 +1436,10 @@ describe("managed turn boundaries", () => {
     };
     await expect(engine.command(command)).rejects.toThrow("authoritative workspace ownership");
     expect(() => parseCommand({ ...command, workspaceId: "" })).toThrow("Invalid workspace ID");
+    engine.setManagedTurnHistoryAdapter(managedHistory().adapter);
+    await expect(engine.command({ ...command, workspaceId: undefined })).rejects.toThrow(
+      "requires workspace preparation",
+    );
   });
 
   it("defers managed startup settlement until shared recovery services are attached", async () => {

@@ -347,6 +347,8 @@ type HostCommandBody =
       sessionId?: string;
       /** S2 validates ownership and derives execution cwd from the Host registry. */
       workspaceId?: string;
+      /** Explicit owner choice; omission on managed Hosts prepares an owned worktree. */
+      workspaceMode?: "current" | "worktree";
       worktreeCwd?: string;
       autoWorktreeBranch?: string;
       harness: RemoteProvider;

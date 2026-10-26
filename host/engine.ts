@@ -213,6 +213,12 @@ export function parseCommand(input: unknown): HostCommand {
   )
     throw new Error("Send note context as a new regular message");
   if (v.type === "create") {
+    if (
+      v.workspaceMode !== undefined &&
+      v.workspaceMode !== "current" &&
+      v.workspaceMode !== "worktree"
+    )
+      throw new Error("Invalid workspace mode");
     if (!isRemoteProvider(v.harness) || !RUNTIME_MODES.includes(v.runtimeMode as never))
       throw new Error("Invalid provider or permission mode");
     if (
@@ -228,6 +234,9 @@ export function parseCommand(input: unknown): HostCommand {
       projectId: text(v.projectId, "project ID"),
       ...(v.sessionId !== undefined ? { sessionId: text(v.sessionId, "session ID", 128) } : {}),
       ...(v.workspaceId !== undefined ? { workspaceId: text(v.workspaceId, "workspace ID") } : {}),
+      ...(v.workspaceMode !== undefined
+        ? { workspaceMode: v.workspaceMode as "current" | "worktree" }
+        : {}),
       ...(v.worktreeCwd !== undefined
         ? { worktreeCwd: text(v.worktreeCwd, "working copy", 4096) }
         : {}),
@@ -469,6 +478,11 @@ export interface ManagedTurnHistoryAdapter {
   history: TurnGitHistory;
   workspaceForSession(value: HostSession): Promise<{ workspaceId: string; path?: string } | null>;
   assertWritable(workspaceId: string): Promise<void>;
+  prepareWorkspaceForCreate?(request: {
+    projectId: string;
+    sessionId: string;
+    idempotencyKey: string;
+  }): Promise<{ workspaceId: string }>;
   workspaceForCreate?(request: {
     projectId: string;
     workspaceId: string;
@@ -984,8 +998,8 @@ export class HostEngine {
     const preview = previewContextualSession(source, contextualInput(command), true);
     if (preview.digest !== command.previewDigest)
       throw new Error("The reviewed context changed. Review it again before continuing.");
-    const managedSource = await this.managedWorkspace(source);
-    const contextualWorkspace = managedSource
+    await this.managedWorkspace(source);
+    const contextualWorkspace = this.managedTurns
       ? await this.managedTurns?.prepareContextualWorkspace?.({
           source,
           // Stable across a crash between workspace creation and transcript acceptance.
@@ -996,7 +1010,7 @@ export class HostEngine {
           idempotencyKey: `contextual:${command.commandId}:workspace`,
         })
       : undefined;
-    if (managedSource && !contextualWorkspace)
+    if (this.managedTurns && !contextualWorkspace)
       throw new Error(
         "Prepare a separate managed workspace before starting this contextual session",
       );
@@ -1448,6 +1462,32 @@ export class HostEngine {
     this.retryTimers.set(id, timer);
   }
 
+  private async prepareCreation(command: Extract<HostCommand, { type: "create" }>) {
+    if (command.workspaceId) return { workspaceId: command.workspaceId };
+    // Adapter-less engines are legacy embeddings. Production attaches the managed
+    // runtime before accepting transports; configured managed engines fail closed.
+    if (!this.managedTurns || command.workspaceMode === "current") return undefined;
+    const project = await this.store.project(command.projectId);
+    // An explicitly selected existing legacy worktree retains its identity without
+    // being silently adopted into automatic lifecycle management.
+    if (
+      command.worktreeCwd &&
+      command.workspaceMode !== "worktree" &&
+      resolveHostWorktree(project.cwd, command.worktreeCwd) !== project.cwd
+    )
+      return undefined;
+    const prepared = await this.managedTurns.prepareWorkspaceForCreate?.({
+      projectId: command.projectId,
+      sessionId:
+        command.sessionId ??
+        createHash("sha256").update(`host-session:${command.commandId}`).digest("hex").slice(0, 32),
+      idempotencyKey: `host-session:${command.commandId}:workspace`,
+    });
+    if (!prepared)
+      throw new Error("Managed session creation requires workspace preparation; update this Host");
+    return prepared;
+  }
+
   async command(raw: unknown): Promise<CommandReceipt> {
     await this.ready;
     return this.store.db.scope(() =>
@@ -1473,9 +1513,11 @@ export class HostEngine {
               .digest("hex");
             const previous = await this.store.receipt(create.commandId, signature);
             if (previous) return previous;
+            const prepared = await this.prepareCreation(create);
             return await this.store.transaction(async () => {
               const created = await this.command({
                 ...create,
+                ...(prepared ? { workspaceId: prepared.workspaceId, worktreeCwd: undefined } : {}),
                 commandId: `${create.commandId}:create`,
               });
               const sent = await this.command({ ...first, sessionId: created.sessionId });
@@ -1493,6 +1535,8 @@ export class HostEngine {
           if (previous) return previous;
           if (command.type === "contextual")
             return await this.contextualCommand(command, signature);
+          const prepared =
+            command.type === "create" ? await this.prepareCreation(command) : undefined;
           if (command.type !== "create" && this.rewinding.has(command.sessionId))
             throw new Error("A conversation change is in progress");
           // Commands apply to the latest state, including batched stream output.
@@ -1508,14 +1552,15 @@ export class HostEngine {
               if (this.switchingProjects.has(project.id))
                 throw new Error("Wait for the branch switch to finish");
               this.provider(command.harness);
-              const managed = command.workspaceId
+              const workspaceId = prepared?.workspaceId ?? command.workspaceId;
+              const managed = workspaceId
                 ? await this.managedTurns?.workspaceForCreate?.({
                     projectId: project.id,
-                    workspaceId: command.workspaceId,
-                    worktreeCwd: command.worktreeCwd,
+                    workspaceId,
+                    worktreeCwd: command.workspaceId ? command.worktreeCwd : undefined,
                   })
                 : undefined;
-              if (command.workspaceId && managed?.workspaceId !== command.workspaceId)
+              if (workspaceId && managed?.workspaceId !== workspaceId)
                 throw new Error(
                   "Managed session creation requires authoritative workspace ownership",
                 );
@@ -1546,6 +1591,7 @@ export class HostEngine {
                 session: {
                   id: sessionId,
                   cwd,
+                  ...(!managed ? { workspaceMode: "current" as const } : {}),
                   ...(managed
                     ? {
                         workspaceId: managed.workspaceId,

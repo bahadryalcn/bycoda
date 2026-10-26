@@ -2657,6 +2657,7 @@ export class HostTasks {
           this.engine,
           {
             ...ready,
+            ...(ready.isolate === false ? { workspaceMode: "current" as const } : {}),
             prompt: workerPrompt(ready, projectCwd, sharedEdits),
           },
           () => !this.closing,
@@ -2718,6 +2719,7 @@ export class HostTasks {
           this.engine,
           {
             ...task,
+            ...(task.isolate === false ? { workspaceMode: "current" as const } : {}),
             prompt: workerPrompt(task, (await this.store.project(task.projectId)).cwd),
           },
           () => !this.closing,
@@ -2980,6 +2982,7 @@ export class HostTasks {
         {
           ...task,
           title: `Review: ${task.title}`.slice(0, 200),
+          ...(task.isolate === false ? { workspaceMode: "current" as const } : {}),
           ...(task.reviewerConfig
             ? {
                 harness: task.reviewerConfig.harness,

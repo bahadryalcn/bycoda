@@ -101,8 +101,37 @@ async function fixture(buildIdentity: BuildIdentity | null = null) {
       disk: { budgetBytes: 1024 ** 3, warningRatio: 0.8, minimumFreeBytes: 1 },
     },
   });
-  return { root, target, store, projectScope, server, device, request, call };
+  return { root, target, store, engine, projectScope, server, device, request, call };
 }
+
+it("prepares independent execution before authenticated old-client atomic creation can dispatch its first turn", async () => {
+  const f = await fixture();
+  const originalHead = git(f.target, "rev-parse", "HEAD");
+  const command = {
+    type: "create",
+    commandId: "older-client-atomic",
+    projectId: f.projectScope.projectId,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+    firstTurn: { type: "send", commandId: "older-client-send", text: "Independent older client" },
+  };
+  const created = await f.call("commands.dispatch", command);
+  expect(await f.call("commands.dispatch", command)).toEqual(created);
+  await f.engine.waitForRun(created.sessionId, (await f.store.session(created.sessionId)).runId);
+  expect((await f.store.session(created.sessionId)).status).toBe("idle");
+  const session = (await f.store.session(created.sessionId)).session;
+  expect(session.workspaceId).toBeTruthy();
+  expect(session.cwd).not.toBe(f.target);
+  const workspace = await f.call<ManagedWorkspace>("workspaces.get", {
+    workspaceId: session.workspaceId,
+  });
+  expect(workspace.owner).toEqual({ kind: "session", id: session.id });
+  expect(workspace.path).toBe(session.cwd);
+  expect(git(session.cwd, "log", "-1", "--format=%s")).toBe("Independent older client");
+  expect(git(f.target, "rev-parse", "HEAD")).toBe(originalHead);
+  expect(readFileSync(join(f.target, "source.txt"), "utf8")).toBe("baseline source\n");
+});
 
 it("coordinates native Git rewind through rescue, restored status and durable transcript acknowledgement", async () => {
   const f = await fixture();

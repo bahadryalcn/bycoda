@@ -70,6 +70,98 @@ async function fixture(options: Parameters<typeof createManagedWorkspaceRuntime>
   return { root, git, store, engine, runtime, project, request, send };
 }
 
+it("prepares an owned workspace at the Host creation boundary for a client without workspace fields", async () => {
+  const f = await fixture();
+  await f.runtime.recover();
+  const command = {
+    type: "create",
+    commandId: "older-client",
+    projectId: f.project.id,
+    harness: "codex",
+    model: "fixture",
+    runtimeMode: "supervised",
+  };
+  const created = await f.engine.command(command);
+  expect(await f.engine.command(command)).toEqual(created);
+  const session = (await f.store.session(created.sessionId)).session;
+  expect(session.workspaceId).toBeTruthy();
+  expect(session.cwd).not.toBe(f.root);
+  expect(session.worktreeCwd).toBe(session.cwd);
+  expect((await f.runtime.workspace(session.workspaceId!)).owner).toEqual({
+    kind: "session",
+    id: created.sessionId,
+  });
+  await f.engine.command({
+    type: "send",
+    commandId: "older-send",
+    sessionId: created.sessionId,
+    text: "Work independently",
+  });
+  await f.engine.waitForRun(created.sessionId, (await f.store.session(created.sessionId)).runId);
+  expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ cwd: session.cwd }));
+  const prepare = vi
+    .spyOn(f.runtime.registry, "prepare")
+    .mockRejectedValueOnce(new Error("Preparation unavailable"));
+  await expect(f.engine.command({ ...command, commandId: "preparation-failed" })).rejects.toThrow(
+    "Preparation unavailable",
+  );
+  expect(prepare).toHaveBeenCalledOnce();
+  expect((await f.store.sessions()).filter((entry) => entry.session.cwd === f.root)).toHaveLength(
+    0,
+  );
+});
+
+it("requires an explicit current choice and gives a contextual legacy source an independent workspace", async () => {
+  const f = await fixture();
+  await f.runtime.recover();
+  const created = await f.engine.command({
+    type: "create",
+    commandId: "explicit-current",
+    projectId: f.project.id,
+    workspaceMode: "current",
+    harness: "codex",
+    model: "fixture",
+    runtimeMode: "supervised",
+  });
+  const source = await f.store.session(created.sessionId);
+  expect(source.session.cwd).toBe(f.root);
+  await f.store.save(
+    {
+      ...source,
+      revision: source.revision + 1,
+      session: {
+        ...source.session,
+        harness: "claude",
+        blocks: [
+          { id: "legacy-user", role: "user", text: "Existing current-mode work" },
+          { id: "legacy-reply", role: "assistant", text: "Context to transfer" },
+        ],
+      },
+    },
+    { type: "test.legacy-current" },
+  );
+  const input = {
+    sessionId: created.sessionId,
+    sourceBlockId: "legacy-reply",
+    expectedRevision: source.revision + 1,
+    mode: "handoff",
+    harness: "codex",
+    model: "fixture",
+    modelSettings: {},
+  };
+  const preview = await f.engine.previewContextual(input);
+  const destination = await f.engine.command({
+    ...input,
+    type: "contextual",
+    commandId: "legacy-handoff",
+    previewDigest: preview.digest,
+  });
+  const session = (await f.store.session(destination.sessionId)).session;
+  expect(session.workspaceId).toBeTruthy();
+  expect(session.cwd).not.toBe(f.root);
+  expect((await f.store.session(created.sessionId)).session.cwd).toBe(f.root);
+});
+
 it("recovers a native receipt saved before Host finalization after reconstructing its adapter", async () => {
   const f = await fixture({
     afterNativeReceiptSaved: async () => {
