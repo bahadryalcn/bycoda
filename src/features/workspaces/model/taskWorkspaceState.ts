@@ -1,14 +1,14 @@
 import type { HostTask } from "../../tasks/model/hostTasks";
 
-/** Temporary app-side extension until S3 projects these fields into HostTask. */
+/** App-side presentation state alongside the authoritative Host task fields. */
 export type ManagedTaskState = {
   workspaceId?: string;
   workspaceRevision?: number;
   completionState?: "pending" | "running" | "finished" | "failed";
-  deliveryState?: "pending" | "review" | "merged" | "published" | "blocked";
+  deliveryState?: HostTask["deliveryState"] | "pending" | "review" | "blocked";
   autoMergeSuspended?: boolean;
 };
-export function taskWorkspaceState(task: HostTask & ManagedTaskState) {
+export function taskWorkspaceState(task: Omit<HostTask, "deliveryState"> & ManagedTaskState) {
   const finished =
     task.completionState === "finished" ||
     (!task.completionState && (task.status === "review" || task.status === "done"));
