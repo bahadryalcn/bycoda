@@ -42,6 +42,7 @@ mod mcp;
 mod menu;
 mod mobile_pty;
 mod native_language;
+mod native_workspace;
 mod notes;
 mod notifications;
 mod pasteboard;
@@ -420,6 +421,15 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             build_info::build_identity,
+            session_store::rewind::managed_turn_begin,
+            session_store::rewind::managed_turn_end,
+            session_store::rewind::managed_rewind_plan,
+            session_store::rewind::managed_rewind_apply,
+            session_store::rewind::managed_rewind_undo,
+            session_store::rewind::managed_rewind_reconcile,
+            worktrees::managed_worktree_removal_plan,
+            worktrees::managed_worktree_removal_apply,
+            native_workspace::managed_workspace_buffers,
             remote::remote_machines,
             server_inventory::server_inventory_list,
             termius_import::termius_import_preview,

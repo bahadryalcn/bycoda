@@ -454,10 +454,18 @@ fn removal_target(root: &Path, path: &Path) -> Result<Worktree, String> {
         // There is no branch retaining detached commits after removal.
         return Err("Create a branch for this detached worktree before deleting it.".into());
     }
-    if tree
-        .branch
-        .as_deref()
-        .is_some_and(|branch| branch.starts_with("bycoda/s/") || branch.starts_with("bycoda/t/"))
+    let reserved_directory = Path::new(&tree.path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.strip_prefix("wt-").is_some_and(|id| {
+                id.len() == 12 && id.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            })
+        });
+    if reserved_directory
+        || tree.branch.as_deref().is_some_and(|branch| {
+            branch.starts_with("bycoda/s/") || branch.starts_with("bycoda/t/")
+        })
     {
         return Err(
             "Managed workspaces must be removed through Host workspace cleanup plan/apply.".into(),
@@ -466,14 +474,32 @@ fn removal_target(root: &Path, path: &Path) -> Result<Worktree, String> {
     Ok(tree)
 }
 
+fn assert_legacy_workspace(conn: &rusqlite::Connection, path: &Path) -> Result<(), String> {
+    let mut statement = conn.prepare("SELECT COALESCE(NULLIF(worktree_cwd,''),cwd) FROM sessions WHERE workspace_id IS NOT NULL").map_err(|e|e.to_string())?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        if same_path(Path::new(&row.map_err(|e| e.to_string())?), path) {
+            return Err(
+                "Managed workspaces must be removed through Host workspace cleanup plan/apply."
+                    .into(),
+            );
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command(async)]
 pub fn git_worktree_check_remove(
     cwd: String,
     path: String,
     force: bool,
+    store: State<'_, SessionStore>,
     terminals: State<'_, crate::pty::PtyHost>,
 ) -> Result<(), String> {
     let path = expand_home(&path);
+    assert_legacy_workspace(&*store.lock_conn()?, &path)?;
     check_removal(
         &expand_home(&cwd),
         &path,
@@ -531,6 +557,7 @@ fn removal_review(
     has_terminals: bool,
     has_agents: bool,
 ) -> Result<WorktreeRemovalReview, String> {
+    assert_legacy_workspace(conn, path)?;
     let tree = removal_target(root, path)?;
     let trees = list(root)?;
     let main = trees.first().ok_or("No working copies found")?;
@@ -1237,6 +1264,7 @@ fn remove_with_sessions(
     force: bool,
     keep_sessions: bool,
 ) -> Result<WorktreeRemoval, String> {
+    assert_legacy_workspace(conn, path)?;
     let tree = match removal_target(root, path) {
         Ok(tree) => tree,
         Err(error) => {
@@ -1301,6 +1329,129 @@ fn remove_with_sessions(
         session_ids: ids,
         project_cwd: main.path.clone(),
     })
+}
+
+fn managed_cleanup_local_check(
+    store: &SessionStore,
+    terminals: &crate::pty::PtyHost,
+    agents: &crate::harness::HarnessHost,
+    workspace_id: &str,
+    path: &Path,
+) -> Result<(), String> {
+    if terminals.has_working_dir(path) || agents.has_working_dir(path) {
+        return Err("Close the terminals and agent processes using this worktree first.".into());
+    }
+    crate::native_workspace::assert_buffers_settled(store, path)?;
+    let sessions = {
+        let conn = store.lock_conn()?;
+        let mut statement = conn
+            .prepare("SELECT id FROM sessions WHERE workspace_id=?1")
+            .map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map([workspace_id], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())?
+    };
+    for session in sessions {
+        crate::session_store::rewind::assert_writable(store, &session)?;
+    }
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn managed_worktree_removal_plan(
+    app: tauri::AppHandle,
+    store: State<'_, SessionStore>,
+    terminals: State<'_, crate::pty::PtyHost>,
+    agents: State<'_, crate::harness::HarnessHost>,
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let workspace_id = request["workspaceId"]
+        .as_str()
+        .ok_or("Workspace ID is required")?;
+    let host = crate::remote::NativeWorkspaceTransport::connect(&app, "workspaces.lifecycle.v1")?;
+    let plan = host.call("workspaces.cleanup.plan", request.clone())?;
+    let token = plan["token"]
+        .as_str()
+        .ok_or("Host returned no cleanup preview token")?;
+    let path = Path::new(
+        plan["path"]
+            .as_str()
+            .ok_or("Host returned no cleanup path")?,
+    );
+    crate::worktree_lifecycle::validate_removal_path(path)?;
+    if plan["workspaceId"] != workspace_id
+        || plan["expectedRevision"] != request["expectedRevision"]
+    {
+        return Err("Workspace cleanup identity or revision changed; preview again".into());
+    }
+    managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
+    let raw = serde_json::to_string(&plan).map_err(|e| e.to_string())?;
+    store.lock_conn()?.execute("INSERT INTO native_cleanup_plans(token,workspace_id,plan_json) VALUES(?1,?2,?3)
+        ON CONFLICT(token) DO UPDATE SET plan_json=excluded.plan_json WHERE native_cleanup_plans.workspace_id=excluded.workspace_id",
+        rusqlite::params![token,workspace_id,raw]).map_err(|e|e.to_string())?;
+    Ok(plan)
+}
+
+#[tauri::command(async)]
+pub fn managed_worktree_removal_apply(
+    app: tauri::AppHandle,
+    store: State<'_, SessionStore>,
+    terminals: State<'_, crate::pty::PtyHost>,
+    agents: State<'_, crate::harness::HarnessHost>,
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let workspace_id = request["workspaceId"]
+        .as_str()
+        .ok_or("Workspace ID is required")?;
+    let token = request["planToken"]
+        .as_str()
+        .ok_or("Cleanup preview token is required")?;
+    let raw: String = store
+        .lock_conn()?
+        .query_row(
+            "SELECT plan_json FROM native_cleanup_plans WHERE token=?1 AND workspace_id=?2",
+            rusqlite::params![token, workspace_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "Open a fresh cleanup preview on this computer before applying".to_string())?;
+    let plan: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if plan["expectedRevision"] != request["expectedRevision"] {
+        return Err("Workspace cleanup revision changed; preview again".into());
+    }
+    let path = Path::new(
+        plan["path"]
+            .as_str()
+            .ok_or("Host returned no cleanup path")?,
+    );
+    let _reservation = crate::worktree_lifecycle::reserve_removal(path)?;
+    managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
+    let host = crate::remote::NativeWorkspaceTransport::connect(&app, "workspaces.lifecycle.v1")?;
+    // No native force-removal fallback. An unknown response remains the same Host operation.
+    let receipt = host.call("workspaces.cleanup.apply", request.clone())?;
+    if receipt["workspaceId"] != workspace_id
+        || receipt["retainedBranchRef"] != plan["branchRef"]
+        || !receipt["workspaceRevision"]
+            .as_i64()
+            .is_some_and(|revision| revision > 0)
+        || !receipt["operationId"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty())
+        || !matches!(
+            receipt["directoryState"].as_str(),
+            Some("present" | "pendingRemoval" | "removing" | "removed" | "blocked")
+        )
+    {
+        return Err(
+            "Host returned a different cleanup receipt; reconnect and inspect status".into(),
+        );
+    }
+    if receipt["directoryState"] == "removed" {
+        store.lock_conn()?.execute("UPDATE sessions SET worktree_removed=1,workspace_revision=?2,provider_session_id=NULL,context_used=NULL,context_window=NULL WHERE workspace_id=?1",
+            rusqlite::params![workspace_id,receipt["workspaceRevision"].as_i64()]).map_err(|e|e.to_string())?;
+    }
+    Ok(receipt)
 }
 
 #[tauri::command(async)]
@@ -1743,6 +1894,53 @@ mod tests {
         assert_eq!(count, 0);
         assert!(!path.exists());
         assert!(git(&root, &["rev-parse", "refs/heads/locked-removal"]).is_ok());
+    }
+
+    #[test]
+    fn worktree_reserved_managed_directory_requires_host_without_native_session() {
+        let repo = repo();
+        let root = repo.0.join("repo");
+        let tree = create(&root, "before-native-persist", "main", false).unwrap();
+        let reserved = repo.0.join("wt-123456789abc");
+        git(
+            &root,
+            &["worktree", "move", &tree.path, &path_to_js(&reserved)],
+        )
+        .unwrap();
+        git(
+            &reserved,
+            &["branch", "-m", "renamed-before-native-persist"],
+        )
+        .unwrap();
+        assert!(check_removal(&root, &reserved, true, false).is_err());
+        assert!(remove(&root, &reserved, true).is_err());
+        assert!(reserved.exists());
+        assert!(git(
+            &root,
+            &["rev-parse", "refs/heads/renamed-before-native-persist"]
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn worktree_registered_managed_path_cannot_bypass_host_after_branch_rename() {
+        let repo = repo();
+        let root = repo.0.join("repo");
+        let tree = create(&root, "managed-renamed", "main", false).unwrap();
+        let path = Path::new(&tree.path);
+        git(path, &["branch", "-m", "user-renamed-branch"]).unwrap();
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        conn.execute("INSERT INTO sessions(id,cwd,harness,model,runtime_mode,title,created_at,updated_at,worktree_cwd,workspace_id,workspace_revision)
+            VALUES('managed-session',?1,'codex','m','supervised','Retain',1,1,?2,'owned-workspace',1)",
+            rusqlite::params![path_to_js(&root),tree.path]).unwrap();
+        assert!(assert_legacy_workspace(&conn, path).is_err());
+        assert!(removal_review(&conn, &root, path, false, false).is_err());
+        assert!(remove_with_sessions(&conn, &root, path, true, true).is_err());
+        assert!(path.exists());
+        assert!(git(&root, &["rev-parse", "refs/heads/user-renamed-branch"]).is_ok());
+        let legacy = create(&root, "genuine-legacy", "main", false).unwrap();
+        assert!(assert_legacy_workspace(&conn, Path::new(&legacy.path)).is_ok());
     }
 
     #[test]

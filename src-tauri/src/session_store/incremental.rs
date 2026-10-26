@@ -197,12 +197,12 @@ pub(super) fn apply(conn: &Connection, delta: &SessionDelta) -> Result<Option<De
     tx.execute("UPDATE sessions SET cwd=?2,harness=?3,model=?4,model_settings=?5,runtime_mode=?6,title=?7,
       provider_session_id=?8,provider_account_id=?9,context_used=?10,context_window=?11,branch=?12,worktree_cwd=?13,
       worktree_removed=?14,linked_work_item_json=?15,automation_id=?16,updated_at=?17,
-      rewind_history_json=?18,pending_context_replay=?19,adopted_divergence=?21,adopted_base=?22,
+      rewind_history_json=?18,pending_context_replay=?19,adopted_divergence=?21,adopted_base=?22,workspace_id=?23,workspace_revision=?24,
       has_user_message=?20 OR EXISTS(SELECT 1 FROM session_blocks WHERE session_id=?1 AND json_extract(block_json,'$.role')='user'),
       is_draft=EXISTS(SELECT 1 FROM session_blocks WHERE session_id=?1 AND json_extract(block_json,'$.role')='user' AND json_extract(block_json,'$.draft')=1)
       WHERE id=?1",params![id,s.cwd,s.harness,s.model,settings,s.runtime_mode,s.title,s.provider_session_id,s.provider_account_id,
       s.context_used,s.context_window,s.branch,s.worktree_cwd,i64::from(s.worktree_removed),linked,s.automation_id,updated_at,
-      rewind_history,s.pending_context_replay,i64::from(archived_user),s.adopted_divergence,s.adopted_base]).map_err(|e|e.to_string())?;
+      rewind_history,s.pending_context_replay,i64::from(archived_user),s.adopted_divergence,s.adopted_base,s.workspace_id,s.workspace_revision]).map_err(|e|e.to_string())?;
     for change in &delta.changes {
         remember_worker_from_blocks(&tx, id, &json!([change.block])).map_err(|e| e.to_string())?;
     }
@@ -408,12 +408,14 @@ fn read_legacy_window(
 
 #[tauri::command(async)]
 pub fn session_get_page(
+    app: AppHandle,
     store: State<'_, SessionStore>,
     session_id: String,
     before: Option<usize>,
     revision: Option<i64>,
     limit: Option<usize>,
 ) -> Result<Option<TranscriptPage>, String> {
+    let _ = super::rewind::reconcile_pending_native(&app, &store, Some(&session_id));
     store.with_read_conn(|conn| {
         page_with_cache(
             conn,

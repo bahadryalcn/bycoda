@@ -58,23 +58,84 @@ pub(crate) fn begin_managed_turn(
     host: &impl TurnExecutionHost,
     request: &ManagedTurnRequest,
 ) -> Result<(), String> {
-    assert_writable(store, &request.session_id)?;
-    let boundary = read(store, &request.session_id)?;
-    if boundary.revision != request.conversation_revision
-        || !boundary.user_block_ids.contains(&request.user_block_id)
-    {
-        return Err("Conversation changed before managed turn capture".into());
+    let rewind_pending: bool = store.lock_conn()?.query_row("SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE session_id=?1 AND phase!='complete')",
+        [&request.session_id], |row|row.get(0)).map_err(|e|e.to_string())?;
+    if rewind_pending {
+        return Err("Managed rewind recovery must complete before writing".into());
+    }
+    let signature = serde_json::to_string(request).map_err(|e| e.to_string())?;
+    let previous = pending_turn(store, &request.session_id)?;
+    if let Some((raw, phase)) = previous {
+        if raw != signature {
+            return Err(
+                "A different managed turn is still active or has an unknown outcome".into(),
+            );
+        }
+        if phase == "active" {
+            return Ok(());
+        }
+        if phase != "starting" {
+            return Err("Managed turn completion must be reconciled before continuing".into());
+        }
+    } else {
+        assert_writable(store, &request.session_id)?;
+        let boundary = read(store, &request.session_id)?;
+        if boundary.revision != request.conversation_revision
+            || !boundary.user_block_ids.contains(&request.user_block_id)
+        {
+            return Err("Conversation changed before managed turn capture".into());
+        }
+        let conn = store.lock_conn()?;
+        conn.execute("INSERT INTO native_managed_turns(session_id,request_json,phase)
+            SELECT ?1,?2,'starting' WHERE (SELECT revision FROM session_block_state WHERE session_id=?1)=?3
+            ON CONFLICT(session_id) DO UPDATE
+            SET request_json=excluded.request_json,phase='starting' WHERE native_managed_turns.phase='complete'",
+            params![request.session_id, signature, request.conversation_revision]).map_err(|e| e.to_string())?;
+        let persisted: String = conn
+            .query_row(
+                "SELECT request_json FROM native_managed_turns WHERE session_id=?1",
+                [&request.session_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if persisted != signature {
+            return Err("Another managed turn won execution admission".into());
+        }
     }
     let record = host.capture_before(request)?;
-    validate_turn_capture(&record, request, "before")
+    validate_turn_capture(&record, request, "before")?;
+    store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='active' WHERE session_id=?1 AND request_json=?2 AND phase='starting'",
+        params![request.session_id,signature]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn pending_turn(
+    store: &SessionStore,
+    session_id: &str,
+) -> Result<Option<(String, String)>, String> {
+    store.lock_conn()?.query_row("SELECT request_json,phase FROM native_managed_turns WHERE session_id=?1 AND phase!='complete'",
+        [session_id], |row| Ok((row.get(0)?,row.get(1)?))).optional().map_err(|e| e.to_string())
 }
 
 pub(crate) fn finish_managed_turn(
+    store: &SessionStore,
     host: &impl TurnExecutionHost,
     request: &ManagedTurnRequest,
 ) -> Result<(), String> {
+    let signature = serde_json::to_string(request).map_err(|e| e.to_string())?;
+    let Some((persisted, phase)) = pending_turn(store, &request.session_id)? else {
+        return Err("There is no managed turn to complete".into());
+    };
+    if persisted != signature || !matches!(phase.as_str(), "active" | "finishing") {
+        return Err("Managed turn completion does not match the active turn".into());
+    }
+    store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='finishing' WHERE session_id=?1 AND request_json=?2",
+        params![request.session_id,signature]).map_err(|e| e.to_string())?;
     let record = host.capture_after(request)?;
-    validate_turn_capture(&record, request, "after")
+    validate_turn_capture(&record, request, "after")?;
+    store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='complete' WHERE session_id=?1 AND request_json=?2 AND phase='finishing'",
+        params![request.session_id,signature]).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn validate_turn_capture(
@@ -82,7 +143,8 @@ fn validate_turn_capture(
     request: &ManagedTurnRequest,
     phase: &str,
 ) -> Result<(), String> {
-    if record["workspaceId"] != request.workspace_id
+    if record["conversationRevision"].as_i64() != Some(request.conversation_revision)
+        || record["workspaceId"] != request.workspace_id
         || record["sessionId"] != request.session_id
         || record["userBlockId"] != request.user_block_id
         || record["runId"] != request.run_id
@@ -110,8 +172,24 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
          CREATE UNIQUE INDEX IF NOT EXISTS session_rewind_pending
            ON session_rewind_operations(session_id) WHERE phase!='complete';
          CREATE TABLE IF NOT EXISTS session_rewind_authorized_writer (
-           operation_id TEXT PRIMARY KEY);",
+           operation_id TEXT PRIMARY KEY);
+         CREATE TABLE IF NOT EXISTS native_managed_turns (
+           session_id TEXT PRIMARY KEY, request_json TEXT NOT NULL,
+           phase TEXT NOT NULL CHECK(phase IN ('starting','active','finishing','complete')));
+         CREATE TABLE IF NOT EXISTS native_rewind_requests (
+           operation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+           idempotency_key TEXT NOT NULL, mutation_json TEXT NOT NULL, phase TEXT NOT NULL DEFAULT 'prepared',
+           UNIQUE(workspace_id,idempotency_key));
+         CREATE TABLE IF NOT EXISTS native_cleanup_plans (
+           token TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, plan_json TEXT NOT NULL);",
     )?;
+    let has_phase: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('native_rewind_requests') WHERE name='phase')", [], |row|row.get(0))?;
+    if !has_phase {
+        conn.execute(
+            "ALTER TABLE native_rewind_requests ADD COLUMN phase TEXT NOT NULL DEFAULT 'applying'",
+            [],
+        )?;
+    }
     // Persisted triggers fence every ordinary full/delta transcript write even
     // after a process restart. Authorization exists only inside restore's SQL
     // transaction, so a crash cannot leave a reusable bypass behind.
@@ -139,7 +217,8 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
 pub(crate) fn assert_writable(store: &SessionStore, session_id: &str) -> Result<(), String> {
     let conn = store.lock_conn()?;
     let pending: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE session_id=?1 AND phase!='complete')",
+        "SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE session_id=?1 AND phase!='complete')
+          OR EXISTS(SELECT 1 FROM native_managed_turns WHERE session_id=?1 AND phase!='complete')",
         [session_id], |row| row.get(0),
     ).map_err(|e| e.to_string())?;
     if pending {
@@ -380,11 +459,19 @@ pub(crate) fn reconcile(
     store: &SessionStore,
     host: &impl RewindExecutionHost,
 ) -> Result<Vec<String>, String> {
+    reconcile_for_session(store, host, None)
+}
+
+fn reconcile_for_session(
+    store: &SessionStore,
+    host: &impl RewindExecutionHost,
+    session_id: Option<&str>,
+) -> Result<Vec<String>, String> {
     let pending: Vec<String> = {
         let conn = store.lock_conn()?;
-        let mut statement = conn.prepare("SELECT operation_id FROM session_rewind_operations WHERE phase!='complete' ORDER BY operation_id").map_err(|e| e.to_string())?;
+        let mut statement = conn.prepare("SELECT operation_id FROM session_rewind_operations WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1) ORDER BY operation_id").map_err(|e| e.to_string())?;
         let rows = statement
-            .query_map([], |row| row.get(0))
+            .query_map(params![session_id], |row| row.get(0))
             .map_err(|e| e.to_string())?;
         rows.collect::<rusqlite::Result<_>>()
             .map_err(|e| e.to_string())?
@@ -403,6 +490,332 @@ pub(crate) fn reconcile(
         complete(store, &operation_id, &receipt)?;
     }
     Ok(blocked)
+}
+
+/// Concrete authenticated transport. The Host controls Git phases and receipt acknowledgement.
+impl TurnExecutionHost for crate::remote::NativeWorkspaceTransport {
+    fn capture_before(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
+        self.call(
+            "native.turn.begin",
+            serde_json::to_value(request).map_err(|e| e.to_string())?,
+        )
+    }
+    fn capture_after(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
+        self.call(
+            "native.turn.end",
+            serde_json::to_value(request).map_err(|e| e.to_string())?,
+        )
+    }
+}
+
+impl RewindExecutionHost for crate::remote::NativeWorkspaceTransport {
+    fn restored_request(&self, operation_id: &str) -> Result<Option<NativeRestoreRequest>, String> {
+        let status = self.call("native.rewind.status", json!({"operationId":operation_id}))?;
+        if status["operationId"] != operation_id {
+            return Err("Execution Host returned a different rewind operation".into());
+        }
+        if !matches!(
+            status["phase"].as_str(),
+            Some("git-restored" | "conversation-restored" | "complete")
+        ) {
+            return Ok(None);
+        }
+        let request: NativeRestoreRequest =
+            serde_json::from_value(status["restoreRequest"].clone()).map_err(|e| e.to_string())?;
+        if request.operation_id != operation_id {
+            return Err("Execution Host returned a different restore operation".into());
+        }
+        Ok(Some(request))
+    }
+    fn acknowledge(&self, operation_id: &str, receipt: &NativeRewindReceipt) -> Result<(), String> {
+        let acknowledgement = self.call(
+            "native.rewind.ack",
+            json!({"operationId":operation_id,"receipt":receipt}),
+        )?;
+        if acknowledgement["operationId"] != operation_id
+            || acknowledgement["acknowledged"] != true
+            || acknowledgement["finalized"] != true
+            || acknowledgement["receipt"]["operationId"] != operation_id
+            || acknowledgement["receipt"]["conversationRevision"] != receipt.revision
+        {
+            return Err(
+                "Execution Host has not durably finalized the native rewind receipt".into(),
+            );
+        }
+        Ok(())
+    }
+}
+
+fn stored_managed_session(store: &SessionStore, session_id: &str) -> Result<SessionRecord, String> {
+    validate_id(session_id, "session")?;
+    let record = get_session(&*store.lock_conn()?, session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Conversation does not exist")?;
+    if record.workspace_id.is_none()
+        || record.workspace_revision.is_none()
+        || record.worktree_removed
+    {
+        return Err("This session has no available managed execution workspace".into());
+    }
+    Ok(record)
+}
+
+pub(crate) fn reconcile_pending_native(
+    app: &AppHandle,
+    store: &SessionStore,
+    session_id: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let pending: bool = store.lock_conn()?.query_row("SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1))", params![session_id], |row|row.get(0)).map_err(|e|e.to_string())?;
+    if !pending {
+        return Ok(vec![]);
+    }
+    let host = crate::remote::NativeWorkspaceTransport::connect(app, "sessions.native-rewind.v1")?;
+    match session_id {
+        Some(id) => reconcile_for_session(store, &host, Some(id)),
+        None => reconcile(store, &host),
+    }
+}
+
+#[tauri::command(async)]
+pub fn managed_rewind_reconcile(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+) -> Result<Vec<String>, String> {
+    reconcile_pending_native(&app, &store, None)
+}
+
+#[tauri::command(async)]
+pub fn managed_turn_begin(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    session_id: String,
+    user_block_id: String,
+    run_id: String,
+) -> Result<(), String> {
+    validate_id(&user_block_id, "user block")?;
+    validate_id(&run_id, "turn run")?;
+    reconcile_pending_native(&app, &store, Some(&session_id))?;
+    let record = stored_managed_session(&store, &session_id)?;
+    let host =
+        crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
+    let request = if let Some((raw, _)) = pending_turn(&store, &session_id)? {
+        let request: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        if request.user_block_id != user_block_id
+            || request.run_id != run_id
+            || Some(&request.workspace_id) != record.workspace_id.as_ref()
+        {
+            return Err(
+                "A different managed turn is still active or has an unknown outcome".into(),
+            );
+        }
+        request
+    } else {
+        ManagedTurnRequest {
+            workspace_id: record.workspace_id.unwrap(),
+            session_id,
+            user_block_id,
+            run_id,
+            conversation_revision: record.transcript_revision.unwrap_or(0),
+        }
+    };
+    begin_managed_turn(&store, &host, &request)
+}
+
+#[tauri::command(async)]
+pub fn managed_turn_end(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    session_id: String,
+    user_block_id: String,
+    run_id: String,
+) -> Result<(), String> {
+    let record = stored_managed_session(&store, &session_id)?;
+    let Some((raw, _)) = pending_turn(&store, &session_id)? else {
+        return Err("There is no managed turn to complete".into());
+    };
+    let request: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if request.user_block_id != user_block_id
+        || request.run_id != run_id
+        || Some(&request.workspace_id) != record.workspace_id.as_ref()
+    {
+        return Err("Managed turn completion does not match the active turn".into());
+    }
+    let host =
+        crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
+    finish_managed_turn(&store, &host, &request)
+}
+
+fn validate_rewind_input(
+    store: &SessionStore,
+    request: &Value,
+) -> Result<ConversationBoundary, String> {
+    let session_id = request["sessionId"]
+        .as_str()
+        .ok_or("Session ID is required")?;
+    let record = stored_managed_session(store, session_id)?;
+    if request["workspaceId"].as_str() != record.workspace_id.as_deref()
+        || request["expectedRevision"].as_i64() != record.workspace_revision
+    {
+        return Err("Managed workspace identity or revision changed; preview again".into());
+    }
+    if let Some(path) = record.worktree_cwd.as_deref() {
+        crate::native_workspace::assert_buffers_settled(store, std::path::Path::new(path))?;
+    }
+    let boundary = read(store, session_id)?;
+    if request["expectedConversationRevision"].as_i64() != Some(boundary.revision) {
+        return Err("Conversation changed; preview again".into());
+    }
+    Ok(boundary)
+}
+
+#[tauri::command(async)]
+pub fn managed_rewind_plan(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    request: Value,
+) -> Result<Value, String> {
+    let boundary = validate_rewind_input(&store, &request)?;
+    assert_writable(&store, request["sessionId"].as_str().unwrap())?;
+    let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
+    let plan = host.call(
+        "native.rewind.plan",
+        json!({"request":request,"conversation":boundary}),
+    )?;
+    if plan["workspaceId"] != request["workspaceId"]
+        || plan["sessionId"] != request["sessionId"]
+        || plan["expectedConversationRevision"] != boundary.revision
+        || plan["expectedRevision"] != request["expectedRevision"]
+    {
+        return Err("Execution Host returned a different rewind preview".into());
+    }
+    Ok(plan)
+}
+
+fn native_apply(
+    store: &SessionStore,
+    host: &crate::remote::NativeWorkspaceTransport,
+    request: Value,
+    direction: RewindDirection,
+) -> Result<Value, String> {
+    let session_id = request["sessionId"]
+        .as_str()
+        .ok_or("Session ID is required")?;
+    let workspace_id = request["workspaceId"]
+        .as_str()
+        .ok_or("Workspace ID is required")?;
+    let key = request["idempotencyKey"]
+        .as_str()
+        .ok_or("Idempotency key is required")?;
+    validate_id(key, "rewind idempotency")?;
+    let signature = serde_json::to_string(&json!({"direction":direction,"request":request}))
+        .map_err(|e| e.to_string())?;
+    let existing: Option<(String,String,String)> = store.lock_conn()?.query_row(
+        "SELECT operation_id,mutation_json,phase FROM native_rewind_requests WHERE workspace_id=?1 AND idempotency_key=?2",
+        params![workspace_id,key], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(|e| e.to_string())?;
+    let (operation_id, may_apply) = if let Some((operation_id, previous, phase)) = existing {
+        if previous != signature {
+            return Err("Rewind idempotency key was reused with different input".into());
+        }
+        (operation_id, phase == "prepared")
+    } else {
+        let boundary = validate_rewind_input(store, &request)?;
+        assert_writable(store, session_id)?;
+        // Preparation must acquire a durable Host reservation without changing Git.
+        let prepared = host.call(
+            "native.rewind.prepare",
+            json!({"request":request,"direction":direction,"conversation":boundary}),
+        )?;
+        let operation_id = prepared["operationId"]
+            .as_str()
+            .ok_or("Execution Host returned no rewind operation")?
+            .to_owned();
+        validate_id(&operation_id, "rewind operation")?;
+        if prepared["sessionId"] != session_id
+            || prepared["workspaceId"] != workspace_id
+            || prepared["expectedConversationRevision"] != boundary.revision
+            || prepared["direction"] != serde_json::to_value(&direction).unwrap()
+        {
+            return Err("Execution Host returned a different prepared rewind".into());
+        }
+        store.lock_conn()?.execute("INSERT INTO native_rewind_requests(operation_id,session_id,workspace_id,idempotency_key,mutation_json) VALUES(?1,?2,?3,?4,?5)",
+            params![operation_id,session_id,workspace_id,key,signature]).map_err(|e| e.to_string())?;
+        (operation_id, true)
+    };
+    if may_apply && receipt(store, &operation_id)?.is_none() {
+        let rescue_id = rescue(
+            store,
+            &operation_id,
+            session_id,
+            request["expectedConversationRevision"]
+                .as_i64()
+                .ok_or("Conversation revision is required")?,
+        )?;
+        // Journal admission before the request. Recovery never resends an unknown Git mutation.
+        let admitted = store.lock_conn()?.execute("UPDATE native_rewind_requests SET phase='applying' WHERE operation_id=?1 AND phase='prepared'", [&operation_id]).map_err(|e|e.to_string())?;
+        if admitted != 1 {
+            return Err(
+                "This rewind is already applying; inspect the same operation status".into(),
+            );
+        }
+        // A timeout here preserves the native rescue/fence; only status can prove Git restored.
+        host.call("native.rewind.apply", json!({"operationId":operation_id,"request":request,"direction":direction,"transcriptRescueId":rescue_id}))?;
+    }
+    let Some(restore_request) = host.restored_request(&operation_id)? else {
+        return Err(
+            "Managed rewind outcome is unknown. Reconnect to the same Host before continuing."
+                .into(),
+        );
+    };
+    if restore_request.session_id != session_id || restore_request.direction != direction {
+        return Err("Execution Host returned a different native rewind".into());
+    }
+    let native_receipt = restore(store, &restore_request)?;
+    host.acknowledge(&operation_id, &native_receipt)?;
+    let status = host.call("native.rewind.status", json!({"operationId":operation_id}))?;
+    let result = status["receipt"].clone();
+    if status["phase"] != "complete"
+        || status["finalized"] != true
+        || result["operationId"] != operation_id
+        || result["workspaceId"] != workspace_id
+        || result["sessionId"] != session_id
+        || result["conversationRevision"] != native_receipt.revision
+        || result["workspaceRevision"].as_i64().is_none()
+    {
+        return Err("Execution Host has not finalized this native rewind".into());
+    }
+    complete(store, &operation_id, &native_receipt)?;
+    store
+        .lock_conn()?
+        .execute(
+            "UPDATE sessions SET workspace_revision=?2 WHERE id=?1 AND workspace_id=?3",
+            params![
+                session_id,
+                result["workspaceRevision"].as_i64(),
+                workspace_id
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
+#[tauri::command(async)]
+pub fn managed_rewind_apply(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    request: Value,
+) -> Result<Value, String> {
+    let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
+    native_apply(&store, &host, request, RewindDirection::Rewind)
+}
+
+#[tauri::command(async)]
+pub fn managed_rewind_undo(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    request: Value,
+) -> Result<Value, String> {
+    let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
+    native_apply(&store, &host, request, RewindDirection::Undo)
 }
 
 fn truncate_chars(text: &str, limit: usize) -> String {
@@ -741,9 +1154,9 @@ mod tests {
         fn capture_before(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
             Ok(
                 json!({"workspaceId":request.workspace_id,"sessionId":request.session_id,
-                "userBlockId":request.user_block_id,"runId":request.run_id,
+                "userBlockId":request.user_block_id,"runId":request.run_id,"conversationRevision":request.conversation_revision,
                 "before":if self.blocked { json!({"status":"blocked","reason":"sparse checkout"}) } else { json!({"status":"complete"}) },
-                "after":{"status":"complete"}}),
+                "after":if self.blocked { json!({"status":"blocked","reason":"sparse checkout"}) } else { json!({"status":"complete"}) }}),
             )
         }
         fn capture_after(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
@@ -763,7 +1176,7 @@ mod tests {
             conversation_revision: revision,
         };
         assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &request).is_ok());
-        assert!(finish_managed_turn(&TurnHost { blocked: false }, &request).is_ok());
+        assert!(finish_managed_turn(&store, &TurnHost { blocked: false }, &request).is_ok());
         assert!(
             begin_managed_turn(&store, &TurnHost { blocked: true }, &request)
                 .unwrap_err()
@@ -771,6 +1184,203 @@ mod tests {
         );
         rescue(&store, "rewind-1", "native", revision).unwrap();
         assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &request).is_err());
+    }
+
+    fn fake_native_host(
+        replies: Vec<(&'static str, Option<Value>)>,
+    ) -> (
+        crate::remote::NativeWorkspaceTransport,
+        std::thread::JoinHandle<Vec<String>>,
+    ) {
+        use std::io::{BufRead, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let transport = crate::remote::NativeWorkspaceTransport::for_test(format!(
+            "http://{}",
+            listener.local_addr().unwrap()
+        ));
+        let server = std::thread::spawn(move || {
+            let mut methods = Vec::new();
+            for (expected, response) in replies {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                    .unwrap();
+                let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+                let mut length = 0;
+                let mut authenticated = false;
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if line.to_ascii_lowercase().starts_with("content-length:") {
+                        length = line
+                            .split_once(':')
+                            .unwrap()
+                            .1
+                            .trim()
+                            .parse::<usize>()
+                            .unwrap();
+                    }
+                    if line.to_ascii_lowercase().starts_with("authorization:") {
+                        authenticated = line.contains("Bearer fixture-token");
+                    }
+                }
+                assert!(authenticated);
+                let mut body = vec![0; length];
+                reader.read_exact(&mut body).unwrap();
+                let body: Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(body["environmentId"], "fixture-env");
+                assert_eq!(body["method"], expected);
+                methods.push(expected.to_string());
+                if let Some(response) = response {
+                    let raw = json!({"result":response}).to_string();
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        raw.len(),
+                        raw
+                    )
+                    .unwrap();
+                    stream.flush().unwrap();
+                }
+                // None deliberately closes the connection after consuming the mutation.
+            }
+            methods
+        });
+        (transport, server)
+    }
+
+    fn managed_seed(store: &SessionStore) -> (i64, Value) {
+        let revision = seed(store);
+        store
+            .lock_conn()
+            .unwrap()
+            .execute(
+                "UPDATE sessions SET workspace_id='managed',workspace_revision=1 WHERE id='native'",
+                [],
+            )
+            .unwrap();
+        (
+            revision,
+            json!({"workspaceId":"managed","sessionId":"native","expectedRevision":1,
+            "expectedConversationRevision":revision,"planToken":"preview","idempotencyKey":"operation-key"}),
+        )
+    }
+
+    #[test]
+    fn checkpoint_native_transport_unknown_git_outcome_is_never_resent() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let (revision, request) = managed_seed(&store);
+        let (host, server) = fake_native_host(vec![
+            (
+                "native.rewind.prepare",
+                Some(
+                    json!({"operationId":"operation-1","workspaceId":"managed","sessionId":"native","direction":"rewind","expectedConversationRevision":revision}),
+                ),
+            ),
+            ("native.rewind.apply", None),
+            (
+                "native.rewind.status",
+                Some(json!({"operationId":"operation-1","phase":"prepared"})),
+            ),
+        ]);
+        assert!(native_apply(&store, &host, request.clone(), RewindDirection::Rewind).is_err());
+        assert!(assert_writable(&store, "native").is_err());
+        assert!(
+            native_apply(&store, &host, request, RewindDirection::Rewind)
+                .unwrap_err()
+                .contains("unknown")
+        );
+        assert!(assert_writable(&store, "native").is_err());
+        assert_eq!(
+            server.join().unwrap(),
+            [
+                "native.rewind.prepare",
+                "native.rewind.apply",
+                "native.rewind.status"
+            ]
+        );
+    }
+
+    #[test]
+    fn checkpoint_native_transport_restores_only_after_authoritative_git_phase_and_final_ack() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let (revision, request) = managed_seed(&store);
+        let restore_request = json!({"operationId":"operation-1","sessionId":"native","userBlockId":"u2","direction":"rewind","expectedRevision":revision});
+        let receipt = json!({"operationId":"operation-1","workspaceId":"managed","sessionId":"native","direction":"rewind","workspaceRevision":2,"conversationRevision":revision+2,"head":"retained-head"});
+        let (host, server) = fake_native_host(vec![
+            (
+                "native.rewind.prepare",
+                Some(
+                    json!({"operationId":"operation-1","workspaceId":"managed","sessionId":"native","direction":"rewind","expectedConversationRevision":revision}),
+                ),
+            ),
+            (
+                "native.rewind.apply",
+                Some(json!({"operationId":"operation-1"})),
+            ),
+            (
+                "native.rewind.status",
+                Some(
+                    json!({"operationId":"operation-1","phase":"git-restored","restoreRequest":restore_request}),
+                ),
+            ),
+            (
+                "native.rewind.ack",
+                Some(
+                    json!({"operationId":"operation-1","acknowledged":true,"finalized":true,"receipt":receipt}),
+                ),
+            ),
+            (
+                "native.rewind.status",
+                Some(
+                    json!({"operationId":"operation-1","phase":"complete","finalized":true,"receipt":receipt}),
+                ),
+            ),
+        ]);
+        assert_eq!(
+            native_apply(&store, &host, request, RewindDirection::Rewind).unwrap(),
+            receipt
+        );
+        assert!(assert_writable(&store, "native").is_ok());
+        let restored = get_session(&store.lock_conn().unwrap(), "native")
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored.blocks.as_array().unwrap().len(), 2);
+        assert_eq!(restored.workspace_revision, Some(2));
+        assert!(restored.provider_session_id.is_none());
+        assert_eq!(server.join().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn checkpoint_native_turn_unknown_outcomes_survive_restart_and_reject_other_turns() {
+        let path =
+            std::env::temp_dir().join(format!("bycoda-turn-unknown-{}.db", uuid::Uuid::new_v4()));
+        let store = SessionStore::open(path.clone()).unwrap();
+        let revision = seed(&store);
+        let request = ManagedTurnRequest {
+            workspace_id: "managed".into(),
+            session_id: "native".into(),
+            user_block_id: "u2".into(),
+            run_id: "run-2".into(),
+            conversation_revision: revision,
+        };
+        assert!(begin_managed_turn(&store, &TurnHost { blocked: true }, &request).is_err());
+        assert!(assert_writable(&store, "native").is_err());
+        drop(store);
+        let store = SessionStore::open(path.clone()).unwrap();
+        let mut other = request.clone();
+        other.run_id = "another-run".into();
+        assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &other).is_err());
+        begin_managed_turn(&store, &TurnHost { blocked: false }, &request).unwrap();
+        assert!(finish_managed_turn(&store, &TurnHost { blocked: true }, &request).is_err());
+        assert!(assert_writable(&store, "native").is_err());
+        finish_managed_turn(&store, &TurnHost { blocked: false }, &request).unwrap();
+        assert!(assert_writable(&store, "native").is_ok());
+        drop(store);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
