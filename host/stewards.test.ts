@@ -9,7 +9,10 @@ import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { HostTasks } from "./tasks";
 import { HostStewards, PREVIOUS_RUN_SKIP, openLimitSkip } from "./stewards";
+import { writerWorkspaces } from "./writer-workspaces.test-support";
 import { DAILY_LIMIT_SKIP } from "../src/features/tasks/model/hostSettings";
+// Managed runs capture real Git checkpoints before provider dispatch.
+if (process.platform === "win32") vi.setConfig({ testTimeout: 120000 });
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -91,10 +94,15 @@ async function setup() {
     answer: vi.fn(),
   };
   const engine = new HostEngine(store, { claude: provider });
+  // S3 verifies orchestration against real Git worktrees. Checkpoint capture
+  // has its own S2 integration suite and is independent of this fixture.
+  vi.spyOn(engine.checkpoints, "begin").mockResolvedValue();
+  vi.spyOn(engine.checkpoints, "finish").mockResolvedValue();
   // 08:00 local; a daily steward at 09:00 is due an hour later.
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
   const tasks = new HostTasks(store, engine, () => clock.now);
-  const stewards = new HostStewards(store, engine, tasks, () => clock.now);
+  const workspaces = writerWorkspaces(directory, async (id) => (await store.project(id)).cwd);
+  const stewards = new HostStewards(store, engine, tasks, () => clock.now, workspaces);
   cleanups.push(async () => {
     for (const turn of turns) turn.finish();
     await tasks.idle();
@@ -139,7 +147,7 @@ async function setup() {
     clock.now = Math.max(clock.now, (await steward()).nextRunAt) + MINUTE;
     const started = turns.length + 1;
     await stewards.tick();
-    await vi.waitFor(() => expect(turns).toHaveLength(started), { timeout: 10000 });
+    await vi.waitFor(() => expect(turns).toHaveLength(started), { timeout: 30000 });
     return turns.at(-1)!;
   };
   /** Ends the latest turn with `text` and lets the next tick settle it. */
@@ -151,7 +159,7 @@ async function setup() {
     await vi.waitFor(
       async () => expect((await store.session(turn.input.sessionId)).status).toBe("idle"),
       {
-        timeout: 10000,
+        timeout: 30000,
       },
     );
     clock.now += MINUTE;
@@ -177,9 +185,24 @@ async function setup() {
     startDue,
     finish,
     worktrees,
+    workspaces,
   };
 }
 describe("host stewards", () => {
+  it("retains unexpected steward source through the removal interface", async () => {
+    const f = await setup();
+    await f.stewards.save(f.input());
+    const turn = await f.startDue();
+    const workspace = [...f.workspaces.rows.values()][0];
+    writeFileSync(join(turn.input.cwd, "unexpected.txt"), "retain me");
+    await f.finish(reply([]));
+    expect(existsSync(turn.input.cwd)).toBe(true);
+    expect(f.workspaces.plan).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: workspace.id }),
+    );
+    expect(f.workspaces.apply).not.toHaveBeenCalled();
+    expect(git(f.repo.cwd, "rev-parse", workspace.branchRef)).toBeTruthy();
+  });
   it("accepts only one concurrent edit of the same configuration", async () => {
     const f = await setup();
     const opening = await f.stewards.save(f.input({ enabled: false }));
@@ -198,7 +221,7 @@ describe("host stewards", () => {
       f.stewards.runNow("steward"),
     ]);
     expect(first.run ?? second.run).toBeDefined();
-    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 10000 });
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 30000 });
     expect(f.worktrees()).toBe(2);
   });
   it("rejects stale configuration edits and toggles while preserving newer steward focus", async () => {
@@ -272,10 +295,10 @@ describe("host stewards", () => {
       model: "claude:test",
       prompt: "In src/retry.ts cover backoff.",
     });
-    // The throwaway checkout and its branch are gone.
+    // Directory retirement preserves the owned branch.
     expect(existsSync(turn.input.cwd)).toBe(false);
     expect(worktrees()).toBe(1);
-    expect(git(repo.cwd, "branch", "--list", "mc/*")).toBe("");
+    expect(git(repo.cwd, "branch", "--list", "bycoda/t/*")).not.toBe("");
     expect(turns).toHaveLength(1);
   });
   it("queues proposals when the steward starts them automatically", async () => {
@@ -483,14 +506,12 @@ describe("host stewards", () => {
     expect(prompt).toContain('{"proposals":[');
     await finish(reply([]));
   });
-  it("runs a project that is not a git repository in place", async () => {
-    const { stewards, input, plain, startDue, finish, steward } = await setup();
+  it("fails closed for a project without a committed Git base", async () => {
+    const { stewards, input, plain, steward, turns } = await setup();
     await stewards.save(input({ projectId: plain.id }));
-    const turn = await startDue();
-    expect(turn.input.cwd).toBe(plain.cwd);
-    expect(turn.input.text).toContain("the project folder itself");
-    await finish(reply([{ title: "Idea", description: "Do it." }]));
-    expect((await steward()).lastRunStatus).toBe("succeeded");
+    await stewards.runNow("steward");
+    expect(turns).toHaveLength(0);
+    expect((await steward()).lastRunStatus).toBe("failed");
   });
   it("does not run a disabled steward, but runNow does", async () => {
     const { stewards, input, clock, turns, steward } = await setup();
@@ -499,7 +520,7 @@ describe("host stewards", () => {
     await stewards.tick();
     expect(turns).toHaveLength(0);
     await stewards.runNow("steward");
-    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 10000 });
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 30000 });
     expect((await steward()).run).toBeDefined();
   });
   it("stops a run past its time limit and removes its checkout", async () => {
@@ -536,7 +557,7 @@ describe("host stewards", () => {
     });
     await vi.waitFor(
       async () => expect((await store.session(turn.input.sessionId)).status).toBe("idle"),
-      { timeout: 10000 },
+      { timeout: 30000 },
     );
     await stewards.tick();
     expect((await steward()).run).toBeUndefined();
@@ -556,16 +577,14 @@ describe("host stewards", () => {
     const { stewards, engine, input, startDue, worktrees, steward } = await setup();
     await stewards.save(input());
     const turn = await startDue();
-    const capture = engine.checkpoints.finish.bind(engine.checkpoints);
     let releaseCapture!: () => void;
     let captureStarted = false;
     const gate = new Promise<void>((resolve) => {
       releaseCapture = resolve;
     });
-    vi.spyOn(engine.checkpoints, "finish").mockImplementation(async (...args) => {
+    vi.spyOn(engine.checkpoints, "finish").mockImplementation(async () => {
       captureStarted = true;
       await gate;
-      return capture(...args);
     });
     let deleted = false;
     const deletion = stewards.delete("steward").then(() => {
@@ -586,12 +605,13 @@ describe("host stewards", () => {
   });
 });
 describe("steward work limits and merging", () => {
-  it("gives the tasks it creates the steward autoMerge setting", async () => {
+  it("suspends the steward automatic merge preference for new tasks", async () => {
     const { stewards, tasks, input, startDue, finish } = await setup();
     await stewards.save(input({ autoMerge: true }));
     await startDue();
     await finish(reply([{ title: "Do it", description: "Specific work." }]));
-    expect(await tasks.list()).toMatchObject([{ title: "Do it", autoMerge: true }]);
+    expect(await tasks.list()).toMatchObject([{ title: "Do it" }]);
+    expect((await tasks.list())[0].autoMerge).not.toBe(true);
   });
   it("leaves autoMerge off by default", async () => {
     const { stewards, tasks, input, startDue, finish } = await setup();

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { writerWorkspaces } from "./writer-workspaces.test-support";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
@@ -7,6 +9,7 @@ import type { HostProvider } from "./providers";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { HostAutomations, MISSED_RUN_SKIP, PREVIOUS_RUN_SKIP } from "./automations";
+if (process.platform === "win32") vi.setConfig({ testTimeout: 60000 });
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -90,9 +93,23 @@ async function setup(start = at("2026-10-05T08:00:00")) {
     answer: vi.fn(),
   };
   const engine = new HostEngine(store, { claude: provider });
+  // S3 verifies orchestration against real Git worktrees. Checkpoint capture
+  // has its own S2 integration suite and is independent of this fixture.
+  vi.spyOn(engine.checkpoints, "begin").mockResolvedValue();
+  vi.spyOn(engine.checkpoints, "finish").mockResolvedValue();
   const clock = { now: start };
-  const automations = new HostAutomations(store, engine, () => clock.now);
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: directory, windowsHide: true, stdio: "pipe" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.name", "Test");
+  git("config", "user.email", "test@example.test");
+  writeFileSync(join(directory, "file.txt"), "base");
+  git("add", "file.txt");
+  git("commit", "-q", "-m", "initial");
+  const workspaces = writerWorkspaces(directory, async (id) => (await store.project(id)).cwd);
+  const automations = new HostAutomations(store, engine, () => clock.now, workspaces);
   cleanups.push(async () => {
+    for (const turn of turns) turn.finish();
     await engine.close();
     await store.close();
     rmSync(directory, { recursive: true, force: true });
@@ -116,10 +133,63 @@ async function setup(start = at("2026-10-05T08:00:00")) {
     ...overrides,
   });
   const settled = (sessionId: string) =>
-    vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"));
-  return { store, engine, provider, turns, clock, automations, input, settled };
+    vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
+      timeout: 20000,
+    });
+  return {
+    store,
+    engine,
+    provider,
+    turns,
+    clock,
+    automations,
+    input,
+    settled,
+    workspaces,
+    directory,
+  };
 }
 describe("host automations", () => {
+  it("fails closed when managed workspace support is unavailable or creation fails", async () => {
+    const f = await setup();
+    await f.automations.save(f.input());
+    const legacy = new HostAutomations(f.store, f.engine, () => f.clock.now);
+    expect(await legacy.runNow("nightly")).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("Update the Host"),
+    });
+    f.workspaces.prepare.mockRejectedValueOnce(new Error("No safe committed base"));
+    expect(await f.automations.runNow("nightly")).toMatchObject({
+      status: "failed",
+      error: "No safe committed base",
+    });
+    expect(f.turns).toHaveLength(0);
+    await legacy.close();
+  });
+  it("preserves an automation's dirty source and refuses finished delivery", async () => {
+    const f = await setup();
+    await f.automations.save(f.input());
+    const run = await f.automations.runNow("nightly");
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 20000 });
+    const workspace = [...f.workspaces.rows.values()][0];
+    expect(f.turns[0].input.cwd).toBe(workspace.path);
+    expect(f.workspaces.prepare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: { kind: "automationRun", id: run.id },
+        choice: { defaultMode: "worktree" },
+      }),
+    );
+    writeFileSync(join(workspace.path, "unexpected.txt"), "retained source");
+    f.turns[0].finish();
+    await f.settled(run.sessionId!);
+    await f.automations.tick();
+    expect((await f.automations.runs("nightly"))[0]).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("Finalization requires review"),
+    });
+    expect(f.workspaces.finish).not.toHaveBeenCalled();
+    expect(f.workspaces.stop).toHaveBeenCalled();
+  });
   it("accepts only one concurrent edit of the same configuration", async () => {
     const f = await setup();
     const opening = await f.automations.save(f.input({ enabled: false }));
@@ -151,7 +221,7 @@ describe("host automations", () => {
       released.resolve();
     }
     await first;
-    await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 20000 });
   });
   it("rejects stale configuration edits and toggles while preserving newer automation prompts", async () => {
     const { automations, input } = await setup();
@@ -178,7 +248,7 @@ describe("host automations", () => {
     const { automations, input, turns, settled } = await setup();
     await automations.save(input());
     const run = await automations.runNow("nightly");
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
     await expect((async () => await automations.delete("nightly"))()).rejects.toThrow(
       "still running",
     );
@@ -212,8 +282,8 @@ describe("host automations", () => {
     const [run] = await automations.runs("nightly");
     expect(run).toMatchObject({ status: "running", trigger: "scheduled" });
     expect((await store.session(run.sessionId!)).session.title).toBe("Nightly audit");
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
-    expect(turns[0].input.text).toBe("Review the repository");
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
+    expect(turns[0].input.text).toContain("Review the repository");
     expect((await automations.list())[0].nextRunAt).toBe(at("2026-10-06T09:00:00"));
     turns[0].finish();
     await settled(run.sessionId!);
@@ -232,7 +302,7 @@ describe("host automations", () => {
     const { automations, input, clock, turns, settled } = await setup();
     await automations.save(input());
     const run = await automations.runNow("nightly");
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
     turns[0].fail(new Error("Not signed in"));
     await settled(run.sessionId!);
     clock.now += MINUTE;
@@ -246,7 +316,7 @@ describe("host automations", () => {
     const { automations, input, clock, provider, turns, settled } = await setup();
     await automations.save(input({ maxRunMinutes: 30 }));
     const run = await automations.runNow("nightly");
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
     clock.now += 29 * MINUTE;
     await automations.tick();
     expect(provider.cancel).not.toHaveBeenCalled();
@@ -266,7 +336,7 @@ describe("host automations", () => {
     await automations.save(input({ scheduleKind: "hourly" }));
     clock.now = at("2026-10-05T09:00:10");
     await automations.tick();
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
     clock.now = at("2026-10-05T10:00:10");
     await automations.tick();
     const [latest, first] = await automations.runs("nightly");
@@ -282,7 +352,7 @@ describe("host automations", () => {
     await automations.save(input({ scheduleKind: "hourly", maxRunsPerDay: 1 }));
     clock.now = at("2026-10-05T09:00:10");
     await automations.tick();
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
     turns[0].finish();
     await settled((await automations.runs("nightly"))[0].sessionId!);
     clock.now = at("2026-10-05T10:00:10");
@@ -293,7 +363,7 @@ describe("host automations", () => {
     });
     const manual = await automations.runNow("nightly");
     expect(manual.status).toBe("running");
-    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    await vi.waitFor(() => expect(turns).toHaveLength(2), { timeout: 20000 });
     turns[1].finish();
   });
   it("skips a run missed while the machine was off and reschedules", async () => {
@@ -323,7 +393,7 @@ describe("host automations", () => {
     const { automations, input, clock, store, turns } = await setup();
     await automations.save(input());
     const run = await automations.runNow("nightly");
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
     const session = await store.session(run.sessionId!);
     await store.save(
       { ...session, revision: session.revision + 1, status: "interrupted" },
@@ -341,7 +411,7 @@ describe("host automations", () => {
     const { automations, input, clock, store, turns, settled } = await setup();
     await automations.save(input());
     const run = await automations.runNow("nightly");
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
     const ask = async (pendingQuestion?: { requestId: number; questions: [] }) => {
       const session = await store.session(run.sessionId!);
       await store.save(
@@ -381,7 +451,7 @@ it("retains active runs across overlapping history pruning and remains stoppable
   const { automations, input, turns, settled } = await setup();
   await automations.save(input());
   const run = await automations.runNow("nightly");
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
   for (let i = 0; i < 110; i++)
     expect((await automations.runNow("nightly")).status).toBe("skipped");
   expect((await automations.runs("nightly")).find((entry) => entry.id === run.id)?.status).toBe(
@@ -398,7 +468,7 @@ it("retains same-day usage above the history limit and resets allowance the next
   const { automations, input, store, clock, turns, settled } = await setup();
   await automations.save(input({ maxRunsPerDay: 101 }));
   const run = await automations.runNow("nightly");
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
   const insert = store.db.prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)");
   for (let i = 0; i < 100; i++) {
     const row = {
