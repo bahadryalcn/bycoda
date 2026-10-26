@@ -27,7 +27,11 @@ async function fixture() {
     },
   });
   const project = await engine.openProject(directory);
-  let server = await createHostServer(engine, []);
+  const server = await createHostServer(engine, []);
+  let disconnected = false;
+  server.on("connection", (socket) => {
+    if (disconnected) socket.destroy();
+  });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const owner = await store.issueDevice("Sprint test owner");
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/rpc`;
@@ -51,14 +55,13 @@ async function fixture() {
     };
   };
   const pause = async () => {
+    // A network outage must not dispose the one managed graph attached to a
+    // live engine. Reject both existing and new connections until it resumes.
+    disconnected = true;
     server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    await server.closeResources();
   };
   const resume = async () => {
-    const port = Number(new URL(url).port);
-    server = await createHostServer(engine, []);
-    await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
+    disconnected = false;
   };
   return { store, engine, project, call, pause, resume };
 }
