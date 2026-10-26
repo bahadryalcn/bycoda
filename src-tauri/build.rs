@@ -1,4 +1,21 @@
 fn main() {
+    // One frozen manifest is embedded verbatim; old unstamped builds stay unknown.
+    println!("cargo:rerun-if-env-changed=BYCODA_BUILD_MANIFEST");
+    let manifest = std::env::var_os("BYCODA_BUILD_MANIFEST")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("../build/build-info.json"));
+    println!("cargo:rerun-if-changed={}", manifest.display());
+    let bytes = std::fs::read(&manifest).unwrap_or_else(|error| {
+        if std::env::var_os("BYCODA_BUILD_MANIFEST").is_some() {
+            panic!("Could not read frozen build manifest: {error}");
+        }
+        b"null".to_vec()
+    });
+    std::fs::write(
+        std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("build-info.json"),
+        bytes,
+    )
+    .expect("Could not embed frozen build identity");
     // generate_context! embeds icons; cargo ignores them unless we watch here.
     println!("cargo:rerun-if-changed=icons");
     println!("cargo:rerun-if-env-changed=BYCODA_HOST_RELEASE_URL");
