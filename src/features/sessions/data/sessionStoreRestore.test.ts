@@ -42,6 +42,26 @@ function codexRecord(): SessionRecord {
 describe("restoring a session whose repair cannot be persisted", () => {
   beforeEach(() => invoke.mockReset());
 
+  it("preserves managed execution identity through serialization and reload", async () => {
+    const session = {
+      ...newSession("codex", "/repo"),
+      workspaceId: "workspace-owned",
+      workspaceRevision: 7,
+      worktreeCwd: "/repo-worktrees/session",
+      blocks: [{ id: "u1", role: "user" as const, text: "Keep execution isolated" }],
+    };
+    const record = sanitizeSessionForPersist(session);
+    expect(record).toMatchObject({ workspaceId: "workspace-owned", workspaceRevision: 7 });
+    invoke.mockImplementation(async (command: string) =>
+      command === "session_get" ? record : null,
+    );
+    expect(await getSession(session.id)).toMatchObject({
+      workspaceId: "workspace-owned",
+      workspaceRevision: 7,
+      worktreeCwd: "/repo-worktrees/session",
+    });
+  });
+
   it("recovers a stored Codex/Gemini mixed identity without losing the chat or its selected model", async () => {
     const record = {
       ...codexRecord(),

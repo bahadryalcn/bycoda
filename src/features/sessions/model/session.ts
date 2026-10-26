@@ -536,6 +536,8 @@ export type Session = {
   branch?: string;
   /** Authoritative managed workspace identity. Absent on legacy sessions, whose checkout is retained. */
   workspaceId?: string;
+  /** Last observed registry revision; refreshed before managed mutations. */
+  workspaceRevision?: number;
   /** Selected working copy; cwd remains the project identity. */
   worktreeCwd?: string;
   /** Blank-composer choice; consumed when the first turn starts. */
