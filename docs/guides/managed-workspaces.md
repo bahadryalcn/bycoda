@@ -33,6 +33,9 @@ requires an explicit choice. A contextual conversation gets an independent branc
 even when its source is a legacy current-mode conversation. Interrupted legacy
 tasks retain their recorded branch and directory outside automatic lifecycle
 ownership until explicitly migrated.
+Goal final reviews retain their authoritative execution identity across
+interruptions. A changed registered workspace or later owner run blocks the
+affected review instead of consuming another run's result.
 
 The assigned branch is where the worker can commit its own coherent changes.
 Review the branch and execution path before starting an independent writer.

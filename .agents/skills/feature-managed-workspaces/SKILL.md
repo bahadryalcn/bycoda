@@ -278,6 +278,11 @@ delivery only; product/runtime acceptance remains as described above.
   exception. Contextual legacy sessions receive independent branches. Interrupted
   legacy task branch/path identities remain outside automatic ownership until
   explicit migration. Implemented in `e0b2c9b7` and `b5820fe1`.
+- Goal final reviewers retain authoritative execution-workspace identity across
+  launch and receipt recovery, and verdicts are bound to the exact observed run
+  after asynchronous snapshots (`4cab6491`). Opaque Host turn IDs are encoded only
+  at recovery-ref/private-path boundaries; raw identities and safe legacy names
+  remain unchanged (`69e6f537`). The real-Git goal suite passes 68 cases.
 - Established current execution identity survives clear, persistence and restart
   through native `workspace_mode`; migration assigns no managed ownership.
   Implemented in `3221e80b`.
