@@ -417,10 +417,26 @@ export class GitTurnHistory implements TurnGitHistory {
     snapshot: TurnGitSnapshot,
     refs: [string, string, string],
   ) {
+    const objects = [snapshot.head, snapshot.index, snapshot.worktree];
+    const commands = await Promise.all(
+      refs.map(async (reference, index) => {
+        const existing = await gitText(workspace.path, [
+          "show-ref",
+          "--verify",
+          "--hash",
+          reference,
+        ]).catch(() => null);
+        if (existing && existing !== objects[index])
+          throw new Error(`Retained recovery ref conflicts with snapshot: ${reference}`);
+        return existing
+          ? `verify ${reference} ${objects[index]}`
+          : `create ${reference} ${objects[index]}`;
+      }),
+    );
     await turnGit(
       workspace.path,
       ["update-ref", "--stdin"],
-      `start\ncreate ${refs[0]} ${snapshot.head}\ncreate ${refs[1]} ${snapshot.index}\ncreate ${refs[2]} ${snapshot.worktree}\nprepare\ncommit\n`,
+      `start\n${commands.join("\n")}\nprepare\ncommit\n`,
     );
   }
   async begin(request: Parameters<TurnGitHistory["begin"]>[0]): Promise<TurnGitRecord> {
@@ -468,7 +484,7 @@ export class GitTurnHistory implements TurnGitHistory {
       const record = await this.get(workspace.id, request.userBlockId);
       if (!record || record.sessionId !== request.sessionId || record.runId !== request.runId)
         throw new Error("Unknown accepted turn");
-      if (record.after) return record;
+      if (record.after?.status === "complete") return record;
       try {
         const snapshot = await this.capture(workspace);
         // Retain all optional after-state objects in one ref transaction.
