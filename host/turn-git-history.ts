@@ -33,8 +33,16 @@ export function refComponent(value: string): string {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(value)) throw new Error("Invalid recovery ref component");
   return value;
 }
+/** Accepted Host turn IDs are opaque (for example goal-final:<uuid>:send).
+ * Keep legacy safe names unchanged. '+' reserves a disjoint encoded namespace,
+ * valid in Git refs and Windows filenames but absent from legacy raw names.
+ * JSON encoding preserves distinct UTF-16 inputs even for lone surrogates. */
+function turnComponent(value: string): string {
+  if (typeof value !== "string" || !value) throw new Error("Invalid recovery turn identity");
+  return /^[A-Za-z0-9_-]{1,128}$/.test(value) ? value : `+sha256-${digest(JSON.stringify(value))}`;
+}
 export const turnRef = (workspaceId: string, turnId: string, phase: TurnRefPhase) =>
-  `refs/bycoda/turns/${refComponent(workspaceId)}/${refComponent(turnId)}/${phase}` as const;
+  `refs/bycoda/turns/${refComponent(workspaceId)}/${turnComponent(turnId)}/${phase}` as const;
 export const rewindRef = (operationId: string, phase: RewindRefPhase) =>
   `refs/bycoda/rewinds/${refComponent(operationId)}/${phase}` as const;
 
@@ -213,7 +221,7 @@ export interface GitTurnHistoryOptions {
 export class GitTurnHistory implements TurnGitHistory {
   constructor(readonly options: GitTurnHistoryOptions) {}
   private recordPath(workspace: string, turn: string) {
-    return join(this.options.root, "turns", refComponent(workspace), `${refComponent(turn)}.json`);
+    return join(this.options.root, "turns", refComponent(workspace), `${turnComponent(turn)}.json`);
   }
   async workspace(id: string) {
     const workspace = await this.options.workspace(id);
@@ -492,7 +500,7 @@ export class GitTurnHistory implements TurnGitHistory {
       try {
         const snapshot = await this.capture(workspace);
         // Retain all optional after-state objects in one ref transaction.
-        const prefix = `refs/bycoda/turns/${refComponent(workspace.id)}/${refComponent(request.userBlockId)}`;
+        const prefix = `refs/bycoda/turns/${refComponent(workspace.id)}/${turnComponent(request.userBlockId)}`;
         await this.retain(workspace, snapshot, [
           `${prefix}/after-head`,
           `${prefix}/after-index`,
@@ -514,7 +522,11 @@ export class GitTurnHistory implements TurnGitHistory {
   }
   async get(workspace: string, turn: string): Promise<TurnGitRecord | null> {
     const bytes = await optionalRead(this.recordPath(workspace, turn));
-    return bytes ? JSON.parse(bytes.toString()) : null;
+    if (!bytes) return null;
+    const record = JSON.parse(bytes.toString()) as TurnGitRecord;
+    if (record.workspaceId !== workspace || record.userBlockId !== turn)
+      throw new Error("Recovery turn manifest identity changed");
+    return record;
   }
   async list(workspace: string, session: string): Promise<TurnGitRecord[]> {
     const directory = join(this.options.root, "turns", refComponent(workspace));

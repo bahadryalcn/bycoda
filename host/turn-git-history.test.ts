@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -55,6 +55,121 @@ describe("managed turn Git history", () => {
       runId,
       conversationRevision: 1,
     });
+
+  it("captures opaque compound Host turn IDs without aliasing legacy or encoded-looking IDs and restores/undoes them", async () => {
+    const raw = "goal-final:cb654c50-a6df-43d4-a8e9-460395d43cd7:send";
+    const request = {
+      workspaceId: workspace.id,
+      sessionId: "session",
+      userBlockId: raw,
+      runId: "goal-final:run:1",
+      conversationRevision: 1,
+    };
+    const first = await history.begin(request);
+    expect(first.before.status).toBe("complete");
+    if (first.before.status !== "complete") throw new Error(first.before.reason);
+    expect(first.userBlockId).toBe(raw);
+    expect(first.runId).toBe(request.runId);
+    const reference = turnRef(workspace.id, raw, "before-worktree");
+    await turnGit(repo, ["check-ref-format", reference]);
+    const component = reference.split("/").at(-2)!;
+    expect(component).toMatch(/^\+sha256-[a-f0-9]{64}$/);
+    const safe = component.slice(1);
+    expect(turnRef(workspace.id, safe, "before-worktree")).not.toBe(reference);
+    expect(turnRef(workspace.id, component, "before-worktree")).not.toBe(reference);
+    const safeRecord = await history.begin({
+      ...request,
+      userBlockId: safe,
+      runId: "safe-run",
+      conversationRevision: 2,
+    });
+    const encodedLooking = await history.begin({
+      ...request,
+      userBlockId: component,
+      runId: "encoded-run",
+      conversationRevision: 3,
+    });
+    expect(safeRecord.before.status).toBe("complete");
+    expect(encodedLooking.before.status).toBe("complete");
+    expect(
+      JSON.parse(await readFile(join(root, "private/turns/workspace", `${safe}.json`), "utf8"))
+        .userBlockId,
+    ).toBe(safe);
+    expect(await history.get(workspace.id, raw)).toEqual(first);
+    expect(await history.get(workspace.id, safe)).toEqual(safeRecord);
+    expect(await history.get(workspace.id, component)).toEqual(encodedLooking);
+    expect(
+      (await history.list(workspace.id, "session")).map((record) => record.userBlockId),
+    ).toEqual([raw, safe, component]);
+    expect((await readdir(join(root, "private/turns/workspace"))).sort()).toEqual(
+      [component, safe, turnRef(workspace.id, component, "before-worktree").split("/").at(-2)]
+        .map((name) => `${name}.json`)
+        .sort(),
+    );
+    await write("source.txt", "committed compound turn\n");
+    await turnGit(repo, ["add", "source.txt"]);
+    await turnGit(repo, ["commit", "-m", "compound turn"]);
+    await write("source.txt", "staged compound turn\n");
+    await turnGit(repo, ["add", "source.txt"]);
+    await write("source.txt", "unstaged compound turn\n");
+    await write("compound-new.txt", "untracked compound turn\n");
+    const ended = await history.end(request);
+    expect(ended.after?.status).toBe("complete");
+    if (ended.after?.status !== "complete") throw new Error("Missing compound after capture");
+    expect((await history.get(workspace.id, raw))?.userBlockId).toBe(raw);
+    expect(await gitText(repo, ["rev-parse", turnRef(workspace.id, raw, "after-worktree")])).toBe(
+      ended.after.snapshot.worktree,
+    );
+    await history.restore(
+      workspace,
+      first.before.snapshot,
+      ended.after.snapshot,
+      "compound-rewind",
+    );
+    expect(await readFile(join(repo, "source.txt"), "utf8")).toBe("base\n");
+    await expect(readFile(join(repo, "compound-new.txt"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await history.restore(workspace, ended.after.snapshot, first.before.snapshot, "compound-undo");
+    expect(await readFile(join(repo, "source.txt"), "utf8")).toBe("unstaged compound turn\n");
+    expect(await gitText(repo, ["show", ":source.txt"])).toBe("staged compound turn");
+    expect(await readFile(join(repo, "compound-new.txt"), "utf8")).toBe(
+      "untracked compound turn\n",
+    );
+  }, 120_000);
+
+  it("keeps opaque turn components safe and distinct without relaxing workspace or rewind identities", async () => {
+    const opaque = [
+      "../../outside",
+      "C:\\outside\\turn",
+      "a/b",
+      "a\\b",
+      "a\0b",
+      "x".repeat(200),
+      "\ud800",
+      "\ud801",
+    ];
+    const refs = opaque.map((id) => turnRef(workspace.id, id, "before-head"));
+    expect(new Set(refs).size).toBe(opaque.length);
+    for (const reference of refs) {
+      expect(reference).toMatch(
+        /^refs\/bycoda\/turns\/workspace\/\+sha256-[a-f0-9]{64}\/before-head$/,
+      );
+      await turnGit(repo, ["check-ref-format", reference]);
+    }
+    expect(turnRef(workspace.id, "legacy-safe_ID9", "before-head")).toBe(
+      "refs/bycoda/turns/workspace/legacy-safe_ID9/before-head",
+    );
+    expect(() => turnRef("../outside", "safe", "before-head")).toThrow(
+      "Invalid recovery ref component",
+    );
+    expect(() => rewindRef("unsafe:operation", "rescue-head")).toThrow(
+      "Invalid recovery ref component",
+    );
+    expect(() => turnRef(workspace.id, "", "before-head")).toThrow(
+      "Invalid recovery turn identity",
+    );
+  }, 120_000);
 
   it.each(["locked", "head-restored", "files-restored"])(
     "recovers its own index lock after real process death at %s and preserves unrelated Git locks",
