@@ -1563,15 +1563,36 @@ mod tests {
         let root = repo.0.join("repo");
         let branch = "mc/orch-retained";
         let path = repo.0.join("worker");
-        git(&root, &["worktree", "add", "-b", branch, path.to_str().unwrap()]).unwrap();
-        git(&path, &["-c", "user.name=Test", "-c", "user.email=test@example.com",
-            "commit", "--allow-empty", "-m", "unmerged worker result"]).unwrap();
+        git(
+            &root,
+            &["worktree", "add", "-b", branch, path.to_str().unwrap()],
+        )
+        .unwrap();
+        git(
+            &path,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "unmerged worker result",
+            ],
+        )
+        .unwrap();
         let tip = git(&path, &["rev-parse", "HEAD"]).unwrap();
         git(&root, &["worktree", "remove", path.to_str().unwrap()]).unwrap();
         // Retry the old cleanup endpoint after its directory has already gone.
         let result = tauri::async_runtime::block_on(git_orchestration_branch_remove(
-            root.to_string_lossy().into_owned(), branch.into()));
-        assert!(result.is_err(), "directory cleanup must not authorize branch deletion");
+            root.to_string_lossy().into_owned(),
+            branch.into(),
+        ));
+        assert!(
+            result.is_err(),
+            "directory cleanup must not authorize branch deletion"
+        );
         assert_eq!(git(&root, &["rev-parse", branch]).unwrap(), tip);
     }
 

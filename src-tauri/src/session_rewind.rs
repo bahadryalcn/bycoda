@@ -479,6 +479,7 @@ pub(crate) trait RewindExecutionHost {
     fn acknowledge(&self, operation_id: &str, receipt: &NativeRewindReceipt) -> Result<(), String>;
 }
 
+#[cfg(test)]
 pub(crate) fn reconcile(
     store: &SessionStore,
     host: &impl RewindExecutionHost,
