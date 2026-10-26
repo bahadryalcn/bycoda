@@ -205,3 +205,7 @@ No native, installed or released proof is recorded by this inventory.
 
 No additional product behavior proposed. Refresh this inventory from committed
 stream results after owner-controlled integration, recording evidence per surface.
+
+Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
+card and the worktree-first documentation. This reference establishes inventory
+delivery only; product/runtime acceptance remains as described above.

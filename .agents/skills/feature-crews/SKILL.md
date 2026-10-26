@@ -218,3 +218,7 @@ port conflict and preserve that process.
 ## Proposals
 
 No additional product changes are proposed by this inventory.
+
+Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
+card and the worktree-first documentation. This reference establishes inventory
+delivery only; product/runtime acceptance remains as described above.

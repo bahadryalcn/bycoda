@@ -224,3 +224,7 @@ Mobile sources are absent from the s0/s7 baseline, so corresponding mobile setti
 ## Evidence and handoff
 
 Committed inventory baseline: `f26ac112404e326478adb687c23ca9cc032acfef`. See `docs/reference/managed-workspaces.md` for frozen contracts, not proof of runtime availability. Record subsequent delivered behavior with a commit reference and exercised evidence. This documentation change did not exercise product UI, a native app, a physical phone, a live Host, installation or release.
+
+Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
+card and the worktree-first documentation. This reference establishes inventory
+delivery only; product/runtime acceptance remains as described above.

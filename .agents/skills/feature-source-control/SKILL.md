@@ -160,3 +160,7 @@ This frozen checkout has no mobile source directory. Mobile screen inventory and
 ## Committed handoff references
 
 Contracts baseline: `f26ac112404e326478adb687c23ca9cc032acfef`; contracts: `docs/reference/managed-workspaces.md`. Add implementation commits, checks, screenshots and build identity when behavior changes; scratch plans are not shipped behavior.
+
+Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
+card and the worktree-first documentation. This reference establishes inventory
+delivery only; product/runtime acceptance remains as described above.
