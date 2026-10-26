@@ -1002,6 +1002,26 @@ export class HostGoals {
       ? await this.store.receiptStatus(`goal-final:${final.requestId}:send`)
       : undefined;
     if (!receipt?.runId) return;
+    let executionWorkspace: { cwd: string; workspaceId?: string };
+    try {
+      executionWorkspace = await this.reviewerExecutionWorkspace(receipt.sessionId, goal);
+    } catch (error) {
+      return await this.blockFinalReview(
+        goal,
+        `Final review no longer owns its recorded execution workspace: ${errorMessage(error)}`,
+        now,
+      );
+    }
+    if (
+      final?.executionWorkspace &&
+      (executionWorkspace.cwd !== final.executionWorkspace.cwd ||
+        executionWorkspace.workspaceId !== final.executionWorkspace.workspaceId)
+    )
+      return await this.blockFinalReview(
+        goal,
+        "Final review no longer owns its recorded execution workspace.",
+        now,
+      );
     const startedAt = final?.startedAt ?? now;
     await this.tasks.budgets.register({
       goalId: goal.id,
@@ -1017,6 +1037,7 @@ export class HostGoals {
         status: "running",
         sessionId: receipt.sessionId,
         runId: receipt.runId,
+        executionWorkspace,
         startedAt,
         freshnessUnknown: !final?.workspaceFingerprint || undefined,
       },
@@ -1188,6 +1209,9 @@ export class HostGoals {
         () => !this.tasks.admissionClosed,
       );
       if (started.deferred) return;
+      const executionWorkspace = started.sessionId
+        ? await this.reviewerExecutionWorkspace(started.sessionId, goal)
+        : undefined;
       const reviewing: HostGoal = {
         ...goal,
         status: "running",
@@ -1200,6 +1224,7 @@ export class HostGoals {
           freshnessUnknown: !workspaceFingerprint || undefined,
           sessionId: started.sessionId,
           runId: started.runId,
+          executionWorkspace,
           startedAt: launchAt,
         },
         updatedAt: now,
@@ -1264,16 +1289,60 @@ export class HostGoals {
       return false;
     }
   }
+  private async reviewerExecutionWorkspace(sessionId: string, goal: HostGoal) {
+    const projectId = goal.leadProjectId;
+    const value = await this.store.session(sessionId);
+    if (value.projectId !== projectId || value.session.id !== sessionId)
+      throw new Error("Reviewer execution identity changed");
+    const session = value.session;
+    if (session.workspaceId) {
+      const workspace = await this.store.managedWorkspace(session.workspaceId);
+      if (
+        !workspace ||
+        workspace.id !== session.workspaceId ||
+        workspace.environmentId !== this.store.environmentId ||
+        workspace.projectId !== projectId ||
+        workspace.owner.kind !== "session" ||
+        workspace.owner.id !== sessionId ||
+        workspace.directoryState !== "present" ||
+        workspace.path !== session.cwd ||
+        session.worktreeCwd !== workspace.path
+      )
+        throw new Error("Reviewer managed workspace ownership changed");
+    } else {
+      const project = await this.store.project(projectId);
+      const selected = resolveHostWorktree(
+        project.cwd,
+        goal.workspaces?.[projectId]?.checkoutCwd ?? project.cwd,
+      );
+      if (session.cwd !== selected) throw new Error("Reviewer selected checkout changed");
+    }
+    return {
+      cwd: session.cwd,
+      ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
+    };
+  }
+
   private async finalReviewOwnsSession(goal: HostGoal): Promise<boolean> {
     const final = goal.finalAcceptance;
     if (!final?.sessionId) return false;
     try {
       const session = await this.store.session(final.sessionId);
       const project = await this.store.project(goal.leadProjectId);
-      const cwd = resolveHostWorktree(
-        project.cwd,
-        goal.workspaces?.[goal.leadProjectId]?.checkoutCwd ?? project.cwd,
-      );
+      const cwd =
+        final.executionWorkspace?.cwd ??
+        resolveHostWorktree(
+          project.cwd,
+          goal.workspaces?.[goal.leadProjectId]?.checkoutCwd ?? project.cwd,
+        );
+      if (final.executionWorkspace) {
+        const current = await this.reviewerExecutionWorkspace(final.sessionId, goal);
+        if (
+          current.cwd !== final.executionWorkspace.cwd ||
+          current.workspaceId !== final.executionWorkspace.workspaceId
+        )
+          return false;
+      }
       return (
         session.runId === final.runId &&
         session.projectId === goal.leadProjectId &&
@@ -1464,7 +1533,16 @@ export class HostGoals {
       );
       return;
     }
-    const blocks = (await this.store.session(final.sessionId!)).session.blocks;
+    const reviewedSession = await this.store.session(final.sessionId!);
+    if (reviewedSession.runId !== final.runId || !(await this.finalReviewOwnsSession(current))) {
+      await this.blockFinalReview(
+        current,
+        "The final reviewer no longer owns its recorded session and turn. Recheck the final review.",
+        this.now(),
+      );
+      return;
+    }
+    const blocks = reviewedSession.session.blocks;
     const lastUser = blocks.findLastIndex((block) => block.role === "user");
     const reply = blocks
       .slice(lastUser + 1)

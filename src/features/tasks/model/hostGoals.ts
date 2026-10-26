@@ -94,6 +94,8 @@ export type GoalFinalAcceptance = {
   accountedRunId?: string;
   sessionId?: string;
   runId?: string;
+  /** Authoritative execution identity captured from the accepted reviewer session. */
+  executionWorkspace?: { cwd: string; workspaceId?: string };
   startedAt?: number;
   completedAt?: number;
   note?: string;

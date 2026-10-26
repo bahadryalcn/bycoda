@@ -117,11 +117,23 @@ async function setup() {
     finish: () => void;
     fail: (error: Error) => void;
   }> = [];
+  const providerAdmissions = new Map<string, ReturnType<typeof Promise.withResolvers<void>>>();
+  const providerAdmission = (sessionId: string, runId: string) => {
+    const key = JSON.stringify([sessionId, runId]);
+    let admitted = providerAdmissions.get(key);
+    if (!admitted) {
+      admitted = Promise.withResolvers<void>();
+      providerAdmissions.set(key, admitted);
+    }
+    return admitted;
+  };
   const provider: HostProvider = {
     send: vi.fn(async (input) => {
       const runId = (await store.session(input.sessionId)).runId;
       return new Promise<void>((resolve, reject) => {
         turns.push({ input, runId, finish: resolve, fail: reject });
+        if (!runId) throw new Error("Fixture provider started without a run identity");
+        providerAdmission(input.sessionId, runId).resolve();
       });
     }),
     cancel: vi.fn(async (sessionId) => {
@@ -191,18 +203,24 @@ async function setup() {
   const goals = new HostGoals(store, engine, tasks, () => clock.now);
   await goals.ready;
   const providersStarted = async () => {
-    await vi.waitFor(
-      async () => {
-        for (const value of (await store.sessions()).filter(
-          (entry) => entry.status === "running",
-        )) {
-          expect(turns.findLast((turn) => turn.input.sessionId === value.session.id)?.runId).toBe(
-            value.runId,
+    for (const value of (await store.sessions()).filter((entry) => entry.status === "running")) {
+      if (!value.runId) throw new Error("Accepted fixture session has no run identity");
+      await Promise.race([
+        providerAdmission(value.session.id, value.runId).promise,
+        engine.waitForRun(value.session.id, value.runId).then(async () => {
+          if (
+            turns.some(
+              (turn) => turn.input.sessionId === value.session.id && turn.runId === value.runId,
+            )
+          )
+            return;
+          const latest = await store.session(value.session.id);
+          throw new Error(
+            `Accepted fixture run ended before provider.send: ${latest.session.blocks.at(-1)?.text ?? latest.status}`,
           );
-        }
-      },
-      { timeout: 30000 },
-    );
+        }),
+      ]);
+    }
   };
   const tick = tasks.tick.bind(tasks);
   vi.spyOn(tasks, "tick").mockImplementation(async () => {
@@ -376,6 +394,12 @@ describe("integrated final goal acceptance", () => {
     const before = await f.goal();
     expect(before.status).toBe("running");
     expect(before.finalAcceptance?.status).toBe("running");
+    const reviewer = (await f.store.session(before.finalAcceptance!.sessionId!)).session;
+    expect(before.finalAcceptance?.executionWorkspace).toEqual({
+      cwd: reviewer.cwd,
+      workspaceId: reviewer.workspaceId,
+    });
+    expect(reviewer.cwd).not.toBe(f.lead.cwd);
     expect(f.turns).toHaveLength(1);
     expect(f.turns[0].input.text).toContain("Ship the beta across the app and the API");
     expect(f.turns[0].input.text).toContain("do not edit files");
@@ -389,6 +413,60 @@ describe("integrated final goal acceptance", () => {
         },
       },
     });
+  });
+  it.each([
+    "recorded cwd",
+    "recorded workspace",
+    "registry id",
+    "registry owner",
+    "registry path",
+    "registry project",
+    "registry environment",
+  ])("rejects final reviewer execution drift in %s", async (field) => {
+    const f = await ready();
+    const goal = await f.goal();
+    const execution = goal.finalAcceptance!.executionWorkspace!;
+    if (field.startsWith("recorded")) {
+      await f.store.db.prepare("UPDATE goals SET value=? WHERE id=?").run(
+        JSON.stringify({
+          ...goal,
+          finalAcceptance: {
+            ...goal.finalAcceptance,
+            executionWorkspace: {
+              ...execution,
+              ...(field === "recorded cwd"
+                ? { cwd: f.lead.cwd }
+                : { workspaceId: "another-workspace" }),
+            },
+          },
+        }),
+        goal.id,
+      );
+    } else {
+      const workspace = (await f.store.managedWorkspace(execution.workspaceId!))!;
+      // Inject a corrupted registry payload directly: the public registry already
+      // rejects changes to these immutable fields; recovery must also fail closed.
+      await f.store.db.prepare("UPDATE managed_workspaces SET payload=? WHERE id=?").run(
+        JSON.stringify({
+          ...workspace,
+          revision: workspace.revision + 1,
+          ...(field === "registry id"
+            ? { id: "another-workspace" }
+            : field === "registry owner"
+              ? { owner: { kind: "session" as const, id: "another-session" } }
+              : field === "registry path"
+                ? { path: f.lead.cwd }
+                : field === "registry project"
+                  ? { projectId: "another-project" }
+                  : { environmentId: "another-environment" }),
+        }),
+        workspace.id,
+      );
+    }
+    await f.advance();
+    expect((await f.goal()).status).toBe("blocked");
+    expect((await f.goal()).error).toContain("no longer owns");
+    expect(f.provider.cancel).not.toHaveBeenCalled();
   });
   it("does not accept a bare PASS or unresolved integrated proof", async () => {
     const f = await ready();
@@ -631,7 +709,13 @@ describe("integrated final goal acceptance", () => {
     await f.store.db.prepare("UPDATE goals SET value=? WHERE id=?").run(
       JSON.stringify({
         ...before,
-        finalAcceptance: { ...retained, status: "pending", sessionId: undefined, runId: undefined },
+        finalAcceptance: {
+          ...retained,
+          status: "pending",
+          sessionId: undefined,
+          runId: undefined,
+          executionWorkspace: undefined,
+        },
       }),
       "goal",
     );
@@ -645,6 +729,37 @@ describe("integrated final goal acceptance", () => {
     expect((await f.goal()).budgetUsage?.attempts).toBe(1);
     await f.finish(retained.sessionId!, report());
     expect((await f.goal()).status).toBe("done");
+  });
+  it("contains failed pending receipt workspace recovery within the affected goal", async () => {
+    const f = await ready();
+    const before = await f.goal();
+    const workspaceId = before.finalAcceptance!.executionWorkspace!.workspaceId!;
+    const workspace = (await f.store.managedWorkspace(workspaceId))!;
+    await f.store.db
+      .prepare("UPDATE managed_workspaces SET payload=? WHERE id=?")
+      .run(
+        JSON.stringify({ ...workspace, owner: { kind: "session", id: "another-session" } }),
+        workspaceId,
+      );
+    await f.store.db.prepare("UPDATE goals SET value=? WHERE id=?").run(
+      JSON.stringify({
+        ...before,
+        finalAcceptance: {
+          ...before.finalAcceptance,
+          status: "pending",
+          sessionId: undefined,
+          runId: undefined,
+          executionWorkspace: undefined,
+        },
+      }),
+      before.id,
+    );
+    await expect(f.advance()).resolves.toBeUndefined();
+    expect((await f.goal()).status).toBe("blocked");
+    expect((await f.goal()).error).toContain("no longer owns");
+    const other = await f.create({ id: "unrelated-goal" });
+    expect(other.status).toBe("planning");
+    expect(f.turns).toHaveLength(2);
   });
   it("does not turn missing historical planner accounting into a fresh budget", async () => {
     const f = await setup();
@@ -693,6 +808,41 @@ describe("integrated final goal acceptance", () => {
     snapshot.mockRestore();
     expect((await f.goal()).status).toBe("cancelled");
     expect((await f.goal()).finalAcceptance?.status).not.toBe("passed");
+  });
+  it("does not consume an owner PASS that arrives during the final reviewer snapshot", async () => {
+    const f = await ready();
+    const sessionId = (await f.goal()).finalAcceptance!.sessionId!;
+    const original = f.tasks.resultFingerprint.bind(f.tasks);
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    const snapshot = vi.spyOn(f.tasks, "resultFingerprint").mockImplementation(async (task) => {
+      entered.resolve();
+      await released.promise;
+      return original(task);
+    });
+    const finishing = f.finish(
+      sessionId,
+      report().replace("VERDICT: PASS", "VERDICT: FAIL - Reviewer found missing proof."),
+    );
+    await entered.promise;
+    await f.engine.command({
+      type: "send",
+      commandId: "owner-after-final-snapshot",
+      sessionId,
+      text: "Separate owner turn",
+    });
+    await f.providersStarted();
+    const ownerTurn = f.turnOf(sessionId);
+    ownerTurn.input.onEvent({ type: "message.delta", text: report() });
+    ownerTurn.input.onEvent({ type: "message.completed" });
+    ownerTurn.finish();
+    await f.settled(sessionId);
+    released.resolve();
+    await finishing;
+    snapshot.mockRestore();
+    expect((await f.goal()).status).toBe("blocked");
+    expect((await f.goal()).error).toContain("no longer owns");
+    expect(f.provider.cancel).not.toHaveBeenCalled();
   });
 });
 describe("editing goal settings", () => {
@@ -1016,8 +1166,13 @@ describe("goal planning", () => {
     const planner = (await store.session(created.plannerSessionId!)).session;
     expect(planner).toMatchObject({
       title: "Plan: Launch the beta",
-      cwd: lead.cwd,
     });
+    expect(planner.workspaceId).toBeTruthy();
+    expect(planner.cwd).not.toBe(lead.cwd);
+    expect(planner.worktreeCwd).toBe(planner.cwd);
+    expect(planner.branch).toMatch(/^bycoda\/s\//);
+    expect(git(planner.cwd, "rev-parse", "HEAD")).toBe(git(lead.cwd, "rev-parse", "HEAD"));
+    expect(turns[0].input.cwd).toBe(planner.cwd);
     const prompt = turns[0].input.text;
     expect(prompt).toContain("Job: Launch the beta");
     expect(prompt).toContain("Ship the beta across the app and the API");
