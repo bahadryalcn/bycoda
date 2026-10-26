@@ -29,6 +29,8 @@ import type {
   WorkspaceRegistry,
   WorkspaceRemovalService,
 } from "./workspace-service-contracts";
+import type { WorkspaceActivityPersistence } from "./workspace-activity-store";
+import type { WorkspaceMutation, WorkspaceOperation } from "./workspace-contracts";
 
 export const sameWorkspacePath = (a: string, b: string) =>
   process.platform === "win32"
@@ -222,12 +224,39 @@ export function createExecutionActivityReservations(deps: {
   /** S3 adapters include providers, shells, buffers, servers, leases and unknown activity. */
   probe(workspaceId: string): Promise<WorkspaceActivity[]>;
   pending(workspaceId: string, exceptOperationId?: string): Promise<boolean>;
-}): ExecutionActivityReservations {
+  persistence?: WorkspaceActivityPersistence;
+  /** Optional journal check prevents releasing an unfinished durable operation. */
+  operation?(operationId: string): Promise<WorkspaceOperation | null>;
+}): ExecutionActivityReservations & {
+  verifyReservation(
+    request: Pick<WorkspaceMutation, "workspaceId" | "expectedRevision"> & {
+      reservationId: string;
+    },
+  ): Promise<void>;
+  recoverOrphanReservations(): Promise<{
+    released: string[];
+    blocked: { reservationId: string; reason: string }[];
+  }>;
+} {
   const activities = new Map<string, WorkspaceActivity>();
   const reservations = new Map<string, WorkspaceReservation>();
   const reserving = new Set<string>();
+  const ready = deps.persistence
+    ? deps.persistence.load().then((saved) => {
+        for (const activity of saved.activities) activities.set(activity.id, activity);
+        for (const reservation of saved.reservations) reservations.set(reservation.id, reservation);
+      })
+    : Promise.resolve();
+  const inUse = async (workspaceId: string) => {
+    if (
+      [...activities.values()].some((a) => a.workspaceId === workspaceId) ||
+      (await deps.probe(workspaceId)).length
+    )
+      throw new Error("Workspace is still in use or activity is unknown.");
+  };
   return {
     async start(input) {
+      await ready;
       if (
         reserving.has(input.workspaceId) ||
         [...reservations.values()].some((r) => r.workspaceId === input.workspaceId)
@@ -239,6 +268,10 @@ export function createExecutionActivityReservations(deps: {
       try {
         if (await deps.pending(input.workspaceId))
           throw new Error("Workspace recovery is pending.");
+        const workspace = await deps.get(input.workspaceId);
+        if (workspace.directoryState !== "present")
+          throw new Error("Workspace directory is not available.");
+        await deps.persistence?.saveActivity(activity);
         return activity;
       } catch (error) {
         activities.delete(activity.id);
@@ -246,34 +279,47 @@ export function createExecutionActivityReservations(deps: {
       }
     },
     async stop(id) {
+      await ready;
+      await deps.persistence?.removeActivity(id);
       activities.delete(id);
     },
     async list(id) {
+      await ready;
       return [...activities.values()]
         .filter((a) => a.workspaceId === id)
         .concat(await deps.probe(id));
     },
     async reserve(input) {
+      await ready;
+      const sameOperation = reservations.get(`reservation:${input.operationId}`);
+      if (sameOperation && sameOperation.workspaceId !== input.workspaceId)
+        throw new Error("Reservation operation belongs to another workspace.");
       const previous = [...reservations.values()].find((r) => r.workspaceId === input.workspaceId);
-      if (previous?.operationId === input.operationId) return previous;
-      if (previous || reserving.has(input.workspaceId)) throw new Error("Workspace is reserved.");
+      if (
+        previous &&
+        (previous.operationId !== input.operationId || previous.purpose !== input.purpose)
+      )
+        throw new Error("Workspace is reserved or reservation request changed.");
+      if (reserving.has(input.workspaceId)) throw new Error("Workspace is reserved.");
       reserving.add(input.workspaceId);
       try {
         const workspace = await deps.get(input.workspaceId);
         if (await deps.pending(input.workspaceId, input.operationId))
           throw new Error("Workspace recovery is pending.");
-        if (workspace.revision !== input.expectedRevision)
-          throw new Error("Workspace revision changed.");
+        // Recovery can have already advanced the workspace under this durable reservation.
         if (
-          [...activities.values()].some((a) => a.workspaceId === input.workspaceId) ||
-          (await deps.probe(input.workspaceId)).length
+          (!previous || previous.expectedRevision !== input.expectedRevision) &&
+          workspace.revision !== input.expectedRevision
         )
-          throw new Error("Workspace is still in use or activity is unknown.");
+          throw new Error("Workspace revision changed.");
+        await inUse(input.workspaceId);
+        if (previous) return previous;
         const reservation = {
           ...input,
           id: `reservation:${input.operationId}`,
           acquiredAt: Date.now(),
         };
+        await deps.persistence?.saveReservation(reservation);
         reservations.set(reservation.id, reservation);
         return reservation;
       } finally {
@@ -281,7 +327,51 @@ export function createExecutionActivityReservations(deps: {
       }
     },
     async release(id) {
+      await ready;
+      const reservation = reservations.get(id);
+      if (reservation && deps.operation) {
+        const operation = await deps.operation(reservation.operationId);
+        if (operation && operation.phase !== "complete")
+          throw new Error("Workspace operation must settle before releasing its reservation.");
+      }
+      await deps.persistence?.removeReservation(id);
       reservations.delete(id);
+    },
+    async verifyReservation(request) {
+      await ready;
+      const reservation = reservations.get(request.reservationId);
+      if (!reservation || reservation.workspaceId !== request.workspaceId)
+        throw new Error("Workspace reservation is missing or belongs to another workspace.");
+      if ((await deps.get(request.workspaceId)).revision !== request.expectedRevision)
+        throw new Error("Workspace revision changed.");
+      if (await deps.pending(request.workspaceId, reservation.operationId))
+        throw new Error("Workspace recovery is pending.");
+      await inUse(request.workspaceId);
+    },
+    async recoverOrphanReservations() {
+      await ready;
+      const released: string[] = [];
+      const blocked: { reservationId: string; reason: string }[] = [];
+      if (!deps.operation) return { released, blocked };
+      for (const reservation of reservations.values()) {
+        try {
+          // A journal owns reconciliation once intent is durable. Before intent
+          // is saved, these services have not performed an authorized Git effect.
+          if (await deps.operation(reservation.operationId)) continue;
+          await inUse(reservation.workspaceId);
+          if (await deps.pending(reservation.workspaceId, reservation.operationId))
+            throw new Error("Workspace recovery is pending.");
+          await deps.persistence?.removeReservation(reservation.id);
+          reservations.delete(reservation.id);
+          released.push(reservation.id);
+        } catch (error) {
+          blocked.push({
+            reservationId: reservation.id,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      return { released, blocked };
     },
   };
 }

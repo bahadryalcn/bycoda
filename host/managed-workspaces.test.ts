@@ -13,8 +13,10 @@ import {
   materializeManagedWorkspace,
 } from "./git-worktrees";
 import type { ManagedWorkspace, WorkspaceCreateOperation } from "./workspace-contracts";
+import type { DurableRewindOperation } from "./session-rewind";
 
 const cleanup: Array<() => Promise<void>> = [];
+const owner = { ownerId: "owner", authorizationId: "authenticated-owner" };
 afterEach(async () => {
   vi.restoreAllMocks();
   for (const fn of cleanup.splice(0).reverse()) await fn();
@@ -83,6 +85,124 @@ async function fixture() {
     },
   };
 }
+
+it("persists owner pinning with revision and idempotency binding", async () => {
+  const f = await fixture();
+  const created = await f.registry.prepare(f.request);
+  const request = {
+    workspaceId: created.workspace.id,
+    expectedRevision: created.workspace.revision,
+    idempotencyKey: "pin",
+    pinned: true,
+  };
+  await expect(f.registry.pin(request, { ownerId: "", authorizationId: "" })).rejects.toThrow(
+    "owner",
+  );
+  const pinned = await f.registry.pin(request, owner);
+  expect(pinned.pinned).toBe(true);
+  expect(pinned.revision).toBe(created.workspace.revision + 1);
+  expect(await f.registry.pin(request, owner)).toEqual(pinned);
+  await expect(f.registry.pin({ ...request, pinned: false }, owner)).rejects.toThrow(
+    "different request",
+  );
+  await expect(f.registry.pin({ ...request, idempotencyKey: "stale" }, owner)).rejects.toThrow(
+    "revision changed",
+  );
+  const reopened = await f.reopen();
+  expect(await reopened.registry.pin(request, owner)).toEqual(pinned);
+});
+
+it("fences owner lifecycle writes until a completed rewind has its durable finalization acknowledgement", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  const operation: DurableRewindOperation = {
+    id: "rewind",
+    kind: "rewind",
+    workspaceId: workspace.id,
+    expectedRevision: workspace.revision,
+    idempotencyKey: "rewind-key",
+    phase: "complete",
+    createdAt: 1,
+    updatedAt: 1,
+    plan: {
+      token: "plan",
+      expiresAt: 100,
+      direction: "rewind",
+      workspaceId: workspace.id,
+      sessionId: workspace.owner.id,
+      userBlockId: "first",
+      expectedRevision: workspace.revision,
+      expectedConversationRevision: 4,
+      branchRef: workspace.branchRef,
+      currentHead: workspace.baseCommit,
+      targetHead: workspace.baseCommit,
+      statusFingerprint: "source-fingerprint",
+      removedUserBlockIds: ["second"],
+      affectedCommits: [],
+      affectedPaths: [],
+      blockers: [],
+      published: false,
+      merged: false,
+    },
+    target: {
+      head: workspace.baseCommit,
+      index: "b".repeat(40),
+      worktree: "c".repeat(40),
+      indexMetadataId: "private-index",
+      paths: [],
+      capturedAt: 1,
+    },
+    reservationId: "reservation:rewind",
+    requestFingerprint: "immutable-request",
+    rescueUserBlockIds: ["first", "second"],
+    finalized: false,
+  };
+  await f.store.saveWorkspaceOperation(operation, null);
+  const request = {
+    workspaceId: workspace.id,
+    expectedRevision: workspace.revision,
+    idempotencyKey: "finish",
+  };
+  await expect(f.registry.finish(request)).rejects.toThrow("recovery required");
+  await expect(f.registry.pin({ ...request, pinned: true }, owner)).rejects.toThrow(
+    "recovery required",
+  );
+  await f.store.saveWorkspaceOperation({ ...operation, finalized: true }, "complete");
+  expect((await f.registry.finish(request)).state).toBe("finished");
+});
+
+it("retargets only to the exact registered branch in the same repository and invalidates earlier revisions", async () => {
+  const f = await fixture();
+  const created = await f.registry.prepare(f.request);
+  const target = join(f.parent, "delivery-target");
+  f.git("worktree", "add", "-q", "-b", "integration", target, "HEAD");
+  const request = {
+    workspaceId: created.workspace.id,
+    expectedRevision: created.workspace.revision,
+    idempotencyKey: "retarget",
+    targetBranchRef: "refs/heads/integration",
+    targetDirectory: target,
+  };
+  await expect(
+    f.registry.retarget({ ...request, targetBranchRef: "refs/heads/main" }, owner),
+  ).rejects.toThrow("requested target branch");
+  const changed = await f.registry.retarget(request, owner);
+  expect(changed).toMatchObject({
+    targetBranchRef: request.targetBranchRef,
+    targetDirectory: target,
+    revision: created.workspace.revision + 1,
+    baseCommit: created.workspace.baseCommit,
+  });
+  expect(await f.registry.retarget(request, owner)).toEqual(changed);
+  await expect(
+    f.store.updateManagedWorkspace(
+      { ...changed, targetBranchRef: "refs/heads/main", revision: changed.revision + 1 },
+      changed.revision,
+    ),
+  ).rejects.toThrow("immutable");
+  const reopened = await f.reopen();
+  expect(await reopened.registry.get({ workspaceId: changed.id })).toEqual(changed);
+});
 
 it("pins the integration tip, excludes dirty files and returns the original duplicate receipt", async () => {
   const f = await fixture();

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
-import { withHostGitMutation } from "./git-mutations";
+import { isAbsolute, join, resolve } from "node:path";
+import { realpath } from "node:fs/promises";
+import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
+import { runGitText } from "../src/shared/lib/processExecution.node";
 import {
   managedWorkspaceBase,
   managedWorkspaceNames,
@@ -15,7 +17,11 @@ import type {
   WorkspaceMutation,
   WorkspaceOwner,
 } from "./workspace-contracts";
-import type { WorkspacePolicyResolver, WorkspaceRegistry } from "./workspace-service-contracts";
+import type {
+  WorkspaceOwnerAuthorization,
+  WorkspacePolicyResolver,
+  WorkspaceRegistry,
+} from "./workspace-service-contracts";
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 
 type Options = {
@@ -24,6 +30,9 @@ type Options = {
   beforeMaterialize?: (workspace: ManagedWorkspace) => Promise<void>;
   /** S4 verifies this against the exclusive execution-activity reservation gate. */
   verifyReservation?: (request: WorkspaceMutation & { reservationId: string }) => Promise<void>;
+  /** External ingress fence; reservation-proven recovery updates intentionally bypass it. */
+  assertWritable?: (workspaceId: string) => Promise<void>;
+  authorizeOwner?: (owner: WorkspaceOwnerAuthorization) => Promise<boolean>;
 };
 
 export function createManagedWorkspaceRegistry(
@@ -33,6 +42,14 @@ export function createManagedWorkspaceRegistry(
 ): WorkspaceRegistry & {
   touchActivity(workspaceId: string): Promise<void>;
   touchOwnerActivity(owner: WorkspaceOwner): Promise<void>;
+  pin(
+    request: WorkspaceMutation & { pinned: boolean },
+    owner: WorkspaceOwnerAuthorization,
+  ): Promise<ManagedWorkspace>;
+  retarget(
+    request: WorkspaceMutation & { targetBranchRef: string; targetDirectory: string },
+    owner: WorkspaceOwnerAuthorization,
+  ): Promise<ManagedWorkspace>;
 } {
   const required = async (id: string) => {
     const workspace = await store.managedWorkspace(id);
@@ -53,7 +70,14 @@ export function createManagedWorkspaceRegistry(
       throw new Error("Workspace mutation requires an idempotency key and nonnegative revision");
   };
   const settled = async (id: string) => {
-    if ((await store.workspaceOperations(id)).some((operation) => operation.phase !== "complete"))
+    if (
+      (await store.workspaceOperations(id)).some(
+        (operation) =>
+          operation.phase !== "complete" ||
+          (operation.kind === "rewind" &&
+            !(operation as typeof operation & { finalized?: boolean }).finalized),
+      )
+    )
       throw new Error("Workspace operation recovery required before further writes");
   };
   const releaseClaims = async (id: string) => {
@@ -261,6 +285,7 @@ export function createManagedWorkspaceRegistry(
           request,
         );
         if (prior) return prior;
+        await options.assertWritable?.(workspace.id);
         if (await options.isActive?.(await required(workspace.id)))
           throw new Error("Workspace is active");
         let op = await store.findWorkspaceOperation({
@@ -304,6 +329,65 @@ export function createManagedWorkspaceRegistry(
     },
     async close(request) {
       return transition(request, "abandoned");
+    },
+    async pin(request, owner) {
+      if (typeof request.pinned !== "boolean") throw new Error("Pinned must be a boolean");
+      return ownerMutation("pin", request, owner, async (workspace) => ({
+        ...workspace,
+        pinned: request.pinned,
+        revision: workspace.revision + 1,
+      }));
+    },
+    async retarget(request, owner) {
+      return ownerMutation("retarget", request, owner, async (workspace) => {
+        if (
+          !isAbsolute(request.targetDirectory) ||
+          !request.targetBranchRef.startsWith("refs/heads/")
+        )
+          throw new Error(
+            "Retarget requires an absolute registered directory and full local branch ref",
+          );
+        if (
+          workspace.state === "merged" ||
+          workspace.directoryState !== "present" ||
+          (await options.isActive?.(workspace))
+        )
+          throw new Error("Workspace must be idle and undelivered before retargeting");
+        const directory = await realpath(request.targetDirectory);
+        if ((await hostGitRepositoryKey(directory)) !== workspace.repositoryId)
+          throw new Error("Retarget directory belongs to a different repository");
+        const git = (args: string[]) =>
+          runGitText(args, {
+            cwd: directory,
+            windowsHide: true,
+            timeout: 30_000,
+            env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+          });
+        await git(["check-ref-format", request.targetBranchRef]);
+        if ((await git(["symbolic-ref", "--quiet", "HEAD"])).trim() !== request.targetBranchRef)
+          throw new Error("Retarget directory is not on the requested target branch");
+        const registered = (await git(["worktree", "list", "--porcelain", "-z"]))
+          .split("\0\0")
+          .some(
+            (record) =>
+              record.split("\0").some((line) => {
+                if (!line.startsWith("worktree ")) return false;
+                const path = resolve(line.slice(9));
+                return process.platform === "win32"
+                  ? path.toLowerCase() === directory.toLowerCase()
+                  : path === directory;
+              }) && record.split("\0").includes(`branch ${request.targetBranchRef}`),
+          );
+        if (!registered || resolve(directory) === resolve(workspace.path))
+          throw new Error("Retarget requires a separate registered target checkout");
+        await git(["rev-parse", "--verify", `${request.targetBranchRef}^{commit}`]);
+        return {
+          ...workspace,
+          targetBranchRef: request.targetBranchRef,
+          targetDirectory: directory,
+          revision: workspace.revision + 1,
+        };
+      });
     },
     async update(request) {
       validateMutation(request);
@@ -388,6 +472,7 @@ export function createManagedWorkspaceRegistry(
       request,
     );
     if (original) return original;
+    await options.assertWritable?.(request.workspaceId);
     const active = await options.isActive?.(await required(request.workspaceId));
     return store.transaction(async () => {
       const scope = `workspace.${state}:${request.workspaceId}`;
@@ -417,6 +502,44 @@ export function createManagedWorkspaceRegistry(
       if (state === "abandoned") await releaseClaims(result.id);
       await store.saveWorkspaceReceipt(scope, request.idempotencyKey, request, result);
       return result;
+    });
+  }
+  async function ownerMutation(
+    action: "pin" | "retarget",
+    request: WorkspaceMutation,
+    owner: WorkspaceOwnerAuthorization,
+    change: (workspace: ManagedWorkspace) => Promise<ManagedWorkspace>,
+  ) {
+    validateMutation(request);
+    if (
+      !owner?.ownerId ||
+      !owner.authorizationId ||
+      (options.authorizeOwner && !(await options.authorizeOwner(owner)))
+    )
+      throw new Error("Workspace mutation requires authenticated owner authorization");
+    const current = await required(request.workspaceId);
+    const project = await store.project(current.projectId);
+    return withHostGitMutation(project.cwd, async () => {
+      const scope = `workspace.${action}:${request.workspaceId}`;
+      const previous = await store.workspaceReceipt<ManagedWorkspace>(
+        scope,
+        request.idempotencyKey,
+        request,
+      );
+      if (previous) return previous;
+      await options.assertWritable?.(request.workspaceId);
+      const fresh = await required(request.workspaceId);
+      revision(fresh, request.expectedRevision);
+      await settled(fresh.id);
+      const next = await change(fresh);
+      return store.transaction(async () => {
+        await settled(fresh.id);
+        await store.updateManagedWorkspace(next, fresh.revision, {
+          retarget: action === "retarget",
+        });
+        await store.saveWorkspaceReceipt(scope, request.idempotencyKey, request, next);
+        return next;
+      });
     });
   }
   return registry;

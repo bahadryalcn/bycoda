@@ -27,6 +27,7 @@ import type {
   WorkspacePolicyOverride,
   WorkspaceState,
 } from "./workspace-contracts";
+import type { WorkspaceActivityPersistence } from "./workspace-activity-store";
 export { blockRevisions } from "./block-revisions";
 const CACHED_SESSIONS = 32;
 // Retried commands are deduplicated by receipt; a week far outlives any retry.
@@ -314,6 +315,14 @@ export class HostStore {
         payload TEXT NOT NULL, UNIQUE(repository_id, feature_key, scope)
       );
       CREATE INDEX IF NOT EXISTS workspace_feature_claims_workspace ON workspace_feature_claims(workspace_id);
+      CREATE TABLE IF NOT EXISTS workspace_execution_activities (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, payload TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS workspace_execution_activities_workspace ON workspace_execution_activities(workspace_id);
+      CREATE TABLE IF NOT EXISTS workspace_execution_reservations (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL UNIQUE, operation_id TEXT NOT NULL UNIQUE,
+        payload TEXT NOT NULL
+      );
     `);
     const columns = await this.db.prepare("PRAGMA table_info(sessions)").all();
     if (!columns.some((column) => column.name === "summary"))
@@ -582,6 +591,7 @@ export class HostStore {
   async updateManagedWorkspace(
     workspace: ManagedWorkspace,
     expectedRevision: number,
+    options: { retarget?: boolean } = {},
   ): Promise<void> {
     return this.db.storeScope(async () => {
       const previous = await this.managedWorkspace(workspace.id);
@@ -602,10 +612,16 @@ export class HostStore {
         "branchRef",
         "baseRef",
         "baseCommit",
-        "targetBranchRef",
       ] as const)
         if (canonicalWorkspaceJson(previous[key]) !== canonicalWorkspaceJson(workspace[key]))
           throw new Error(`Workspace identity is immutable: ${key}`);
+      if (
+        !options.retarget &&
+        (previous.targetBranchRef !== workspace.targetBranchRef ||
+          (previous as ManagedWorkspace & { targetDirectory?: string }).targetDirectory !==
+            (workspace as ManagedWorkspace & { targetDirectory?: string }).targetDirectory)
+      )
+        throw new Error("Workspace identity is immutable: targetBranchRef/targetDirectory");
       const result = await this.db
         .prepare(
           "UPDATE managed_workspaces SET state=?, revision=?, payload=? WHERE id=? AND revision=?",
@@ -630,6 +646,75 @@ export class HostStore {
         .get(id);
       return row ? JSON.parse(String(row.payload)) : null;
     });
+  }
+  workspaceActivityPersistence(): WorkspaceActivityPersistence {
+    return {
+      load: () =>
+        this.db.storeScope(async () => {
+          const activities = await this.db
+            .prepare("SELECT payload FROM workspace_execution_activities ORDER BY id")
+            .all();
+          const reservations = await this.db
+            .prepare("SELECT payload FROM workspace_execution_reservations ORDER BY id")
+            .all();
+          return {
+            activities: activities.map((row) => JSON.parse(String(row.payload))),
+            reservations: reservations.map((row) => JSON.parse(String(row.payload))),
+          };
+        }),
+      saveActivity: (activity) =>
+        this.transaction(async () => {
+          if (
+            await this.db
+              .prepare("SELECT id FROM workspace_execution_reservations WHERE workspace_id=?")
+              .get(activity.workspaceId)
+          )
+            throw new Error("Workspace is reserved.");
+          await this.db
+            .prepare(
+              "INSERT INTO workspace_execution_activities (id, workspace_id, payload) VALUES (?, ?, ?)",
+            )
+            .run(activity.id, activity.workspaceId, JSON.stringify(activity));
+        }),
+      removeActivity: (id) =>
+        this.db.storeScope(async () => {
+          await this.db.prepare("DELETE FROM workspace_execution_activities WHERE id=?").run(id);
+        }),
+      saveReservation: (reservation) =>
+        this.transaction(async () => {
+          if (
+            await this.db
+              .prepare("SELECT id FROM workspace_execution_activities WHERE workspace_id=?")
+              .get(reservation.workspaceId)
+          )
+            throw new Error("Workspace is still in use or activity is unknown.");
+          const previous = await this.db
+            .prepare("SELECT payload FROM workspace_execution_reservations WHERE id=?")
+            .get(reservation.id);
+          if (previous) {
+            if (
+              canonicalWorkspaceJson(JSON.parse(String(previous.payload))) !==
+              canonicalWorkspaceJson(reservation)
+            )
+              throw new Error("Workspace reservation request changed.");
+            return;
+          }
+          await this.db
+            .prepare(
+              "INSERT INTO workspace_execution_reservations (id, workspace_id, operation_id, payload) VALUES (?, ?, ?, ?)",
+            )
+            .run(
+              reservation.id,
+              reservation.workspaceId,
+              reservation.operationId,
+              JSON.stringify(reservation),
+            );
+        }),
+      removeReservation: (id) =>
+        this.db.storeScope(async () => {
+          await this.db.prepare("DELETE FROM workspace_execution_reservations WHERE id=?").run(id);
+        }),
+    };
   }
   async workspaceOperations(workspaceId?: string): Promise<WorkspaceOperation[]> {
     return this.db.storeScope(async () => {
@@ -699,9 +784,39 @@ export class HostStore {
       const nextPlan = operation.kind === "create" ? operation.plannedWorkspace : operation.plan;
       if (canonicalWorkspaceJson(previousPlan) !== canonicalWorkspaceJson(nextPlan))
         throw new Error("Workspace operation plan is immutable");
+      // Once recorded, recovery authority and acknowledgements cannot disappear
+      // through a stale same-phase payload. Progress-only fields remain mutable.
+      const oldFields = previous as unknown as Record<string, unknown>;
+      const newFields = operation as unknown as Record<string, unknown>;
+      for (const key of [
+        "reservationId",
+        "target",
+        "requestFingerprint",
+        "rescueUserBlockIds",
+        "transcriptRescueId",
+        "undoTranscriptRescueId",
+        "conversationResult",
+        "intendedTargetHead",
+        "receipt",
+      ])
+        if (
+          oldFields[key] !== undefined &&
+          canonicalWorkspaceJson(oldFields[key]) !== canonicalWorkspaceJson(newFields[key])
+        )
+          throw new Error(`Workspace operation recovery identity is immutable: ${key}`);
+      if (oldFields.finalized === true && newFields.finalized !== true)
+        throw new Error("Workspace operation finalization cannot be reversed");
       const result = await this.db
-        .prepare("UPDATE workspace_operations SET phase=?, payload=? WHERE id=? AND phase=?")
-        .run(operation.phase, JSON.stringify(operation), operation.id, expectedPhase);
+        .prepare(
+          "UPDATE workspace_operations SET phase=?, payload=? WHERE id=? AND phase=? AND payload=?",
+        )
+        .run(
+          operation.phase,
+          JSON.stringify(operation),
+          operation.id,
+          expectedPhase,
+          JSON.stringify(previous),
+        );
       if (!Number(result.changes))
         throw Object.assign(new Error("Workspace operation phase changed"), {
           code: "WORKSPACE_OPERATION_CONFLICT",
@@ -1110,6 +1225,7 @@ export class HostStore {
       hasDesktop: boolean;
       running: boolean;
       shellRunning: boolean;
+      workspaceId?: string;
       providerSessionId: string | null;
       harness: string | null;
       cwd: string | null;
@@ -1118,7 +1234,8 @@ export class HostStore {
     return this.db.storeScope(async () => {
       return (
         await this.db
-          .prepare(`SELECT id, has_desktop, status, shell_running, provider_session_id, harness, session_cwd
+          .prepare(`SELECT id, has_desktop, status, shell_running, provider_session_id, harness, session_cwd,
+          json_extract(summary, '$.workspaceId') AS workspace_id
         FROM session_state ORDER BY updated_at DESC`)
           .all()
       ).map((row) => {
@@ -1129,6 +1246,7 @@ export class HostStore {
             hasDesktop: unwritten.desktop != null,
             running: unwritten.status === "running",
             shellRunning: unwritten.session.blocks.some((block) => block.shell?.running),
+            workspaceId: unwritten.session.workspaceId,
             providerSessionId: unwritten.session.providerSessionId || null,
             harness: unwritten.session.harness ?? null,
             cwd: unwritten.session.cwd ?? null,
@@ -1138,6 +1256,7 @@ export class HostStore {
           hasDesktop: !!Number(row.has_desktop),
           running: row.status === "running",
           shellRunning: !!Number(row.shell_running),
+          workspaceId: row.workspace_id == null ? undefined : String(row.workspace_id),
           providerSessionId: row.provider_session_id ? String(row.provider_session_id) : null,
           harness: row.harness == null ? null : String(row.harness),
           cwd: row.session_cwd == null ? null : String(row.session_cwd),
