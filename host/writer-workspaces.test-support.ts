@@ -9,7 +9,8 @@ import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 import type { HostEngine } from "./engine";
 import { GitTurnHistory } from "./turn-git-history";
 
-/** Test execution adapter: real isolated Git worktrees; in-memory S1/S4 records. */
+/** Test execution adapter: real Git worktrees; in-memory lifecycle records with
+ * session ownership mirrored into the Host store for reviewer identity checks. */
 export function writerWorkspaces(root: string, projectCwd: (id: string) => Promise<string>) {
   const git = (cwd: string, ...args: string[]) =>
     execFileSync("git", args, { cwd, encoding: "utf8", windowsHide: true, stdio: "pipe" }).trim();
@@ -22,7 +23,7 @@ export function writerWorkspaces(root: string, projectCwd: (id: string) => Promi
     if (realpathSync.native(cwd) !== realpathSync.native(git(cwd, "rev-parse", "--show-toplevel")))
       throw new Error("Managed workspaces require the Git repository root.");
     const id = `workspace-${rows.size + 1}`;
-    const branchRef = `refs/heads/bycoda/t/${id}`;
+    const branchRef = `refs/heads/bycoda/${request.owner.kind === "session" ? "s" : "t"}/${id}`;
     const path = join(root, id);
     const baseRef = request.baseRef ?? "HEAD";
     const head = git(cwd, "rev-parse", `${baseRef}^{commit}`);
@@ -138,18 +139,32 @@ export function writerWorkspaces(root: string, projectCwd: (id: string) => Promi
     return row;
   };
   // Real retained Git snapshots make the orchestration fixture honor the same
-  // accepted-turn protocol as production. Registry/lifecycle records above remain
-  // explicitly in memory; this helper is not durable recovery or delivery proof.
+  // accepted-turn protocol as production. Lifecycle orchestration above remains
+  // in memory; mirroring session ownership below is not recovery/delivery proof.
   const history = new GitTurnHistory({
     root: join(root, "fixture-turn-history"),
     workspace: required,
   });
   const attachEngine = async (engine: HostEngine) => {
     await engine.ready;
+    services.environmentId = engine.store.environmentId;
     engine.setManagedTurnHistoryAdapter({
       history,
       assertWritable: async (id) => {
         await required(id);
+      },
+      prepareWorkspaceForCreate: async (request) => {
+        const prepared = await prepare({
+          projectId: request.projectId,
+          environmentId: services.environmentId,
+          owner: { kind: "session", id: request.sessionId },
+          idempotencyKey: request.idempotencyKey,
+          slug: "fixture-session",
+          choice: { defaultMode: "worktree" },
+        });
+        if (!(await engine.store.managedWorkspace(prepared.workspace.id)))
+          await engine.store.insertManagedWorkspace(prepared.workspace);
+        return { workspaceId: prepared.workspace.id };
       },
       workspaceForCreate: async (request) => {
         const row = await required(request.workspaceId);
