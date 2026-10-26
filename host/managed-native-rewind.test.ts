@@ -303,3 +303,133 @@ it("discovers and completes the real Host preparation after its process is kille
     if (child.connected) child.disconnect();
   }
 }, 180_000);
+
+it.each(["expired", "source-drift", "never-contacted"])(
+  "durably cancels a proven absent %s preparation and rejects delayed replay of its key",
+  async (scenario) => {
+    const f = await fixture();
+    await f.runtime.recover();
+    const { workspace } = await f.runtime.registry.prepare(f.request);
+    const turn = {
+      workspaceId: workspace.id,
+      sessionId: "owned-session",
+      userBlockId: "cancel-user",
+      runId: "cancel-run",
+      conversationRevision: 1,
+    };
+    await f.runtime.withOwner("native-device", async (owner) => {
+      await f.runtime.nativeRewind.bindTurn(turn, owner);
+      await f.runtime.nativeTurns.begin(turn, owner);
+      writeFileSync(join(workspace.path, "source.txt"), "after turn\n");
+      await f.runtime.nativeTurns.end(turn, owner);
+      let clock = Date.now();
+      const options = {
+        ...f.runtime.rewind.options,
+        now: () => clock,
+        authorize: async (candidate: typeof owner) => candidate === owner,
+        isHostSession: async (id: string) => !!(await f.store.sessionAuthority(id)),
+      };
+      const native = createManagedNativeRewind(options);
+      const conversation = { revision: 2, userBlockIds: [turn.userBlockId] };
+      const preview = {
+        workspaceId: workspace.id,
+        sessionId: turn.sessionId,
+        expectedRevision: workspace.revision,
+        expectedConversationRevision: 2,
+        direction: "rewind" as const,
+        userBlockId: turn.userBlockId,
+      };
+      const plan = await native.plan({ request: preview, conversation }, owner);
+      const input = {
+        request: {
+          workspaceId: workspace.id,
+          sessionId: turn.sessionId,
+          expectedRevision: workspace.revision,
+          expectedConversationRevision: 2,
+          planToken: plan.token,
+          idempotencyKey: `cancel-${scenario}`,
+        },
+        conversation,
+        direction: "rewind" as const,
+      };
+      if (scenario === "expired") clock += 600_000;
+      if (scenario === "source-drift")
+        writeFileSync(join(workspace.path, "source.txt"), "external drift\n");
+      const key = {
+        workspaceId: workspace.id,
+        sessionId: turn.sessionId,
+        idempotencyKey: input.request.idempotencyKey,
+      };
+      let queuedCancellation: ReturnType<typeof native.cancelPreparation> | undefined;
+      if (scenario === "expired") {
+        let entered!: () => void, release!: () => void;
+        const started = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const apply = native.service.apply.bind(native.service);
+        vi.spyOn(native.service, "apply").mockImplementationOnce(async (request) => {
+          entered();
+          await gate;
+          return apply(request);
+        });
+        const rejected = native.prepare(input, owner).then(
+          () => null,
+          (error) => error,
+        );
+        await started;
+        queuedCancellation = native.cancelPreparation(key, owner);
+        let cancelledEarly = false;
+        void queuedCancellation.then(() => {
+          cancelledEarly = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(cancelledEarly).toBe(false);
+        release();
+        expect(await rejected).toBeInstanceOf(Error);
+      } else if (scenario !== "never-contacted") {
+        await expect(native.prepare(input, owner)).rejects.toThrow();
+      }
+      expect(await native.lookup(key, owner)).toBeNull();
+      const cancelled = await (queuedCancellation ?? native.cancelPreparation(key, owner));
+      expect(cancelled).toEqual({ ...key, cancelled: true });
+      const restarted = createManagedNativeRewind(options);
+      expect(await restarted.cancelPreparation(key, owner)).toEqual(cancelled);
+      await expect(restarted.prepare(input, owner)).rejects.toThrow("cancelled");
+      await expect(
+        restarted.cancelPreparation(key, { ...owner, ownerId: "other-device" }),
+      ).rejects.toThrow("Authenticated");
+      expect(
+        (await f.runtime.registry.listOperations(workspace.id)).filter(
+          (op) => op.kind === "rewind",
+        ),
+      ).toHaveLength(0);
+      const fresh = await restarted.plan({ request: preview, conversation }, owner);
+      const prepared = await restarted.prepare(
+        {
+          ...input,
+          request: {
+            ...input.request,
+            planToken: fresh.token,
+            idempotencyKey: `fresh-${scenario}`,
+          },
+        },
+        owner,
+      );
+      const existing = await restarted.cancelPreparation(
+        { ...key, idempotencyKey: `fresh-${scenario}` },
+        owner,
+      );
+      expect(existing).toEqual({
+        ...key,
+        idempotencyKey: `fresh-${scenario}`,
+        cancelled: false,
+        operation: prepared,
+      });
+      expect((await restarted.status(prepared, owner)).phase).toBe("prepared");
+    });
+  },
+  120_000,
+);

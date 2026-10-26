@@ -540,6 +540,23 @@ fn reconcile_pending_transport(
         let direction: RewindDirection =
             serde_json::from_value(input["direction"].clone()).map_err(|e| e.to_string())?;
         if native_apply(store, host, input["request"].clone(), direction).is_err() {
+            let pending: bool = store
+                .lock_conn()?
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM native_rewind_intents
+                WHERE workspace_id=?1 AND idempotency_key=?2 AND phase!='complete')",
+                    params![
+                        input["request"]["workspaceId"].as_str(),
+                        input["request"]["idempotencyKey"].as_str()
+                    ],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            // A positively acknowledged absent-operation cancellation consumes
+            // the old key and releases its local fence for a fresh preview.
+            if !pending {
+                continue;
+            }
             blocked.push(
                 input["request"]["idempotencyKey"]
                     .as_str()
@@ -744,6 +761,9 @@ pub fn managed_rewind_plan(
     store: State<'_, SessionStore>,
     request: Value,
 ) -> Result<Value, String> {
+    if let Some(session_id) = request["sessionId"].as_str() {
+        reconcile_pending_native(&app, &store, Some(session_id))?;
+    }
     let boundary = validate_rewind_input(&store, &request)?;
     assert_writable(&store, request["sessionId"].as_str().unwrap())?;
     let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
@@ -759,6 +779,44 @@ pub fn managed_rewind_plan(
         return Err("Execution Host returned a different rewind preview".into());
     }
     Ok(plan)
+}
+
+/// A failed/absent preparation is not evidence of no mutation. Only this
+/// authenticated, durable Host tombstone acknowledgement can release intent.
+/// If preparation won the race, return its original journal for resumption.
+fn cancel_native_preparation(
+    store: &SessionStore,
+    host: &crate::remote::NativeWorkspaceTransport,
+    workspace_id: &str,
+    session_id: &str,
+    key: &str,
+) -> Result<Option<Value>, String> {
+    let cancelled = host.call(
+        "native.rewind.cancelPreparation",
+        json!({"workspaceId":workspace_id,"sessionId":session_id,"idempotencyKey":key}),
+    )?;
+    if cancelled["workspaceId"] != workspace_id
+        || cancelled["sessionId"] != session_id
+        || cancelled["idempotencyKey"] != key
+    {
+        return Err("Execution Host returned a different preparation cancellation".into());
+    }
+    if cancelled["cancelled"] == true {
+        let released = store.lock_conn()?.execute("UPDATE native_rewind_intents SET phase='complete'
+            WHERE workspace_id=?1 AND idempotency_key=?2 AND operation_id IS NULL AND phase='pending'
+              AND NOT EXISTS(SELECT 1 FROM native_rewind_requests WHERE workspace_id=?1 AND idempotency_key=?2)",
+            params![workspace_id,key]).map_err(|e|e.to_string())?;
+        if released != 1 {
+            return Err(
+                "Native rewind cancellation identity changed; recovery remains pending".into(),
+            );
+        }
+        return Ok(None);
+    }
+    if cancelled["cancelled"] != false || cancelled["operation"].is_null() {
+        return Err("Execution Host has not confirmed preparation cancellation".into());
+    }
+    Ok(Some(cancelled["operation"].clone()))
 }
 
 fn native_apply(
@@ -788,14 +846,19 @@ fn native_apply(
         }
         (operation_id, phase == "prepared")
     } else {
-        let previous_intent: Option<(String,String)> = store.lock_conn()?.query_row(
-            "SELECT mutation_json,boundary_json FROM native_rewind_intents WHERE workspace_id=?1 AND idempotency_key=?2",
-            params![workspace_id,key], |row|Ok((row.get(0)?,row.get(1)?)))
+        let previous_intent: Option<(String,String,String)> = store.lock_conn()?.query_row(
+            "SELECT mutation_json,boundary_json,phase FROM native_rewind_intents WHERE workspace_id=?1 AND idempotency_key=?2",
+            params![workspace_id,key], |row|Ok((row.get(0)?,row.get(1)?,row.get(2)?)))
             .optional().map_err(|e|e.to_string())?;
         let retry = previous_intent.is_some();
-        let boundary = if let Some((previous, raw_boundary)) = previous_intent {
+        let boundary = if let Some((previous, raw_boundary, phase)) = previous_intent {
             if previous != signature {
                 return Err("Rewind idempotency key was reused with different input".into());
+            }
+            if phase == "complete" {
+                return Err(
+                    "Native rewind preparation was cancelled; preview again with a new key".into(),
+                );
             }
             serde_json::from_str::<ConversationBoundary>(&raw_boundary)
                 .map_err(|e| e.to_string())?
@@ -817,7 +880,7 @@ fn native_apply(
         // Preparation must acquire a durable Host reservation without changing Git.
         // After a lost response, authenticate and discover the original durable
         // operation by its key before attempting idempotent preparation again.
-        let found = if retry {
+        let mut found = if retry {
             host.call(
                 "native.rewind.lookup",
                 json!({"workspaceId":workspace_id,"sessionId":session_id,"idempotencyKey":key}),
@@ -825,11 +888,32 @@ fn native_apply(
         } else {
             Value::Null
         };
+        if retry && found.is_null() {
+            if let Some(operation) =
+                cancel_native_preparation(store, host, workspace_id, session_id, key)?
+            {
+                found = operation;
+            } else {
+                return Err(
+                    "Native rewind preparation was cancelled; preview again with a new key".into(),
+                );
+            }
+        }
         let prepared = if found.is_null() {
-            host.call(
+            match host.call(
                 "native.rewind.prepare",
                 json!({"request":request,"direction":direction,"conversation":boundary}),
-            )?
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    match cancel_native_preparation(store, host, workspace_id, session_id, key) {
+                        Ok(Some(operation)) => operation,
+                        // The original failure remains visible. A matching tombstone
+                        // ack lets this same app request a fresh preview immediately.
+                        Ok(None) | Err(_) => return Err(error),
+                    }
+                }
+            }
         } else {
             found
         };
@@ -1363,7 +1447,12 @@ mod tests {
                 assert_eq!(body["method"], expected);
                 methods.push(expected.to_string());
                 if let Some(response) = response {
-                    let raw = json!({"result":response}).to_string();
+                    let raw = if let Some(error) = response.get("fixtureRpcError") {
+                        json!({"error":error})
+                    } else {
+                        json!({"result":response})
+                    }
+                    .to_string();
                     write!(
                         stream,
                         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -1571,6 +1660,110 @@ mod tests {
                 "native.rewind.status"
             ]
         );
+    }
+
+    #[test]
+    fn checkpoint_native_failed_preparation_cancels_only_after_authoritative_tombstone_ack() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let (_, request) = managed_seed(&store);
+        let (host, server) = fake_native_host(vec![
+            ("native.rewind.prepare", None),
+            ("native.rewind.cancelPreparation", None),
+            ("native.rewind.lookup", Some(Value::Null)),
+            (
+                "native.rewind.cancelPreparation",
+                Some(json!({"workspaceId":"managed","sessionId":"native",
+                "idempotencyKey":"operation-key","cancelled":true})),
+            ),
+        ]);
+        assert!(native_apply(&store, &host, request.clone(), RewindDirection::Rewind).is_err());
+        assert!(assert_writable(&store, "native").is_err());
+        assert!(reconcile_pending_transport(&store, &host, None)
+            .unwrap()
+            .is_empty());
+        assert!(assert_writable(&store, "native").is_ok());
+        assert_eq!(read(&store, "native").unwrap().user_block_ids, ["u1", "u2"]);
+        assert_eq!(
+            server.join().unwrap(),
+            [
+                "native.rewind.prepare",
+                "native.rewind.cancelPreparation",
+                "native.rewind.lookup",
+                "native.rewind.cancelPreparation"
+            ]
+        );
+        // A cancelled key remains consumed; it cannot silently submit a fresh preparation.
+        assert!(
+            native_apply(&store, &host, request, RewindDirection::Rewind)
+                .unwrap_err()
+                .contains("cancelled")
+        );
+    }
+
+    #[test]
+    fn checkpoint_native_preparation_cancellation_unknown_or_mismatched_ack_keeps_fence() {
+        for acknowledgement in [
+            None,
+            Some(json!({"workspaceId":"other","sessionId":"native",
+            "idempotencyKey":"operation-key","cancelled":true})),
+            Some(json!({"workspaceId":"managed",
+            "sessionId":"native","idempotencyKey":"operation-key"})),
+        ] {
+            let store = SessionStore::open_in_memory().unwrap();
+            let (_, request) = managed_seed(&store);
+            let (host, server) = fake_native_host(vec![
+                ("native.rewind.prepare", None),
+                ("native.rewind.cancelPreparation", acknowledgement),
+            ]);
+            assert!(native_apply(&store, &host, request, RewindDirection::Rewind).is_err());
+            assert!(assert_writable(&store, "native").is_err());
+            assert_eq!(read(&store, "native").unwrap().user_block_ids, ["u1", "u2"]);
+            assert_eq!(server.join().unwrap().len(), 2);
+        }
+    }
+
+    #[test]
+    fn checkpoint_native_rejected_preparation_allows_fresh_preview_and_write_in_same_session() {
+        for rejection in ["Rewind preview is stale", "Workspace changed after preview"] {
+            let store = SessionStore::open_in_memory().unwrap();
+            let (_, request) = managed_seed(&store);
+            let (host, server) = fake_native_host(vec![
+                (
+                    "native.rewind.prepare",
+                    Some(json!({"fixtureRpcError":rejection})),
+                ),
+                (
+                    "native.rewind.cancelPreparation",
+                    Some(json!({"workspaceId":"managed","sessionId":"native",
+                    "idempotencyKey":"operation-key","cancelled":true})),
+                ),
+            ]);
+            assert!(
+                native_apply(&store, &host, request.clone(), RewindDirection::Rewind)
+                    .unwrap_err()
+                    .contains(rejection)
+            );
+            assert!(assert_writable(&store, "native").is_ok());
+            assert!(validate_rewind_input(&store, &request).is_ok());
+            store
+                .lock_conn()
+                .unwrap()
+                .execute(
+                    "UPDATE sessions SET title='fresh preview allowed' WHERE id='native'",
+                    [],
+                )
+                .unwrap();
+            assert_eq!(read(&store, "native").unwrap().user_block_ids, ["u1", "u2"]);
+            assert!(
+                native_apply(&store, &host, request, RewindDirection::Rewind)
+                    .unwrap_err()
+                    .contains("cancelled")
+            );
+            assert_eq!(
+                server.join().unwrap(),
+                ["native.rewind.prepare", "native.rewind.cancelPreparation"]
+            );
+        }
     }
 
     #[test]

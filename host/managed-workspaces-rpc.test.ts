@@ -709,3 +709,91 @@ it("authenticates clean native close and same-device instance reconciliation wit
   expect(await f.call("native.buffers.retire", identity)).toEqual({ acknowledged: true });
   expect(await f.call("native.buffers.reconcile", reconcile)).toEqual({ acknowledged: true });
 });
+
+it("authenticates preparation cancellation and fences late same-key requests without allowing foreign tombstones", async () => {
+  const f = await fixture();
+  const sessionId = randomUUID();
+  const { workspace } = await f.call<{ workspace: ManagedWorkspace }>("workspaces.prepare", {
+    ...f.projectScope,
+    owner: { kind: "session", id: sessionId },
+    slug: "cancel native",
+    mode: "worktree",
+    idempotencyKey: "cancel-native-workspace",
+  });
+  const turn = {
+    workspaceId: workspace.id,
+    sessionId,
+    userBlockId: "cancel-user",
+    runId: "cancel-run",
+    conversationRevision: 1,
+  };
+  await f.call("native.turn.begin", turn);
+  writeFileSync(join(workspace.path, "source.txt"), "native dirty source\n");
+  await f.call("native.turn.end", turn);
+  const conversation = { revision: 2, userBlockIds: [turn.userBlockId] };
+  const current = await f.call<ManagedWorkspace>("workspaces.get", { workspaceId: workspace.id });
+  const plan = await f.call("native.rewind.plan", {
+    request: {
+      workspaceId: workspace.id,
+      sessionId,
+      expectedRevision: current.revision,
+      expectedConversationRevision: 2,
+      direction: "rewind",
+      userBlockId: turn.userBlockId,
+    },
+    conversation,
+  });
+  const mutation = {
+    workspaceId: workspace.id,
+    sessionId,
+    expectedRevision: current.revision,
+    expectedConversationRevision: 2,
+    planToken: plan.token,
+    idempotencyKey: "rpc-cancelled",
+  };
+  const key = { workspaceId: workspace.id, sessionId, idempotencyKey: mutation.idempotencyKey };
+  const cancelled = await f.call("native.rewind.cancelPreparation", key);
+  expect(cancelled).toEqual({ ...key, cancelled: true });
+  expect(await f.call("native.rewind.cancelPreparation", key)).toEqual(cancelled);
+  expect(
+    (
+      await f.request("native.rewind.prepare", {
+        request: mutation,
+        direction: "rewind",
+        conversation,
+      })
+    ).value.error,
+  ).toMatch(/cancelled/);
+  expect(readFileSync(join(workspace.path, "source.txt"), "utf8")).toBe("native dirty source\n");
+  const protectedKey = { ...key, idempotencyKey: "rpc-protected-key" };
+  expect(
+    (await f.request("native.rewind.cancelPreparation", protectedKey, "invalid-token")).status,
+  ).toBe(401);
+  const foreign = await f.store.issueDevice("Foreign native device");
+  expect(
+    (await f.request("native.rewind.cancelPreparation", protectedKey, foreign.token)).value.error,
+  ).toMatch(/another device/);
+  const hostSession = await f.call("commands.dispatch", {
+    type: "create",
+    commandId: "scope-for-cancel",
+    projectId: f.projectScope.projectId,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const grant = await f.call("conversation.access.issue", { sessionId: hostSession.sessionId });
+  const scoped = await f.request("native.rewind.cancelPreparation", protectedKey, grant.token);
+  expect(scoped.status).toBe(400);
+  expect(scoped.value.error).toMatch(/credential|conversation|owner|scope/i);
+  const operation = await f.call("native.rewind.prepare", {
+    request: { ...mutation, idempotencyKey: protectedKey.idempotencyKey },
+    direction: "rewind",
+    conversation,
+  });
+  expect(await f.call("native.rewind.cancelPreparation", protectedKey)).toEqual({
+    ...protectedKey,
+    cancelled: false,
+    operation,
+  });
+  expect((await f.call("native.rewind.status", operation)).phase).toBe("prepared");
+});

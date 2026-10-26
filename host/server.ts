@@ -2120,6 +2120,7 @@ export async function createHostServer(
                 case "native.rewind.plan":
                 case "native.rewind.prepare":
                 case "native.rewind.lookup":
+                case "native.rewind.cancelPreparation":
                 case "native.rewind.apply":
                 case "native.rewind.status":
                 case "native.rewind.ack": {
@@ -2127,6 +2128,7 @@ export async function createHostServer(
                     | "plan"
                     | "prepare"
                     | "lookup"
+                    | "cancelPreparation"
                     | "apply"
                     | "status"
                     | "ack";

@@ -20,6 +20,8 @@ type NativeOperation = {
   receipt?: { revision: number };
   conversation?: Boundary;
 };
+type PreparationKey = { workspaceId: string; sessionId: string; idempotencyKey: string };
+type CancelledPreparation = PreparationKey & { owner: string };
 class AwaitNativeReceipt extends Error {}
 const fingerprint = (owner: WorkspaceOwnerAuthorization) =>
   createHash("sha256").update(owner.ownerId).digest("hex");
@@ -37,6 +39,13 @@ export function createManagedNativeRewind(
   const directory = join(options.root, "native-conversations");
   const sessionPath = (id: string) => join(directory, `session-${refComponent(id)}.json`);
   const operationPath = (id: string) => join(directory, `operation-${refComponent(id)}.json`);
+  const cancellationPath = (key: PreparationKey) =>
+    join(
+      directory,
+      `cancelled-${createHash("sha256")
+        .update(JSON.stringify([key.workspaceId, key.idempotencyKey]))
+        .digest("hex")}.json`,
+    );
   const read = async <T>(path: string): Promise<T | null> => {
     try {
       return JSON.parse(await readFile(path, "utf8"));
@@ -198,10 +207,7 @@ export function createManagedNativeRewind(
     isNativeSession: async (sessionId: string) => !!(await binding(sessionId)),
     /** Read-only discovery after loss of the preparation response. Authentication
      * binds the key to its original native device, workspace and session. */
-    async lookup(
-      input: { workspaceId: string; sessionId: string; idempotencyKey: string },
-      owner: WorkspaceOwnerAuthorization,
-    ) {
+    async lookup(input: PreparationKey, owner: WorkspaceOwnerAuthorization) {
       refComponent(input.idempotencyKey);
       await authorizeSession(input.workspaceId, input.sessionId, owner);
       const entry = (await options.registry.findOperation({
@@ -214,6 +220,34 @@ export function createManagedNativeRewind(
         throw new Error("Native rewind session identity changed");
       await ownedOperation(entry.id, owner);
       return preparedDescriptor(entry);
+    },
+    /** Only an absent operation may be cancelled. Serialize with prepare and
+     * retain a durable key tombstone so a delayed request cannot create it later. */
+    async cancelPreparation(input: PreparationKey, owner: WorkspaceOwnerAuthorization) {
+      refComponent(input.idempotencyKey);
+      await authorizeSession(input.workspaceId, input.sessionId, owner);
+      const key: PreparationKey = {
+        workspaceId: input.workspaceId,
+        sessionId: input.sessionId,
+        idempotencyKey: input.idempotencyKey,
+      };
+      const entry = (await options.registry.findOperation({
+        workspaceId: key.workspaceId,
+        kind: "rewind",
+        idempotencyKey: key.idempotencyKey,
+      })) as DurableRewindOperation | null;
+      if (entry) {
+        await ownedOperation(entry.id, owner);
+        if (entry.plan.sessionId !== key.sessionId)
+          throw new Error("Native rewind session identity changed");
+        return { ...key, cancelled: false as const, operation: preparedDescriptor(entry) };
+      }
+      const cancelled: CancelledPreparation = { ...key, owner: fingerprint(owner) };
+      const previous = await read<CancelledPreparation>(cancellationPath(key));
+      if (previous && JSON.stringify(previous) !== JSON.stringify(cancelled))
+        throw new Error("Cancelled native preparation belongs to another device or session");
+      if (!previous) await durableWrite(cancellationPath(key), JSON.stringify(cancelled));
+      return { ...key, cancelled: true as const };
     },
     async bindTurn(
       request: { workspaceId: string; sessionId: string; conversationRevision: number },
@@ -236,6 +270,10 @@ export function createManagedNativeRewind(
     ) {
       if (input.direction !== "rewind" && input.direction !== "undo")
         throw new Error("Invalid rewind direction");
+      refComponent(input.request.idempotencyKey);
+      await authorizeSession(input.request.workspaceId, input.request.sessionId, owner);
+      if (await read<CancelledPreparation>(cancellationPath(input.request)))
+        throw new Error("Native rewind preparation was cancelled; preview again with a new key");
       await bind(input.request, input.conversation, owner);
       try {
         await service[input.direction === "undo" ? "undo" : "apply"](input.request);
@@ -364,6 +402,7 @@ export function createManagedNativeRewind(
     bindTurn: serialized(api.bindTurn),
     plan: serialized(api.plan),
     lookup: serialized(api.lookup),
+    cancelPreparation: serialized(api.cancelPreparation),
     prepare: serialized(api.prepare),
     apply: serialized(api.apply),
     status: serialized(api.status),
