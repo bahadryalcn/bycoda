@@ -1,5 +1,19 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
-import { gitMutationScope, isHostGitMutation, withHostGitMutation } from "./git-mutations";
+import {
+  gitMutationScope,
+  hostGitRepositoryKey,
+  isBranchDeliveryCommand,
+  isHostGitMutation,
+  isManagedWorkspaceBranch,
+  MANAGED_DELIVERY_REVIEW_REQUIRED,
+  withHostGitMutation,
+} from "./git-mutations";
+import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
+import type {
+  BranchDeliveryService,
+  WorkspaceOwnerAuthorization,
+  WorkspaceRegistry,
+} from "./workspace-service-contracts";
 import { constants } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -146,6 +160,12 @@ const alreadyExists = (name: string) =>
 
 type Located = { root: string; relative: string };
 
+/** Installed by the execution Host, never supplied in workspace.run arguments. */
+export interface WorkspaceCommandDelivery {
+  registry: Pick<WorkspaceRegistry, "list">;
+  service: BranchDeliveryService;
+}
+
 export class WorkspaceCommands {
   private searches = new Map<string, { owner: string; controller: AbortController }>();
   private cancelledSearches = new Map<string, number>();
@@ -167,7 +187,33 @@ export class WorkspaceCommands {
     private readonly checkpoints = new HostCheckpoints(
       resolve(dirname(store.attachmentDir), "checkpoints"),
     ),
+    private readonly delivery?: WorkspaceCommandDelivery,
   ) {}
+
+  async reviewDelivery(request: WorkspaceRpcRequest<"workspaces.delivery.review">) {
+    return await this.deliveryService().review(request);
+  }
+
+  /** Owner proof is a separate trusted-transport parameter, not renderer input. */
+  async mergeDelivery(
+    request: WorkspaceRpcRequest<"workspaces.delivery.merge">,
+    owner: WorkspaceOwnerAuthorization,
+  ) {
+    return await this.deliveryService().merge(request, owner);
+  }
+
+  async publishDelivery(
+    request: WorkspaceRpcRequest<"workspaces.delivery.publish">,
+    owner: WorkspaceOwnerAuthorization,
+  ) {
+    return await this.deliveryService().publish(request, owner);
+  }
+
+  private deliveryService(): BranchDeliveryService {
+    if (!this.delivery)
+      throw new Error("Managed workspace delivery is unavailable. Update the execution Host.");
+    return this.delivery.service;
+  }
 
   async run(command: unknown, args: unknown, owner = "local"): Promise<Awaited<Promise<unknown>>> {
     if (!WORKSPACE_COMMANDS.includes(command as WorkspaceCommand))
@@ -183,6 +229,8 @@ export class WorkspaceCommands {
             root,
             async () => {
               try {
+                if (isBranchDeliveryCommand(command as string))
+                  await this.assertLegacyDeliveryAllowed(command as string, input);
                 return await this.runCommand(command as WorkspaceCommand, input, owner);
               } finally {
                 invalidateHostGitIndex(root);
@@ -203,6 +251,62 @@ export class WorkspaceCommands {
       );
     }
     return await this.runCommand(command as WorkspaceCommand, input, owner);
+  }
+
+  private async assertLegacyDeliveryAllowed(command: string, input: Record<string, unknown>) {
+    if (command === "git_merge" && isManagedWorkspaceBranch(input.reference))
+      throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
+    if (!this.delivery) return; // Existing unregistered sessions keep legacy source control.
+    const cwd = await this.gitRoot(input.cwd);
+    const key = await hostGitRepositoryKey(cwd);
+    const projects = await this.store.projects();
+    const matching = await Promise.all(
+      projects.map(async (project) =>
+        (await hostGitRepositoryKey(project.cwd)) === key ? project : null,
+      ),
+    );
+    const owners = matching.filter((project) => project !== null);
+    if (!owners.length) throw new Error("Project is unavailable");
+    const currentBranch = (await this.gitCommand(cwd, ["symbolic-ref", "--quiet", "HEAD"])).trim();
+    const treeRoot = await realpath(
+      (await this.gitCommand(cwd, ["rev-parse", "--show-toplevel"])).trim(),
+    );
+    const samePath = (left: string, right: string) => {
+      const normalize = (path: string) => {
+        const value = resolve(path).replace(/\\/g, "/");
+        return process.platform === "win32" ? value.toLowerCase() : value;
+      };
+      return normalize(left) === normalize(right);
+    };
+    const expectedSource =
+      command === "git_merge" && input.expectedTargetSha !== undefined
+        ? await this.gitCommitSha(cwd, input.expectedTargetSha)
+        : undefined;
+    const reference =
+      typeof input.reference === "string"
+        ? input.reference.startsWith("refs/")
+          ? input.reference
+          : `refs/heads/${input.reference}`
+        : undefined;
+    for (const project of owners) {
+      // Failed registry reads are unknown, never permission to publish.
+      const workspaces = await this.delivery.registry.list({ projectId: project.id });
+      for (const workspace of workspaces) {
+        const workspacePath = await realpath(workspace.path).catch(() => workspace.path);
+        if (
+          samePath(treeRoot, workspacePath) ||
+          workspace.branchRef === currentBranch ||
+          workspace.branchRef === reference
+        )
+          throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
+        if (expectedSource !== undefined) {
+          const source = (
+            await this.gitCommand(cwd, ["rev-parse", "--verify", `${workspace.branchRef}^{commit}`])
+          ).trim();
+          if (source === expectedSource) throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
+        }
+      }
+    }
   }
 
   cancelSearches(owner: string): void {
