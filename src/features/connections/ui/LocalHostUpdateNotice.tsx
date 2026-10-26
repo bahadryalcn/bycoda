@@ -2,6 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { buildIdentity } from "../../../shared/model/build-info";
+import { remoteRequest } from "../model/connections";
+import { localHostCompatibility } from "../model/buildCompatibility";
+import type { HostDescriptor, RemoteMachine } from "../model/protocol";
 
 type BundledHostStatus = {
   state: string;
@@ -14,6 +18,7 @@ type BundledHostStatus = {
 export function LocalHostUpdateNotice() {
   useLocale();
   const [status, setStatus] = useState<BundledHostStatus | null>(null);
+  const [mismatch, setMismatch] = useState<"identity" | "capabilities" | null>(null);
   useEffect(() => {
     let cancelled = false;
     const load = () =>
@@ -24,15 +29,36 @@ export function LocalHostUpdateNotice() {
         () => undefined,
       );
     void load();
-    const timer = window.setInterval(load, 15_000);
+    const loadCompatibility = async () => {
+      try {
+        const machines = await invoke<RemoteMachine[]>("remote_machines");
+        const machine = machines.find((entry) => entry.localHost);
+        if (!machine) return;
+        const descriptor = await remoteRequest<HostDescriptor>(
+          machine.id,
+          "environment.describe",
+          {},
+          true,
+        );
+        if (!cancelled) setMismatch(localHostCompatibility(buildIdentity, descriptor));
+      } catch {
+        /* An unavailable descriptor is not evidence of a mismatch. */
+      }
+    };
+    void loadCompatibility();
+    const timer = window.setInterval(() => {
+      void load();
+      void loadCompatibility();
+    }, 15_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
   }, []);
-  if (!status || (status.state !== "deferred" && status.state !== "failed")) return null;
+  const pendingUpdate = status?.state === "deferred" || status?.state === "failed";
+  if (!pendingUpdate && !mismatch) return null;
   const versions =
-    status.installed && status.bundled
+    status?.installed && status.bundled
       ? t("This computer's host is {p0}; this app includes {p1}.", {
           p0: status.installed,
           p1: status.bundled,
@@ -41,11 +67,20 @@ export function LocalHostUpdateNotice() {
   return (
     <Alert tone="warning" role="status">
       <span className="font-medium text-content">
-        {status.state === "failed"
-          ? t("The host on this computer could not be updated.")
-          : t("The host on this computer will update soon.")}
+        {pendingUpdate
+          ? status?.state === "failed"
+            ? t("The host on this computer could not be updated.")
+            : t("The host on this computer will update soon.")
+          : t("The app and this computer's Host need to be updated together.")}
       </span>{" "}
-      {versions} {status.message ? t(status.message) : null}
+      {versions} {status?.message ? t(status.message) : null}{" "}
+      {mismatch === "identity"
+        ? t("The serving Host source differs from the Host bundled with this app.")
+        : mismatch === "capabilities"
+          ? t(
+              "The serving Host does not support managed workspace creation and policy. Update the Host before starting work.",
+            )
+          : null}
     </Alert>
   );
 }
