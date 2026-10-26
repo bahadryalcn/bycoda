@@ -308,11 +308,18 @@ as a new defect; then exercise the affected flow on the identified app and host.
 ### Local lead-run workers
 
 New isolated workers launched by the local lead-run controller use managed,
-session-owned branches. Each worker commits its assigned changes and reports its
+session-owned branches based on the selected lead checkout's committed SHA. The
+lead branch and directory are saved as the delivery target, including when the
+lead works outside the project integration branch. Uncommitted lead files are
+excluded. Missing, detached or changed lead targets block preparation or review;
+the controller does not substitute the integration checkout.
+
+Each worker commits its assigned changes and reports its
 branch and final SHA. Review retains the result until the owner opens that worker
 session's **Workspace actions**, reviews the branch and approves its merge. Retry
-the coordinator review after delivery. New commits after a merge require another
-owner review. Checkpoint copying does not count as branch delivery.
+the coordinator review after delivery into the saved lead target. A merge into a
+different branch does not permit acceptance. New commits after a merge require
+another owner review. Checkpoint copying does not count as branch delivery.
 
 Retained workers from older local runs keep their existing checkout and commits;
 they require explicit owner migration before managed acceptance. Removing a

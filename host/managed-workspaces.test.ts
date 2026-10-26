@@ -242,6 +242,145 @@ it("pins the integration tip, excludes dirty files and returns the original dupl
   expect(await reopened.registry.prepare(f.request)).toEqual(a);
 });
 
+it("pins a selected lead's commit and delivery target across retries and Host restart", async () => {
+  const f = await fixture();
+  const lead = join(f.parent, "lead");
+  f.git("worktree", "add", "-q", "-b", "feature/lead", lead, "HEAD");
+  writeFileSync(join(lead, "prerequisite.txt"), "committed prerequisite\n");
+  f.gitAt(lead, "add", ".");
+  f.gitAt(lead, "commit", "-qm", "lead prerequisite");
+  const source = {
+    directory: lead,
+    branchRef: "refs/heads/feature/lead",
+    baseCommit: f.gitAt(lead, "rev-parse", "HEAD"),
+  };
+  const request = { ...f.request, source };
+  writeFileSync(join(lead, "private-draft.txt"), "uncommitted lead draft\n");
+  const prepared = await f.registry.prepare(request);
+  expect(prepared.workspace).toMatchObject({
+    baseRef: source.branchRef,
+    baseCommit: source.baseCommit,
+    targetBranchRef: source.branchRef,
+    targetDirectory: lead,
+  });
+  expect(f.gitAt(prepared.workspace.path, "rev-parse", "HEAD")).toBe(source.baseCommit);
+  expect(readFileSync(join(prepared.workspace.path, "prerequisite.txt"), "utf8")).toBe(
+    "committed prerequisite\n",
+  );
+  expect(existsSync(join(prepared.workspace.path, "private-draft.txt"))).toBe(false);
+  expect(existsSync(join(f.cwd, "prerequisite.txt"))).toBe(false);
+  writeFileSync(join(lead, "later.txt"), "later committed lead state\n");
+  f.gitAt(lead, "add", "later.txt");
+  f.gitAt(lead, "commit", "-qm", "advance lead");
+  expect(await f.registry.prepare(request)).toEqual(prepared);
+  const reopened = await f.reopen();
+  expect(await reopened.registry.prepare(request)).toEqual(prepared);
+  await expect(
+    reopened.registry.prepare({
+      ...request,
+      source: { ...source, baseCommit: f.gitAt(lead, "rev-parse", "HEAD") },
+    }),
+  ).rejects.toThrow("different request");
+});
+
+it("rejects unresolved, detached, foreign and stale selected leads without falling back to integration", async () => {
+  const f = await fixture();
+  const lead = join(f.parent, "lead");
+  f.git("worktree", "add", "-q", "-b", "feature/lead", lead, "HEAD");
+  const source = {
+    directory: lead,
+    branchRef: "refs/heads/feature/lead",
+    baseCommit: f.gitAt(lead, "rev-parse", "HEAD"),
+  };
+  await expect(f.registry.prepare({ ...f.request, source: null as any })).rejects.toThrow(
+    "Selected source requires",
+  );
+  await expect(
+    f.registry.prepare({ ...f.request, source: { ...source, directory: "relative" } }),
+  ).rejects.toThrow("Selected source requires");
+  await expect(
+    f.registry.prepare({ ...f.request, source: { ...source, baseCommit: "HEAD" } }),
+  ).rejects.toThrow("committed SHA");
+  await expect(
+    f.registry.prepare({
+      ...f.request,
+      source: { ...source, directory: join(f.parent, "missing") },
+    }),
+  ).rejects.toThrow();
+  const subdirectory = join(lead, "subdirectory");
+  mkdirSync(subdirectory);
+  await expect(
+    f.registry.prepare({ ...f.request, source: { ...source, directory: subdirectory } }),
+  ).rejects.toThrow("registered target checkout");
+  await expect(
+    f.registry.prepare({ ...f.request, source: { ...source, branchRef: "refs/heads/main" } }),
+  ).rejects.toThrow("requested target branch");
+  await expect(
+    f.registry.prepare({ ...f.request, source, baseRef: "refs/heads/main" }),
+  ).rejects.toThrow("another base or dependency");
+  await expect(
+    f.registry.prepare({
+      ...f.request,
+      source,
+      dependency: { workspaceId: "another", commit: source.baseCommit },
+    }),
+  ).rejects.toThrow("another base or dependency");
+  const foreign = await fixture();
+  await expect(
+    f.registry.prepare({
+      ...f.request,
+      source: { ...source, directory: foreign.cwd, branchRef: "refs/heads/main" },
+    }),
+  ).rejects.toThrow("different repository");
+  f.gitAt(lead, "checkout", "--detach", "-q");
+  await expect(f.registry.prepare({ ...f.request, source })).rejects.toThrow();
+  f.gitAt(lead, "checkout", "-q", "feature/lead");
+  writeFileSync(join(lead, "later.txt"), "advanced\n");
+  f.gitAt(lead, "add", ".");
+  f.gitAt(lead, "commit", "-qm", "advance source before preparation");
+  await expect(f.registry.prepare({ ...f.request, source })).rejects.toThrow("commit changed");
+  expect(await f.registry.list({ projectId: f.project.id })).toEqual([]);
+});
+
+it("recovers a selected lead's pinned base and rejects a changed delivery directory", async () => {
+  const f = await fixture();
+  const lead = join(f.parent, "lead");
+  f.git("worktree", "add", "-q", "-b", "feature/lead", lead, "HEAD");
+  const source = {
+    directory: lead,
+    branchRef: "refs/heads/feature/lead",
+    baseCommit: f.gitAt(lead, "rev-parse", "HEAD"),
+  };
+  const paused = createManagedWorkspaceRegistry(f.store, f.policy, {
+    beforeMaterialize: async () => {
+      throw new Error("paused creation");
+    },
+  });
+  await expect(paused.prepare({ ...f.request, source })).rejects.toThrow("paused creation");
+  const [workspace] = await f.store.managedWorkspaces();
+  const [operation] = await f.store.workspaceOperations(workspace.id);
+  await f.store.db
+    .prepare("UPDATE managed_workspaces SET payload=? WHERE id=?")
+    .run(JSON.stringify({ ...workspace, targetDirectory: f.cwd }), workspace.id);
+  await expect(f.registry.recoverCreate(operation.id)).rejects.toThrow("target identity changed");
+  expect(existsSync(workspace.path)).toBe(false);
+  await f.store.db
+    .prepare("UPDATE managed_workspaces SET payload=? WHERE id=?")
+    .run(JSON.stringify(workspace), workspace.id);
+  writeFileSync(join(lead, "later.txt"), "lead moved after journal registration\n");
+  f.gitAt(lead, "add", ".");
+  f.gitAt(lead, "commit", "-qm", "lead advances while worker preparation is paused");
+  const recovered = await f.registry.recoverCreate(operation.id);
+  expect(recovered).toMatchObject({
+    baseCommit: source.baseCommit,
+    baseRef: source.branchRef,
+    targetBranchRef: source.branchRef,
+    targetDirectory: lead,
+  });
+  expect(f.gitAt(recovered.path, "rev-parse", "HEAD")).toBe(source.baseCommit);
+  expect(existsSync(join(recovered.path, "later.txt"))).toBe(false);
+});
+
 it("allows one workspace per writer and independent workspaces for other writer kinds", async () => {
   const f = await fixture();
   const created = await f.registry.prepare(f.request);

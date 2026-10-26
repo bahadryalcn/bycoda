@@ -25,6 +25,8 @@ export type OrchestrationWorkspace = {
   branch?: string;
   /** Authoritative Host registry identity; legacy checkouts are never silently adopted. */
   managedWorkspaceId?: string;
+  /** Committed lead baseline and delivery target pinned when this worker was prepared. */
+  source?: { baseCommit: string; branchRef: string; directory: string };
 };
 
 export type DispatchState =

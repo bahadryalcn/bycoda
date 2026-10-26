@@ -16,7 +16,10 @@ import {
   orchestrationProjectCwd,
   orchestrationCheckoutCwd,
   workspaceIdentity,
+  type OrchestrationRun,
+  type OrchestrationWorkspace,
 } from "../../../features/orchestration/model/orchestration";
+import type { ManagedWorkspace } from "../../../features/workspaces/model/contracts";
 import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
   listWorktrees,
@@ -50,6 +53,57 @@ export interface OrchestratorWorkerBindingDeps {
 
 type OrchestratorBindingConfig = Parameters<typeof orchestrator.bind>[0];
 
+async function selectedLeadSource(run: OrchestrationRun, saved?: OrchestrationWorkspace) {
+  const directory = orchestrationCheckoutCwd(run);
+  const listed = await listWorktrees(directory);
+  const lead = listed.worktrees.find((tree) => sameProjectPath(tree.path, directory));
+  if (
+    !lead ||
+    lead.missing ||
+    lead.prunable ||
+    !lead.branch ||
+    !/^[a-f0-9]{40,64}$/i.test(lead.head)
+  )
+    throw new Error("The selected lead's committed base and delivery target cannot be resolved");
+  const branchRef = lead.branch.startsWith("refs/heads/")
+    ? lead.branch
+    : `refs/heads/${lead.branch}`;
+  const selectedBranch = run.workspace?.branch;
+  if (
+    selectedBranch &&
+    branchRef !==
+      (selectedBranch.startsWith("refs/heads/") ? selectedBranch : `refs/heads/${selectedBranch}`)
+  )
+    throw new Error("The selected lead's target branch changed; its workers were retained");
+  if (saved) {
+    if (!saved.source || !/^[a-f0-9]{40,64}$/i.test(saved.source.baseCommit))
+      throw new Error(
+        "This worker has no pinned lead target; explicit owner migration is required",
+      );
+    if (!sameProjectPath(saved.source.directory, lead.path) || saved.source.branchRef !== branchRef)
+      throw new Error("The selected lead's delivery target changed; its worker was retained");
+    // Lead HEAD can advance through other accepted workers. Never rebase a retained worker implicitly.
+    return saved.source;
+  }
+  return { baseCommit: lead.head, branchRef, directory: lead.path };
+}
+
+function assertWorkerSource(
+  managed: ManagedWorkspace,
+  source: NonNullable<OrchestrationWorkspace["source"]>,
+) {
+  if (
+    managed.baseCommit !== source.baseCommit ||
+    managed.baseRef !== source.branchRef ||
+    managed.targetBranchRef !== source.branchRef ||
+    !managed.targetDirectory ||
+    !sameProjectPath(managed.targetDirectory, source.directory)
+  )
+    throw new Error(
+      "Worker base or delivery target differs from its selected lead; its result was not accepted",
+    );
+}
+
 export function createOrchestratorWorkerBindings({
   checkOpenWorktreeFiles,
   onStop,
@@ -69,7 +123,7 @@ export function createOrchestratorWorkerBindings({
         task.workspacePolicy === "shared"
           ? workspaceIdentity(projectCwd, leadCheckoutCwd)
           : task.workspace
-            ? await listWorktrees(leadCheckoutCwd).then((listed) => {
+            ? await listWorktrees(leadCheckoutCwd).then(async (listed) => {
                 const tree = listed.worktrees.find(
                   (entry) => pathKey(entry.path) === pathKey(task.workspace!.checkoutCwd),
                 );
@@ -77,6 +131,22 @@ export function createOrchestratorWorkerBindings({
                   throw new Error(
                     "This worker's retained worktree is missing. Its saved changes cannot be retried automatically.",
                   );
+                const source = await selectedLeadSource(run, task.workspace);
+                if (task.workspace!.managedWorkspaceId) {
+                  const managed = await workspaceRequest(
+                    "workspaces.get",
+                    { workspaceId: task.workspace!.managedWorkspaceId },
+                    { cwd: projectCwd },
+                  );
+                  if (
+                    !managed ||
+                    managed.owner.kind !== "session" ||
+                    managed.owner.id !== task.sessionId ||
+                    !sameProjectPath(managed.path, tree.path)
+                  )
+                    throw new Error("Worker workspace identity changed; its checkout was retained");
+                  assertWorkerSource(managed, source);
+                }
                 return {
                   ...workspaceIdentity(
                     projectCwd,
@@ -84,9 +154,11 @@ export function createOrchestratorWorkerBindings({
                     tree.branch ?? task.workspace!.branch,
                   ),
                   managedWorkspaceId: task.workspace!.managedWorkspaceId,
+                  source,
                 };
               })
             : await (async () => {
+                const source = await selectedLeadSource(run);
                 const context = await resolveWorkspaceContext(projectCwd);
                 const { workspace: managed } = await workspaceRequest(
                   "workspaces.prepare",
@@ -97,6 +169,7 @@ export function createOrchestratorWorkerBindings({
                     owner: { kind: "session", id: task.sessionId },
                     slug: task.title,
                     choice: { defaultMode: "worktree" },
+                    source,
                   },
                   { cwd: projectCwd },
                 );
@@ -108,6 +181,7 @@ export function createOrchestratorWorkerBindings({
                   throw new Error(
                     "Worker workspace preparation is incomplete; retry the same assignment",
                   );
+                assertWorkerSource(managed, source);
                 return {
                   ...workspaceIdentity(
                     projectCwd,
@@ -115,6 +189,7 @@ export function createOrchestratorWorkerBindings({
                     managed.branchRef.replace(/^refs\/heads\//, ""),
                   ),
                   managedWorkspaceId: managed.id,
+                  source,
                 };
               })();
       const checkoutCwd = workspace.checkoutCwd;
@@ -227,6 +302,7 @@ export function createOrchestratorWorkerBindings({
         throw new Error(
           "This legacy worker needs explicit owner migration and owner-approved managed delivery; its checkout and branch were retained",
         );
+      const source = await selectedLeadSource(run, task.workspace);
       let managed = await workspaceRequest(
         "workspaces.get",
         { workspaceId },
@@ -239,6 +315,7 @@ export function createOrchestratorWorkerBindings({
         !sameProjectPath(managed.path, fromCwd)
       )
         throw new Error("Worker workspace identity changed; its result was not accepted");
+      assertWorkerSource(managed, source);
       if (managed.state !== "merged") {
         if (managed.state !== "finished")
           managed = await workspaceRequest(
@@ -259,6 +336,14 @@ export function createOrchestratorWorkerBindings({
         { workspaceId, expectedRevision: managed.revision, action: "merge" },
         { cwd: orchestrationProjectCwd(run) },
       );
+      if (
+        delivery.targetBranchRef !== source.branchRef ||
+        !delivery.targetDirectory ||
+        !sameProjectPath(delivery.targetDirectory, source.directory)
+      )
+        throw new Error(
+          "Owner-approved delivery did not enter the selected lead's target; its result was not accepted",
+        );
       if (delivery.blockers.length || delivery.commits.length)
         throw new Error(
           "The worker branch changed after owner-approved managed delivery; request a fresh owner review before acceptance",

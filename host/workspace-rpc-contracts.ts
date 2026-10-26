@@ -55,6 +55,8 @@ export interface WorkspaceRpcContract {
       /** Explicit owner choice only; agent callers cannot manufacture policy exceptions. */
       choice?: WorkspacePolicyOverride;
       baseRef?: string;
+      /** Pin a selected lead's committed checkout and its intended delivery target. */
+      source?: { baseCommit: string; branchRef: string; directory: string };
       /** A committed dependency, never another workspace's dirty directory. */
       dependency?: { workspaceId: string; commit: string };
       featureKey?: string;

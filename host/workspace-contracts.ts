@@ -25,6 +25,8 @@ export interface ManagedWorkspace {
   /** Immutable committed creation baseline; never a snapshot of another checkout's dirty files. */
   baseCommit: string;
   targetBranchRef: string;
+  /** Explicit selected-source or owner-retargeted delivery checkout. */
+  targetDirectory?: string;
   state: WorkspaceState;
   directoryState: WorkspaceDirectoryState;
   revision: number;
@@ -250,6 +252,8 @@ export type BranchDeliveryPlan = {
   sourceBranchRef: string;
   sourceHead: string;
   targetBranchRef: string;
+  /** Older Hosts may omit this; acceptance bound to a checkout must reject its absence. */
+  targetDirectory?: string;
   targetHead: string;
   targetStatusFingerprint: string;
   commits: string[];

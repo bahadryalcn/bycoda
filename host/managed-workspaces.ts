@@ -192,7 +192,10 @@ export function createManagedWorkspaceRegistry(
         const creating = !(operation.idempotencyKey.startsWith("resume:") && planned.revision > 0);
         if (operation.phase === "complete") return complete(operation, project.cwd, creating);
         revision(workspace, operation.expectedRevision);
-        if (workspace.targetBranchRef !== planned.targetBranchRef)
+        if (
+          workspace.targetBranchRef !== planned.targetBranchRef ||
+          workspace.targetDirectory !== planned.targetDirectory
+        )
           throw new Error("Workspace creation target identity changed");
         if (
           (await store.workspaceOperations(workspace.id)).some(
@@ -244,7 +247,59 @@ export function createManagedWorkspaceRegistry(
           );
         let baseRef = request.baseRef ?? resolved.integrationBranchRef;
         let baseCommit: string;
-        if (request.dependency) {
+        let targetBranchRef = resolved.integrationBranchRef;
+        let targetDirectory: string | undefined;
+        if (request.source !== undefined) {
+          if (request.baseRef !== undefined || request.dependency !== undefined)
+            throw new Error("Selected source cannot be combined with another base or dependency");
+          const source = request.source;
+          if (
+            !source ||
+            typeof source.directory !== "string" ||
+            !isAbsolute(source.directory) ||
+            typeof source.branchRef !== "string" ||
+            !source.branchRef.startsWith("refs/heads/") ||
+            typeof source.baseCommit !== "string" ||
+            !/^[a-f0-9]{40,64}$/i.test(source.baseCommit)
+          )
+            throw new Error(
+              "Selected source requires an absolute checkout, full branch ref and committed SHA",
+            );
+          const directory = await realpath(source.directory);
+          if ((await hostGitRepositoryKey(directory)) !== repositoryId)
+            throw new Error("Selected source belongs to a different repository");
+          const git = (args: string[]) =>
+            runGitText(args, {
+              cwd: directory,
+              windowsHide: true,
+              timeout: 30_000,
+              env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+            });
+          await git(["check-ref-format", source.branchRef]);
+          if ((await git(["symbolic-ref", "--quiet", "HEAD"])).trim() !== source.branchRef)
+            throw new Error("Selected source checkout is not on the requested target branch");
+          const registered = (await git(["worktree", "list", "--porcelain", "-z"]))
+            .split("\0\0")
+            .some((record) => {
+              const fields = record.split("\0");
+              return (
+                fields.some((line) => {
+                  if (!line.startsWith("worktree ")) return false;
+                  const path = resolve(line.slice(9));
+                  return process.platform === "win32"
+                    ? path.toLowerCase() === directory.toLowerCase()
+                    : path === directory;
+                }) && fields.includes(`branch ${source.branchRef}`)
+              );
+            });
+          if (!registered) throw new Error("Selected source is not a registered target checkout");
+          baseCommit = await managedWorkspaceBase(project.cwd, source.baseCommit);
+          if ((await git(["rev-parse", "--verify", "HEAD^{commit}"])).trim() !== baseCommit)
+            throw new Error("Selected source commit changed; resolve the lead checkout again");
+          baseRef = source.branchRef;
+          targetBranchRef = source.branchRef;
+          targetDirectory = directory;
+        } else if (request.dependency) {
           const dependency = await required(request.dependency.workspaceId);
           if (
             dependency.repositoryId !== repositoryId ||
@@ -276,7 +331,8 @@ export function createManagedWorkspaceRegistry(
           branchRef: `refs/heads/${names.branch}`,
           baseRef,
           baseCommit,
-          targetBranchRef: resolved.integrationBranchRef,
+          targetBranchRef,
+          ...(targetDirectory ? { targetDirectory } : {}),
           state: "idle",
           directoryState: "blocked",
           revision: 0,

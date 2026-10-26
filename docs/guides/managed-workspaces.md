@@ -39,6 +39,12 @@ Goal final reviews retain their authoritative execution identity across
 interruptions. A changed registered workspace or later owner run blocks the
 affected review instead of consuming another run's result.
 
+Local lead-run workers pin the selected lead's committed SHA, branch and directory
+at preparation. They retain that baseline on retry even when the lead advances.
+Owner-approved delivery must enter the saved lead target before acceptance; a
+delivery to the integration branch alone does not satisfy a different lead target.
+An unresolved or detached lead is an error, with no integration fallback.
+
 The assigned branch is where the worker can commit its own coherent changes.
 Review the branch and execution path before starting an independent writer.
 Parallel writers need separate workspaces. Feature cards describe all affected
