@@ -201,7 +201,12 @@ export async function captureBuildIdentity(request) {
     ...before,
     capturedAt: Date.now(),
     components: { web: request.buildId, native: request.buildId, host: request.buildId },
-    includedSources: [{ repositoryId: before.repositoryId, sourceHead: before.head }],
+    // Only the verified clean snapshot establishes inclusion of the complete HEAD.
+    // Dirty bytes may remove or replace committed features.
+    includedSources:
+      before.dirtyPaths.length === 0
+        ? [{ repositoryId: before.repositoryId, sourceHead: before.head }]
+        : [],
   };
   const path = join(request.frozenRoot, "build/build-info.json");
   await mkdir(dirname(path), { recursive: true });

@@ -37,6 +37,7 @@ export function compareSource(source, identity) {
   if (source.repositoryId !== identity.repositoryId) return "different";
   if (source.head === identity.head && source.sourceFingerprint === identity.sourceFingerprint)
     return "exact";
+  if (source.head === identity.head) return "different";
   if (
     source.dirtyPaths.length === 0 &&
     identity.includedSources.some(

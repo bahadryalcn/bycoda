@@ -12,7 +12,7 @@ import {
   readBuildIdentity,
   parseBuildIdentity,
 } from "./build-info.mjs";
-import { buildStatus } from "./build-status.mjs";
+import { buildStatus, compareSource } from "./build-status.mjs";
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "bycoda-identity-"));
@@ -68,6 +68,32 @@ test("linked worktrees share repository identity and retain their own branch/sou
   await writeFile(join(sibling, "source.txt"), "worktree only");
   assert.notEqual((await sourceIdentity(sibling)).sourceFingerprint, a.sourceFingerprint);
   assert.equal(await readFile(join(root, "source.txt"), "utf8"), "original\n");
+});
+
+test("a dirty deletion cannot claim inclusion of its clean HEAD source", async (t) => {
+  const { root } = await fixture(t);
+  const clean = await sourceIdentity(root);
+  await rm(join(root, "source.txt"));
+  const deleted = await captureBuildIdentity({
+    sourceRoot: root,
+    frozenRoot: root,
+    buildId: "deleted-source",
+    version: "1.2.3",
+    channel: "local",
+    mode: "debug",
+  });
+  assert.equal(deleted.head, clean.head);
+  assert.notEqual(deleted.sourceFingerprint, clean.sourceFingerprint);
+  assert.equal(compareSource(clean, deleted), "different");
+  assert.deepEqual(deleted.includedSources, []);
+  // Also reject historical manifests that overclaimed the dirty HEAD.
+  assert.equal(
+    compareSource(clean, {
+      ...deleted,
+      includedSources: [{ repositoryId: clean.repositoryId, sourceHead: clean.head }],
+    }),
+    "different",
+  );
 });
 
 test("build status verifies installed binary, queries actual live host and never echoes secrets", async (t) => {

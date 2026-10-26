@@ -20,6 +20,7 @@ export function compareBuildIdentity(
   if (source.repositoryId !== built.repositoryId) return "different";
   if (source.sourceFingerprint === built.sourceFingerprint && source.head === built.head)
     return "exact";
+  if (source.head === built.head) return "different";
   if (
     source.dirtyPaths.length === 0 &&
     built.includedSources.some(
