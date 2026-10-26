@@ -4,6 +4,12 @@ const MAX_REPLAY_CHARS = 24_000;
 const MAX_BLOCK_CHARS = 4_000;
 const MAX_REPLAY_BLOCKS = 100;
 
+function truncateReplayText(text: string, limit: number): string {
+  const result = text.slice(0, limit);
+  // Match native UTF-16 budgets without emitting half of an emoji/surrogate pair.
+  return /[\uD800-\uDBFF]$/.test(result) ? result.slice(0, -1) : result;
+}
+
 /** Build a bounded, literal transcript replay. No model-written summary is used. */
 export function buildConversationReplay(blocks: Block[]): string {
   const rows: string[] = [];
@@ -36,10 +42,9 @@ export function buildConversationReplay(blocks: Block[]): string {
     const fullRow = `${block.role.toUpperCase()}: ${content.join("\n")}`;
     if (fullRow.length > MAX_BLOCK_CHARS || fullRow.length > remaining) omittedText = true;
     if (remaining <= 0) break;
-    const row = fullRow.slice(0, Math.min(MAX_BLOCK_CHARS, remaining));
+    const row = truncateReplayText(fullRow, Math.min(MAX_BLOCK_CHARS, remaining));
     rows.push(row);
     remaining -= row.length + 1;
-    if (remaining <= 0) break;
   }
   if (!rows.length) return "";
   rows.reverse();
@@ -85,17 +90,28 @@ export function rewindConversationBeforeMessage(
   session: Session,
   blockId: string,
   now = Date.now(),
-  options: { preserveProviderBinding?: boolean } = {},
+  options: {
+    preserveProviderBinding?: boolean;
+    managedWorkspace?: boolean;
+    operationId?: string;
+  } = {},
 ): Session {
   if (!canRewindConversation(session, blockId)) return session;
   const index = session.blocks.findIndex((block) => block.id === blockId);
   const removed = session.blocks.slice(index).map((block) => ({ ...block }));
   const retained = session.blocks.slice(0, index);
-  const replay = options.preserveProviderBinding ? "" : buildConversationReplay(retained);
+  // Managed Git restoration must always continue in a fresh provider session.
+  const preserveProviderBinding =
+    options.preserveProviderBinding &&
+    !options.managedWorkspace &&
+    !(session as Session & { managedWorkspaceId?: string; workspaceId?: string })
+      .managedWorkspaceId &&
+    !(session as Session & { workspaceId?: string }).workspaceId;
+  const replay = preserveProviderBinding ? "" : buildConversationReplay(retained);
   return {
     ...session,
     blocks: retained,
-    ...(options.preserveProviderBinding ? {} : { providerSessionId: undefined }),
+    ...(preserveProviderBinding ? {} : { providerSessionId: undefined }),
     context: undefined,
     usage: undefined,
     usageLimit: undefined,
@@ -112,7 +128,12 @@ export function rewindConversationBeforeMessage(
     pendingContextReplay: replay || undefined,
     rewindHistory: [
       ...(session.rewindHistory ?? []),
-      { id: crypto.randomUUID(), createdAt: now, fromBlockId: blockId, blocks: removed },
+      {
+        id: options.operationId ?? crypto.randomUUID(),
+        createdAt: now,
+        fromBlockId: blockId,
+        blocks: removed,
+      },
     ],
   };
 }
