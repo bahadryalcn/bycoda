@@ -16,12 +16,13 @@ changing this feature. Coordinate live claims; this tracked card is not a lock.
 
 ## Surface inventory
 
-Inventory baseline: `f26ac112404e326478adb687c23ca9cc032acfef`, 2026-10-26.
+Inventory refreshed from integrated I2 Host `b77b8f39` and I2 app `9f7c1e94`,
+2026-10-26, on `bycoda/wt-model/integration`.
 Search roots: `src/app/`, `src/features/`, `host/`, `src-tauri/src/`,
 `src/shared/i18n/`, `tests/browser/`, `scripts/local-update/`, build configs.
 Search terms: worktree, workspace, rewind, checkpoint, build identity and exact
-command names below. These are existing surfaces or frozen contracts, not a
-claim that the new end-to-end model is routed or accepted.
+command names below. The services and surfaces below are implemented in source;
+runtime capabilities and exercised acceptance remain separate.
 
 ### Contracts, instructions and docs
 
@@ -51,11 +52,17 @@ claim that the new end-to-end model is routed or accepted.
   `src/features/source-control/ui/SourceControl.tsx`,
   `src/features/source-control/ui/GitChangesPanel.tsx`,
   `src/features/source-control/ui/GitGraphWorkspace.tsx`: checkout-scoped Git
-  operations and legacy commit/push/PR controls. They require delivery-gate wiring.
+  operations and legacy commit/push/PR controls. Managed delivery is guarded by
+  the Host owner review gate; legacy mutation dispatch cannot bypass it.
 - `src/features/settings/ui/SettingsView.tsx`,
   `src/features/settings/ui/WorkspaceSettings.tsx`,
   `src/features/settings/ui/SourceControlSettings.tsx`: existing settings hosts;
-  new lifecycle/policy controls are integration work, not baseline guarantees.
+  managed lifecycle/policy controls are hosted here through
+  `src/features/workspaces/ui/WorkspacePolicySettings.tsx`.
+- `src/features/settings/ui/GeneralSettings.tsx`,
+  `src/features/settings/ui/BuildIdentityDetails.tsx` and
+  `src/features/connections/ui/LocalHostUpdateNotice.tsx`: source stamp, copyable
+  identity details and Host compatibility explanation.
 - `src/app/workspace/projects/useWorkspaceDirectoryActions.ts`,
   `src/app/workspace/projects/useWorktreeSelection.ts`,
   `src/app/workspace/projects/useWorktreeRemoval.ts`,
@@ -76,8 +83,11 @@ claim that the new end-to-end model is routed or accepted.
   `src/features/sessions/model/conversationRewind.ts`,
   `src/features/sessions/model/conversationRewindStrategy.ts`,
   `src/features/sessions/ui/AgentTranscript.tsx`,
-  `src/features/sessions/ui/SessionReview.tsx`: conversation boundaries, legacy
-  rewind and per-file checkpoint review; these are separate contracts.
+  `src/features/sessions/ui/SessionReview.tsx`,
+  `src/features/workspaces/model/rewindClient.ts`,
+  `src/features/workspaces/ui/WorkspaceRewindPreview.tsx`: managed preview,
+  operation recovery and Undo discovery; legacy current-mode rewind and per-file
+  checkpoint review retain their separate contracts.
 - `src/integrations/harness/providers/codex/codex.ts`,
   `src/integrations/harness/providers/opencode/opencodeClient.ts`: opaque provider
   reverts must not double-restore files with authoritative managed Git rewind.
@@ -85,16 +95,29 @@ claim that the new end-to-end model is routed or accepted.
   `src/features/tasks/ui/TaskWorkspacePicker.tsx`,
   `src/features/tasks/ui/TaskWorkflowControls.tsx`,
   `src/features/tasks/model/hostTasks.ts`,
-  `src/features/tasks/model/taskWorkspace.ts`: task workspace, dependency and
-  delivery controls; see the tasks/goals card for the full task surface tree.
+  `src/features/tasks/model/taskWorkspace.ts`,
+  `src/features/workspaces/model/taskWorkspaceState.ts`,
+  `src/features/workspaces/ui/WorkspaceReview.tsx`: task workspace, dependency,
+  artifact/finalization state and SHA-bound owner delivery; see the tasks/goals
+  card for the full task surface tree.
 - `src/features/orchestration/model/orchestrationWorkspace.ts`,
   `src/features/automations/model/automations.ts`,
   `src/app/workspace/bridges/useAutomationLaunch.ts`: additional writer creation.
 
 ### Host/native operations
 
+- `host/managed-workspace-runtime.ts`: single production registry, history,
+  delivery, activity, removal, retention, bootstrap and port service graph with
+  startup recovery. `host/managed-native-turns.ts`,
+  `host/managed-native-activity.ts` and `host/managed-native-rewind.ts` provide
+  device-bound native coordination; unknown operations remain fenced.
+- `src-tauri/src/native_workspace.rs`, `src-tauri/src/session_rewind.rs`,
+  `src/app/workspace/files/useManagedWorkspaceBuffers.ts` and
+  `src/features/workspaces/model/nativeManagedTurn.ts`: native process/buffer
+  admission, turn capture, SQLite rescue/receipts and status-only read recovery.
+  Native capabilities are required in addition to general managed capabilities.
 - `host/git-worktrees.ts`, `host/workspace-commands.ts`, `host/workspace.ts`,
-  `host/server.ts`: existing Git list/create/remove routing and workspace commands.
+  `host/server.ts`: Git routing, authenticated managed owner RPCs and workspace commands.
   Native bridge identifiers in `src/features/source-control/model/worktrees.ts`:
   `git_worktrees`, `git_worktree_create`, `git_orchestration_worktree_create`,
   `git_worktree_rename_branch`, `git_worktree_check_remove`,
@@ -109,7 +132,7 @@ claim that the new end-to-end model is routed or accepted.
   `host/conversation-task-tools.ts`, `host/conversation-goal-tools.ts`,
   `host/conversation-steward-tools.ts`: orchestrators and agent writer tools;
   `host/git-actions.ts`, `host/git-mutations.ts` own general Git mutation paths.
-- Frozen RPC families (not baseline dispatcher claims):
+- Routed managed RPC families:
   `workspaces.prepare/get/list/resume/finish/close`,
   `projects.workspacePolicy.get/update`,
   `workspaces.featureClaims.list/acquire/release`,
@@ -125,7 +148,9 @@ claim that the new end-to-end model is routed or accepted.
   `src-tauri/src/bundled_host.rs`, `src-tauri/src/windows_instance.rs`,
   `scripts/local-update/local_update.py`, `vite.config.ts`,
   `src-tauri/tauri.conf.json`: development ports, data/executable identity and
-  frozen-source packaging; s0 types alone do not implement isolation.
+  frozen-source packaging. `scripts/build/dev-native.mjs`,
+  `scripts/build/dev-shot.mjs`, `scripts/build/build-status.mjs` implement isolated
+  leased runs, stamped captures and bounded identity comparison.
 
 ### Mobile, localization and browser surfaces
 
@@ -141,6 +166,10 @@ claim that the new end-to-end model is routed or accepted.
 - `tests/browser/worktrees.tsx`, `tests/browser/worktrees.html`,
   `tests/browser/worktrees.e2e.ts`, `tests/browser/playwright.worktrees.config.ts`,
   `tests/browser/vite.worktrees.config.ts`: management fixture and matrix.
+- `tests/browser/workspace-actions.tsx`, `workspace-rewind.tsx`,
+  `build-identity.tsx` and their specs: owner review, policy, rewind/recovery and
+  build-stamp fixtures. `tests/browser/tasks.tsx` exercises persisted Host task
+  finalization and delivery fields.
 - `tests/browser/git-workspace.tsx`, `tests/browser/git-workspace.html`,
   `tests/browser/git-workspace.spec.ts`, `tests/browser/git-checkouts.spec.ts`,
   `tests/browser/playwright.git-checkouts.config.ts`,
@@ -187,24 +216,42 @@ no-follow Windows removal protocols.
   and open screenshots under `temp/verification/<id>/`. Fixture results are
   distinct from isolated native/Host, installed and released evidence.
 
-## Known blockers
+## Known limitations and acceptance boundary
 
-The contracts baseline does not contain the other streams' managed service and UI
-implementations. Capability routing, native acceptance and build comparison need
-their integrated commits. Mobile sources are unavailable. Do not infer build
+The integrated tree contains managed service routing and the desktop/native
+adapters. Missing or older execution-Host capabilities remain a visible blocker;
+never infer native support from Host-only Git rewind. Native operations require
+cross-store rescue, status and receipt acknowledgement before clearing fences.
+The integrated Host now advertises `sessions.managedCreation.v1`,
+`sessions.native-execution.v1`, `sessions.native-rewind.v1` and
+`workspaces.native-activity.v1` for the implemented trusted endpoints.
+Native process leases and stale/unknown app buffer reports are retained until
+fresh authenticated reconciliation; another app cannot clear them. A managed
+directory and branch both manually renamed before native persistence need
+authoritative Host registry discovery, beyond native naming/path guards.
+
+`host/managed-workspaces.e2e.test.ts` exercises real Git/SQLite production services
+with fake providers. This and browser fixtures do not prove the full live native
+two-session scenario, real provider/GitHub publication, physical devices or
+installed/released behavior. Mobile sources are unavailable. Do not infer build
 inclusion from semver or capture time; unstamped identity remains unknown.
 
 ## Committed handoff references
 
 Contract baseline: `f26ac112404e326478adb687c23ca9cc032acfef`.
-S7 documentation/runtime changes land on `bycoda/wt-model/s7`; resolve the latest
-committed change with `git log --oneline -- .agents/skills/feature-managed-workspaces AGENTS.md docs/reference/managed-workspaces.md`.
-No native, installed or released proof is recorded by this inventory.
+I2 Host wiring: `b77b8f39`; I2 app/native wiring: `9f7c1e94`.
+I3 merges: `af6a9399` (Host) and `e2a71d1c` (app); resolve final integration fixes
+and documentation commits with `git log --oneline -- host/managed-workspace-runtime.ts .agents/skills/feature-managed-workspaces docs/reference/managed-workspaces.md`.
+I3 trusted transport and atomic native rewind receipts: `6d2fac1c`;
+managed provider retirement: `2f4aff43`; composer/disclosure fixes: `c410c4e0`.
+I3 local check logs/captures live under `temp/verification/i3/` and the final
+handoff under `temp/local/i3/`; these are ignored local evidence, not runtime
+product dependencies. No installed or released proof is recorded by this card.
 
 ## Proposals
 
-No additional product behavior proposed. Refresh this inventory from committed
-stream results after owner-controlled integration, recording evidence per surface.
+No additional product behavior proposed. Record acceptance per surface after
+owner-controlled integration and preserve the distinctions above.
 
 Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
 card and the worktree-first documentation. This reference establishes inventory

@@ -5,9 +5,8 @@ and execution directory. The project remains the same project; edits, terminals,
 checks and development servers run in the assigned directory. Existing `current`
 sessions remain in their checkout until explicitly migrated.
 
-This guide describes the managed-workspace contract. The contracts baseline
-contains the existing manual worktree controls, not the complete new lifecycle,
-delivery or Git rewind implementation. A connected Host must advertise the
+This guide describes the integrated managed-workspace workflow. A connected Host
+must advertise the
 required capability before a client offers its operation. Older Hosts need an
 update explanation; creation failure must never send work into main silently.
 
@@ -19,11 +18,12 @@ work defaults to a worktree based on a resolved committed SHA. It does not copy
 uncommitted work from another checkout. To depend on another session, use its
 committed result and record that dependency.
 
-The baseline composer already offers workspace/base selection for a blank
-session. Settings → Workspace → Source control includes manual worktree
-management. Policy, retention, storage and unified delivery controls belong to
-the managed-workspace integration; their presence in a contract is not proof that
-the installed app has them. Mobile sources are absent from this baseline, so its
+The composer offers workspace/base selection for a blank session. Settings →
+Workspace → Source control includes managed workspace policy, retention, storage,
+pinning and directory management. Review the selected execution Host and committed
+base before creating work; missing Host support shows an update requirement.
+The source includes these controls, but the installed app must still be compared
+with its build stamp. Mobile sources are absent from this tree, so its
 mobile creation and recovery flow cannot be documented as implemented here.
 
 The assigned branch is where the worker can commit its own coherent changes.
@@ -41,9 +41,9 @@ review; stale approval cannot apply to a new result.
 
 Only the authenticated owner UI authorizes integration merge, push or PR
 publication. Persistent automatic-merge preferences need renewed approval. The
-baseline task UI has legacy merge controls; these must be routed through the new
-review contract before they satisfy this policy. Agent requests cannot provide
-owner approval. A successful push followed by PR failure retains its push
+task UI separates completion, finalization, approval, delivery and artifact state.
+Use Review changes on the managed directory or task result to inspect delivery.
+Agent requests cannot provide owner approval. A successful push followed by PR failure retains its push
 receipt; inspect/reconcile the same operation before retrying.
 
 Unrelated dirty target files are preserved. Overlapping staged, unstaged,
@@ -65,6 +65,13 @@ or branch. Unknown directories and main are never automatic cleanup targets.
 On Windows, dependency links must be detached without following their targets;
 unsafe links and blocked handles leave a recoverable blocked operation.
 
+Unsaved or unknown native editor reports also block removal and rewind. Fresh
+reports settle only that app profile, process instance and window; reconnecting
+one app cannot silently clear another app's buffers. Uncertain prior process
+leases require explicit reconciliation, even after their process appears old.
+Stale closed windows and earlier app instances can remain blocked until their
+state is explicitly reconciled; restarting another instance does not erase them.
+
 The default directory budget is 50 GiB, warning at 80%, with 20 GiB minimum free
 space. Shared caches and Git recovery objects are counted separately. Pressure
 can accelerate only already eligible safe cleanup. If that is insufficient, new
@@ -84,19 +91,29 @@ rescue state; it does not overwrite later work blindly. Interrupted operations
 block further writes until reconciled. Neither rewind nor Undo rewinds an already
 merged integration branch or force-pushes published history.
 
-The baseline conversation rewind does not provide this bycoda-owned Git
-transaction. Its per-file checkpoint review/Undo is a separate operation with
-shared-work and HEAD-change guards. Until `sessions.git-rewind.v1` is implemented
-and advertised, treat conversation rewind as legacy/provider-dependent behavior,
-not an exact branch/index/worktree restore guarantee.
+Managed Host sessions use the bycoda-owned Git transaction when
+`sessions.git-rewind.v1` is advertised. Native sessions additionally require
+`sessions.native-rewind.v1` and durable native transcript acknowledgement;
+missing support leaves the operation unavailable. The integrated Host supplies
+the trusted native protocol, while complete live native execution and crash
+recovery remain separate acceptance checks. Reload discovers authoritative
+operation state before recovering Undo. A timeout retains the existing operation
+and write fence; it does not authorize retrying Git restoration blindly.
+Existing `current` sessions retain their legacy rewind confirmation. Per-file
+checkpoint review/Undo remains a separate operation with shared-work and
+HEAD-change guards.
 
 ## Knowing which build is visible
 
 Before reporting a screenshot as a new defect, compare requested source with the
 displayed app and responsive Host identities. A semver match or completion before
 capture time does not prove inclusion across worktrees. Unstamped builds report
-source identity unknown. The planned `build:status` comparison requires the
-development-environment stream; it is absent from this contracts baseline.
+source identity unknown. General settings shows a compact source stamp and
+copyable build details. `pnpm build:status` provides bounded, read-only comparison
+of source, manifest, native and responsive Host identities without starting or
+updating services. Isolated development uses `pnpm dev:native` with leased ports,
+separate Host/desktop data and a copied run executable; `pnpm dev:shot` captures
+source-stamped native evidence. A browser fixture is labelled separately.
 See [Local updates](../local-update.md) for owner-directed packaging/installation
 and [Managed workspace contracts](../reference/managed-workspaces.md) for RPCs,
 recovery and the integration acceptance inventory.

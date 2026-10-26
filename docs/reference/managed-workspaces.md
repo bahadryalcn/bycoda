@@ -1,8 +1,49 @@
 # Managed workspaces
 
-This reference defines the worktree-first contracts. Contract availability does
-not mean a Host implements or advertises a capability. Execution paths advertise
-capabilities only after their behavior and recovery protocol exist.
+This reference describes the integrated worktree-first implementation and its
+versioned contracts. The source includes the registry, policy, turn history,
+delivery, retention, bootstrap and desktop surfaces. A connected execution Host
+must advertise an operation's capability; a contract or matching app version
+alone does not establish runtime support.
+
+## Implemented service graph and acceptance limits
+
+`host/managed-workspace-runtime.ts` composes the production services once. Startup
+reconciles provably stopped Host activities and recovers creation, rewind,
+delivery and removal journals before admitting new writers. Sessions, tasks,
+goals, automations and stewards use authoritative registry execution paths.
+Providers, shells, terminals, editor writes and development servers participate
+in shared durable activity/reservation admission. Uncertain activity remains
+blocked instead of expiring by age.
+
+The desktop now includes worktree-default creation, policy/retention/storage
+settings, managed directory review and removal, task delivery state and artifact
+previews, rewind/Undo previews, and General build details. Native session storage
+preserves workspace identity through full and incremental reloads. Native turn,
+activity and rewind adapters use native-kept paired Host credentials and durable
+SQLite fences; missing capabilities keep these operations unavailable.
+The integrated Host implements and advertises managed creation, native turn
+capture, native process/buffer admission and native rewind coordination through
+the trusted transports below. This is source integration, not live native
+acceptance.
+
+`host/managed-workspaces.e2e.test.ts` exercises the production graph with real
+temporary Git repositories and SQLite, independently committed sessions,
+rewind/Undo, owner delivery with unrelated dirty target preservation, and
+junction-safe retirement retaining branches and recovery refs. Its providers are
+fake. Browser fixtures exercise interface states, not installed application or
+live provider behavior. Full native two-session execution and cross-store
+recovery must be exercised separately before native release acceptance.
+
+Native process leases are released by the same authenticated device only after
+confirmed settlement. Complete buffer reports are scoped to device, app profile,
+process instance and window; another client cannot clear them. Restart, stale,
+missing or uncertain reports remain blocking until fresh reconciliation. There
+is no blind timeout that declares a dead or unreachable app clean. Stale windows
+or earlier process instances can therefore remain blocked until explicitly
+reconciled; a fresh report from a different instance does not erase them. Mobile source
+is absent from this integrated tree. Installed/released inclusion remains unknown
+until compared with the actual running build identity.
 
 ## Ownership and policy
 
@@ -23,9 +64,10 @@ Branches use `bycoda/s/<slug>-<12id>` or `bycoda/t/<slug>-<12id>`; directories u
 workspace ID, not its shortened display form. Creation failure never falls back
 to main. Older Hosts require a visible update explanation.
 
-`WorkspaceNames` freezes helper signatures only: S1 supplies branch/directory
-naming and S2 supplies turn/rewind refs. Constants define prefixes and the
-12-character display ID length; implementations still validate Git ref components.
+`host/managed-workspaces.ts` implements branch/directory naming and
+`host/turn-git-history.ts` implements turn/rewind refs. Constants define prefixes
+and the 12-character display ID length; implementations validate Git ref
+components and full ownership.
 
 ## Lifecycle and storage
 
@@ -112,6 +154,8 @@ duplicating a successful push or PR.
 
 RPC request/response types are frozen in
 [`host/workspace-rpc-contracts.ts`](../../host/workspace-rpc-contracts.ts).
+`host/server.ts` routes owner operations through the shared runtime; delivery and
+publication require authenticated owner transport, not agent credentials.
 
 | RPC methods                                                         | Capability                     |
 | ------------------------------------------------------------------- | ------------------------------ |
@@ -123,6 +167,27 @@ RPC request/response types are frozen in
 | `workspaces.delivery.review/merge`                                  | `workspaces.delivery.v1`       |
 | `workspaces.delivery.publish`                                       | `workspaces.pr-publication.v1` |
 | `workspaces.cleanup.plan/apply/status`, `workspaces.storage.status` | `workspaces.lifecycle.v1`      |
+
+Additional integration transports retain the frozen owner contract:
+
+- Managed `sessions.create` binds the persisted session ID before execution and
+  advertises `sessions.managedCreation.v1`.
+- `workspaces.pin` uses `workspaces.pinning.v1`.
+- `workspaces.bootstrap.prepare/status/cancel` explicitly prepare dependencies;
+  workspace creation never silently installs them.
+- `sessions.rewind.status` exposes durable operation/Undo discovery for
+  Host-executed sessions; persisted browser IDs are discovery hints only.
+- Trusted `native.turn.begin/end`, `native.activity.start/end`,
+  `native.buffers.update` and `native.rewind.plan/prepare/apply/status/ack` use
+  native execution/activity/rewind capabilities. Native transcript rescue is
+  persisted before Git restore; Host completion waits for native receipt
+  acknowledgement. Capability absence must never trigger opaque provider revert
+  or a second independent native Git restoration algorithm.
+
+The trusted native transport capabilities are `sessions.native-execution.v1`,
+`workspaces.native-activity.v1` and `sessions.native-rewind.v1`; all are implemented
+and advertised by the integrated Host. Native rewind still requires the general
+Git rewind/Undo capabilities and the matching complete native adapter.
 
 `build.identity.v1` identifies immutable frozen-source manifests, including Git
 identity, dirty paths, fingerprint, capture time, component identities and
@@ -172,9 +237,10 @@ authorization. No profile-level instruction or skill edits are implied.
 
 ## Integration acceptance inventory
 
-This is a review checklist, not a claim that other streams passed. The S7 baseline
-is contract commit `f26ac112404e326478adb687c23ca9cc032acfef`. New services and UI
-must be checked after the owner integrates their committed results. See the
+This remains a release review checklist, separate from implementation inventory.
+The integrated source includes I2 Host `b77b8f39` and I2 app `9f7c1e94`; I3
+verification and integration fixes belong to `bycoda/wt-model/integration`.
+See the
 [user guide](../guides/managed-workspaces.md) for the workflow and legacy limits.
 
 | Area / owner                 | Required exercised behavior                                                                                                                                                                                                                              | Evidence boundary                                                                                                           |
