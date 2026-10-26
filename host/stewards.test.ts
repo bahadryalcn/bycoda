@@ -94,14 +94,15 @@ async function setup() {
     answer: vi.fn(),
   };
   const engine = new HostEngine(store, { claude: provider });
-  // S3 verifies orchestration against real Git worktrees. Checkpoint capture
-  // has its own S2 integration suite and is independent of this fixture.
+  // Legacy per-file checkpoints are independent of this fixture. Managed runs
+  // below attach real retained turn-history capture through writerWorkspaces.
   vi.spyOn(engine.checkpoints, "begin").mockResolvedValue();
   vi.spyOn(engine.checkpoints, "finish").mockResolvedValue();
   // 08:00 local; a daily steward at 09:00 is due an hour later.
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
   const tasks = new HostTasks(store, engine, () => clock.now);
   const workspaces = writerWorkspaces(directory, async (id) => (await store.project(id)).cwd);
+  await workspaces.attachEngine(engine);
   const stewards = new HostStewards(store, engine, tasks, () => clock.now, workspaces);
   cleanups.push(async () => {
     for (const turn of turns) turn.finish();
@@ -574,7 +575,7 @@ describe("host stewards", () => {
     expect(second.updatedAt).toBeGreaterThan(first.updatedAt);
   });
   it("removes the checkout when the steward is deleted mid-run", async () => {
-    const { stewards, engine, input, startDue, worktrees, steward } = await setup();
+    const { stewards, input, startDue, worktrees, steward, workspaces } = await setup();
     await stewards.save(input());
     const turn = await startDue();
     let releaseCapture!: () => void;
@@ -582,9 +583,11 @@ describe("host stewards", () => {
     const gate = new Promise<void>((resolve) => {
       releaseCapture = resolve;
     });
-    vi.spyOn(engine.checkpoints, "finish").mockImplementation(async () => {
+    const end = workspaces.history.end.bind(workspaces.history);
+    vi.spyOn(workspaces.history, "end").mockImplementation(async (request) => {
       captureStarted = true;
       await gate;
+      return await end(request);
     });
     let deleted = false;
     const deletion = stewards.delete("steward").then(() => {

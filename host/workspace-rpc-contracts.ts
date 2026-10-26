@@ -25,6 +25,7 @@ export const WORKSPACE_RPC_METHODS = {
   resume: "workspaces.resume",
   finish: "workspaces.finish",
   close: "workspaces.close",
+  pin: "workspaces.pin",
   policyGet: "projects.workspacePolicy.get",
   policyUpdate: "projects.workspacePolicy.update",
   featureClaimsList: "workspaces.featureClaims.list",
@@ -70,6 +71,10 @@ export interface WorkspaceRpcContract {
   "workspaces.finish": { request: WorkspaceMutation; response: ManagedWorkspace };
   /** Close marks abandoned; it does not imply directory or branch deletion. */
   "workspaces.close": { request: WorkspaceMutation; response: ManagedWorkspace };
+  "workspaces.pin": {
+    request: WorkspaceMutation & { pinned: boolean };
+    response: ManagedWorkspace;
+  };
   "projects.workspacePolicy.get": {
     request: { projectId: string; environmentId: string };
     response: { revision: number; resolved: ResolvedWorkspacePolicy };

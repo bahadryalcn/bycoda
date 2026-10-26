@@ -260,10 +260,6 @@ Connect another computer using an SSH forward to the loopback port.`);
   const { HostEngine } = await import("./engine");
   const { hostProviders } = await import("./providers");
   const { createHostServer } = await import("./server");
-  const { HostAutomations } = await import("./automations");
-  const { HostTasks } = await import("./tasks");
-  const { HostGoals } = await import("./goals");
-  const { HostStewards } = await import("./stewards");
   const releaseOwner = await acquireHostOwner(directory);
   try {
     const { installAppSkills } = await import("./app-skills");
@@ -300,11 +296,6 @@ Connect another computer using an SSH forward to the loopback port.`);
     }
     const engine = new HostEngine(store, hostProviders);
     await engine.ready;
-    const automations = new HostAutomations(store, engine);
-    const tasks = new HostTasks(store, engine);
-    // Goals run on the task board's timer.
-    const goals = new HostGoals(store, engine, tasks);
-    const stewards = new HostStewards(store, engine, tasks);
     const secret = randomBytes(32).toString("base64url");
     let stopping: Promise<void> | undefined;
     let stop: () => Promise<void>;
@@ -348,12 +339,13 @@ Connect another computer using an SSH forward to the loopback port.`);
           }
         });
       },
-      automations,
-      tasks,
       undefined,
-      goals,
-      stewards,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
     );
+    const { automations, tasks, stewards } = server;
     backend.setSocialAccess(server.social, `http://127.0.0.1:${port}`);
     backend.setRuntimeLogAccess(server.runtimeLogAccess, `http://127.0.0.1:${port}`);
     backend.setConversationAccess(server.conversationAccess, `http://127.0.0.1:${port}`);

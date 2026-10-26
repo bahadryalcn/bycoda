@@ -16,6 +16,8 @@ type TerminalEntry = {
   process?: OwnedTerminalProcess;
   output: string;
   end: number;
+  releaseActivity?: () => Promise<void>;
+  releasingActivity?: Promise<void>;
 };
 type Project = { id: string; cwd: string };
 
@@ -24,6 +26,10 @@ export class HostTerminals {
   private entries = new Map<string, TerminalEntry>();
   private creations = new Map<string, { fingerprint: string; result: Promise<HostTerminal> }>();
   private closed = false;
+  private activityGate?: (cwd: string, terminalId: string) => Promise<() => Promise<void>>;
+  setActivityGate(gate: (cwd: string, terminalId: string) => Promise<() => Promise<void>>) {
+    this.activityGate = gate;
+  }
   constructor(
     private readonly launch = startTerminalProcess,
     private readonly profiles: () => ShellProfiles = listShellProfiles,
@@ -109,7 +115,16 @@ export class HostTerminals {
       output: "",
       end: 0,
     };
+    entry.releaseActivity = await this.activityGate?.(cwd, entry.value.id);
     this.entries.set(entry.value.id, entry);
+    try {
+      if (!(await authorized())) throw new Error("Device credential is invalid or revoked");
+      if (this.closed) throw new Error("Host terminals are stopping");
+    } catch (error) {
+      entry.value.state = "exited";
+      await this.releaseActivity(entry);
+      throw error;
+    }
     try {
       entry.process = this.launch(
         profile,
@@ -121,10 +136,12 @@ export class HostTerminals {
         (code) => {
           entry.value.state = "exited";
           entry.value.exitCode = code;
+          void this.releaseActivity(entry).catch(() => {});
         },
       );
     } catch {
       entry.value.state = "exited";
+      await this.releaseActivity(entry);
       throw new Error("Could not start terminal shell");
     }
     return entry.value;
@@ -176,6 +193,7 @@ export class HostTerminals {
     // Anonymous pipes cannot deliver console Ctrl+C reliably on Windows. Stop the owned tree.
     await entry.process?.stop();
     entry.value.state = "exited";
+    await this.releaseActivity(entry);
     return { accepted: true as const };
   }
 
@@ -183,6 +201,7 @@ export class HostTerminals {
     const entry = this.owned(projectId, id);
     await entry.process?.stop();
     entry.value.state = "exited";
+    await this.releaseActivity(entry);
     this.entries.delete(entry.value.id);
     return { closed: true as const };
   }
@@ -194,10 +213,28 @@ export class HostTerminals {
     return entry;
   }
 
+  private async releaseActivity(entry: TerminalEntry) {
+    if (entry.releasingActivity) return entry.releasingActivity;
+    const release = entry.releaseActivity;
+    if (!release) return;
+    const pending = release().then(() => {
+      if (entry.releaseActivity === release) entry.releaseActivity = undefined;
+    });
+    entry.releasingActivity = pending;
+    try {
+      await pending;
+    } finally {
+      if (entry.releasingActivity === pending) entry.releasingActivity = undefined;
+    }
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     await Promise.allSettled(
-      [...this.entries.values()].map(async (entry) => await entry.process?.stop()),
+      [...this.entries.values()].map(async (entry) => {
+        await entry.process?.stop();
+        await this.releaseActivity(entry);
+      }),
     );
     this.entries.clear();
   }

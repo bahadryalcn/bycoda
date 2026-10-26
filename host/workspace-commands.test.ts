@@ -21,7 +21,7 @@ import * as gitActions from "./git-actions";
 vi.mock("./git-worktrees", () => ({ hostWorktrees: vi.fn() }));
 const roots: string[] = [];
 
-async function managedDeliverySetup() {
+async function managedDeliverySetup(startMutation?: WorkspaceCommandDelivery["startMutation"]) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "bycoda-managed-command-")));
   roots.push(root);
   const project = join(root, "project");
@@ -61,10 +61,72 @@ async function managedDeliverySetup() {
     } as never,
     async (_id, action) => await action(),
     undefined,
-    { registry, service } as WorkspaceCommandDelivery,
+    { registry, service, startMutation } as WorkspaceCommandDelivery,
   );
   return { commands, registry, service, project, tree, git };
 }
+
+it("fences Git and editor writes while leaving reads available and releases admission on success or validation failure", async () => {
+  const release = vi.fn(async () => {});
+  const startMutation = vi
+    .fn<NonNullable<WorkspaceCommandDelivery["startMutation"]>>()
+    .mockRejectedValueOnce(new Error("Workspace reservation is active"))
+    .mockRejectedValueOnce(new Error("Workspace reservation is active"))
+    .mockResolvedValue(release);
+  const { commands, tree, git } = await managedDeliverySetup(startMutation);
+  const path = join(tree, "source.txt");
+  await writeFile(path, "before");
+  await expect(commands.run("write_text_file", { path, content: "blocked" })).rejects.toThrow(
+    "Workspace reservation is active",
+  );
+  await expect(
+    commands.run("git_stage_file", { cwd: tree, relative: "source.txt" }),
+  ).rejects.toThrow("Workspace reservation is active");
+  expect(await readFile(path, "utf8")).toBe("before");
+  expect(git(tree, "diff", "--cached", "--name-only")).toBe("");
+  await commands.run("read_text_file", { path });
+  expect(startMutation).toHaveBeenCalledTimes(2);
+  expect(release).not.toHaveBeenCalled();
+  await commands.run("write_text_file", { path, content: "after" });
+  await commands.run("git_stage_file", { cwd: tree, relative: "source.txt" });
+  expect(git(tree, "diff", "--cached", "--name-only")).toBe("source.txt");
+  await expect(
+    commands.run("create_path", { parent: tree, name: "../outside", isDir: false }),
+  ).rejects.toThrow();
+  expect(release).toHaveBeenCalledTimes(3);
+});
+
+it("uses actual write destinations for admission even when input supplies an unrelated cwd", async () => {
+  const release = vi.fn(async () => {});
+  let destination = "";
+  const startMutation = vi.fn(async (path: string) => {
+    if (
+      path === destination ||
+      path.startsWith(`${destination}\\`) ||
+      path.startsWith(`${destination}/`)
+    )
+      throw new Error("Destination is reserved");
+    return release;
+  });
+  const { commands, project, tree } = await managedDeliverySetup(startMutation);
+  destination = tree;
+  const source = join(project, "input.txt");
+  await writeFile(source, "preserved");
+  const existing = join(tree, "existing.txt");
+  await writeFile(existing, "unchanged");
+  await expect(
+    commands.run("write_text_file", { cwd: project, path: existing, content: "blocked" }),
+  ).rejects.toThrow("Destination is reserved");
+  expect(await readFile(existing, "utf8")).toBe("unchanged");
+  for (const command of ["copy_path", "move_path"]) {
+    await expect(
+      commands.run(command, { cwd: project, from: source, destParent: tree }),
+    ).rejects.toThrow("Destination is reserved");
+  }
+  expect(await readFile(source, "utf8")).toBe("preserved");
+  expect(await readdir(tree)).not.toContain("input.txt");
+  expect(release).toHaveBeenCalledTimes(2);
+});
 
 it("blocks legacy delivery from a managed directory even after an external branch switch", async () => {
   const { commands, project, tree, git } = await managedDeliverySetup();

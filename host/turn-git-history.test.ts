@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ManagedWorkspace } from "./workspace-contracts";
@@ -52,6 +52,47 @@ describe("managed turn Git history", () => {
       runId,
       conversationRevision: 1,
     });
+
+  it("idempotently verifies preexisting matching recovery refs and never replaces conflicting refs", async () => {
+    const snapshot = await history.capture(workspace);
+    const refs: [string, string, string] = [
+      rewindRef("retry", "rescue-head"),
+      rewindRef("retry", "rescue-index"),
+      rewindRef("retry", "rescue-worktree"),
+    ];
+    await turnGit(repo, ["update-ref", refs[0], snapshot.head]);
+    await history.retain(workspace, snapshot, refs);
+    await history.retain(workspace, snapshot, refs);
+    for (const [index, reference] of refs.entries())
+      expect(await gitText(repo, ["rev-parse", reference])).toBe(
+        [snapshot.head, snapshot.index, snapshot.worktree][index],
+      );
+    await write("source.txt", "different recovery source\n");
+    const changed = await history.capture(workspace);
+    await expect(history.retain(workspace, changed, refs)).rejects.toThrow("conflicts");
+    expect(await gitText(repo, ["rev-parse", refs[2]])).toBe(snapshot.worktree);
+  }, 120_000);
+
+  it("retries a blocked after capture while retaining the original complete before boundary", async () => {
+    const before = await begin();
+    await write("source.txt", "finished turn\n");
+    const capture = vi
+      .spyOn(history, "capture")
+      .mockRejectedValueOnce(new Error("temporary capture failure"));
+    const request = {
+      workspaceId: workspace.id,
+      sessionId: "session",
+      userBlockId: "user-1",
+      runId: "run-1",
+    };
+    const failed = await history.end(request);
+    expect(failed.after).toMatchObject({ status: "blocked", reason: "temporary capture failure" });
+    capture.mockRestore();
+    const retried = await history.end(request);
+    expect(retried.before).toEqual(before.before);
+    expect(retried.after?.status).toBe("complete");
+    expect(await history.end(request)).toEqual(retried);
+  }, 120_000);
 
   it("retains every real commit boundary and raw index/worktree including staged, unstaged and untracked bytes", async () => {
     await write("source.txt", "staged\r\n");

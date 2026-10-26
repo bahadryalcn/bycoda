@@ -83,6 +83,7 @@ export const WORKSPACE_CAPABILITIES = {
   gitRewind: "sessions.git-rewind.v1",
   gitRewindUndo: "sessions.git-rewind-undo.v1",
   lifecycle: "workspaces.lifecycle.v1",
+  pinning: "workspaces.pinning.v1",
   buildIdentity: "build.identity.v1",
 } as const;
 export type WorkspaceCapability =

@@ -13,8 +13,10 @@ import {
   materializeManagedWorkspace,
 } from "./git-worktrees";
 import type { ManagedWorkspace, WorkspaceCreateOperation } from "./workspace-contracts";
+import type { DurableRewindOperation } from "./session-rewind";
 
 const cleanup: Array<() => Promise<void>> = [];
+const owner = { ownerId: "owner", authorizationId: "authenticated-owner" };
 afterEach(async () => {
   vi.restoreAllMocks();
   for (const fn of cleanup.splice(0).reverse()) await fn();
@@ -84,6 +86,124 @@ async function fixture() {
   };
 }
 
+it("persists owner pinning with revision and idempotency binding", async () => {
+  const f = await fixture();
+  const created = await f.registry.prepare(f.request);
+  const request = {
+    workspaceId: created.workspace.id,
+    expectedRevision: created.workspace.revision,
+    idempotencyKey: "pin",
+    pinned: true,
+  };
+  await expect(f.registry.pin(request, { ownerId: "", authorizationId: "" })).rejects.toThrow(
+    "owner",
+  );
+  const pinned = await f.registry.pin(request, owner);
+  expect(pinned.pinned).toBe(true);
+  expect(pinned.revision).toBe(created.workspace.revision + 1);
+  expect(await f.registry.pin(request, owner)).toEqual(pinned);
+  await expect(f.registry.pin({ ...request, pinned: false }, owner)).rejects.toThrow(
+    "different request",
+  );
+  await expect(f.registry.pin({ ...request, idempotencyKey: "stale" }, owner)).rejects.toThrow(
+    "revision changed",
+  );
+  const reopened = await f.reopen();
+  expect(await reopened.registry.pin(request, owner)).toEqual(pinned);
+});
+
+it("fences owner lifecycle writes until a completed rewind has its durable finalization acknowledgement", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  const operation: DurableRewindOperation = {
+    id: "rewind",
+    kind: "rewind",
+    workspaceId: workspace.id,
+    expectedRevision: workspace.revision,
+    idempotencyKey: "rewind-key",
+    phase: "complete",
+    createdAt: 1,
+    updatedAt: 1,
+    plan: {
+      token: "plan",
+      expiresAt: 100,
+      direction: "rewind",
+      workspaceId: workspace.id,
+      sessionId: workspace.owner.id,
+      userBlockId: "first",
+      expectedRevision: workspace.revision,
+      expectedConversationRevision: 4,
+      branchRef: workspace.branchRef,
+      currentHead: workspace.baseCommit,
+      targetHead: workspace.baseCommit,
+      statusFingerprint: "source-fingerprint",
+      removedUserBlockIds: ["second"],
+      affectedCommits: [],
+      affectedPaths: [],
+      blockers: [],
+      published: false,
+      merged: false,
+    },
+    target: {
+      head: workspace.baseCommit,
+      index: "b".repeat(40),
+      worktree: "c".repeat(40),
+      indexMetadataId: "private-index",
+      paths: [],
+      capturedAt: 1,
+    },
+    reservationId: "reservation:rewind",
+    requestFingerprint: "immutable-request",
+    rescueUserBlockIds: ["first", "second"],
+    finalized: false,
+  };
+  await f.store.saveWorkspaceOperation(operation, null);
+  const request = {
+    workspaceId: workspace.id,
+    expectedRevision: workspace.revision,
+    idempotencyKey: "finish",
+  };
+  await expect(f.registry.finish(request)).rejects.toThrow("recovery required");
+  await expect(f.registry.pin({ ...request, pinned: true }, owner)).rejects.toThrow(
+    "recovery required",
+  );
+  await f.store.saveWorkspaceOperation({ ...operation, finalized: true }, "complete");
+  expect((await f.registry.finish(request)).state).toBe("finished");
+});
+
+it("retargets only to the exact registered branch in the same repository and invalidates earlier revisions", async () => {
+  const f = await fixture();
+  const created = await f.registry.prepare(f.request);
+  const target = join(f.parent, "delivery-target");
+  f.git("worktree", "add", "-q", "-b", "integration", target, "HEAD");
+  const request = {
+    workspaceId: created.workspace.id,
+    expectedRevision: created.workspace.revision,
+    idempotencyKey: "retarget",
+    targetBranchRef: "refs/heads/integration",
+    targetDirectory: target,
+  };
+  await expect(
+    f.registry.retarget({ ...request, targetBranchRef: "refs/heads/main" }, owner),
+  ).rejects.toThrow("requested target branch");
+  const changed = await f.registry.retarget(request, owner);
+  expect(changed).toMatchObject({
+    targetBranchRef: request.targetBranchRef,
+    targetDirectory: target,
+    revision: created.workspace.revision + 1,
+    baseCommit: created.workspace.baseCommit,
+  });
+  expect(await f.registry.retarget(request, owner)).toEqual(changed);
+  await expect(
+    f.store.updateManagedWorkspace(
+      { ...changed, targetBranchRef: "refs/heads/main", revision: changed.revision + 1 },
+      changed.revision,
+    ),
+  ).rejects.toThrow("immutable");
+  const reopened = await f.reopen();
+  expect(await reopened.registry.get({ workspaceId: changed.id })).toEqual(changed);
+});
+
 it("pins the integration tip, excludes dirty files and returns the original duplicate receipt", async () => {
   const f = await fixture();
   const sha = f.git("rev-parse", "main");
@@ -136,7 +256,7 @@ it("allows one workspace per writer and independent workspaces for other writer 
   expect(await f.registry.list({ projectId: f.project.id })).toHaveLength(2);
 }, 60_000);
 
-it("journals before any directory mutation and recovers creation at the pinned SHA after restart", async () => {
+it("journals before directory mutation and automatically recovers the pinned creation after restart", async () => {
   const f = await fixture();
   const base = f.git("rev-parse", "main");
   const save = f.store.saveWorkspaceOperation.bind(f.store);
@@ -167,13 +287,75 @@ it("journals before any directory mutation and recovers creation at the pinned S
   f.git("add", ".");
   f.git("commit", "-qm", "advance integration");
   const reopened = await f.reopen();
-  const recovered = await reopened.registry.prepare(f.request);
-  expect(recovered.workspace.id).toBe(workspace.id);
-  expect(recovered.workspace.baseCommit).toBe(base);
+  const operation = (await reopened.registry.listOperations(workspace.id))[0];
+  const startup = createManagedWorkspaceRegistry(reopened.store, f.policy, {
+    assertWritable: async () => {
+      throw new Error("Startup writes are disabled");
+    },
+    isActive: async () => false,
+  });
+  const recovered = await startup.recoverCreate(operation.id);
+  expect(recovered.id).toBe(workspace.id);
+  expect(recovered.baseCommit).toBe(base);
+  expect(recovered.path).toBe(workspace.path);
+  expect(await startup.recoverCreate(operation.id)).toEqual(recovered);
+  expect(await reopened.registry.prepare(f.request)).toEqual({
+    workspace: recovered,
+    operationId: operation.id,
+  });
   expect(f.gitAt(workspace.path, "rev-parse", "HEAD")).toBe(base);
   expect(await reopened.registry.listOperations(workspace.id)).toMatchObject([
     { phase: "complete" },
   ]);
+});
+
+it("creation recovery holds active or concurrently recovering workspaces and never materializes a moved identity", async () => {
+  const f = await fixture();
+  const blocked = createManagedWorkspaceRegistry(f.store, f.policy, {
+    beforeMaterialize: async () => {
+      throw new Error("interrupted before Git");
+    },
+  });
+  await expect(
+    blocked.prepare({ ...f.request, idempotencyKey: "resume:caller-key" }),
+  ).rejects.toThrow("interrupted");
+  const [workspace] = await f.store.managedWorkspaces();
+  const [operation] = await f.store.workspaceOperations(workspace.id);
+  const active = createManagedWorkspaceRegistry(f.store, f.policy, { isActive: async () => true });
+  await expect(active.recoverCreate(operation.id)).rejects.toThrow("still active");
+  expect(existsSync(workspace.path)).toBe(false);
+  if (operation.kind !== "create") throw new Error("Expected creation journal");
+  const other: WorkspaceCreateOperation = {
+    ...operation,
+    id: "another-operation",
+    idempotencyKey: "other",
+  };
+  await f.store.saveWorkspaceOperation(other, null);
+  await expect(f.registry.recoverCreate(operation.id)).rejects.toThrow(
+    "Another workspace operation",
+  );
+  await f.store.saveWorkspaceOperation(
+    { ...other, phase: "complete", resumePhase: undefined },
+    other.phase,
+  );
+  const original = await f.store.managedWorkspace(workspace.id);
+  await f.store.db
+    .prepare("UPDATE managed_workspaces SET payload=? WHERE id=?")
+    .run(JSON.stringify({ ...original, baseCommit: "f".repeat(40) }), workspace.id);
+  await expect(f.registry.recoverCreate(operation.id)).rejects.toThrow(
+    "identity changed: baseCommit",
+  );
+  expect(existsSync(workspace.path)).toBe(false);
+  await f.store.db
+    .prepare("UPDATE managed_workspaces SET payload=? WHERE id=?")
+    .run(JSON.stringify(original), workspace.id);
+  const recovered = await f.registry.recoverCreate(operation.id);
+  expect(recovered).toMatchObject({
+    id: workspace.id,
+    baseCommit: workspace.baseCommit,
+    path: workspace.path,
+    directoryState: "present",
+  });
 });
 
 it("never adopts an existing unregistered directory or falls back to main", async () => {
@@ -202,7 +384,7 @@ it("rejects an unavailable base and explicit current-mode preparation without al
   expect(existsSync(f.root)).toBe(false);
 });
 
-it("rematerializes a retained branch with its later commits and preserves lifecycle receipts", async () => {
+it("recovers interrupted rematerialization of a retained branch with later commits and preserves lifecycle receipts", async () => {
   const f = await fixture();
   const { workspace } = await f.registry.prepare(f.request);
   writeFileSync(join(workspace.path, "source.txt"), "task implementation\n");
@@ -221,7 +403,26 @@ it("rematerializes a retained branch with its later commits and preserves lifecy
     finished.revision,
   );
   const request = { workspaceId: workspace.id, expectedRevision: 3, idempotencyKey: "resume" };
-  const resumed = await f.registry.resume(request);
+  const save = f.store.saveWorkspaceOperation.bind(f.store);
+  let interrupted = false;
+  vi.spyOn(f.store, "saveWorkspaceOperation").mockImplementation(
+    async (operation, expectedPhase) => {
+      if (
+        !interrupted &&
+        operation.phase === "materialized" &&
+        operation.idempotencyKey === "resume:resume"
+      ) {
+        interrupted = true;
+        throw new Error("resume interrupted after Git materialization");
+      }
+      return save(operation, expectedPhase);
+    },
+  );
+  await expect(f.registry.resume(request)).rejects.toThrow("resume interrupted");
+  const resumeOperation = (await f.registry.listOperations(workspace.id)).find(
+    (op) => op.idempotencyKey === "resume:resume",
+  )!;
+  const resumed = await f.registry.recoverCreate(resumeOperation.id);
   expect(resumed).toMatchObject({
     id: workspace.id,
     path: workspace.path,
@@ -268,6 +469,27 @@ it("tracks meaningful activity, rejects active lifecycle transitions and require
       changes: { state: "merged" },
     }),
   ).rejects.toThrow("reservation");
+});
+
+it("uses fresh activity evidence to finish a workspace whose cached state is still active", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  let active = true;
+  const registry = createManagedWorkspaceRegistry(f.store, f.policy, {
+    isActive: async () => active,
+  });
+  await registry.touchActivity(workspace.id);
+  const current = (await registry.get({ workspaceId: workspace.id }))!;
+  expect(current.state).toBe("active");
+  const request = {
+    workspaceId: current.id,
+    expectedRevision: current.revision,
+    idempotencyKey: "finish-cached-active",
+  };
+  await expect(registry.finish(request)).rejects.toThrow("idle");
+  active = false;
+  expect((await registry.get({ workspaceId: current.id }))?.state).toBe("active");
+  expect((await registry.finish(request)).state).toBe("finished");
 });
 
 it("releases live feature claims on close and fences overlapping operation journals", async () => {
