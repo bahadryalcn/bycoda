@@ -1178,6 +1178,82 @@ function managedHistory() {
 }
 
 describe("managed turn boundaries", () => {
+  it("keeps unavailable managed sessions unchanged during startup while recovering legacy sessions", async () => {
+    const { store, engine, id, provider, project } = await setup();
+    const legacy = await engine.command({
+      type: "create",
+      commandId: "legacy-startup",
+      projectId: project.id,
+      harness: "codex",
+      model: "codex:test",
+      runtimeMode: "supervised",
+    });
+    const original = await store.session(id);
+    const retained = await store.save(
+      {
+        ...original,
+        revision: original.revision + 1,
+        status: "running",
+        runId: "unavailable-run",
+        session: {
+          ...original.session,
+          workspaceId: "retired-workspace",
+          providerSessionId: "unavailable-provider",
+          blocks: [
+            {
+              id: "retained-shell",
+              role: "system",
+              text: "",
+              shell: { command: "pending", output: "retained", exitCode: null, running: true },
+            },
+          ],
+        },
+      },
+      { type: "test.retired-workspace" },
+    );
+    const legacyValue = await store.session(legacy.sessionId);
+    await store.save(
+      {
+        ...legacyValue,
+        revision: legacyValue.revision + 1,
+        status: "running",
+        runId: "legacy-run",
+        session: { ...legacyValue.session, providerSessionId: "legacy-provider" },
+      },
+      { type: "test.legacy-startup" },
+    );
+    const { adapter } = managedHistory();
+    adapter.workspaceForSession = async (value) => {
+      if (value.session.workspaceId)
+        throw new Error("Workspace directory was removed; resume it first");
+      return null;
+    };
+    vi.mocked(provider.bind).mockClear();
+    const restarted = new HostEngine(store, { codex: provider }, undefined, adapter);
+    cleanups.push(() => restarted.close());
+    await restarted.ready;
+    expect(await store.session(id)).toEqual(retained);
+    expect((await store.session(legacy.sessionId)).status).toBe("interrupted");
+    expect(restarted.recoveredInterrupted).toEqual([legacy.sessionId]);
+    expect(vi.mocked(provider.bind).mock.calls.map(([sessionId]) => sessionId)).not.toContain(id);
+    expect(provider.bind).toHaveBeenCalledWith(
+      legacy.sessionId,
+      "legacy-provider",
+      legacyValue.session.cwd,
+      undefined,
+    );
+    await expect(
+      restarted.command({
+        type: "send",
+        commandId: "retired-send",
+        sessionId: id,
+        text: "continue",
+      }),
+    ).rejects.toThrow("Workspace directory was removed");
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(await store.session(id)).toEqual(retained);
+  });
+
   it("normalizes adopted project cwd and dispatches stale managed snapshots in the authoritative execution directory", async () => {
     const { engine, store, id, directory, turns, provider } = await setup();
     const { adapter } = managedHistory();

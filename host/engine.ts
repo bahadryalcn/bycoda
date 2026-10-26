@@ -832,9 +832,19 @@ export class HostEngine {
       // recovery against a durable managed conversation in that interval.
       if (!this.managedTurns && snapshot?.session.workspaceId) continue;
       const managedValue = this.managedTurns ? snapshot : undefined;
-      const managed = managedValue
-        ? await this.managedTurns!.workspaceForSession(managedValue)
-        : undefined;
+      let managed:
+        | Awaited<ReturnType<ManagedTurnHistoryAdapter["workspaceForSession"]>>
+        | undefined;
+      try {
+        managed = managedValue
+          ? await this.managedTurns!.workspaceForSession(managedValue)
+          : undefined;
+      } catch {
+        // A retired directory or unresolved ownership remains readable and fenced.
+        // Never rewrite its transcript or bind a provider to a legacy fallback cwd.
+        // A later explicit operation reports the authoritative resolution failure.
+        continue;
+      }
       if (managedOnly && !managed) continue;
       if (managed) {
         try {
