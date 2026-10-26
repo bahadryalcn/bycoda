@@ -128,6 +128,7 @@ it("coalesces unchanged list materialization without invalidating another projec
     const other = await s.store.addProject(join(s.directory, "other"), "Other");
     await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "other-project",
       projectId: other.id,
       harness: "codex",
@@ -150,6 +151,7 @@ it("refreshes branch labels without a session write or a global project invalida
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "branch-label",
     projectId: s.project.id,
     harness: "codex",
@@ -176,6 +178,7 @@ it("shares unchanged known-list work for a ten-thousand-session project", async 
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "large-list",
     projectId: s.project.id,
     harness: "codex",
@@ -255,6 +258,7 @@ it("shares bounded machine change cursors, detects restart, and requires device 
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "change-create",
     projectId: s.project.id,
     harness: "codex",
@@ -317,6 +321,7 @@ it("serves an actual tail page and partial delta without shipping unloaded trans
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "page-create",
     projectId: s.project.id,
     harness: "codex",
@@ -384,6 +389,7 @@ it("keeps pinned history coherent through a live append, deletion, and host rest
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "combined-create",
     projectId: s.project.id,
     harness: "codex",
@@ -508,6 +514,7 @@ it("replays the durable receipt after a lost response or host restart without st
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "receipt-create",
     projectId: s.project.id,
     harness: "codex",
@@ -588,6 +595,7 @@ it("keeps each loopback host authoritative and usable when the other host discon
   const projectB = await hostB.engine.openProject(directoryB);
   const sessionA = await hostA.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "owner-a-create",
     projectId: projectA.id,
     harness: "codex",
@@ -596,6 +604,7 @@ it("keeps each loopback host authoritative and usable when the other host discon
   });
   const sessionB = await hostB.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "owner-b-create",
     projectId: projectB.id,
     harness: "codex",
@@ -671,6 +680,7 @@ it("releases a disconnected long poll without blocking the command lane", async 
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "cancel-poll-create",
     projectId: s.project.id,
     harness: "codex",
@@ -711,6 +721,7 @@ it("wakes machine readers on store writes and inlines only bounded opted-in delt
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "inline-create",
     projectId: s.project.id,
     harness: "codex",
