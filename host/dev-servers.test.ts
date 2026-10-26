@@ -83,6 +83,57 @@ function fixture(options: Partial<DevServersOptions> = {}) {
   return { discovery, children, spawnProcess, service, list, selected, target };
 }
 
+it("rejects reserved workspace starts before spawning and releases attempted port allocations", async () => {
+  const startActivity = vi.fn(async () => {
+    throw new Error("Workspace reservation is active");
+  });
+  const { service, spawnProcess } = fixture({ startActivity });
+  await expect(
+    service.handle(
+      "devServers.start",
+      {
+        command: "pnpm dev",
+        projectId: "project",
+      },
+      projects,
+    ),
+  ).rejects.toThrow("Workspace reservation is active");
+  await expect(
+    service.startWorkspace(
+      {
+        workspaceId: "reserved",
+        runId: "blocked",
+        kinds: ["vite", "hmr"],
+        command: "pnpm dev",
+        cwd: process.cwd(),
+      },
+      projects,
+    ),
+  ).rejects.toThrow("Workspace reservation is active");
+  expect(startActivity).toHaveBeenCalledTimes(2);
+  expect(spawnProcess).not.toHaveBeenCalled();
+  expect(await service.portLeases.list("reserved")).toEqual([]);
+});
+
+it("releases dev-server admission after a spawn failure", async () => {
+  const release = vi.fn(async () => {});
+  const { service, spawnProcess } = fixture({ startActivity: async () => release });
+  spawnProcess.mockImplementation(() => {
+    throw new Error("spawn unavailable");
+  });
+  await expect(
+    service.handle(
+      "devServers.start",
+      {
+        command: "pnpm dev",
+        projectId: "project",
+      },
+      projects,
+    ),
+  ).rejects.toThrow("spawn unavailable");
+  expect(release).toHaveBeenCalledTimes(1);
+});
+
 it("passes workspace port identities to its owned command, retains leases until verified stop, and reacquires on restart", async () => {
   const { service, discovery, spawnProcess } = fixture();
   let nextPid = 201;
@@ -603,7 +654,8 @@ describe("host dev server management", () => {
   });
 
   it("keeps managed descendants and their ports when the dedicated shell exits", async () => {
-    const { service, discovery, children } = fixture();
+    const release = vi.fn(async () => {});
+    const { service, discovery, children } = fixture({ startActivity: async () => release });
     const started = (await service.handle(
       "devServers.start",
       { command: "npm run dev", projectId: "project" },
@@ -617,10 +669,17 @@ describe("host dev server management", () => {
     expect((await service.list(projects, true)).servers).toMatchObject([
       { managed: true, state: "running", endpoints: [endpoint(3201)] },
     ]);
+    expect(release).not.toHaveBeenCalled();
+    discovery.stubborn = true;
+    expect(
+      await service.handle("devServers.stop", { id: started.server!.id }, projects),
+    ).toMatchObject({ state: "running", requiresForce: true });
+    expect(release).not.toHaveBeenCalled();
     expect(
       await service.handle("devServers.kill", { id: started.server!.id }, projects),
     ).toMatchObject({ state: "stopped", affectedPorts: [3201] });
     expect(discovery.signal).toHaveBeenCalledWith(expect.objectContaining({ pid: 102 }), true);
+    expect(release).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -2442,8 +2442,14 @@ export class HostEngine {
     const provider = this.provider(value.session.harness);
     const { id, cwd, harness, title } = value.session;
     if (generateTitle && provider.generateTitle) {
-      void provider
-        .generateTitle({ sessionId: id, cwd, message })
+      void (async () => {
+        const release = await this.executionActivity(value, "provider");
+        try {
+          return await provider.generateTitle!({ sessionId: id, cwd, message });
+        } finally {
+          await release?.();
+        }
+      })()
         .then((generated) => {
           if (this.closing || !generated) return;
           return this.store.db.scope(() =>

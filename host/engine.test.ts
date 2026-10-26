@@ -1345,6 +1345,7 @@ describe("managed turn boundaries", () => {
       throw new Error("Workspace reservation is active");
     });
     const { engine, store, id, provider } = await setup("codex", {}, adapter, shell);
+    provider.generateTitle = vi.fn(async () => null);
     await engine.command({
       type: "send",
       commandId: "blocked-provider",
@@ -1353,6 +1354,7 @@ describe("managed turn boundaries", () => {
     });
     await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
     expect(provider.send).not.toHaveBeenCalled();
+    expect(provider.generateTitle).not.toHaveBeenCalled();
     expect(adapter.history.begin).not.toHaveBeenCalled();
     await engine.command({
       type: "shell",
