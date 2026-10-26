@@ -1313,7 +1313,9 @@ describe("goal tasks", () => {
       expect(a.status).toBe("review");
       // Still waiting: review is not done.
       expect(b.status).toBe("queued");
-      await tasks.move(a.id, "done");
+      await expect(tasks.move(a.id, "done")).rejects.toThrow(
+        "Task completion does not authorize delivery",
+      );
       expect((await planned()).b.status).toBe("queued");
       await approve(a.id);
       await tasks.tick();
@@ -1390,7 +1392,7 @@ describe("goal tasks", () => {
     },
   );
   it("is done once every task is done", async () => {
-    const { lead, addProject, plan, planned, tasks, finish, goal, advance } = await setup();
+    const { lead, addProject, plan, planned, finish, goal, advance, approve } = await setup();
     const api = await addProject("api");
     await plan(
       planReply([
@@ -1404,10 +1406,10 @@ describe("goal tasks", () => {
     await finish(b.sessionId!);
     ({ a, b } = await planned());
     expect([a.status, b.status]).toEqual(["review", "review"]);
-    await tasks.move(a.id, "done");
+    await approve(a.id);
     await advance();
     expect((await goal()).status).toBe("running");
-    await tasks.move(b.id, "done");
+    await approve(b.id);
     // Listing brings progress up to date without waiting for a tick.
     expect((await goal()).status).toBe("done");
   });
