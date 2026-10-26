@@ -169,11 +169,29 @@ async function setup(verifyTimeoutMs?: number) {
     finish: () => void;
     fail: (error: Error) => void;
   }> = [];
+  const readinessByRun = new Map<
+    string,
+    { promise: Promise<void>; resolve: () => void; started: boolean }
+  >();
+  const providerReadiness = (sessionId: string, runId: string | undefined) => {
+    if (!runId) throw new Error(`Accepted fixture session ${sessionId} has no run identity`);
+    const key = JSON.stringify([sessionId, runId]);
+    let ready = readinessByRun.get(key);
+    if (!ready) {
+      const signal = Promise.withResolvers<void>();
+      ready = { promise: signal.promise, resolve: () => signal.resolve(), started: false };
+      readinessByRun.set(key, ready);
+    }
+    return ready;
+  };
   const provider: HostProvider = {
     send: vi.fn(async (input) => {
       const runId = (await store.session(input.sessionId)).runId;
       return new Promise<void>((resolve, reject) => {
         turns.push({ input, runId, finish: resolve, fail: reject });
+        const ready = providerReadiness(input.sessionId, runId);
+        ready.started = true;
+        ready.resolve();
       });
     }),
     cancel: vi.fn(async (sessionId) => {
@@ -216,19 +234,23 @@ async function setup(verifyTimeoutMs?: number) {
   } as unknown as TaskWorkspaceServices;
   const tasks = new HostTasks(store, engine, () => clock.now, verifyTimeoutMs, managed);
   const providersStarted = async () => {
-    // Checkpoint capture is serialized across sessions, so the session checked
-    // first may be the last to launch. Each check therefore gets the readiness
-    // budget for every running peer, not just its own.
+    // A saved running record precedes serialized Git capture and provider.send.
+    // Await the exact provider boundary, while still exposing failed admission
+    // through the production run-completion promise. The test budget bounds both.
     const running = (await store.sessions()).filter((entry) => entry.status === "running");
     for (const value of running) {
-      await vi.waitFor(
-        () => {
-          expect(turns.findLast((turn) => turn.input.sessionId === value.session.id)?.runId).toBe(
-            value.runId,
+      const ready = providerReadiness(value.session.id, value.runId);
+      await Promise.race([
+        ready.promise,
+        engine.waitForRun(value.session.id, value.runId).then(async () => {
+          if (ready.started) return;
+          const latest = await store.session(value.session.id);
+          throw new Error(
+            `Accepted fixture run ${value.session.id}/${value.runId} ended before provider.send; ` +
+              `status=${latest.status}, runId=${latest.runId}, error=${latest.error ?? "none"}`,
           );
-        },
-        { timeout: 10000 * running.length },
-      );
+        }),
+      ]);
     }
   };
   const tick = tasks.tick.bind(tasks);
@@ -269,16 +291,18 @@ async function setup(verifyTimeoutMs?: number) {
     ...overrides,
   });
   const task = async (id = "main") => (await tasks.list()).find((entry) => entry.id === id)!;
-  const settled = (sessionId: string) =>
-    vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
-      timeout: 30000,
-    });
+  const settled = async (sessionId: string, ownedRunId?: string) => {
+    const runId = ownedRunId ?? (await store.session(sessionId)).runId;
+    await engine.waitForRun(sessionId, runId);
+    expect((await store.session(sessionId)).status).toBe("idle");
+  };
   const interrupt = async (
     sessionId: string,
     note = "Host restarted. This turn was interrupted; inspect its work before continuing.",
   ) => {
-    turns.findLast((turn) => turn.input.sessionId === sessionId)!.finish();
-    await settled(sessionId);
+    const turn = turns.findLast((entry) => entry.input.sessionId === sessionId)!;
+    turn.finish();
+    await settled(sessionId, turn.runId);
     const session = await store.session(sessionId);
     await store.save(
       {
@@ -341,7 +365,7 @@ async function setup(verifyTimeoutMs?: number) {
       turn.input.onEvent({ type: "message.completed" });
     }
     turn.finish();
-    await settled(sessionId);
+    await settled(sessionId, turn.runId);
     await advance();
   };
   /** Runs a task to a clean finish, simulating its worker's scoped commit. */

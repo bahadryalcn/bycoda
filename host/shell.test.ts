@@ -72,6 +72,7 @@ describe("a !command on the host", () => {
   it("runs in the session's folder without a model turn and records the output", async () => {
     const { engine, store, provider, runs, id, directory } = await setup();
     await engine.command({ type: "shell", commandId: "run-1", sessionId: id, line: "git status" });
+    await vi.waitFor(() => expect(runs).toHaveLength(1));
 
     expect(runs).toMatchObject([{ command: "git status" }]);
     expect(runs[0].cwd).toBe((await store.session(id)).session.cwd);
@@ -98,6 +99,7 @@ describe("a !command on the host", () => {
   it("hands the output to the next message, once", async () => {
     const { engine, runs, turns, id } = await setup();
     await engine.command({ type: "shell", commandId: "run-1", sessionId: id, line: "npm test" });
+    await vi.waitFor(() => expect(runs).toHaveLength(1));
     runs[0].finish({ output: "1 failed", exitCode: 1, timedOut: false });
     await vi.waitFor(() => expect(runs).toHaveLength(1));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -122,6 +124,7 @@ describe("a !command on the host", () => {
     turns[0].input.onEvent({ type: "message.delta", text: "Working" });
 
     await engine.command({ type: "shell", commandId: "run-1", sessionId: id, line: "ls" });
+    await vi.waitFor(() => expect(runs).toHaveLength(1));
     turns[0].input.onEvent({ type: "message.delta", text: " on it" });
     runs[0].finish({ output: "a.txt", exitCode: 0, timedOut: false });
     await vi.waitFor(async () =>
