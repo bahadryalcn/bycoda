@@ -2119,12 +2119,14 @@ export async function createHostServer(
                 }
                 case "native.rewind.plan":
                 case "native.rewind.prepare":
+                case "native.rewind.lookup":
                 case "native.rewind.apply":
                 case "native.rewind.status":
                 case "native.rewind.ack": {
                   const action = String(input.method).slice("native.rewind.".length) as
                     | "plan"
                     | "prepare"
+                    | "lookup"
                     | "apply"
                     | "status"
                     | "ack";

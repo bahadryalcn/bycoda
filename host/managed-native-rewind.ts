@@ -186,9 +186,35 @@ export function createManagedNativeRewind(
     )
       throw new Error("Native rewind mutation changed");
   };
+  const preparedDescriptor = (entry: DurableRewindOperation) => ({
+    operationId: entry.id,
+    workspaceId: entry.workspaceId,
+    sessionId: entry.plan.sessionId,
+    direction: entry.plan.direction,
+    expectedConversationRevision: entry.plan.expectedConversationRevision,
+  });
   const api = {
     service,
     isNativeSession: async (sessionId: string) => !!(await binding(sessionId)),
+    /** Read-only discovery after loss of the preparation response. Authentication
+     * binds the key to its original native device, workspace and session. */
+    async lookup(
+      input: { workspaceId: string; sessionId: string; idempotencyKey: string },
+      owner: WorkspaceOwnerAuthorization,
+    ) {
+      refComponent(input.idempotencyKey);
+      await authorizeSession(input.workspaceId, input.sessionId, owner);
+      const entry = (await options.registry.findOperation({
+        workspaceId: input.workspaceId,
+        kind: "rewind",
+        idempotencyKey: input.idempotencyKey,
+      })) as DurableRewindOperation | null;
+      if (!entry) return null;
+      if (entry.plan.sessionId !== input.sessionId)
+        throw new Error("Native rewind session identity changed");
+      await ownedOperation(entry.id, owner);
+      return preparedDescriptor(entry);
+    },
     async bindTurn(
       request: { workspaceId: string; sessionId: string; conversationRevision: number },
       owner: WorkspaceOwnerAuthorization,
@@ -223,13 +249,7 @@ export function createManagedNativeRewind(
       })) as DurableRewindOperation | null;
       if (!entry) throw new Error("Native rewind preparation has no journal");
       checkMutation(entry, input.request, input.direction);
-      return {
-        operationId: entry.id,
-        workspaceId: entry.workspaceId,
-        sessionId: entry.plan.sessionId,
-        direction: entry.plan.direction,
-        expectedConversationRevision: entry.plan.expectedConversationRevision,
-      };
+      return preparedDescriptor(entry);
     },
     async apply(
       input: {
@@ -343,6 +363,7 @@ export function createManagedNativeRewind(
     ...api,
     bindTurn: serialized(api.bindTurn),
     plan: serialized(api.plan),
+    lookup: serialized(api.lookup),
     prepare: serialized(api.prepare),
     apply: serialized(api.apply),
     status: serialized(api.status),

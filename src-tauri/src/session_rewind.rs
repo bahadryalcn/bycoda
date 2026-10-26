@@ -88,6 +88,8 @@ pub(crate) fn begin_managed_turn(
         let conn = store.lock_conn()?;
         conn.execute("INSERT INTO native_managed_turns(session_id,request_json,phase)
             SELECT ?1,?2,'starting' WHERE (SELECT revision FROM session_block_state WHERE session_id=?1)=?3
+            AND NOT EXISTS(SELECT 1 FROM native_rewind_intents WHERE session_id=?1 AND phase!='complete')
+            AND NOT EXISTS(SELECT 1 FROM session_rewind_operations WHERE session_id=?1 AND phase!='complete')
             ON CONFLICT(session_id) DO UPDATE
             SET request_json=excluded.request_json,phase='starting' WHERE native_managed_turns.phase='complete'",
             params![request.session_id, signature, request.conversation_revision]).map_err(|e| e.to_string())?;
@@ -180,6 +182,13 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
            operation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
            idempotency_key TEXT NOT NULL, mutation_json TEXT NOT NULL, phase TEXT NOT NULL DEFAULT 'prepared',
            UNIQUE(workspace_id,idempotency_key));
+         CREATE TABLE IF NOT EXISTS native_rewind_intents (
+           workspace_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, session_id TEXT NOT NULL,
+           mutation_json TEXT NOT NULL, boundary_json TEXT NOT NULL, operation_id TEXT,
+           phase TEXT NOT NULL DEFAULT 'pending' CHECK(phase IN ('pending','complete')),
+           PRIMARY KEY(workspace_id,idempotency_key));
+         CREATE UNIQUE INDEX IF NOT EXISTS native_rewind_intent_pending
+           ON native_rewind_intents(session_id) WHERE phase!='complete';
          CREATE TABLE IF NOT EXISTS native_cleanup_plans (
            token TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, plan_json TEXT NOT NULL);",
     )?;
@@ -209,6 +218,15 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
                        WHERE w.operation_id=op.operation_id))
                  BEGIN SELECT RAISE(ABORT,'Managed rewind recovery must complete before writing'); END;"
             ))?;
+            conn.execute_batch(&format!(
+                "CREATE TRIGGER IF NOT EXISTS native_rewind_intent_fence_{table}_{event}
+                 BEFORE {event} ON {table}
+                 WHEN EXISTS (SELECT 1 FROM native_rewind_intents intent
+                   WHERE intent.session_id={row}.{column} AND intent.phase!='complete'
+                     AND NOT EXISTS (SELECT 1 FROM session_rewind_authorized_writer w
+                       WHERE w.operation_id=intent.operation_id))
+                 BEGIN SELECT RAISE(ABORT,'Managed rewind recovery must complete before writing'); END;"
+            ))?;
         }
     }
     Ok(())
@@ -218,7 +236,8 @@ pub(crate) fn assert_writable(store: &SessionStore, session_id: &str) -> Result<
     let conn = store.lock_conn()?;
     let pending: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE session_id=?1 AND phase!='complete')
-          OR EXISTS(SELECT 1 FROM native_managed_turns WHERE session_id=?1 AND phase!='complete')",
+          OR EXISTS(SELECT 1 FROM native_managed_turns WHERE session_id=?1 AND phase!='complete')
+          OR EXISTS(SELECT 1 FROM native_rewind_intents WHERE session_id=?1 AND phase!='complete')",
         [session_id], |row| row.get(0),
     ).map_err(|e| e.to_string())?;
     if pending {
@@ -444,6 +463,11 @@ pub(crate) fn complete(
         [operation_id],
     )
     .map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE native_rewind_intents SET phase='complete' WHERE operation_id=?1",
+        [operation_id],
+    )
+    .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
 }
 
@@ -490,6 +514,46 @@ fn reconcile_for_session(
         complete(store, &operation_id, &receipt)?;
     }
     Ok(blocked)
+}
+
+fn reconcile_pending_transport(
+    store: &SessionStore,
+    host: &crate::remote::NativeWorkspaceTransport,
+    session_id: Option<&str>,
+) -> Result<Vec<String>, String> {
+    // Preparation intents exist before either local operation table. Recover
+    // their original key/request; never create a replacement operation.
+    let intents: Vec<String> = {
+        let conn = store.lock_conn()?;
+        let mut query = conn.prepare("SELECT mutation_json FROM native_rewind_intents
+            WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1) ORDER BY workspace_id,idempotency_key")
+            .map_err(|e|e.to_string())?;
+        let rows = query
+            .query_map(params![session_id], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<rusqlite::Result<_>>()
+            .map_err(|e| e.to_string())?
+    };
+    let mut blocked = Vec::new();
+    for raw in intents {
+        let input: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        let direction: RewindDirection =
+            serde_json::from_value(input["direction"].clone()).map_err(|e| e.to_string())?;
+        if native_apply(store, host, input["request"].clone(), direction).is_err() {
+            blocked.push(
+                input["request"]["idempotencyKey"]
+                    .as_str()
+                    .unwrap_or("unknown-intent")
+                    .to_owned(),
+            );
+        }
+    }
+    // An unresolved intent remains fenced, including unavailable Host lookup or
+    // an unknown apply outcome. A later reconnect resumes this same identity.
+    if !blocked.is_empty() {
+        return Ok(blocked);
+    }
+    reconcile_for_session(store, host, session_id)
 }
 
 /// Concrete authenticated transport. The Host controls Git phases and receipt acknowledgement.
@@ -565,14 +629,15 @@ pub(crate) fn reconcile_pending_native(
     store: &SessionStore,
     session_id: Option<&str>,
 ) -> Result<Vec<String>, String> {
-    let pending: bool = store.lock_conn()?.query_row("SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1))", params![session_id], |row|row.get(0)).map_err(|e|e.to_string())?;
+    let pending: bool = store.lock_conn()?.query_row("SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1))
+        OR EXISTS(SELECT 1 FROM native_rewind_intents WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1))", params![session_id], |row|row.get(0)).map_err(|e|e.to_string())?;
     if !pending {
         return Ok(vec![]);
     }
     let host = crate::remote::NativeWorkspaceTransport::connect(app, "sessions.native-rewind.v1")?;
     match session_id {
-        Some(id) => reconcile_for_session(store, &host, Some(id)),
-        None => reconcile(store, &host),
+        Some(id) => reconcile_pending_transport(store, &host, Some(id)),
+        None => reconcile_pending_transport(store, &host, None),
     }
 }
 
@@ -723,13 +788,51 @@ fn native_apply(
         }
         (operation_id, phase == "prepared")
     } else {
-        let boundary = validate_rewind_input(store, &request)?;
-        assert_writable(store, session_id)?;
+        let previous_intent: Option<(String,String)> = store.lock_conn()?.query_row(
+            "SELECT mutation_json,boundary_json FROM native_rewind_intents WHERE workspace_id=?1 AND idempotency_key=?2",
+            params![workspace_id,key], |row|Ok((row.get(0)?,row.get(1)?)))
+            .optional().map_err(|e|e.to_string())?;
+        let retry = previous_intent.is_some();
+        let boundary = if let Some((previous, raw_boundary)) = previous_intent {
+            if previous != signature {
+                return Err("Rewind idempotency key was reused with different input".into());
+            }
+            serde_json::from_str::<ConversationBoundary>(&raw_boundary)
+                .map_err(|e| e.to_string())?
+        } else {
+            let boundary = validate_rewind_input(store, &request)?;
+            assert_writable(store, session_id)?;
+            let admitted = store.lock_conn()?.execute("INSERT INTO native_rewind_intents
+                (workspace_id,idempotency_key,session_id,mutation_json,boundary_json)
+                SELECT ?1,?2,?3,?4,?5 WHERE (SELECT revision FROM session_block_state WHERE session_id=?3)=?6
+                  AND NOT EXISTS(SELECT 1 FROM native_managed_turns WHERE session_id=?3 AND phase!='complete')
+                  AND NOT EXISTS(SELECT 1 FROM session_rewind_operations WHERE session_id=?3 AND phase!='complete')",
+                params![workspace_id,key,session_id,signature,serde_json::to_string(&boundary).map_err(|e|e.to_string())?,boundary.revision])
+                .map_err(|e|e.to_string())?;
+            if admitted != 1 {
+                return Err("Conversation or execution changed before native rewind intent".into());
+            }
+            boundary
+        };
         // Preparation must acquire a durable Host reservation without changing Git.
-        let prepared = host.call(
-            "native.rewind.prepare",
-            json!({"request":request,"direction":direction,"conversation":boundary}),
-        )?;
+        // After a lost response, authenticate and discover the original durable
+        // operation by its key before attempting idempotent preparation again.
+        let found = if retry {
+            host.call(
+                "native.rewind.lookup",
+                json!({"workspaceId":workspace_id,"sessionId":session_id,"idempotencyKey":key}),
+            )?
+        } else {
+            Value::Null
+        };
+        let prepared = if found.is_null() {
+            host.call(
+                "native.rewind.prepare",
+                json!({"request":request,"direction":direction,"conversation":boundary}),
+            )?
+        } else {
+            found
+        };
         let operation_id = prepared["operationId"]
             .as_str()
             .ok_or("Execution Host returned no rewind operation")?
@@ -742,11 +845,18 @@ fn native_apply(
         {
             return Err("Execution Host returned a different prepared rewind".into());
         }
-        store.lock_conn()?.execute("INSERT INTO native_rewind_requests(operation_id,session_id,workspace_id,idempotency_key,mutation_json) VALUES(?1,?2,?3,?4,?5)",
+        native_rewind_crash_boundary("before-request-insert");
+        let conn = store.lock_conn()?;
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute("INSERT INTO native_rewind_requests(operation_id,session_id,workspace_id,idempotency_key,mutation_json) VALUES(?1,?2,?3,?4,?5)",
             params![operation_id,session_id,workspace_id,key,signature]).map_err(|e| e.to_string())?;
+        tx.execute("UPDATE native_rewind_intents SET operation_id=?3 WHERE workspace_id=?1 AND idempotency_key=?2",
+            params![workspace_id,key,operation_id]).map_err(|e|e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
         (operation_id, true)
     };
     if may_apply && receipt(store, &operation_id)?.is_none() {
+        native_rewind_crash_boundary("before-rescue-insert");
         let rescue_id = rescue(
             store,
             &operation_id,
@@ -802,6 +912,19 @@ fn native_apply(
         .map_err(|e| e.to_string())?;
     Ok(result)
 }
+
+/// Tests stop a real native process at these exact cross-store crash windows.
+#[cfg(test)]
+fn native_rewind_crash_boundary(boundary: &str) {
+    if std::env::var("BYCODA_TEST_REWIND_CRASH_AT").as_deref() == Ok(boundary) {
+        std::fs::write(std::env::var("BYCODA_TEST_REWIND_READY").unwrap(), boundary).unwrap();
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+    }
+}
+#[cfg(not(test))]
+fn native_rewind_crash_boundary(_: &str) {}
 
 #[tauri::command(async)]
 pub fn managed_rewind_apply(
@@ -1272,6 +1395,147 @@ mod tests {
             json!({"workspaceId":"managed","sessionId":"native","expectedRevision":1,
             "expectedConversationRevision":revision,"planToken":"preview","idempotencyKey":"operation-key"}),
         )
+    }
+
+    #[test]
+    #[ignore = "helper invoked in a separately terminated process"]
+    fn checkpoint_native_rewind_crash_child() {
+        let path = std::env::var("BYCODA_TEST_REWIND_DB").unwrap();
+        let store = SessionStore::open(std::path::PathBuf::from(path)).unwrap();
+        let (revision, request) = managed_seed(&store);
+        let (host, _server) = fake_native_host(vec![(
+            "native.rewind.prepare",
+            Some(
+                json!({"operationId":"operation-1","workspaceId":"managed","sessionId":"native",
+                "direction":"rewind","expectedConversationRevision":revision}),
+            ),
+        )]);
+        native_apply(&store, &host, request, RewindDirection::Rewind).unwrap();
+        panic!("Native crash boundary was not reached");
+    }
+
+    #[test]
+    fn checkpoint_native_rewind_process_death_before_both_local_insertions_recovers_same_operation()
+    {
+        for boundary in ["before-request-insert", "before-rescue-insert"] {
+            let root = std::env::temp_dir().join(format!(
+                "bycoda-native-rewind-kill-{}",
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir(&root).unwrap();
+            let path = root.join("native.db");
+            let ready = root.join("ready");
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "session_store::rewind::tests::checkpoint_native_rewind_crash_child",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("BYCODA_TEST_REWIND_DB", &path)
+                .env("BYCODA_TEST_REWIND_READY", &ready)
+                .env("BYCODA_TEST_REWIND_CRASH_AT", boundary)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped());
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                command.creation_flags(0x08000000);
+            }
+            let mut child = command.spawn().unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            while !ready.exists() && std::time::Instant::now() < deadline {
+                if child.try_wait().unwrap().is_some() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            if !ready.exists() {
+                let _ = child.kill();
+                let output = child.wait_with_output().unwrap();
+                panic!(
+                    "Native subprocess did not reach {boundary}: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            child.kill().unwrap();
+            child.wait().unwrap();
+            let store = SessionStore::open(path).unwrap();
+            // No exception/unwind/finally ran in the terminated process. The intent
+            // must fence transcript and execution before either local rescue row.
+            assert!(
+                assert_writable(&store, "native").is_err(),
+                "Lost intent after {boundary}"
+            );
+            assert!(store
+                .lock_conn()
+                .unwrap()
+                .execute(
+                    "UPDATE sessions SET title='must remain fenced' WHERE id='native'",
+                    []
+                )
+                .is_err());
+            let (requests, rescues): (i64,i64) = store.lock_conn().unwrap().query_row(
+                "SELECT (SELECT count(*) FROM native_rewind_requests),(SELECT count(*) FROM session_rewind_operations)",
+                [], |row|Ok((row.get(0)?,row.get(1)?))).unwrap();
+            assert_eq!(
+                requests,
+                if boundary == "before-request-insert" {
+                    0
+                } else {
+                    1
+                }
+            );
+            assert_eq!(
+                rescues, 0,
+                "Process must die before transcript rescue insertion"
+            );
+            let revision = read(&store, "native").unwrap().revision;
+            let prepared = json!({"operationId":"operation-1","workspaceId":"managed","sessionId":"native",
+                "direction":"rewind","expectedConversationRevision":revision});
+            let restore_request = json!({"operationId":"operation-1","sessionId":"native","userBlockId":"u2",
+                "direction":"rewind","expectedRevision":revision});
+            let receipt = json!({"operationId":"operation-1","workspaceId":"managed","sessionId":"native",
+                "direction":"rewind","workspaceRevision":2,"conversationRevision":revision+2,"head":"retained-head"});
+            let mut replies = Vec::new();
+            if boundary == "before-request-insert" {
+                replies.push(("native.rewind.lookup", Some(prepared)));
+            }
+            replies.extend([
+                ("native.rewind.apply", Some(json!({"operationId":"operation-1"}))),
+                ("native.rewind.status", Some(json!({"operationId":"operation-1","phase":"git-restored","restoreRequest":restore_request}))),
+                ("native.rewind.ack", Some(json!({"operationId":"operation-1","acknowledged":true,"finalized":true,"receipt":receipt}))),
+                ("native.rewind.status", Some(json!({"operationId":"operation-1","phase":"complete","finalized":true,"receipt":receipt}))),
+            ]);
+            let (host, server) = fake_native_host(replies);
+            assert!(reconcile_pending_transport(&store, &host, None)
+                .unwrap()
+                .is_empty());
+            assert!(assert_writable(&store, "native").is_ok());
+            assert_eq!(read(&store, "native").unwrap().user_block_ids, ["u1"]);
+            assert_eq!(
+                server
+                    .join()
+                    .unwrap()
+                    .iter()
+                    .filter(|m| *m == "native.rewind.apply")
+                    .count(),
+                1
+            );
+            let count: i64 = store
+                .lock_conn()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM session_rewind_operations",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1);
+            drop(store);
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

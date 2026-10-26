@@ -423,6 +423,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "native.rewind.apply",
   "native.rewind.plan",
   "native.rewind.prepare",
+  "native.rewind.lookup",
   "native.rewind.status",
   "native.turn.begin",
   "native.turn.end",

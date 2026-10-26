@@ -1201,6 +1201,7 @@ impl NativeWorkspaceTransport {
                 | "native.rewind.prepare"
                 | "native.rewind.apply"
                 | "native.rewind.status"
+                | "native.rewind.lookup"
                 | "native.rewind.ack"
                 | "workspaces.cleanup.plan"
                 | "workspaces.cleanup.apply"
@@ -2691,6 +2692,7 @@ mod tests {
             "native.rewind.prepare",
             "native.rewind.apply",
             "native.rewind.status",
+            "native.rewind.lookup",
             "native.rewind.ack",
         ] {
             assert!(
