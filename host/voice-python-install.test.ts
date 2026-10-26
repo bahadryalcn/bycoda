@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -34,7 +34,7 @@ it("reuses only a contained private interpreter without fetching or executing in
   await writeFile(interpreter, "private interpreter fixture");
   const fetcher = vi.fn();
   vi.stubGlobal("fetch", fetcher);
-  expect(await ensureVoicePython(options)).toBe(interpreter);
+  expect(await ensureVoicePython(options)).toBe(await realpath(interpreter));
   expect(fetcher).not.toHaveBeenCalled();
   expect(options.run).not.toHaveBeenCalled();
 });

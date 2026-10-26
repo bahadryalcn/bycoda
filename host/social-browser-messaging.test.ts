@@ -7,7 +7,8 @@ import type { BrowserRecipeContext } from "./social-browser-recipe";
 import { messagingBrowserRecipes } from "./social-browser-messaging";
 
 type Platform = "whatsapp" | "telegram";
-const now = Date.parse("2026-10-26T10:00:00Z");
+// WhatsApp's rendered timestamps use the browser's local timezone.
+const now = new Date(2026, 9, 26, 12, 0, 5).getTime();
 const ownPhone = "905551234567";
 const peer = "905559876543";
 const escape = (s: string) =>

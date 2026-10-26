@@ -162,11 +162,11 @@ mod badge_tests {
             assert!(pixels[..row].iter().all(|&byte| byte == 0));
             assert!(pixels[pixels.len() - row..].iter().all(|&byte| byte == 0));
             assert!(pixels
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .any(|pixel| pixel[3] > 0 && pixel[3] < 255));
-            assert!(pixels
-                .chunks_exact(4)
-                .any(|pixel| pixel == [255, 255, 255, 255]));
+            assert!(pixels.as_chunks::<4>().0.contains(&[255, 255, 255, 255]));
         }
     }
 

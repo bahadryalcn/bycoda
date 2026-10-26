@@ -782,7 +782,8 @@ mod tests {
     }
     // A real TCP upstream, with a bounded accept loop so a missing retry fails
     // instead of leaving a hanging fixture. The body is fully consumed.
-    fn host(replies: Vec<(u16, bool)>) -> (String, thread::JoinHandle<Vec<(String, Vec<u8>)>>) {
+    type SeenRequests = Vec<(String, Vec<u8>)>;
+    fn host(replies: Vec<(u16, bool)>) -> (String, thread::JoinHandle<SeenRequests>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
@@ -993,7 +994,7 @@ mod tests {
         registry.cache(&session, (2, 0), &cache, json!({"token":"new"}));
         assert_eq!(cache.lock().unwrap()[&session]["token"], "new");
         registry.revoke_spawn(&session, (2, 0));
-        assert!(registry.sessions.get(&session).is_none());
+        assert!(!registry.sessions.contains_key(&session));
         // A configure/spawn error is handled by the same guarded revocation.
         registry.begin(&session, (3, 0));
         registry.revoke_spawn(&session, (3, 0));
