@@ -1911,7 +1911,7 @@ describe("scoped Conversation Tools RPC", () => {
         runtimeMode: source.session.runtimeMode,
         approvePlan: true,
         manualStart: true,
-        isolate: false,
+        isolate: true,
         autoMerge: false,
       });
       expect(create).toHaveBeenCalledOnce();
@@ -5226,17 +5226,18 @@ describe("remote host API", () => {
       settings: { autoMerge: true, continueUntilDone: true, maxRunningTasks: 1, maxRunMinutes: 0 },
     });
     expect(edited.value.result).toMatchObject({
-      autoMerge: true,
+      deliveryApprovalRequired: true,
       continueUntilDone: true,
       maxRunningTasks: 1,
     });
+    expect(edited.value.result.autoMerge).toBeUndefined();
     expect(created.value.result).toMatchObject({
       id: "launch",
       status: "planning",
       taskIds: [],
     });
     expect((await s.call("goals.list")).value.result).toMatchObject([
-      { id: "launch", status: "planning" },
+      { id: "launch", status: "planning", deliveryApprovalRequired: true },
     ]);
     const refused = await s.call("goals.approve", { goalId: "launch" });
     expect(refused.value.error).toBe("Only a plan waiting for approval can be approved.");
