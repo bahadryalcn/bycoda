@@ -297,13 +297,13 @@ export async function runSubmitDispatch(
       text: turn.controlText.trim(),
       ...(turn.providerFailureSeen ? { error: turn.controlOutcome.error } : {}),
     };
-    // A failed provider can leave its process alive with a dead event
-    // stream or poisoned turn state. Park it now; the next prompt will
-    // reconnect and resume through a fresh transport.
+    // Managed capture needs a settled writer even after a successful turn.
+    // Stop through the adapter first so intentional exit events are muted;
+    // native retirement then waits for process exit and Host acknowledgement.
     const finalizedCurrentTurn = await finalizeLocalTurn({
       isCurrent: () => turnGen.current.get(sessionId) === gen,
       retire: () =>
-        turn.providerFailureSeen || turnGen.current.get(sessionId) !== gen
+        finishManagedTurn || turn.providerFailureSeen || turnGen.current.get(sessionId) !== gen
           ? stopHarnessSession(current.harness, sessionId).catch(() => {
               turn.checkpointRetirementUncertain = true;
             })

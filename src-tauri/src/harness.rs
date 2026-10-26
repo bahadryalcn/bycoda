@@ -4,7 +4,7 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, Mutex, OnceLock};
+use std::sync::{mpsc, Arc, Condvar, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
@@ -186,6 +186,36 @@ fn emit_routed<P: Serialize + Clone>(app: &AppHandle, owners: &Owners, event: &s
 struct HarnessInner {
     children: HashMap<String, Arc<LiveChild>>,
     epochs: HashMap<String, u64>,
+    managed_exits: HashMap<String, Vec<Arc<ManagedProviderExit>>>,
+}
+
+/// A removed child is not proof that its process and Host activity have exited.
+/// Keep this receipt across ordinary stop calls until managed capture consumes it.
+#[derive(Default)]
+struct ManagedProviderExit {
+    result: Mutex<Option<Result<(), String>>>,
+    changed: Condvar,
+}
+
+impl ManagedProviderExit {
+    fn finish(&self, result: Result<(), String>) {
+        *self.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
+        self.changed.notify_all();
+    }
+
+    fn wait(&self, timeout: Duration) -> Result<(), String> {
+        let result = self.result.lock().unwrap_or_else(|e| e.into_inner());
+        let (result, _) = self
+            .changed
+            .wait_timeout_while(result, timeout, |result| result.is_none())
+            .unwrap_or_else(|e| e.into_inner());
+        result.clone().unwrap_or_else(|| {
+            Err(
+                "Managed provider exit is not confirmed; reconnect before capturing the turn"
+                    .into(),
+            )
+        })
+    }
 }
 
 pub struct HarnessHost {
@@ -219,6 +249,7 @@ impl HarnessHost {
             inner: Mutex::new(HarnessInner {
                 children: HashMap::new(),
                 epochs: HashMap::new(),
+                managed_exits: HashMap::new(),
             }),
             sse: Mutex::new(HashMap::new()),
             runtime_binary_paths: Mutex::new(None),
@@ -280,6 +311,34 @@ impl HarnessHost {
         *inner.epochs.entry(session_id.to_string()).or_insert(0) += 1;
         crate::session_tools_bridge::revoke_session(session_id);
         inner.children.remove(session_id)
+    }
+
+    pub(crate) fn retire_managed_session(&self, session_id: &str) -> Result<(), String> {
+        self.stop_sse(session_id);
+        if let Some(live) = self.kill_session(session_id) {
+            terminate(live.pid);
+        }
+        let exits = self
+            .lock_inner()
+            .managed_exits
+            .get(session_id)
+            .cloned()
+            .unwrap_or_default();
+        for exit in &exits {
+            exit.wait(Duration::from_secs(20))?;
+        }
+        let mut inner = self.lock_inner();
+        if inner.children.contains_key(session_id) {
+            return Err("A different managed provider started during turn retirement".into());
+        }
+        if let Some(pending) = inner.managed_exits.get_mut(session_id) {
+            pending.retain(|entry| !exits.iter().any(|exit| Arc::ptr_eq(entry, exit)));
+            if !pending.is_empty() {
+                return Err("A different managed provider is still settling".into());
+            }
+        }
+        inner.managed_exits.remove(session_id);
+        Ok(())
     }
 
     fn remove_if_pid(&self, session_id: &str, pid: u32) -> Option<Arc<LiveChild>> {
@@ -1125,6 +1184,15 @@ pub fn harness_spawn(
         .stderr
         .take()
         .ok_or_else(|| "Failed to open harness stderr".to_string())?;
+    let managed_exit = workspace_activity.as_ref().map(|_| {
+        let exit = Arc::new(ManagedProviderExit::default());
+        host.lock_inner()
+            .managed_exits
+            .entry(session_id.clone())
+            .or_default()
+            .push(Arc::clone(&exit));
+        exit
+    });
 
     // The spawning window consumes the output; its JS state owns the turn.
     let owners = Arc::new(Owners::new(window.label()));
@@ -1143,10 +1211,12 @@ pub fn harness_spawn(
         // stream that replaced it. Reap it without emitting anything.
         terminate(rejected.pid);
         thread::spawn(move || {
-            if child.wait().is_ok() {
-                if let Some(activity) = workspace_activity {
-                    activity.settled();
-                }
+            let result = child
+                .wait()
+                .map_err(|e| e.to_string())
+                .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
+            if let Some(exit) = managed_exit {
+                exit.finish(result);
             }
         });
         return Err(SPAWN_CANCELLED.to_string());
@@ -1200,10 +1270,11 @@ pub fn harness_spawn(
     thread::spawn(move || {
         let exit = child.wait();
         let code = exit.as_ref().ok().and_then(|status| status.code());
-        if exit.is_ok() {
-            if let Some(activity) = workspace_activity {
-                activity.settled();
-            }
+        let settlement = exit
+            .map_err(|e| e.to_string())
+            .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
+        if let Some(exit) = managed_exit {
+            exit.finish(settlement);
         }
         if let Some(host) = wait_app.try_state::<HarnessHost>() {
             if host.remove_if_pid(&wait_id, wait_pid).is_some() {
@@ -2300,7 +2371,7 @@ pub async fn run_shell_command(
         let output = run_shell_command_sync(&cwd, &command, profile.as_deref());
         if output.as_ref().is_ok_and(|result| !result.timed_out) {
             if let Some(activity) = activity {
-                activity.settled();
+                let _ = activity.settled();
             }
         }
         output
@@ -2525,6 +2596,94 @@ fn spawn_retrying_text_file_busy(cmd: &mut Command) -> std::io::Result<std::proc
         }
     }
     cmd.spawn()
+}
+
+#[cfg(test)]
+mod managed_retirement_tests {
+    use super::*;
+
+    #[test]
+    fn managed_retirement_waits_for_process_exit_and_host_activity_ack() {
+        let mut command = if cfg!(windows) {
+            let mut command = Command::new("ping");
+            command.args(["-n", "60", "127.0.0.1"]);
+            command
+        } else {
+            let mut command = Command::new("sleep");
+            command.arg("60");
+            command
+        };
+        prepare_gui_child(&mut command);
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let host = Arc::new(HarnessHost::new());
+        let (epoch, kill_all, _) = host.begin_spawn("managed");
+        let exit = Arc::new(ManagedProviderExit::default());
+        host.lock_inner()
+            .managed_exits
+            .insert("managed".into(), vec![Arc::clone(&exit)]);
+        let live = Arc::new(LiveChild {
+            cwd: std::env::temp_dir(),
+            stdin: Mutex::new(child.stdin.take().unwrap()),
+            pid: child.id(),
+            account: None,
+            owners: Arc::new(Owners::default()),
+        });
+        assert!(host
+            .install_spawn("managed".into(), epoch, kill_all, live)
+            .is_none());
+        let (exited, process_exit) = mpsc::channel();
+        let (ack, host_ack) = mpsc::channel();
+        let waiter = thread::spawn(move || {
+            let result = child.wait().map(|_| ()).map_err(|e| e.to_string());
+            exited.send(()).unwrap();
+            // Model an activity-release RPC still waiting for its durable receipt.
+            host_ack.recv_timeout(Duration::from_secs(5)).unwrap();
+            exit.finish(result);
+        });
+        let retiring = Arc::clone(&host);
+        let (finished, completion) = mpsc::channel();
+        let retirement = thread::spawn(move || {
+            finished
+                .send(retiring.retire_managed_session("managed"))
+                .unwrap();
+        });
+        process_exit.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(
+            completion.recv_timeout(Duration::from_millis(50)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        ack.send(()).unwrap();
+        completion
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        waiter.join().unwrap();
+        retirement.join().unwrap();
+        assert!(host.get("managed").is_none());
+        assert!(!host.lock_inner().managed_exits.contains_key("managed"));
+    }
+
+    #[test]
+    fn managed_retirement_preserves_unknown_release_failure_across_retries() {
+        let host = HarnessHost::new();
+        let exit = Arc::new(ManagedProviderExit::default());
+        exit.finish(Err("Host activity release outcome is unknown".into()));
+        host.lock_inner()
+            .managed_exits
+            .insert("managed".into(), vec![exit]);
+        for _ in 0..2 {
+            assert!(host
+                .retire_managed_session("managed")
+                .unwrap_err()
+                .contains("outcome is unknown"));
+            assert!(host.lock_inner().managed_exits.contains_key("managed"));
+        }
+    }
 }
 
 #[cfg(unix)]

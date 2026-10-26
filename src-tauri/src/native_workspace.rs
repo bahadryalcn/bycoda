@@ -40,9 +40,17 @@ impl Activity {
     pub(crate) fn started(&mut self) {
         self.started = true;
     }
-    pub(crate) fn settled(mut self) {
-        self.started = false;
-        // Drop performs the single explicit release. Failure retains Host's durable lease.
+    pub(crate) fn settled(mut self) -> Result<(), String> {
+        // Do not retry an unknown release from Drop. The durable Host lease stays
+        // fenced unless this exact release receives its acknowledgement.
+        self.started = true;
+        let result = self
+            .host
+            .call("native.activity.end", json!({"activityId":self.id}))?;
+        if result["acknowledged"] != true {
+            return Err("Execution Host has not acknowledged native process exit".into());
+        }
+        Ok(())
     }
 }
 

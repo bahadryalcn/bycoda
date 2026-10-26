@@ -640,6 +640,11 @@ pub fn managed_turn_end(
     {
         return Err("Managed turn completion does not match the active turn".into());
     }
+    // Persistent native transports may outlive a completed provider turn. Exact
+    // capture requires their process exit and acknowledged shared-activity release.
+    // Legacy sessions never enter this managed-only command.
+    app.state::<crate::harness::HarnessHost>()
+        .retire_managed_session(&request.session_id)?;
     let host =
         crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
     finish_managed_turn(&store, &host, &request)

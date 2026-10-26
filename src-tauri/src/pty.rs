@@ -1215,7 +1215,7 @@ fn spawn_unix(
         let code = exit.as_ref().ok().and_then(|status| status.code());
         if exit.is_ok() {
             if let Some(activity) = workspace_activity {
-                activity.settled();
+                let _ = activity.settled();
             }
         }
         // Only announce this child. A remount/respawn reuses the id, and the
@@ -1391,7 +1391,7 @@ fn spawn_windows(
         let code = exit.as_ref().ok().map(|status| status.exit_code() as i32);
         if exit.is_ok() {
             if let Some(activity) = workspace_activity {
-                activity.settled();
+                let _ = activity.settled();
             }
         }
         let owner = if let Some(host) = wait_app.try_state::<PtyHost>() {

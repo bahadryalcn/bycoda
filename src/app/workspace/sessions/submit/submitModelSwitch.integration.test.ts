@@ -64,6 +64,7 @@ let actions: ReturnType<typeof useSessionModelActions>;
 let ctx: SubmitDeps;
 let events: Map<string, HarnessEvent[]>;
 const sends: Array<{ harness: string; input: SendTurnInput }> = [];
+const stoppedSessions: string[] = [];
 
 function adapter(id: "codex" | "antigravity"): HarnessAdapter {
   return {
@@ -88,7 +89,9 @@ function adapter(id: "codex" | "antigravity"): HarnessAdapter {
       }
     },
     async cancelTurn() {},
-    async stopSession() {},
+    async stopSession(sessionId) {
+      stoppedSessions.push(sessionId);
+    },
     async forgetSession() {},
     respondApproval() {},
     respondQuestion() {},
@@ -136,6 +139,7 @@ function initialSession(): Session {
 
 beforeEach(async () => {
   sends.length = 0;
+  stoppedSessions.length = 0;
   events = new Map();
   native.invoke.mockReset();
   native.invoke.mockImplementation(async (command: string) => {
@@ -228,7 +232,10 @@ it("admits a managed native provider only after its accepted boundary is durable
       expect(sends).toHaveLength(0);
       expect(args.userBlockId).not.toBe("original-user");
     }
-    if (command === "managed_turn_end") expect(sends).toHaveLength(1);
+    if (command === "managed_turn_end") {
+      expect(sends).toHaveLength(1);
+      expect(stoppedSessions).toContain(original.id);
+    }
     return null;
   });
   await submit();
