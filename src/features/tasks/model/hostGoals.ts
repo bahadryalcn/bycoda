@@ -129,6 +129,8 @@ export type GoalSettings = {
 };
 
 export type HostGoal = HostGoalInput & {
+  /** Persisted automatic delivery is suspended pending a fresh task-level review. */
+  deliveryApprovalRequired?: boolean;
   status: GoalStatus;
   plan?: GoalPlan;
   /** Why planning failed, for a goal blocked before it had tasks. */

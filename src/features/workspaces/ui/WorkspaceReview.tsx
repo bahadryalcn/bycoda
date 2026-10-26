@@ -4,6 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import type { TaskDeliveryArtifactsPreview } from "../../tasks/model/hostTasks";
 import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
 import type {
   BranchDeliveryPlan,
@@ -55,7 +56,9 @@ export function WorkspaceReview({
   onWorkspaceChange?: (workspace: ManagedWorkspace) => void;
 }) {
   const t = useT();
-  const [plan, setPlan] = useState<BranchDeliveryPlan | null>(null);
+  const [plan, setPlan] = useState<
+    (BranchDeliveryPlan & { artifacts?: TaskDeliveryArtifactsPreview }) | null
+  >(null);
   const [mode, setMode] = useState<"merge" | "publish">(() =>
     savedPublication(workspace, "attempt") ? "publish" : "merge",
   );
@@ -145,6 +148,7 @@ export function WorkspaceReview({
       lock.current ||
       plan.expiresAt <= Date.now() ||
       plan.blockers.length ||
+      plan.artifacts?.blockers.length ||
       plan.overlappingPaths.length
     )
       return;
@@ -247,7 +251,11 @@ export function WorkspaceReview({
                 <Button
                   loading={pending === mode}
                   disabled={
-                    !!pending || expired || !!plan.blockers.length || !!plan.overlappingPaths.length
+                    !!pending ||
+                    expired ||
+                    !!plan.blockers.length ||
+                    !!plan.artifacts?.blockers.length ||
+                    !!plan.overlappingPaths.length
                   }
                   onClick={() => void deliver()}
                 >
@@ -463,6 +471,24 @@ export function WorkspaceReview({
                 <Suspense fallback={<p role="status">{t("Loading diff…")}</p>}>
                   <CommitDiff cwd={executionCwd} sha={diffCommit} />
                 </Suspense>
+              </section>
+            )}
+            {plan.artifacts && (
+              <section>
+                <h3 className="font-medium">{t("Additional delivery files")}</h3>
+                <dl className="grid gap-2 text-ui-caption">
+                  {plan.artifacts.paths.map((path) => (
+                    <div key={path} className="min-w-0">
+                      <dt className="break-all">{path}</dt>
+                      <dd className="break-all font-mono text-(--ui-text-secondary)">
+                        {plan.artifacts?.hashes[path]}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                {!!plan.artifacts.blockers.length && (
+                  <p role="alert">{plan.artifacts.blockers.join(" · ")}</p>
+                )}
               </section>
             )}
             <section>

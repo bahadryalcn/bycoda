@@ -128,6 +128,8 @@ mockIPC((command, args = {}) => {
               "workspaces.managed.v1",
               "workspaces.policy.v1",
               "workspaces.lifecycle.v1",
+              "workspaces.delivery.v1",
+              "workspaces.pr-publication.v1",
               ...(!query.has("noPinning") ? ["workspaces.pinning.v1"] : []),
             ]
           : [],
@@ -136,6 +138,42 @@ mockIPC((command, args = {}) => {
     if (method === "workspaces.list") return structuredClone(workspaces);
     if (method === "workspaces.get")
       return structuredClone(workspaces.find((entry) => entry.id === params.workspaceId) ?? null);
+    if (method === "workspaces.delivery.review") {
+      const workspace = workspaces.find((entry) => entry.id === params.workspaceId)!;
+      return {
+        token: "fixture-owner-review",
+        expiresAt: Date.now() + 600000,
+        workspaceId: workspace.id,
+        expectedRevision: workspace.revision,
+        sourceBranchRef: workspace.branchRef,
+        sourceHead: "b".repeat(40),
+        targetBranchRef: workspace.targetBranchRef,
+        targetHead: "a".repeat(40),
+        targetStatusFingerprint: "fixture-target",
+        commits: [],
+        changedPaths: ["src/example.ts"],
+        overlappingPaths: [],
+        artifacts: {
+          paths: ["artifacts/acceptance.png"],
+          hashes: { "artifacts/acceptance.png": "fixture-artifact-sha256" },
+          sourceFingerprint: "fixture-source",
+          targetFingerprint: "fixture-target",
+          targetHashes: { "artifacts/acceptance.png": null },
+          blockers: [],
+        },
+        checks: [],
+        visualEvidence: [],
+        blockers: [],
+        action: params.action,
+        ...(params.action === "publish" ? { publication: params.publication } : {}),
+      };
+    }
+    if (method === "workspaces.delivery.merge") {
+      const workspace = workspaces[0];
+      workspace.state = "merged";
+      ++workspace.revision;
+      return structuredClone(workspace);
+    }
     if (method === "workspaces.pin") {
       const workspace = workspaces.find((entry) => entry.id === params.workspaceId)!;
       if (workspace.revision !== params.expectedRevision)

@@ -11,6 +11,7 @@ export type ManagedTaskState = {
 export function taskWorkspaceState(task: Omit<HostTask, "deliveryState"> & ManagedTaskState) {
   const finished =
     task.completionState === "finished" ||
+    Boolean(task.finalization) ||
     (!task.completionState && (task.status === "review" || task.status === "done"));
   const delivered =
     task.merged || task.deliveryState === "merged" || task.deliveryState === "published";
@@ -22,12 +23,21 @@ export function taskWorkspaceState(task: Omit<HostTask, "deliveryState"> & Manag
       : task.completionState === "failed"
         ? "Implementation blocked"
         : "Implementation in progress",
-    delivery: delivered
-      ? "Delivered"
-      : task.mergeError || task.deliveryState === "blocked"
-        ? "Delivery is blocked"
-        : "Not delivered",
+    delivery: task.artifactDeliveryPending
+      ? "Delivery is blocked"
+      : delivered
+        ? "Delivered"
+        : task.mergeError || task.deliveryState === "blocked"
+          ? "Delivery is blocked"
+          : "Not delivered",
     needsRenewedApproval:
-      !delivered && Boolean(task.autoMergeSuspended || task.autoMerge || task.deliveryRequested),
+      !delivered &&
+      Boolean(
+        task.deliveryApprovalRequired ||
+        task.deliveryState === "awaitingOwner" ||
+        task.autoMergeSuspended ||
+        task.autoMerge ||
+        task.deliveryRequested,
+      ),
   };
 }
