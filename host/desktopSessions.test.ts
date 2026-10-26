@@ -924,6 +924,7 @@ describe("the run lease of a conversation", () => {
     const created = (
       await s.call("commands.dispatch", {
         type: "create",
+        workspaceMode: "current",
         commandId: "owner-create",
         projectId: s.project.id,
         harness: "codex",

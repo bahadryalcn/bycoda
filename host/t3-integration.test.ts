@@ -100,6 +100,7 @@ async function setup(controlOrigin?: string) {
     return (
       await engine.command({
         type: "create",
+        workspaceMode: "current",
         commandId: randomUUID(),
         projectId,
         harness: "codex",

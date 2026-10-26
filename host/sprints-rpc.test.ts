@@ -121,6 +121,7 @@ it("exposes planning and source history only to paired owners and retains idempo
   expect((await call("sprints.report", { id: input.id })).result.frozen).toBe(false);
   const session = await engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: crypto.randomUUID(),
     projectId: project.id,
     harness: "codex",
