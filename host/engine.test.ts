@@ -7,6 +7,7 @@ import type { HostProvider } from "./providers";
 import { HostEngine, parseCommand, type ManagedTurnHistoryAdapter } from "./engine";
 import type { TurnGitRecord, TurnGitSnapshot } from "./workspace-contracts";
 import { HostStore } from "./store";
+import { launchSessionRun } from "./sessionRuns";
 import { readAttachmentChunk, writeAttachmentChunk } from "./attachments";
 import {
   applySessionSync,
@@ -1087,6 +1088,7 @@ async function setup(
   harness: RemoteProvider = "codex",
   overrides: Partial<Record<RemoteProvider, HostProvider>> = {},
   managedTurns?: ManagedTurnHistoryAdapter,
+  shell?: ConstructorParameters<typeof HostEngine>[2],
 ) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-engine-test-"));
   const store = new HostStore(join(directory, "host.db"));
@@ -1112,7 +1114,7 @@ async function setup(
   const engine = new HostEngine(
     store,
     Object.fromEntries(REMOTE_PROVIDERS.map((id) => [id, overrides[id] ?? provider])),
-    undefined,
+    shell,
     managedTurns,
   );
   await engine.ready;
@@ -1176,6 +1178,198 @@ function managedHistory() {
 }
 
 describe("managed turn boundaries", () => {
+  it("allocates a separate owned workspace for a managed contextual writer", async () => {
+    const { engine, store, id, directory } = await setup();
+    const original = await store.session(id);
+    await store.save(
+      {
+        ...original,
+        revision: original.revision + 1,
+        session: {
+          ...original.session,
+          workspaceId: "source-workspace",
+          worktreeCwd: directory,
+          branch: "bycoda/s/source",
+          blocks: [
+            { id: "source-user", role: "user", text: "Implement search" },
+            { id: "source-reply", role: "assistant", text: "Search is implemented." },
+          ],
+        },
+      },
+      { type: "test.managed-source" },
+    );
+    const { adapter } = managedHistory();
+    let destinationId = "";
+    adapter.workspaceForSession = async (value) =>
+      value.session.workspaceId ? { workspaceId: value.session.workspaceId } : null;
+    adapter.prepareContextualWorkspace = vi.fn(async (request) => {
+      destinationId = request.sessionId;
+      return { workspaceId: "destination-workspace" };
+    });
+    adapter.workspaceForCreate = async () => ({
+      workspaceId: "destination-workspace",
+      sessionId: destinationId,
+      path: join(directory, "destination"),
+      branchRef: "refs/heads/bycoda/s/destination",
+      revision: 1,
+    });
+    engine.setManagedTurnHistoryAdapter(adapter);
+    const source = await store.session(id);
+    const input = {
+      sessionId: id,
+      sourceBlockId: "source-reply",
+      expectedRevision: source.revision,
+      mode: "handoff",
+      harness: "claude",
+      model: "claude:test",
+      modelSettings: {},
+    };
+    const preview = await engine.previewContextual(input);
+    const command = {
+      ...input,
+      type: "contextual",
+      commandId: "managed-context",
+      previewDigest: preview.digest,
+    };
+    const receipt = await engine.command(command);
+    expect(await engine.command(command)).toEqual(receipt);
+    expect(adapter.prepareContextualWorkspace).toHaveBeenCalledTimes(1);
+    expect((await store.session(receipt.sessionId)).session).toMatchObject({
+      workspaceId: "destination-workspace",
+      cwd: join(directory, "destination"),
+      worktreeCwd: join(directory, "destination"),
+      branch: "bycoda/s/destination",
+    });
+    expect(await store.session(id)).toEqual(source);
+  });
+
+  it("creates unattended managed sessions with authoritative identity and holds admission through provider completion", async () => {
+    const { engine, store, project, directory, turns } = await setup();
+    const { adapter } = managedHistory();
+    const release = vi.fn(async () => {});
+    adapter.workspaceForSession = async (value) =>
+      value.session.workspaceId ? { workspaceId: value.session.workspaceId } : null;
+    adapter.workspaceForCreate = vi.fn(async () => ({
+      workspaceId: "managed",
+      sessionId: "prepared-session",
+      path: join(directory, "owned"),
+      branchRef: "refs/heads/bycoda/s/owned",
+      revision: 7,
+    }));
+    adapter.startActivity = vi.fn(async () => release);
+    engine.setManagedTurnHistoryAdapter(adapter);
+    const launched = await launchSessionRun(store, engine, {
+      requestId: "managed-run",
+      projectId: project.id,
+      workspaceId: "managed",
+      harness: "codex",
+      model: "codex:test",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      title: "Owned run",
+      prompt: "Implement the change",
+    });
+    expect(launched.error).toBeUndefined();
+    expect(launched.sessionId).toBe("prepared-session");
+    const saved = await store.session("prepared-session");
+    expect(saved.session).toMatchObject({
+      workspaceId: "managed",
+      workspaceRevision: 7,
+      cwd: join(directory, "owned"),
+      worktreeCwd: join(directory, "owned"),
+      branch: "bycoda/s/owned",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(adapter.startActivity).toHaveBeenCalledWith(expect.anything(), "provider");
+    expect(turns[0].input.cwd).toBe(join(directory, "owned"));
+    expect(release).not.toHaveBeenCalled();
+    turns[0].finish();
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    await expect(
+      engine.command({
+        type: "create",
+        commandId: "duplicate-owner",
+        projectId: project.id,
+        workspaceId: "managed",
+        harness: "codex",
+        model: "codex:test",
+        runtimeMode: "supervised",
+      }),
+    ).rejects.toThrow("already has its session");
+  });
+
+  it("rejects managed create without a resolver and rejects malformed workspace identity", async () => {
+    const { engine, project } = await setup();
+    const command = {
+      type: "create",
+      commandId: "unresolved-owner",
+      projectId: project.id,
+      workspaceId: "managed",
+      harness: "codex",
+      model: "codex:test",
+      runtimeMode: "supervised",
+    };
+    await expect(engine.command(command)).rejects.toThrow("authoritative workspace ownership");
+    expect(() => parseCommand({ ...command, workspaceId: "" })).toThrow("Invalid workspace ID");
+  });
+
+  it("defers managed startup settlement until shared recovery services are attached", async () => {
+    const { store, id, provider } = await setup();
+    const value = await store.session(id);
+    await store.save(
+      {
+        ...value,
+        revision: value.revision + 1,
+        status: "running",
+        runId: "interrupted-managed-run",
+        session: { ...value.session, workspaceId: "managed" },
+      },
+      { type: "test.interrupted" },
+    );
+    const restarted = new HostEngine(store, { codex: provider });
+    cleanups.push(() => restarted.close());
+    await restarted.ready;
+    expect((await store.session(id)).status).toBe("running");
+    const { adapter } = managedHistory();
+    restarted.setManagedTurnHistoryAdapter(adapter);
+    await restarted.recoverManagedStartup();
+    expect((await store.session(id)).status).toBe("interrupted");
+    expect(restarted.recoveredInterrupted).toEqual([id]);
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
+  it("blocks provider and shell starts at the shared gate without leaving a running shell", async () => {
+    const shell = vi.fn(async () => ({ output: "unexpected", exitCode: 0, timedOut: false }));
+    const { adapter } = managedHistory();
+    adapter.startActivity = vi.fn(async () => {
+      throw new Error("Workspace reservation is active");
+    });
+    const { engine, store, id, provider } = await setup("codex", {}, adapter, shell);
+    await engine.command({
+      type: "send",
+      commandId: "blocked-provider",
+      sessionId: id,
+      text: "go",
+    });
+    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(adapter.history.begin).not.toHaveBeenCalled();
+    await engine.command({
+      type: "shell",
+      commandId: "blocked-shell",
+      sessionId: id,
+      line: "git status",
+    });
+    await vi.waitFor(async () => {
+      const block = (await store.session(id)).session.blocks.find(
+        (entry) => entry.id === "blocked-shell",
+      );
+      expect(block?.shell?.running).toBeUndefined();
+      expect(block?.shell?.output).toBe("Workspace reservation is active");
+    });
+    expect(shell).not.toHaveBeenCalled();
+  });
+
   it("binds immutable transcript rescue to the checked conversation revision", async () => {
     const { engine, store, id } = await setup();
     const adapter = engine.conversationRewindAdapter();
