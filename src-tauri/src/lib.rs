@@ -1034,6 +1034,7 @@ pub fn run() {
             window::request_quit(handle);
         }
         tauri::RunEvent::Exit => {
+            let _ = native_workspace::retire_buffers(handle);
             ssh_window_lifecycle::shutdown();
             if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
                 state.shutdown();

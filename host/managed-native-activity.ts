@@ -36,6 +36,7 @@ interface ProcessLease extends NativeActivityStart {
 interface BufferLease extends NativeBufferSnapshot {
   device: string;
   receivedAt: number;
+  retiredAt?: number;
 }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const pathKey = (path: string) =>
@@ -134,6 +135,7 @@ export function createManagedNativeActivity(deps: {
     if (!workspace) throw new Error("Native workspace registry identity is unavailable");
     const result: WorkspaceActivity[] = [];
     for (const report of await snapshots()) {
+      if (report.retiredAt !== undefined) continue;
       const reportId = digest([report.device, report.clientId, report.instanceId]);
       const stale =
         !refreshed.has(reportId) || now() - report.receivedAt > 45_000 || report.receivedAt > now();
@@ -260,6 +262,98 @@ export function createManagedNativeActivity(deps: {
         return { acknowledged: true as const };
       });
     },
+    retireBuffers(
+      request: { clientId: string; instanceId: string; processId: number },
+      owner: WorkspaceOwnerAuthorization,
+    ) {
+      return serial(async () => {
+        const device = await authenticate(owner);
+        identity(request.clientId, "client identity");
+        identity(request.instanceId, "instance identity");
+        const path = join(
+          bufferDirectory,
+          `${digest([device, request.clientId, request.instanceId])}.json`,
+        );
+        const report = await read<BufferLease>(path);
+        if (!report || report.processId !== request.processId)
+          throw new Error("Native buffer instance identity is unavailable");
+        if (report.retiredAt !== undefined) return { acknowledged: true as const };
+        if (
+          !report.owners.length ||
+          report.owners.some(
+            (entry) => entry.unknown || entry.buffers.some((buffer) => buffer.dirty),
+          )
+        )
+          throw new Error("Dirty or unknown buffers require explicit owner recovery");
+        await durableWrite(path, JSON.stringify({ ...report, retiredAt: now() }));
+        return { acknowledged: true as const };
+      });
+    },
+    reconcileBuffers(
+      request: {
+        clientId: string;
+        instanceId: string;
+        predecessors: { instanceId: string; processId: number }[];
+      },
+      owner: WorkspaceOwnerAuthorization,
+    ) {
+      return serial(async () => {
+        const device = await authenticate(owner);
+        identity(request.clientId, "client identity");
+        identity(request.instanceId, "instance identity");
+        if (!Array.isArray(request.predecessors) || request.predecessors.length > 1000)
+          throw new Error("Invalid predecessor identities");
+        for (const entry of request.predecessors) {
+          identity(entry.instanceId, "predecessor identity");
+          if (!Number.isSafeInteger(entry.processId) || entry.processId < 1)
+            throw new Error("Invalid predecessor process identity");
+        }
+        const current = await read<BufferLease>(
+          join(bufferDirectory, `${digest([device, request.clientId, request.instanceId])}.json`),
+        );
+        if (!current || current.retiredAt !== undefined)
+          throw new Error("Fresh native instance report required");
+        // Native transport is pinned to the local-sync Host. The Host checks the
+        // operating system itself: caller booleans, elapsed time and EPERM are
+        // never evidence of death, and PID reuse conservatively keeps the fence.
+        const prior = (await snapshots()).filter(
+          (report) =>
+            report.device === device &&
+            report.clientId === request.clientId &&
+            report.instanceId !== request.instanceId &&
+            report.retiredAt === undefined,
+        );
+        for (const report of prior) {
+          if (
+            request.predecessors.length &&
+            !request.predecessors.some(
+              (entry) =>
+                entry.instanceId === report.instanceId && entry.processId === report.processId,
+            )
+          )
+            continue;
+          if (
+            !report.owners.length ||
+            report.owners.some(
+              (entry) => entry.unknown || entry.buffers.some((buffer) => buffer.dirty),
+            )
+          )
+            throw new Error("Dirty or unknown buffers require explicit owner recovery");
+          let dead = false;
+          try {
+            process.kill(report.processId, 0);
+          } catch (error) {
+            dead = (error as NodeJS.ErrnoException).code === "ESRCH";
+          }
+          if (!dead) throw new Error("Previous native process is not proven dead");
+          await durableWrite(
+            join(bufferDirectory, `${digest([device, report.clientId, report.instanceId])}.json`),
+            JSON.stringify({ ...report, retiredAt: now() }),
+          );
+        }
+        return { acknowledged: true as const };
+      });
+    },
     updateBuffers(request: NativeBufferSnapshot, owner: WorkspaceOwnerAuthorization) {
       return serial(async () => {
         const device = await authenticate(owner);
@@ -297,11 +391,15 @@ export function createManagedNativeActivity(deps: {
         const reportId = digest([device, request.clientId, request.instanceId]);
         const path = join(bufferDirectory, `${reportId}.json`);
         const previous = await read<BufferLease>(path);
+        if (previous?.retiredAt !== undefined)
+          throw new Error("Native buffer instance already retired");
         if (previous && previous.processId !== request.processId)
           throw new Error("Native instance process identity changed");
         const omitted = previous?.owners.filter((entry) => !ownerIds.has(entry.ownerId)) ?? [];
         const report: BufferLease = {
-          ...request,
+          clientId: request.clientId,
+          instanceId: request.instanceId,
+          processId: request.processId,
           owners: request.owners.concat(omitted.map((entry) => ({ ...entry, unknown: true }))),
           device,
           receivedAt: now(),

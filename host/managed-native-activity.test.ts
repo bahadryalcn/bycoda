@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { afterEach, expect, it } from "vitest";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -250,4 +252,112 @@ it("keeps lifecycle activity probes available while a directory is pending remov
       ),
     ).rejects.toThrow("unavailable");
   }
+});
+
+it("retires a clean closed instance and reconciles a clean dead predecessor without releasing dirty or foreign reports", async () => {
+  const f = await fixture();
+  const old = {
+    ...f.report(false),
+    processId: process.pid,
+    owners: [{ ownerId: "main", updatedAt: 1_000_000, unknown: false, buffers: [] }],
+  };
+  await f.service.updateBuffers(old, owner);
+  await f.service.retireBuffers(
+    { clientId: old.clientId, instanceId: old.instanceId, processId: old.processId },
+    owner,
+  );
+  f.advance(46_000);
+  f.restart();
+  expect(await f.service.probe("workspace")).toHaveLength(0);
+  const prior = { ...old, instanceId: "prior" };
+  await f.service.updateBuffers(prior, owner);
+  await f.service.updateBuffers({ ...old, instanceId: "replacement" }, owner);
+  await expect(
+    f.service.reconcileBuffers(
+      {
+        clientId: old.clientId,
+        instanceId: "replacement",
+        predecessors: [{ instanceId: "prior", processId: old.processId }],
+      },
+      other,
+    ),
+  ).rejects.toThrow();
+  await expect(
+    f.service.reconcileBuffers(
+      {
+        clientId: old.clientId,
+        instanceId: "replacement",
+        predecessors: [{ instanceId: "prior", processId: old.processId }],
+      },
+      owner,
+    ),
+  ).rejects.toThrow("not proven dead");
+  expect(await f.service.probe("workspace")).toHaveLength(2);
+});
+
+it("reconciles a terminated local native process but retains dirty and unknown crash reports", async () => {
+  const f = await fixture();
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    windowsHide: true,
+    stdio: "ignore",
+  });
+  await once(child, "spawn");
+  cleanups.push(async () => {
+    if (child.exitCode === null) child.kill();
+  });
+  const old = {
+    ...f.report(false),
+    processId: child.pid!,
+    owners: [{ ownerId: "main", updatedAt: 1_000_000, unknown: false, buffers: [] }],
+  };
+  await f.service.updateBuffers(old, owner);
+  const dirty = { ...f.report(true, "dirty-client", "dirty-crash"), processId: child.pid! };
+  await f.service.updateBuffers(dirty, owner);
+  await f.service.updateBuffers(
+    {
+      ...old,
+      clientId: "unknown-client",
+      instanceId: "unknown-crash",
+      owners: [{ ...old.owners[0], unknown: true }],
+    },
+    owner,
+  );
+  const exited = once(child, "exit");
+  child.kill("SIGKILL");
+  await exited;
+  f.advance(46_000);
+  f.restart();
+  await f.service.updateBuffers(
+    {
+      ...old,
+      instanceId: "replacement",
+      processId: process.pid,
+      owners: [{ ...old.owners[0], updatedAt: 1_046_000 }],
+    },
+    owner,
+  );
+  expect(await f.service.probe("workspace")).toHaveLength(3);
+  await f.service.reconcileBuffers(
+    { clientId: old.clientId, instanceId: "replacement", predecessors: [] },
+    owner,
+  );
+  expect(await f.service.probe("workspace")).toHaveLength(2);
+  for (const report of [dirty, { ...old, clientId: "unknown-client" }]) {
+    await f.service.updateBuffers(
+      {
+        ...f.report(false),
+        clientId: report.clientId,
+        instanceId: "replacement",
+        processId: process.pid,
+      },
+      owner,
+    );
+    await expect(
+      f.service.reconcileBuffers(
+        { clientId: report.clientId, instanceId: "replacement", predecessors: [] },
+        owner,
+      ),
+    ).rejects.toThrow("explicit owner recovery");
+  }
+  expect(await f.service.probe("workspace")).toHaveLength(2);
 });

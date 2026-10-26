@@ -372,6 +372,8 @@ it("dispatches revision-bound pin, host rewind/Undo, approved delivery and clean
     "workspaces.pin",
     "workspaces.delivery.merge",
     "workspaces.cleanup.apply",
+    "native.buffers.retire",
+    "native.buffers.reconcile",
   ]) {
     const denied = await f.request(method, pinRequest, grant.token);
     expect(denied.status).toBe(400);
@@ -674,4 +676,36 @@ it("resumes the same owner-approved publication journal without pushing again an
   expect((await f.call("workspaces.delivery.publish", request)).status).toBe("complete");
   expect(push).toHaveBeenCalledTimes(1);
   expect(createPr).toHaveBeenCalledTimes(2);
+});
+
+it("authenticates clean native close and same-device instance reconciliation without trusting process-death claims", async () => {
+  const f = await fixture();
+  const report = {
+    clientId: "profile",
+    instanceId: "old",
+    processId: process.pid,
+    owners: [{ ownerId: "main", updatedAt: Date.now(), unknown: false, buffers: [] }],
+  };
+  await f.call("native.buffers.update", report);
+  const identity = {
+    clientId: report.clientId,
+    instanceId: report.instanceId,
+    processId: report.processId,
+  };
+  expect((await f.request("native.buffers.retire", identity, "invalid-token")).status).toBe(401);
+  const other = await f.store.issueDevice("Other buffer device");
+  expect((await f.request("native.buffers.retire", identity, other.token)).status).toBe(400);
+  await f.call("native.buffers.update", { ...report, instanceId: "new" });
+  const reconcile = {
+    clientId: "profile",
+    instanceId: "new",
+    predecessors: [{ instanceId: "old", processId: process.pid }],
+    processDead: true,
+  };
+  expect((await f.request("native.buffers.reconcile", reconcile, other.token)).status).toBe(400);
+  const stillLive = await f.request("native.buffers.reconcile", reconcile);
+  expect(stillLive.status).toBe(400);
+  expect(stillLive.value.error).toMatch(/not proven dead/);
+  expect(await f.call("native.buffers.retire", identity)).toEqual({ acknowledged: true });
+  expect(await f.call("native.buffers.reconcile", reconcile)).toEqual({ acknowledged: true });
 });

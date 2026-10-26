@@ -417,6 +417,8 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "native.activity.end",
   "native.activity.start",
   "native.buffers.update",
+  "native.buffers.retire",
+  "native.buffers.reconcile",
   "native.rewind.ack",
   "native.rewind.apply",
   "native.rewind.plan",

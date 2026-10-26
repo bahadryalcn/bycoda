@@ -2099,13 +2099,19 @@ export async function createHostServer(
                   break;
                 case "native.activity.start":
                 case "native.activity.end":
+                case "native.buffers.retire":
+                case "native.buffers.reconcile":
                 case "native.buffers.update": {
                   const action =
-                    input.method === "native.buffers.update"
-                      ? "updateBuffers"
-                      : input.method === "native.activity.start"
-                        ? "start"
-                        : "end";
+                    input.method === "native.buffers.retire"
+                      ? "retireBuffers"
+                      : input.method === "native.buffers.reconcile"
+                        ? "reconcileBuffers"
+                        : input.method === "native.buffers.update"
+                          ? "updateBuffers"
+                          : input.method === "native.activity.start"
+                            ? "start"
+                            : "end";
                   result = await withWorkspaceOwner<unknown>(token, (owner) =>
                     managed.nativeActivity[action](params as never, owner),
                   );

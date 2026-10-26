@@ -1195,6 +1195,8 @@ impl NativeWorkspaceTransport {
                 | "native.activity.start"
                 | "native.activity.end"
                 | "native.buffers.update"
+                | "native.buffers.retire"
+                | "native.buffers.reconcile"
                 | "native.rewind.plan"
                 | "native.rewind.prepare"
                 | "native.rewind.apply"
@@ -2683,6 +2685,8 @@ mod tests {
             "native.activity.start",
             "native.activity.end",
             "native.buffers.update",
+            "native.buffers.retire",
+            "native.buffers.reconcile",
             "native.rewind.plan",
             "native.rewind.prepare",
             "native.rewind.apply",

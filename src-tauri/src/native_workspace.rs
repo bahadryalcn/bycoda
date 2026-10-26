@@ -143,6 +143,8 @@ pub struct BufferState {
     dirty: bool,
 }
 
+static INSTANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 static BUFFER_REPORT_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub(crate) fn ensure_schema(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
@@ -214,12 +216,18 @@ pub fn managed_workspace_buffers(
         "{:x}",
         Sha256::digest(crate::fs::path_to_js(&profile).as_bytes())
     );
-    static INSTANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     let instance_id = INSTANCE.get_or_init(|| uuid::Uuid::new_v4().to_string());
     let response = host.call("native.buffers.update", json!({"clientId":client_id,"instanceId":instance_id,"processId":std::process::id(),"owners":owners}))?;
     if response["acknowledged"] != true {
         return Err("Host has not acknowledged native buffer state".into());
     }
+    // This bridge selects only the local-sync Host, which independently proves
+    // predecessor process death before retiring any clean same-profile report.
+    // Dirty/unknown reports keep their explicit recovery fence.
+    host.call(
+        "native.buffers.reconcile",
+        json!({"clientId":client_id,"instanceId":instance_id,"predecessors":[]}),
+    )?;
     store
         .lock_conn()?
         .execute(
@@ -227,6 +235,36 @@ pub fn managed_workspace_buffers(
             rusqlite::params![window.label(), now],
         )
         .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Called before the local transport shuts down. Failure preserves the report;
+/// the next instance can reconcile only clean state after OS-proven process exit.
+pub(crate) fn retire_buffers(app: &AppHandle) -> Result<(), String> {
+    let Some(instance_id) = INSTANCE.get() else {
+        return Ok(());
+    };
+    let _gate = BUFFER_REPORT_GATE
+        .lock()
+        .map_err(|_| "Native buffer report is locked")?;
+    use sha2::{Digest, Sha256};
+    let profile = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let client_id = format!(
+        "{:x}",
+        Sha256::digest(crate::fs::path_to_js(&profile).as_bytes())
+    );
+    let host =
+        crate::remote::NativeWorkspaceTransport::connect(app, "workspaces.native-activity.v1")?;
+    let response = host.call(
+        "native.buffers.retire",
+        json!({"clientId":client_id,"instanceId":instance_id,"processId":std::process::id()}),
+    )?;
+    if response["acknowledged"] != true {
+        return Err("Host has not acknowledged native buffer retirement".into());
+    }
     Ok(())
 }
 
