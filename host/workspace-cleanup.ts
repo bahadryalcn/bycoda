@@ -157,9 +157,12 @@ async function registrations(cwd: string) {
   });
 }
 
-async function sourceState(path: string) {
+async function sourceState(path: string, detachedLinks = new Map<string, string>()) {
   // A failed status is propagated, never converted to a clean result.
-  const status = await git(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  const status = (await git(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]))
+    .split("\0")
+    .filter((entry) => !(entry.startsWith(" D ") && detachedLinks.has(entry.slice(3))))
+    .join("\0");
   const head = (await git(path, ["rev-parse", "HEAD"])).trim();
   const branch = (await git(path, ["symbolic-ref", "HEAD"])).trim();
   const files = (await git(path, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]))
@@ -213,7 +216,7 @@ async function sourceState(path: string) {
     if (info?.isSymbolicLink()) hash.update(readlinkSync(full));
     else if (info?.isFile()) hash.update(readFileSync(full));
     else if (info) throw new Error("Unsupported source entry requires private recovery support.");
-    else hash.update("missing");
+    else hash.update(detachedLinks.get(file) ?? "missing");
   }
   return {
     status: status || (ignored.length ? "ignored-private-inputs" : ""),
@@ -517,6 +520,19 @@ export async function guardedRemoveWorkspace(
       throw new Error("Recovery must be outside the workspace.");
     const archives: string[] = [];
     const recoveryIds: string[] = [];
+    const beforeDetachment =
+      registered && exists(input.path) && !input.recovering ? await sourceState(input.path) : null;
+    const trackedLinks = new Map<string, string>();
+    if (beforeDetachment) {
+      const entries = (await git(input.path, ["ls-files", "--stage", "-z"]))
+        .split("\0")
+        .filter(Boolean);
+      for (const link of links) {
+        const name = relative(input.path, link.path).split(sep).join("/");
+        if (entries.some((entry) => entry.startsWith("120000 ") && entry.endsWith(`\t${name}`)))
+          trackedLinks.set(name, readlinkSync(link.path));
+      }
+    }
     for (const link of links) {
       // Revalidate each link's parents; only detach the entry, never its target.
       assertNoFollowPath(input.managedRoot, dirname(link.path));
@@ -584,6 +600,16 @@ export async function guardedRemoveWorkspace(
       );
     await input.phase?.("evidence-preserved", recoveryIds, archives);
     if (await input.inUse()) throw new Error("Workspace is still in use.");
+    if (beforeDetachment && !input.allowDirty) {
+      if (
+        links.some((link) => exists(link.path)) ||
+        (await inventoryWorkspaceLinks(input.path)).length
+      )
+        throw new Error("Dependency links changed during cleanup.");
+      const afterDetachment = await sourceState(input.path, trackedLinks);
+      if (afterDetachment.fingerprint !== beforeDetachment.fingerprint)
+        throw new Error("Source changed during link detachment; preview again.");
+    }
     if (input.recovering && exists(input.path)) {
       if (exists(join(input.path, ".git"))) {
         const state = await sourceState(input.path);
@@ -603,7 +629,7 @@ export async function guardedRemoveWorkspace(
         await git(input.projectCwd, [
           "worktree",
           "remove",
-          ...(input.allowDirty ? ["--force"] : []),
+          ...(input.allowDirty || trackedLinks.size > 0 ? ["--force"] : []),
           "--",
           input.path,
         ]);

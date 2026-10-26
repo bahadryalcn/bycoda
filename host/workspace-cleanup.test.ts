@@ -191,6 +191,61 @@ it("detaches a node_modules junction before Git removal and preserves the outsid
   expect([...s.operations.values()].map((op) => op.phase)).toEqual(["complete"]);
 }, 120_000);
 
+it.skipIf(process.platform === "win32")(
+  "removes only the validated deletion delta of a committed dependency symlink",
+  async () => {
+    const s = await setup();
+    const target = join(s.root, "outside-dependencies");
+    mkdirSync(target);
+    writeFileSync(join(target, "sentinel"), "preserve");
+    git(s.path, "config", "core.symlinks", "true");
+    symlinkSync(target, join(s.path, "node_modules"), "dir");
+    git(s.path, "add", "-f", "node_modules");
+    git(s.path, "commit", "-q", "-m", "committed dependency link");
+    expect(git(s.path, "ls-files", "--stage", "node_modules")).toMatch(/^120000 /);
+    expect(git(s.path, "status", "--porcelain")).toBe("");
+    const head = git(s.path, "rev-parse", "HEAD");
+    await s.apply({ kind: "retentionScheduler" });
+    expect(existsSync(s.path)).toBe(false);
+    expect(readFileSync(join(target, "sentinel"), "utf8")).toBe("preserve");
+    expect(git(s.project, "rev-parse", "bycoda/t/test")).toBe(head);
+  },
+  120_000,
+);
+
+it.skipIf(process.platform === "win32")(
+  "rejects unrelated edits made while detaching a committed dependency link",
+  async () => {
+    const s = await setup();
+    const target = join(s.root, "outside-dependencies");
+    mkdirSync(target);
+    git(s.path, "config", "core.symlinks", "true");
+    symlinkSync(target, join(s.path, "node_modules"), "dir");
+    git(s.path, "add", "-f", "node_modules");
+    git(s.path, "commit", "-q", "-m", "committed dependency link");
+    await expect(
+      guardedRemoveWorkspace({
+        projectCwd: s.project,
+        managedRoot: s.managedRoot,
+        path: s.path,
+        branchRef: s.workspace.branchRef,
+        archiveRoot: s.archiveRoot,
+        operationId: "detachment-drift",
+        inUse: () => false,
+        phase: async (phase) => {
+          if (phase === "links-detached")
+            writeFileSync(join(s.path, "source.txt"), "concurrent edit");
+        },
+      }),
+    ).rejects.toThrow(/changed|uncommitted/);
+    expect(readFileSync(join(s.path, "source.txt"), "utf8")).toBe("concurrent edit");
+    expect(git(s.project, "worktree", "list", "--porcelain")).toContain(
+      s.path.replaceAll("\\", "/"),
+    );
+  },
+  120_000,
+);
+
 it("blocks automatic dirty cleanup; authenticated owner confirmation privately preserves staged, unstaged and untracked source", async () => {
   const s = await setup();
   writeFileSync(join(s.path, "source.txt"), "staged");
