@@ -87,12 +87,12 @@ it.each([false, true])(
       sessionId,
       text: "Fix remote session and worktree naming",
     });
-    await vi.waitFor(() => expect(branch).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(branch).toHaveBeenCalledTimes(1), { timeout: 20_000 });
     // Settling a turn includes real Git checkpoints; Windows process startup
     // can exceed waitFor's default one-second deadline.
     const waitForIdle = () =>
       vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
-        timeout: 10_000,
+        timeout: 20_000,
       });
     if (deleted) {
       await waitForIdle();
@@ -100,8 +100,13 @@ it.each([false, true])(
       const logged = vi.spyOn(console, "debug").mockImplementation(() => {});
       try {
         finishBranch("remote-naming");
-        await vi.waitFor(() =>
-          expect(logged).toHaveBeenCalledWith("[bycoda] remote worktree branch", expect.any(Error)),
+        await vi.waitFor(
+          () =>
+            expect(logged).toHaveBeenCalledWith(
+              "[bycoda] remote worktree branch",
+              expect.any(Error),
+            ),
+          { timeout: 20_000 },
         );
         expect(
           (await hostWorktrees(cwd)).worktrees.find((item) => item.path === tree.path)?.branch,
@@ -112,13 +117,16 @@ it.each([false, true])(
       return;
     }
     finishBranch("remote-naming");
-    await vi.waitFor(async () => {
-      expect((await store.session(sessionId)).session).toMatchObject({
-        title: "codex · Fix remote naming",
-        branch: "mc/remote-naming",
-        worktreeCwd: tree.path,
-      });
-    });
+    await vi.waitFor(
+      async () => {
+        expect((await store.session(sessionId)).session).toMatchObject({
+          title: "codex · Fix remote naming",
+          branch: "mc/remote-naming",
+          worktreeCwd: tree.path,
+        });
+      },
+      { timeout: 20_000 },
+    );
     expect(
       (await hostWorktrees(cwd)).worktrees.find((item) => item.path === tree.path)?.branch,
     ).toBe("mc/remote-naming");
@@ -138,6 +146,7 @@ it.each([false, true])(
       renameHostWorktreeBranch(cwd, tree.path, "mc/12345678", "mc/other"),
     ).rejects.toThrow("changed");
   },
+  90_000,
 );
 
 it("creates registered host worktrees and binds new sessions to the selected checkout", async () => {
@@ -215,6 +224,11 @@ it("reuses a worktree list briefly and refreshes it after this host changes work
   writeFileSync(join(cwd, "file.txt"), "initial\n");
   git("add", "file.txt");
   git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "initial");
+  // Cache age is the behavior under test, independent of real Git process startup time.
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+  cleanups.push(() => {
+    clock.mockRestore();
+  });
   const root = (await hostWorktrees(cwd)).defaultRoot;
   cleanups.push(() => {
     invalidateHostWorktrees();

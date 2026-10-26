@@ -41,6 +41,11 @@ import { skillInvocationTokens } from "../src/features/skills/model/skillTokens"
 import { hostname, homedir } from "node:os";
 import { RuntimeTerminalLogs } from "./runtime-terminal-logs";
 import { HostTerminals } from "./terminals";
+import { createManagedWorkspaceRegistry } from "./managed-workspaces";
+import { createWorkspacePolicyResolver } from "./workspace-policy";
+import { createWorkspaceFeatureClaims } from "./feature-claims";
+import { WORKSPACE_CAPABILITIES } from "./workspace-contracts";
+import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 import { createHash, randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import {
@@ -63,11 +68,19 @@ import { SocialPeers } from "./social-peers";
 import { createSocialAdapters } from "../src/integrations/social/platformAdapters";
 import { HostTasks } from "./tasks";
 import { HostSprints } from "./sprints";
-import type { SprintCreateInput, SprintUpdateInput, SprintCommand, SprintCompleteInput, SprintPlanInput, SprintIngestInput, SprintGoalContextInput } from "../src/features/tasks/model/hostSprints";
+import type {
+  SprintCreateInput,
+  SprintUpdateInput,
+  SprintCommand,
+  SprintCompleteInput,
+  SprintPlanInput,
+  SprintIngestInput,
+  SprintGoalContextInput,
+} from "../src/features/tasks/model/hostSprints";
 import { AttachmentOwnership } from "./attachment-ownership";
 import { HostGoals } from "./goals";
 import { HostStewards } from "./stewards";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { DeviceHost } from "./device-host";
 import { DevicePreviews } from "./device-preview";
 import type { DeviceAction } from "../src/features/devices/types";
@@ -263,6 +276,71 @@ export async function createHostServer(
   terminalsOverride?: HostTerminals,
 ) {
   await engine.ready;
+  const workspacePolicy = createWorkspacePolicyResolver(engine.store);
+  const workspacePathKey = (path: string) =>
+    process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
+  const inWorkspace = (path: string, root: string) =>
+    workspacePathKey(path) === workspacePathKey(root) ||
+    workspacePathKey(path).startsWith(`${workspacePathKey(root)}${sep}`);
+  const managedWorkspaces = createManagedWorkspaceRegistry(engine.store, workspacePolicy, {
+    isActive: async (workspace) => {
+      if (
+        workspace.owner.kind === "session" &&
+        (desktop.live.busyClient(workspace.owner.id) || runLeases.holder(workspace.owner.id))
+      )
+        return true;
+      for (const project of await engine.store.projects()) {
+        if (
+          terminals
+            .list(project.id)
+            .terminals.some(
+              (terminal) =>
+                terminal.state === "running" && inWorkspace(terminal.cwd, workspace.path),
+            )
+        )
+          return true;
+        for (const summary of await engine.store.summaries(project.id)) {
+          if (
+            !(
+              (workspace.owner.kind === "session" && summary.id === workspace.owner.id) ||
+              (summary.worktreeCwd && inWorkspace(summary.worktreeCwd, workspace.path))
+            )
+          )
+            continue;
+          if (
+            summary.status === "running" ||
+            desktop.live.busyClient(summary.id) ||
+            (await engine.busyReason(summary.id))
+          )
+            return true;
+          const snapshot = await engine.store.session(summary.id);
+          if (snapshot.session.blocks.some((block) => block.shell?.running)) return true;
+        }
+      }
+      return false;
+    },
+  });
+  const recordWorkspaceActivity = async (action: () => Promise<void>) => {
+    try {
+      await action();
+    } catch {
+      console.warn("Managed workspace activity metadata could not be recorded");
+    }
+  };
+  const touchSessionWorkspace = (id: string) =>
+    recordWorkspaceActivity(() => managedWorkspaces.touchOwnerActivity({ kind: "session", id }));
+  const featureClaims = createWorkspaceFeatureClaims(engine.store);
+  const workspaceForOwnerRpc = async (workspaceId: unknown) => {
+    if (typeof workspaceId !== "string" || !workspaceId || workspaceId.length > 200)
+      throw new Error("Invalid workspace identity");
+    const value = await managedWorkspaces.get({ workspaceId });
+    if (value) {
+      await engine.store.project(value.projectId);
+      if (value.environmentId !== engine.store.environmentId)
+        throw new Error("Workspace belongs to another execution host");
+    }
+    return value;
+  };
   const automations = automationsOverride ?? new HostAutomations(engine.store, engine);
   await automations.ready;
   const tasks = tasksOverride ?? new HostTasks(engine.store, engine);
@@ -285,6 +363,21 @@ export async function createHostServer(
   const runtimeLogs = new RuntimeLogsService();
   const terminalLogs = new RuntimeTerminalLogs(runtimeLogs);
   const terminals = terminalsOverride ?? new HostTerminals();
+  const terminalActivityCursors = new Map<string, number>();
+  const terminalActivityStates = new Map<string, string>();
+  const touchTerminalWorkspace = (projectId: string, terminalId: unknown, closedCwd?: string) =>
+    recordWorkspaceActivity(async () => {
+      const terminal = terminals.list(projectId).terminals.find((entry) => entry.id === terminalId);
+      const cwd = terminal?.cwd ?? closedCwd;
+      if (!cwd) return;
+      if (terminal) terminalActivityStates.set(terminal.id, terminal.state);
+      const workspaces = await managedWorkspaces.list({
+        projectId,
+        environmentId: engine.store.environmentId,
+      });
+      for (const workspace of workspaces)
+        if (inWorkspace(cwd, workspace.path)) await managedWorkspaces.touchActivity(workspace.id);
+    });
   const logMonitors = new RuntimeLogMonitors(browserRuntime.load, runtimeLogs);
   const sharedBrowser = new SharedBrowser(browserRuntime.load, Date.now, { runtimeLogs });
   const devServers = new DevServersService({ runtimeLogs });
@@ -567,6 +660,7 @@ export async function createHostServer(
         await adopt(id);
         for (const command of queueRowCommands(id, row, (await engine.store.session(id)).session))
           await engine.command(command);
+        await touchSessionWorkspace(id);
       },
       transaction: async (action) => await engine.store.transaction(action),
       wakeAt: () => {
@@ -582,7 +676,10 @@ export async function createHostServer(
     Date.now,
     false,
   );
-  engine.onSettled = async (id, outcome) => await queueDrainer.settled(id, outcome);
+  engine.onSettled = async (id, outcome) => {
+    await touchSessionWorkspace(id);
+    await queueDrainer.settled(id, outcome);
+  };
   // A turn found running at startup was cut short: its queue waits for the owner.
   for (const id of engine.recoveredInterrupted)
     await queueDrainer.settled(id, {
@@ -603,6 +700,7 @@ export async function createHostServer(
           await engine.store.db.scope(async () => {
             // A later heartbeat may already have released or replaced this owner.
             if (desktop.live.busyClient(id) !== clientId) return;
+            await touchSessionWorkspace(id);
             const holder = `desktop:${clientId}`;
             let heldBefore = acceptedAt;
             // A window running a turn holds the conversation whether or not it asked first
@@ -635,6 +733,8 @@ export async function createHostServer(
     // its lease runs out on its own (longer than the longest beat gap).
     if (reason !== "gone")
       runLeases.drop(id, `desktop:${clientId}`, lastBusy.get(`${id}\0${clientId}`) ?? 0);
+    if (reason !== "gone")
+      heartbeatEffects = heartbeatEffects.then(() => touchSessionWorkspace(id));
   };
   /**
    * The run leases a desktop window says it holds (for the conversations it runs
@@ -1887,6 +1987,88 @@ export async function createHostServer(
             () => engine.store.authenticated(token),
             async () => {
               switch (input.method) {
+                // These routes are owner transport only. Scoped agent credentials are
+                // rejected above, so they cannot manufacture project-policy exceptions.
+                case "workspaces.prepare": {
+                  await engine.store.project(String(params.projectId ?? ""));
+                  if (params.environmentId !== engine.store.environmentId)
+                    throw new Error("Workspace belongs to another execution host");
+                  result = await managedWorkspaces.prepare(
+                    params as unknown as WorkspaceRpcRequest<"workspaces.prepare">,
+                  );
+                  break;
+                }
+                case "workspaces.list": {
+                  await engine.store.project(String(params.projectId ?? ""));
+                  if (
+                    params.environmentId !== undefined &&
+                    params.environmentId !== engine.store.environmentId
+                  )
+                    throw new Error("Workspace belongs to another execution host");
+                  result = await managedWorkspaces.list({
+                    ...(params as unknown as WorkspaceRpcRequest<"workspaces.list">),
+                    environmentId: engine.store.environmentId,
+                  });
+                  break;
+                }
+                case "workspaces.get":
+                  result = await workspaceForOwnerRpc(params.workspaceId);
+                  break;
+                case "workspaces.resume":
+                case "workspaces.finish":
+                case "workspaces.close": {
+                  if (!(await workspaceForOwnerRpc(params.workspaceId)))
+                    throw new Error("Managed workspace not found");
+                  const action =
+                    input.method === "workspaces.resume"
+                      ? "resume"
+                      : input.method === "workspaces.finish"
+                        ? "finish"
+                        : "close";
+                  result = await managedWorkspaces[action](
+                    params as unknown as WorkspaceRpcRequest<"workspaces.resume">,
+                  );
+                  break;
+                }
+                case "projects.workspacePolicy.get":
+                case "projects.workspacePolicy.update": {
+                  await engine.store.project(String(params.projectId ?? ""));
+                  if (params.environmentId !== engine.store.environmentId)
+                    throw new Error("Workspace policy belongs to another execution host");
+                  result =
+                    input.method === "projects.workspacePolicy.get"
+                      ? await workspacePolicy.get(
+                          params as unknown as WorkspaceRpcRequest<"projects.workspacePolicy.get">,
+                        )
+                      : await workspacePolicy.update(
+                          params as unknown as WorkspaceRpcRequest<"projects.workspacePolicy.update">,
+                          {
+                            ownerId: createHash("sha256").update(token).digest("hex"),
+                            authorizationId: randomUUID(),
+                          },
+                        );
+                  break;
+                }
+                case "workspaces.featureClaims.list":
+                  await engine.store.project(String(params.projectId ?? ""));
+                  result = await featureClaims.list(
+                    params as unknown as WorkspaceRpcRequest<"workspaces.featureClaims.list">,
+                  );
+                  break;
+                case "workspaces.featureClaims.acquire":
+                case "workspaces.featureClaims.release": {
+                  if (!(await workspaceForOwnerRpc(params.workspaceId)))
+                    throw new Error("Managed workspace not found");
+                  result =
+                    input.method === "workspaces.featureClaims.acquire"
+                      ? await featureClaims.acquire(
+                          params as unknown as WorkspaceRpcRequest<"workspaces.featureClaims.acquire">,
+                        )
+                      : await featureClaims.release(
+                          params as unknown as WorkspaceRpcRequest<"workspaces.featureClaims.release">,
+                        );
+                  break;
+                }
                 case "terminals.list":
                 case "terminals.create":
                 case "terminals.read":
@@ -1894,6 +2076,12 @@ export async function createHostServer(
                 case "terminals.interrupt":
                 case "terminals.close": {
                   const project = await engine.store.project(String(params.projectId ?? ""));
+                  const closedCwd =
+                    input.method === "terminals.close"
+                      ? terminals
+                          .list(project.id)
+                          .terminals.find((terminal) => terminal.id === params.id)?.cwd
+                      : undefined;
                   if (input.method === "terminals.list") result = terminals.list(project.id);
                   else if (input.method === "terminals.create")
                     result = await terminals.create(
@@ -1909,6 +2097,28 @@ export async function createHostServer(
                   else if (input.method === "terminals.interrupt")
                     result = await terminals.interrupt(project.id, params.id);
                   else result = await terminals.remove(project.id, params.id);
+                  if (input.method === "terminals.create")
+                    await touchTerminalWorkspace(project.id, (result as { id: string }).id);
+                  else if (input.method === "terminals.write")
+                    await touchTerminalWorkspace(project.id, params.id);
+                  else if (input.method === "terminals.read") {
+                    const read = result as {
+                      cursor: number;
+                      terminal: { id: string; state: string };
+                    };
+                    const previous = terminalActivityCursors.get(read.terminal.id) ?? 0;
+                    if (
+                      read.cursor > previous ||
+                      terminalActivityStates.get(read.terminal.id) !== read.terminal.state
+                    ) {
+                      terminalActivityCursors.set(read.terminal.id, read.cursor);
+                      await touchTerminalWorkspace(project.id, read.terminal.id);
+                    }
+                  } else if (input.method === "terminals.close" && typeof params.id === "string") {
+                    terminalActivityCursors.delete(params.id);
+                    terminalActivityStates.delete(params.id);
+                    await touchTerminalWorkspace(project.id, params.id, closedCwd);
+                  }
                   break;
                 }
                 case "conversation.desktop.take":
@@ -2140,6 +2350,8 @@ export async function createHostServer(
                         : provider === "codex" || provider === "claude",
                     ),
                     capabilities: [
+                      WORKSPACE_CAPABILITIES.managed,
+                      WORKSPACE_CAPABILITIES.policy,
                       "terminals.v1",
                       "mobile.pairing",
                       "mobile.access",
@@ -3643,6 +3855,12 @@ export async function createHostServer(
                     await crews.ownerDirective(params);
                     return receipt;
                   });
+                  if (
+                    ["send", "steer", "compact", "contextual", "shell"].includes(
+                      String(params.type),
+                    )
+                  )
+                    await touchSessionWorkspace(sessionId);
                   // A usage limit that was dismissed lets a queue that waited on it go on.
                   if (params.type === "usageLimit") queueDrainer.kick(sessionId);
                   break;
@@ -3852,16 +4070,28 @@ export async function createHostServer(
                   result = await sprints.create(params.input as SprintCreateInput);
                   break;
                 case "sprints.update":
-                  result = await sprints.update(String(params.id ?? ""), params.input as SprintUpdateInput);
+                  result = await sprints.update(
+                    String(params.id ?? ""),
+                    params.input as SprintUpdateInput,
+                  );
                   break;
                 case "sprints.start":
-                  result = await sprints.start(String(params.id ?? ""), params.input as SprintCommand);
+                  result = await sprints.start(
+                    String(params.id ?? ""),
+                    params.input as SprintCommand,
+                  );
                   break;
                 case "sprints.complete":
-                  result = await sprints.complete(String(params.id ?? ""), params.input as SprintCompleteInput);
+                  result = await sprints.complete(
+                    String(params.id ?? ""),
+                    params.input as SprintCompleteInput,
+                  );
                   break;
                 case "sprints.archive":
-                  result = await sprints.archive(String(params.id ?? ""), params.input as SprintCommand);
+                  result = await sprints.archive(
+                    String(params.id ?? ""),
+                    params.input as SprintCommand,
+                  );
                   break;
                 case "sprints.plan":
                   result = await sprints.plan(params.input as SprintPlanInput);
@@ -3879,7 +4109,10 @@ export async function createHostServer(
                   result = await tasks.snapshotWithCursor();
                   break;
                 case "tasks.events":
-                  result = await tasks.events(params.after as number, params.limit as number | undefined);
+                  result = await tasks.events(
+                    params.after as number,
+                    params.limit as number | undefined,
+                  );
                   break;
                 case "tasks.list":
                   if (params.projectId !== undefined)

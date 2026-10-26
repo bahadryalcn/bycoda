@@ -20,6 +20,13 @@ import { snapshotWeight } from "../src/features/connections/model/snapshotWeight
 import { blockRevisions } from "./block-revisions";
 import type { BlockChanges } from "../src/features/sessions/model/blockChanges";
 import type { UsageMetadataPage, UsageTurnMetadata } from "./usage-report";
+import type {
+  ManagedWorkspace,
+  WorkspaceFeatureClaim,
+  WorkspaceOperation,
+  WorkspacePolicyOverride,
+  WorkspaceState,
+} from "./workspace-contracts";
 export { blockRevisions } from "./block-revisions";
 const CACHED_SESSIONS = 32;
 // Retried commands are deduplicated by receipt; a week far outlives any retry.
@@ -276,6 +283,38 @@ export class HostStore {
       CREATE TABLE IF NOT EXISTS events (session_id TEXT NOT NULL REFERENCES sessions(id), revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id, revision));
       CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, hash TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS sync_records (table_name TEXT NOT NULL, id TEXT NOT NULL, value TEXT, rev INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (table_name, id));`);
+    // Additive, host-local records: deleting a conversation or project must not
+    // cascade into loss of branch ownership, recovery journals or receipts.
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS managed_workspaces (
+        id TEXT PRIMARY KEY, repository_id TEXT NOT NULL, project_id TEXT NOT NULL,
+        environment_id TEXT NOT NULL, owner_kind TEXT NOT NULL, owner_id TEXT NOT NULL,
+        path TEXT NOT NULL UNIQUE, branch_ref TEXT NOT NULL, state TEXT NOT NULL,
+        revision INTEGER NOT NULL, payload TEXT NOT NULL,
+        UNIQUE(repository_id, environment_id, owner_kind, owner_id),
+        UNIQUE(repository_id, branch_ref)
+      );
+      CREATE INDEX IF NOT EXISTS managed_workspaces_project ON managed_workspaces(project_id, environment_id);
+      CREATE TABLE IF NOT EXISTS workspace_operations (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, kind TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL, phase TEXT NOT NULL, payload TEXT NOT NULL,
+        UNIQUE(workspace_id, kind, idempotency_key)
+      );
+      CREATE TABLE IF NOT EXISTS workspace_mutation_receipts (
+        scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, signature TEXT NOT NULL,
+        response TEXT NOT NULL, PRIMARY KEY(scope, idempotency_key)
+      );
+      CREATE TABLE IF NOT EXISTS workspace_policies (
+        project_id TEXT NOT NULL, environment_id TEXT NOT NULL, revision INTEGER NOT NULL,
+        payload TEXT NOT NULL, PRIMARY KEY(project_id, environment_id)
+      );
+      CREATE TABLE IF NOT EXISTS workspace_feature_claims (
+        id TEXT PRIMARY KEY, repository_id TEXT NOT NULL, project_id TEXT NOT NULL,
+        feature_key TEXT NOT NULL, scope TEXT NOT NULL, workspace_id TEXT NOT NULL,
+        payload TEXT NOT NULL, UNIQUE(repository_id, feature_key, scope)
+      );
+      CREATE INDEX IF NOT EXISTS workspace_feature_claims_workspace ON workspace_feature_claims(workspace_id);
+    `);
     const columns = await this.db.prepare("PRAGMA table_info(sessions)").all();
     if (!columns.some((column) => column.name === "summary"))
       await this.db.exec("ALTER TABLE sessions ADD COLUMN summary TEXT");
@@ -477,6 +516,330 @@ export class HostStore {
         }
       });
     }
+  }
+  async managedWorkspace(id: string): Promise<ManagedWorkspace | null> {
+    return this.db.storeScope(async () => {
+      const row = await this.db
+        .prepare("SELECT payload FROM managed_workspaces WHERE id=?")
+        .get(id);
+      return row ? JSON.parse(String(row.payload)) : null;
+    });
+  }
+  async managedWorkspaces(
+    filter: {
+      projectId?: string;
+      repositoryId?: string;
+      environmentId?: string;
+      states?: WorkspaceState[];
+    } = {},
+  ): Promise<ManagedWorkspace[]> {
+    return this.db.storeScope(async () => {
+      const clauses: string[] = [],
+        values: string[] = [];
+      for (const [column, value] of [
+        ["project_id", filter.projectId],
+        ["repository_id", filter.repositoryId],
+        ["environment_id", filter.environmentId],
+      ])
+        if (value !== undefined) {
+          clauses.push(`${column}=?`);
+          values.push(value);
+        }
+      if (filter.states) {
+        if (!filter.states.length) return [];
+        clauses.push(`state IN (${filter.states.map(() => "?").join(",")})`);
+        values.push(...filter.states);
+      }
+      const rows = await this.db
+        .prepare(
+          `SELECT payload FROM managed_workspaces${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY id`,
+        )
+        .all(...values);
+      return rows.map((row) => JSON.parse(String(row.payload)));
+    });
+  }
+  async insertManagedWorkspace(workspace: ManagedWorkspace): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db
+        .prepare(`INSERT INTO managed_workspaces
+        (id, repository_id, project_id, environment_id, owner_kind, owner_id, path, branch_ref, state, revision, payload)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(
+          workspace.id,
+          workspace.repositoryId,
+          workspace.projectId,
+          workspace.environmentId,
+          workspace.owner.kind,
+          workspace.owner.id,
+          workspace.path,
+          workspace.branchRef,
+          workspace.state,
+          workspace.revision,
+          JSON.stringify(workspace),
+        );
+    });
+  }
+  async updateManagedWorkspace(
+    workspace: ManagedWorkspace,
+    expectedRevision: number,
+  ): Promise<void> {
+    return this.db.storeScope(async () => {
+      const previous = await this.managedWorkspace(workspace.id);
+      if (
+        !previous ||
+        previous.revision !== expectedRevision ||
+        workspace.revision !== expectedRevision + 1
+      )
+        throw Object.assign(new Error("Workspace revision changed"), {
+          code: "WORKSPACE_REVISION_CONFLICT",
+        });
+      for (const key of [
+        "repositoryId",
+        "projectId",
+        "environmentId",
+        "owner",
+        "path",
+        "branchRef",
+        "baseRef",
+        "baseCommit",
+        "targetBranchRef",
+      ] as const)
+        if (canonicalWorkspaceJson(previous[key]) !== canonicalWorkspaceJson(workspace[key]))
+          throw new Error(`Workspace identity is immutable: ${key}`);
+      const result = await this.db
+        .prepare(
+          "UPDATE managed_workspaces SET state=?, revision=?, payload=? WHERE id=? AND revision=?",
+        )
+        .run(
+          workspace.state,
+          workspace.revision,
+          JSON.stringify(workspace),
+          workspace.id,
+          expectedRevision,
+        );
+      if (!Number(result.changes))
+        throw Object.assign(new Error("Workspace revision changed"), {
+          code: "WORKSPACE_REVISION_CONFLICT",
+        });
+    });
+  }
+  async workspaceOperation(id: string): Promise<WorkspaceOperation | null> {
+    return this.db.storeScope(async () => {
+      const row = await this.db
+        .prepare("SELECT payload FROM workspace_operations WHERE id=?")
+        .get(id);
+      return row ? JSON.parse(String(row.payload)) : null;
+    });
+  }
+  async workspaceOperations(workspaceId?: string): Promise<WorkspaceOperation[]> {
+    return this.db.storeScope(async () => {
+      const rows =
+        workspaceId === undefined
+          ? await this.db.prepare("SELECT payload FROM workspace_operations ORDER BY id").all()
+          : await this.db
+              .prepare("SELECT payload FROM workspace_operations WHERE workspace_id=? ORDER BY id")
+              .all(workspaceId);
+      return rows.map((row) => JSON.parse(String(row.payload)));
+    });
+  }
+  async findWorkspaceOperation(request: {
+    workspaceId: string;
+    kind: WorkspaceOperation["kind"];
+    idempotencyKey: string;
+  }): Promise<WorkspaceOperation | null> {
+    return this.db.storeScope(async () => {
+      const row = await this.db
+        .prepare(
+          "SELECT payload FROM workspace_operations WHERE workspace_id=? AND kind=? AND idempotency_key=?",
+        )
+        .get(request.workspaceId, request.kind, request.idempotencyKey);
+      return row ? JSON.parse(String(row.payload)) : null;
+    });
+  }
+  async saveWorkspaceOperation(
+    operation: WorkspaceOperation,
+    expectedPhase: WorkspaceOperation["phase"] | null,
+  ): Promise<void> {
+    return this.transaction(async () => {
+      if (operation.phase === "blocked" && !operation.resumePhase)
+        throw new Error("Blocked workspace operation must retain its recovery phase");
+      if (expectedPhase === null) {
+        await this.db
+          .prepare(
+            "INSERT INTO workspace_operations (id, workspace_id, kind, idempotency_key, phase, payload) VALUES (?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            operation.id,
+            operation.workspaceId,
+            operation.kind,
+            operation.idempotencyKey,
+            operation.phase,
+            JSON.stringify(operation),
+          );
+        return;
+      }
+      const previous = await this.workspaceOperation(operation.id);
+      if (!previous || previous.phase !== expectedPhase)
+        throw Object.assign(new Error("Workspace operation phase changed"), {
+          code: "WORKSPACE_OPERATION_CONFLICT",
+        });
+      for (const key of [
+        "workspaceId",
+        "kind",
+        "idempotencyKey",
+        "expectedRevision",
+        "createdAt",
+      ] as const)
+        if (previous[key] !== operation[key])
+          throw new Error(`Workspace operation identity is immutable: ${key}`);
+      // The original creation snapshot or reviewed plan is authority, not
+      // progress. Recovery may add rescue data and receipts, never retarget the
+      // reserved directory, source baseline or approved Git/conversation state.
+      const previousPlan = previous.kind === "create" ? previous.plannedWorkspace : previous.plan;
+      const nextPlan = operation.kind === "create" ? operation.plannedWorkspace : operation.plan;
+      if (canonicalWorkspaceJson(previousPlan) !== canonicalWorkspaceJson(nextPlan))
+        throw new Error("Workspace operation plan is immutable");
+      const result = await this.db
+        .prepare("UPDATE workspace_operations SET phase=?, payload=? WHERE id=? AND phase=?")
+        .run(operation.phase, JSON.stringify(operation), operation.id, expectedPhase);
+      if (!Number(result.changes))
+        throw Object.assign(new Error("Workspace operation phase changed"), {
+          code: "WORKSPACE_OPERATION_CONFLICT",
+        });
+    });
+  }
+  /** Receipts deliberately have no age-based pruning: retries after retirement
+   * or restart must not repeat Git mutations. Scope is a host-selected namespace. */
+  async workspaceReceipt<T>(scope: string, key: string, request: unknown): Promise<T | null> {
+    return this.db.storeScope(async () => {
+      const row = await this.db
+        .prepare(
+          "SELECT signature, response FROM workspace_mutation_receipts WHERE scope=? AND idempotency_key=?",
+        )
+        .get(scope, key);
+      if (!row) return null;
+      if (row.signature !== canonicalWorkspaceJson(request))
+        throw Object.assign(
+          new Error("Idempotency key was already used with a different request"),
+          { code: "WORKSPACE_IDEMPOTENCY_CONFLICT" },
+        );
+      return JSON.parse(String(row.response)) as T;
+    });
+  }
+  async saveWorkspaceReceipt(
+    scope: string,
+    key: string,
+    request: unknown,
+    response: unknown,
+  ): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db
+        .prepare(
+          "INSERT INTO workspace_mutation_receipts (scope, idempotency_key, signature, response) VALUES (?, ?, ?, ?)",
+        )
+        .run(scope, key, canonicalWorkspaceJson(request), JSON.stringify(response));
+    });
+  }
+  async workspacePolicy(
+    projectId: string,
+    environmentId: string,
+  ): Promise<{ revision: number; policy: WorkspacePolicyOverride } | null> {
+    return this.db.storeScope(async () => {
+      const row = await this.db
+        .prepare(
+          "SELECT revision, payload FROM workspace_policies WHERE project_id=? AND environment_id=?",
+        )
+        .get(projectId, environmentId);
+      return row
+        ? { revision: Number(row.revision), policy: JSON.parse(String(row.payload)) }
+        : null;
+    });
+  }
+  async saveWorkspacePolicy(
+    projectId: string,
+    environmentId: string,
+    policy: WorkspacePolicyOverride,
+    expectedRevision: number,
+  ): Promise<{ revision: number; policy: WorkspacePolicyOverride }> {
+    return this.transaction(async () => {
+      const previous = await this.workspacePolicy(projectId, environmentId);
+      if ((previous?.revision ?? 0) !== expectedRevision)
+        throw Object.assign(new Error("Workspace policy revision changed"), {
+          code: "WORKSPACE_POLICY_REVISION_CONFLICT",
+        });
+      const revision = expectedRevision + 1;
+      if (previous)
+        await this.db
+          .prepare(
+            "UPDATE workspace_policies SET revision=?, payload=? WHERE project_id=? AND environment_id=?",
+          )
+          .run(revision, JSON.stringify(policy), projectId, environmentId);
+      else
+        await this.db
+          .prepare(
+            "INSERT INTO workspace_policies (project_id, environment_id, revision, payload) VALUES (?, ?, ?, ?)",
+          )
+          .run(projectId, environmentId, revision, JSON.stringify(policy));
+      return { revision, policy };
+    });
+  }
+  async workspaceFeatureClaims(
+    filter: {
+      projectId?: string;
+      repositoryId?: string;
+      featureKey?: string;
+      workspaceId?: string;
+    } = {},
+  ): Promise<WorkspaceFeatureClaim[]> {
+    return this.db.storeScope(async () => {
+      const clauses: string[] = [],
+        values: string[] = [];
+      for (const [column, value] of [
+        ["project_id", filter.projectId],
+        ["repository_id", filter.repositoryId],
+        ["feature_key", filter.featureKey],
+        ["workspace_id", filter.workspaceId],
+      ])
+        if (value !== undefined) {
+          clauses.push(`${column}=?`);
+          values.push(value);
+        }
+      const rows = await this.db
+        .prepare(
+          `SELECT payload FROM workspace_feature_claims${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY id`,
+        )
+        .all(...values);
+      return rows.map((row) => JSON.parse(String(row.payload)));
+    });
+  }
+  async insertWorkspaceFeatureClaim(claim: WorkspaceFeatureClaim): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db
+        .prepare(
+          "INSERT INTO workspace_feature_claims (id, repository_id, project_id, feature_key, scope, workspace_id, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          claim.id,
+          claim.repositoryId,
+          claim.projectId,
+          claim.featureKey,
+          claim.scope ?? "",
+          claim.workspaceId,
+          JSON.stringify(claim),
+        );
+    });
+  }
+  async deleteWorkspaceFeatureClaim(claimId: string, workspaceId: string): Promise<boolean> {
+    return this.db.storeScope(
+      async () =>
+        Number(
+          (
+            await this.db
+              .prepare("DELETE FROM workspace_feature_claims WHERE id=? AND workspace_id=?")
+              .run(claimId, workspaceId)
+          ).changes,
+        ) > 0,
+    );
   }
   async project(id: string): Promise<HostProject> {
     return this.db.storeScope(async () => {
@@ -1487,6 +1850,14 @@ export class HostStore {
     return this.closePromise;
   }
 }
+/** Canonical JSON preserves semantic key ordering across RPC implementations. */
+function canonicalWorkspaceJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) =>
+    item && typeof item === "object" && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)))
+      : item,
+  );
+}
 export function summary(value: HostSession): HostSessionSummary {
   const blocks = value.session.blocks;
   const { root, positions } = indexBlocks(blocks);
@@ -1522,6 +1893,7 @@ function summaryFromBlocks(value: HostSession): HostSessionSummary {
     status: value.status,
     updatedAt: value.updatedAt,
     id: value.session.id,
+    workspaceId: value.session.workspaceId,
     cwd: value.session.cwd,
     title: value.session.title,
     harness: value.session.harness as RemoteProvider,

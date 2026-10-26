@@ -1,9 +1,10 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
-import { withHostGitMutation } from "./git-mutations";
-import { execFileSync } from "node:child_process";
+import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { lstat, mkdir, realpath } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
+import type { ManagedWorkspace, WorkspaceNames, WorkspaceOwner } from "./workspace-contracts";
 
 const options = (cwd: string, mutation = false) => ({
   cwd,
@@ -12,6 +13,146 @@ const options = (cwd: string, mutation = false) => ({
   timeout: mutation ? 120_000 : 10_000,
   maxBuffer: 1024 * 1024,
 });
+
+/** Stable names are allocated before execution and never renamed by title generation. */
+export function managedWorkspaceNames(owner: WorkspaceOwner, slug: string, id: string) {
+  if (!/^[a-zA-Z0-9-]{12,}$/.test(id)) throw new Error("Invalid workspace identity");
+  const short = id.replaceAll("-", "").slice(0, 12).toLowerCase();
+  if (short.length !== 12) throw new Error("Invalid workspace identity");
+  const name =
+    slug
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 64)
+      .replace(/-$/, "") || "work";
+  return {
+    branch: `bycoda/${owner.kind === "task" ? "t" : "s"}/${name}-${short}`,
+    directory: `wt-${short}`,
+  };
+}
+
+/** S1 portion of the frozen naming service; S2 supplies turnRef and rewindRef. */
+export const workspaceNames: Pick<WorkspaceNames, "branch" | "directory"> = {
+  branch(owner, slug, id) {
+    return managedWorkspaceNames(owner, slug, id).branch as ReturnType<WorkspaceNames["branch"]>;
+  },
+  directory(id) {
+    return managedWorkspaceNames({ kind: "session", id: "naming" }, "work", id)
+      .directory as ReturnType<WorkspaceNames["directory"]>;
+  },
+};
+
+export async function managedWorkspaceBase(cwd: string, ref: string): Promise<string> {
+  if (!ref || ref.startsWith("-") || /[\0\r\n]/.test(ref))
+    throw new Error("Invalid committed workspace base");
+  return (
+    await exec(
+      "git",
+      ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`],
+      options(cwd),
+    )
+  ).stdout.trim();
+}
+
+/** Resolve the root once; later materialization refuses path redirection. */
+export async function managedWorkspaceRoot(
+  cwd: string,
+  configured: string | null,
+): Promise<string> {
+  const root = resolve(configured ?? (await listCached(cwd, true)).defaultRoot);
+  return canonicalDirectory(root);
+}
+
+async function canonicalDirectory(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT" || dirname(path) === path) throw error;
+    return join(await canonicalDirectory(dirname(path)), basename(path));
+  }
+}
+
+/** Caller holds the common-repository mutation gate and a durable operation reservation. */
+export async function materializeManagedWorkspace(
+  cwd: string,
+  workspace: ManagedWorkspace,
+  creating: boolean,
+): Promise<void> {
+  const path = resolve(workspace.path);
+  if ((await hostGitRepositoryKey(cwd)) !== workspace.repositoryId)
+    throw new Error("Managed project repository identity changed");
+  if ((await canonicalDirectory(dirname(path))) !== dirname(path))
+    throw new Error("Managed workspace root changed");
+  await mkdir(dirname(path), { recursive: true });
+  if ((await realpath(dirname(path))) !== dirname(path))
+    throw new Error("Managed workspace root changed");
+  const info = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+    return null;
+  });
+  if (info?.isSymbolicLink()) throw new Error("Managed workspace path is a link");
+  const marker = `refs/bycoda/workspaces/${workspace.id}`;
+  const branch = workspace.branchRef.replace(/^refs\/heads\//, "");
+  if (creating) {
+    const owner = await managedWorkspaceBase(cwd, marker).catch(() => null);
+    if (owner === null) {
+      // update-ref transactions atomically reserve the branch and its complete owner ID.
+      const input = `start\ncreate ${workspace.branchRef} ${workspace.baseCommit}\ncreate ${marker} ${workspace.baseCommit}\nprepare\ncommit\n`;
+      await new Promise<void>((done, reject) => {
+        const child = spawn("git", ["update-ref", "--stdin"], {
+          ...options(cwd, true),
+          stdio: ["pipe", "ignore", "pipe"],
+        });
+        let error = "";
+        child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+          error += chunk;
+        });
+        child.on("error", reject);
+        child.on("close", (code) =>
+          code === 0
+            ? done()
+            : reject(new Error(`Workspace branch reservation failed: ${error.slice(0, 2000)}`)),
+        );
+        child.stdin.on("error", reject);
+        child.stdin.end(input);
+      });
+    } else if (owner !== workspace.baseCommit)
+      throw new Error("Workspace branch ownership changed");
+    if ((await managedWorkspaceBase(cwd, workspace.branchRef)) !== workspace.baseCommit)
+      throw new Error("Workspace creation branch moved; recovery required");
+  } else if ((await managedWorkspaceBase(cwd, marker)) !== workspace.baseCommit) {
+    throw new Error("Workspace branch ownership is missing");
+  }
+  const listed = await listCached(cwd, true);
+  const verify = async () => {
+    if (
+      (await hostGitRepositoryKey(path)) !== workspace.repositoryId ||
+      (await hostGitRepositoryKey(cwd)) !== workspace.repositoryId
+    )
+      throw new Error("Managed workspace repository changed");
+    const actual = (await exec("git", ["symbolic-ref", "HEAD"], options(path))).stdout.trim();
+    if (actual !== workspace.branchRef) throw new Error("Managed workspace branch changed");
+    if (creating && (await managedWorkspaceBase(path, "HEAD")) !== workspace.baseCommit)
+      throw new Error("Managed workspace HEAD changed during creation");
+  };
+  const registered = listed.worktrees.find((tree) => resolve(tree.path) === path);
+  if (registered) {
+    if (registered.isMain || registered.branch !== branch || registered.missing || !info)
+      throw new Error("Managed worktree registration changed");
+    await verify();
+    return;
+  }
+  if (info) throw new Error("Managed workspace directory already exists without registration");
+  if (listed.worktrees.some((tree) => tree.branch === branch))
+    throw new Error("Managed branch is checked out elsewhere");
+  try {
+    await exec("git", ["worktree", "add", "--", path, branch], options(cwd, true));
+    await verify();
+  } finally {
+    invalidateHostWorktrees();
+  }
+}
 
 function available(path: string): boolean {
   try {

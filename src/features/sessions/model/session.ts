@@ -534,6 +534,8 @@ export type Session = {
   pendingSwitch?: PendingHarnessSwitch;
   /** Last known branch in the session's working copy. */
   branch?: string;
+  /** Authoritative managed workspace identity. Absent on legacy sessions, whose checkout is retained. */
+  workspaceId?: string;
   /** Selected working copy; cwd remains the project identity. */
   worktreeCwd?: string;
   /** Blank-composer choice; consumed when the first turn starts. */
