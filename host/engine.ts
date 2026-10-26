@@ -466,7 +466,7 @@ export function parseCommand(input: unknown): HostCommand {
  */
 export interface ManagedTurnHistoryAdapter {
   history: TurnGitHistory;
-  workspaceForSession(value: HostSession): Promise<{ workspaceId: string } | null>;
+  workspaceForSession(value: HostSession): Promise<{ workspaceId: string; path?: string } | null>;
   assertWritable(workspaceId: string): Promise<void>;
   workspaceForCreate?(request: {
     projectId: string;
@@ -846,7 +846,11 @@ export class HostEngine {
       }
       if (state.hasDesktop && !state.shellRunning && !state.running) {
         if (state.providerSessionId && state.harness)
-          this.provider(state.harness).bind(state.id, state.providerSessionId, state.cwd ?? "");
+          this.provider(state.harness).bind(
+            state.id,
+            state.providerSessionId,
+            managed?.path ?? state.cwd ?? "",
+          );
         continue;
       }
       let value = managedValue ?? (await store.session(state.id));
@@ -1082,7 +1086,12 @@ export class HostEngine {
       this.operations.run(snapshot.session.id, async () => {
         const id = snapshot.session.id;
         if (this.rewinding.has(id)) throw new Error("A conversation change is in progress");
-        await this.managedWorkspace(snapshot);
+        const managed = await this.managedWorkspace(snapshot);
+        if (managed?.path)
+          snapshot = {
+            ...snapshot,
+            session: { ...snapshot.session, cwd: managed.path, worktreeCwd: managed.path },
+          };
         if (snapshot.status === "running") throw new LeaseHeldError("desktop");
         const provider = this.provider(snapshot.session.harness);
         const saved = await this.store.transaction(async () => {
@@ -2445,7 +2454,12 @@ export class HostEngine {
       void (async () => {
         const release = await this.executionActivity(value, "provider");
         try {
-          return await provider.generateTitle!({ sessionId: id, cwd, message });
+          const workspace = await this.managedWorkspace(value);
+          return await provider.generateTitle!({
+            sessionId: id,
+            cwd: workspace?.path ?? cwd,
+            message,
+          });
         } finally {
           await release?.();
         }
@@ -2478,7 +2492,7 @@ export class HostEngine {
         .catch((error) => console.debug("[bycoda] remote session title", error));
     }
     const temporary = value.autoWorktreeBranch;
-    if (temporary && provider.generateBranchName) {
+    if (temporary && !value.session.workspaceId && provider.generateBranchName) {
       void provider
         .generateBranchName(cwd, message)
         .then(async (fragment) => {
@@ -2555,7 +2569,8 @@ export class HostEngine {
     goalContext = "",
     userBlockId?: string,
   ): void {
-    const { session, runId } = value;
+    let session = value.session;
+    const { runId } = value;
     const provider = this.provider(session.harness);
     let ready!: () => void;
     let replayConsumed = false;
@@ -2591,7 +2606,10 @@ export class HostEngine {
         try {
           if (!this.closing && !active.cancelled) {
             active.releaseActivity = await this.executionActivity(value, "provider");
-            active.managed = !!(await this.managedWorkspace(value));
+            const workspace = await this.managedWorkspace(value);
+            active.managed = !!workspace;
+            if (workspace?.path)
+              session = { ...session, cwd: workspace.path, worktreeCwd: workspace.path };
             const managedBoundary = active.managed
               ? await this.beginManagedTurn(value, userBlockId!)
               : undefined;

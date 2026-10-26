@@ -1178,6 +1178,54 @@ function managedHistory() {
 }
 
 describe("managed turn boundaries", () => {
+  it("normalizes adopted project cwd and dispatches stale managed snapshots in the authoritative execution directory", async () => {
+    const { engine, store, id, directory, turns, provider } = await setup();
+    const { adapter } = managedHistory();
+    const owned = join(directory, "owned-execution");
+    adapter.workspaceForSession = async (value) =>
+      value.session.workspaceId ? { workspaceId: value.session.workspaceId, path: owned } : null;
+    engine.setManagedTurnHistoryAdapter(adapter);
+    const original = await store.session(id);
+    const adopted = await engine.adoptSession({
+      ...original,
+      session: {
+        ...original.session,
+        id: "adopted-managed",
+        workspaceId: "managed",
+        cwd: directory,
+        worktreeCwd: owned,
+      },
+    });
+    expect(adopted.session.cwd).toBe(owned);
+    // Older persisted snapshots can still carry project identity in cwd. Execution
+    // must always derive its directory from the registry at admission.
+    await store.save(
+      {
+        ...adopted,
+        revision: adopted.revision + 1,
+        session: { ...adopted.session, cwd: directory },
+      },
+      { type: "test.legacy-cwd" },
+    );
+    provider.generateTitle = vi.fn(async () => null);
+    await engine.command({
+      type: "send",
+      commandId: "owned-cwd",
+      sessionId: adopted.session.id,
+      text: "Implement here",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.cwd).toBe(owned);
+    await vi.waitFor(() =>
+      expect(provider.generateTitle).toHaveBeenCalledWith({
+        sessionId: adopted.session.id,
+        cwd: owned,
+        message: "Implement here",
+      }),
+    );
+    turns[0].finish();
+  });
+
   it("allocates a separate owned workspace for a managed contextual writer", async () => {
     const { engine, store, id, directory } = await setup();
     const original = await store.session(id);
