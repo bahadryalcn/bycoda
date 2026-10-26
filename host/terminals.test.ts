@@ -29,8 +29,132 @@ function setup(locate = async (root: string) => root) {
     locate,
   );
   services.push(service);
-  return { service, child, launch, output: (data: string) => output(data) };
+  return {
+    service,
+    child,
+    launch,
+    output: (data: string) => output(data),
+    exit: (code: number | null) => exit(code),
+  };
 }
+
+it("rejects reserved terminal admission before process launch and deduplicates the rejected request", async () => {
+  const s = setup();
+  const gate = vi.fn(async () => {
+    throw new Error("Workspace reservation is active");
+  });
+  s.service.setActivityGate(gate);
+  const create = () => s.service.create(project, { requestId: "blocked-01" }, "owner", () => true);
+  const results = await Promise.allSettled([create(), create()]);
+  for (const result of results)
+    expect(result).toMatchObject({
+      status: "rejected",
+      reason: { message: "Workspace reservation is active" },
+    });
+  expect(gate).toHaveBeenCalledTimes(1);
+  expect(s.launch).not.toHaveBeenCalled();
+  expect(s.service.list(project.id).terminals).toEqual([]);
+});
+
+it.each(["exit", "interrupt", "remove", "close"])(
+  "holds terminal admission until %s and releases it once despite simultaneous exit callbacks",
+  async (finish) => {
+    const s = setup();
+    let completeRelease!: () => void;
+    const release = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          completeRelease = resolve;
+        }),
+    );
+    const gate = vi.fn(async () => release);
+    s.service.setActivityGate(gate);
+    const create = () =>
+      s.service.create(project, { requestId: "admitted-01" }, "owner", () => true);
+    const [terminal, retry] = await Promise.all([create(), create()]);
+    expect(retry.id).toBe(terminal.id);
+    expect(gate).toHaveBeenCalledTimes(1);
+    expect(s.launch).toHaveBeenCalledTimes(1);
+    await s.service.write(project.id, { id: terminal.id, data: "hello\n" });
+    expect(release).not.toHaveBeenCalled();
+    const finishing =
+      finish === "exit"
+        ? (s.exit(0), Promise.resolve())
+        : finish === "interrupt"
+          ? s.service.interrupt(project.id, terminal.id)
+          : finish === "remove"
+            ? s.service.remove(project.id, terminal.id)
+            : s.service.close();
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    completeRelease();
+    await finishing;
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    expect((await create()).state).toBe("exited");
+    expect(gate).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("releases terminal admission after launch failure and holds it for an unconfirmed shutdown", async () => {
+  const failed = setup();
+  const failedRelease = vi.fn(async () => {});
+  failed.service.setActivityGate(async () => failedRelease);
+  failed.launch.mockImplementation(() => {
+    throw new Error("spawn failed");
+  });
+  await expect(
+    failed.service.create(project, { requestId: "failed-01" }, "owner", () => true),
+  ).rejects.toThrow("Could not start terminal shell");
+  expect(failedRelease).toHaveBeenCalledTimes(1);
+
+  const running = setup();
+  const runningRelease = vi.fn(async () => {});
+  running.service.setActivityGate(async () => runningRelease);
+  const terminal = await running.service.create(
+    project,
+    { requestId: "running-01" },
+    "owner",
+    () => true,
+  );
+  running.child.stop.mockRejectedValueOnce(new Error("Process shutdown is unknown"));
+  await expect(running.service.interrupt(project.id, terminal.id)).rejects.toThrow(
+    "shutdown is unknown",
+  );
+  expect(runningRelease).not.toHaveBeenCalled();
+  expect(running.service.read(project.id, { id: terminal.id }).terminal.state).toBe("running");
+  await running.service.interrupt(project.id, terminal.id);
+  expect(runningRelease).toHaveBeenCalledTimes(1);
+});
+
+it.each(["close", "revoke"])(
+  "rechecks %s after pending workspace admission before launching",
+  async (action) => {
+    const s = setup();
+    let finishAdmission!: () => void;
+    const admission = new Promise<void>((resolve) => {
+      finishAdmission = resolve;
+    });
+    const release = vi.fn(async () => {});
+    const gate = vi.fn(async () => {
+      await admission;
+      return release;
+    });
+    s.service.setActivityGate(gate);
+    let authorized = true;
+    const creating = s.service.create(
+      project,
+      { requestId: "pending-01" },
+      "owner",
+      () => authorized,
+    );
+    await vi.waitFor(() => expect(gate).toHaveBeenCalledTimes(1));
+    if (action === "close") await s.service.close();
+    else authorized = false;
+    finishAdmission();
+    await expect(creating).rejects.toThrow(action === "close" ? "stopping" : "revoked");
+    expect(s.launch).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+  },
+);
 
 it("deduplicates concurrent creation and does not replay a closed creation receipt", async () => {
   const s = setup();
