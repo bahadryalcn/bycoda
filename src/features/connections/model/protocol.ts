@@ -2,6 +2,14 @@ import type { Block, Session, RuntimeMode, SecondOpinionMeta } from "../../sessi
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import type { AgentModel } from "../../sessions/model/models";
 import type { LinkedWorkItem } from "../../sessions/model/session";
+import type { BuildIdentity, WorkspaceCapability } from "../../workspaces/model/contracts";
+export type {
+  ManagedWorkspace,
+  WorkspacePolicy,
+  WorkspaceRpcMethod,
+  WorkspaceRpcRequest,
+  WorkspaceRpcResponse,
+} from "../../workspaces/model/contracts";
 
 export const HOST_PROTOCOL_VERSION = 1;
 
@@ -48,7 +56,17 @@ export type HostDescriptor = {
   providers: RemoteProvider[];
   capabilities: string[];
   platform?: "win32" | "darwin" | "linux";
+  /** Absent on older hosts; semver alone does not identify the serving source. */
+  buildIdentity?: BuildIdentity;
 };
+/** A missing capability requires an update; callers must never fall back to the project checkout. */
+export function requireWorkspaceCapability(
+  host: Pick<HostDescriptor, "capabilities"> | undefined,
+  capability: WorkspaceCapability = "workspaces.managed.v1",
+): void {
+  if (!host?.capabilities.includes(capability))
+    throw new Error("Update the execution Host to use managed workspaces. No work was started.");
+}
 export type HostProject = {
   id: string;
   cwd: string;
@@ -177,6 +195,9 @@ export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" 
   linkedWorkItem?: LinkedWorkItem;
   needsInput?: boolean;
   branch?: string;
+  /** Authoritative workspace identity; older snapshots retain their recorded checkout fields. */
+  workspaceId?: string;
+  workspaceRevision?: number;
   worktreeCwd?: string;
   repo?: string;
   draft?: boolean;
@@ -322,6 +343,12 @@ type HostCommandBody =
       type: "create";
       commandId: string;
       projectId: string;
+      /** Reserved creation identity, validated by sessions.managedCreation.v1 Hosts. */
+      sessionId?: string;
+      /** S2 validates ownership and derives execution cwd from the Host registry. */
+      workspaceId?: string;
+      /** Explicit owner choice; omission on managed Hosts prepares an owned worktree. */
+      workspaceMode?: "current" | "worktree";
       worktreeCwd?: string;
       autoWorktreeBranch?: string;
       harness: RemoteProvider;
@@ -395,7 +422,14 @@ type HostCommandBody =
       action: "arm" | "disarm" | "dismiss";
     }
   | { type: "cancel"; commandId: string; sessionId: string; runId: string }
-  | { type: "stopItem"; commandId: string; sessionId: string; runId: string; blockId: string; callId: string }
+  | {
+      type: "stopItem";
+      commandId: string;
+      sessionId: string;
+      runId: string;
+      blockId: string;
+      callId: string;
+    }
   | {
       type: "approve";
       commandId: string;

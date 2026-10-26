@@ -1130,6 +1130,96 @@ pub(crate) fn local_editor_format_rpc(app: &AppHandle, params: Value) -> Result<
     )
 }
 
+/// Pinned native-only route. Credentials are never passed through renderer arguments.
+/// Reconnects and retries are explicit; an uncertain mutation is not replayed here.
+pub(crate) struct NativeWorkspaceTransport {
+    machine: StoredMachine,
+}
+
+impl NativeWorkspaceTransport {
+    #[cfg(test)]
+    pub(crate) fn for_test(endpoint: String) -> Self {
+        Self {
+            machine: StoredMachine {
+                id: "fixture".into(),
+                name: "Fixture".into(),
+                endpoint,
+                environment_id: "fixture-env".into(),
+                token: "fixture-token".into(),
+                ssh: None,
+                local_host: true,
+            },
+        }
+    }
+    pub(crate) fn connect(app: &AppHandle, capability: &str) -> Result<Self, String> {
+        let state: State<'_, RemoteConnections> = app.state();
+        let machine = {
+            let _guard = state
+                .store
+                .lock()
+                .map_err(|_| "Connection store is locked")?;
+            read(&store_path(app)?)?
+                .into_iter()
+                .find(|machine| is_local_sync(machine, "This computer (local sync)"))
+                .ok_or("Connect the local bycoda Host for managed native execution")?
+        };
+        let descriptor = rpc(
+            &machine.endpoint,
+            &machine.token,
+            Some(&machine.environment_id),
+            "environment.describe",
+            json!({}),
+        )?;
+        if descriptor["environmentId"] != machine.environment_id
+            || descriptor["protocolVersion"] != 1
+        {
+            return Err(
+                "Local Host identity or protocol changed; reconnect before managed execution"
+                    .into(),
+            );
+        }
+        if !descriptor["capabilities"]
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(capability)))
+        {
+            return Err("Update bycoda Host to use managed native execution safely. The project checkout will not be used as a fallback.".into());
+        }
+        Ok(Self { machine })
+    }
+
+    pub(crate) fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+        if !matches!(
+            method,
+            "native.turn.begin"
+                | "native.turn.end"
+                | "native.activity.start"
+                | "native.activity.end"
+                | "native.buffers.update"
+                | "native.buffers.retire"
+                | "native.buffers.reconcile"
+                | "native.rewind.plan"
+                | "native.rewind.prepare"
+                | "native.rewind.apply"
+                | "native.rewind.status"
+                | "native.rewind.lookup"
+                | "native.rewind.cancelPreparation"
+                | "native.rewind.ack"
+                | "workspaces.cleanup.plan"
+                | "workspaces.cleanup.apply"
+                | "workspaces.cleanup.status"
+        ) {
+            return Err("Unsupported native workspace bridge operation".into());
+        }
+        rpc(
+            &self.machine.endpoint,
+            &self.machine.token,
+            Some(&self.machine.environment_id),
+            method,
+            params,
+        )
+    }
+}
+
 pub(crate) fn local_conversation_environment(app: &AppHandle) -> Result<String, String> {
     let state: State<'_, RemoteConnections> = app.state();
     let _guard = state
@@ -1351,6 +1441,28 @@ fn supported_remote_method(method: &str) -> bool {
     matches!(
         method,
         "social.request"
+            | "workspaces.prepare"
+            | "workspaces.get"
+            | "workspaces.list"
+            | "workspaces.resume"
+            | "workspaces.finish"
+            | "workspaces.close"
+            | "projects.workspacePolicy.get"
+            | "projects.workspacePolicy.update"
+            | "workspaces.featureClaims.list"
+            | "workspaces.featureClaims.acquire"
+            | "workspaces.featureClaims.release"
+            | "sessions.rewind.plan"
+            | "sessions.rewind.apply"
+            | "sessions.rewind.undo"
+            | "workspaces.delivery.review"
+            | "workspaces.delivery.merge"
+            | "workspaces.delivery.publish"
+            | "workspaces.cleanup.plan"
+            | "workspaces.cleanup.apply"
+            | "workspaces.cleanup.status"
+            | "workspaces.storage.status"
+            | "workspaces.pin"
             | "voice.local.inspect"
             | "voice.local.start"
             | "voice.local.transcribe"
@@ -2536,6 +2648,60 @@ mod tests {
             panic!("Expected a refused connection")
         };
         assert!(connection_refused(&error));
+    }
+
+    #[test]
+    fn session_managed_owner_rpc_allowlist_excludes_trusted_native_protocol() {
+        for method in [
+            "workspaces.prepare",
+            "workspaces.get",
+            "workspaces.list",
+            "workspaces.resume",
+            "workspaces.finish",
+            "workspaces.close",
+            "projects.workspacePolicy.get",
+            "projects.workspacePolicy.update",
+            "workspaces.featureClaims.list",
+            "workspaces.featureClaims.acquire",
+            "workspaces.featureClaims.release",
+            "sessions.rewind.plan",
+            "sessions.rewind.apply",
+            "sessions.rewind.undo",
+            "workspaces.delivery.review",
+            "workspaces.delivery.merge",
+            "workspaces.delivery.publish",
+            "workspaces.cleanup.plan",
+            "workspaces.cleanup.apply",
+            "workspaces.cleanup.status",
+            "workspaces.storage.status",
+            "workspaces.pin",
+        ] {
+            assert!(
+                supported_remote_method(method),
+                "missing managed owner RPC {method}"
+            );
+        }
+        for method in [
+            "native.turn.begin",
+            "native.turn.end",
+            "native.activity.start",
+            "native.activity.end",
+            "native.buffers.update",
+            "native.buffers.retire",
+            "native.buffers.reconcile",
+            "native.rewind.plan",
+            "native.rewind.prepare",
+            "native.rewind.apply",
+            "native.rewind.status",
+            "native.rewind.lookup",
+            "native.rewind.cancelPreparation",
+            "native.rewind.ack",
+        ] {
+            assert!(
+                !supported_remote_method(method),
+                "renderer must not call trusted transport {method}"
+            );
+        }
     }
 
     #[test]

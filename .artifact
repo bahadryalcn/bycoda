@@ -26,6 +26,7 @@ and contributors. Preserve existing work and use the established locations.
 | Translation maintenance | `scripts/i18n/` |
 | Local update implementation, configuration, and tests | `scripts/local-update/` |
 | Public local update commands | `scripts/update-local.ps1`, `scripts/update-local.sh` |
+| Project skills and feature cards | `.agents/skills/` |
 | User guides | `docs/guides/` |
 | Integration and host workflow guides | `docs/integrations/` |
 | Architecture and maintenance references | `docs/reference/` |

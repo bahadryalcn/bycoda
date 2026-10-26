@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { HostProvider } from "./providers";
-import { HostEngine, parseCommand } from "./engine";
+import { HostEngine, parseCommand, type ManagedTurnHistoryAdapter } from "./engine";
+import type { TurnGitRecord, TurnGitSnapshot } from "./workspace-contracts";
 import { HostStore } from "./store";
+import { launchSessionRun } from "./sessionRuns";
 import { readAttachmentChunk, writeAttachmentChunk } from "./attachments";
 import {
   applySessionSync,
@@ -1085,6 +1087,8 @@ afterEach(async () => {
 async function setup(
   harness: RemoteProvider = "codex",
   overrides: Partial<Record<RemoteProvider, HostProvider>> = {},
+  managedTurns?: ManagedTurnHistoryAdapter,
+  shell?: ConstructorParameters<typeof HostEngine>[2],
 ) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-engine-test-"));
   const store = new HostStore(join(directory, "host.db"));
@@ -1110,11 +1114,14 @@ async function setup(
   const engine = new HostEngine(
     store,
     Object.fromEntries(REMOTE_PROVIDERS.map((id) => [id, overrides[id] ?? provider])),
+    shell,
+    managedTurns,
   );
   await engine.ready;
   const created = await engine.command({
     type: "create",
     commandId: "create",
+    workspaceMode: "current",
     projectId: project.id,
     harness,
     model: `${harness}:test`,
@@ -1135,6 +1142,698 @@ async function setup(
     id: created.sessionId,
   };
 }
+
+function managedHistory() {
+  const records = new Map<string, TurnGitRecord>();
+  const snapshot: TurnGitSnapshot = {
+    head: "a".repeat(40),
+    index: "b".repeat(40),
+    worktree: "c".repeat(40),
+    indexMetadataId: "metadata",
+    paths: [],
+    capturedAt: 1,
+  };
+  const adapter: ManagedTurnHistoryAdapter = {
+    workspaceForSession: vi.fn(async () => ({ workspaceId: "managed" })),
+    assertWritable: vi.fn(async () => {}),
+    history: {
+      begin: vi.fn(async (request) => {
+        const record: TurnGitRecord = {
+          ...request,
+          branchRef: "refs/heads/bycoda/s/test",
+          before: { status: "complete", snapshot },
+        };
+        records.set(request.userBlockId, record);
+        return record;
+      }),
+      end: vi.fn(async (request) => {
+        const record = records.get(request.userBlockId)!;
+        record.after = { status: "complete", snapshot };
+        return record;
+      }),
+      get: vi.fn(async (_workspace, turn) => records.get(turn) ?? null),
+      list: vi.fn(async () => [...records.values()]),
+    },
+  };
+  return { adapter, records };
+}
+
+describe("managed turn boundaries", () => {
+  it("keeps unavailable managed sessions unchanged during startup while recovering legacy sessions", async () => {
+    const { store, engine, id, provider, project } = await setup();
+    const legacy = await engine.command({
+      type: "create",
+      commandId: "legacy-startup",
+      projectId: project.id,
+      harness: "codex",
+      model: "codex:test",
+      runtimeMode: "supervised",
+    });
+    const original = await store.session(id);
+    const retained = await store.save(
+      {
+        ...original,
+        revision: original.revision + 1,
+        status: "running",
+        runId: "unavailable-run",
+        session: {
+          ...original.session,
+          workspaceId: "retired-workspace",
+          providerSessionId: "unavailable-provider",
+          blocks: [
+            {
+              id: "retained-shell",
+              role: "system",
+              text: "",
+              shell: { command: "pending", output: "retained", exitCode: null, running: true },
+            },
+          ],
+        },
+      },
+      { type: "test.retired-workspace" },
+    );
+    const legacyValue = await store.session(legacy.sessionId);
+    await store.save(
+      {
+        ...legacyValue,
+        revision: legacyValue.revision + 1,
+        status: "running",
+        runId: "legacy-run",
+        session: { ...legacyValue.session, providerSessionId: "legacy-provider" },
+      },
+      { type: "test.legacy-startup" },
+    );
+    const { adapter } = managedHistory();
+    adapter.workspaceForSession = async (value) => {
+      if (value.session.workspaceId)
+        throw new Error("Workspace directory was removed; resume it first");
+      return null;
+    };
+    vi.mocked(provider.bind).mockClear();
+    const restarted = new HostEngine(store, { codex: provider }, undefined, adapter);
+    cleanups.push(() => restarted.close());
+    await restarted.ready;
+    expect(await store.session(id)).toEqual(retained);
+    expect((await store.session(legacy.sessionId)).status).toBe("interrupted");
+    expect(restarted.recoveredInterrupted).toEqual([legacy.sessionId]);
+    expect(vi.mocked(provider.bind).mock.calls.map(([sessionId]) => sessionId)).not.toContain(id);
+    expect(provider.bind).toHaveBeenCalledWith(
+      legacy.sessionId,
+      "legacy-provider",
+      legacyValue.session.cwd,
+      undefined,
+    );
+    await expect(
+      restarted.command({
+        type: "send",
+        commandId: "retired-send",
+        sessionId: id,
+        text: "continue",
+      }),
+    ).rejects.toThrow("Workspace directory was removed");
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(await store.session(id)).toEqual(retained);
+  });
+
+  it("normalizes adopted project cwd and dispatches stale managed snapshots in the authoritative execution directory", async () => {
+    const { engine, store, id, directory, turns, provider } = await setup();
+    const { adapter } = managedHistory();
+    const owned = join(directory, "owned-execution");
+    adapter.workspaceForSession = async (value) =>
+      value.session.workspaceId ? { workspaceId: value.session.workspaceId, path: owned } : null;
+    engine.setManagedTurnHistoryAdapter(adapter);
+    const original = await store.session(id);
+    const adopted = await engine.adoptSession({
+      ...original,
+      session: {
+        ...original.session,
+        id: "adopted-managed",
+        workspaceId: "managed",
+        cwd: directory,
+        worktreeCwd: owned,
+      },
+    });
+    expect(adopted.session.cwd).toBe(owned);
+    // Older persisted snapshots can still carry project identity in cwd. Execution
+    // must always derive its directory from the registry at admission.
+    await store.save(
+      {
+        ...adopted,
+        revision: adopted.revision + 1,
+        session: { ...adopted.session, cwd: directory },
+      },
+      { type: "test.legacy-cwd" },
+    );
+    provider.generateTitle = vi.fn(async () => null);
+    await engine.command({
+      type: "send",
+      commandId: "owned-cwd",
+      sessionId: adopted.session.id,
+      text: "Implement here",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.cwd).toBe(owned);
+    await vi.waitFor(() =>
+      expect(provider.generateTitle).toHaveBeenCalledWith({
+        sessionId: adopted.session.id,
+        cwd: owned,
+        message: "Implement here",
+      }),
+    );
+    turns[0].finish();
+  });
+
+  it("allocates a separate owned workspace for a managed contextual writer", async () => {
+    const { engine, store, id, directory } = await setup();
+    const original = await store.session(id);
+    await store.save(
+      {
+        ...original,
+        revision: original.revision + 1,
+        session: {
+          ...original.session,
+          workspaceId: "source-workspace",
+          worktreeCwd: directory,
+          branch: "bycoda/s/source",
+          blocks: [
+            { id: "source-user", role: "user", text: "Implement search" },
+            { id: "source-reply", role: "assistant", text: "Search is implemented." },
+          ],
+        },
+      },
+      { type: "test.managed-source" },
+    );
+    const { adapter } = managedHistory();
+    let destinationId = "";
+    adapter.workspaceForSession = async (value) =>
+      value.session.workspaceId ? { workspaceId: value.session.workspaceId } : null;
+    adapter.prepareContextualWorkspace = vi.fn(async (request) => {
+      destinationId = request.sessionId;
+      return { workspaceId: "destination-workspace" };
+    });
+    adapter.workspaceForCreate = async () => ({
+      workspaceId: "destination-workspace",
+      sessionId: destinationId,
+      path: join(directory, "destination"),
+      branchRef: "refs/heads/bycoda/s/destination",
+      revision: 1,
+    });
+    engine.setManagedTurnHistoryAdapter(adapter);
+    const source = await store.session(id);
+    const input = {
+      sessionId: id,
+      sourceBlockId: "source-reply",
+      expectedRevision: source.revision,
+      mode: "handoff",
+      harness: "claude",
+      model: "claude:test",
+      modelSettings: {},
+    };
+    const preview = await engine.previewContextual(input);
+    const command = {
+      ...input,
+      type: "contextual",
+      commandId: "managed-context",
+      previewDigest: preview.digest,
+    };
+    const receipt = await engine.command(command);
+    expect(await engine.command(command)).toEqual(receipt);
+    expect(adapter.prepareContextualWorkspace).toHaveBeenCalledTimes(1);
+    expect((await store.session(receipt.sessionId)).session).toMatchObject({
+      workspaceId: "destination-workspace",
+      cwd: join(directory, "destination"),
+      worktreeCwd: join(directory, "destination"),
+      branch: "bycoda/s/destination",
+    });
+    expect(await store.session(id)).toEqual(source);
+  });
+
+  it("creates unattended managed sessions with authoritative identity and holds admission through provider completion", async () => {
+    const { engine, store, project, directory, turns } = await setup();
+    const { adapter } = managedHistory();
+    const release = vi.fn(async () => {});
+    adapter.workspaceForSession = async (value) =>
+      value.session.workspaceId ? { workspaceId: value.session.workspaceId } : null;
+    adapter.workspaceForCreate = vi.fn(async () => ({
+      workspaceId: "managed",
+      sessionId: "prepared-session",
+      path: join(directory, "owned"),
+      branchRef: "refs/heads/bycoda/s/owned",
+      revision: 7,
+    }));
+    adapter.startActivity = vi.fn(async () => release);
+    engine.setManagedTurnHistoryAdapter(adapter);
+    const launched = await launchSessionRun(store, engine, {
+      requestId: "managed-run",
+      projectId: project.id,
+      workspaceId: "managed",
+      harness: "codex",
+      model: "codex:test",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      title: "Owned run",
+      prompt: "Implement the change",
+    });
+    expect(launched.error).toBeUndefined();
+    expect(launched.sessionId).toBe("prepared-session");
+    const saved = await store.session("prepared-session");
+    expect(saved.session).toMatchObject({
+      workspaceId: "managed",
+      workspaceRevision: 7,
+      cwd: join(directory, "owned"),
+      worktreeCwd: join(directory, "owned"),
+      branch: "bycoda/s/owned",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(adapter.startActivity).toHaveBeenCalledWith(expect.anything(), "provider");
+    expect(turns[0].input.cwd).toBe(join(directory, "owned"));
+    expect(release).not.toHaveBeenCalled();
+    turns[0].finish();
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    await expect(
+      engine.command({
+        type: "create",
+        commandId: "duplicate-owner",
+        projectId: project.id,
+        workspaceId: "managed",
+        harness: "codex",
+        model: "codex:test",
+        runtimeMode: "supervised",
+      }),
+    ).rejects.toThrow("already has its session");
+  });
+
+  it("rejects managed create without a resolver and rejects malformed workspace identity", async () => {
+    const { engine, project } = await setup();
+    const command = {
+      type: "create",
+      commandId: "unresolved-owner",
+      projectId: project.id,
+      workspaceId: "managed",
+      harness: "codex",
+      model: "codex:test",
+      runtimeMode: "supervised",
+    };
+    await expect(engine.command(command)).rejects.toThrow("authoritative workspace ownership");
+    expect(() => parseCommand({ ...command, workspaceId: "" })).toThrow("Invalid workspace ID");
+    engine.setManagedTurnHistoryAdapter(managedHistory().adapter);
+    await expect(engine.command({ ...command, workspaceId: undefined })).rejects.toThrow(
+      "requires workspace preparation",
+    );
+  });
+
+  it("defers managed startup settlement until shared recovery services are attached", async () => {
+    const { store, id, provider } = await setup();
+    const value = await store.session(id);
+    await store.save(
+      {
+        ...value,
+        revision: value.revision + 1,
+        status: "running",
+        runId: "interrupted-managed-run",
+        session: { ...value.session, workspaceId: "managed" },
+      },
+      { type: "test.interrupted" },
+    );
+    const restarted = new HostEngine(store, { codex: provider });
+    cleanups.push(() => restarted.close());
+    await restarted.ready;
+    expect((await store.session(id)).status).toBe("running");
+    const { adapter } = managedHistory();
+    restarted.setManagedTurnHistoryAdapter(adapter);
+    await restarted.recoverManagedStartup();
+    expect((await store.session(id)).status).toBe("interrupted");
+    expect(restarted.recoveredInterrupted).toEqual([id]);
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
+  it("blocks provider and shell starts at the shared gate without leaving a running shell", async () => {
+    const shell = vi.fn(async () => ({ output: "unexpected", exitCode: 0, timedOut: false }));
+    const { adapter } = managedHistory();
+    adapter.startActivity = vi.fn(async () => {
+      throw new Error("Workspace reservation is active");
+    });
+    const { engine, store, id, provider } = await setup("codex", {}, adapter, shell);
+    provider.generateTitle = vi.fn(async () => null);
+    await engine.command({
+      type: "send",
+      commandId: "blocked-provider",
+      sessionId: id,
+      text: "go",
+    });
+    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(provider.generateTitle).not.toHaveBeenCalled();
+    expect(adapter.history.begin).not.toHaveBeenCalled();
+    await engine.command({
+      type: "shell",
+      commandId: "blocked-shell",
+      sessionId: id,
+      line: "git status",
+    });
+    await vi.waitFor(async () => {
+      const block = (await store.session(id)).session.blocks.find(
+        (entry) => entry.id === "blocked-shell",
+      );
+      expect(block?.shell?.running).toBeUndefined();
+      expect(block?.shell?.output).toBe("Workspace reservation is active");
+    });
+    expect(shell).not.toHaveBeenCalled();
+  });
+
+  it("binds immutable transcript rescue to the checked conversation revision", async () => {
+    const { engine, store, id } = await setup();
+    const adapter = engine.conversationRewindAdapter();
+    const before = await store.session(id);
+    await expect(adapter.rescue("revision-bound", id, before.revision + 1)).rejects.toThrow(
+      "changed before transcript rescue",
+    );
+    expect(await adapter.rescue("revision-bound", id, before.revision)).toBe("revision-bound");
+    await engine.updateSession(id, { title: "later change" });
+    const current = await store.session(id);
+    await expect(adapter.rescue("revision-bound", id, before.revision)).rejects.toThrow(
+      "changed before transcript rescue",
+    );
+    await expect(adapter.rescue("revision-bound", id, current.revision)).rejects.toThrow(
+      "rescue revision does not match",
+    );
+  });
+
+  it("blocks concurrent metadata and command writers through the session gate", async () => {
+    const { engine, store, id, provider } = await setup();
+    const before = await store.session(id);
+    await engine.conversationRewindAdapter().withSessionGate(id, async () => {
+      await expect(engine.updateSession(id, { title: "racing change" })).rejects.toThrow(
+        "conversation change",
+      );
+      await expect(
+        engine.command({ type: "send", commandId: "racing-send", sessionId: id, text: "change" }),
+      ).rejects.toThrow("conversation change");
+    });
+    expect(await store.session(id)).toEqual(before);
+    expect(provider.send).not.toHaveBeenCalled();
+    await engine.updateSession(id, { title: "after release" });
+    expect((await store.session(id)).session.title).toBe("after release");
+  });
+
+  it("captures each delivered steer before sending it and completes every accepted boundary", async () => {
+    const { adapter, records } = managedHistory();
+    const { engine, store, id, provider, turns } = await setup("codex", {}, adapter);
+    provider.steer = vi.fn(async () => {
+      expect(records.has("steer-boundary")).toBe(true);
+    });
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "primary-boundary",
+      sessionId: id,
+      text: "work",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    turns[0].input.onAccepted?.();
+    await engine.command({
+      type: "steer",
+      commandId: "steer-boundary",
+      sessionId: id,
+      runId: receipt.runId,
+      text: "also this",
+    });
+    await vi.waitFor(async () =>
+      expect(
+        (await store.session(id)).session.blocks.find((block) => block.id === "steer-boundary")
+          ?.draft,
+      ).not.toBe(true),
+    );
+    turns[0].finish();
+    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    expect([...records.keys()]).toEqual(["primary-boundary", "steer-boundary"]);
+    expect(records.get("primary-boundary")?.after?.status).toBe("complete");
+    expect(records.get("steer-boundary")?.after?.status).toBe("complete");
+  });
+
+  it("atomically rewinds and undoes the Host transcript with durable duplicate receipts and fresh replay", async () => {
+    const { engine, store, id } = await setup();
+    const initial = await store.session(id);
+    await store.save(
+      {
+        ...initial,
+        revision: initial.revision + 1,
+        session: {
+          ...initial.session,
+          providerSessionId: "old-binding",
+          blocks: [
+            { id: "retained", role: "user", text: "retained context" },
+            { id: "remove", role: "user", text: "removed prompt" },
+            { id: "answer", role: "assistant", text: "removed answer" },
+          ],
+        },
+      },
+      { type: "fixture" },
+    );
+    const adapter = engine.conversationRewindAdapter();
+    const before = await adapter.read(id);
+    await adapter.settle(id);
+    const rescueId = await adapter.withSessionGate(id, () =>
+      adapter.rescue("rewind-original", id, before.revision),
+    );
+    const request = {
+      operationId: "rewind-original",
+      sessionId: id,
+      userBlockId: "remove",
+      direction: "rewind" as const,
+      expectedRevision: before.revision,
+    };
+    const receipt = await adapter.withSessionGate(id, () => adapter.restore(request));
+    expect(receipt.revision).toBe(before.revision + 1);
+    const rewound = await store.session(id);
+    expect(rewound.session.blocks.map((block) => block.id)).toEqual(["retained"]);
+    expect(rewound.session.providerSessionId).toBeUndefined();
+    expect(rewound.session.pendingContextReplay).toContain("retained context");
+    expect(rewound.session.rewindHistory?.at(-1)?.id).toBe("rewind-original");
+    expect(await adapter.restore(request)).toEqual(receipt);
+    expect(await engine.conversationRewindAdapter().receipt("rewind-original")).toEqual(receipt);
+    expect((await store.session(id)).revision).toBe(receipt.revision);
+    await expect(adapter.restore({ ...request, userBlockId: "retained" })).rejects.toThrow(
+      "different payload",
+    );
+    await adapter.withSessionGate(id, () =>
+      adapter.restore({
+        operationId: "undo-original",
+        sessionId: id,
+        userBlockId: "remove",
+        direction: "undo",
+        transcriptRescueId: rescueId,
+        expectedRevision: receipt.revision,
+      }),
+    );
+    const undone = await store.session(id);
+    expect(undone.session.blocks.map((block) => block.id)).toEqual([
+      "retained",
+      "remove",
+      "answer",
+    ]);
+    expect(undone.session.providerSessionId).toBeUndefined();
+    expect(undone.session.pendingContextReplay).toContain("removed answer");
+  });
+
+  it("rolls back transcript mutation if its durable receipt cannot be written", async () => {
+    const { engine, store, id } = await setup();
+    const initial = await store.session(id);
+    await store.save(
+      {
+        ...initial,
+        revision: initial.revision + 1,
+        session: {
+          ...initial.session,
+          blocks: [{ id: "remove", role: "user", text: "do not lose this" }],
+        },
+      },
+      { type: "fixture" },
+    );
+    const before = await store.session(id);
+    const adapter = engine.conversationRewindAdapter();
+    await adapter.receipt("failed-atomic");
+    const originalPrepare = store.db.prepare.bind(store.db);
+    const spy = vi.spyOn(store.db, "prepare").mockImplementation((sql) => {
+      const statement = originalPrepare(sql);
+      if (sql.startsWith("INSERT INTO managed_rewind_receipts"))
+        statement.run = async () => {
+          throw new Error("receipt disk failure");
+        };
+      return statement;
+    });
+    await expect(
+      adapter.restore({
+        operationId: "failed-atomic",
+        sessionId: id,
+        userBlockId: "remove",
+        direction: "rewind",
+        expectedRevision: before.revision,
+      }),
+    ).rejects.toThrow("receipt disk failure");
+    spy.mockRestore();
+    expect(await store.session(id)).toEqual(before);
+    expect(await adapter.receipt("failed-atomic")).toBeNull();
+  });
+
+  it("settles an owned provider but refuses unconfirmed background writers", async () => {
+    const { engine, store, id, turns } = await setup();
+    await engine.command({
+      type: "send",
+      commandId: "settle-provider",
+      sessionId: id,
+      text: "work",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    const adapter = engine.conversationRewindAdapter();
+    await adapter.settle(id);
+    expect((await store.session(id)).status).toBe("idle");
+    const latest = await store.session(id);
+    await store.save(
+      {
+        ...latest,
+        revision: latest.revision + 1,
+        session: { ...latest.session, backgroundTasks: ["unconfirmed-writer"] },
+      },
+      { type: "fixture" },
+    );
+    await expect(adapter.settle(id)).rejects.toThrow("Settle background writers");
+  });
+
+  it("captures the accepted block before execution and the settled head afterward", async () => {
+    const { adapter } = managedHistory();
+    const { engine, store, id, provider, turns } = await setup("codex", {}, adapter);
+    vi.mocked(adapter.history.begin).mockImplementationOnce(async (request) => {
+      expect(provider.send).not.toHaveBeenCalled();
+      expect(request.userBlockId).toBe("accepted-boundary");
+      expect((await store.session(id)).session.blocks.at(-1)?.id).toBe(request.userBlockId);
+      return {
+        ...request,
+        branchRef: "refs/heads/bycoda/s/test",
+        before: {
+          status: "complete",
+          snapshot: {
+            head: "a",
+            index: "b",
+            worktree: "c",
+            indexMetadataId: "metadata",
+            paths: [],
+            capturedAt: 1,
+          },
+        },
+      };
+    });
+    vi.mocked(adapter.history.end).mockImplementationOnce(async (request) => ({
+      ...request,
+      conversationRevision: 1,
+      branchRef: "refs/heads/bycoda/s/test",
+      before: { status: "blocked", reason: "fixture" },
+      after: {
+        status: "complete",
+        snapshot: {
+          head: "a",
+          index: "b",
+          worktree: "c",
+          indexMetadataId: "metadata",
+          paths: [],
+          capturedAt: 1,
+        },
+      },
+    }));
+    const legacyBegin = vi.spyOn(engine.checkpoints, "begin");
+    await engine.command({
+      type: "send",
+      commandId: "accepted-boundary",
+      sessionId: id,
+      text: "change source",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(adapter.history.end).not.toHaveBeenCalled();
+    expect(legacyBegin).not.toHaveBeenCalled();
+    turns[0].finish();
+    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    expect(adapter.history.end).toHaveBeenCalledWith(
+      expect.objectContaining({ userBlockId: "accepted-boundary", sessionId: id }),
+    );
+  });
+
+  it("stops managed dispatch and surfaces the reason when before capture is blocked", async () => {
+    const { adapter } = managedHistory();
+    vi.mocked(adapter.history.begin).mockImplementation(async (request) => ({
+      ...request,
+      branchRef: "refs/heads/bycoda/s/test",
+      before: { status: "blocked", reason: "Resolve the unmerged index" },
+    }));
+    const { engine, store, id, provider } = await setup("codex", {}, adapter);
+    const legacyFinish = vi.spyOn(engine.checkpoints, "finish");
+    await engine.command({
+      type: "send",
+      commandId: "blocked-capture",
+      sessionId: id,
+      text: "change",
+    });
+    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(legacyFinish).not.toHaveBeenCalled();
+    expect(adapter.history.end).not.toHaveBeenCalled();
+    expect(JSON.stringify((await store.session(id)).session.blocks)).toContain(
+      "Resolve the unmerged index",
+    );
+  });
+
+  it("fences new writes before accepting a command while recovery is pending", async () => {
+    const { adapter } = managedHistory();
+    const { engine, store, id, provider } = await setup("codex", {}, adapter);
+    const before = await store.session(id);
+    vi.mocked(adapter.assertWritable).mockRejectedValue(new Error("Rewind recovery pending"));
+    await expect(
+      engine.command({ type: "send", commandId: "blocked-write", sessionId: id, text: "change" }),
+    ).rejects.toThrow("Rewind recovery pending");
+    expect(await store.session(id)).toEqual(before);
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(await engine.busyReason(id)).toBe("Rewind recovery pending");
+  });
+
+  it("requires a host Git preview before a managed rewind and never calls provider revert", async () => {
+    const { adapter } = managedHistory();
+    const { engine, store, id, provider } = await setup("codex", {}, adapter);
+    provider.rewind = vi.fn(async () => {});
+    const before = await store.session(id);
+    await expect(
+      engine.rewind({
+        type: "rewind",
+        commandId: "unsafe-rewind",
+        sessionId: id,
+        blockId: "anything",
+      }),
+    ).rejects.toThrow("sessions.rewind.plan/apply");
+    expect(provider.rewind).not.toHaveBeenCalled();
+    expect(await store.session(id)).toEqual(before);
+  });
+
+  it("keeps previous boundaries through compaction and captures compaction separately", async () => {
+    const { adapter, records } = managedHistory();
+    const { engine, store, id, provider, turns } = await setup("codex", {}, adapter);
+    await engine.command({
+      type: "send",
+      commandId: "before-compact",
+      sessionId: id,
+      text: "first",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    turns[0].finish();
+    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    provider.compact = vi.fn(async () => {});
+    await engine.command({ type: "compact", commandId: "compact-boundary", sessionId: id });
+    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    expect([...records.keys()]).toEqual(["before-compact", "compact-boundary"]);
+    expect(records.get("before-compact")?.before.status).toBe("complete");
+    expect(records.get("compact-boundary")?.after?.status).toBe("complete");
+    expect((await engine.conversationRewindAdapter().read(id)).userBlockIds).toEqual([
+      "before-compact",
+      "compact-boundary",
+    ]);
+  });
+});
 
 describe("headless session ownership", () => {
   it("rejects explicit foreign models at creation and configuration without changing the conversation", async () => {

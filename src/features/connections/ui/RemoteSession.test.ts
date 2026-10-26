@@ -52,6 +52,28 @@ import type {
   RemoteMachine,
 } from "../model/protocol";
 import { preloadModelPicker } from "../../sessions/ui/ModelPicker";
+import { invalidateMachineSnapshot } from "../../automations/model/machineSnapshot";
+
+const transportProbe = vi.hoisted(() => ({
+  current: undefined as RemoteSessionOverrides | undefined,
+}));
+// Observe the real transport's render-probe contract without changing its props,
+// the pane, or Composer's fail-closed creation policy. Creation transport tests
+// call these callbacks explicitly; they do not claim that UI creation is wired.
+vi.mock("./RemoteSession", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./RemoteSession")>();
+  return {
+    ...original,
+    RemoteSession: (props: ComponentProps<typeof original.RemoteSession>) =>
+      createElement(original.RemoteSession, {
+        ...props,
+        render: (overrides: RemoteSessionOverrides) => {
+          transportProbe.current = overrides;
+          return props.render(overrides);
+        },
+      }),
+  };
+});
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
@@ -183,6 +205,9 @@ let lazyHistorySupported = false;
 let inlineSyncSupported = false;
 let inlineDelta: SessionSync | undefined;
 let conversationRewindSupported = false;
+let managedCreationSupported = true;
+let workspaceDefaultMode: "current" | "worktree" = "current";
+let workspacePreparationFailure: string | undefined;
 let machineSessionDeleted = false;
 let machineSessionRevisionHint: number | undefined;
 let machineChangesFailure: string | undefined;
@@ -218,6 +243,8 @@ let machineDown: string | undefined;
 const unreachable = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 
 beforeEach(() => {
+  transportProbe.current = undefined;
+  invalidateMachineSnapshot();
   vi.mocked(invoke).mockReset();
   vi.mocked(readRemotePageCache).mockReset().mockResolvedValue(undefined);
   vi.mocked(writeRemotePageCache).mockReset().mockResolvedValue(undefined);
@@ -236,6 +263,9 @@ beforeEach(() => {
   steerSupported = false;
   lazyHistorySupported = false;
   conversationRewindSupported = false;
+  managedCreationSupported = true;
+  workspaceDefaultMode = "current";
+  workspacePreparationFailure = undefined;
   machineSessionDeleted = false;
   machineSessionRevisionHint = undefined;
   inlineSyncSupported = false;
@@ -245,6 +275,7 @@ beforeEach(() => {
   historyReadDelay = undefined;
   tailReadDelay = undefined;
   localStorage.setItem("bycoda.modelControls", "beside");
+  localStorage.setItem("bycoda.managedCreate:env:shell", "host-session");
   commands = [];
   host = undefined;
   syncDelay = undefined;
@@ -331,6 +362,9 @@ beforeEach(() => {
           ...(attachmentOwnershipSupported ? ["attachments.ownership.v1"] : []),
           "sessions.plan",
           "sessions.draft",
+          "workspaces.managed.v1",
+          "workspaces.policy.v1",
+          ...(managedCreationSupported ? ["sessions.managedCreation.v1"] : []),
           ...(steerSupported ? ["sessions.steer"] : []),
           ...(sharedQueueSupported ? ["sessions.queue"] : []),
           ...(harnessSwitchSupported ? ["sessions.harnessSwitch"] : []),
@@ -377,6 +411,32 @@ beforeEach(() => {
       if (catalog instanceof Error) throw catalog.message;
       return catalog;
     }
+    if (method === "projects.list") return [{ id: "project", name: "repo", cwd: "/home/me/repo" }];
+    if (method === "projects.workspacePolicy.get")
+      return {
+        resolved: {
+          policy: { defaultMode: workspaceDefaultMode, integrationBranchRef: "refs/heads/main" },
+        },
+      };
+    if (method === "workspaces.prepare") {
+      if (workspacePreparationFailure) throw new Error(workspacePreparationFailure);
+      createdBranch = "bycoda/session/host-session";
+      createdWorktree = "/home/me/repo-worktrees/managed-session";
+      return {
+        workspace: {
+          id: "workspace-session",
+          revision: 1,
+          owner: { kind: "session", id: params.owner.id },
+          projectId: "project",
+          environmentId: "env",
+          path: createdWorktree,
+          branchRef: `refs/heads/${createdBranch}`,
+          directoryState: "present",
+        },
+      };
+    }
+    if (operation === "git_diff_index")
+      return { head: "abc", branch: "main", files: [], conflicts: [] };
     if (operation === "git.branches" || operation === "git_branches") {
       if (branchFailure) throw new Error(branchFailure);
       if (workspace)
@@ -549,8 +609,9 @@ function dispatch(command: HostCommand) {
       status: "idle",
       updatedAt: 0,
       session: {
-        id: "host-session",
+        id: command.sessionId ?? "host-session",
         cwd: command.worktreeCwd ?? "/home/me/repo",
+        ...(command.workspaceId ? { workspaceId: command.workspaceId, workspaceRevision: 1 } : {}),
         harness: command.harness,
         model: command.model,
         modelSettings: command.modelSettings ?? {},
@@ -919,6 +980,13 @@ async function send(text: string) {
   await act(async () => byLabel("Send")!.click());
   await settle();
 }
+
+/** Exercise transport admission/recovery below the separately tested UI gate. */
+async function sendTransport(text: string) {
+  expect(transportProbe.current?.onSubmit).toBeTypeOf("function");
+  await act(async () => transportProbe.current!.onSubmit!("shell", text, []));
+  await settle();
+}
 // The combined picker opens a settings menu; its "Model" row shows the model list.
 async function openModels(triggerLabel: string) {
   // The flyout loads on demand; have it ready before the menu opens.
@@ -985,6 +1053,7 @@ it("uses the normal composer with the host branch in its top row", async () => {
 it("opens transcript files and diffs through the shared remote tabs", async () => {
   const onOpenFile = vi.fn();
   const onOpenDiff = vi.fn();
+  openExistingChat();
   await render(shell(), { onOpenFile, onOpenDiff });
   await send("Inspect files");
   await act(async () => byLabel("Open transcript file")!.click());
@@ -1148,17 +1217,86 @@ it("shows an unavailable branch when Git lookup fails", async () => {
     name: "unlisted",
     cwd: "/home/me/unlisted",
   });
-  await render({ ...shell(), cwd: unlisted.key });
+  await render({ ...shell(), cwd: unlisted.key, workspaceMode: "current" });
   const picker = byLabel("No git repository");
   expect(picker).not.toBeNull();
   expect((picker as HTMLButtonElement).disabled).toBe(true);
 });
 
-it("creates the host session with the chosen settings on the first message", async () => {
+it("holds new remote creation and drafts when the Host lacks managed creation", async () => {
+  managedCreationSupported = false;
+  // Supply the new read-only discovery contract so this checks missing creator
+  // readiness rather than failing earlier on an obsolete Host fixture.
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    const request = input as { method?: string; params?: { command?: string } } | undefined;
+    if (command === "remote_request") {
+      if (request?.method === "projects.list")
+        return [{ id: "project", name: "repo", cwd: "/home/me/repo" }];
+      if (request?.method === "environment.describe") {
+        const descriptor = (await original(command, input)) as HostDescriptor;
+        return {
+          ...descriptor,
+          capabilities: [
+            ...descriptor.capabilities,
+            "workspaces.managed.v1",
+            "workspaces.policy.v1",
+          ],
+        };
+      }
+      if (request?.method === "projects.workspacePolicy.get")
+        return {
+          resolved: { policy: { defaultMode: "current", integrationBranchRef: "refs/heads/main" } },
+        };
+      if (request?.method === "workspace.run" && request.params?.command === "git_diff_index")
+        return { head: "abc", branch: "main", files: [], conflicts: [] };
+    }
+    return original(command, input);
+  });
+  await render();
+  await type("Keep this unsent remote message");
+  expect(container.textContent).toContain(
+    "Update bycoda to create managed sessions on this remote Host.",
+  );
+  expect(byLabel("Send")!.disabled).toBe(true);
+  await act(async () => byLabel("Send")!.click());
+  await act(async () =>
+    container
+      .querySelector("textarea")!
+      .dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      ),
+  );
+  expect(container.querySelector("textarea")!.value).toBe("Keep this unsent remote message");
+  expect(commands).toEqual([]);
+  expect(remoteSessionFor("shell")).toBeUndefined();
+
+  await act(async () => byLabel("Add files or choose a mode")!.click());
+  const draft = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Save this message without starting"),
+  );
+  expect(draft).toBeDefined();
+  await act(async () => draft!.click());
+  await type("Keep this unsent remote draft");
+  expect(byLabel("Save draft")!.disabled).toBe(true);
+  await act(async () => byLabel("Save draft")!.click());
+  await act(async () =>
+    container
+      .querySelector("textarea")!
+      .dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      ),
+  );
+  expect(container.querySelector("textarea")!.value).toBe("Keep this unsent remote draft");
+  expect(commands).toEqual([]);
+  expect(remoteSessionFor("shell")).toBeUndefined();
+});
+
+it("transport: creates the host session with the chosen settings on the first message", async () => {
   await render();
   await chooseEffort("Medium");
   expect(commands).toHaveLength(0);
-  await send("Fix the tests");
+  await sendTransport("Fix the tests");
   expect(commands.map((command) => command.type)).toEqual(["create", "send"]);
   expect(commands[0]).toMatchObject({
     projectId: "project",
@@ -1174,7 +1312,7 @@ it("creates the host session with the chosen settings on the first message", asy
   expect(container.textContent).toContain("Fix the tests");
 });
 
-it("keeps a new session on its selected remote provider", async () => {
+it("transport: keeps a new session on its selected remote provider", async () => {
   providers = ["codex", "cursor"];
   catalog = {
     models: { codex: [gpt], cursor: [cursor] },
@@ -1186,7 +1324,7 @@ it("keeps a new session on its selected remote provider", async () => {
     model: cursor.id,
     modelSettings: {},
   });
-  await send("Use Cursor remotely");
+  await sendTransport("Use Cursor remotely");
   expect(commands[0]).toMatchObject({
     type: "create",
     harness: "cursor",
@@ -1273,14 +1411,14 @@ it("applies the local model visibility settings to a historical host chat", asyn
   ).toEqual(["Sonnet"]);
 });
 
-it("drops settings from the tab that the host's model does not offer", async () => {
+it("transport: drops settings from the tab that the host's model does not offer", async () => {
   await render({
     ...shell(),
     harness: "codex",
     model: "codex:gpt-test",
     modelSettings: { reasoningEffort: "high", serviceTier: "fast" },
   });
-  await send("Fix the tests");
+  await sendTransport("Fix the tests");
   expect(commands[0]).toMatchObject({
     type: "create",
     model: "codex:gpt-test",
@@ -1291,6 +1429,7 @@ it("drops settings from the tab that the host's model does not offer", async () 
 });
 
 it("sends a remote plan turn from the plus menu", async () => {
+  openExistingChat();
   await render();
   await act(async () => byLabel("Add files or choose a mode")!.click());
   const plan = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
@@ -1305,24 +1444,21 @@ it("sends a remote plan turn from the plus menu", async () => {
   });
 });
 
-async function saveDraft(text: string) {
-  await act(async () => byLabel("Add files or choose a mode")!.click());
-  const draft = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes("Save this message without starting"),
-  )!;
-  await act(async () => draft.click());
-  await type(text);
-  await act(async () => byLabel("Save draft")!.click());
+/** Draft transport coverage; the real Composer gate is asserted separately. */
+async function saveDraftTransport(text: string) {
+  expect(transportProbe.current?.onSaveDraft).toBeTypeOf("function");
+  await act(async () => transportProbe.current!.onSaveDraft!("shell", text, []));
   await settle();
 }
+
 const transcriptItems = (text: string) =>
   [...container.querySelectorAll("ol[aria-label='Transcript'] li")].filter((item) =>
     item.textContent?.includes(text),
   );
 
-it("saves and sends a remote draft", async () => {
+it("transport: saves and sends a remote draft", async () => {
   await render();
-  await saveDraft("Review this later");
+  await saveDraftTransport("Review this later");
   expect(commands.map((command) => command.type)).toEqual(["create", "draft"]);
   expect(commands.at(-1)).toMatchObject({
     type: "draft",
@@ -1338,13 +1474,13 @@ it("saves and sends a remote draft", async () => {
   });
 });
 
-it("keeps a new draft on screen while the host confirms it", async () => {
+it("transport: keeps a new draft on screen while the host confirms it", async () => {
   await render();
   let releaseSync = () => {};
   syncDelay = new Promise<void>((resolve) => {
     releaseSync = resolve;
   });
-  await saveDraft("Review this later");
+  await saveDraftTransport("Review this later");
   expect(commands.map((command) => command.type)).toEqual(["create", "draft"]);
   expect(transcriptItems("Review this later")).toHaveLength(1);
   expect(container.textContent).not.toContain("Work on repo.");
@@ -1361,9 +1497,9 @@ it("keeps a new draft on screen while the host confirms it", async () => {
   expect(transcriptItems("Review this later")).toHaveLength(1);
 });
 
-it("replaces a sent draft with its message at once", async () => {
+it("transport: replaces a sent draft with its message at once", async () => {
   await render();
-  await saveDraft("Review this later");
+  await saveDraftTransport("Review this later");
   syncDelay = new Promise<void>(() => {});
   await act(async () => byLabel("Send remote draft")!.click());
   expect(commands.at(-1)).toMatchObject({ type: "send" });
@@ -1371,9 +1507,9 @@ it("replaces a sent draft with its message at once", async () => {
   expect(byLabel("Send remote draft")).toBeNull();
 });
 
-it("removes a draft-only conversation with its draft, as a local one", async () => {
+it("transport: removes a draft-only conversation with its draft, as a local one", async () => {
   await render();
-  await saveDraft("Review this later");
+  await saveDraftTransport("Review this later");
   const sessionId = remoteSessionFor("shell");
   expect(sessionId).toBe("host-session");
   await act(async () => byLabel("Remove remote draft")!.click());
@@ -1385,9 +1521,9 @@ it("removes a draft-only conversation with its draft, as a local one", async () 
   expect(container.textContent).toContain("Work on repo.");
 });
 
-it("keeps a sent message visible until the host sync confirms it", async () => {
+it("transport: keeps a sent message visible until the host sync confirms it", async () => {
   await render();
-  await send("First");
+  await sendTransport("First");
   let releaseSync = () => {};
   syncDelay = new Promise<void>((resolve) => {
     releaseSync = resolve;
@@ -1411,9 +1547,9 @@ it("keeps a sent message visible until the host sync confirms it", async () => {
   expect(secondMessages()).toHaveLength(1);
 });
 
-it("shows confirmation progress while an ordinary message is in flight", async () => {
+it("transport: shows confirmation progress while an ordinary message is in flight", async () => {
   await render();
-  await send("First");
+  await sendTransport("First");
   let releaseDispatch = () => {};
   dispatchDelay = new Promise<void>((resolve) => {
     releaseDispatch = resolve;
@@ -1432,13 +1568,13 @@ it("shows confirmation progress while an ordinary message is in flight", async (
   expect(commands.at(-1)).toMatchObject({ type: "send", text: "Second" });
 });
 
-it("keeps the first turn active while its accepted message awaits host sync", async () => {
+it("transport: keeps the first turn active while its accepted message awaits host sync", async () => {
   await render();
   let releaseSync = () => {};
   syncDelay = new Promise<void>((resolve) => {
     releaseSync = resolve;
   });
-  await send("First remote turn");
+  await sendTransport("First remote turn");
   expect(commands.map((command) => command.type)).toEqual(["create", "send"]);
   const transcript = () => container.querySelector("ol[aria-label='Transcript']");
   expect(transcript()?.textContent).toContain("First remote turn");
@@ -1504,21 +1640,81 @@ it("creates a host worktree through the composer and selects it", async () => {
   expect(invoke).toHaveBeenCalledWith(
     "remote_request",
     expect.objectContaining({
-      method: "git.worktreeCreate",
+      method: "workspaces.prepare",
       params: expect.objectContaining({
         projectId: "project",
-        cwd: "/home/me/repo",
-        branch: expect.stringMatching(/^mc\/[a-z0-9]+$/),
-        base: "dev",
-        existing: false,
+        owner: { kind: "session", id: "host-session" },
+        baseRef: "dev",
       }),
     }),
   );
   expect(commands[0]).toMatchObject({
     type: "create",
+    sessionId: "host-session",
+    workspaceId: "workspace-session",
     worktreeCwd: createdWorktree,
-    autoWorktreeBranch: createdBranch,
   });
+});
+
+it("uses Host worktree policy and binds preparation to the reserved authoritative creation identity", async () => {
+  workspaceDefaultMode = "worktree";
+  await render();
+  await send("Use the policy default");
+  const prepare = vi
+    .mocked(invoke)
+    .mock.calls.find(
+      ([, input]) => (input as { method?: string })?.method === "workspaces.prepare",
+    );
+  expect(prepare?.[1]).toMatchObject({
+    params: {
+      owner: { kind: "session", id: "host-session" },
+      idempotencyKey: "session:host-session:workspace",
+      baseRef: "refs/heads/main",
+    },
+  });
+  expect(commands[0]).toMatchObject({
+    type: "create",
+    sessionId: "host-session",
+    workspaceId: "workspace-session",
+    worktreeCwd: "/home/me/repo-worktrees/managed-session",
+  });
+  expect(host?.session.workspaceId).toBe("workspace-session");
+});
+
+it("keeps managed preparation failures off the project checkout and retries the same owner", async () => {
+  workspaceDefaultMode = "worktree";
+  workspacePreparationFailure = "Workspace storage is busy";
+  await render();
+  await sendTransport("First attempt");
+  expect(commands).toEqual([]);
+  workspacePreparationFailure = undefined;
+  await sendTransport("Try the same workspace");
+  const prepares = vi
+    .mocked(invoke)
+    .mock.calls.filter(
+      ([, input]) => (input as { method?: string })?.method === "workspaces.prepare",
+    );
+  expect(prepares).toHaveLength(2);
+  expect(prepares[0][1]).toMatchObject({
+    params: {
+      owner: { kind: "session", id: "host-session" },
+      idempotencyKey: "session:host-session:workspace",
+    },
+  });
+  expect(prepares[1][1]).toMatchObject({
+    params: {
+      owner: { kind: "session", id: "host-session" },
+      idempotencyKey: "session:host-session:workspace",
+    },
+  });
+  expect(commands[0]).toMatchObject({
+    workspaceId: "workspace-session",
+    worktreeCwd: "/home/me/repo-worktrees/managed-session",
+  });
+  expect(invoke).not.toHaveBeenCalledWith(
+    "remote_request",
+    expect.objectContaining({ method: "git.worktreeCreate" }),
+  );
 });
 
 it("searches and creates a host branch from the composer picker", async () => {
@@ -1594,6 +1790,7 @@ it("locks a started remote session to its worktree like a local session", async 
 });
 
 it("applies effort changes directly and uses them on the next turn", async () => {
+  openExistingChat();
   await render();
   await send("First");
   await chooseEffort("Low");
@@ -1616,6 +1813,8 @@ it("applies effort changes directly and uses them on the next turn", async () =>
 });
 
 it("keeps a saved model's effort editable when the host catalog fails", async () => {
+  openExistingChat();
+  host = { ...host!, session: { ...host!.session, modelSettings: { reasoningEffort: "high" } } };
   await render();
   await send("First");
   catalog = new Error("Codex CLI is not authenticated");
@@ -1680,11 +1879,11 @@ it("puts the message back in the composer when Send cannot reconnect", async () 
   expect(container.textContent).toContain("Can’t reach Home server");
 });
 
-it("keeps a first message visible, with Try again, when Send cannot reconnect", async () => {
+it("transport: keeps a first message visible, with Try again, when Send cannot reconnect", async () => {
   machineDown = unreachable;
   await render();
   await type("Fix the tests");
-  await act(async () => byLabel("Send")!.click());
+  await sendTransport("Fix the tests");
   await settle();
   await settle();
   expect(commands).toHaveLength(0);
@@ -1697,12 +1896,11 @@ it("keeps a first message visible, with Try again, when Send cannot reconnect", 
   ).toBe(true);
 });
 
-it("reconnects first and then sends when Send is pressed while disconnected", async () => {
+it("transport: reconnects first and then sends when Send is pressed while disconnected", async () => {
   machineDown = unreachable;
   await render();
-  await type("Fix the tests");
   machineDown = undefined;
-  await act(async () => byLabel("Send")!.click());
+  await sendTransport("Fix the tests");
   for (let i = 0; i < 4; i++) await settle();
   expect(commands.map((command) => command.type)).toEqual(["create", "send"]);
   expect(commands[1]).toMatchObject({ text: "Fix the tests" });
@@ -1721,6 +1919,7 @@ it("asks to connect the machine when it is not set up on this computer", async (
 });
 
 it("çalışan turda Extras ayarını saklar ve tur bittikten sonra uygular", async () => {
+  openExistingChat();
   await render();
   await send("First");
   host = {
@@ -1758,7 +1957,7 @@ it("çalışan turda Extras ayarını saklar ve tur bittikten sonra uygular", as
 });
 
 it.each([false, true])(
-  "retries a lost create response without duplicating the first turn (remount: %s)",
+  "transport: retries a lost create response without duplicating the first turn (remount: %s)",
   async (remount) => {
     const original = vi.mocked(invoke).getMockImplementation()!;
     let accepted: ReturnType<typeof dispatch> | undefined;
@@ -1774,7 +1973,7 @@ it.each([false, true])(
       return original(command, input);
     });
     await render();
-    await send("Keep this first message");
+    await sendTransport("Keep this first message");
     expect(commands.map((command) => command.type)).toEqual(["create"]);
     if (remount) {
       await act(async () => root.unmount());
@@ -1798,13 +1997,13 @@ it.each([false, true])(
   },
 );
 
-it("ignores a late create response after its tab has switched conversations", async () => {
+it("transport: ignores a late create response after its tab has switched conversations", async () => {
   await render();
   let release!: () => void;
   dispatchDelay = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await send("Pending first message");
+  await sendTransport("Pending first message");
   await act(async () => rememberRemoteSession("shell", "different-session"));
   await act(async () => {
     release();
@@ -1816,13 +2015,13 @@ it("ignores a late create response after its tab has switched conversations", as
   expect(container.textContent).not.toContain("Pending first message");
 });
 
-it("names the create window until the receipt has bound the host session", async () => {
+it("transport: names the create window until the receipt has bound the host session", async () => {
   await render();
   let release!: () => void;
   dispatchDelay = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await send("First message");
+  await sendTransport("First message");
   expect(remoteCreateIntent("shell")).toMatchObject({ shellId: "shell", environmentId: "env" });
   expect(remoteSessionFor("shell")).toBeUndefined();
   await act(async () => {
@@ -1834,13 +2033,13 @@ it("names the create window until the receipt has bound the host session", async
   expect(remoteCreateIntent("shell")).toBeUndefined();
 });
 
-it("still binds a created session to its tab when the binding changed meanwhile but is empty again", async () => {
+it("transport: still binds a created session to its tab when the binding changed meanwhile but is empty again", async () => {
   await render();
   let release!: () => void;
   dispatchDelay = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await send("Pending first message");
+  await sendTransport("Pending first message");
   await act(async () => rememberRemoteSession("shell", "different-session"));
   await act(async () => rememberRemoteSession("shell"));
   await act(async () => {
@@ -1851,13 +2050,13 @@ it("still binds a created session to its tab when the binding changed meanwhile 
   expect(remoteSessionFor("shell")).toBe("host-session");
 });
 
-it("does not take a created session another tab already shows", async () => {
+it("transport: does not take a created session another tab already shows", async () => {
   await render();
   let release!: () => void;
   dispatchDelay = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await send("Pending first message");
+  await sendTransport("Pending first message");
   await act(async () => rememberRemoteSession("shell", "different-session"));
   await act(async () => rememberRemoteSession("shell"));
   await act(async () => rememberRemoteSession("other-shell", "host-session"));
@@ -1935,7 +2134,7 @@ it("locks remote sends through rewind and waits for an authoritative snapshot be
   let completed = false;
   let rewind!: Promise<boolean>;
   await act(async () => {
-    rewind = Promise.resolve(remoteOverrides.onRewindMessage!("host-session", "latest-user"));
+    rewind = Promise.resolve(remoteOverrides.onRewindMessage!("shell", "latest-user"));
     void rewind.then(() => {
       completed = true;
     });
@@ -2013,12 +2212,12 @@ it("exposes rewind only when supported and permits it after lazy history is full
   await renderRemoteProbe();
   expect(remoteOverrides.session?.historyPartial).toBe(true);
   await act(async () => {
-    expect(await remoteOverrides.onRewindMessage!("host-session", "latest-user")).toBe(false);
+    expect(await remoteOverrides.onRewindMessage!("shell", "latest-user")).toBe(false);
     await remoteOverrides.onLoadRemoteHistory?.();
   });
   expect(remoteOverrides.session?.historyPartial).toBe(false);
   await act(async () => {
-    expect(await remoteOverrides.onRewindMessage!("host-session", "latest-user")).toBe(true);
+    expect(await remoteOverrides.onRewindMessage!("shell", "latest-user")).toBe(true);
   });
   expect(commands.filter((command) => command.type === "rewind")).toHaveLength(1);
 });
@@ -3314,7 +3513,7 @@ slow(
 );
 
 slow(
-  "Stop invalidates reconnect preparation before any conversation or turn is launched",
+  "transport: Stop invalidates reconnect preparation before any conversation or turn is launched",
   async () => {
     machineDown = unreachable;
     await render();
@@ -3324,7 +3523,7 @@ slow(
     });
     machineDown = undefined;
     await type("Stopped while reconnecting");
-    await act(async () => byLabel("Send")!.click());
+    await sendTransport("Stopped while reconnecting");
     await whenStopShown();
     await act(async () => byLabel("Stop")!.click());
     await act(async () => {

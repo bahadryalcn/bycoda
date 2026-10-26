@@ -9,7 +9,307 @@ import { sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { sessionNeedsInput, type Block } from "../src/features/sessions/model/session";
 import { registerBlockChanges } from "../src/features/sessions/model/blockChanges";
 import { HostEngine } from "./engine";
+import type {
+  ManagedWorkspace,
+  WorkspaceCreateOperation,
+  WorkspaceFeatureClaim,
+  WorkspaceRewindOperation,
+} from "./workspace-contracts";
 const cleanups: Array<() => void | Promise<void>> = [];
+describe("managed workspace persistence", () => {
+  it("retains optional session workspace identity in summaries after reopen", async () => {
+    const path = join(open(), "workspace-summary.db"),
+      store = new HostStore(path);
+    cleanups.push(() => store.close());
+    const project = await store.addProject("/workspace-summary", "Workspace summary");
+    const legacy = session("legacy-session", project.id),
+      managed = session("managed-session", project.id);
+    managed.session.workspaceId = "authoritative-workspace";
+    await store.save(legacy, {});
+    await store.save(managed, {});
+    expect(
+      (await store.summaries(project.id)).find((row) => row.id === managed.session.id)?.workspaceId,
+    ).toBe("authoritative-workspace");
+    expect(
+      (await store.summaries(project.id)).find((row) => row.id === legacy.session.id)?.workspaceId,
+    ).toBeUndefined();
+    await store.close();
+    const reopened = new HostStore(path);
+    cleanups.push(() => reopened.close());
+    expect(
+      (await reopened.summaries(project.id)).find((row) => row.id === managed.session.id)
+        ?.workspaceId,
+    ).toBe("authoritative-workspace");
+    expect(
+      (await reopened.summaries(project.id)).find((row) => row.id === legacy.session.id)
+        ?.workspaceId,
+    ).toBeUndefined();
+  });
+  function workspace(id = "workspace-1"): ManagedWorkspace {
+    return {
+      id,
+      repositoryId: "canonical-repository",
+      projectId: "project",
+      environmentId: "host",
+      owner: { kind: "session", id: `session-${id}` },
+      path: `/managed/${id}`,
+      branchRef: `refs/heads/bycoda/s/test-${id}`,
+      baseRef: "refs/heads/main",
+      baseCommit: "a".repeat(40),
+      targetBranchRef: "refs/heads/main",
+      state: "idle",
+      directoryState: "present",
+      revision: 0,
+      lastActivityAt: 100,
+      pinned: false,
+    };
+  }
+  function operation(value: ManagedWorkspace): WorkspaceCreateOperation {
+    return {
+      id: `create-${value.id}`,
+      workspaceId: value.id,
+      kind: "create",
+      idempotencyKey: "create-key",
+      expectedRevision: 0,
+      phase: "prepared",
+      createdAt: 100,
+      updatedAt: 100,
+      plannedWorkspace: value,
+    };
+  }
+  async function setup() {
+    const path = join(open(), "workspaces.db"),
+      store = new HostStore(path);
+    cleanups.push(() => store.close());
+    await store.ready;
+    return { store, path };
+  }
+  it("keeps ownership, journal, policy, claims and receipts across reopening", async () => {
+    const { store, path } = await setup(),
+      value = workspace(),
+      journal = operation(value);
+    const claim: WorkspaceFeatureClaim = {
+      id: "claim",
+      repositoryId: value.repositoryId,
+      projectId: value.projectId,
+      workspaceId: value.id,
+      featureKey: "editor",
+      owner: value.owner,
+      branchRef: value.branchRef,
+      acquiredAt: 101,
+    };
+    await store.transaction(async () => {
+      await store.insertManagedWorkspace(value);
+      await store.saveWorkspaceOperation(journal, null);
+      await store.saveWorkspacePolicy(value.repositoryId, "host", { defaultMode: "current" }, 0);
+      await store.insertWorkspaceFeatureClaim(claim);
+      await store.saveWorkspaceReceipt(
+        "prepare",
+        "key",
+        { a: 1, nested: { z: 2, b: 3 } },
+        { workspaceId: value.id },
+      );
+    });
+    await store.close();
+    const reopened = new HostStore(path);
+    cleanups.push(() => reopened.close());
+    expect(await reopened.managedWorkspace(value.id)).toEqual(value);
+    expect(await reopened.workspaceOperation(journal.id)).toEqual(journal);
+    expect(await reopened.findWorkspaceOperation(journal)).toEqual(journal);
+    expect(await reopened.workspacePolicy(value.repositoryId, "host")).toEqual({
+      revision: 1,
+      policy: { defaultMode: "current" },
+    });
+    expect(await reopened.workspaceFeatureClaims({ repositoryId: value.repositoryId })).toEqual([
+      claim,
+    ]);
+    expect(
+      await reopened.workspaceReceipt("prepare", "key", { nested: { b: 3, z: 2 }, a: 1 }),
+    ).toEqual({ workspaceId: value.id });
+    await expect(reopened.workspaceReceipt("prepare", "key", { a: 2 })).rejects.toMatchObject({
+      code: "WORKSPACE_IDEMPOTENCY_CONFLICT",
+    });
+    expect(await reopened.managedWorkspaces({ states: [] })).toEqual([]);
+    expect(await reopened.managedWorkspaces({ environmentId: "other" })).toEqual([]);
+    expect(
+      await reopened.managedWorkspaces({ repositoryId: value.repositoryId, states: ["idle"] }),
+    ).toEqual([value]);
+  });
+  it("rolls back an atomic reservation with its operation and receipt", async () => {
+    const { store } = await setup(),
+      value = workspace(),
+      journal = operation(value);
+    await expect(
+      store.transaction(async () => {
+        await store.insertManagedWorkspace(value);
+        await store.saveWorkspaceOperation(journal, null);
+        await store.saveWorkspaceReceipt("prepare", "key", {}, { id: value.id });
+        throw new Error("interrupt before commit");
+      }),
+    ).rejects.toThrow("interrupt before commit");
+    expect(await store.managedWorkspace(value.id)).toBeNull();
+    expect(await store.workspaceOperations()).toEqual([]);
+    expect(await store.workspaceReceipt("prepare", "key", {})).toBeNull();
+  });
+  it("rejects stale workspace writes and duplicate writer or branch ownership", async () => {
+    const { store } = await setup(),
+      value = workspace();
+    await store.insertManagedWorkspace(value);
+    const outcomes = await Promise.allSettled([
+      store.updateManagedWorkspace({ ...value, state: "finished", revision: 1 }, 0),
+      store.updateManagedWorkspace({ ...value, state: "abandoned", revision: 1 }, 0),
+    ]);
+    expect(outcomes.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect((await store.managedWorkspace(value.id))?.revision).toBe(1);
+    await expect(
+      store.updateManagedWorkspace({ ...value, path: "/other", revision: 2 }, 1),
+    ).rejects.toThrow("immutable");
+    await expect(
+      store.insertManagedWorkspace({ ...workspace("other"), owner: value.owner }),
+    ).rejects.toThrow();
+    await expect(
+      store.insertManagedWorkspace({ ...workspace("other"), branchRef: value.branchRef }),
+    ).rejects.toThrow();
+    expect(await store.managedWorkspaces()).toHaveLength(1);
+  });
+  it("compares operation phase and preserves recovery metadata", async () => {
+    const { store } = await setup(),
+      journal = operation(workspace());
+    await store.saveWorkspaceOperation(journal, null);
+    await store.saveWorkspaceOperation(
+      { ...journal, phase: "registered", updatedAt: 101 },
+      "prepared",
+    );
+    await expect(
+      store.saveWorkspaceOperation({ ...journal, phase: "materialized" }, "prepared"),
+    ).rejects.toMatchObject({ code: "WORKSPACE_OPERATION_CONFLICT" });
+    await expect(
+      store.saveWorkspaceOperation({ ...journal, phase: "blocked" }, "registered"),
+    ).rejects.toThrow("recovery phase");
+    await store.saveWorkspaceOperation(
+      {
+        ...journal,
+        phase: "blocked",
+        resumePhase: "registered",
+        error: { code: "IO", message: "interrupted" },
+      },
+      "registered",
+    );
+    expect(await store.workspaceOperation(journal.id)).toMatchObject({
+      phase: "blocked",
+      resumePhase: "registered",
+    });
+    await expect(
+      store.saveWorkspaceOperation({ ...journal, idempotencyKey: "different" }, "blocked"),
+    ).rejects.toThrow("immutable");
+  });
+  it("freezes creation and reviewed plans while allowing recovery progress", async () => {
+    const { store } = await setup(),
+      creation = operation(workspace());
+    await store.saveWorkspaceOperation(creation, null);
+    for (const changes of [
+      { path: "/unowned-directory" },
+      { branchRef: "refs/heads/main" },
+      { baseCommit: "b".repeat(40) },
+      { owner: { kind: "session" as const, id: "another-owner" } },
+    ])
+      await expect(
+        store.saveWorkspaceOperation(
+          {
+            ...creation,
+            phase: "registered",
+            plannedWorkspace: { ...creation.plannedWorkspace, ...changes },
+          },
+          "prepared",
+        ),
+      ).rejects.toThrow("plan is immutable");
+    expect(await store.workspaceOperation(creation.id)).toEqual(creation);
+    const rewind: WorkspaceRewindOperation = {
+      id: "rewind-operation",
+      workspaceId: creation.workspaceId,
+      kind: "rewind",
+      phase: "prepared",
+      idempotencyKey: "rewind-key",
+      expectedRevision: 0,
+      createdAt: 100,
+      updatedAt: 100,
+      plan: {
+        token: "reviewed-token",
+        expiresAt: 1000,
+        direction: "rewind",
+        workspaceId: creation.workspaceId,
+        sessionId: "session",
+        userBlockId: "boundary",
+        expectedRevision: 0,
+        expectedConversationRevision: 1,
+        branchRef: creation.plannedWorkspace.branchRef,
+        currentHead: "a".repeat(40),
+        targetHead: "b".repeat(40),
+        statusFingerprint: "reviewed-state",
+        removedUserBlockIds: ["later-turn"],
+        affectedCommits: [],
+        affectedPaths: ["source.ts"],
+        blockers: [],
+        published: false,
+        merged: false,
+      },
+    };
+    await store.saveWorkspaceOperation(rewind, null);
+    for (const changes of [
+      { targetHead: "c".repeat(40) },
+      { token: "unreviewed-token" },
+      { statusFingerprint: "different-state" },
+      { removedUserBlockIds: ["other-turn"] },
+    ])
+      await expect(
+        store.saveWorkspaceOperation(
+          {
+            ...rewind,
+            phase: "git-restored",
+            plan: { ...rewind.plan, ...changes },
+          },
+          "prepared",
+        ),
+      ).rejects.toThrow("plan is immutable");
+    await store.saveWorkspaceOperation(
+      {
+        ...rewind,
+        phase: "git-restored",
+        transcriptRescueId: "private-rescue",
+        updatedAt: 101,
+      },
+      "prepared",
+    );
+    expect(await store.workspaceOperation(rewind.id)).toMatchObject({
+      phase: "git-restored",
+      transcriptRescueId: "private-rescue",
+      plan: rewind.plan,
+    });
+  });
+  it("serializes policy compare-and-set and binds claim removal to its workspace", async () => {
+    const { store } = await setup(),
+      value = workspace();
+    await store.saveWorkspacePolicy("repository", "host", { defaultMode: "worktree" }, 0);
+    await expect(store.saveWorkspacePolicy("repository", "host", {}, 0)).rejects.toMatchObject({
+      code: "WORKSPACE_POLICY_REVISION_CONFLICT",
+    });
+    const claim: WorkspaceFeatureClaim = {
+      id: "claim",
+      repositoryId: value.repositoryId,
+      projectId: value.projectId,
+      featureKey: "feature",
+      workspaceId: value.id,
+      owner: value.owner,
+      branchRef: value.branchRef,
+      acquiredAt: 100,
+    };
+    await store.insertWorkspaceFeatureClaim(claim);
+    await expect(store.insertWorkspaceFeatureClaim({ ...claim, id: "other" })).rejects.toThrow();
+    expect(await store.deleteWorkspaceFeatureClaim(claim.id, "other-workspace")).toBe(false);
+    expect(await store.deleteWorkspaceFeatureClaim(claim.id, value.id)).toBe(true);
+    expect(await store.workspaceFeatureClaims({ featureKey: "feature" })).toEqual([]);
+  });
+});
 describe("incremental project summaries", () => {
   it("patches streamed summaries without rereading unchanged project rows", async () => {
     const store = new HostStore(join(open(), "summaries.db"));

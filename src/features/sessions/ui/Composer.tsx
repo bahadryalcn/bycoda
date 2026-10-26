@@ -36,6 +36,11 @@ import { useLocale, useT } from "../../../shared/i18n";
 import type { QueueAction } from "../model/queueAction";
 import { useComposerSpelling } from "../../settings/model/composerSpelling";
 import { ComposerTips } from "./ComposerTips";
+import { useWorkspaceCreation } from "../../workspaces/model/workspaceCreation";
+import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { WorkspaceCreationStatus } from "../../workspaces/ui/WorkspaceCreationStatus";
+import { SessionWorkspaceActions } from "../../workspaces/ui/SessionWorkspaceActions";
+import { WorkspaceRewindPreviewHost } from "../../workspaces/ui/WorkspaceRewindPreview";
 import "./chat-controls.css";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
@@ -366,6 +371,8 @@ type Props = {
   onBranchChange?: () => void;
   onWorktreeChange?: (tree: Worktree) => Promise<void>;
   draftWorkspace?: boolean;
+  /** UI integration signal only. Set after the remote creator binds managed ownership. */
+  managedWorkspaceCreationReady?: boolean;
   workspaceMode?: WorkspaceMode;
   worktreeBase?: string;
   onWorkspaceModeChange?: (mode: WorkspaceMode, base?: string) => void;
@@ -935,6 +942,7 @@ export const Composer = memo(function Composer({
   onBranchChange,
   onWorktreeChange,
   draftWorkspace = false,
+  managedWorkspaceCreationReady = false,
   workspaceMode,
   worktreeBase,
   onWorkspaceModeChange,
@@ -1070,10 +1078,23 @@ export const Composer = memo(function Composer({
     executionCwd,
     draftWorkspace && enabled && !busy,
   );
+  const workspaceCreation = useWorkspaceCreation(
+    cwd,
+    draftWorkspace && enabled && looksLikeProject(cwd),
+    workspaceMode,
+    worktreeBase,
+  );
+  const remoteWorkspaceCreationBlocked =
+    draftWorkspace && !!parseRemotePath(cwd) && !managedWorkspaceCreationReady;
+  const workspaceCreationError =
+    workspaceCreation.error ??
+    (remoteWorkspaceCreationBlocked
+      ? t("Update bycoda to create managed sessions on this remote Host.")
+      : undefined);
+  const workspaceSendBlocked =
+    draftWorkspace && (workspaceCreation.pending || !!workspaceCreationError);
   const resolvedWorktreeBase =
-    worktreeBase && worktreeBase !== "HEAD"
-      ? worktreeBase
-      : branch || draftBranches?.current || worktreeBase || undefined;
+    workspaceCreation.base || branch || draftBranches?.current || undefined;
   useEffect(() => {
     if (
       draftWorkspace &&
@@ -1374,6 +1395,9 @@ export const Composer = memo(function Composer({
   const orchestrationActive =
     orchestrationSelected || leadingMode?.name === ORCHESTRATOR_COMMAND.name;
   const draftActive = draftSelected || leadingMode?.name === DRAFT_COMMAND.name;
+  // Remote draft saving can also create a Host session, so it needs the same bridge.
+  const workspaceActionBlocked =
+    remoteWorkspaceCreationBlocked || (!draftActive && workspaceSendBlocked);
   const planActive = planSelected || leadingMode?.name === PLAN_COMMAND.name;
 
   /** Turning a mode off also drops its leading command from the text. */
@@ -2245,7 +2269,14 @@ export const Composer = memo(function Composer({
   }, [editLastTurnSupported, onRecallLastTurnReady, recallLastTurn]);
 
   const submit = (value: string, queue = false) => {
-    if (disabled || worktreeRemoved || sendHeldReason || submitLockRef.current) return;
+    if (
+      disabled ||
+      worktreeRemoved ||
+      workspaceActionBlocked ||
+      sendHeldReason ||
+      submitLockRef.current
+    )
+      return;
     const token = Symbol();
     submitLockRef.current = token;
     setSubmission({ sessionId, action: queue ? "queue" : "send" });
@@ -2266,7 +2297,7 @@ export const Composer = memo(function Composer({
       pending = pasteFlightRef.current;
     }
     const value = ref.current?.value ?? submittedValue;
-    if (disabled || worktreeRemoved || sendHeldReason) return;
+    if (disabled || worktreeRemoved || workspaceActionBlocked || sendHeldReason) return;
     if (isClearSessionCommand(value)) {
       if (busy || onSubmit(value.trim(), [], { intent: "default" }) === false) {
         setPasteError(t("Stop the current turn before clearing the conversation."));
@@ -2760,7 +2791,7 @@ export const Composer = memo(function Composer({
     }
     e.preventDefault();
     e.stopPropagation();
-    const next = (workspaceMode ?? "current") === "current" ? "worktree" : "current";
+    const next = workspaceCreation.mode === "current" ? "worktree" : "current";
     if (next === "worktree" && !resolvedWorktreeBase) return;
     onWorkspaceModeChange(next, next === "worktree" ? resolvedWorktreeBase : undefined);
     ref.current?.focus();
@@ -2904,6 +2935,24 @@ export const Composer = memo(function Composer({
         />
       ) : null}
       {children}
+      {sessionId ? <WorkspaceRewindPreviewHost sessionId={sessionId} /> : null}
+      {sessionId && !draftWorkspace ? (
+        <SessionWorkspaceActions
+          key={`workspace-actions:${sessionId}`}
+          sessionId={sessionId}
+          cwd={cwd}
+          enabled={enabled}
+        />
+      ) : null}
+      {remoteWorkspaceCreationBlocked && (hideTopBar || hideBranchPicker) ? (
+        <div className="px-3 py-2">
+          <WorkspaceCreationStatus
+            pending={false}
+            error={workspaceCreationError}
+            onRetry={workspaceCreation.refresh}
+          />
+        </div>
+      ) : null}
       <TranscriptSelectionMenu
         selection={translationSelection.selection}
         onDismiss={translationSelection.dismissSelection}
@@ -3604,7 +3653,7 @@ export const Composer = memo(function Composer({
               <ComposerAction
                 busy={busy}
                 submitting={submission?.sessionId === sessionId ? submission?.action : null}
-                disabled={disabled}
+                disabled={disabled || workspaceActionBlocked}
                 hasValue={hasValue && !worktreeRemoved}
                 allowBusySubmit={allowBusySubmit}
                 label={draftActive ? t("Save draft") : t("Send")}
@@ -3630,14 +3679,20 @@ export const Composer = memo(function Composer({
                           : "Steer",
                       )
                 }
-                blockedReason={sendHeldReason ?? sendBlockedReason}
+                blockedReason={
+                  sendHeldReason ??
+                  sendBlockedReason ??
+                  (workspaceSendBlocked
+                    ? workspaceCreationError || t("Checking workspace policy…")
+                    : undefined)
+                }
                 onSend={() => submit(ref.current?.value ?? "")}
                 onQueue={
                   queueShortcutApplies({
                     busy,
                     backgroundOnly,
                     allowBusySubmit,
-                    disabled: disabled || worktreeRemoved,
+                    disabled: disabled || worktreeRemoved || workspaceSendBlocked,
                     popupOpen: false,
                     draftMode: draftActive,
                     text: draft,
@@ -3668,19 +3723,23 @@ export const Composer = memo(function Composer({
             >
               {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
                 <>
-                  <WorkspacePicker
-                    alignBase="inline"
-                    cwd={executionCwd}
-                    mode={workspaceMode ?? "current"}
-                    base={resolvedWorktreeBase}
-                    enabled={enabled && !busy}
-                    onModeChange={onWorkspaceModeChange}
-                    onBaseChange={onWorktreeBaseChange}
-                    onSelectWorktree={onWorktreeChange}
-                    onOpenSettings={onManageWorktrees}
-                    onClose={() => ref.current?.focus()}
-                  />
-                  {(workspaceMode ?? "current") === "current" ? (
+                  {workspaceCreationError ? (
+                    <WorkspaceIdentity worktree={workspaceCreation.mode === "worktree"} />
+                  ) : (
+                    <WorkspacePicker
+                      alignBase="inline"
+                      cwd={executionCwd}
+                      mode={workspaceCreation.mode}
+                      base={resolvedWorktreeBase}
+                      enabled={enabled && !busy && !workspaceCreation.pending}
+                      onModeChange={onWorkspaceModeChange}
+                      onBaseChange={onWorktreeBaseChange}
+                      onSelectWorktree={onWorktreeChange}
+                      onOpenSettings={onManageWorktrees}
+                      onClose={() => ref.current?.focus()}
+                    />
+                  )}
+                  {workspaceCreation.mode === "current" ? (
                     <div className="flex min-w-0 justify-end">
                       <BranchPicker
                         cwd={executionCwd}
@@ -3727,6 +3786,18 @@ export const Composer = memo(function Composer({
                 </div>
               ) : null}
             </div>
+            {draftWorkspace ? (
+              <div className="basis-full pb-1">
+                <WorkspaceCreationStatus
+                  preview={
+                    workspaceCreation.mode === "worktree" ? workspaceCreation.preview : undefined
+                  }
+                  pending={workspaceCreation.pending && !workspaceCreationError}
+                  error={workspaceCreationError}
+                  onRetry={workspaceCreation.refresh}
+                />
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

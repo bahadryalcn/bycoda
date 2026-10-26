@@ -5,6 +5,21 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mcpInvoke = vi.hoisted(() => vi.fn());
+vi.mock("../../workspaces/model/workspaceCreation", () => ({
+  shortWorkspaceRef: (ref: string) => ref.replace(/^refs\/(heads|remotes)\//, ""),
+  useWorkspaceCreation: (
+    _cwd: string,
+    _active: boolean,
+    choice?: "current" | "worktree",
+    base?: string,
+  ) => ({
+    mode: choice ?? "worktree",
+    base: base || "main",
+    preview: { baseRef: "refs/heads/main", baseCommit: "12345678", excludedPaths: 2 },
+    pending: false,
+    refresh: vi.fn(),
+  }),
+}));
 vi.mock("../model/textareaSelectionRect", () => ({
   textareaSelectionRect: () => new DOMRect(20, 100, 120, 20),
 }));
@@ -50,7 +65,10 @@ import { registerHarness } from "../../../integrations/harness/core/registry";
 import { codexAdapter } from "../../../integrations/harness/providers/codex/codexAdapter";
 import { antigravityAdapter } from "../../../integrations/harness/providers/antigravity/antigravityAdapter";
 import { saveLastModelChoice } from "../model/models";
-import { saveDefaultTranslationChoice, saveDefaultRepromptChoice } from "../model/translationPreferences";
+import {
+  saveDefaultTranslationChoice,
+  saveDefaultRepromptChoice,
+} from "../model/translationPreferences";
 
 function renderAction(busy: boolean, hasValue: boolean, allowBusySubmit = true) {
   return renderToStaticMarkup(
@@ -132,58 +150,64 @@ describe("Composer question focus", () => {
   it.each([
     ["Translate to English", "Apply translation"],
     ["Reprompt", "Apply prompt"],
-  ])("previews %s for a selected draft, applies only on approval, and toggles with arrows", async (action, applyLabel) => {
-    saveLastModelChoice("codex", "codex:gpt-6.1");
-    const run = vi.fn(async () => "Hello");
-    registerHarness({ ...codexAdapter, runTextPrompt: run });
-    const original = "Before Merhaba after";
-    await renderComposer(
-      undefined,
-      vi.fn(),
-      false,
-      0,
-      original,
-      undefined,
-      vi.fn(),
-      "translate-draft",
-      "codex",
-    );
-    const textarea = container.querySelector("textarea")!;
-    textarea.focus();
-    vi.spyOn(textarea, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 100, 300, 40));
-    await act(async () => {
-      textarea.setSelectionRange(7, 14);
-      textarea.dispatchEvent(new Event("select", { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    });
-    const translate = [
-      ...document.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button'),
-    ].find((button) => button.textContent?.includes(action))!;
-    expect(translate).toBeDefined();
-    expect(run).not.toHaveBeenCalled();
-    await act(async () => translate.click());
-    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(textarea.value).toBe(original);
-    const apply = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
-      (button) => button.textContent === applyLabel,
-    )!;
-    await act(async () => apply.click());
-    expect(textarea.value).toBe("Before Hello after");
-    for (const [key, expected] of [
-      ["ArrowUp", original],
-      ["ArrowDown", "Before Hello after"],
-    ]) {
-      await act(async () =>
-        textarea.dispatchEvent(
-          new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
-        ),
+  ])(
+    "previews %s for a selected draft, applies only on approval, and toggles with arrows",
+    async (action, applyLabel) => {
+      saveLastModelChoice("codex", "codex:gpt-6.1");
+      const run = vi.fn(async () => "Hello");
+      registerHarness({ ...codexAdapter, runTextPrompt: run });
+      const original = "Before Merhaba after";
+      await renderComposer(
+        undefined,
+        vi.fn(),
+        false,
+        0,
+        original,
+        undefined,
+        vi.fn(),
+        "translate-draft",
+        "codex",
       );
-      expect(textarea.value).toBe(expected);
-    }
-    expect(run).toHaveBeenCalledOnce();
-  });
+      const textarea = container.querySelector("textarea")!;
+      textarea.focus();
+      vi.spyOn(textarea, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 100, 300, 40));
+      await act(async () => {
+        textarea.setSelectionRange(7, 14);
+        textarea.dispatchEvent(new Event("select", { bubbles: true }));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+      const translate = [
+        ...document.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button'),
+      ].find((button) => button.textContent?.includes(action))!;
+      expect(translate).toBeDefined();
+      expect(run).not.toHaveBeenCalled();
+      await act(async () => translate.click());
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+      expect(textarea.value).toBe(original);
+      const apply = [
+        ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+      ].find((button) => button.textContent === applyLabel)!;
+      await act(async () => apply.click());
+      expect(textarea.value).toBe("Before Hello after");
+      for (const [key, expected] of [
+        ["ArrowUp", original],
+        ["ArrowDown", "Before Hello after"],
+      ]) {
+        await act(async () =>
+          textarea.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+          ),
+        );
+        expect(textarea.value).toBe(expected);
+      }
+      expect(run).toHaveBeenCalledOnce();
+    },
+  );
   it("opens the translation menu for an Antigravity model without silently calling Codex", async () => {
-    saveDefaultTranslationChoice({ harness: "antigravity", model: "antigravity:gemini-3.8-flash-high" });
+    saveDefaultTranslationChoice({
+      harness: "antigravity",
+      model: "antigravity:gemini-3.8-flash-high",
+    });
     const run = vi.fn(async () => "Hello");
     registerHarness({ ...codexAdapter, runTextPrompt: run });
     const antigravityRun = vi.fn(async () => "Hello");
@@ -334,6 +358,42 @@ describe("Composer question focus", () => {
       ),
     );
   }
+
+  it("keeps workspace actions and the message queue distinct while preserving the draft", async () => {
+    const consoleError = vi.spyOn(console, "error");
+    try {
+      await renderComposer(
+        undefined,
+        vi.fn(),
+        false,
+        0,
+        "Keep this draft",
+        undefined,
+        vi.fn(),
+        "managed-composer-identity",
+      );
+      const textarea = container.querySelector("textarea")!;
+      await renderComposer(
+        undefined,
+        vi.fn(),
+        false,
+        1,
+        "Keep this draft",
+        undefined,
+        vi.fn(),
+        "managed-composer-identity",
+      );
+      expect(container.querySelector("textarea")).toBe(textarea);
+      expect(textarea.value).toBe("Keep this draft");
+      expect(
+        consoleError.mock.calls.filter((args) =>
+          args.some((value) => String(value).includes("same key")),
+        ),
+      ).toEqual([]);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 
   it("shows the working folder picker without additional projects", async () => {
     localStorage.clear();
@@ -2116,7 +2176,7 @@ describe("Composer question focus", () => {
         }),
       ),
     );
-    expect(onWorkspaceModeChange).toHaveBeenLastCalledWith("worktree", "mc/greeting");
+    expect(onWorkspaceModeChange).toHaveBeenLastCalledWith("worktree", "main");
 
     await act(async () =>
       root.render(
@@ -2129,6 +2189,68 @@ describe("Composer question focus", () => {
       ),
     );
     expect(onWorktreeBaseChange).toHaveBeenLastCalledWith("mc/greeting");
+  });
+
+  it("holds new remote sends until the creator explicitly supports managed ownership", async () => {
+    const onSubmit = vi.fn();
+    const onSaveDraft = vi.fn();
+    const props = {
+      focused: false,
+      harness: "codex" as const,
+      model: "codex:gpt-6.1",
+      runtimeMode: "supervised" as const,
+      cwd: "remote://fixture/repo",
+      executionCwd: "remote://fixture/repo",
+      draftWorkspace: true,
+      hideTopBar: true,
+      hideBranchPicker: true,
+      initialDraft: "Keep this remote draft",
+      canSaveDraft: true,
+      onSaveDraft,
+      onFocus: vi.fn(),
+      onCwdChange: vi.fn(),
+      onModelChange: vi.fn(),
+      onRuntimeModeChange: vi.fn(),
+      onSubmit,
+    };
+    await act(async () => root.render(createElement(Composer, props)));
+    expect(container.textContent).toContain(
+      "Update bycoda to create managed sessions on this remote Host.",
+    );
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')?.disabled).toBe(true);
+    const textarea = container.querySelector("textarea")!;
+    await act(async () =>
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(textarea.value).toBe("Keep this remote draft");
+    await act(async () => {
+      textarea.value = "/draft Keep this remote draft";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Save draft"]')?.disabled).toBe(
+      true,
+    );
+    await act(async () =>
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(onSaveDraft).not.toHaveBeenCalled();
+    await act(async () => {
+      textarea.value = "Keep this remote draft";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      root.render(createElement(Composer, { ...props, managedWorkspaceCreationReady: true })),
+    );
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')?.disabled).toBe(false);
+    await act(async () =>
+      root.render(createElement(Composer, { ...props, draftWorkspace: false })),
+    );
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')?.disabled).toBe(false);
   });
 
   it("focuses the draft from blank composer space without intercepting controls", async () => {

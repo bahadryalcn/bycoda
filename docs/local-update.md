@@ -12,6 +12,31 @@ one source snapshot and builds Windows and the configured macOS SSH machine in
 parallel. It does not switch branches, commit, push, or publish a release. Local
 scratch files, documentation, and Python bytecode are excluded from build snapshots.
 
+## Worktree source and build provenance
+
+Run the coordinator from the owner-selected source worktree. Project identity and
+execution path differ: a change committed on a session branch is not automatically
+included in an integration checkout or its next package. Do not switch branches,
+merge, copy another workspace's dirty files, or start installation to resolve that
+difference. Builds and installation remain owner-directed.
+
+Before diagnosing a screenshot, compare the requested source/workspace against the
+build actually displayed and the responsive running Host. The managed-workspace
+build contract records repository, branch, HEAD, source fingerprint, dirty paths,
+component identities and included source/delivery references; see
+[Managed workspaces](reference/managed-workspaces.md). `build:status` is the planned
+comparison command owned by the development-environment stream; it is not available
+on the contracts baseline. Use it only when the integrated package provides it.
+Without a build stamp or comparison capability, report **source identity unknown**.
+Equal versions, an earlier completion time, or a successful package build do not
+prove that a particular commit is installed or running.
+
+Keep requested-source, packaged, installed, responsive Host and pending-install
+status separate in reports. `-Status` and the coordinator's recorded artifacts
+establish update stage completion; a scheduled update is not a completed install.
+Preserve separate Host/app idle gates, persistent caches, databases, credentials
+and rollback files. Never print raw authentication state for provenance checks.
+
 ## Prerequisites and machine configuration
 
 Python 3.12+, Node.js, the packageManager-pinned pnpm version, Rust, Tauri platform

@@ -29,6 +29,7 @@ import { pendingShellRuns, withShellContext } from "../../../../features/session
 import { isNativeCommandPrompt } from "../../../../features/skills/model/skills";
 import { isEqualOrInside } from "../../../../shared/lib/paths";
 import { withPlanBuildTarget } from "../../helpers/sessionHelpers";
+import { needsSessionWorkspace } from "../../../../features/workspaces/model/sessionWorkspace";
 
 export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): PreflightResult {
   const {
@@ -197,7 +198,7 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   if (isPreparingHandoff(current)) return { settled: true, value: false };
   saveRecentModelChoice(current.harness, current.model);
   const initialWorkCwd = sessionWorkCwd(current);
-  const createDraftWorktree = !current.worktreeCwd && current.workspaceMode === "worktree";
+  const createDraftWorktree = needsSessionWorkspace(current);
   const accountProvider = supportsProviderAccounts(current.harness) ? current.harness : undefined;
   const providerAccountId = accountProvider
     ? sessionProviderAccountId(accountProvider, current)

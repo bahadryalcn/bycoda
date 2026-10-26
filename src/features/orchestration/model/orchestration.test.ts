@@ -116,10 +116,17 @@ describe("worker assignment prompts", () => {
     expect(sent).toContain("<bycoda_assignment>");
     expect(sent).toContain("src/App.tsx");
     expect(sent).toContain("override any contradictory wording");
-    expect(sent).toContain("stage, commit, push");
-    expect(sent).toContain("Git finalization remains the lead's responsibility");
+    expect(sent).toContain("Commit your changes on your assigned branch");
+    expect(sent).toContain("owner-approved managed delivery");
+    expect(sent).not.toContain("stage, commit, push");
     expect(visibleUserPrompt(sent)).toBe("Review the branch.");
   });
+});
+
+it("preserves the no-commit identity of retained legacy shared workers", () => {
+  const prompt = workerTurnPrompt("Continue", ["src"], undefined, false);
+  expect(prompt).toContain("do not stage or commit until the owner explicitly migrates");
+  expect(prompt).not.toContain("Commit your changes on your assigned branch");
 });
 
 describe("local orchestration", () => {

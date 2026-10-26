@@ -4,6 +4,7 @@ import { mapCodexNotification } from "../../../integrations/harness/providers/co
 import { toolCallLabel } from "../model/transcriptActivity";
 import { conversationReplayPrompt } from "../model/conversationRewind";
 import { newSession, type Block, type BtwThread, type Session } from "../model/session";
+import { clearConversation } from "../model/clearConversation";
 import {
   backfillClaudeShellCommands,
   backfillCodexShellCommands,
@@ -35,6 +36,14 @@ it("persists an empty active transcript when rewound history remains", () => {
     blocks: [],
     rewindHistory: [{ fromBlockId: "removed-user" }],
   });
+});
+
+it("persists execution identity when clearing a legacy current conversation", () => {
+  const legacy = newSession("codex", "/repo");
+  legacy.blocks = [{ id: "turn", role: "user", text: "Established" }];
+  const payload = sanitizeSessionForPersist(clearConversation(legacy));
+  expect(payload.blocks).toEqual([]);
+  expect(payload).toHaveProperty("workspaceMode", "current");
 });
 
 describe("Claude Shell row recovery", () => {

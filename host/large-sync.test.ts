@@ -99,6 +99,8 @@ async function setup() {
   });
   const { sessionId } = await engine.command({
     type: "create",
+    // This non-Git fixture exercises transport sizing in its selected checkout.
+    workspaceMode: "current",
     commandId: "create",
     projectId: project.id,
     harness: "codex",

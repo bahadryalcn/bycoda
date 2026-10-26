@@ -56,7 +56,28 @@ test("settings expose advanced controls without opening a menu", async ({ page }
   ]) {
     await page.goto(`/tests/browser/settings.html?section=${section}&theme=dark&lang=en`);
     const form = page.locator(".bycoda-settings-form");
-    await expect(form.locator("details, summary")).toHaveCount(0);
+    // Optional provenance, recovery help and manual connection setup are intentionally disclosed.
+    // Keep this inventory exact so ordinary settings cannot silently move behind disclosures.
+    const optionalDisclosures: Record<string, string[]> = {
+      general: ["Build details"],
+      connections: ["Connect to an existing host by URL", "How reconnection works"],
+      policies: ["About"],
+    };
+    await expect
+      .poll(async () =>
+        (await form.locator("details > summary").allTextContents())
+          .map((label) => label.trim())
+          .sort(),
+      )
+      .toEqual((optionalDisclosures[section] ?? []).slice().sort());
+    if (section === "general") {
+      const buildDetails = form.getByTestId("build-identity-details");
+      await buildDetails.locator("summary").click();
+      await expect(
+        buildDetails.getByRole("button", { name: "Copy build details", exact: true }),
+      ).toBeVisible();
+      await expect(buildDetails).toContainText("Source comparison");
+    }
     expect(await form.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
   }
 });

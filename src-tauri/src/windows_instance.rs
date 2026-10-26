@@ -49,6 +49,10 @@ fn pipe_name(app: &tauri::AppHandle) -> Result<Vec<u16>, Box<dyn std::error::Err
             hash.update(unit.to_le_bytes());
         }
     }
+    if let Some(profile) = crate::debug_profile::profile_id() {
+        hash.update(profile.as_bytes());
+        hash.update([0]);
+    }
     Ok(format!(r"\\.\pipe\bycoda-relaunch-{:x}", hash.finalize())
         .encode_utf16()
         .chain(Some(0))

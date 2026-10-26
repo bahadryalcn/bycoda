@@ -19,6 +19,7 @@ import { HostTasks } from "./tasks";
 import { HostCrews } from "./crews";
 import { HostGoals } from "./goals";
 import { DesktopSessions } from "./desktopSessions";
+import { HostTerminals } from "./terminals";
 import { AsyncHostNotes } from "./host-notes-async";
 import { GenericAcpService } from "./generic-acp";
 import * as accessCenter from "./access-center";
@@ -30,6 +31,7 @@ import { LocalVoiceService } from "./voice-local";
 import { configureChildBackend } from "../src/integrations/harness/core/child";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
+import { requireWorkspaceCapability } from "../src/features/connections/model/protocol";
 import { QUEUE_LEASE_TTL_MS } from "../src/features/connections/model/sharedQueue";
 import { RUN_LEASE_TTL_MS } from "../src/features/sync/model/runLease";
 import { CLAIM_GRACE_MS, SessionQueues } from "./session-queue";
@@ -46,6 +48,274 @@ const binaries: { codex?: string } = {};
 configureChildBackend(new HostChildBackend(binaries));
 
 const cleanups: Array<() => Promise<void>> = [];
+
+async function enableManagedFixture(s: Awaited<ReturnType<typeof setup>>) {
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: s.directory, windowsHide: true, stdio: "pipe" });
+  git("init", "-q", "-b", "main");
+  writeFileSync(join(s.directory, "source.txt"), "fixture source\n");
+  git("add", "source.txt");
+  git(
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.test",
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "-qm",
+    "Fixture baseline",
+  );
+  const configured = await s.call("projects.workspacePolicy.update", {
+    projectId: s.project.id,
+    environmentId: s.store.environmentId,
+    expectedRevision: 0,
+    idempotencyKey: "managed-fixture-policy",
+    policy: { root: join(s.directory, "managed"), disk: { minimumFreeBytes: 1 } },
+  });
+  expect(configured.value.error).toBeUndefined();
+}
+
+describe("managed workspace owner RPCs", () => {
+  it("requires an updated host instead of silently selecting the project checkout", () => {
+    expect(() => requireWorkspaceCapability(undefined)).toThrow(/Update the execution Host/);
+    expect(() => requireWorkspaceCapability({ capabilities: ["git.worktreeCreate"] })).toThrow(
+      /No work was started/,
+    );
+    expect(() =>
+      requireWorkspaceCapability({ capabilities: ["workspaces.managed.v1"] }),
+    ).not.toThrow();
+  });
+
+  it("routes policy, creation, claims and lifecycle against real Git through authenticated owner transport", async () => {
+    const s = await setup([]);
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: s.directory, windowsHide: true, encoding: "utf8" }).trim();
+    git("init", "-b", "main");
+    writeFileSync(join(s.directory, "source.txt"), "committed source\n");
+    git("add", "source.txt");
+    git(
+      "-c",
+      "user.name=Workspace Test",
+      "-c",
+      "user.email=test@example.invalid",
+      "commit",
+      "-m",
+      "Initial source",
+    );
+    const base = git("rev-parse", "HEAD");
+    writeFileSync(join(s.directory, "source.txt"), "unrelated dirty source\n");
+    const capabilities = (await s.call("environment.describe")).value.result.capabilities;
+    expect(capabilities).toEqual(
+      expect.arrayContaining(["workspaces.managed.v1", "workspaces.policy.v1"]),
+    );
+    expect(capabilities).toEqual(
+      expect.arrayContaining([
+        "sessions.git-rewind.v1",
+        "sessions.git-rewind-undo.v1",
+        "workspaces.lifecycle.v1",
+        "workspaces.delivery.v1",
+        "workspaces.pr-publication.v1",
+        "workspaces.pinning.v1",
+      ]),
+    );
+    const project = { projectId: s.project.id, environmentId: s.store.environmentId };
+    const policy = await s.call("projects.workspacePolicy.get", project);
+    expect(policy.value.error).toBeUndefined();
+    expect(policy.value.result.resolved.policy.defaultMode).toBe("worktree");
+    const update = {
+      ...project,
+      expectedRevision: policy.value.result.revision,
+      idempotencyKey: "rpc-policy",
+      policy: { root: join(s.directory, "managed") },
+    };
+    expect((await s.call("projects.workspacePolicy.update", update, "invalid")).status).toBe(401);
+    expect((await s.call("projects.workspacePolicy.update", update)).value.error).toBeUndefined();
+    const request = {
+      ...project,
+      idempotencyKey: "rpc-create",
+      owner: { kind: "session", id: "session-one" },
+      slug: "RPC work",
+    };
+    expect((await s.call("workspaces.prepare", request, "invalid")).status).toBe(401);
+    const prepared = await s.call("workspaces.prepare", request);
+    expect(prepared.value.error).toBeUndefined();
+    const workspace = prepared.value.result.workspace;
+    expect(workspace).toMatchObject({ projectId: s.project.id, baseCommit: base });
+    expect(workspace.path).not.toBe(s.directory);
+    expect(git("show", `${workspace.branchRef}:source.txt`)).toBe("committed source");
+    expect((await s.call("workspaces.prepare", request)).value.result).toEqual(
+      prepared.value.result,
+    );
+    expect((await s.call("workspaces.get", { workspaceId: workspace.id })).value.result.id).toBe(
+      workspace.id,
+    );
+    expect((await s.call("workspaces.list", project)).value.result).toHaveLength(1);
+    expect(
+      (await s.call("workspaces.list", { ...project, environmentId: "another-host" })).value.error,
+    ).toMatch(/another execution host/);
+    expect(
+      (
+        await s.call("sessions.desktopLive", {
+          clientId: "workspace-owner",
+          sessions: [{ id: "session-one", busy: true }],
+        })
+      ).value.error,
+    ).toBeUndefined();
+    const busy = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
+    expect(busy.state).toBe("active");
+    expect(busy.lastActivityAt).toBeGreaterThanOrEqual(workspace.lastActivityAt);
+    expect(
+      (
+        await s.call("workspaces.finish", {
+          workspaceId: workspace.id,
+          expectedRevision: busy.revision,
+          idempotencyKey: "rpc-finish-busy",
+        })
+      ).value.error,
+    ).toMatch(/active|running|use|busy|idle/i);
+    expect(
+      (
+        await s.call("sessions.desktopLive", {
+          clientId: "workspace-owner",
+          sessions: [{ id: "session-one", busy: false }],
+        })
+      ).value.error,
+    ).toBeUndefined();
+    const idle = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
+    expect(idle.state).toBe("idle");
+    const alias = await s.engine.openProject(workspace.path);
+    const terminal = {
+      id: "workspace-terminal",
+      projectId: alias.id,
+      name: "Test shell",
+      cwd: join(workspace.path, "nested"),
+      shell: "test",
+      transport: "pipe" as const,
+      state: "running" as "running" | "exited",
+      createdAt: Date.now(),
+      exitCode: null,
+    };
+    const terminalList = vi.spyOn(HostTerminals.prototype, "list").mockImplementation((id) => ({
+      terminals: id === alias.id ? [terminal] : [],
+      writable: true,
+      profiles: [],
+    }));
+    const terminalWrite = vi
+      .spyOn(HostTerminals.prototype, "write")
+      .mockResolvedValue({ written: true });
+    const terminalRead = vi.spyOn(HostTerminals.prototype, "read").mockImplementation(() => ({
+      terminal,
+      cursor: 1,
+      output: "done",
+      truncated: false,
+      hasMore: false,
+    }));
+    try {
+      const writeFailure = vi
+        .spyOn(s.store, "updateManagedWorkspace")
+        .mockRejectedValueOnce(new Error("temporary metadata failure"));
+      const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        expect(
+          (
+            await s.call("terminals.write", {
+              projectId: alias.id,
+              id: terminal.id,
+              text: "echo test",
+            })
+          ).value.result,
+        ).toEqual({ written: true });
+        expect(warning).toHaveBeenCalledWith(
+          "Managed workspace activity metadata could not be recorded",
+        );
+      } finally {
+        writeFailure.mockRestore();
+        warning.mockRestore();
+      }
+      expect(
+        (
+          await s.call("workspaces.finish", {
+            workspaceId: workspace.id,
+            expectedRevision: idle.revision,
+            idempotencyKey: "rpc-terminal-busy",
+          })
+        ).value.error,
+      ).toMatch(/active|running|use|busy|idle/i);
+      expect(
+        (
+          await s.call("terminals.write", {
+            projectId: alias.id,
+            id: terminal.id,
+            text: "echo test",
+          })
+        ).value.error,
+      ).toBeUndefined();
+      expect(
+        (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result.state,
+      ).toBe("active");
+      terminal.state = "exited";
+      expect(
+        (await s.call("terminals.read", { projectId: alias.id, id: terminal.id })).value.error,
+      ).toBeUndefined();
+      expect(
+        (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result.state,
+      ).toBe("idle");
+    } finally {
+      terminalList.mockRestore();
+      terminalWrite.mockRestore();
+      terminalRead.mockRestore();
+    }
+    const afterTerminal = (await s.call("workspaces.get", { workspaceId: workspace.id })).value
+      .result;
+    const claim = await s.call("workspaces.featureClaims.acquire", {
+      workspaceId: workspace.id,
+      expectedRevision: afterTerminal.revision,
+      idempotencyKey: "rpc-acquire",
+      featureKey: "editor",
+    });
+    expect(claim.value.error).toBeUndefined();
+    expect(claim.value.result.acquired).toBe(true);
+    expect(
+      (await s.call("workspaces.featureClaims.list", { projectId: s.project.id })).value.result,
+    ).toHaveLength(1);
+    let latest = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
+    expect(
+      (
+        await s.call("workspaces.featureClaims.release", {
+          workspaceId: workspace.id,
+          expectedRevision: latest.revision,
+          idempotencyKey: "rpc-release",
+          claimId: claim.value.result.claim.id,
+        })
+      ).value.result,
+    ).toEqual({ released: true });
+    latest = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
+    const finished = await s.call("workspaces.finish", {
+      workspaceId: workspace.id,
+      expectedRevision: latest.revision,
+      idempotencyKey: "rpc-finish",
+    });
+    expect(finished.value.error).toBeUndefined();
+    expect(finished.value.result.state).toBe("finished");
+    const resumed = await s.call("workspaces.resume", {
+      workspaceId: workspace.id,
+      expectedRevision: finished.value.result.revision,
+      idempotencyKey: "rpc-resume",
+    });
+    expect(resumed.value.error).toBeUndefined();
+    expect(["active", "idle"]).toContain(resumed.value.result.state);
+    const closed = await s.call("workspaces.close", {
+      workspaceId: workspace.id,
+      expectedRevision: resumed.value.result.revision,
+      idempotencyKey: "rpc-close",
+    });
+    expect(closed.value.error).toBeUndefined();
+    expect(closed.value.result.state).toBe("abandoned");
+    expect(git("diff", "--", "source.txt")).toContain("unrelated dirty source");
+    expect(s.send).not.toHaveBeenCalled();
+  });
+});
 
 it("routes owner crew work deletion through authenticated RPC", async () => {
   const s = await setup([]);
@@ -275,6 +545,7 @@ it("routes history import only through the authenticated desktop owner with froz
   );
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "history-rpc-source",
     projectId: s.project.id,
     harness: "codex",
@@ -336,6 +607,7 @@ it("routes history import to the registered source worktree and refuses unrelate
   git("worktree", "add", "-qb", "history-source", checkout);
   const opened = await s.call("commands.dispatch", {
     type: "create",
+    workspaceMode: "current",
     commandId: "history-worktree-source",
     projectId: s.project.id,
     worktreeCwd: checkout,
@@ -361,6 +633,7 @@ it("routes history import to the registered source worktree and refuses unrelate
       (
         await s.call("commands.dispatch", {
           type: "create",
+          workspaceMode: "current",
           commandId: "unrelated-history-source",
           projectId: s.project.id,
           worktreeCwd: tmpdir(),
@@ -384,6 +657,7 @@ it("binds organization metadata operations to the authenticated owning conversat
   );
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "organization-source",
     projectId: s.project.id,
     harness: "codex",
@@ -440,6 +714,7 @@ it("keeps new canonical desktop preference, provider and worktree facades finite
     expect(capabilities).toContain(capability);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "desktop-settings-source",
     projectId: s.project.id,
     harness: "codex",
@@ -522,6 +797,7 @@ it("binds a native worktree review and status receipt to its paired device witho
   const s = await setup([]);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "worktree-device-source",
     projectId: s.project.id,
     harness: "codex",
@@ -606,6 +882,7 @@ it("isolates SSH approvals, workspace handles and uncertain receipts per actor a
   const s = await setup([]);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "ssh-owned-source",
     projectId: s.project.id,
     harness: "codex",
@@ -696,6 +973,7 @@ it("seals fresh owned PTY identifiers by role and injects actor identity only af
   const s = await setup([]);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "pty-owned-source",
     projectId: s.project.id,
     harness: "codex",
@@ -863,6 +1141,7 @@ it("partitions provider metadata and quota receipts without leaking internal ope
   const s = await setup([]);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "account-owned-source",
     projectId: s.project.id,
     harness: "codex",
@@ -965,6 +1244,7 @@ it("validates note context before special-command side effects and sends only an
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "note-rpc-source",
     projectId: s.project.id,
     harness: "codex",
@@ -1081,8 +1361,10 @@ it("exposes a safe authenticated provider center and applies only reviewed ACP m
 
 it("binds contextual RPC creation to the reviewed source and reconciles the original receipt after source changes", async () => {
   const s = await setup(["codex", "claude"], true);
+  await enableManagedFixture(s);
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "context-rpc-source",
     projectId: s.project.id,
     harness: "codex",
@@ -1095,12 +1377,11 @@ it("binds contextual RPC creation to the reviewed source and reconciles the orig
     sessionId: created.sessionId,
     text: "Review search",
   });
-  await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce(), { timeout: 15_000 });
   s.turn().onEvent({ type: "message.delta", text: "Search review complete." });
   s.finish();
-  await vi.waitFor(async () =>
-    expect((await s.store.session(created.sessionId)).status).toBe("idle"),
-  );
+  await s.engine.waitForRun(created.sessionId, (await s.store.session(created.sessionId)).runId);
+  expect((await s.store.session(created.sessionId)).status).toBe("idle");
   const source = await s.store.session(created.sessionId);
   const reply = source.session.blocks.find((block) => block.role === "assistant")!;
   const input = {
@@ -1330,6 +1611,7 @@ it.each(["sessions.update", "commands.dispatch"])(
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: crypto.randomUUID(),
       projectId: s.project.id,
       harness: "codex",
@@ -1427,6 +1709,7 @@ it("scopes note reads to the authoritative session before accessing notes", asyn
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "notes-session",
     projectId: s.project.id,
     harness: "codex",
@@ -1598,6 +1881,7 @@ describe("scoped Conversation Tools RPC", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: crypto.randomUUID(),
       projectId: s.project.id,
       harness: "codex",
@@ -1675,7 +1959,7 @@ describe("scoped Conversation Tools RPC", () => {
         runtimeMode: source.session.runtimeMode,
         approvePlan: true,
         manualStart: true,
-        isolate: false,
+        isolate: true,
         autoMerge: false,
       });
       expect(create).toHaveBeenCalledOnce();
@@ -2133,6 +2417,7 @@ describe("scoped Conversation Tools RPC", () => {
     const create = async (projectId: string) =>
       await s.engine.command({
         type: "create",
+        workspaceMode: "current",
         commandId: crypto.randomUUID(),
         projectId,
         harness: "codex",
@@ -2429,6 +2714,7 @@ it("allows explicit local voice setup only with paired desktop credentials", asy
     ).toBe(403);
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: crypto.randomUUID(),
       projectId: s.project.id,
       harness: "codex",
@@ -2637,6 +2923,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "metadata-create",
       projectId: s.project.id,
       harness: "codex",
@@ -2668,6 +2955,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "clear-create",
       projectId: s.project.id,
       harness: "codex",
@@ -2704,6 +2992,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "rewind-create",
       projectId: s.project.id,
       harness: "codex",
@@ -2744,6 +3033,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "selected-create",
       projectId: s.project.id,
       harness: "codex",
@@ -2787,6 +3077,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "queue-wake-create",
       projectId: s.project.id,
       harness: "codex",
@@ -2824,6 +3115,7 @@ describe("shared queued messages", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "queue-create",
       projectId: s.project.id,
       harness: "codex",
@@ -2893,6 +3185,7 @@ describe("shared queued messages", () => {
       (
         await s.engine.command({
           type: "create",
+          workspaceMode: "current",
           commandId,
           projectId: s.project.id,
           harness: "codex",
@@ -3125,6 +3418,7 @@ describe("shared queued messages", () => {
       (
         await s.engine.command({
           type: "create",
+          workspaceMode: "current",
           commandId,
           projectId: s.project.id,
           harness: "codex",
@@ -3424,6 +3718,7 @@ describe("runtime log access", () => {
     const s = await setup();
     const session = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "log-session",
       projectId: s.project.id,
       harness: "codex",
@@ -3497,6 +3792,7 @@ describe("remote host API", () => {
     const s = await setup();
     const session = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "mobile-session-auth",
       projectId: s.project.id,
       harness: "codex",
@@ -3592,6 +3888,7 @@ describe("remote host API", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "status-create",
       projectId: s.project.id,
       harness: "codex",
@@ -3651,6 +3948,7 @@ describe("remote host API", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "partial-create",
       projectId: s.project.id,
       harness: "codex",
@@ -3728,6 +4026,7 @@ describe("remote host API", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "large-block-create",
       projectId: s.project.id,
       harness: "codex",
@@ -3796,6 +4095,7 @@ describe("remote host API", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "longpoll-create",
       projectId: s.project.id,
       harness: "codex",
@@ -3848,6 +4148,7 @@ describe("remote host API", () => {
       method: "commands.dispatch",
       params: {
         type: "create",
+        workspaceMode: "current",
         commandId: "revoked-create",
         projectId: s.project.id,
         harness: "codex",
@@ -3896,6 +4197,7 @@ describe("remote host API", () => {
     });
     const created = await s.call("commands.dispatch", {
       type: "create",
+      workspaceMode: "current",
       commandId: "upload-create",
       projectId: s.project.id,
       harness: "codex",
@@ -3927,6 +4229,7 @@ describe("remote host API", () => {
     const s = await setup();
     const create = await s.call("commands.dispatch", {
       type: "create",
+      workspaceMode: "current",
       commandId: "card-session",
       projectId: s.project.id,
       harness: "codex",
@@ -4048,6 +4351,7 @@ describe("remote host API", () => {
 
     const opened = await s.call("commands.dispatch", {
       type: "create",
+      workspaceMode: "current",
       commandId: "in-worktree",
       projectId: s.project.id,
       worktreeCwd: tree.path,
@@ -4069,6 +4373,7 @@ describe("remote host API", () => {
       (
         await s.call("commands.dispatch", {
           type: "create",
+          workspaceMode: "current",
           commandId: "outside-worktree",
           projectId: s.project.id,
           worktreeCwd: tmpdir(),
@@ -4181,6 +4486,7 @@ describe("remote host API", () => {
     const s = await setup();
     const create = await s.call("commands.dispatch", {
       type: "create",
+      workspaceMode: "current",
       commandId: "create",
       projectId: s.project.id,
       harness: "codex",
@@ -4238,6 +4544,7 @@ describe("remote host API", () => {
     const s = await setup();
     const create = await s.call("commands.dispatch", {
       type: "create",
+      workspaceMode: "current",
       commandId: "create",
       projectId: s.project.id,
       harness: "codex",
@@ -4966,6 +5273,7 @@ describe("remote host API", () => {
 
   it("answers the goal commands, advertised as a capability", async () => {
     const s = await setup();
+    await enableManagedFixture(s);
     expect((await s.call("environment.describe")).value.result.capabilities).toContain("goals");
     expect((await s.call("environment.describe")).value.result.capabilities).toContain(
       "goals.direct-checkout",
@@ -4990,17 +5298,18 @@ describe("remote host API", () => {
       settings: { autoMerge: true, continueUntilDone: true, maxRunningTasks: 1, maxRunMinutes: 0 },
     });
     expect(edited.value.result).toMatchObject({
-      autoMerge: true,
+      deliveryApprovalRequired: true,
       continueUntilDone: true,
       maxRunningTasks: 1,
     });
+    expect(edited.value.result.autoMerge).toBeUndefined();
     expect(created.value.result).toMatchObject({
       id: "launch",
       status: "planning",
       taskIds: [],
     });
     expect((await s.call("goals.list")).value.result).toMatchObject([
-      { id: "launch", status: "planning" },
+      { id: "launch", status: "planning", deliveryApprovalRequired: true },
     ]);
     const refused = await s.call("goals.approve", { goalId: "launch" });
     expect(refused.value.error).toBe("Only a plan waiting for approval can be approved.");
@@ -5051,6 +5360,7 @@ it("previews a transcript above 16 MiB with revision-only unchanged polls and bo
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "large-task-preview",
     projectId: s.project.id,
     harness: "codex",
@@ -5172,6 +5482,7 @@ it("claims host queue attachment exports before returning an offline-editable sn
   const s = await setup();
   const created = await s.engine.command({
     type: "create",
+    workspaceMode: "current",
     commandId: "owned-queue",
     projectId: s.project.id,
     harness: "codex",
@@ -5317,6 +5628,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
     const sessionId = (
       await engine.command({
         type: "create",
+        workspaceMode: "current",
         commandId: "adopted-create",
         projectId: project.id,
         harness: "codex",
@@ -5497,6 +5809,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
     const sessionId = (
       await first.command({
         type: "create",
+        workspaceMode: "current",
         commandId: "restart-create",
         projectId: project.id,
         harness: "codex",

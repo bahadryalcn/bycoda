@@ -20,11 +20,9 @@ import { HostTasks, MAX_RUNNING_TASKS, MAX_REPAIR_ATTEMPTS } from "./tasks";
 import type { HostTask } from "../src/features/tasks/model/hostTasks";
 import * as processExecution from "../src/shared/lib/processExecution.node";
 import * as hostShell from "./shell";
-import {
-  currentHostGitRepository,
-  hostGitRepositoryKey,
-  withHostGitMutation,
-} from "./git-mutations";
+import { writerWorkspaces } from "./writer-workspaces.test-support";
+import type { TaskWorkspaceServices } from "./task-workspace-runtime";
+import { withHostGitMutation } from "./git-mutations";
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -155,6 +153,7 @@ async function setup(verifyTimeoutMs?: number) {
     git(added.cwd, "checkout", "-q", "-b", "main");
     git(added.cwd, "config", "user.name", "Test");
     git(added.cwd, "config", "user.email", "test@example.test");
+    git(added.cwd, "config", "commit.gpgsign", "false");
     // A Windows runner defaults to autocrlf=true, which rewrites the files these tests read back.
     git(added.cwd, "config", "core.autocrlf", "false");
     writeFileSync(join(added.cwd, "file.txt"), "initial\n");
@@ -170,11 +169,29 @@ async function setup(verifyTimeoutMs?: number) {
     finish: () => void;
     fail: (error: Error) => void;
   }> = [];
+  const readinessByRun = new Map<
+    string,
+    { promise: Promise<void>; resolve: () => void; started: boolean }
+  >();
+  const providerReadiness = (sessionId: string, runId: string | undefined) => {
+    if (!runId) throw new Error(`Accepted fixture session ${sessionId} has no run identity`);
+    const key = JSON.stringify([sessionId, runId]);
+    let ready = readinessByRun.get(key);
+    if (!ready) {
+      const signal = Promise.withResolvers<void>();
+      ready = { promise: signal.promise, resolve: () => signal.resolve(), started: false };
+      readinessByRun.set(key, ready);
+    }
+    return ready;
+  };
   const provider: HostProvider = {
     send: vi.fn(async (input) => {
       const runId = (await store.session(input.sessionId)).runId;
       return new Promise<void>((resolve, reject) => {
         turns.push({ input, runId, finish: resolve, fail: reject });
+        const ready = providerReadiness(input.sessionId, runId);
+        ready.started = true;
+        ready.resolve();
       });
     }),
     cancel: vi.fn(async (sessionId) => {
@@ -188,22 +205,52 @@ async function setup(verifyTimeoutMs?: number) {
     answer: vi.fn(),
   };
   const engine = new HostEngine(store, { claude: provider });
+  // Stub legacy per-file checkpoints for direct-mode scenarios. Managed runs
+  // below attach real turn-history capture through writerWorkspaces.
+  // Direct held-checkpoint tests replace these stubs with their barriers.
+  vi.spyOn(engine.checkpoints, "begin").mockResolvedValue(undefined);
+  vi.spyOn(engine.checkpoints, "finish").mockResolvedValue(undefined);
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
-  const tasks = new HostTasks(store, engine, () => clock.now, verifyTimeoutMs);
+  const workspaces = writerWorkspaces(directory, async (id) => (await store.project(id)).cwd);
+  await workspaces.attachEngine(engine);
+  const delivery = { review: vi.fn(), merge: vi.fn(), publish: vi.fn(), recover: vi.fn() };
+  const managed = {
+    ...workspaces,
+    delivery,
+    retargetWorkspace: async (
+      request: { workspaceId: string; targetBranchRef: string },
+      owner: { authorizationId: string },
+    ) => {
+      if (!owner.authorizationId) throw new Error("Owner proof required");
+      const workspace = workspaces.rows.get(request.workspaceId)!;
+      const updated = {
+        ...workspace,
+        targetBranchRef: request.targetBranchRef,
+        revision: workspace.revision + 1,
+      };
+      workspaces.rows.set(workspace.id, updated);
+      return updated;
+    },
+  } as unknown as TaskWorkspaceServices;
+  const tasks = new HostTasks(store, engine, () => clock.now, verifyTimeoutMs, managed);
   const providersStarted = async () => {
-    // Checkpoint capture is serialized across sessions, so the session checked
-    // first may be the last to launch. Each check therefore gets the readiness
-    // budget for every running peer, not just its own.
+    // A saved running record precedes serialized Git capture and provider.send.
+    // Await the exact provider boundary, while still exposing failed admission
+    // through the production run-completion promise. The test budget bounds both.
     const running = (await store.sessions()).filter((entry) => entry.status === "running");
     for (const value of running) {
-      await vi.waitFor(
-        () => {
-          expect(turns.findLast((turn) => turn.input.sessionId === value.session.id)?.runId).toBe(
-            value.runId,
+      const ready = providerReadiness(value.session.id, value.runId);
+      await Promise.race([
+        ready.promise,
+        engine.waitForRun(value.session.id, value.runId).then(async () => {
+          if (ready.started) return;
+          const latest = await store.session(value.session.id);
+          throw new Error(
+            `Accepted fixture run ${value.session.id}/${value.runId} ended before provider.send; ` +
+              `status=${latest.status}, runId=${latest.runId}, error=${latest.error ?? "none"}`,
           );
-        },
-        { timeout: 10000 * running.length },
-      );
+        }),
+      ]);
     }
   };
   const tick = tasks.tick.bind(tasks);
@@ -244,16 +291,18 @@ async function setup(verifyTimeoutMs?: number) {
     ...overrides,
   });
   const task = async (id = "main") => (await tasks.list()).find((entry) => entry.id === id)!;
-  const settled = (sessionId: string) =>
-    vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
-      timeout: 30000,
-    });
+  const settled = async (sessionId: string, ownedRunId?: string) => {
+    const runId = ownedRunId ?? (await store.session(sessionId)).runId;
+    await engine.waitForRun(sessionId, runId);
+    expect((await store.session(sessionId)).status).toBe("idle");
+  };
   const interrupt = async (
     sessionId: string,
     note = "Host restarted. This turn was interrupted; inspect its work before continuing.",
   ) => {
-    turns.findLast((turn) => turn.input.sessionId === sessionId)!.finish();
-    await settled(sessionId);
+    const turn = turns.findLast((entry) => entry.input.sessionId === sessionId)!;
+    turn.finish();
+    await settled(sessionId, turn.runId);
     const session = await store.session(sessionId);
     await store.save(
       {
@@ -290,19 +339,36 @@ async function setup(verifyTimeoutMs?: number) {
     await tasks.idle();
   };
   /** Ends the requested session turn cleanly and settles it. */
-  const finish = async (sessionId: string, reply?: string) => {
+  const finish = async (sessionId: string, reply?: string, commitWork = true) => {
     await providersStarted();
     const turn = turns.findLast((turn) => turn.input.sessionId === sessionId)!;
+    const worker = (await tasks.list()).find((entry) => entry.sessionId === sessionId);
+    if (commitWork && worker?.branch && worker.worktreeCwd) {
+      // Simulate the worker's instructed commit before handoff. The Host must
+      // never create that commit on behalf of an implementation worker.
+      const paths = git(
+        worker.worktreeCwd,
+        "ls-files",
+        "--modified",
+        "--others",
+        "--exclude-standard",
+      )
+        .split("\n")
+        .filter(Boolean);
+      if (paths.length) {
+        git(worker.worktreeCwd, "add", "--", ...paths);
+        git(worker.worktreeCwd, "commit", "-qm", worker.title);
+      }
+    }
     if (reply !== undefined) {
       turn.input.onEvent({ type: "message.delta", text: reply });
       turn.input.onEvent({ type: "message.completed" });
     }
     turn.finish();
-    await settled(sessionId);
+    await settled(sessionId, turn.runId);
     await advance();
   };
-  /** Runs a task to a clean finish, leaving it in review. `files` is what
-   * the agent leaves uncommitted in its working copy. */
+  /** Runs a task to a clean finish, simulating its worker's scoped commit. */
   const review = async (
     overrides: Record<string, unknown> = {},
     files: Record<string, string> = {},
@@ -320,6 +386,40 @@ async function setup(verifyTimeoutMs?: number) {
     await vi.waitFor(() => expect(turns.at(-1)!.input.text).toContain("VERDICT: PASS"));
     return await task(started.id);
   };
+  /** Orchestrator fixture: the separately tested delivery service owns Git. */
+  const approve = async (id = "main") => {
+    const result = await task(id);
+    const workspace = workspaces.rows.get(result.workspaceId!)!;
+    const source = git(result.worktreeCwd!, "rev-parse", "HEAD");
+    const target = result.deliveryCwd ?? (await store.project(result.projectId)).cwd;
+    delivery.review.mockResolvedValueOnce({
+      workspaceId: workspace.id,
+      expectedRevision: workspace.revision,
+      token: "fixture-owner-plan",
+    });
+    const plan = await tasks.reviewDelivery(id);
+    delivery.merge.mockImplementationOnce(async () => {
+      git(target, "merge", "--no-ff", "--no-edit", source);
+      const targetHead = git(target, "rev-parse", "HEAD");
+      workspaces.rows.set(workspace.id, {
+        ...workspace,
+        state: "merged",
+        revision: workspace.revision + 1,
+        deliveredCommit: targetHead,
+      });
+      return { targetHead };
+    });
+    return await tasks.mergeDelivery(
+      id,
+      {
+        workspaceId: workspace.id,
+        expectedRevision: workspace.revision,
+        idempotencyKey: `approve-${id}`,
+        planToken: plan.token,
+      },
+      { ownerId: "test-owner", authorizationId: "test-transport-proof" },
+    );
+  };
   return {
     directory,
     store,
@@ -328,6 +428,9 @@ async function setup(verifyTimeoutMs?: number) {
     turns,
     clock,
     tasks,
+    managed,
+    workspaces,
+    delivery,
     input,
     task,
     settled,
@@ -335,6 +438,7 @@ async function setup(verifyTimeoutMs?: number) {
     run,
     review,
     reviewing,
+    approve,
     advance,
     finish,
     addProject,
@@ -585,111 +689,81 @@ describe("explicit task workspaces and owner controls", () => {
     }
     expect(calls).toEqual(["main-checkout", "independent", "linked-checkout"]);
   });
-  it.each([
-    ["recoverMerge", "recoverMergeSerialized"],
-    ["deliver", "deliverSerialized"],
-    ["cleanupDelivered", "cleanupDeliveredSerialized"],
-  ] as const)(
-    "holds the complete %s operation in the shared Git mutation lane",
-    async (method, serialized) => {
-      const s = await setup();
-      const repo = await s.addRepo(`lease-${method}`);
-      const linkedPath = join(s.directory, `linked-${method}`);
-      git(repo.cwd, "worktree", "add", "-q", "-b", "linked", linkedPath);
-      const linked = await s.store.addProject(linkedPath, "linked");
-      const task = await s.tasks.save(await s.input({ projectId: linked.id, isolate: false }));
-      const blocker = Promise.withResolvers<void>();
-      const blocked = Promise.withResolvers<void>();
-      const operationHeld = Promise.withResolvers<void>();
-      const operationEntered = Promise.withResolvers<void>();
-      const target = s.tasks as unknown as Record<
-        typeof method | typeof serialized,
-        (task: HostTask, arg: number) => Promise<unknown>
-      >;
-      const identity = await hostGitRepositoryKey(repo.cwd);
-      const spy = vi.spyOn(target, serialized).mockImplementation(async () => {
-        expect(currentHostGitRepository()).toBe(identity);
-        operationEntered.resolve();
-        await operationHeld.promise;
-        return task;
-      });
-      const blocking = withHostGitMutation(repo.cwd, async () => {
-        blocked.resolve();
-        await blocker.promise;
-      });
-      await blocked.promise;
-      const operation = target[method](task, s.clock.now);
-      let externalEntered = false;
-      let external: Promise<void> | undefined;
-      try {
-        // Admission is ordered: this unrelated fence proves the task's lease has
-        // joined the queue without relying on a timer or scheduler speed.
-        await withHostGitMutation(s.directory, async () => undefined);
-        expect(spy).not.toHaveBeenCalled();
-        blocker.resolve();
-        await operationEntered.promise;
-        external = withHostGitMutation(repo.cwd, async () => {
-          externalEntered = true;
-        });
-        await withHostGitMutation(s.directory, async () => undefined);
-        expect(externalEntered).toBe(false);
-      } finally {
-        blocker.resolve();
-        operationHeld.resolve();
-        await Promise.all([blocking, operation, external]);
-        spy.mockRestore();
-      }
-      expect(externalEntered).toBe(true);
-    },
-  );
-  it.each([
-    ["recoverMerge", "recoverMergeSerialized"],
-    ["deliver", "deliverSerialized"],
-    ["cleanupDelivered", "cleanupDeliveredSerialized"],
-  ] as const)(
-    "rechecks persisted ownership before a queued %s operation starts",
-    async (method, serialized) => {
-      const s = await setup();
-      const task = await s.tasks.save(await s.input());
-      const cwd = (await s.store.project(task.projectId)).cwd;
-      const entered = Promise.withResolvers<void>();
-      const held = Promise.withResolvers<void>();
-      const target = s.tasks as unknown as Record<
-        typeof method | typeof serialized,
-        (task: HostTask, arg: number) => Promise<unknown>
-      >;
-      const spy = vi.spyOn(target, serialized).mockResolvedValue(task);
-      const blocking = withHostGitMutation(cwd, async () => {
-        entered.resolve();
-        await held.promise;
-      });
+  it("awaits the shared delivery receipt while independent task work progresses", async () => {
+    const s = await setup();
+    const repo = await s.addRepo("pending-delivery");
+    const reviewed = await s.review({ projectId: repo.id }, { "result.txt": "result\n" });
+    const workspace = s.workspaces.rows.get(reviewed.workspaceId!)!;
+    const entered = Promise.withResolvers<void>();
+    const receipt = Promise.withResolvers<{ targetHead: string }>();
+    s.delivery.merge.mockImplementationOnce(async () => {
+      entered.resolve();
+      return await receipt.promise;
+    });
+    const request = {
+      workspaceId: workspace.id,
+      expectedRevision: workspace.revision,
+      idempotencyKey: "owner-delivery",
+      planToken: "owner-plan",
+    };
+    const owner = { ownerId: "owner", authorizationId: "transport-proof" };
+    const pending = s.tasks.mergeDelivery(reviewed.id, request, owner);
+    try {
       await entered.promise;
-      const operation = target[method](task, s.clock.now);
-      await withHostGitMutation(s.directory, async () => undefined);
-      // updatedAt deliberately stays equal: timestamp checks would admit stale work.
-      await s.store.db
-        .prepare(
-          "UPDATE tasks SET value=json_set(value, '$.title', 'Changed while queued', '$.status', 'blocked') WHERE id=?",
-        )
-        .run(task.id);
-      try {
-        expect(spy).not.toHaveBeenCalled();
-      } finally {
-        held.resolve();
-        await Promise.all([blocking, operation]);
-      }
-      try {
-        expect(spy).not.toHaveBeenCalled();
-        expect(await s.tasks.get(task.id)).toMatchObject({
-          title: "Changed while queued",
-          status: "blocked",
-          updatedAt: task.updatedAt,
-        });
-      } finally {
-        spy.mockRestore();
-      }
-    },
-  );
+      expect((await s.task()).status).toBe("review");
+      expect((await s.task()).merged).toBeUndefined();
+      await s.tasks.save(s.input({ id: "independent" }));
+      await s.tasks.tick();
+      expect((await s.task("independent")).status).toBe("running");
+      expect(s.turns).toHaveLength(2);
+      expect(s.delivery.merge).toHaveBeenCalledWith(request, owner);
+    } finally {
+      receipt.resolve({ targetHead: "a".repeat(40) });
+      await pending;
+    }
+    expect(await s.task()).toMatchObject({
+      status: "done",
+      merged: true,
+      deliveredCommit: "a".repeat(40),
+    });
+  });
+  it("retains the delivery receipt without completing a task whose workspace ownership changed", async () => {
+    const s = await setup();
+    const repo = await s.addRepo("changed-delivery-owner");
+    const reviewed = await s.review({ projectId: repo.id }, { "result.txt": "result\n" });
+    const workspace = s.workspaces.rows.get(reviewed.workspaceId!)!;
+    const entered = Promise.withResolvers<void>();
+    const receipt = Promise.withResolvers<{ targetHead: string }>();
+    s.delivery.merge.mockImplementationOnce(async () => {
+      entered.resolve();
+      return await receipt.promise;
+    });
+    const pending = s.tasks
+      .mergeDelivery(
+        reviewed.id,
+        {
+          workspaceId: workspace.id,
+          expectedRevision: workspace.revision,
+          idempotencyKey: "old-owner-delivery",
+          planToken: "owner-plan",
+        },
+        { ownerId: "owner", authorizationId: "transport-proof" },
+      )
+      .catch((error) => error);
+    await entered.promise;
+    await s.store.db
+      .prepare(
+        "UPDATE tasks SET value=json_set(value, '$.workspaceId', 'another-workspace') WHERE id=?",
+      )
+      .run(reviewed.id);
+    receipt.resolve({ targetHead: "a".repeat(40) });
+    expect(await pending).toMatchObject({
+      message: expect.stringContaining("Task changed during delivery"),
+    });
+    expect(await s.task()).toMatchObject({ status: "review", workspaceId: "another-workspace" });
+    expect((await s.task()).merged).toBeUndefined();
+    expect(existsSync(reviewed.worktreeCwd!)).toBe(true);
+  });
   it("prepares independent tasks without waiting for an earlier held working copy", async () => {
     const { tasks, input, turns } = await setup();
     await tasks.limits.save({ maxRunningTasks: 2 });
@@ -762,34 +836,24 @@ describe("explicit task workspaces and owner controls", () => {
     });
     expect(turns).toHaveLength(0);
   });
-  it("protects a delivered worktree retained by a todo task outside the scheduler subset", async () => {
+  it("retains reviewed work and branches while another todo task references the checkout", async () => {
     const s = await setup();
     const project = await s.addRepo("todo-ownership");
-    const current = await s.run({ projectId: project.id, autoMerge: true, review: false });
+    const current = await s.run({ projectId: project.id, autoMerge: true });
     const path = current.worktreeCwd!;
-    const held = await s.tasks.save(
-      await s.input({ id: "held", projectId: project.id, status: "todo", isolate: false }),
+    await s.tasks.save(
+      s.input({ id: "held", projectId: project.id, status: "todo", isolate: false }),
     );
     await s.store.db
-      .prepare("UPDATE tasks SET value=json_set(value, '$.worktreeCwd', ?) WHERE id=?")
-      .run(path, held.id);
-    writeFileSync(join(path, "file.txt"), "completed work retained by another task\n");
+      .prepare("UPDATE tasks SET value=json_set(value, '$.worktreeCwd', ?) WHERE id='held'")
+      .run(path);
+    writeFileSync(join(path, "file.txt"), "completed work\n");
     await s.finish(current.sessionId!);
-    s.clock.now += 3 * MINUTE;
-    await s.tasks.tick();
-    await s.tasks.idle();
-    expect((await s.tasks.get(current.id))?.status).toBe("done");
-    expect((await s.tasks.get(current.id))?.cleanupError).toContain("still in use");
+    await s.advance();
+    expect((await s.tasks.get(current.id))?.status).toBe("review");
+    expect((await s.tasks.get("held"))?.worktreeCwd).toBe(path);
     expect(existsSync(path)).toBe(true);
-    expect((await s.tasks.get(held.id))?.worktreeCwd).toBe(path);
-    await s.store.db
-      .prepare("UPDATE tasks SET value=json_remove(value, '$.worktreeCwd') WHERE id=?")
-      .run(held.id);
-    s.clock.now += 3 * MINUTE;
-    await s.tasks.tick();
-    await s.tasks.idle();
-    expect((await s.tasks.get(current.id))?.worktreeCwd).toBeUndefined();
-    expect(existsSync(path)).toBe(false);
+    expect(git(project.cwd, "rev-parse", current.branch!)).toBeTruthy();
   });
   it("never publishes a transactional change etag across rollback and revision reuse", async () => {
     const { tasks, input, store } = await setup();
@@ -917,47 +981,35 @@ describe("explicit task workspaces and owner controls", () => {
     expect(results.filter((item) => item.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((item) => item.status === "rejected")).toHaveLength(1);
   });
-  it("delivers into a selected integration checkout while preserving dirty main", async () => {
-    const { addRepo, review, tasks, input } = await setup();
-    const repo = await addRepo("selected");
-    const integration = join(repo.cwd, "..", "integration");
-    git(repo.cwd, "worktree", "add", "-q", "-b", "goal/settings", integration, "HEAD");
-    writeFileSync(join(repo.cwd, "file.txt"), "owner work\n");
-    const before = git(repo.cwd, "status", "--porcelain");
-    const done = await review(
-      {
-        projectId: repo.id,
-        workspace: {
-          checkoutCwd: integration,
-          baseBranch: "goal/settings",
-          branchName: "mc/selected",
+  it(
+    "retains the selected integration target for explicit reviewed delivery and preserves dirty main",
+    async () => {
+      const { addRepo, review, tasks } = await setup();
+      const repo = await addRepo("selected");
+      const integration = join(repo.cwd, "..", "integration");
+      git(repo.cwd, "worktree", "add", "-q", "-b", "goal/settings", integration, "HEAD");
+      writeFileSync(join(repo.cwd, "file.txt"), "owner work\n");
+      const before = git(repo.cwd, "status", "--porcelain");
+      const result = await review(
+        {
+          projectId: repo.id,
+          workspace: { checkoutCwd: integration, baseBranch: "goal/settings" },
         },
-      },
-      { "result.txt": "task result\n" },
-    );
-    expect(done).toMatchObject({
-      baseBranch: "goal/settings",
-      branch: "mc/selected",
-      deliveryCwd: integration,
-    });
-    const delivered = await tasks.move(done.id, "done");
-    expect(delivered.deliveredCommit).toBe(git(integration, "rev-parse", "HEAD"));
-    expect(readFileSync(join(integration, "result.txt"), "utf8")).toBe("task result\n");
-    expect(git(repo.cwd, "status", "--porcelain")).toBe(before);
-    expect(existsSync(integration)).toBe(true);
-    await tasks.save(
-      input({
-        id: "wrong-base",
-        projectId: repo.id,
-        dependsOn: [done.id],
-        workspace: { checkoutCwd: repo.cwd, baseBranch: "main" },
-      }),
-    );
-    await tasks.tick();
-    expect((await tasks.get("wrong-base"))?.error).toContain(
-      "does not contain completed dependency",
-    );
-  }, 60000);
+        { "result.txt": "task result\n" },
+      );
+      expect(result).toMatchObject({
+        baseBranch: "goal/settings",
+        deliveryCwd: integration,
+        status: "review",
+      });
+      expect(result.branch).toMatch(/^bycoda\/t\//);
+      await expect(tasks.move(result.id, "done")).rejects.toThrow(/review|approval|plan/i);
+      expect(existsSync(join(integration, "result.txt"))).toBe(false);
+      expect(git(repo.cwd, "status", "--porcelain")).toBe(before);
+      expect(existsSync(integration)).toBe(true);
+    },
+    SHELL_TEST_MS,
+  );
   it("keeps a direct project run free of contradictory worktree instructions", async () => {
     const { addRepo, run, turns } = await setup();
     const repo = await addRepo("default-direct");
@@ -966,22 +1018,24 @@ describe("explicit task workspaces and owner controls", () => {
     expect(turns[0].input.cwd).toBe(repo.cwd);
     expect(turns[0].input.text).not.toContain("a separate checkout");
   }, 60000);
-  it("retains a removed delivery worktree error on the reviewed result", async () => {
-    const { addRepo, review, tasks } = await setup();
-    const repo = await addRepo("removed-target");
-    const checkout = join(repo.cwd, "..", "temporary-target");
-    git(repo.cwd, "worktree", "add", "-q", "-b", "goal/temporary", checkout, "HEAD");
-    const result = await review({
-      projectId: repo.id,
-      workspace: { checkoutCwd: checkout, baseBranch: "goal/temporary" },
-    });
-    git(repo.cwd, "worktree", "remove", checkout);
-    await expect(tasks.move(result.id, "done")).rejects.toThrow("available worktree");
-    expect(await tasks.get(result.id)).toMatchObject({
-      status: "review",
-      mergeError: expect.stringContaining("available worktree"),
-    });
-  }, 60000);
+  it(
+    "never uses a board move to deliver after the selected integration checkout is removed",
+    async () => {
+      const { addRepo, review, tasks } = await setup();
+      const repo = await addRepo("removed-target");
+      const checkout = join(repo.cwd, "..", "temporary-target");
+      git(repo.cwd, "worktree", "add", "-q", "-b", "goal/temporary", checkout, "HEAD");
+      const result = await review({
+        projectId: repo.id,
+        workspace: { checkoutCwd: checkout, baseBranch: "goal/temporary" },
+      });
+      git(repo.cwd, "worktree", "remove", checkout);
+      await expect(tasks.move(result.id, "done")).rejects.toThrow(/review|approval|plan/i);
+      expect((await tasks.get(result.id))?.status).toBe("review");
+      expect(existsSync(result.worktreeCwd!)).toBe(true);
+    },
+    SHELL_TEST_MS,
+  );
   it("runs direct tasks concurrently in the shared owner worktree and retains it", async () => {
     const { addRepo, input, tasks, turns, finish } = await setup();
     const repo = await addRepo("direct");
@@ -1092,7 +1146,7 @@ describe("explicit task workspaces and owner controls", () => {
     expect((await tasks.list()).filter((task) => task.status === "running")).toHaveLength(1);
   });
   it("retargets a reviewed goal result and its pending tasks without rerunning", async () => {
-    const { addRepo, review, tasks, input, store, turns } = await setup();
+    const { addRepo, review, tasks, input, store, turns, approve } = await setup();
     const repo = await addRepo("retarget");
     await store.db.exec(
       "CREATE TABLE IF NOT EXISTS goals (id TEXT PRIMARY KEY, value TEXT NOT NULL)",
@@ -1110,10 +1164,15 @@ describe("explicit task workspaces and owner controls", () => {
     writeFileSync(join(repo.cwd, "file.txt"), "ongoing owner edits\n");
     const checkout = join(repo.cwd, "..", "delivery");
     git(repo.cwd, "worktree", "add", "-q", "-b", "goal/delivery", checkout, "HEAD");
-    await tasks.retarget(reviewed.id, { checkoutCwd: checkout, baseBranch: "goal/delivery" });
+    await tasks.retarget(
+      reviewed.id,
+      { checkoutCwd: checkout, baseBranch: "goal/delivery" },
+      undefined,
+      { ownerId: "test-owner", authorizationId: "transport-proof" },
+    );
     expect(turns).toHaveLength(1);
     expect((await tasks.get("next"))?.workspace).toMatchObject({ checkoutCwd: checkout });
-    await tasks.move(reviewed.id, "done");
+    await approve(reviewed.id);
     await tasks.tick();
     expect(await tasks.get("next")).toMatchObject({
       status: "running",
@@ -1308,7 +1367,8 @@ describe("host tasks", () => {
   it(
     "resumes an interrupted task in its retained session and worktree before releasing dependencies",
     async () => {
-      const { tasks, run, task, clock, interrupt, turns, input, addRepo, finish } = await setup();
+      const { tasks, run, task, clock, interrupt, turns, input, addRepo, finish, approve } =
+        await setup();
       const repo = await addRepo("recover");
       const started = await run({ projectId: repo.id });
       writeFileSync(join(started.worktreeCwd!, "progress.txt"), "keep this work");
@@ -1331,7 +1391,7 @@ describe("host tasks", () => {
       );
       expect((await task("dependent")).status).toBe("queued");
       await finish(started.sessionId!);
-      await tasks.move(started.id, "done");
+      await approve(started.id);
       await tasks.tick();
       expect((await task("dependent")).status).toBe("running");
     },
@@ -1496,9 +1556,9 @@ describe("host tasks", () => {
     expect((await task()).needsInput).toBeUndefined();
   });
   it("approves a reviewed task, and runs a reviewed or done one again", async () => {
-    const { tasks, review, task, turns, store, addRepo } = await setup();
+    const { tasks, review, task, turns, store, addRepo, approve } = await setup();
     const reviewed = await review({ projectId: (await addRepo("again-cleanup")).id });
-    expect((await tasks.move("main", "done")).status).toBe("done");
+    expect((await approve()).status).toBe("done");
     await store.db.prepare("UPDATE tasks SET value=? WHERE id='main'").run(
       JSON.stringify({
         ...(await task()),
@@ -1548,7 +1608,7 @@ describe("host tasks", () => {
     expect((await task()).sessionId).not.toBe(started.sessionId);
   });
   it("refuses moves the board does not offer", async () => {
-    const { tasks, input, run, review, addRepo } = await setup();
+    const { tasks, input, run, review, addRepo, approve } = await setup();
     await tasks.save(input({ id: "waiting" }));
     for (const to of ["running", "verifying", "review", "done", "blocked", "queued"])
       await expect(tasks.move("waiting", to)).rejects.toThrow(
@@ -1571,7 +1631,7 @@ describe("host tasks", () => {
       await expect(tasks.move("reviewed", to)).rejects.toThrow(
         `A review task cannot be moved to ${to}.`,
       );
-    await tasks.move("reviewed", "done");
+    await approve("reviewed");
     for (const to of ["running", "verifying", "review", "blocked"])
       await expect(tasks.move("reviewed", to)).rejects.toThrow(
         `A done task cannot be moved to ${to}.`,
@@ -1757,7 +1817,7 @@ describe("a task on its own branch", () => {
       baseBranch: "main",
       baseCommit: head,
     });
-    expect(started.branch).toMatch(/^mc\/[a-z0-9]{8}$/);
+    expect(started.branch).toMatch(/^bycoda\/t\/workspace-\d+$/);
     expect(started.worktreeCwd).not.toBe(repo.cwd);
     expect(turns[0].input.cwd).toBe(started.worktreeCwd);
     // The agent is told to stay out of the project folder.
@@ -1778,24 +1838,22 @@ describe("a task on its own branch", () => {
     expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
     expect(git(repo.cwd, "status", "--porcelain")).toBe("");
   });
-  it("commits what the agent left uncommitted on the task branch", async () => {
-    const { review, addRepo } = await setup();
-    const repo = await addRepo("repo");
+  it("previews uncommitted worker output and blocks handoff without staging or committing it", async () => {
+    const { run, addRepo, finish, task } = await setup();
+    const repo = await addRepo("uncommitted-output");
     const head = git(repo.cwd, "rev-parse", "HEAD");
-    const reviewed = await review(
-      { projectId: repo.id },
-      { "report.md": "# Report\n", "file.txt": "changed\n" },
-    );
-    expect(reviewed.status).toBe("review");
-    expect(git(reviewed.worktreeCwd!, "status", "--porcelain")).toBe("");
-    expect(git(repo.cwd, "log", "-1", "--format=%s", reviewed.branch!)).toBe("Ship the report");
-    expect(reviewed.diffStat).toContain("report.md");
-    expect(reviewed.diffStat).toContain("2 files changed");
-    // Nothing reached the project.
+    const started = await run({ projectId: repo.id });
+    writeFileSync(join(started.worktreeCwd!, "report.md"), "# Report\n");
+    await finish(started.sessionId!, undefined, false);
+    expect(await task()).toMatchObject({
+      status: "blocked",
+      error: expect.stringContaining("Finalization requires review"),
+    });
+    expect(git(started.worktreeCwd!, "status", "--porcelain")).toBe("?? report.md");
+    expect(git(started.worktreeCwd!, "diff", "--cached", "--name-only")).toBe("");
+    expect(git(started.worktreeCwd!, "rev-parse", "HEAD")).toBe(head);
     expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
-    expect(git(repo.cwd, "status", "--porcelain")).toBe("");
     expect(existsSync(join(repo.cwd, "report.md"))).toBe(false);
-    expect(readFileSync(join(repo.cwd, "file.txt"), "utf8")).toBe("initial\n");
   });
   it("runs several tasks of one project at once, each on its branch", async () => {
     const { tasks, input, task, turns, addRepo, clock } = await setup();
@@ -1837,7 +1895,7 @@ describe("a task on its own branch", () => {
     await tasks.save(input({ projectId: project.id, isolate: true }));
     await tasks.tick();
     expect((await task()).status).toBe("blocked");
-    expect((await task()).error).toContain("Open the Git repository root");
+    expect((await task()).error).toMatch(/Git repository root/);
     expect((await task()).branch).toBeUndefined();
     expect((await task()).worktreeCwd).toBeUndefined();
     expect(turns).toHaveLength(0);
@@ -1852,7 +1910,7 @@ describe("a task on its own branch", () => {
       await tasks.save(input({ projectId: project.id, isolate: true }));
       await tasks.tick();
       expect((await task()).status).toBe("blocked");
-      expect((await task()).error).toContain("Cannot create an isolated task workspace");
+      expect((await task()).error).toMatch(/Git|git|repository/i);
       expect(turns).toHaveLength(0);
     },
   );
@@ -1876,94 +1934,95 @@ describe("a task on its own branch", () => {
       .run(JSON.stringify(legacy), saved.id);
     await tasks.tick();
     expect((await task()).status).toBe("blocked");
-    expect((await task()).error).toContain("Cannot create an isolated task workspace");
+    expect((await task()).error).toMatch(/Git|git|repository/i);
     expect(turns).toHaveLength(0);
   });
-  it("blocks a task when the project is not on a branch", async () => {
+  it.each([true, undefined])(
+    "preserves a legacy isolated task's commits and dirty checkout on resume (isolate=%s)",
+    async (isolate) => {
+      const f = await setup();
+      const repo = await f.addRepo("legacy-resume");
+      const cwd = join(f.directory, "legacy-worktree");
+      const branch = "legacy/interrupted-task";
+      git(repo.cwd, "worktree", "add", "-b", branch, cwd);
+      writeFileSync(join(cwd, "result.txt"), "completed work\n");
+      git(cwd, "add", "result.txt");
+      git(cwd, "commit", "-qm", "Preserve interrupted task work");
+      const head = git(cwd, "rev-parse", "HEAD");
+      writeFileSync(join(cwd, "file.txt"), "unfinished work\n");
+      const saved = await f.tasks.save(f.input({ projectId: repo.id }));
+      const legacy = { ...saved, isolate, workspaceId: undefined, branch, worktreeCwd: cwd };
+      await f.store.db
+        .prepare("UPDATE tasks SET value=? WHERE id=?")
+        .run(JSON.stringify(legacy), saved.id);
+      const resumed = await (
+        f.tasks as unknown as { workingCopy(task: HostTask): Promise<HostTask> }
+      ).workingCopy(legacy);
+      expect(resumed).toMatchObject({ branch, worktreeCwd: cwd });
+      expect(resumed.workspaceId).toBeUndefined();
+      expect(f.workspaces.registry.prepare).not.toHaveBeenCalled();
+      expect(git(cwd, "rev-parse", "HEAD")).toBe(head);
+      expect(readFileSync(join(cwd, "file.txt"), "utf8")).toBe("unfinished work\n");
+    },
+  );
+  it("creates a managed task from the committed policy base without switching a detached project", async () => {
     const { tasks, input, task, addRepo, turns } = await setup();
-    const repo = await addRepo("repo");
+    const repo = await addRepo("detached");
+    const head = git(repo.cwd, "rev-parse", "HEAD");
     git(repo.cwd, "checkout", "-q", "--detach");
     await tasks.save(input({ projectId: repo.id }));
     await tasks.tick();
-    expect((await task()).status).toBe("blocked");
-    expect((await task()).error).toContain("not on a branch");
-    expect(turns).toHaveLength(0);
+    expect((await task()).status).toBe("running");
+    expect(turns).toHaveLength(1);
+    expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
+    expect(git(repo.cwd, "branch", "--show-current")).toBe("");
   });
-  it("merges an approved task into its base branch and cleans up", async () => {
+  it("requires a delivery plan when a reviewed card is moved to Done", async () => {
     const { tasks, review, addRepo } = await setup();
-    const repo = await addRepo("repo");
+    const repo = await addRepo("board-move");
     const reviewed = await review({ projectId: repo.id }, { "report.md": "# Report\n" });
-    const done = await tasks.move("main", "done");
-    expect(done).toMatchObject({
-      status: "done",
-      merged: true,
-      branch: reviewed.branch,
-    });
-    expect(done.worktreeCwd).toBeUndefined();
-    expect(readFileSync(join(repo.cwd, "report.md"), "utf8")).toBe("# Report\n");
-    expect(git(repo.cwd, "symbolic-ref", "--short", "HEAD")).toBe("main");
-    // A merge commit, not a fast-forward.
-    expect(git(repo.cwd, "rev-list", "--parents", "-1", "HEAD").split(" ")).toHaveLength(3);
-    expect(git(repo.cwd, "branch", "--list", "mc/*")).toBe("");
-    expect(existsSync(reviewed.worktreeCwd!)).toBe(false);
-    // A merged task is deleted without discarding anything, and runs again on
-    // a new branch.
-    const again = await tasks.move("main", "queued");
-    expect(again.branch).toBeUndefined();
-    expect(again.merged).toBeUndefined();
-    await tasks.delete("main");
-    expect(await tasks.list()).toEqual([]);
+    const head = git(repo.cwd, "rev-parse", "HEAD");
+    await expect(tasks.move("main", "done")).rejects.toThrow(/review|approval|plan/i);
+    expect((await tasks.get("main"))?.status).toBe("review");
+    expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
+    expect(git(repo.cwd, "rev-parse", reviewed.branch!)).toBeTruthy();
+    expect(existsSync(reviewed.worktreeCwd!)).toBe(true);
   });
-  it("keeps a task in review when the project is on another branch", async () => {
+  it("keeps the reviewed result intact after the integration checkout changes branches", async () => {
     const { tasks, review, task, addRepo } = await setup();
-    const repo = await addRepo("repo");
+    const repo = await addRepo("moved-target");
     const reviewed = await review({ projectId: repo.id }, { "report.md": "# Report\n" });
     const head = git(repo.cwd, "rev-parse", "HEAD");
     git(repo.cwd, "checkout", "-q", "-b", "other");
-    await expect(tasks.move("main", "done")).rejects.toThrow(
-      "The project is on other. Check out main there, then merge again.",
-    );
+    await expect(tasks.move("main", "done")).rejects.toThrow(/review|approval|plan/i);
     expect((await task()).status).toBe("review");
     expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
-    expect(git(repo.cwd, "rev-parse", "--verify", reviewed.branch!)).toBeTruthy();
     expect(existsSync(reviewed.worktreeCwd!)).toBe(true);
-    git(repo.cwd, "checkout", "-q", "main");
-    const done = await tasks.move("main", "done");
-    expect(done.status).toBe("done");
-    expect(done.mergeError).toBeUndefined();
-    expect(existsSync(join(repo.cwd, "report.md"))).toBe(true);
+    expect(existsSync(join(repo.cwd, "report.md"))).toBe(false);
   });
-  it("repairs an owner-requested conflicting merge without changing the delivery checkout", async () => {
-    const { tasks, review, task, addRepo } = await setup();
-    const repo = await addRepo("repo");
-    const reviewed = await review({ projectId: repo.id }, { "file.txt": "from the agent\n" });
-    writeFileSync(join(repo.cwd, "file.txt"), "from the owner\n");
-    git(repo.cwd, "commit", "-q", "-am", "owner");
+  it("never starts integration repair from an unreviewed board move", async () => {
+    const { tasks, review, task, addRepo, turns } = await setup();
+    const repo = await addRepo("conflicting-target");
+    const reviewed = await review({ projectId: repo.id }, { "file.txt": "worker\n" });
+    writeFileSync(join(repo.cwd, "file.txt"), "owner\n");
+    git(repo.cwd, "commit", "-qam", "owner");
     const head = git(repo.cwd, "rev-parse", "HEAD");
-    await tasks.move("main", "done");
-    expect((await task()).status).toBe("running");
-    expect((await task()).deliveryRequested).toBe(true);
-    expect((await task()).mergeRepair?.conflicts).toEqual(["file.txt"]);
-    expect((await task()).mergeError).toContain("conflicts with main");
+    await expect(tasks.move("main", "done")).rejects.toThrow(/review|approval|plan/i);
+    expect((await task()).status).toBe("review");
+    expect((await task()).mergeRepair).toBeUndefined();
+    expect(turns).toHaveLength(1);
     expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
-    expect(git(repo.cwd, "status", "--porcelain")).toBe("");
-    expect(readFileSync(join(repo.cwd, "file.txt"), "utf8")).toBe("from the owner\n");
-    expect(git(repo.cwd, "log", "-1", "--format=%s", reviewed.branch!)).toBe("Ship the report");
     expect(existsSync(reviewed.worktreeCwd!)).toBe(true);
   });
-  it("deletes an unmerged task only when told to discard its branch", async () => {
+  it("retires an explicitly discarded clean directory while preserving the unmerged branch", async () => {
     const { tasks, review, addRepo } = await setup();
-    const repo = await addRepo("repo");
+    const repo = await addRepo("discard");
     const reviewed = await review({ projectId: repo.id }, { "report.md": "# Report\n" });
-    await expect(tasks.delete("main")).rejects.toThrow(
-      `This task’s work is on ${reviewed.branch} and was never merged.`,
-    );
-    expect(await tasks.list()).toHaveLength(1);
-    expect(git(repo.cwd, "branch", "--list", "mc/*")).toContain(reviewed.branch);
-    expect(existsSync(reviewed.worktreeCwd!)).toBe(true);
+    const head = git(reviewed.worktreeCwd!, "rev-parse", "HEAD");
+    await expect(tasks.delete("main")).rejects.toThrow("was never merged");
     await tasks.delete("main", true);
     expect(await tasks.list()).toEqual([]);
-    expect(git(repo.cwd, "branch", "--list", "mc/*")).toBe("");
+    expect(git(repo.cwd, "rev-parse", reviewed.branch!)).toBe(head);
     expect(existsSync(reviewed.worktreeCwd!)).toBe(false);
     expect(existsSync(join(repo.cwd, "report.md"))).toBe(false);
   });
@@ -1993,7 +2052,7 @@ describe("a task on its own branch", () => {
     expect((await task()).status).toBe("review");
     expect((await task()).diffStat).toContain("report.md");
     expect((await task()).diffStat).toContain("notes.md");
-    expect(git(repo.cwd, "branch", "--list", "mc/*").split("\n")).toHaveLength(1);
+    expect(git(repo.cwd, "branch", "--list", "bycoda/t/*").split("\n")).toHaveLength(1);
   });
 });
 describe("task verification", () => {
@@ -2322,8 +2381,8 @@ describe("task verification", () => {
     writeFileSync(join(original.worktreeCwd!, "file.txt"), "Friday\n");
     await finish((await task()).sessionId!);
     await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-    expect(await task()).toMatchObject({ status: "done", autoMerged: true });
-    expect((await task("dependent")).status).toBe("running");
+    expect(await task()).toMatchObject({ status: "review", deliveryApprovalRequired: true });
+    expect((await task("dependent")).status).toBe("queued");
   });
   it("hands blocked work to one independent worker before asking for instructions", async () => {
     const { tasks, store, engine, clock, reviewing, task, finish } = await setup();
@@ -2593,7 +2652,7 @@ describe("task verification", () => {
     async () => {
       const { reviewing, tasks, task, finish, turns, input, addRepo } = await setup();
       const repo = await addRepo("takeover");
-      await reviewing({ projectId: repo.id, autoMerge: true });
+      await reviewing({ projectId: repo.id, source: "goal", autoMerge: true });
       await finish(
         (await task()).reviewer!.sessionId!,
         '```json\n{"reviewNotes":[{"finding":"Need an alternative local check.","category":"external","suggestion":"Inspect available test tools."}]}\n```\nVERDICT: FAIL - Evidence missing.',
@@ -2623,8 +2682,8 @@ describe("task verification", () => {
       );
       expect((await task()).status).toBe("verifying");
       await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      expect(await task()).toMatchObject({ status: "done", autoMerged: true });
-      expect((await task("dependent")).status).toBe("running");
+      expect(await task()).toMatchObject({ status: "review", deliveryApprovalRequired: true });
+      expect((await task("dependent")).status).toBe("queued");
     },
     SHELL_TEST_MS,
   );
@@ -2933,42 +2992,46 @@ describe("task verification", () => {
       error: "Review failed: The report skips Friday.",
     });
   });
-  it.each([false, true])(
-    "passes failed review details to the retry worker (isolated: %s)",
-    async (isolated) => {
-      const { tasks, reviewing, task, turns, finish, addRepo, store } = await setup();
-      const repo = isolated ? await addRepo("repo") : undefined;
-      const verifying = await reviewing(repo ? { projectId: repo.id } : {});
-      const reviewer = verifying.reviewer!.sessionId!;
-      await finish(
-        reviewer,
-        "package.ts:42 keeps the old selection after rollback.\nVERDICT: FAIL - Package versions disagree.",
-      );
-      const originalPrompt = (await task()).prompt;
-      // Going through To do must preserve the finding after verification is cleared.
-      const todo = await tasks.move("main", "todo");
-      expect(todo.verification).toBeUndefined();
-      expect(todo.retryFeedback).toContain("package.ts:42");
-      expect(todo.retryFeedback!.length).toBeLessThanOrEqual(12000);
-      await tasks.move("main", "queued");
-      await tasks.tick();
-      expect((await task()).prompt).toBe(originalPrompt);
-      expect((await task()).sessionId).not.toBe(verifying.sessionId);
-      expect((await task()).branch).toBe(verifying.branch);
-      expect((await store.session((await task()).sessionId!)).session.cwd).toBe(
-        verifying.worktreeCwd ?? (await store.project(verifying.projectId)).cwd,
-      );
-      const retry = turns.at(-1)!.input.text;
-      expect(retry).toContain(originalPrompt);
-      expect(retry).toContain("Package versions disagree.");
-      expect(retry).toContain("package.ts:42 keeps the old selection after rollback.");
-      expect(retry).toContain("fix the findings");
-      await finish((await task()).sessionId!);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      expect((await task()).status).toBe(isolated ? "review" : "done");
-      expect((await task()).retryFeedback).toBeUndefined();
-    },
-  );
+  for (const isolated of [false, true])
+    it(
+      `passes failed review details to the retry worker (isolated: ${isolated})`,
+      async () => {
+        const { tasks, reviewing, task, turns, finish, addRepo, store } = await setup();
+        const repo = isolated ? await addRepo("repo") : undefined;
+        const verifying = await reviewing(repo ? { projectId: repo.id } : {});
+        const reviewer = verifying.reviewer!.sessionId!;
+        await finish(
+          reviewer,
+          "package.ts:42 keeps the old selection after rollback.\nVERDICT: FAIL - Package versions disagree.",
+        );
+        const originalPrompt = (await task()).prompt;
+        // Going through To do must preserve the finding after verification is cleared.
+        const todo = await tasks.move("main", "todo");
+        expect(todo.verification).toBeUndefined();
+        expect(todo.retryFeedback).toContain("package.ts:42");
+        expect(todo.retryFeedback!.length).toBeLessThanOrEqual(12000);
+        await tasks.move("main", "queued");
+        await tasks.tick();
+        expect((await task()).prompt).toBe(originalPrompt);
+        expect((await task()).sessionId).not.toBe(verifying.sessionId);
+        expect((await task()).branch).toBe(verifying.branch);
+        expect((await store.session((await task()).sessionId!)).session.cwd).toBe(
+          verifying.worktreeCwd ?? (await store.project(verifying.projectId)).cwd,
+        );
+        const retry = turns.at(-1)!.input.text;
+        expect(retry).toContain(originalPrompt);
+        expect(retry).toContain("Package versions disagree.");
+        expect(retry).toContain("package.ts:42 keeps the old selection after rollback.");
+        expect(retry).toContain("fix the findings");
+        await finish((await task()).sessionId!);
+        await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
+        expect((await task()).status).toBe(isolated ? "review" : "done");
+        expect((await task()).retryFeedback).toBeUndefined();
+      },
+      // Four real managed turns retain before/after Git snapshots on Windows.
+      // Parallel integration verification can outlast the ordinary shell budget.
+      isolated && process.platform === "win32" ? 120000 : undefined,
+    );
   it("retries a failed review even when its session is unavailable", async () => {
     const { tasks, reviewing, task, turns, finish, store } = await setup();
     const verifying = await reviewing();
@@ -3045,675 +3108,117 @@ describe("task verification", () => {
     expect((await task()).status).toBe("blocked");
   });
 });
-describe("merging without waiting for approval", () => {
-  const PASSING_CHECK = 'node -e "process.exit(0)"';
-  it(
-    "merges a task once its check command passes",
-    async () => {
-      const { review, addRepo, task } = await setup();
-      const repo = await addRepo("repo");
-      const merged = await review(
-        { projectId: repo.id, autoMerge: true, verifyCommand: PASSING_CHECK },
-        { "report.md": "# Report\n" },
-      );
-      expect(merged).toMatchObject({
-        status: "done",
-        merged: true,
-        autoMerged: true,
-        mergedAt: expect.any(Number),
-      });
-      expect((await task()).mergeError).toBeUndefined();
-      expect(readFileSync(join(repo.cwd, "report.md"), "utf8")).toBe("# Report\n");
-      expect(git(repo.cwd, "branch", "--list", "mc/*")).toBe("");
-      expect(git(repo.cwd, "rev-list", "--parents", "-1", "HEAD").split(" ")).toHaveLength(3);
-    },
-    SHELL_TEST_MS,
-  );
-  it("merges a task once the reviewer passes it", async () => {
-    const { reviewing, finish, task, addRepo } = await setup();
-    const repo = await addRepo("repo");
-    const verifying = await reviewing({ projectId: repo.id, autoMerge: true });
-    await finish(verifying.reviewer!.sessionId!, "Looks right.\n\nVERDICT: PASS");
-    expect(await task()).toMatchObject({ status: "done", autoMerged: true });
-  });
-  it("corrects a task the reviewer fails while leaving it unmerged", async () => {
-    const { reviewing, finish, task, addRepo } = await setup();
-    const repo = await addRepo("repo");
-    const verifying = await reviewing({ projectId: repo.id, autoMerge: true });
-    await finish(verifying.reviewer!.sessionId!, "VERDICT: FAIL - missing");
-    expect(await task()).toMatchObject({ status: "running", repairAttempts: 1 });
-    expect((await task()).autoMerged).toBeUndefined();
-  });
-  it("honors automatic merge when the owner disables checks", async () => {
-    const { review, task, addRepo } = await setup();
-    const repo = await addRepo("repo");
-    const reviewed = await review(
-      { projectId: repo.id, autoMerge: true },
-      { "report.md": "# Report\n" },
-    );
-    expect(reviewed.status).toBe("done");
-    expect(reviewed.mergeError).toBeUndefined();
-    expect(existsSync(join(repo.cwd, "report.md"))).toBe(true);
-    expect(await task()).toMatchObject({ status: "done", merged: true });
-    expect((await task()).autoMerged).toBe(true);
-    expect((await task()).mergeError).toBeUndefined();
-  });
-  it(
-    "delivers into a dirty checkout and keeps the owner's unrelated edits",
-    async () => {
-      const { review, addRepo, task, turns } = await setup();
-      const repo = await addRepo("repo");
-      writeFileSync(join(repo.cwd, "file.txt"), "edited by the owner\n");
-      const reviewed = await review(
-        { projectId: repo.id, autoMerge: true, verifyCommand: PASSING_CHECK },
-        { "report.md": "# Report\n" },
-      );
-      // The worker was told which files other sessions are editing.
-      expect(turns[0].input.text).toContain("uncommitted edits by other sessions");
-      expect(turns[0].input.text).toContain("file.txt");
-      expect(reviewed.status).toBe("done");
-      expect(await task()).toMatchObject({ merged: true, autoMerged: true });
-      expect((await task()).mergeError).toBeUndefined();
-      expect((await task()).deliveryNote).toBeUndefined();
-      expect(readFileSync(join(repo.cwd, "file.txt"), "utf8")).toBe("edited by the owner\n");
-      expect(readFileSync(join(repo.cwd, "report.md"), "utf8")).toBe("# Report\n");
-      // The owner's file is still their uncommitted edit, not stashed or reverted.
-      expect(git(repo.cwd, "status", "--porcelain")).toContain("file.txt");
-      expect(git(repo.cwd, "stash", "list")).toBe("");
-    },
-    SHELL_TEST_MS,
-  );
-  it(
-    "blocks delivery when the owner's uncommitted edits overlap the task's files",
-    async () => {
-      const { review, addRepo, task } = await setup();
-      const repo = await addRepo("repo");
-      writeFileSync(join(repo.cwd, "file.txt"), "owner version\n");
-      const head = git(repo.cwd, "rev-parse", "HEAD");
-      const reviewed = await review(
-        { projectId: repo.id, autoMerge: true, verifyCommand: PASSING_CHECK },
-        { "file.txt": "task version\n" },
-      );
-      expect(reviewed.status).toBe("review");
-      expect(reviewed.autoMerged).toBeUndefined();
-      expect((await task()).mergeError).toContain("overlap files this task changes (file.txt)");
-      expect((await task()).mergeError).toContain("Commit or stash them, then merge again.");
-      // Nothing moved: no merge, no stash, and the owner's edit is still in place.
-      expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
-      expect(git(repo.cwd, "stash", "list")).toBe("");
-      expect(readFileSync(join(repo.cwd, "file.txt"), "utf8")).toBe("owner version\n");
-      expect(git(repo.cwd, "status", "--porcelain")).toContain("file.txt");
-    },
-    SHELL_TEST_MS,
-  );
-  it(
-    "blocks delivery when an untracked owner file would be overwritten by the merge",
-    async () => {
-      const { review, addRepo, task } = await setup();
-      const repo = await addRepo("repo");
-      writeFileSync(join(repo.cwd, "report.md"), "owner notes\n");
-      const head = git(repo.cwd, "rev-parse", "HEAD");
-      const reviewed = await review(
-        { projectId: repo.id, autoMerge: true, verifyCommand: PASSING_CHECK },
-        { "report.md": "# Report\n" },
-      );
-      expect(reviewed.status).toBe("review");
-      expect((await task()).mergeError).toContain("overlap files this task changes (report.md)");
-      expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
-      expect(readFileSync(join(repo.cwd, "report.md"), "utf8")).toBe("owner notes\n");
-      expect(git(repo.cwd, "stash", "list")).toBe("");
-    },
-    SHELL_TEST_MS,
-  );
-  it(
-    "keeps a task in review with the error when the merge conflicts",
-    async () => {
-      const { run, finish, addRepo, task } = await setup();
-      const repo = await addRepo("repo");
-      const started = await run({
-        projectId: repo.id,
-        autoMerge: true,
-        verifyCommand: PASSING_CHECK,
-      });
-      writeFileSync(join(started.worktreeCwd!, "file.txt"), "from the agent\n");
-      writeFileSync(join(repo.cwd, "file.txt"), "from the owner\n");
-      git(repo.cwd, "commit", "-q", "-am", "owner");
-      const head = git(repo.cwd, "rev-parse", "HEAD");
-      await finish(started.sessionId!);
-      expect((await task()).status).toBe("review");
-      expect((await task()).mergeError).toContain("conflicts with main in file.txt");
-      expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
-      expect(git(repo.cwd, "status", "--porcelain")).toBe("");
-    },
-    SHELL_TEST_MS,
-  );
-  it(
-    "never merges a task that ran in the project folder",
-    async () => {
-      const { review } = await setup();
-      const reviewed = await review({
-        autoMerge: true,
-        verifyCommand: PASSING_CHECK,
-      });
-      expect(reviewed).toMatchObject({ status: "done" });
-      expect(reviewed.autoMerged).toBeUndefined();
-      expect(reviewed.mergeError).toBeUndefined();
-    },
-    SHELL_TEST_MS,
-  );
-  it("keeps owner-cancelled auto-merge review work stopped", async () => {
-    const { reviewing, task, finish, tasks, store, turns, advance } = await setup();
-    await reviewing({ autoMerge: true });
-    await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-    // Older non-isolated runs could leave a review card instead of completing.
-    const legacy = { ...(await task()), status: "review" };
-    await store.db
-      .prepare("UPDATE tasks SET value=? WHERE id=?")
-      .run(JSON.stringify(legacy), legacy.id);
-    await tasks.cancel((await task()).id, "Goal cancelled");
-    await advance();
-    expect(await task()).toMatchObject({
-      status: "blocked",
-      error: "Goal cancelled",
-    });
-    expect(turns).toHaveLength(2);
-  });
-  it("does not recover legacy review cards belonging to a cancelled goal", async () => {
-    const { reviewing, task, finish, tasks, store, turns } = await setup();
-    await reviewing({ autoMerge: true, goalId: "cancelled-owner" });
-    await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-    await store.db.exec("CREATE TABLE goals (id TEXT PRIMARY KEY, value TEXT NOT NULL)");
-    await store.db
-      .prepare("INSERT INTO goals VALUES (?, ?)")
-      .run("cancelled-owner", JSON.stringify({ status: "cancelled" }));
-    const legacy = {
-      ...(await task()),
-      status: "review",
-      isolate: true,
-      branch: "mc/retained",
-      baseBranch: "main",
-    };
-    await store.db
-      .prepare("UPDATE tasks SET value=? WHERE id=?")
-      .run(JSON.stringify(legacy), legacy.id);
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      await tasks.tick();
-      expect(errors).not.toHaveBeenCalled();
-      expect((await task()).status).toBe("review");
-      expect(turns).toHaveLength(2);
-    } finally {
-      errors.mockRestore();
-    }
-  });
-  it(
-    "recreates a missing committed task worktree and respects the persisted integration limit",
-    async () => {
-      const { run, task, finish, advance, tasks, store, turns, addRepo } = await setup();
-      const repo = await addRepo("repo");
-      const started = await run({
-        projectId: repo.id,
-        autoMerge: true,
-        review: true,
-      });
-      writeFileSync(join(started.worktreeCwd!, "file.txt"), "task feature\n");
-      writeFileSync(join(repo.cwd, "file.txt"), "base feature\n");
-      git(repo.cwd, "commit", "-q", "-am", "base feature");
-      await finish(started.sessionId!);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      git(repo.cwd, "worktree", "remove", "--", started.worktreeCwd!);
-      await advance();
-      expect((await task()).status).toBe("running");
-      expect(existsSync((await task()).worktreeCwd!)).toBe(true);
-      expect(readFileSync(join((await task()).worktreeCwd!, "file.txt"), "utf8")).toContain(
-        "task feature",
-      );
-      // Model another already-verified attempt at the integration ceiling.
-      await tasks.move((await task()).id, "blocked");
-      git((await task()).worktreeCwd!, "merge", "--abort");
-      const limited = {
-        ...(await task()),
-        status: "review",
-        verification: {
-          review: { verdict: "pass", note: "", sessionId: "reviewer" },
-        },
-        mergeRepair: { ...(await task()).mergeRepair!, attempts: MAX_REPAIR_ATTEMPTS },
-        mergeRetry: undefined,
-      };
-      await store.db
-        .prepare("UPDATE tasks SET value=? WHERE id=?")
-        .run(JSON.stringify(limited), limited.id);
-      const turnCount = turns.length;
-      await advance();
-      expect(await task()).toMatchObject({
-        status: "blocked",
-        repairStop: { reason: "limit" },
-      });
-      expect(turns).toHaveLength(turnCount);
-      expect(existsSync((await task()).worktreeCwd!)).toBe(true);
-      expect(readFileSync(join(repo.cwd, "file.txt"), "utf8")).toBe("base feature\n");
-    },
-    SHELL_TEST_MS,
-  );
-  it("corrects manually created auto-merge tasks using structured findings without repeating the review transcript", async () => {
-    const { reviewing, finish, task, turns } = await setup();
-    await reviewing({ autoMerge: true });
-    await finish(
-      (await task()).reviewer!.sessionId!,
-      'Long review narrative that need not be repeated.\n```json\n{"reviewNotes":[{"finding":"Friday totals are missing.","suggestion":"Add Friday totals."}]}\n```\nVERDICT: FAIL - Friday totals are missing.',
-    );
-    expect(await task()).toMatchObject({ status: "running", repairAttempts: 1 });
-    const prompt = turns.at(-1)!.input.text;
-    expect(prompt).toContain("Add Friday totals.");
-    expect(prompt).not.toContain("Long review narrative");
-  });
-  it(
-    "does not abort a merge the owner already has in progress",
-    async () => {
-      const { run, finish, task, addRepo, advance, turns } = await setup();
-      const repo = await addRepo("repo");
-      const started = await run({
-        projectId: repo.id,
-        autoMerge: true,
-        review: true,
-      });
-      git(repo.cwd, "checkout", "-q", "-b", "owner-change");
-      writeFileSync(join(repo.cwd, "file.txt"), "owner branch\n");
-      git(repo.cwd, "commit", "-q", "-am", "owner branch");
-      git(repo.cwd, "checkout", "-q", "main");
-      writeFileSync(join(repo.cwd, "file.txt"), "main branch\n");
-      git(repo.cwd, "commit", "-q", "-am", "main branch");
-      expect(() => git(repo.cwd, "merge", "owner-change")).toThrow();
-      const pending = git(repo.cwd, "rev-parse", "MERGE_HEAD");
-      const content = readFileSync(join(repo.cwd, "file.txt"), "utf8");
-      await finish(started.sessionId!);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      await advance();
-      expect((await task()).status).toBe("review");
-      expect((await task()).mergeError).toContain("merge in progress");
-      expect(turns).toHaveLength(2);
-      expect(git(repo.cwd, "rev-parse", "MERGE_HEAD")).toBe(pending);
-      expect(readFileSync(join(repo.cwd, "file.txt"), "utf8")).toBe(content);
-    },
-    SHELL_TEST_MS,
-  );
-  it(
-    "automatically resolves integration in the retained checkout and releases dependencies only after review",
-    async () => {
-      const { run, finish, task, tasks, turns, advance, addRepo, input } = await setup();
-      const repo = await addRepo("repo");
-      const started = await run({
-        projectId: repo.id,
-        autoMerge: true,
-        review: true,
-      });
-      writeFileSync(join(started.worktreeCwd!, "file.txt"), "task feature\n");
-      writeFileSync(join(started.worktreeCwd!, "task.txt"), "completed work\n");
-      writeFileSync(join(repo.cwd, "file.txt"), "base feature\n");
-      git(repo.cwd, "commit", "-q", "-am", "base update");
-      const baseHead = git(repo.cwd, "rev-parse", "HEAD");
-      await tasks.save(input({ id: "dependent", projectId: repo.id, dependsOn: [started.id] }));
-      await finish(started.sessionId!);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      expect((await task()).status).toBe("review");
-      const retainedHead = git(started.worktreeCwd!, "rev-parse", "HEAD");
-      await advance();
-      expect(await task()).toMatchObject({
-        status: "running",
-        branch: started.branch,
-        worktreeCwd: started.worktreeCwd,
-        mergeRepair: { baseHead, attempts: 1 },
-      });
-      expect((await task("dependent")).status).toBe("queued");
-      expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(baseHead);
-      expect(git(started.worktreeCwd!, "rev-parse", "MERGE_HEAD")).toBe(baseHead);
-      expect(turns.at(-1)!.input.text).toContain("Do not restart the task");
-      writeFileSync(join(started.worktreeCwd!, "file.txt"), "base feature\ntask feature\n");
-      git(started.worktreeCwd!, "add", "file.txt");
-      const repairSession = (await task()).sessionId!;
-      await finish(repairSession);
-      expect((await task()).status).toBe("verifying");
-      expect((await task("dependent")).status).toBe("queued");
-      expect(git(started.worktreeCwd!, "merge-base", "--is-ancestor", retainedHead, "HEAD")).toBe(
-        "",
-      );
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      expect(await task()).toMatchObject({
-        status: "done",
-        merged: true,
-        autoMerged: true,
-      });
-      expect((await task("dependent")).status).toBe("running");
-      expect(readFileSync(join(repo.cwd, "file.txt"), "utf8")).toBe("base feature\ntask feature\n");
-      expect(readFileSync(join(repo.cwd, "task.txt"), "utf8")).toBe("completed work\n");
-    },
-    SHELL_TEST_MS,
-  );
-  it.each([
-    { autoMerge: true, artifactOnly: false },
-    { autoMerge: false, artifactOnly: false },
-    { autoMerge: true, artifactOnly: true },
-    { autoMerge: false, artifactOnly: true },
-  ])(
-    "replays completed work onto replacement history, reviews it, and releases dependencies (auto=$autoMerge, artifacts=$artifactOnly)",
-    async ({ autoMerge, artifactOnly }) => {
-      const { run, finish, task, tasks, turns, advance, addRepo, input } = await setup();
-      const repo = await addRepo("replaced");
-      writeFileSync(join(repo.cwd, ".gitignore"), "/temp/\n");
-      git(repo.cwd, "add", ".gitignore");
-      git(repo.cwd, "commit", "-q", "-m", "ignore local outputs");
-      const started = await run({ projectId: repo.id, autoMerge, review: true });
-      if (!artifactOnly) writeFileSync(join(started.worktreeCwd!, "task.txt"), "completed task\n");
-      mkdirSync(join(started.worktreeCwd!, "temp/local/task-output"), { recursive: true });
-      writeFileSync(
-        join(started.worktreeCwd!, "temp/local/task-output/inventory.txt"),
-        "reviewed inventory\n",
-      );
-      // Replace main's history while preserving its current snapshot.
-      const replacement = git(repo.cwd, "commit-tree", "HEAD^{tree}", "-m", "replacement root");
-      git(repo.cwd, "update-ref", "refs/heads/main", replacement);
-      await tasks.save(input({ id: "dependent", projectId: repo.id, dependsOn: [started.id] }));
-      await finish(started.sessionId!);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      expect((await task()).status).toBe("review");
-      if (autoMerge) expect((await task()).mergeError).toContain("no common history");
-      const originalHead = git(started.worktreeCwd!, "rev-parse", "HEAD");
-      if (autoMerge) await advance();
-      else {
-        await tasks.move(started.id, "done");
-        await tasks.idle();
-      }
-      expect((await task()).status).toBe("verifying");
-      expect((await task()).branch).not.toBe(started.branch);
-      expect((await task()).historyRecovery).toEqual([
-        {
-          branch: started.branch,
-          worktreeCwd: started.worktreeCwd,
-          baseCommit: started.baseCommit,
-          head: originalHead,
-        },
-      ]);
-      expect((await task("dependent")).status).toBe("queued");
-      expect(
-        readFileSync(
-          join((await task()).worktreeCwd!, "temp/local/task-output/inventory.txt"),
-          "utf8",
-        ),
-      ).toBe("reviewed inventory\n");
-      expect(turns).toHaveLength(3); // Original worker, original review, recovery review.
-      expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(replacement);
-      expect(git(started.worktreeCwd!, "rev-parse", "HEAD")).toBe(originalHead);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      expect(await task()).toMatchObject({ status: "done", merged: true });
-      expect(Boolean((await task()).autoMerged)).toBe(autoMerge);
-      expect((await task("dependent")).status).toBe("running");
-      if (!artifactOnly)
-        expect(readFileSync(join(repo.cwd, "task.txt"), "utf8")).toBe("completed task\n");
-      expect((await task()).artifactPaths).toEqual(["temp/local/task-output/inventory.txt"]);
-      expect(
-        readFileSync(
-          join((await task("dependent")).worktreeCwd!, "temp/local/task-output/inventory.txt"),
-          "utf8",
-        ),
-      ).toBe("reviewed inventory\n");
-      expect(() => git(repo.cwd, "merge-base", "--is-ancestor", originalHead, "HEAD")).toThrow();
-      expect(existsSync(started.worktreeCwd!)).toBe(false);
-      expect(git(repo.cwd, "rev-parse", started.branch!)).toBe(originalHead);
-    },
-    SHELL_TEST_MS,
-  );
-  it(
-    "repairs replay conflicts without changing the original result or delivery checkout",
-    async () => {
-      const { run, finish, task, tasks, advance, addRepo, input, turns } = await setup();
-      const repo = await addRepo("replay-conflict");
-      const started = await run({ projectId: repo.id, autoMerge: true, review: true });
-      writeFileSync(join(started.worktreeCwd!, "file.txt"), "task feature\n");
-      writeFileSync(join(repo.cwd, "file.txt"), "new base feature\n");
-      git(repo.cwd, "add", "file.txt");
-      const tree = git(repo.cwd, "write-tree");
-      const replacement = git(repo.cwd, "commit-tree", tree, "-m", "replacement root");
-      git(repo.cwd, "update-ref", "refs/heads/main", replacement);
-      await tasks.save(input({ id: "dependent", projectId: repo.id, dependsOn: [started.id] }));
-      await finish(started.sessionId!);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      const originalHead = git(started.worktreeCwd!, "rev-parse", "HEAD");
-      await advance();
-      expect(await task()).toMatchObject({
-        status: "running",
-        mergeRepair: { conflicts: ["file.txt"], prepared: true, attempts: 1 },
-      });
-      expect(turns.at(-1)!.input.text).toContain("replayed only the recorded task changes");
-      expect((await task("dependent")).status).toBe("queued");
-      expect(git(repo.cwd, "status", "--porcelain")).toBe("");
-      expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(replacement);
-      expect(git(started.worktreeCwd!, "rev-parse", "HEAD")).toBe(originalHead);
-      writeFileSync(
-        join((await task()).worktreeCwd!, "file.txt"),
-        "new base feature\ntask feature\n",
-      );
-      git((await task()).worktreeCwd!, "add", "file.txt");
-      await finish((await task()).sessionId!);
-      expect((await task()).status).toBe("verifying");
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      expect((await task()).status).toBe("done");
-      expect((await task("dependent")).status).toBe("running");
-      expect(readFileSync(join(repo.cwd, "file.txt"), "utf8")).toBe(
-        "new base feature\ntask feature\n",
-      );
-    },
-    SHELL_TEST_MS,
-  );
-  it.each(["missing base", "dirty original", "foreign base"])(
-    "retains the original work when recovery encounters a %s",
-    async (condition) => {
-      const { run, finish, task, advance, addRepo, store, turns } = await setup();
-      const repo = await addRepo("missing-base");
-      const started = await run({ projectId: repo.id, autoMerge: true, review: true });
-      const replacement = git(repo.cwd, "commit-tree", "HEAD^{tree}", "-m", "replacement root");
-      git(repo.cwd, "update-ref", "refs/heads/main", replacement);
-      await finish(started.sessionId!);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      const originalHead = git(started.worktreeCwd!, "rev-parse", "HEAD");
-      if (condition === "dirty original")
-        writeFileSync(join(started.worktreeCwd!, "owner.txt"), "owner draft\n");
-      const legacy = {
-        ...(await task()),
-        baseCommit:
-          condition === "missing base"
-            ? undefined
-            : condition === "foreign base"
-              ? replacement
-              : (await task()).baseCommit,
-      };
-      await store.db
-        .prepare("UPDATE tasks SET value=? WHERE id=?")
-        .run(JSON.stringify(legacy), legacy.id);
-      await advance();
-      expect(await task()).toMatchObject({ status: "blocked", repairStop: { reason: "external" } });
-      if (condition === "missing base")
-        expect((await task()).error).toContain("recorded task base is missing");
-      if (condition === "dirty original") {
-        expect((await task()).error).toContain("checkout changed after review");
-        expect(readFileSync(join(started.worktreeCwd!, "owner.txt"), "utf8")).toBe("owner draft\n");
-      }
-      expect(turns).toHaveLength(2);
-      expect((await task()).branch).toBe(started.branch);
-      expect(git(started.worktreeCwd!, "rev-parse", "HEAD")).toBe(originalHead);
-      expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(replacement);
-    },
-    SHELL_TEST_MS,
-  );
-  it(
-    "resumes an interrupted history replay from its retained conflict index",
-    async () => {
-      const { run, finish, task, tasks, advance, addRepo, store, engine, clock, turns } =
-        await setup();
-      const repo = await addRepo("interrupted-replay");
-      const started = await run({ projectId: repo.id, autoMerge: true, review: true });
-      writeFileSync(join(started.worktreeCwd!, "file.txt"), "task feature\n");
-      writeFileSync(join(repo.cwd, "file.txt"), "new base feature\n");
-      git(repo.cwd, "add", "file.txt");
-      const replacement = git(
-        repo.cwd,
-        "commit-tree",
-        git(repo.cwd, "write-tree"),
-        "-m",
-        "replacement root",
-      );
-      git(repo.cwd, "update-ref", "refs/heads/main", replacement);
-      await finish(started.sessionId!);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      await advance();
-      expect((await task()).status).toBe("running");
-      const recoveryCwd = (await task()).worktreeCwd!;
-      const conflicts = readFileSync(join(recoveryCwd, "file.txt"), "utf8");
-      await tasks.move((await task()).id, "blocked");
-      // Model a restart after cherry-pick updated the index but before preparation
-      // was persisted. The durable replayStarted marker must allow resumption.
-      const interrupted = {
-        ...(await task()),
-        status: "queued",
-        sessionId: undefined,
-        runId: undefined,
-        error: undefined,
-        needsInput: undefined,
-        awaitingOwnerRestart: undefined,
-        mergeRepair: { ...(await task()).mergeRepair!, prepared: false },
-        updatedAt: ++clock.now,
-      };
-      await store.db
-        .prepare("UPDATE tasks SET value=? WHERE id=?")
-        .run(JSON.stringify(interrupted), interrupted.id);
-      const restarted = new HostTasks(store, engine, () => clock.now);
-      await restarted.tick();
-      expect(await task()).toMatchObject({ status: "running", worktreeCwd: recoveryCwd });
-      expect(readFileSync(join(recoveryCwd, "file.txt"), "utf8")).toBe(conflicts);
-      expect(turns.at(-1)!.input.text).toContain("replayed only the recorded task changes");
-      expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(replacement);
-    },
-    SHELL_TEST_MS,
-  );
-  it(
-    "retries dirty checkout delivery without a model and keeps backoff across restarts",
-    async () => {
-      const { run, finish, task, advance, turns, store, engine, clock, addRepo } = await setup();
-      const repo = await addRepo("repo");
-      const started = await run({
-        projectId: repo.id,
-        autoMerge: true,
-        review: true,
-      });
-      writeFileSync(join(started.worktreeCwd!, "task.txt"), "task\n");
-      writeFileSync(join(repo.cwd, "file.txt"), "owner draft\n");
-      await finish(started.sessionId!);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      await advance();
-      const retry = (await task()).mergeRetry;
-      const turnCount = turns.length;
-      const restarted = new HostTasks(store, engine, () => clock.now);
-      await restarted.tick();
-      expect((await task()).mergeRetry).toEqual(retry);
-      expect(turns).toHaveLength(turnCount);
-      expect(readFileSync(join(repo.cwd, "file.txt"), "utf8")).toBe("owner draft\n");
-      git(repo.cwd, "commit", "-q", "-am", "save owner draft");
-      await restarted.tick();
-      expect(await task()).toMatchObject({ status: "done", autoMerged: true });
-      expect(turns).toHaveLength(turnCount);
-      expect(readFileSync(join(repo.cwd, "task.txt"), "utf8")).toBe("task\n");
-    },
-    SHELL_TEST_MS,
-  );
-  it(
-    "never stages unresolved integration conflicts as a completed result",
-    async () => {
-      const { run, finish, task, advance, addRepo } = await setup();
-      const repo = await addRepo("repo");
-      const started = await run({
-        projectId: repo.id,
-        autoMerge: true,
-        review: true,
-      });
-      writeFileSync(join(started.worktreeCwd!, "file.txt"), "task\n");
-      writeFileSync(join(repo.cwd, "file.txt"), "owner\n");
-      git(repo.cwd, "commit", "-q", "-am", "owner");
-      await finish(started.sessionId!);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      await advance();
-      const head = git(started.worktreeCwd!, "rev-parse", "HEAD");
-      await finish((await task()).sessionId!);
-      expect(await task()).toMatchObject({ status: "queued", repairAttempts: 1 });
-      expect((await task()).retryFeedback).toContain("Unresolved merge conflicts");
-      expect(git(started.worktreeCwd!, "rev-parse", "HEAD")).toBe(head);
-      expect(git(started.worktreeCwd!, "diff", "--name-only", "--diff-filter=U")).toBe("file.txt");
-    },
-    SHELL_TEST_MS,
-  );
-  it(
-    "keeps the location of a worktree with post-review changes after delivery",
-    async () => {
-      const { review, tasks, task, addRepo } = await setup();
-      const repo = await addRepo("repo");
-      const reviewed = await review({ projectId: repo.id }, { "task.txt": "task\n" });
-      writeFileSync(join(reviewed.worktreeCwd!, "draft.txt"), "later draft\n");
-      await tasks.move(reviewed.id, "done");
-      expect(await task()).toMatchObject({
-        status: "done",
-        worktreeCwd: reviewed.worktreeCwd,
-      });
-      expect((await task()).cleanupError).toContain("changes made after delivery");
-      expect(readFileSync(join(reviewed.worktreeCwd!, "draft.txt"), "utf8")).toBe("later draft\n");
-    },
-    SHELL_TEST_MS,
-  );
-  it("retries cleanup of a delivered task after its worktree is unlocked", async () => {
-    const { review, tasks, task, advance, addRepo } = await setup();
-    const repo = await addRepo("cleanup-retry");
-    const result = await review({ projectId: repo.id }, { "task.txt": "task\n" });
-    git(repo.cwd, "worktree", "lock", result.worktreeCwd!);
-    await tasks.move(result.id, "done");
-    expect((await task()).status).toBe("done");
-    expect((await task()).cleanupError).toContain("locked");
-    expect(existsSync(result.worktreeCwd!)).toBe(true);
-    git(repo.cwd, "worktree", "unlock", result.worktreeCwd!);
-    await advance();
-    await advance();
-    expect(existsSync(result.worktreeCwd!)).toBe(false);
-    expect((await task()).worktreeCwd).toBeUndefined();
-    expect((await task()).cleanupError).toBeUndefined();
-  });
-  it("preserves a delivered checkout referenced by another task and cleans it when released", async () => {
-    const { review, tasks, task, input, advance, addRepo } = await setup();
-    const repo = await addRepo("cleanup-use");
-    const result = await review({ projectId: repo.id }, { "task.txt": "task\n" });
-    await tasks.save(
-      input({
-        id: "owner-task",
-        projectId: repo.id,
-        status: "todo",
-        isolate: false,
-        workspace: { checkoutCwd: result.worktreeCwd },
-      }),
-    );
-    await tasks.move(result.id, "done");
-    expect((await task()).cleanupError).toContain("still in use");
-    expect(existsSync(result.worktreeCwd!)).toBe(true);
-    await tasks.delete("owner-task");
-    await advance();
-    await advance();
-    expect(existsSync(result.worktreeCwd!)).toBe(false);
-    expect((await task()).cleanupError).toBeUndefined();
-  });
-  it("saves autoMerge, drops it when an edit turns it off, and rejects other values", async () => {
+describe("owner-approved task delivery", () => {
+  it("suspends stored automatic approval and still validates the old option", async () => {
     const { tasks, input } = await setup();
     expect(await tasks.save(input({ autoMerge: true }))).toMatchObject({
-      autoMerge: true,
+      deliveryApprovalRequired: true,
+      deliveryState: "awaitingOwner",
     });
+    expect((await tasks.get("main"))?.autoMerge).toBeUndefined();
     expect((await tasks.save(input({ autoMerge: false }))).autoMerge).toBeUndefined();
-    expect((await tasks.save(input({ id: "other" }))).autoMerge).toBeUndefined();
-    await expect(
-      (async () => await tasks.save(input({ id: "bad", autoMerge: "yes" })))(),
-    ).rejects.toThrow("Invalid task options");
+    await expect(tasks.save(input({ id: "bad", autoMerge: "yes" }))).rejects.toThrow(
+      "Invalid task options",
+    );
+  });
+
+  it(
+    "keeps a checked implementation awaiting owner approval",
+    async () => {
+      const { review, addRepo, task } = await setup();
+      const repo = await addRepo("checked-result");
+      const head = git(repo.cwd, "rev-parse", "HEAD");
+      const result = await review(
+        { projectId: repo.id, autoMerge: true, verifyCommand: 'node -e "process.exit(0)"' },
+        { "report.md": "# Report\n" },
+      );
+      expect(result).toMatchObject({
+        status: "review",
+        deliveryApprovalRequired: true,
+        deliveryState: "awaitingOwner",
+      });
+      expect((await task()).merged).toBeUndefined();
+      expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
+      expect(existsSync(join(repo.cwd, "report.md"))).toBe(false);
+    },
+    SHELL_TEST_MS,
+  );
+
+  it("keeps reviewed work and its dependents waiting until owner delivery", async () => {
+    const { reviewing, finish, task, addRepo, tasks, input } = await setup();
+    const repo = await addRepo("reviewed-result");
+    const head = git(repo.cwd, "rev-parse", "HEAD");
+    const verifying = await reviewing({ projectId: repo.id, autoMerge: true });
+    await tasks.save(input({ id: "dependent", projectId: repo.id, dependsOn: ["main"] }));
+    await finish(verifying.reviewer!.sessionId!, "VERDICT: PASS");
+    expect(await task()).toMatchObject({ status: "review", deliveryApprovalRequired: true });
+    expect((await task()).autoMerged).toBeUndefined();
+    expect((await task("dependent")).status).toBe("queued");
+    expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
+  });
+
+  it("continues implementation repairs without authorizing integration", async () => {
+    const { reviewing, finish, task, addRepo } = await setup();
+    const repo = await addRepo("repair-result");
+    const head = git(repo.cwd, "rev-parse", "HEAD");
+    const verifying = await reviewing({
+      projectId: repo.id,
+      autoMerge: true,
+      continueUntilDone: true,
+    });
+    await finish(verifying.reviewer!.sessionId!, "VERDICT: FAIL - Missing behavior");
+    expect(await task()).toMatchObject({ status: "running", repairAttempts: 1 });
+    expect((await task()).autoMerged).toBeUndefined();
+    expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
+  });
+
+  it.each(["unrelated", "overlapping", "untracked"])(
+    "does not deliver through old automatic approval with %s owner changes",
+    async (kind) => {
+      const { run, finish, task, addRepo, advance } = await setup();
+      const repo = await addRepo("dirty-target");
+      const head = git(repo.cwd, "rev-parse", "HEAD");
+      const started = await run({ projectId: repo.id, autoMerge: true });
+      writeFileSync(join(started.worktreeCwd!, "file.txt"), "worker result\n");
+      const path =
+        kind === "overlapping" ? "file.txt" : kind === "untracked" ? "result.txt" : "owner.txt";
+      writeFileSync(join(repo.cwd, path), "owner draft\n");
+      const status = git(repo.cwd, "status", "--porcelain");
+      await finish(started.sessionId!);
+      await advance();
+      expect(await task()).toMatchObject({ status: "review", deliveryApprovalRequired: true });
+      expect(git(repo.cwd, "rev-parse", "HEAD")).toBe(head);
+      expect(git(repo.cwd, "status", "--porcelain")).toBe(status);
+      expect(readFileSync(join(repo.cwd, path), "utf8")).toBe("owner draft\n");
+    },
+  );
+
+  it("routes explicit task delivery through the shared reviewed service", async () => {
+    const { review, addRepo, tasks, delivery } = await setup();
+    const repo = await addRepo("owner-plan");
+    const result = await review({ projectId: repo.id }, { "result.txt": "result\n" });
+    const plan = { workspaceId: result.workspaceId!, expectedRevision: 2, token: "sha-bound" };
+    delivery.review.mockResolvedValue(plan);
+    expect(await tasks.reviewDelivery(result.id)).toBe(plan);
+    expect(delivery.review).toHaveBeenCalledWith({
+      workspaceId: result.workspaceId,
+      expectedRevision: 2,
+      action: "merge",
+    });
+    const owner = { ownerId: "owner", authorizationId: "transport-proof" };
+    const request = {
+      workspaceId: result.workspaceId!,
+      expectedRevision: 2,
+      idempotencyKey: "delivery",
+      planToken: plan.token,
+    };
+    delivery.merge.mockResolvedValue({ targetHead: "a".repeat(40) });
+    expect(await tasks.mergeDelivery(result.id, request, owner)).toMatchObject({
+      status: "done",
+      merged: true,
+      deliveredCommit: "a".repeat(40),
+    });
+    expect(delivery.merge).toHaveBeenCalledWith(request, owner);
   });
 });
 describe("host work limits", () => {

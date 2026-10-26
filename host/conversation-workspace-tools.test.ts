@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "./store";
@@ -10,12 +11,13 @@ import { HostAutomations } from "./automations";
 import { ProviderInboxBridge } from "./provider-inbox";
 import { ConversationWorkspaceTools } from "./conversation-workspace-tools";
 import { validateConversationTool, type ConversationTool } from "./conversation-tools";
+import { writerWorkspaces } from "./writer-workspaces.test-support";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0)) await close();
 });
-async function setup() {
+async function setup(managed = false) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-workspace-tools-"));
   const store = new HostStore(join(directory, "host.db"));
   let finishRun = () => {};
@@ -32,7 +34,20 @@ async function setup() {
       answer: () => {},
     },
   });
-  const project = await engine.openProject(directory);
+  const projectDirectory = managed ? join(directory, "repo") : directory;
+  if (managed) {
+    mkdirSync(projectDirectory);
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: projectDirectory, windowsHide: true, stdio: "pipe" });
+    git("init", "-q", "-b", "main");
+    git("config", "user.name", "Workspace Tools Test");
+    git("config", "user.email", "workspace-tools@example.test");
+    git("config", "commit.gpgsign", "false");
+    writeFileSync(join(projectDirectory, "source.txt"), "baseline\n");
+    git("add", "source.txt");
+    git("commit", "-qm", "baseline");
+  }
+  const project = await engine.openProject(projectDirectory);
   const other = await store.addProject(join(directory, "other"), "Other");
   const created = await engine.command({
     type: "create",
@@ -58,7 +73,11 @@ async function setup() {
     () => [noteFile],
     () => 1000,
   );
-  const automations = new HostAutomations(store, engine, () => 1000);
+  const workspaces = managed
+    ? writerWorkspaces(directory, async (id) => (await store.project(id)).cwd)
+    : undefined;
+  await workspaces?.attachEngine(engine);
+  const automations = new HostAutomations(store, engine, () => 1000, workspaces);
   const inbox = new ProviderInboxBridge(store.db);
   const approval = vi.fn(async (_operation: Record<string, unknown>) => ({ approved: true }));
   const attention = vi.fn(async (_projectId: string) => [{ id: "attention" }]);
@@ -248,7 +267,7 @@ describe("direct application workspace tools", () => {
     );
   });
   it("exposes run history and cancellation while preventing an automation from controlling itself", async () => {
-    const s = await setup();
+    const s = await setup(true);
     await s.call("automations.create", automation);
     const run = await s.automations.runNow("daily");
     expect(((await s.call("automations.runs", { automationId: "daily" })) as any).items[0].id).toBe(

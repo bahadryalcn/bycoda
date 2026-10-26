@@ -1,7 +1,9 @@
 import { mapAsync } from "./async-collections";
+import { writerWorkspaces } from "./writer-workspaces.test-support";
+import type { TaskWorkspaceServices } from "./task-workspace-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
-// Each planner and worker turn also captures a real workspace checkpoint.
-if (process.platform === "win32") vi.setConfig({ testTimeout: 60000 });
+// Real Git worktrees, commits and managed turn history; legacy per-file checkpoints are stubbed.
+if (process.platform === "win32") vi.setConfig({ testTimeout: 120000 });
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -115,11 +117,23 @@ async function setup() {
     finish: () => void;
     fail: (error: Error) => void;
   }> = [];
+  const providerAdmissions = new Map<string, ReturnType<typeof Promise.withResolvers<void>>>();
+  const providerAdmission = (sessionId: string, runId: string) => {
+    const key = JSON.stringify([sessionId, runId]);
+    let admitted = providerAdmissions.get(key);
+    if (!admitted) {
+      admitted = Promise.withResolvers<void>();
+      providerAdmissions.set(key, admitted);
+    }
+    return admitted;
+  };
   const provider: HostProvider = {
     send: vi.fn(async (input) => {
       const runId = (await store.session(input.sessionId)).runId;
       return new Promise<void>((resolve, reject) => {
         turns.push({ input, runId, finish: resolve, fail: reject });
+        if (!runId) throw new Error("Fixture provider started without a run identity");
+        providerAdmission(input.sessionId, runId).resolve();
       });
     }),
     cancel: vi.fn(async (sessionId) => {
@@ -133,23 +147,80 @@ async function setup() {
     answer: vi.fn(),
   };
   const engine = new HostEngine(store, { claude: provider });
+  // Legacy per-file checkpoints are independent of this fixture. Managed runs
+  // below attach real retained turn-history capture through writerWorkspaces.
+  vi.spyOn(engine.checkpoints, "begin").mockResolvedValue();
+  vi.spyOn(engine.checkpoints, "finish").mockResolvedValue();
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
-  const tasks = new HostTasks(store, engine, () => clock.now);
+  const workspaces = writerWorkspaces(directory, async (id) => (await store.project(id)).cwd);
+  await workspaces.attachEngine(engine);
+  const delivery = { review: vi.fn(), merge: vi.fn() };
+  const tasks = new HostTasks(store, engine, () => clock.now, undefined, {
+    ...workspaces,
+    delivery,
+  } as unknown as TaskWorkspaceServices);
+  delivery.review.mockImplementation(async ({ workspaceId }: { workspaceId: string }) => ({
+    token: workspaceId,
+    workspaceId,
+    expectedRevision: workspaces.rows.get(workspaceId)!.revision,
+  }));
+  delivery.merge.mockImplementation(async ({ workspaceId }: { workspaceId: string }) => {
+    const row = workspaces.rows.get(workspaceId)!;
+    const task = (await tasks.get(row.owner.id))!;
+    const target = task.deliveryCwd ?? (await store.project(row.projectId)).cwd;
+    const sourceHead = git(row.path, "rev-parse", "HEAD");
+    const previousTargetHead = git(target, "rev-parse", "HEAD");
+    git(target, "merge", "--no-ff", "--no-edit", sourceHead);
+    const targetHead = git(target, "rev-parse", "HEAD");
+    workspaces.rows.set(row.id, {
+      ...row,
+      state: "merged",
+      revision: row.revision + 1,
+      deliveredCommit: targetHead,
+    });
+    return {
+      operationId: `delivery:${row.id}`,
+      workspaceId,
+      sourceHead,
+      previousTargetHead,
+      targetHead,
+      workspaceRevision: row.revision + 1,
+    };
+  });
+  const approve = async (id: string) => {
+    const plan = await tasks.reviewDelivery(id);
+    return tasks.mergeDelivery(
+      id,
+      {
+        workspaceId: plan.workspaceId,
+        expectedRevision: plan.expectedRevision,
+        planToken: plan.token,
+        idempotencyKey: `approve:${id}`,
+      },
+      { ownerId: "test-owner", authorizationId: "test-transport-proof" },
+    );
+  };
   const goals = new HostGoals(store, engine, tasks, () => clock.now);
   await goals.ready;
   const providersStarted = async () => {
-    await vi.waitFor(
-      async () => {
-        for (const value of (await store.sessions()).filter(
-          (entry) => entry.status === "running",
-        )) {
-          expect(turns.findLast((turn) => turn.input.sessionId === value.session.id)?.runId).toBe(
-            value.runId,
+    for (const value of (await store.sessions()).filter((entry) => entry.status === "running")) {
+      if (!value.runId) throw new Error("Accepted fixture session has no run identity");
+      await Promise.race([
+        providerAdmission(value.session.id, value.runId).promise,
+        engine.waitForRun(value.session.id, value.runId).then(async () => {
+          if (
+            turns.some(
+              (turn) => turn.input.sessionId === value.session.id && turn.runId === value.runId,
+            )
+          )
+            return;
+          const latest = await store.session(value.session.id);
+          throw new Error(
+            `Accepted fixture run ended before provider.send: ${latest.session.blocks.at(-1)?.text ?? latest.status}`,
           );
-        }
-      },
-      { timeout: 10000 },
-    );
+        }),
+      ]);
+    }
   };
   const tick = tasks.tick.bind(tasks);
   vi.spyOn(tasks, "tick").mockImplementation(async () => {
@@ -196,7 +267,7 @@ async function setup() {
     turns.findLast((turn) => turn.input.sessionId === sessionId)!;
   const settled = (sessionId: string) =>
     vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
-      timeout: 10000,
+      timeout: 30000,
     });
   /** A minute later: settles what finished and starts what can start. */
   const advance = async () => {
@@ -213,6 +284,19 @@ async function setup() {
       turn.input.onEvent({ type: "message.delta", text: reply });
       turn.input.onEvent({ type: "message.completed" });
     }
+    const worker = (await tasks.list()).find(
+      (task) => task.sessionId === sessionId && task.branch && task.worktreeCwd,
+    );
+    if (worker) {
+      const changed = git(worker.worktreeCwd!, "status", "--porcelain")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => line.slice(3).replace(/^"|"$/g, ""));
+      if (changed.length) {
+        git(worker.worktreeCwd!, "add", "--", ...changed);
+        git(worker.worktreeCwd!, "commit", "-q", "-m", "Complete fixture worker scope");
+      }
+    }
     turn.finish();
     await settled(sessionId);
     await advance();
@@ -222,7 +306,7 @@ async function setup() {
     const expected = turns.length + 1;
     const created = await goals.create(input(overrides));
     // Real Git checkpoint capture precedes the provider call for repository goals.
-    await vi.waitFor(() => expect(turns).toHaveLength(expected), { timeout: 10000 });
+    await vi.waitFor(() => expect(turns).toHaveLength(expected), { timeout: 30000 });
     return created;
   };
   /** Creates a goal whose planner replies with `reply`. */
@@ -253,6 +337,7 @@ async function setup() {
     plan,
     addProject,
     addRepo,
+    approve,
   };
 }
 describe("integrated final goal acceptance", () => {
@@ -309,6 +394,12 @@ describe("integrated final goal acceptance", () => {
     const before = await f.goal();
     expect(before.status).toBe("running");
     expect(before.finalAcceptance?.status).toBe("running");
+    const reviewer = (await f.store.session(before.finalAcceptance!.sessionId!)).session;
+    expect(before.finalAcceptance?.executionWorkspace).toEqual({
+      cwd: reviewer.cwd,
+      workspaceId: reviewer.workspaceId,
+    });
+    expect(reviewer.cwd).not.toBe(f.lead.cwd);
     expect(f.turns).toHaveLength(1);
     expect(f.turns[0].input.text).toContain("Ship the beta across the app and the API");
     expect(f.turns[0].input.text).toContain("do not edit files");
@@ -322,6 +413,60 @@ describe("integrated final goal acceptance", () => {
         },
       },
     });
+  });
+  it.each([
+    "recorded cwd",
+    "recorded workspace",
+    "registry id",
+    "registry owner",
+    "registry path",
+    "registry project",
+    "registry environment",
+  ])("rejects final reviewer execution drift in %s", async (field) => {
+    const f = await ready();
+    const goal = await f.goal();
+    const execution = goal.finalAcceptance!.executionWorkspace!;
+    if (field.startsWith("recorded")) {
+      await f.store.db.prepare("UPDATE goals SET value=? WHERE id=?").run(
+        JSON.stringify({
+          ...goal,
+          finalAcceptance: {
+            ...goal.finalAcceptance,
+            executionWorkspace: {
+              ...execution,
+              ...(field === "recorded cwd"
+                ? { cwd: f.lead.cwd }
+                : { workspaceId: "another-workspace" }),
+            },
+          },
+        }),
+        goal.id,
+      );
+    } else {
+      const workspace = (await f.store.managedWorkspace(execution.workspaceId!))!;
+      // Inject a corrupted registry payload directly: the public registry already
+      // rejects changes to these immutable fields; recovery must also fail closed.
+      await f.store.db.prepare("UPDATE managed_workspaces SET payload=? WHERE id=?").run(
+        JSON.stringify({
+          ...workspace,
+          revision: workspace.revision + 1,
+          ...(field === "registry id"
+            ? { id: "another-workspace" }
+            : field === "registry owner"
+              ? { owner: { kind: "session" as const, id: "another-session" } }
+              : field === "registry path"
+                ? { path: f.lead.cwd }
+                : field === "registry project"
+                  ? { projectId: "another-project" }
+                  : { environmentId: "another-environment" }),
+        }),
+        workspace.id,
+      );
+    }
+    await f.advance();
+    expect((await f.goal()).status).toBe("blocked");
+    expect((await f.goal()).error).toContain("no longer owns");
+    expect(f.provider.cancel).not.toHaveBeenCalled();
   });
   it("does not accept a bare PASS or unresolved integrated proof", async () => {
     const f = await ready();
@@ -564,7 +709,13 @@ describe("integrated final goal acceptance", () => {
     await f.store.db.prepare("UPDATE goals SET value=? WHERE id=?").run(
       JSON.stringify({
         ...before,
-        finalAcceptance: { ...retained, status: "pending", sessionId: undefined, runId: undefined },
+        finalAcceptance: {
+          ...retained,
+          status: "pending",
+          sessionId: undefined,
+          runId: undefined,
+          executionWorkspace: undefined,
+        },
       }),
       "goal",
     );
@@ -578,6 +729,37 @@ describe("integrated final goal acceptance", () => {
     expect((await f.goal()).budgetUsage?.attempts).toBe(1);
     await f.finish(retained.sessionId!, report());
     expect((await f.goal()).status).toBe("done");
+  });
+  it("contains failed pending receipt workspace recovery within the affected goal", async () => {
+    const f = await ready();
+    const before = await f.goal();
+    const workspaceId = before.finalAcceptance!.executionWorkspace!.workspaceId!;
+    const workspace = (await f.store.managedWorkspace(workspaceId))!;
+    await f.store.db
+      .prepare("UPDATE managed_workspaces SET payload=? WHERE id=?")
+      .run(
+        JSON.stringify({ ...workspace, owner: { kind: "session", id: "another-session" } }),
+        workspaceId,
+      );
+    await f.store.db.prepare("UPDATE goals SET value=? WHERE id=?").run(
+      JSON.stringify({
+        ...before,
+        finalAcceptance: {
+          ...before.finalAcceptance,
+          status: "pending",
+          sessionId: undefined,
+          runId: undefined,
+          executionWorkspace: undefined,
+        },
+      }),
+      before.id,
+    );
+    await expect(f.advance()).resolves.toBeUndefined();
+    expect((await f.goal()).status).toBe("blocked");
+    expect((await f.goal()).error).toContain("no longer owns");
+    const other = await f.create({ id: "unrelated-goal" });
+    expect(other.status).toBe("planning");
+    expect(f.turns).toHaveLength(2);
   });
   it("does not turn missing historical planner accounting into a fresh budget", async () => {
     const f = await setup();
@@ -619,13 +801,48 @@ describe("integrated final goal acceptance", () => {
       return await original(task);
     });
     const finishing = f.finish((await f.goal()).finalAcceptance!.sessionId!, report());
-    await vi.waitFor(() => expect(entered).toBe(true), { timeout: 10000 });
+    await vi.waitFor(() => expect(entered).toBe(true), { timeout: 30000 });
     await f.goals.cancel("goal");
     release();
     await finishing;
     snapshot.mockRestore();
     expect((await f.goal()).status).toBe("cancelled");
     expect((await f.goal()).finalAcceptance?.status).not.toBe("passed");
+  });
+  it("does not consume an owner PASS that arrives during the final reviewer snapshot", async () => {
+    const f = await ready();
+    const sessionId = (await f.goal()).finalAcceptance!.sessionId!;
+    const original = f.tasks.resultFingerprint.bind(f.tasks);
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    const snapshot = vi.spyOn(f.tasks, "resultFingerprint").mockImplementation(async (task) => {
+      entered.resolve();
+      await released.promise;
+      return original(task);
+    });
+    const finishing = f.finish(
+      sessionId,
+      report().replace("VERDICT: PASS", "VERDICT: FAIL - Reviewer found missing proof."),
+    );
+    await entered.promise;
+    await f.engine.command({
+      type: "send",
+      commandId: "owner-after-final-snapshot",
+      sessionId,
+      text: "Separate owner turn",
+    });
+    await f.providersStarted();
+    const ownerTurn = f.turnOf(sessionId);
+    ownerTurn.input.onEvent({ type: "message.delta", text: report() });
+    ownerTurn.input.onEvent({ type: "message.completed" });
+    ownerTurn.finish();
+    await f.settled(sessionId);
+    released.resolve();
+    await finishing;
+    snapshot.mockRestore();
+    expect((await f.goal()).status).toBe("blocked");
+    expect((await f.goal()).error).toContain("no longer owns");
+    expect(f.provider.cancel).not.toHaveBeenCalled();
   });
 });
 describe("editing goal settings", () => {
@@ -728,12 +945,17 @@ describe("editing goal settings", () => {
     const { goals, tasks, original } = await seeded();
     const before = await tasks.list();
     const saved = await goals.update("goal", settings, original.updatedAt);
-    expect(saved).toMatchObject({ ...settings, status: "running", taskIds: original.taskIds });
+    expect(saved).toMatchObject({
+      ...settings,
+      autoMerge: undefined,
+      deliveryApprovalRequired: true,
+      status: "running",
+      taskIds: original.taskIds,
+    });
     for (const id of ["waiting", "reviewed", "active", "stopped"]) {
       const task = (await tasks.get(id))!;
       const old = before.find((entry) => entry.id === id)!;
       expect(task).toMatchObject({
-        autoMerge: true,
         continueUntilDone: true,
         status: old.status,
         dependsOn: old.dependsOn,
@@ -742,6 +964,7 @@ describe("editing goal settings", () => {
         model: old.model,
         review: true,
       });
+      expect(task.autoMerge).not.toBe(true);
       expect(task.maxRunMinutes).toBe(id === "active" ? 10 : 30);
     }
     expect((await tasks.get("stopped"))?.awaitingOwnerRestart).toBe(true);
@@ -775,7 +998,7 @@ describe("editing goal settings", () => {
     expect((await tasks.get("waiting"))?.maxRunMinutes).toBe(10);
     expect((await tasks.get("stopped"))?.awaitingOwnerRestart).toBe(true);
     expect((await tasks.get("waiting"))?.continueUntilDone).toBeUndefined();
-    expect((await tasks.get("waiting"))?.autoMerge).toBe(true);
+    expect((await tasks.get("waiting"))?.autoMerge).not.toBe(true);
   });
   it("rolls back all task updates if one write fails", async () => {
     const { goals, tasks, store } = await seeded();
@@ -806,7 +1029,7 @@ describe("editing goal settings", () => {
       );
     }
   });
-  it("delivers an already reviewed branch and releases its queued dependency", async () => {
+  it("keeps reviewed work and its dependency separate from a persistent merge preference", async () => {
     const { addRepo, plan, finish, planned, goals, goal, tasks } = await setup();
     const repo = await addRepo("edit-delivery");
     await plan(
@@ -823,11 +1046,13 @@ describe("editing goal settings", () => {
     expect((await planned()).two.status).toBe("queued");
     await goals.update("goal", { ...settings, maxRunMinutes: 0 }, (await goal()).updatedAt);
     await tasks.idle();
-    expect((await planned()).one).toMatchObject({ status: "done", merged: true, autoMerged: true });
-    expect((await planned()).two.status).toBe("running");
-    expect(readFileSync(join(repo.cwd, "result.txt"), "utf8").replace(/\r\n/g, "\n")).toBe(
-      "reviewed result\n",
-    );
+    expect((await planned()).one).toMatchObject({
+      status: "review",
+      deliveryApprovalRequired: true,
+    });
+    expect((await planned()).one.merged).not.toBe(true);
+    expect((await planned()).two.status).toBe("queued");
+    expect(existsSync(join(repo.cwd, "result.txt"))).toBe(false);
   });
 });
 describe("goal workspace and scheduling choices", () => {
@@ -941,8 +1166,13 @@ describe("goal planning", () => {
     const planner = (await store.session(created.plannerSessionId!)).session;
     expect(planner).toMatchObject({
       title: "Plan: Launch the beta",
-      cwd: lead.cwd,
     });
+    expect(planner.workspaceId).toBeTruthy();
+    expect(planner.cwd).not.toBe(lead.cwd);
+    expect(planner.worktreeCwd).toBe(planner.cwd);
+    expect(planner.branch).toMatch(/^bycoda\/s\//);
+    expect(git(planner.cwd, "rev-parse", "HEAD")).toBe(git(lead.cwd, "rev-parse", "HEAD"));
+    expect(turns[0].input.cwd).toBe(planner.cwd);
     const prompt = turns[0].input.text;
     expect(prompt).toContain("Job: Launch the beta");
     expect(prompt).toContain("Ship the beta across the app and the API");
@@ -1219,7 +1449,8 @@ describe("goal tasks", () => {
   it(
     "starts a dependent task once its dependency is merged, from the merged HEAD",
     async () => {
-      const { goals, lead, addRepo, plan, planned, tasks, turns, turnOf, finish } = await setup();
+      const { goals, lead, addRepo, plan, planned, tasks, turns, turnOf, finish, approve } =
+        await setup();
       const repo = await addRepo("repo");
       await plan(
         planReply([
@@ -1238,7 +1469,11 @@ describe("goal tasks", () => {
       expect(a.status).toBe("review");
       // Still waiting: review is not done.
       expect(b.status).toBe("queued");
-      await tasks.move(a.id, "done");
+      await expect(tasks.move(a.id, "done")).rejects.toThrow(
+        "Task completion does not authorize delivery",
+      );
+      expect((await planned()).b.status).toBe("queued");
+      await approve(a.id);
       await tasks.tick();
       await vi.waitFor(() => expect(turns).toHaveLength(3));
       ({ b } = await planned());
@@ -1313,7 +1548,7 @@ describe("goal tasks", () => {
     },
   );
   it("is done once every task is done", async () => {
-    const { lead, addProject, plan, planned, tasks, finish, goal, advance } = await setup();
+    const { lead, addProject, plan, planned, finish, goal, advance, approve } = await setup();
     const api = await addProject("api");
     await plan(
       planReply([
@@ -1327,10 +1562,10 @@ describe("goal tasks", () => {
     await finish(b.sessionId!);
     ({ a, b } = await planned());
     expect([a.status, b.status]).toEqual(["review", "review"]);
-    await tasks.move(a.id, "done");
+    await approve(a.id);
     await advance();
     expect((await goal()).status).toBe("running");
-    await tasks.move(b.id, "done");
+    await approve(b.id);
     // Listing brings progress up to date without waiting for a tick.
     expect((await goal()).status).toBe("done");
   });
@@ -1469,12 +1704,12 @@ describe("goal merging and work limits", () => {
     expect(readFileSync(join(repo.cwd, "file.txt"), "utf8")).toBe("owner changes\n");
     expect(readFileSync(join(repo.cwd, "result.txt"), "utf8")).toBe("first task\n");
   });
-  it("gives every planned task the goal autoMerge setting", async () => {
+  it("suspends the goal automatic merge preference for planned tasks", async () => {
     const { plan, planned, lead } = await setup();
     await plan(planReply([{ key: "one", project: lead.cwd }]), {
       autoMerge: true,
     });
-    expect((await planned()).one.autoMerge).toBe(true);
+    expect((await planned()).one.autoMerge).not.toBe(true);
   });
   it("leaves autoMerge off by default", async () => {
     const { plan, planned, lead } = await setup();

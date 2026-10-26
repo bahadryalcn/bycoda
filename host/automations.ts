@@ -19,6 +19,20 @@ import {
   type SessionRunEngine,
 } from "./sessionRuns";
 import type { HostStore } from "./store";
+import { previewTaskFinalization } from "./task-workspace-runtime";
+import type {
+  ExecutionActivityReservations,
+  WorkspaceRegistry,
+} from "./workspace-service-contracts";
+import type { HostAutomationRun as StoredAutomationRun } from "../src/features/automations/model/hostAutomations";
+
+/** Supplied by the execution host. Missing managed-workspace support fails closed. */
+export interface AutomationWorkspaceServices {
+  registry: WorkspaceRegistry;
+  activity: ExecutionActivityReservations;
+  environmentId: string;
+}
+type ManagedAutomationRun = StoredAutomationRun & { workspaceId?: string; activityId?: string };
 const TICK_MS = 30000;
 const MAX_RUNS_PER_AUTOMATION = 100;
 /** A run this overdue was missed while the machine was off or asleep. */
@@ -39,6 +53,7 @@ export class HostAutomations {
     private readonly store: HostStore,
     private readonly engine: SessionRunEngine,
     private readonly now: () => number = Date.now,
+    private readonly workspaces?: AutomationWorkspaceServices,
   ) {
     this.ready = (async () => {
       await store.ready;
@@ -249,11 +264,17 @@ export class HostAutomations {
   private async activeRuns(): Promise<HostAutomationRun[]> {
     return (
       await flatMapAsync(await this.list(), async (automation) => await this.runs(automation.id))
-    ).filter((run) => run.status === "running");
+    ).filter(
+      (run) =>
+        run.status === "running" ||
+        (run.status === "pending" &&
+          Boolean((run as ManagedAutomationRun).workspaceId) &&
+          !this.launching.has(run.automationId)),
+    );
   }
   private async launch(
     automation: HostAutomation,
-    run: HostAutomationRun,
+    run: ManagedAutomationRun,
     now: number,
   ): Promise<HostAutomationRun> {
     if (this.launching.has(automation.id))
@@ -268,36 +289,73 @@ export class HostAutomations {
           : dailyRunLimitSkip(automationLimits(automation), history, run.id, now);
       if (skip) return await this.finish(run, "skipped", skip, now);
       if (this.closing) return this.finish(run, "skipped", "Skipped: the host is stopping.", now);
-      const started = await launchSessionRun(
-        this.store,
-        this.engine,
-        {
-          projectId: automation.projectId,
-          harness: automation.harness,
-          model: automation.model,
-          modelSettings: automation.modelSettings,
-          runtimeMode: automation.runtimeMode,
-          title: automation.name,
-          prompt: automation.prompt,
-        },
-        () => !this.closing,
-      );
-      if (started.deferred)
-        return this.finish(run, "skipped", "Skipped: the host is stopping.", now);
-      if (started.error !== undefined)
-        return await this.finish(
-          { ...run, sessionId: started.sessionId },
+      if (!this.workspaces)
+        return this.finish(
+          run,
           "failed",
-          started.error,
+          "Update the Host to enable managed automation workspaces.",
           now,
         );
-      return await this.writeRun({
-        ...run,
-        status: "running",
-        startedAt: now,
-        sessionId: started.sessionId,
-        runId: started.runId,
-      });
+      try {
+        const { workspace } = await this.workspaces.registry.prepare({
+          idempotencyKey: `automation:${run.id}`,
+          projectId: automation.projectId,
+          environmentId: this.workspaces.environmentId,
+          owner: { kind: "automationRun", id: run.id },
+          slug: automation.name,
+          choice: { defaultMode: "worktree" },
+        });
+        if (
+          workspace.owner.kind !== "automationRun" ||
+          workspace.owner.id !== run.id ||
+          workspace.projectId !== automation.projectId ||
+          workspace.directoryState !== "present"
+        )
+          throw new Error("The managed workspace does not belong to this automation run.");
+        run = { ...run, workspaceId: workspace.id };
+        await this.writeRun(run);
+        const activity = await this.workspaces.activity.start({
+          workspaceId: workspace.id,
+          kind: "provider",
+          ownerId: run.id,
+        });
+        run = { ...run, activityId: activity.id };
+        await this.writeRun(run);
+        const started = await launchSessionRun(
+          this.store,
+          this.engine,
+          {
+            projectId: automation.projectId,
+            harness: automation.harness,
+            model: automation.model,
+            modelSettings: automation.modelSettings,
+            runtimeMode: automation.runtimeMode,
+            title: automation.name,
+            prompt: `Work only in ${workspace.path} on ${workspace.branchRef}. Commit scoped changes on this branch and leave a clean tree. Integration, push and PR publication require separate owner approval.\n\n${automation.prompt}`,
+            worktreeCwd: workspace.path,
+            workspaceId: workspace.id,
+          },
+          () => !this.closing,
+        );
+        if (started.deferred)
+          return this.finish(run, "skipped", "Skipped: the host is stopping.", now);
+        if (started.error !== undefined)
+          return await this.finish(
+            { ...run, sessionId: started.sessionId },
+            "failed",
+            started.error,
+            now,
+          );
+        return await this.writeRun({
+          ...run,
+          status: "running",
+          startedAt: now,
+          sessionId: started.sessionId,
+          runId: started.runId,
+        });
+      } catch (error) {
+        return this.finish(run, "failed", errorMessage(error), now);
+      }
     } finally {
       this.launching.delete(automation.id);
     }
@@ -332,11 +390,31 @@ export class HostAutomations {
     await this.finish(run, outcome.status, outcome.error, now);
   }
   private async finish(
-    run: HostAutomationRun,
+    run: ManagedAutomationRun,
     status: HostAutomationRun["status"],
     error: string | undefined,
     now: number,
   ): Promise<HostAutomationRun> {
+    if (run.activityId) await this.workspaces?.activity.stop(run.activityId);
+    if (run.workspaceId && this.workspaces) {
+      const workspace = await this.workspaces.registry.get({ workspaceId: run.workspaceId });
+      if (workspace) {
+        const mutation = {
+          workspaceId: workspace.id,
+          expectedRevision: workspace.revision,
+          idempotencyKey: `automation:${run.id}:finish`,
+        };
+        // A failed/cancelled run remains resumable; only successful work is finished.
+        if (status === "succeeded") {
+          const preview = await previewTaskFinalization(workspace.path, workspace.branchRef);
+          if (!preview.clean) {
+            status = "failed";
+            error =
+              "Finalization requires review: commit the intended automation changes on its assigned branch before delivery.";
+          } else await this.workspaces.registry.finish(mutation);
+        }
+      }
+    }
     return this.store.db.scope(async () => {
       const finished = await this.writeRun({
         ...run,

@@ -5,7 +5,7 @@ Crews connect a coordinator conversation to independently addressable specialist
 ## Ready-made bycoda team
 
 The first owner-side Crew list on each host adds **bycoda Product Team** and
-17 reusable member profiles to **Settings > Crews**. They are ordinary host-wide
+17 reusable member profiles to **Settings > Agents > Crews**. They are ordinary host-wide
 records: edit their names, instructions, models, groups and working limits, copy
 them into project crews, or delete them. Initialization happens once, including
 on hosts that already contain custom crews. Existing records and run snapshots
@@ -150,58 +150,177 @@ guidance, adapted to this application's scheduler and owner-approval contracts:
 - [Playwright testing practices](https://playwright.dev/docs/best-practices)
   informs isolated, user-observable verification.
 
-## Navigation
+## Find, edit and start a crew
 
-Use **Settings > Crews** to create a team and save reusable agents to its library. Definitions can belong to the current project or all projects on the selected host. Copying a definition to another scope creates a new definition. Each run keeps a snapshot; editing a definition does not change active work.
+Open **Settings > Agents > Crews**. **Show crews** controls whether the crew
+section appears in the project rail. **Your crews** lists saved definitions with
+scope and member count; choose **Edit**, **Crew work**, or **New crew**. The rail
+also has **New crew**, a start action on each crew, and an options menu containing
+**Open coordinator** when one active run is available, **Crew work**, **Start
+work**, **Edit crew**, **Add members**, **Duplicate**, scope copying and, on a
+compatible host, **Delete crew**.
 
-Choose a crew from **Your crews**. **Team members** shows each member's purpose and model; select a row to open that member's detail view. **Role and instructions** and **Models and capabilities** separate the member's responsibilities from its runtime choices. **Back to team** returns to the roster without discarding edits. Fixed selection uses one chosen model; automatic selection uses an allowed model pool. **Models and capabilities** contains capability inspection, cost/quality estimates, provider settings and the reusable agent library action. **Use starter roster** adds a coordinator, developer and reviewer using the first available catalog model. Use the member library to add the ready-made specialty profiles; review model choices before starting work.
+The editor has **Team (count)** and **Working settings** views. Give the crew a
+name and choose **This project** or **All projects** when creating it. All projects
+means projects on the same host. Team groups members by coordinator, specialist,
+reviewer and advisor. Add members from the searchable library or create a member;
+an empty crew also offers a starter team. **Role** is an editable specialty name;
+**Responsibility in the crew** determines orchestration. A valid crew has one
+coordinator, one reviewer, at least one specialist and at most 20 members.
 
-**Team**, **Working style** and **Crew settings** are separate views. **Working style** contains the automatic selection preference, concurrency, budget limits and permissions. **Crew settings** contains the name and scope. Save explicitly with **Save crew**. Drafts survive switching crews and leaving Settings in the same desktop window, separately for each host and project. They are not saved across window reloads or app restarts. If another session changes a definition, keep local edits as a new crew or explicitly discard them and load the latest version before saving. Active runs keep their original settings.
+A member editor contains instructions, fixed or automatic model choice, and
+advanced options. Fixed models use the normal provider/model picker and the
+model's supported settings. Automatic selection uses a searchable allowed-model
+list with owner cost and quality ratings. Switching a fixed model loads that
+model's own defaults. Groups help find library members and require a host that
+supports member groups. Inspect capabilities when needed; editing a capability
+declaration does not establish verified runtime access.
 
-Use the **+** action under **Crews** in Sessions to select a definition and describe a deliverable. The coordinator opens in the normal conversation pane. Assignments, their selected model, request counts and independent review conversations remain visible under the crew without expanding a group. Select the request action to open the coordinator. Each conversation can be opened separately. Managed conversations appear in this group instead of being duplicated in the ordinary Sessions list.
+**Working settings** contains the crew icon/color, automatic model priority
+(**Economy**, **Balanced**, **Quality**), highest cost and lowest quality allowed,
+whether unrated cost is allowed, and a bulk model choice for fixed members. The
+limits are **Members working at once** (1–4), **Assignments per job** (1–20), and
+**Minutes per assignment** (1–240). Permission switches control coordinator
+answers to member permission requests and provider-native subagents. These are
+execution policies, not provider billing caps. Appearance and rail visibility
+are device-local; the host stores execution definitions.
 
-Pause holds new assignments while active work continues. Stop pauses the crew and cancels its active work. Stopped assignments remain available in Tasks; resume does not automatically retry blocked work.
+Choose **Create crew** or **Save**, or **Save and start work** where offered.
+**Discard** restores the saved definition. Unsaved drafts survive closing the
+editor and navigating away within the same desktop window, separated by host,
+project and crew; they do not survive reloads or app restarts. If another session
+changes the definition, choose **Keep edits as new crew** or **Discard edits and
+load latest**. Active runs retain their saved definition snapshot.
 
-## Roles and model selection
+To launch, choose **Start work**, select the crew, and fill **What should the crew
+deliver?** The first non-empty line becomes the work title. Editing the crew from
+this dialog preserves the delivery draft. A successful launch opens the
+coordinator in the normal conversation pane. If opening the conversation fails
+after creation, **Open conversation** reuses the created run rather than starting
+another one.
 
-A crew has one coordinator, one reviewer and at least one specialist. Advisors are optional. Each role has instructions and either a fixed model or an allowed list for automatic selection. Model settings, including supported effort controls, come from the connected host catalog.
+## Member library and copies
 
-Automatic selection checks required capabilities, model availability, fixed choices and policy limits before applying cost and quality preferences. Economy, balanced and quality presets can be adjusted with explicit weights. The UI identifies custom weights; selecting a preset resets both overrides. Selection reasons are retained on assignments.
+The Settings page's **Member library** offers **New member**, search, group
+filtering and member editing. Save a crew member to the library or explicitly
+update its source profile. Crews hold independent copies: a library edit reaches
+a crew only through an explicit update there. Group rename/delete updates the
+profiles, not the members' existence; deleting a group keeps the members. These
+controls are hidden on hosts without group support.
 
-Cost and quality inputs are owner estimates, not billing records or universal model benchmarks. After at least three reviewed assignments for the same member/model/settings combination in a project, first-pass review history can inform selection when no owner quality estimate is supplied. Samples and acceptance counts remain inspectable. This history is task-specific evidence, not a guarantee of future quality.
+**Duplicate** makes an editable crew copy. **Copy to all projects** and **Copy to
+this project** create a separately scoped definition. Deleting a saved crew
+requires confirmation and the host's delete capability; existing work snapshots,
+tasks and conversations remain available.
 
-The estimated assignment budget reserves both implementation and its initial review. It is not a provider billing cap. Additional owner-requested retries, coordinator turns, native subagents and opaque subscription usage are not priced by this estimate. Assignment-count, time and host execution limits remain separate.
+## Crew work and conversations
 
-## Capabilities
+Open **Crew work** from Settings or the rail. The management dialog has a crew
+selector, **Ongoing**, **Finished** and **All** views, and a selectable work list.
+A selected work item shows its status, progress, decisions needed, blocked
+assignments, and coordinator, worker and reviewer conversations. Select a
+conversation to open it. The session sidebar keeps managed conversations grouped
+instead of duplicating them in the ordinary Sessions list.
 
-Inspect saved capabilities to view model availability, image-tool access and review observations. Unknown capability is not treated as support. User-entered declarations cannot create verified tool access.
+**Pause** holds new assignments while active work continues; **Resume work**
+allows scheduling again. **Stop work** asks for confirmation, pauses the run and
+cancels active assignments. Stopped assignments remain in Tasks; resuming does
+not automatically retry blocked work. **Delete work** is available only on hosts
+with run-delete support and after active work is stopped. It removes the work
+from the list while keeping the crew, tasks and conversations. Decisions are
+answered in the coordinator conversation through **Answer**.
 
-Native Codex image generation is probed on demand through the installed runtime and account. This checks feature/auth availability; it neither enables ImageGen nor proves that a future image request will succeed. Other capability probes may return unknown. Generated results still need inspection by the specialist/reviewer. No paid calibration or image generation runs merely because Settings is opened.
+## Model evidence, coordination and review
 
-## Coordination and review
+Automatic selection filters required capabilities, availability, fixed choices
+and policy limits before ranking cost and quality. Custom weight overrides remain
+visible; selecting a priority preset resets them. Ratings are owner estimates,
+not bills or universal model benchmarks. After at least three reviewed assignments
+for the same member/model/settings combination in a project, first-pass review
+history can inform selection when no owner quality estimate exists. Unknown
+capability does not count as support. Native Codex image-tool probing is on demand;
+opening Settings neither generates an asset nor starts a paid calibration.
 
-The coordinator delegates through Conversation Tools and the host task queue. Specialists use crew requests for missing resources or expertise. Messages are persisted and significant events wake an idle coordinator. Replayed requests and event deliveries reuse durable IDs.
+The coordinator delegates through Conversation Tools and the host task queue.
+Specialists request missing resources or expertise. Messages persist, significant
+events wake idle coordinators, and durable IDs prevent replayed requests from
+creating duplicate work. Owner messages sent directly to a member remain directives
+the coordinator must reconcile before accepting that assignment.
 
-Direct messages sent to a member through the host are recorded for the coordinator to reconcile. Existing queue/steer behavior governs the member's running turn. The coordinator cannot accept that assignment until its owner directives are resolved.
+Technical review runs in a separate conversation using the configured reviewer.
+The coordinator accepts reviewed assignments; Tasks cannot mark direct crew tasks
+done around that gate. Acceptance checks the reviewed file snapshot; changed owned
+files require another independent review. Multiple component assignments require
+a final integration assignment depending on all of them before the crew finishes.
+Project-relative file scopes serialize overlapping assignments; disjoint scopes
+can run within crew and host limits. These leases are scheduling coordination,
+not a filesystem sandbox. Preserve unrelated changes.
 
-Technical review runs in a separate session using the configured reviewer model. Direct crew tasks wait for coordinator acceptance after review; the Tasks board cannot mark them done directly. Acceptance checks the reviewed file snapshot; changed owned files require another independent review. Multiple component assignments require a final integration assignment that depends on the other work before the crew can finish.
+Runtime approvals and questions remain owner-controlled unless the owner enabled
+delegation in the definition. A coordinator cannot authorize itself. Delegated
+responses bind to the exact member turn and pending request. Inbox, social and
+publication gates retain their own contracts. Workers commit within their
+authorized branch and file scope; crew acceptance never authorizes merging,
+pushing or publishing.
 
-Assignments declare project-relative file scopes. Overlapping scopes serialize through the task scheduler; disjoint scopes can run within host and crew concurrency limits. These leases coordinate tasks; they do not introduce a new filesystem sandbox for provider tools. Root-scoped integration work runs exclusively against other direct tasks. Existing project instructions and unrelated dirty work must be preserved.
+## Tasks, tools and recovery
 
-Runtime approvals and questions remain owner-controlled unless the owner explicitly grants delegation in the crew definition. A coordinator cannot grant this permission to itself. Delegated replies bind to the exact member turn and pending request. Inbox, social, publication and other native owner gates retain their own contracts. Crew acceptance does not authorize staging, commits, merges, pushes or publication.
+In Tasks, select a saved crew under **Run with**, then **Start with crew**. Each
+task gets an independent coordinator/run from that definition and waits for
+accepted assignments and crew completion. A required task check must pass on the
+final integration assignment or sole assignment. Stopping the parent pauses and
+cancels its active crew work; retry creates a fresh run. Coordinators have a
+separate allowance under the host task limit so a one-worker host can delegate.
+Task execution requires `crews.tasks.v1`.
 
-## Tools and recovery
+All roles have normal host session tools under their existing permissions. Agents
+use `tools.list` to discover actions, `crews.schema` and `crews.inspect` to inspect
+contracts/models, and `crews.save` to save project definitions. `crews.start`
+attaches a compatible conversation by default; `newConversation: true` launches
+a separate coordinator. `tasks.create` with `crewDefinitionId` and
+`status: "queued"` schedules a board task, inheriting caller permissions and using
+the task ID as its idempotency key. A fixed coordinator must match an attached
+conversation. Starting a new coordinator avoids that attachment constraint.
 
-All crew roles use normal host sessions and their available application tools. Coordinators, workers and reviewers discover actions through `tools.list`; tasks, notes, automations, devices, terminals, servers, logs, skills and app UI remain available according to their existing contracts. Social policy and native owner approvals still apply. A crew cannot enable a missing integration or grant itself permissions.
+Interrupted work is retained. Unknown runtime outcomes are not completed work;
+inspect the authoritative run before retrying. A missing coordinator pauses its
+crew without blocking unrelated crews. A missing host shows an update/connection
+error. Older hosts hide unsupported delete/group controls instead of pretending
+they succeeded.
 
-In Tasks, choose a saved crew under **Run with**, then **Start with crew**. Each task starts its own coordinator and independent run from the saved definition. The parent task waits for accepted assignments and crew completion; an idle coordinator does not mark it done. A required task check must pass on the final integration assignment (or the sole assignment). Stopping the parent pauses that run and cancels its active work; retry creates a fresh run. Coordinators have a separate concurrency allowance using the host task limit, so a one-worker host can still execute delegated work.
+## Managed workspace transition and verification
 
-Use **Duplicate crew** to make an editable copy. Host-wide definitions can be selected in other projects on the same host; project definitions stay scoped. Multiple tasks can use the same definition independently, subject to host limits and file-scope scheduling. Task execution requires the host capability `crews.tasks.v1`.
+This guide describes the crew UI and host behavior present on the frozen contract
+baseline. The [managed workspace reference](../reference/managed-workspaces.md)
+defines the worktree-first target: independently scheduled writers receive distinct
+managed workspaces and delivery needs owner approval. The contract alone does not
+prove a connected host implements it. Existing current-mode sessions retain their
+checkout until explicitly migrated; do not infer new worktree isolation from a
+crew definition or a file-scope lease.
 
-Conversation Tools `tasks.create` accepts `crewDefinitionId` and `status: "queued"` to schedule a team; it inherits the caller's runtime permissions. Its task ID is an idempotency key. `crews.start` with `newConversation: true` starts a separate coordinator instead of attaching the caller. The requester can inspect and send crew requests, while acceptance stays with the new coordinator.
+The ambient **Agent crew** scene in Appearance is separate from a reusable Crew:
+its Classic, Star Wars and Lord of the Rings characters do not start assignments.
 
-Agents can discover definition contracts with `crews.schema`, inspect the connected catalog with `crews.inspect`, save project definitions and attach a compatible existing host conversation with `crews.start`. A fixed coordinator choice must match the existing conversation. New coordinator conversations can be started from Sessions.
+Source and browser fixtures do not prove installed-host, physical-device or paid
+provider acceptance. Compare build identity before treating an owner screenshot
+as a new defect; then exercise the affected flow on the identified app and host.
 
-Crew assignments use existing task dependencies, checks, retry and review recovery. Coordinator launch and event delivery use host receipt IDs. Interrupted work is retained; unresolved or uncertain runtime operations are not described as completed work. A missing coordinator session pauses its crew rather than blocking other crews.
+### Local lead-run workers
 
-The installed desktop and host must both advertise the Crews capability. Source and fixture tests do not establish installed-host, physical-device or live paid-provider acceptance.
+New isolated workers launched by the local lead-run controller use managed,
+session-owned branches based on the selected lead checkout's committed SHA. The
+lead branch and directory are saved as the delivery target, including when the
+lead works outside the project integration branch. Uncommitted lead files are
+excluded. Missing, detached or changed lead targets block preparation or review;
+the controller does not substitute the integration checkout.
+
+Each worker commits its assigned changes and reports its
+branch and final SHA. Review retains the result until the owner opens that worker
+session's **Workspace actions**, reviews the branch and approves its merge. Retry
+the coordinator review after delivery into the saved lead target. A merge into a
+different branch does not permit acceptance. New commits after a merge require
+another owner review. Checkpoint copying does not count as branch delivery.
+
+Retained workers from older local runs keep their existing checkout and commits;
+they require explicit owner migration before managed acceptance. Removing a
+managed worker directory uses the shared cleanup guards and keeps its branch.

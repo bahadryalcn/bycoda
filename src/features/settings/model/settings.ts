@@ -1,4 +1,8 @@
-import { createStoredSetting, storedFlag, subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
+import {
+  createStoredSetting,
+  storedFlag,
+  subscribePreferenceChanges,
+} from "../../../shared/lib/storedSetting";
 import { t, sourceMessages } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { HARNESSES, HARNESS_TITLE } from "../../sessions/model/session";
@@ -201,7 +205,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Commit and pull request generation, code review and project worktrees.");
     },
     keywords:
-      "git branch worktree working copy project create delete commit pull request generation diff review kaynak kontrolü",
+      "git branch worktree working copy project create delete commit pull request generation diff review retention pin cleanup disk budget storage kaynak kontrolü",
   },
   {
     id: "inbox",
@@ -227,10 +231,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     keywords: "archived restore delete hidden",
   },
   {
-    id: "crews", group: "agents",
-    get label() { return t("Crews"); },
-    get description() { return t("Reusable agent teams, project crews and model allocation policies."); },
-    keywords: "crew team coordinator specialist reviewer advisor orchestration model cost quality capability",
+    id: "crews",
+    group: "agents",
+    get label() {
+      return t("Crews");
+    },
+    get description() {
+      return t("Reusable agent teams, project crews and model allocation policies.");
+    },
+    keywords:
+      "crew team coordinator specialist reviewer advisor orchestration model cost quality capability",
   },
   {
     id: "chat",
@@ -346,7 +356,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Performance trace");
     },
-    keywords: "diagnostics performance trace freeze lag slow startup long task debug performans tanılama izleme donma",
+    keywords:
+      "diagnostics performance trace freeze lag slow startup long task debug performans tanılama izleme donma",
   },
   {
     id: "performance-trace-data",
@@ -519,6 +530,54 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("MCP servers");
     },
     keywords: "claude tools connections oauth authenticate login add remove",
+  },
+  {
+    id: "workspace-policy",
+    section: "worktrees",
+    get label() {
+      return t("Workspace policy");
+    },
+    keywords: "default workspace mode current checkout worktree host project policy",
+  },
+  {
+    id: "default-workspace-mode",
+    section: "worktrees",
+    get label() {
+      return t("Default workspace");
+    },
+    keywords: "current checkout worktree new session default mode",
+  },
+  {
+    id: "workspace-pinning",
+    section: "worktrees",
+    get label() {
+      return t("Pin new workspaces");
+    },
+    keywords: "pin retention automatic cleanup keep never",
+  },
+  {
+    id: "workspace-retention",
+    section: "worktrees",
+    get label() {
+      return t("Directory retention");
+    },
+    keywords: "cleanup lifecycle active idle finished merged closed never days",
+  },
+  {
+    id: "workspace-disk-policy",
+    section: "worktrees",
+    get label() {
+      return t("Storage limits");
+    },
+    keywords: "disk budget warning free space gib directories cleanup",
+  },
+  {
+    id: "workspace-storage-status",
+    section: "worktrees",
+    get label() {
+      return t("Workspace storage");
+    },
+    keywords: "disk usage cache recovery blocked paused free space",
   },
   {
     id: "project-worktrees",
@@ -913,8 +972,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   {
     id: "voice-companion",
     section: "chat",
-    get label() { return t("Voice companion"); },
-    keywords: "voice speech microphone whisper voxcpm python models ses konuşma mikrofon sesli model kurulum",
+    get label() {
+      return t("Voice companion");
+    },
+    keywords:
+      "voice speech microphone whisper voxcpm python models ses konuşma mikrofon sesli model kurulum",
   },
   {
     id: "anchor-prompts",
@@ -1004,7 +1066,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Crew theme");
     },
-    keywords: "crew theme ekip tema classic star wars starwars yoda obi wan vader luke leia r2 d2 lord of the rings lotr yüzüklerin efendisi gandalf sauron nazgul elf legolas orc ork dwarf cüce hobbit",
+    keywords:
+      "crew theme ekip tema classic star wars starwars yoda obi wan vader luke leia r2 d2 lord of the rings lotr yüzüklerin efendisi gandalf sauron nazgul elf legolas orc ork dwarf cüce hobbit",
   },
   {
     id: "crew-growth",
@@ -1680,7 +1743,11 @@ export function saveModelControls(value: ModelControls) {
 }
 
 export function subscribeModelControls(onStoreChange: () => void) {
-  return subscribePreferenceChanges([MODEL_CONTROLS_KEY, COMPOSER_EFFORT_VISIBLE_KEY], MODEL_CONTROLS_CHANGE_EVENT, onStoreChange);
+  return subscribePreferenceChanges(
+    [MODEL_CONTROLS_KEY, COMPOSER_EFFORT_VISIBLE_KEY],
+    MODEL_CONTROLS_CHANGE_EVENT,
+    onStoreChange,
+  );
 }
 
 const NOTES_ENABLED_KEY = "bycoda.notesEnabled";
@@ -1953,7 +2020,8 @@ export function saveCloseToTray(value: boolean) {
   writeFlag(CLOSE_TO_TRAY_KEY, value);
   if (typeof window !== "undefined") window.dispatchEvent(new Event("bycoda:close-to-tray-change"));
 }
-export const subscribeCloseToTray = (onChange: () => void) => subscribePreferenceChanges([CLOSE_TO_TRAY_KEY], "bycoda:close-to-tray-change", onChange);
+export const subscribeCloseToTray = (onChange: () => void) =>
+  subscribePreferenceChanges([CLOSE_TO_TRAY_KEY], "bycoda:close-to-tray-change", onChange);
 
 const CREW_SCENE_ENABLED_KEY = "bycoda.crewSceneEnabled";
 
@@ -1984,7 +2052,11 @@ export function saveCrewSceneEnabled(value: boolean) {
 }
 
 export function subscribeCrewSceneEnabled(onStoreChange: () => void) {
-  return subscribePreferenceChanges([CREW_SCENE_ENABLED_KEY, LEGACY_CREW_SCENE_ENABLED_KEY], CREW_SCENE_ENABLED_CHANGE_EVENT, onStoreChange);
+  return subscribePreferenceChanges(
+    [CREW_SCENE_ENABLED_KEY, LEGACY_CREW_SCENE_ENABLED_KEY],
+    CREW_SCENE_ENABLED_CHANGE_EVENT,
+    onStoreChange,
+  );
 }
 
 const CREW_GROWTH_ENABLED_KEY = "bycoda.crewGrowthEnabled";
@@ -2026,7 +2098,11 @@ export function saveCrewGrowthEnabled(value: boolean) {
 }
 
 export function subscribeCrewGrowthEnabled(onStoreChange: () => void) {
-  return subscribePreferenceChanges([CREW_GROWTH_ENABLED_KEY], CREW_GROWTH_ENABLED_CHANGE_EVENT, onStoreChange);
+  return subscribePreferenceChanges(
+    [CREW_GROWTH_ENABLED_KEY],
+    CREW_GROWTH_ENABLED_CHANGE_EVENT,
+    onStoreChange,
+  );
 }
 
 const DIFF_VIEWER_KEY = "bycoda.diffViewer";
@@ -2153,7 +2229,12 @@ const CLAUDE_HOOKS_KEY = "bycoda.claudeHooks";
 
 export const CLAUDE_HOOKS_DEFAULT = true;
 
-const claudeHooksSetting = storedFlag(CLAUDE_HOOKS_KEY, CLAUDE_HOOKS_DEFAULT, "bycoda:claude-hooks-change", true);
+const claudeHooksSetting = storedFlag(
+  CLAUDE_HOOKS_KEY,
+  CLAUDE_HOOKS_DEFAULT,
+  "bycoda:claude-hooks-change",
+  true,
+);
 export const subscribeClaudeHooks = claudeHooksSetting.subscribe;
 
 export function loadClaudeHooks(): boolean {

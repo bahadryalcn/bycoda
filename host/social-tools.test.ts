@@ -112,6 +112,7 @@ async function fixture(platform: "x" | "youtube" = "x") {
   const session = async (harness: (typeof REMOTE_PROVIDERS)[number]) => {
     const result = await engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: crypto.randomUUID(),
       projectId: project.id,
       harness,

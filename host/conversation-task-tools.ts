@@ -1,4 +1,30 @@
-import type { HostTask } from "../src/features/tasks/model/hostTasks";
+import { hasUnmergedBranch, type HostTask } from "../src/features/tasks/model/hostTasks";
+
+/** S1 applies these after untrusted task arguments at the agent-tool boundary. */
+export const CONVERSATION_TASK_EXECUTION_DEFAULTS = Object.freeze({
+  isolate: true,
+  autoMerge: false,
+  continueUntilDone: false,
+});
+
+export function assertConversationWorkspaceIntent(input: Record<string, unknown>): void {
+  if (
+    input.isolate === false ||
+    [
+      "autoMerge",
+      "deliveryRequested",
+      "integrationDelivery",
+      "merge",
+      "push",
+      "pr",
+      "createPr",
+      "publish",
+    ].some((key) => input[key] !== undefined && input[key] !== false)
+  )
+    throw new Error(
+      "Agent tools cannot request shared-checkout execution, integration delivery, push or PR publication. Use the owner UI.",
+    );
+}
 
 const id = { type: "string", minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" };
 const pageFields = {
@@ -40,6 +66,7 @@ export function normalizeConversationTaskConfiguration(
   projectId: string,
   tasks: readonly Pick<HostTask, "id" | "projectId">[],
 ): Pick<HostTask, "dependsOn" | "verifyCommand"> {
+  assertConversationWorkspaceIntent(input);
   const patch: Pick<HostTask, "dependsOn" | "verifyCommand"> = {};
   if (input.dependsOn !== undefined) {
     const dependencies = input.dependsOn;
@@ -118,7 +145,7 @@ export function callConversationTaskRead(
             taskId,
             title: dependency.title,
             status: dependency.status,
-            blocking: dependency.status !== "done",
+            blocking: dependency.status !== "done" || hasUnmergedBranch(dependency),
           }
         : { taskId, status: "unavailable", blocking: false };
     });

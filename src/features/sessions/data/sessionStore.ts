@@ -87,6 +87,9 @@ export type SessionSummary = {
   providerSessionId?: string;
   branch?: string;
   worktreeCwd?: string;
+  workspaceMode?: "current" | "worktree";
+  workspaceId?: string;
+  workspaceRevision?: number;
   worktreeRemoved?: boolean;
   repo?: string;
   additions?: number;
@@ -117,6 +120,9 @@ type SessionRecord = {
   contextWindow?: number | null;
   branch?: string | null;
   worktreeCwd?: string | null;
+  workspaceMode?: "current" | "worktree" | null;
+  workspaceId?: string | null;
+  workspaceRevision?: number | null;
   worktreeRemoved?: boolean;
   linkedWorkItem?: LinkedWorkItem | null;
   automationId?: string | null;
@@ -143,6 +149,9 @@ type SessionUpsertPayload = {
   contextWindow?: number;
   branch?: string;
   worktreeCwd?: string;
+  workspaceMode?: "current" | "worktree";
+  workspaceId?: string;
+  workspaceRevision?: number;
   worktreeRemoved?: boolean;
   linkedWorkItem?: LinkedWorkItem;
   automationId?: string;
@@ -197,6 +206,11 @@ function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks">
     ...(session.context?.window ? { contextWindow: session.context.window } : {}),
     ...(session.branch ? { branch: session.branch } : {}),
     ...(session.worktreeCwd ? { worktreeCwd: session.worktreeCwd } : {}),
+    ...(session.workspaceMode ? { workspaceMode: session.workspaceMode } : {}),
+    ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
+    ...(Number.isSafeInteger(session.workspaceRevision) && session.workspaceRevision! >= 0
+      ? { workspaceRevision: session.workspaceRevision }
+      : {}),
     ...(session.worktreeRemoved ? { worktreeRemoved: true } : {}),
     ...(linkedWorkItem ? { linkedWorkItem } : {}),
     ...(session.automationId && isPersistableId(session.automationId)
@@ -1722,6 +1736,13 @@ function recordToSession(record: SessionRecord): Session {
       : {}),
     ...(record.branch ? { branch: record.branch } : {}),
     ...(record.worktreeCwd ? { worktreeCwd: record.worktreeCwd } : {}),
+    ...(record.workspaceMode === "current" || record.workspaceMode === "worktree"
+      ? { workspaceMode: record.workspaceMode }
+      : {}),
+    ...(record.workspaceId ? { workspaceId: record.workspaceId } : {}),
+    ...(Number.isSafeInteger(record.workspaceRevision) && record.workspaceRevision! >= 0
+      ? { workspaceRevision: record.workspaceRevision! }
+      : {}),
     ...(record.worktreeRemoved ? { worktreeRemoved: true } : {}),
     ...(linkedWorkItem ? { linkedWorkItem } : {}),
     ...(record.automationId && isPersistableId(record.automationId)

@@ -3,6 +3,7 @@ import type { HostTask } from "../src/features/tasks/model/hostTasks";
 import {
   callConversationTaskRead,
   normalizeConversationTaskConfiguration,
+  CONVERSATION_TASK_EXECUTION_DEFAULTS,
 } from "./conversation-task-tools";
 import { HostStore } from "./store";
 import { HostTasks } from "./tasks";
@@ -32,7 +33,6 @@ describe("conversation task configuration", () => {
           dependsOn: ["first", "first"],
           verifyCommand: "  pnpm test  ",
           runtimeMode: "auto",
-          autoMerge: true,
         },
         "second",
         "project",
@@ -48,6 +48,41 @@ describe("conversation task configuration", () => {
       ),
     ).toEqual({ dependsOn: [], verifyCommand: "" });
     expect(normalizeConversationTaskConfiguration({}, "second", "project", rows)).toEqual({});
+  });
+
+  it("keeps agent-created tasks isolated and refuses delivery or publication requests", () => {
+    expect(CONVERSATION_TASK_EXECUTION_DEFAULTS).toEqual({
+      isolate: true,
+      autoMerge: false,
+      continueUntilDone: false,
+    });
+    expect(Object.isFrozen(CONVERSATION_TASK_EXECUTION_DEFAULTS)).toBe(true);
+    for (const patch of [
+      { isolate: false },
+      { autoMerge: true },
+      { deliveryRequested: true },
+      { integrationDelivery: "main" },
+      { merge: true },
+      { push: "origin" },
+      { pr: {} },
+      { createPr: true },
+      { publish: true },
+    ])
+      expect(() => normalizeConversationTaskConfiguration(patch, "task", "project", [])).toThrow(
+        "owner UI",
+      );
+  });
+
+  it("reports completed but undelivered branches as blocking dependencies", () => {
+    const dependency = task("first", { status: "done", branch: "bycoda/t/first", merged: false });
+    expect(
+      callConversationTaskRead(
+        "tasks.dependencies.list",
+        {},
+        task("second", { dependsOn: ["first"] }),
+        [dependency],
+      ),
+    ).toMatchObject({ blockingCount: 1, items: [{ taskId: "first", blocking: true }] });
   });
 
   it("rejects missing, foreign, self, malformed and excessive dependencies", () => {

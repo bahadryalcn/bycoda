@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { execFileSync } from "node:child_process";
 import {
   chmod,
   mkdir,
@@ -12,13 +13,176 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WorkspaceCommands } from "./workspace-commands";
+import { WorkspaceCommands, type WorkspaceCommandDelivery } from "./workspace-commands";
 import { hostWorktrees } from "./git-worktrees";
 import * as workspace from "./workspace";
 import * as gitActions from "./git-actions";
 
 vi.mock("./git-worktrees", () => ({ hostWorktrees: vi.fn() }));
 const roots: string[] = [];
+
+async function managedDeliverySetup(startMutation?: WorkspaceCommandDelivery["startMutation"]) {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "bycoda-managed-command-")));
+  roots.push(root);
+  const project = join(root, "project");
+  const tree = join(root, "tree");
+  await mkdir(project);
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      windowsHide: true,
+    }).trim();
+  git(project, "init", "-q", "-b", "main");
+  git(project, "config", "user.name", "Test");
+  git(project, "config", "user.email", "test@example.test");
+  git(project, "config", "commit.gpgsign", "false");
+  git(project, "commit", "-q", "--allow-empty", "-m", "base");
+  git(project, "worktree", "add", "-q", "-b", "bycoda/t/test-123456789012", tree);
+  const service = { review: vi.fn(), merge: vi.fn(), publish: vi.fn(), recover: vi.fn() };
+  const registry = {
+    list: vi.fn().mockResolvedValue([
+      {
+        id: "w",
+        projectId: "p",
+        path: tree,
+        branchRef: "refs/heads/bycoda/t/test-123456789012",
+      },
+    ]),
+  };
+  vi.mocked(hostWorktrees).mockResolvedValue({
+    defaultRoot: root,
+    worktrees: [{ path: project }, { path: tree }],
+  } as never);
+  const commands = new WorkspaceCommands(
+    {
+      projects: () => [{ id: "p", cwd: project }],
+      attachmentDir: join(root, "attachments"),
+    } as never,
+    async (_id, action) => await action(),
+    undefined,
+    { registry, service, startMutation } as WorkspaceCommandDelivery,
+  );
+  return { commands, registry, service, project, tree, git };
+}
+
+it("fences Git and editor writes while leaving reads available and releases admission on success or validation failure", async () => {
+  const release = vi.fn(async () => {});
+  const startMutation = vi
+    .fn<NonNullable<WorkspaceCommandDelivery["startMutation"]>>()
+    .mockRejectedValueOnce(new Error("Workspace reservation is active"))
+    .mockRejectedValueOnce(new Error("Workspace reservation is active"))
+    .mockResolvedValue(release);
+  const { commands, tree, git } = await managedDeliverySetup(startMutation);
+  const path = join(tree, "source.txt");
+  await writeFile(path, "before");
+  await expect(commands.run("write_text_file", { path, content: "blocked" })).rejects.toThrow(
+    "Workspace reservation is active",
+  );
+  await expect(
+    commands.run("git_stage_file", { cwd: tree, relative: "source.txt" }),
+  ).rejects.toThrow("Workspace reservation is active");
+  expect(await readFile(path, "utf8")).toBe("before");
+  expect(git(tree, "diff", "--cached", "--name-only")).toBe("");
+  await commands.run("read_text_file", { path });
+  expect(startMutation).toHaveBeenCalledTimes(2);
+  expect(release).not.toHaveBeenCalled();
+  await commands.run("write_text_file", { path, content: "after" });
+  await commands.run("git_stage_file", { cwd: tree, relative: "source.txt" });
+  expect(git(tree, "diff", "--cached", "--name-only")).toBe("source.txt");
+  await expect(
+    commands.run("create_path", { parent: tree, name: "../outside", isDir: false }),
+  ).rejects.toThrow();
+  expect(release).toHaveBeenCalledTimes(3);
+});
+
+it("uses actual write destinations for admission even when input supplies an unrelated cwd", async () => {
+  const release = vi.fn(async () => {});
+  let destination = "";
+  const startMutation = vi.fn(async (path: string) => {
+    if (
+      path === destination ||
+      path.startsWith(`${destination}\\`) ||
+      path.startsWith(`${destination}/`)
+    )
+      throw new Error("Destination is reserved");
+    return release;
+  });
+  const { commands, project, tree } = await managedDeliverySetup(startMutation);
+  destination = tree;
+  const source = join(project, "input.txt");
+  await writeFile(source, "preserved");
+  const existing = join(tree, "existing.txt");
+  await writeFile(existing, "unchanged");
+  await expect(
+    commands.run("write_text_file", { cwd: project, path: existing, content: "blocked" }),
+  ).rejects.toThrow("Destination is reserved");
+  expect(await readFile(existing, "utf8")).toBe("unchanged");
+  for (const command of ["copy_path", "move_path"]) {
+    await expect(
+      commands.run(command, { cwd: project, from: source, destParent: tree }),
+    ).rejects.toThrow("Destination is reserved");
+  }
+  expect(await readFile(source, "utf8")).toBe("preserved");
+  expect(await readdir(tree)).not.toContain("input.txt");
+  expect(release).toHaveBeenCalledTimes(2);
+});
+
+it("blocks legacy delivery from a managed directory even after an external branch switch", async () => {
+  const { commands, project, tree, git } = await managedDeliverySetup();
+  git(tree, "checkout", "-qb", "external-name");
+  const head = git(project, "rev-parse", "HEAD");
+  for (const command of ["git_push", "git_sync", "git_pr_create", "git_merge"])
+    await expect(
+      commands.run(command, {
+        cwd: tree,
+        reference: "main",
+        confirmed: true,
+        owner: { ownerId: "owner", authorizationId: "renderer-claim" },
+      }),
+    ).rejects.toThrow("fresh review plan");
+  expect(git(project, "rev-parse", "HEAD")).toBe(head);
+  expect(git(tree, "status", "--porcelain")).toBe("");
+});
+
+it("blocks integration by source SHA after a managed directory is retired and fails closed on unknown ownership", async () => {
+  const { commands, registry, project, tree, git } = await managedDeliverySetup();
+  await writeFile(join(tree, "result.txt"), "result");
+  git(tree, "add", "result.txt");
+  git(tree, "commit", "-qm", "result");
+  const source = git(tree, "rev-parse", "HEAD");
+  git(project, "worktree", "remove", tree);
+  const head = git(project, "rev-parse", "HEAD");
+  await expect(
+    commands.run("git_merge", { cwd: project, expectedTargetSha: source.slice(0, 12) }),
+  ).rejects.toThrow("fresh review plan");
+  expect(git(project, "rev-parse", "HEAD")).toBe(head);
+  registry.list.mockRejectedValueOnce(new Error("Workspace ownership unavailable"));
+  await expect(commands.run("git_push", { cwd: project })).rejects.toThrow(
+    "Workspace ownership unavailable",
+  );
+});
+
+it("routes reviewed session delivery to the shared service with transport authorization separate from input", async () => {
+  const { commands, service } = await managedDeliverySetup();
+  const review = { workspaceId: "w", expectedRevision: 4, action: "merge" } as const;
+  const request = {
+    workspaceId: "w",
+    expectedRevision: 4,
+    idempotencyKey: "delivery",
+    planToken: "reviewed",
+  };
+  const proof = { ownerId: "owner", authorizationId: "transport-proof" };
+  service.review.mockResolvedValue({ token: "reviewed" });
+  service.merge.mockResolvedValue({ operationId: "merged" });
+  service.publish.mockResolvedValue({ operationId: "published" });
+  expect(await commands.reviewDelivery(review)).toEqual({ token: "reviewed" });
+  expect(await commands.mergeDelivery(request, proof)).toEqual({ operationId: "merged" });
+  expect(await commands.publishDelivery(request, proof)).toEqual({ operationId: "published" });
+  expect(service.review).toHaveBeenCalledWith(review);
+  expect(service.merge).toHaveBeenCalledWith(request, proof);
+  expect(service.publish).toHaveBeenCalledWith(request, proof);
+});
 
 it("isolates search cancellation by server owner and cancels revoked-owner work", async () => {
   const { projects, commands } = await setup();

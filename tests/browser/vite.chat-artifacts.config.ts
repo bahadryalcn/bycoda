@@ -8,7 +8,11 @@ export default defineConfig({
     outDir: "temp/build/browser-chat-artifacts",
     emptyOutDir: false,
     rolldownOptions: {
-      input: ["tests/browser/transcript.html", "tests/browser/artifact-formats.html"],
+      input: [
+        "tests/browser/transcript.html",
+        "tests/browser/artifact-formats.html",
+        "tests/browser/workspace-rewind.html",
+      ],
     },
   },
   preview: { host: "127.0.0.1", port: 1449, strictPort: true },

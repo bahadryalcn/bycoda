@@ -14,22 +14,13 @@ import {
   shouldAskOutgoingAgent,
 } from "../../../../features/sessions/model/handoff";
 import { requestOutgoingHandoff } from "../../../../features/sessions/model/handoffTurn";
-import { sessionWorkCwd } from "../../../../features/sessions/model/session";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
-import {
-  createWorktree,
-  namedWorktreeBranch,
-  renameWorktreeBranch,
-  temporaryWorktreeBranchName,
-} from "../../../../features/source-control/model/worktrees";
+import { prepareSessionWorkspace } from "../../../../features/workspaces/model/sessionWorkspace";
 import {
   forgetHarnessSession,
-  generateHarnessBranchName,
   isLiveHarness,
-  pickTextHarness,
   stopStreaming,
 } from "../../../../integrations/harness";
-import { pathKey } from "../../../../shared/lib/paths";
 import { currentWorkspace } from "../../helpers/appHelpers";
 
 export function startSubmittedTurn(
@@ -40,38 +31,32 @@ export function startSubmittedTurn(
 ): void {
   const { enqueueHarnessEvent, flushHarnessEvents } = ctx;
   const { editedResends, retiringTurns, turnGen, workspacePins } = ctx.refs;
-  const { sessionId, text, attachments, options } = input;
-  const {
-    current,
-    editedResend,
-    handoffCard,
-    initialWorkCwd,
-    createDraftWorktree,
-    harnessText,
-    pendingSwitch,
-  } = pre;
+  const { sessionId, text, options } = input;
+  const { current, editedResend, handoffCard, initialWorkCwd, createDraftWorktree, pendingSwitch } =
+    pre;
   const { gen, proposalId, queuedHandoff, launchTitleGeneration, turn } = setup;
   void (async () => {
     let workCwd = initialWorkCwd;
     if (createDraftWorktree) {
-      const tree = await createWorktree(
-        current.cwd,
-        temporaryWorktreeBranchName(),
-        current.worktreeBase || "HEAD",
-        false,
-      );
-      workCwd = tree.path;
+      const workspace = await prepareSessionWorkspace(current);
+      if (turnGen.current.get(sessionId) !== gen) return;
+      workCwd = workspace?.path ?? initialWorkCwd;
       workspacePins.current.set(sessionId, currentWorkspace(current.cwd));
-      if (turn.proposalDraft)
-        turn.proposalDraft = { ...turn.proposalDraft, checkoutCwd: tree.path };
+      if (turn.proposalDraft) turn.proposalDraft = { ...turn.proposalDraft, checkoutCwd: workCwd };
       setSessions((prev) =>
         prev.map((session) =>
           session.id === sessionId
             ? {
                 ...session,
-                worktreeCwd: tree.path,
-                branch: tree.branch ?? undefined,
-                workspaceMode: undefined,
+                ...(workspace
+                  ? {
+                      workspaceId: workspace.id,
+                      workspaceRevision: workspace.revision,
+                      worktreeCwd: workspace.path,
+                      branch: workspace.branchRef.replace(/^refs\/heads\//, ""),
+                    }
+                  : {}),
+                workspaceMode: workspace ? undefined : "current",
                 worktreeBase: undefined,
                 worktreePreparing: undefined,
               }
@@ -79,24 +64,6 @@ export function startSubmittedTurn(
         ),
       );
       notifyReviewChanged(sessionId);
-
-      const branchMessage = harnessText || attachments.map((file) => file.name).join(", ");
-      void generateHarnessBranchName(pickTextHarness(current.harness), workCwd, branchMessage)
-        .then(async (fragment) => {
-          const branch = fragment ? namedWorktreeBranch(fragment) : null;
-          if (!branch) return;
-          const renamed = await renameWorktreeBranch(current.cwd, tree.path, branch);
-          setSessions((prev) =>
-            prev.map((session) =>
-              session.id === sessionId && pathKey(sessionWorkCwd(session)) === pathKey(tree.path)
-                ? { ...session, branch: renamed.branch ?? undefined }
-                : session,
-            ),
-          );
-        })
-        .catch((error) => {
-          console.warn("App operation failed", error);
-        });
     }
     launchTitleGeneration(workCwd);
     if (turnGen.current.get(sessionId) !== gen) return;

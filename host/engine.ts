@@ -4,6 +4,9 @@ import { parseProviderAccountId } from "../src/features/providers/model/provider
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, dirname, join } from "node:path";
 import { HostCheckpoints } from "./checkpoints";
+import type { TurnGitHistory } from "./workspace-service-contracts";
+import type { ConversationRewindAdapter } from "./session-rewind";
+import { durableWrite, refComponent } from "./turn-git-history";
 import { previewContextualSession } from "./contextual-session";
 import {
   composeNoteContext,
@@ -74,6 +77,7 @@ import type { HostProvider } from "./providers";
 import { HostStore } from "./store";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 import { runHostShell } from "./shell";
+import { isTaskWorktreeRemoving } from "./task-worktree-cleanup";
 import { prepareHostSkillPrompt } from "./prompt-skills";
 import {
   forgetRuntimeHint,
@@ -209,6 +213,12 @@ export function parseCommand(input: unknown): HostCommand {
   )
     throw new Error("Send note context as a new regular message");
   if (v.type === "create") {
+    if (
+      v.workspaceMode !== undefined &&
+      v.workspaceMode !== "current" &&
+      v.workspaceMode !== "worktree"
+    )
+      throw new Error("Invalid workspace mode");
     if (!isRemoteProvider(v.harness) || !RUNTIME_MODES.includes(v.runtimeMode as never))
       throw new Error("Invalid provider or permission mode");
     if (
@@ -222,6 +232,11 @@ export function parseCommand(input: unknown): HostCommand {
       type: "create",
       commandId,
       projectId: text(v.projectId, "project ID"),
+      ...(v.sessionId !== undefined ? { sessionId: text(v.sessionId, "session ID", 128) } : {}),
+      ...(v.workspaceId !== undefined ? { workspaceId: text(v.workspaceId, "workspace ID") } : {}),
+      ...(v.workspaceMode !== undefined
+        ? { workspaceMode: v.workspaceMode as "current" | "worktree" }
+        : {}),
       ...(v.worktreeCwd !== undefined
         ? { worktreeCwd: text(v.worktreeCwd, "working copy", 4096) }
         : {}),
@@ -456,6 +471,47 @@ export function parseCommand(input: unknown): HostCommand {
   throw new Error("Unsupported command");
 }
 
+/** S1 supplies registry identity; S2 supplies capture and the durable recovery fence.
+ * The resolver must reject unknown/broken managed ownership rather than return legacy.
+ */
+export interface ManagedTurnHistoryAdapter {
+  history: TurnGitHistory;
+  workspaceForSession(value: HostSession): Promise<{ workspaceId: string; path?: string } | null>;
+  assertWritable(workspaceId: string): Promise<void>;
+  prepareWorkspaceForCreate?(request: {
+    projectId: string;
+    sessionId: string;
+    idempotencyKey: string;
+  }): Promise<{ workspaceId: string }>;
+  workspaceForCreate?(request: {
+    projectId: string;
+    workspaceId: string;
+    worktreeCwd?: string;
+  }): Promise<{
+    workspaceId: string;
+    path: string;
+    branchRef: string;
+    revision: number;
+    /** A session-owned workspace was prepared against this stable identity. */
+    sessionId?: string;
+  }>;
+  /** The shared reservation gate holds this activity until the process settles. */
+  startActivity?(value: HostSession, kind: "provider" | "shell"): Promise<() => Promise<void>>;
+  /** A contextual handoff or second opinion is a separate scheduled writer. */
+  prepareContextualWorkspace?(request: {
+    source: HostSession;
+    sessionId: string;
+    idempotencyKey: string;
+  }): Promise<{ workspaceId: string }>;
+}
+
+type ManagedTurnBoundary = {
+  workspaceId: string;
+  sessionId: string;
+  userBlockId: string;
+  runId: string;
+};
+
 export class HostEngine {
   private readonly operations = new EngineOperations();
   private switchingProjects = new Set<string>();
@@ -471,6 +527,9 @@ export class HostEngine {
       ending: boolean;
       persistenceFailed: boolean;
       resumeAtReset?: boolean;
+      managedTurns: ManagedTurnBoundary[];
+      managed: boolean;
+      releaseActivity?: () => Promise<void>;
     }
   >();
   /** Running sessions, including streamed events not yet written to disk. */
@@ -502,10 +561,11 @@ export class HostEngine {
     if (this.closing) return "Host is stopping";
     if (this.rewinding.has(sessionId)) return "A conversation change is in progress";
     try {
-      if (this.switchingProjects.has((await this.store.session(sessionId)).projectId))
-        return "A branch switch is in progress";
-    } catch {
-      /* unknown conversation */
+      const value = await this.store.session(sessionId);
+      await this.managedWorkspace(value);
+      if (this.switchingProjects.has(value.projectId)) return "A branch switch is in progress";
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
     }
     return undefined;
   }
@@ -516,6 +576,7 @@ export class HostEngine {
     readonly store: HostStore,
     private readonly providers: Partial<Record<RemoteProvider, HostProvider>>,
     private readonly shell: (cwd: string, command: string) => Promise<ShellResult> = runHostShell,
+    private managedTurns?: ManagedTurnHistoryAdapter,
   ) {
     const checkpointRoot = join(dirname(store.attachmentDir), "checkpoints");
     this.checkpoints = new HostCheckpoints(
@@ -527,7 +588,248 @@ export class HostEngine {
 
   readonly ready: Promise<void>;
 
-  private async initialize(): Promise<void> {
+  /** Server composition attaches the one shared service graph before accepting writes. */
+  setManagedTurnHistoryAdapter(adapter: ManagedTurnHistoryAdapter): void {
+    if (this.running.size || this.managedTurns)
+      throw new Error("Managed execution services are already attached or running");
+    this.managedTurns = adapter;
+  }
+
+  /** Run only after durable workspace recovery, before starting schedulers/transports. */
+  async recoverManagedStartup(): Promise<void> {
+    await this.ready;
+    await this.initialize(true);
+  }
+
+  private async executionActivity(value: HostSession, kind: "provider" | "shell") {
+    if (isTaskWorktreeRemoving(value.session.worktreeCwd ?? value.session.cwd))
+      throw new Error("The task checkout is being removed; wait before starting work");
+    await this.managedWorkspace(value);
+    return this.managedTurns?.startActivity?.(value, kind);
+  }
+
+  private async managedWorkspace(value: HostSession) {
+    const session = value.session as Session & {
+      workspaceId?: string;
+      managedWorkspaceId?: string;
+    };
+    const managedId = session.managedWorkspaceId ?? session.workspaceId;
+    const workspace = await this.managedTurns?.workspaceForSession(value);
+    if (managedId && workspace?.workspaceId !== managedId)
+      throw new Error(
+        "Managed workspace execution requires its authoritative turn-history adapter",
+      );
+    if (workspace) await this.managedTurns!.assertWritable(workspace.workspaceId);
+    return workspace;
+  }
+
+  private async beginManagedTurn(value: HostSession, userBlockId: string) {
+    const workspace = await this.managedWorkspace(value);
+    if (!workspace) return undefined;
+    const boundary = {
+      workspaceId: workspace.workspaceId,
+      sessionId: value.session.id,
+      userBlockId,
+      runId: value.runId!,
+    };
+    const record = await this.managedTurns!.history.begin({
+      ...boundary,
+      conversationRevision: value.revision,
+    });
+    if (record.before.status !== "complete")
+      throw new Error(
+        `Turn Git capture blocked: ${record.before.reason}. Retry after resolving it.`,
+      );
+    return boundary;
+  }
+
+  /** Local HostStore side of the same protocol used by the native receipt bridge.
+   * Rescue files stay outside materialized workspaces; receipts do not expire with RPC receipts.
+   */
+  conversationRewindAdapter(
+    rescueRoot = join(dirname(this.store.attachmentDir), "rewind-transcripts"),
+  ): ConversationRewindAdapter {
+    let schema: Promise<void> | undefined;
+    const initialize = () =>
+      (schema ??= this.store.db.scope(() =>
+        this.store.db.exec(`
+      CREATE TABLE IF NOT EXISTS managed_rewind_receipts (
+        operation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+        signature TEXT NOT NULL, revision INTEGER NOT NULL
+      )`),
+      ));
+    const path = (operationId: string) => join(rescueRoot, `${refComponent(operationId)}.json`);
+    const receipt = async (operationId: string) => {
+      await initialize();
+      const row = await this.store.db.scope(() =>
+        this.store.db
+          .prepare("SELECT revision FROM managed_rewind_receipts WHERE operation_id=?")
+          .get(operationId),
+      );
+      return row ? { revision: Number(row.revision) } : null;
+    };
+    return {
+      read: async (sessionId) => {
+        await this.ready;
+        await this.flush(sessionId);
+        const value = await this.store.session(sessionId);
+        return {
+          revision: value.revision,
+          userBlockIds: value.session.blocks
+            .filter((block) => block.role === "user" && !block.draft && !block.internal)
+            .map((block) => block.id),
+        };
+      },
+      settle: async (sessionId) => {
+        await this.ready;
+        const initial = await this.store.session(sessionId);
+        const active = this.running.get(sessionId);
+        const provider = this.provider(initial.session.harness);
+        if (active) {
+          active.cancelled = true;
+          await provider.cancel(sessionId);
+          await provider.stop(sessionId);
+          await active.done;
+        } else {
+          await provider.stop(sessionId);
+        }
+        await this.flush(sessionId);
+        const latest = await this.store.session(sessionId);
+        if (
+          this.running.has(sessionId) ||
+          latest.status === "running" ||
+          latest.session.blocks.some((block) => block.shell?.running) ||
+          (latest.session.backgroundTasks?.length ?? 0) > 0 ||
+          (latest.session.backgroundAgents ?? 0) > 0 ||
+          (latest.session.queuedMessages?.length ?? 0) > 0
+        )
+          throw new Error("Settle background writers, shells and queued messages before rewinding");
+      },
+      withSessionGate: async (sessionId, work) => {
+        await this.ready;
+        if (this.rewinding.has(sessionId))
+          throw new Error("Another conversation change is in progress");
+        this.rewinding.add(sessionId);
+        try {
+          await this.flush(sessionId);
+          return await work();
+        } finally {
+          this.rewinding.delete(sessionId);
+          this.onUnblocked?.();
+        }
+      },
+      rescue: async (operationId, sessionId, expectedRevision) => {
+        await this.ready;
+        await this.flush(sessionId);
+        const value = await this.store.session(sessionId);
+        if (value.revision !== expectedRevision)
+          throw new Error("The conversation changed before transcript rescue");
+        const existing = await readFile(path(operationId), "utf8").catch(
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return undefined;
+            throw error;
+          },
+        );
+        if (existing) {
+          const saved = JSON.parse(existing) as { operationId: string; value: HostSession };
+          if (saved.operationId !== operationId || saved.value.session.id !== sessionId)
+            throw new Error("Transcript rescue ownership mismatch");
+          if (saved.value.revision !== expectedRevision)
+            throw new Error("Transcript rescue revision does not match the operation");
+          return operationId;
+        }
+        await durableWrite(path(operationId), JSON.stringify({ operationId, value }));
+        return operationId;
+      },
+      restore: async (request) => {
+        await this.ready;
+        await initialize();
+        const signature = createHash("sha256").update(JSON.stringify(request)).digest("hex");
+        const rescued =
+          request.direction === "undo"
+            ? (JSON.parse(await readFile(path(request.transcriptRescueId ?? ""), "utf8")) as {
+                operationId: string;
+                value: HostSession;
+              })
+            : undefined;
+        if (
+          rescued &&
+          (rescued.operationId !== request.transcriptRescueId ||
+            rescued.value.session.id !== request.sessionId)
+        )
+          throw new Error("Transcript rescue ownership mismatch");
+        const result = await this.store.transaction(async () => {
+          const existing = await this.store.db
+            .prepare(
+              "SELECT session_id, signature, revision FROM managed_rewind_receipts WHERE operation_id=?",
+            )
+            .get(request.operationId);
+          if (existing) {
+            if (existing.session_id !== request.sessionId || existing.signature !== signature)
+              throw new Error("Rewind operation ID was already used with a different payload");
+            return { revision: Number(existing.revision) };
+          }
+          const latest = await this.store.session(request.sessionId);
+          if (
+            latest.revision !== request.expectedRevision ||
+            latest.status === "running" ||
+            this.running.has(request.sessionId)
+          )
+            throw new Error("The conversation changed; reconcile before rewinding");
+          const session = rescued
+            ? {
+                ...latest.session,
+                blocks: rescued.value.session.blocks,
+                rewindHistory: rescued.value.session.rewindHistory,
+                providerSessionId: undefined,
+                pendingContextReplay:
+                  buildConversationReplay(rescued.value.session.blocks) || undefined,
+                context: undefined,
+                usage: undefined,
+                usageLimit: undefined,
+                retryMessage: undefined,
+                pendingQuestion: undefined,
+                submittedQuestions: undefined,
+                pendingSwitch: undefined,
+                queueStatus: undefined,
+                queuedMessages: rescued.value.session.queuedMessages,
+                editingQueuedMessageId: undefined,
+                backgroundTasks: undefined,
+                backgroundAgents: undefined,
+                runningModelTarget: undefined,
+                busy: false,
+              }
+            : rewindConversationBeforeMessage(latest.session, request.userBlockId, Date.now(), {
+                managedWorkspace: true,
+                operationId: request.operationId,
+              });
+          if (session === latest.session)
+            throw new Error("This conversation cannot be rewound at the selected message");
+          const saved = await this.save(
+            { ...latest, session, status: "idle", runId: undefined },
+            {
+              type: "conversation.gitRewound",
+              operationId: request.operationId,
+              direction: request.direction,
+            },
+          );
+          await this.store.db
+            .prepare(
+              "INSERT INTO managed_rewind_receipts (operation_id, session_id, signature, revision) VALUES (?, ?, ?, ?)",
+            )
+            .run(request.operationId, request.sessionId, signature, saved.revision);
+          return { revision: saved.revision };
+        });
+        forgetRuntimeHint(request.sessionId);
+        const live = this.live.get(request.sessionId);
+        if (live) live.value = await this.store.session(request.sessionId);
+        return result;
+      },
+      receipt,
+    };
+  }
+
+  private async initialize(managedOnly = false): Promise<void> {
     await this.store.ready;
     const store = this.store;
     // Provider dispatch is not transactional with SQLite. Never replay a send
@@ -535,12 +837,48 @@ export class HostEngine {
     // Only sessions that need rewriting are parsed; the rest are bound from
     // mirror columns and their snapshot loads on first access.
     for (const state of await store.startupStates()) {
-      if (state.hasDesktop && !state.shellRunning && !state.running) {
-        if (state.providerSessionId && state.harness)
-          this.provider(state.harness).bind(state.id, state.providerSessionId, state.cwd ?? "");
+      if (!this.managedTurns && state.workspaceId) continue;
+      if (managedOnly && !state.workspaceId) continue;
+      const snapshot =
+        this.managedTurns || state.running || state.shellRunning || !state.hasDesktop
+          ? await store.session(state.id)
+          : undefined;
+      // The CLI creates the engine before the shared recovery graph. Never run legacy
+      // recovery against a durable managed conversation in that interval.
+      if (!this.managedTurns && snapshot?.session.workspaceId) continue;
+      const managedValue = this.managedTurns ? snapshot : undefined;
+      let managed:
+        | Awaited<ReturnType<ManagedTurnHistoryAdapter["workspaceForSession"]>>
+        | undefined;
+      try {
+        managed = managedValue
+          ? await this.managedTurns!.workspaceForSession(managedValue)
+          : undefined;
+      } catch {
+        // A retired directory or unresolved ownership remains readable and fenced.
+        // Never rewrite its transcript or bind a provider to a legacy fallback cwd.
+        // A later explicit operation reports the authoritative resolution failure.
         continue;
       }
-      let value = await store.session(state.id);
+      if (managedOnly && !managed) continue;
+      if (managed) {
+        try {
+          await this.managedTurns!.assertWritable(managed.workspaceId);
+        } catch {
+          // Cross-store rewind recovery owns this transcript until reconciled.
+          continue;
+        }
+      }
+      if (state.hasDesktop && !state.shellRunning && !state.running) {
+        if (state.providerSessionId && state.harness)
+          this.provider(state.harness).bind(
+            state.id,
+            state.providerSessionId,
+            managed?.path ?? state.cwd ?? "",
+          );
+        continue;
+      }
+      let value = managedValue ?? (await store.session(state.id));
       // Sessions started here before they were shared with this machine's
       // desktop app become shared too, so the app on this machine lists them.
       if (!value.desktop)
@@ -567,9 +905,24 @@ export class HostEngine {
           { type: "shell.interrupted" },
         );
       if (value.status === "running") {
-        void this.checkpoints
-          .recover(value.session.id, value.session.cwd)
-          .catch((error) => console.warn("Checkpoint recovery failed", error));
+        if (!managed) {
+          void this.checkpoints
+            .recover(value.session.id, value.session.cwd)
+            .catch((error) => console.warn("Checkpoint recovery failed", error));
+        } else {
+          for (const record of await this.managedTurns!.history.list(
+            managed.workspaceId,
+            value.session.id,
+          )) {
+            if (!record.after && record.before.status === "complete")
+              await this.managedTurns!.history.end({
+                workspaceId: managed.workspaceId,
+                sessionId: value.session.id,
+                userBlockId: record.userBlockId,
+                runId: record.runId,
+              });
+          }
+        }
         await this.save(
           this.settled(
             value,
@@ -645,12 +998,30 @@ export class HostEngine {
     const preview = previewContextualSession(source, contextualInput(command), true);
     if (preview.digest !== command.previewDigest)
       throw new Error("The reviewed context changed. Review it again before continuing.");
+    await this.managedWorkspace(source);
+    const contextualWorkspace = this.managedTurns
+      ? await this.managedTurns?.prepareContextualWorkspace?.({
+          source,
+          // Stable across a crash between workspace creation and transcript acceptance.
+          sessionId: createHash("sha256")
+            .update(`contextual-session:${command.commandId}`)
+            .digest("hex")
+            .slice(0, 32),
+          idempotencyKey: `contextual:${command.commandId}:workspace`,
+        })
+      : undefined;
+    if (this.managedTurns && !contextualWorkspace)
+      throw new Error(
+        "Prepare a separate managed workspace before starting this contextual session",
+      );
     return await this.store.transaction(async () => {
       const created = await this.command({
         type: "create",
         commandId: `${command.commandId}:create`,
         projectId: source.projectId,
-        worktreeCwd: preview.cwd,
+        ...(contextualWorkspace
+          ? { workspaceId: contextualWorkspace.workspaceId }
+          : { worktreeCwd: preview.cwd }),
         harness: command.harness,
         model: command.model,
         modelSettings: command.modelSettings,
@@ -675,8 +1046,12 @@ export class HostEngine {
               command.harness,
               command.mode === "handoff" ? "Handoff" : "Second opinion",
             ),
-            ...(source.session.worktreeCwd ? { worktreeCwd: source.session.worktreeCwd } : {}),
-            ...(source.session.branch ? { branch: source.session.branch } : {}),
+            ...(!contextualWorkspace && source.session.worktreeCwd
+              ? { worktreeCwd: source.session.worktreeCwd }
+              : {}),
+            ...(!contextualWorkspace && source.session.branch
+              ? { branch: source.session.branch }
+              : {}),
           },
         },
         {
@@ -736,6 +1111,12 @@ export class HostEngine {
       this.operations.run(snapshot.session.id, async () => {
         const id = snapshot.session.id;
         if (this.rewinding.has(id)) throw new Error("A conversation change is in progress");
+        const managed = await this.managedWorkspace(snapshot);
+        if (managed?.path)
+          snapshot = {
+            ...snapshot,
+            session: { ...snapshot.session, cwd: managed.path, worktreeCwd: managed.path },
+          };
         if (snapshot.status === "running") throw new LeaseHeldError("desktop");
         const provider = this.provider(snapshot.session.harness);
         const saved = await this.store.transaction(async () => {
@@ -795,6 +1176,7 @@ export class HostEngine {
         if (this.rewinding.has(id)) return undefined;
         if (snapshot.status === "running" || this.live.has(id)) return undefined;
         const current = await this.store.session(id);
+        await this.managedWorkspace(current);
         if (!current.desktop || current.status === "running") return undefined;
         if (snapshot.updatedAt <= current.desktop.updatedAt) return undefined;
         const { session } = snapshot;
@@ -953,6 +1335,8 @@ export class HostEngine {
     await this.ready;
     return this.store.db.scope(() =>
       this.operations.run(id, async () => {
+        if (this.rewinding.has(id)) throw new Error("A conversation change is in progress");
+        await this.managedWorkspace(await this.store.session(id));
         await this.flush(id);
         const summary = await this.store.updateSession(id, patch);
         const live = this.live.get(id);
@@ -1039,6 +1423,9 @@ export class HostEngine {
                     { type: "interrupted", reason: "persistence failure" },
                   );
                 }
+                const active = this.running.get(id);
+                await active?.releaseActivity?.();
+                if (active) active.releaseActivity = undefined;
                 await this.onSettled?.(id, {
                   interrupted: true,
                   reason:
@@ -1075,6 +1462,32 @@ export class HostEngine {
     this.retryTimers.set(id, timer);
   }
 
+  private async prepareCreation(command: Extract<HostCommand, { type: "create" }>) {
+    if (command.workspaceId) return { workspaceId: command.workspaceId };
+    // Adapter-less engines are legacy embeddings. Production attaches the managed
+    // runtime before accepting transports; configured managed engines fail closed.
+    if (!this.managedTurns || command.workspaceMode === "current") return undefined;
+    const project = await this.store.project(command.projectId);
+    // An explicitly selected existing legacy worktree retains its identity without
+    // being silently adopted into automatic lifecycle management.
+    if (
+      command.worktreeCwd &&
+      command.workspaceMode !== "worktree" &&
+      resolveHostWorktree(project.cwd, command.worktreeCwd) !== project.cwd
+    )
+      return undefined;
+    const prepared = await this.managedTurns.prepareWorkspaceForCreate?.({
+      projectId: command.projectId,
+      sessionId:
+        command.sessionId ??
+        createHash("sha256").update(`host-session:${command.commandId}`).digest("hex").slice(0, 32),
+      idempotencyKey: `host-session:${command.commandId}:workspace`,
+    });
+    if (!prepared)
+      throw new Error("Managed session creation requires workspace preparation; update this Host");
+    return prepared;
+  }
+
   async command(raw: unknown): Promise<CommandReceipt> {
     await this.ready;
     return this.store.db.scope(() =>
@@ -1100,9 +1513,11 @@ export class HostEngine {
               .digest("hex");
             const previous = await this.store.receipt(create.commandId, signature);
             if (previous) return previous;
+            const prepared = await this.prepareCreation(create);
             return await this.store.transaction(async () => {
               const created = await this.command({
                 ...create,
+                ...(prepared ? { workspaceId: prepared.workspaceId, worktreeCwd: undefined } : {}),
                 commandId: `${create.commandId}:create`,
               });
               const sent = await this.command({ ...first, sessionId: created.sessionId });
@@ -1120,10 +1535,14 @@ export class HostEngine {
           if (previous) return previous;
           if (command.type === "contextual")
             return await this.contextualCommand(command, signature);
+          const prepared =
+            command.type === "create" ? await this.prepareCreation(command) : undefined;
           if (command.type !== "create" && this.rewinding.has(command.sessionId))
             throw new Error("A conversation change is in progress");
           // Commands apply to the latest state, including batched stream output.
           if (command.type !== "create") await this.flush(command.sessionId);
+          if (command.type !== "create" && command.type !== "cancel" && command.type !== "stopItem")
+            await this.managedWorkspace(await this.store.session(command.sessionId));
           let effect: ((saved: HostSession) => void) | undefined;
           const { receipt, saved } = await this.store.transaction(async () => {
             let value: HostSession;
@@ -1133,11 +1552,35 @@ export class HostEngine {
               if (this.switchingProjects.has(project.id))
                 throw new Error("Wait for the branch switch to finish");
               this.provider(command.harness);
-              const cwd = resolveHostWorktree(project.cwd, command.worktreeCwd);
+              const workspaceId = prepared?.workspaceId ?? command.workspaceId;
+              const managed = workspaceId
+                ? await this.managedTurns?.workspaceForCreate?.({
+                    projectId: project.id,
+                    workspaceId,
+                    worktreeCwd: command.workspaceId ? command.worktreeCwd : undefined,
+                  })
+                : undefined;
+              if (workspaceId && managed?.workspaceId !== workspaceId)
+                throw new Error(
+                  "Managed session creation requires authoritative workspace ownership",
+                );
+              if (managed) await this.managedTurns!.assertWritable(managed.workspaceId);
+              if (
+                command.sessionId &&
+                managed?.sessionId &&
+                command.sessionId !== managed.sessionId
+              )
+                throw new Error("Requested session identity does not own this workspace");
+              const cwd = managed?.path ?? resolveHostWorktree(project.cwd, command.worktreeCwd);
+              const sessionId = managed?.sessionId ?? command.sessionId ?? randomUUID();
+              if (await this.store.sessionAuthority(sessionId))
+                throw new Error(
+                  "This managed workspace already has its session; resume it instead",
+                );
               const now = Date.now();
               value = {
                 projectId: project.id,
-                autoWorktreeBranch: command.autoWorktreeBranch,
+                autoWorktreeBranch: managed ? undefined : command.autoWorktreeBranch,
                 // Shared with this machine's desktop app from the start: it lists
                 // the session in its project, and turns it runs come back here.
                 desktop: { updatedAt: 0 },
@@ -1146,8 +1589,17 @@ export class HostEngine {
                 createdAt: now,
                 updatedAt: now,
                 session: {
-                  id: randomUUID(),
+                  id: sessionId,
                   cwd,
+                  ...(!managed ? { workspaceMode: "current" as const } : {}),
+                  ...(managed
+                    ? {
+                        workspaceId: managed.workspaceId,
+                        workspaceRevision: managed.revision,
+                        worktreeCwd: managed.path,
+                        branch: managed.branchRef.replace(/^refs\/heads\//, ""),
+                      }
+                    : {}),
                   harness: command.harness,
                   ...(command.providerAccountId === undefined
                     ? {}
@@ -1156,7 +1608,7 @@ export class HostEngine {
                   runtimeMode: command.runtimeMode,
                   modelSettings: command.modelSettings ?? {},
                   title: "New remote session",
-                  ...(command.autoWorktreeBranch
+                  ...(!managed && command.autoWorktreeBranch
                     ? { branch: command.autoWorktreeBranch, worktreeCwd: cwd }
                     : {}),
                   blocks: [],
@@ -1519,6 +1971,7 @@ export class HostEngine {
                           `${handoffBlock}${command.type === "send" && command.noteCard ? composeNoteContext(command.noteCard, "") : ""}`,
                         ).trim()
                       : "",
+                    command.commandId,
                   );
                   if (firstTurn && command.type === "send") {
                     this.generateFirstTurnNames(saved, command.text, placeholderTitle);
@@ -1646,6 +2099,11 @@ export class HostEngine {
                           this.running.get(command.sessionId) !== active
                         )
                           return;
+                        const managedBoundary = await this.beginManagedTurn(
+                          await this.store.session(command.sessionId),
+                          command.commandId,
+                        );
+                        if (managedBoundary) active.managedTurns.push(managedBoundary);
                         attempted = true;
                         await this.followUpDelivery(
                           command.sessionId,
@@ -1708,7 +2166,11 @@ export class HostEngine {
                 } else {
                   if (value.session.pendingQuestion?.requestId !== command.requestId)
                     throw new Error("Question is already resolved");
-                  if (["sending", "queued", "unknown"].includes(value.session.pendingQuestion.delivery ?? ""))
+                  if (
+                    ["sending", "queued", "unknown"].includes(
+                      value.session.pendingQuestion.delivery ?? "",
+                    )
+                  )
                     throw new Error("Question answer is already pending delivery");
                   value = {
                     ...value,
@@ -1726,7 +2188,8 @@ export class HostEngine {
                         type: "question.updated",
                         requestId: command.requestId,
                         delivery: "unknown",
-                        error: "Answer delivery could not be confirmed. Check the connection before continuing.",
+                        error:
+                          "Answer delivery could not be confirmed. Check the connection before continuing.",
                       });
                     }
                   };
@@ -1783,6 +2246,7 @@ export class HostEngine {
     try {
       await this.flush(command.sessionId);
       const initial = await this.store.session(command.sessionId);
+      await this.managedWorkspace(initial);
       if (
         initial.status === "running" ||
         this.running.has(command.sessionId) ||
@@ -1838,6 +2302,10 @@ export class HostEngine {
     try {
       await this.flush(command.sessionId);
       const initial = await this.store.session(command.sessionId);
+      if (await this.managedWorkspace(initial))
+        throw new Error(
+          "Managed workspaces require sessions.rewind.plan/apply; preview the Git rewind first",
+        );
       if (command.expectedRevision !== undefined && initial.revision !== command.expectedRevision)
         throw new Error("The conversation changed; refresh before rewinding");
       if (initial.status === "running" || this.running.has(command.sessionId))
@@ -1993,7 +2461,23 @@ export class HostEngine {
   }
 
   private runShell(id: string, blockId: string, cwd: string, command: string): void {
-    void this.shell(cwd, command)
+    void (async (): Promise<ShellResult> => {
+      let release: (() => Promise<void>) | undefined;
+      try {
+        const value = await this.store.session(id);
+        release = await this.executionActivity(value, "shell");
+        // Resolve once more at admission; never execute a renderer-supplied cwd.
+        return await this.shell(value.session.worktreeCwd ?? value.session.cwd ?? cwd, command);
+      } catch (error) {
+        return {
+          output: error instanceof Error ? error.message : String(error),
+          exitCode: null,
+          timedOut: false,
+        };
+      } finally {
+        await release?.();
+      }
+    })()
       .then((result) => {
         if (this.closing) return;
         return this.store.db.scope(() =>
@@ -2030,15 +2514,28 @@ export class HostEngine {
     const provider = this.provider(value.session.harness);
     const { id, cwd, harness, title } = value.session;
     if (generateTitle && provider.generateTitle) {
-      void provider
-        .generateTitle({ sessionId: id, cwd, message })
+      void (async () => {
+        const release = await this.executionActivity(value, "provider");
+        try {
+          const workspace = await this.managedWorkspace(value);
+          return await provider.generateTitle!({
+            sessionId: id,
+            cwd: workspace?.path ?? cwd,
+            message,
+          });
+        } finally {
+          await release?.();
+        }
+      })()
         .then((generated) => {
           if (this.closing || !generated) return;
           return this.store.db.scope(() =>
             this.operations.run(id, async () => {
               if (this.closing) return;
+              if (this.rewinding.has(id)) return;
               await this.flush(id);
               const current = await this.store.session(id);
+              await this.managedWorkspace(current);
               if (current.session.title !== title) return;
               const saved = await this.save(
                 {
@@ -2058,7 +2555,7 @@ export class HostEngine {
         .catch((error) => console.debug("[bycoda] remote session title", error));
     }
     const temporary = value.autoWorktreeBranch;
-    if (temporary && provider.generateBranchName) {
+    if (temporary && !value.session.workspaceId && provider.generateBranchName) {
       void provider
         .generateBranchName(cwd, message)
         .then(async (fragment) => {
@@ -2067,6 +2564,8 @@ export class HostEngine {
           // A title/branch request may finish after the conversation was deleted.
           const currentBeforeRename = await this.store.session(id);
           if (this.closing || currentBeforeRename.autoWorktreeBranch !== temporary) return;
+          // Managed branch identity is fixed by the registry, never renamed by a title hint.
+          if (await this.managedWorkspace(currentBeforeRename)) return;
           const project = await this.store.project(value.projectId);
           if (this.closing) return;
           await renameHostWorktreeBranch(
@@ -2131,8 +2630,10 @@ export class HostEngine {
     rewindReplay = "",
     /** Shell/handoff context kept out of a leading Codex /goal command. */
     goalContext = "",
+    userBlockId?: string,
   ): void {
-    const { session, runId } = value;
+    let session = value.session;
+    const { runId } = value;
     const provider = this.provider(session.harness);
     let ready!: () => void;
     let replayConsumed = false;
@@ -2155,6 +2656,10 @@ export class HostEngine {
       ending: false,
       persistenceFailed: false,
       resumeAtReset,
+      managedTurns: [] as ManagedTurnBoundary[],
+      releaseActivity: undefined as (() => Promise<void>) | undefined,
+      // Resolver failures are unknown ownership, never permission to use legacy restore.
+      managed: !!this.managedTurns,
     };
     this.running.set(session.id, active);
     this.live.set(session.id, { value, events: [], blockChanges: new Map() });
@@ -2163,6 +2668,15 @@ export class HostEngine {
         let error: string | undefined;
         try {
           if (!this.closing && !active.cancelled) {
+            active.releaseActivity = await this.executionActivity(value, "provider");
+            const workspace = await this.managedWorkspace(value);
+            active.managed = !!workspace;
+            if (workspace?.path)
+              session = { ...session, cwd: workspace.path, worktreeCwd: workspace.path };
+            const managedBoundary = active.managed
+              ? await this.beginManagedTurn(value, userBlockId!)
+              : undefined;
+            if (managedBoundary) active.managedTurns.push(managedBoundary);
             // A provider may still have the binding from an earlier stint in
             // this chat. A handoff starts a new conversation with its recap.
             if (resetConversationFrom) {
@@ -2172,10 +2686,11 @@ export class HostEngine {
               await provider.stop(session.id);
             }
             if (this.closing || active.cancelled) throw new Error("Turn cancelled");
-            await this.checkpoints.begin(session.id, session.cwd, runId!).catch((error) => {
-              if (String(error).includes("checkpoint-coordination:")) throw error;
-              console.warn("Workspace checkpoint failed", error);
-            });
+            if (!managedBoundary)
+              await this.checkpoints.begin(session.id, session.cwd, runId!).catch((error) => {
+                if (String(error).includes("checkpoint-coordination:")) throw error;
+                console.warn("Workspace checkpoint failed", error);
+              });
             if (this.closing || active.cancelled) throw new Error("Turn cancelled");
             // Startup binds from mirror columns without the account; a provider
             // thread lives in its account's profile, so resume it from there.
@@ -2204,6 +2719,8 @@ export class HostEngine {
               },
             };
             if (prompt === null) {
+              if (active.managedTurns[0])
+                await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
               await provider.compact!(input);
               forgetRuntimeHint(session.id);
             } else {
@@ -2264,6 +2781,8 @@ export class HostEngine {
                   )),
               };
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
+              if (active.managedTurns[0])
+                await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
               await provider.send(providerInput);
               markHint();
               active.ending = true;
@@ -2280,9 +2799,24 @@ export class HostEngine {
         await provider.stop(session.id);
         // Retire outstanding delivery work before exposing an idle session.
         await active.steers;
-        await this.checkpoints
-          .finish(session.id, session.cwd, runId!)
-          .catch((reason) => console.warn("Workspace checkpoint failed", reason));
+        if (active.managed) {
+          // Keep each accepted boundary independently; compaction never prunes this map.
+          for (const boundary of active.managedTurns) {
+            try {
+              const record = await this.managedTurns!.history.end(boundary);
+              if (record.after?.status !== "complete")
+                throw new Error(
+                  `Turn Git capture blocked: ${record.after?.status === "blocked" ? record.after.reason : "missing after capture"}`,
+                );
+            } catch (reason) {
+              error = reason instanceof Error ? reason.message : String(reason);
+            }
+          }
+        } else {
+          await this.checkpoints
+            .finish(session.id, session.cwd, runId!)
+            .catch((reason) => console.warn("Workspace checkpoint failed", reason));
+        }
         await this.store.db.scope(() =>
           this.operations.enqueue(session.id, async () => {
             await this.flush(session.id);
@@ -2320,6 +2854,8 @@ export class HostEngine {
                 { type: "settled", error, cancelled: active.cancelled },
               );
             }
+            await active.releaseActivity?.();
+            active.releaseActivity = undefined;
             await this.onSettled?.(session.id, {
               ...(active.cancelled ? { cancelled: true } : {}),
               ...(this.closing || active.persistenceFailed

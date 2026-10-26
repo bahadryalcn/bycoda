@@ -94,6 +94,8 @@ export type GoalFinalAcceptance = {
   accountedRunId?: string;
   sessionId?: string;
   runId?: string;
+  /** Authoritative execution identity captured from the accepted reviewer session. */
+  executionWorkspace?: { cwd: string; workspaceId?: string };
   startedAt?: number;
   completedAt?: number;
   note?: string;
@@ -129,6 +131,8 @@ export type GoalSettings = {
 };
 
 export type HostGoal = HostGoalInput & {
+  /** Persisted automatic delivery is suspended pending a fresh task-level review. */
+  deliveryApprovalRequired?: boolean;
   status: GoalStatus;
   plan?: GoalPlan;
   /** Why planning failed, for a goal blocked before it had tasks. */

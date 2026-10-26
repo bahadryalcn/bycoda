@@ -1,4 +1,5 @@
-import { type MutableRefObject, useCallback } from "react";
+import { type MutableRefObject, useCallback, useEffect } from "react";
+import { t } from "../../../shared/i18n";
 import {
   HARNESS_TITLE,
   sessionWorkCwd,
@@ -11,6 +12,7 @@ import {
   canRewindHarnessLastTurn,
   compactHarnessContext,
   forgetHarnessSession,
+  stopHarnessSession,
   rewindHarnessLastTurn,
   type HarnessEvent,
 } from "../../../integrations/harness";
@@ -32,6 +34,17 @@ import { conversationRewindStrategy } from "../../../features/sessions/model/con
 import { shouldPersistSession, upsertSession } from "../../../features/sessions/data/sessionStore";
 import { flushSync } from "react-dom";
 import { notifyReviewChanged } from "../../../features/sessions/model/checkpoint";
+import {
+  applyWorkspaceRewind,
+  planWorkspaceRewind,
+} from "../../../features/workspaces/model/rewindClient";
+import {
+  offerWorkspaceRewindUndo,
+  clearWorkspaceRewindUndo,
+  requestWorkspaceRewindPreview,
+  registerWorkspaceRewindUndoHandler,
+  type WorkspaceRewindUndoIdentity,
+} from "../../../features/workspaces/ui/WorkspaceRewindPreview";
 export interface CompactAndRewindDeps {
   sessionsRef: MutableRefObject<Session[]>;
   setSessions: typeof setSessions;
@@ -162,6 +175,57 @@ export function useCompactAndRewind({
     [enqueueHarnessEvent, flushHarnessEvents],
   );
 
+  const reconcileManaged = useCallback((sessionId: string, next: Session) => {
+    turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
+    lastBoundProvider.current.delete(sessionId);
+    lastPersistedUserBlock.current.delete(sessionId);
+    sessionsRef.current = sessionsRef.current.map((session) =>
+      session.id === sessionId ? next : session,
+    );
+    flushSync(() =>
+      setSessions((prev) => prev.map((session) => (session.id === sessionId ? next : session))),
+    );
+    notifyReviewChanged(sessionId);
+  }, []);
+  const undoManaged = useCallback(
+    async (sessionId: string, { workspaceId, operationId }: WorkspaceRewindUndoIdentity) => {
+      const current = sessionsRef.current.find((session) => session.id === sessionId);
+      if (
+        !current ||
+        current.workspaceId !== workspaceId ||
+        remoteProjectFor(current.cwd) ||
+        current.busy ||
+        windowTransferPendingRef.current ||
+        movingSessionIds.current.has(sessionId) ||
+        retiringTurns.current.has(sessionId) ||
+        !editedResends.start(sessionId)
+      )
+        throw new Error(t("Wait for this session to finish before undoing the rewind."));
+      try {
+        await stopHarnessSession(current.harness, sessionId);
+        const undoPlan = await planWorkspaceRewind(current, workspaceId, { operationId });
+        const undoKey = crypto.randomUUID();
+        await requestWorkspaceRewindPreview(
+          undoPlan,
+          async () => {
+            const latest = sessionsRef.current.find((session) => session.id === sessionId);
+            if (!latest || latest.blocks !== current.blocks || latest.busy)
+              throw new Error(t("The conversation changed. Close this preview and try again."));
+            const undone = await applyWorkspaceRewind(latest, undoPlan, undoKey);
+            await forgetHarnessSession(current.harness, sessionId);
+            reconcileManaged(sessionId, undone.session);
+            clearWorkspaceRewindUndo(sessionId);
+          },
+          sessionId,
+        );
+      } finally {
+        editedResends.finish(sessionId);
+      }
+    },
+    [editedResends, reconcileManaged],
+  );
+  useEffect(() => registerWorkspaceRewindUndoHandler("*", undoManaged), [undoManaged]);
+
   const onRewindMessage = useCallback(
     async (sessionId: string, blockId: string): Promise<boolean> => {
       if (
@@ -181,6 +245,36 @@ export function useCompactAndRewind({
         return false;
       if (remoteProjectFor(snapshot.cwd)) {
         return (await remoteSessionActions(sessionId)?.rewind(blockId)) ?? false;
+      }
+      const workspaceId = snapshot.workspaceId;
+      if (workspaceId) {
+        if (!editedResends.start(sessionId)) return false;
+        try {
+          await stopHarnessSession(snapshot.harness, sessionId);
+          const plan = await planWorkspaceRewind(snapshot, workspaceId, { userBlockId: blockId });
+          const operationKey = crypto.randomUUID();
+          return await requestWorkspaceRewindPreview(
+            plan,
+            async () => {
+              const latest = sessionsRef.current.find((session) => session.id === sessionId);
+              if (!latest || latest.blocks !== snapshot.blocks || latest.busy)
+                throw new Error(t("The conversation changed. Close this preview and try again."));
+              const result = await applyWorkspaceRewind(latest, plan, operationKey);
+              await forgetHarnessSession(snapshot.harness, sessionId);
+              reconcileManaged(sessionId, result.session);
+              const operationId = result.receipt.undoOperationId;
+              if (operationId)
+                offerWorkspaceRewindUndo(
+                  sessionId,
+                  () => undoManaged(sessionId, { workspaceId, operationId }),
+                  { workspaceId, operationId },
+                );
+            },
+            sessionId,
+          );
+        } finally {
+          editedResends.finish(sessionId);
+        }
       }
       if (!editedResends.start(sessionId)) return false;
       const strategy = conversationRewindStrategy(
@@ -266,7 +360,7 @@ export function useCompactAndRewind({
         editedResends.finish(sessionId);
       }
     },
-    [editedResends, flushHarnessEvents, persistSession],
+    [editedResends, flushHarnessEvents, persistSession, reconcileManaged, undoManaged],
   );
   return { onCompactContext, onRewindMessage };
 }

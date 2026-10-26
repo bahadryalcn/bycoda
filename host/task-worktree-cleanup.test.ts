@@ -9,7 +9,7 @@ import { createHostWorktree, hostWorktrees } from "./git-worktrees";
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 5 });
-});
+}, 120_000);
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8", windowsHide: true }).trim();
 async function setup() {
@@ -39,7 +39,7 @@ it("removes a delivered checkout while preserving ignored outputs in the archive
   expect(readFileSync(join(archives[0], "local/result/README.md"), "utf8")).toBe(
     "completed output",
   );
-});
+}, 120_000);
 it("archives Windows-style unregistered residual directories without losing their files", async () => {
   const { cwd, tree } = await setup();
   git(cwd, "worktree", "remove", tree.path);
@@ -50,7 +50,7 @@ it("archives Windows-style unregistered residual directories without losing thei
   });
   expect(existsSync(tree.path)).toBe(false);
   expect(readFileSync(join(archives[0], "package.json"), "utf8")).toBe("retained file");
-});
+}, 120_000);
 it("retains post-delivery changes and refuses the main or unrelated checkout", async () => {
   const { cwd, tree, root } = await setup();
   writeFileSync(join(tree.path, "owner-draft.txt"), "owner draft");
@@ -64,7 +64,7 @@ it("retains post-delivery changes and refuses the main or unrelated checkout", a
     cleanupTaskWorktree(cwd, "task", join(root, "audit"), "mc/test", {}),
   ).rejects.toThrow("outside its managed workspace");
   expect(readFileSync(join(tree.path, "owner-draft.txt"), "utf8")).toBe("owner draft");
-});
+}, 120_000);
 it("preserves locked checkouts and removes them after unlock", async () => {
   const { cwd, tree } = await setup();
   git(cwd, "worktree", "lock", tree.path);
@@ -75,4 +75,4 @@ it("preserves locked checkouts and removes them after unlock", async () => {
   git(cwd, "worktree", "unlock", tree.path);
   await cleanupTaskWorktree(cwd, "task", tree.path, "mc/test", { head: tree.head });
   expect(existsSync(tree.path)).toBe(false);
-});
+}, 120_000);

@@ -83,17 +83,130 @@ function fixture(options: Partial<DevServersOptions> = {}) {
   return { discovery, children, spawnProcess, service, list, selected, target };
 }
 
+it("rejects reserved workspace starts before spawning and releases attempted port allocations", async () => {
+  const startActivity = vi.fn(async () => {
+    throw new Error("Workspace reservation is active");
+  });
+  const { service, spawnProcess } = fixture({ startActivity });
+  await expect(
+    service.handle(
+      "devServers.start",
+      {
+        command: "pnpm dev",
+        projectId: "project",
+      },
+      projects,
+    ),
+  ).rejects.toThrow("Workspace reservation is active");
+  await expect(
+    service.startWorkspace(
+      {
+        workspaceId: "reserved",
+        runId: "blocked",
+        kinds: ["vite", "hmr"],
+        command: "pnpm dev",
+        cwd: process.cwd(),
+      },
+      projects,
+    ),
+  ).rejects.toThrow("Workspace reservation is active");
+  expect(startActivity).toHaveBeenCalledTimes(2);
+  expect(spawnProcess).not.toHaveBeenCalled();
+  expect(await service.portLeases.list("reserved")).toEqual([]);
+});
+
+it("releases dev-server admission after a spawn failure", async () => {
+  const release = vi.fn(async () => {});
+  const { service, spawnProcess } = fixture({ startActivity: async () => release });
+  spawnProcess.mockImplementation(() => {
+    throw new Error("spawn unavailable");
+  });
+  await expect(
+    service.handle(
+      "devServers.start",
+      {
+        command: "pnpm dev",
+        projectId: "project",
+      },
+      projects,
+    ),
+  ).rejects.toThrow("spawn unavailable");
+  expect(release).toHaveBeenCalledTimes(1);
+});
+
+it("passes workspace port identities to its owned command, retains leases until verified stop, and reacquires on restart", async () => {
+  const { service, discovery, spawnProcess } = fixture();
+  let nextPid = 201;
+  spawnProcess.mockImplementation((...arguments_: unknown[]) => {
+    const options = arguments_[2] as { env: NodeJS.ProcessEnv };
+    const pid = nextPid++;
+    discovery.live.set(pid, { ...root, pid, startedAt: `lease-${pid}` });
+    discovery.ports.set(pid, [endpoint(Number(options.env.BYCODA_VITE_PORT))]);
+    return Object.assign(new EventEmitter(), {
+      pid,
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+    }) as unknown as ChildProcess;
+  });
+  const first = await service.startWorkspace(
+    {
+      workspaceId: "workspace",
+      runId: "one",
+      kinds: ["vite", "hmr", "host", "cdp"],
+      command: "pnpm dev",
+      cwd: process.cwd(),
+    },
+    projects,
+  );
+  expect(first.result.server).toMatchObject({ state: "running", process: { pid: 201 } });
+  const invocation = (spawnProcess.mock.calls as unknown as unknown[][])[0];
+  expect(invocation[2]).toMatchObject({
+    env: {
+      BYCODA_VITE_PORT: String(first.lease.ports.vite),
+      BYCODA_HMR_PORT: String(first.lease.ports.hmr),
+      BYCODA_DEV_HOST_PORT: String(first.lease.ports.host),
+      BYCODA_WEBVIEW_DEBUG_PORT: String(first.lease.ports.cdp),
+    },
+  });
+  expect(await service.portLeases.list("workspace")).toHaveLength(1);
+  const restarted = (await service.handle(
+    "devServers.restart",
+    { id: first.result.server!.id },
+    projects,
+  )) as DevServerStartResult;
+  expect(restarted.server).toMatchObject({ state: "running", process: { pid: 202 } });
+  const active = await service.portLeases.list("workspace");
+  expect(active).toHaveLength(1);
+  expect(active[0].id).not.toBe(first.lease.id);
+  await service.handle("devServers.stop", { id: restarted.server!.id }, projects);
+  expect(await service.portLeases.list("workspace")).toEqual([]);
+  expect(discovery.live.has(root.pid)).toBe(true);
+});
+
 it("rejects a changed reviewed process tree or port set before signalling", async () => {
   const test = fixture();
   const server = await test.selected();
   const target = test.target(server, true);
-  const review = await test.service.handle("devServers.details", target, projects) as { expectedImpact: string };
+  const review = (await test.service.handle("devServers.details", target, projects)) as {
+    expectedImpact: string;
+  };
   test.discovery.ports.set(root.pid, [endpoint(3999)]);
-  await expect(test.service.handle("devServers.kill", { ...target, expectedImpact: review.expectedImpact }, projects))
-    .rejects.toThrow("reviewed process tree or ports changed");
+  await expect(
+    test.service.handle(
+      "devServers.kill",
+      { ...target, expectedImpact: review.expectedImpact },
+      projects,
+    ),
+  ).rejects.toThrow("reviewed process tree or ports changed");
   expect(test.discovery.signal).not.toHaveBeenCalled();
-  const fresh = await test.service.handle("devServers.details", target, projects) as { expectedImpact: string };
-  await test.service.handle("devServers.kill", { ...target, expectedImpact: fresh.expectedImpact }, projects);
+  const fresh = (await test.service.handle("devServers.details", target, projects)) as {
+    expectedImpact: string;
+  };
+  await test.service.handle(
+    "devServers.kill",
+    { ...target, expectedImpact: fresh.expectedImpact },
+    projects,
+  );
   expect(test.discovery.signal).toHaveBeenCalledOnce();
 });
 
@@ -101,10 +214,22 @@ it("rejects an unreviewed child process before force signalling", async () => {
   const test = fixture();
   const server = await test.selected();
   const target = test.target(server, true);
-  const review = await test.service.handle("devServers.details", target, projects) as { expectedImpact: string };
-  test.discovery.live.set(202, { pid: 202, parentPid: root.pid, startedAt: "new-child", name: "worker" });
-  await expect(test.service.handle("devServers.kill", { ...target, expectedImpact: review.expectedImpact }, projects))
-    .rejects.toThrow("reviewed process tree or ports changed");
+  const review = (await test.service.handle("devServers.details", target, projects)) as {
+    expectedImpact: string;
+  };
+  test.discovery.live.set(202, {
+    pid: 202,
+    parentPid: root.pid,
+    startedAt: "new-child",
+    name: "worker",
+  });
+  await expect(
+    test.service.handle(
+      "devServers.kill",
+      { ...target, expectedImpact: review.expectedImpact },
+      projects,
+    ),
+  ).rejects.toThrow("reviewed process tree or ports changed");
   expect(test.discovery.signal).not.toHaveBeenCalled();
 });
 
@@ -529,7 +654,8 @@ describe("host dev server management", () => {
   });
 
   it("keeps managed descendants and their ports when the dedicated shell exits", async () => {
-    const { service, discovery, children } = fixture();
+    const release = vi.fn(async () => {});
+    const { service, discovery, children } = fixture({ startActivity: async () => release });
     const started = (await service.handle(
       "devServers.start",
       { command: "npm run dev", projectId: "project" },
@@ -543,10 +669,17 @@ describe("host dev server management", () => {
     expect((await service.list(projects, true)).servers).toMatchObject([
       { managed: true, state: "running", endpoints: [endpoint(3201)] },
     ]);
+    expect(release).not.toHaveBeenCalled();
+    discovery.stubborn = true;
+    expect(
+      await service.handle("devServers.stop", { id: started.server!.id }, projects),
+    ).toMatchObject({ state: "running", requiresForce: true });
+    expect(release).not.toHaveBeenCalled();
     expect(
       await service.handle("devServers.kill", { id: started.server!.id }, projects),
     ).toMatchObject({ state: "stopped", affectedPorts: [3201] });
     expect(discovery.signal).toHaveBeenCalledWith(expect.objectContaining({ pid: 102 }), true);
+    expect(release).toHaveBeenCalledTimes(1);
   });
 });
 

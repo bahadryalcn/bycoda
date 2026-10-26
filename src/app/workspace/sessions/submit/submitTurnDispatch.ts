@@ -58,6 +58,8 @@ import {
   worktreeDeletedExternally,
 } from "../../../../features/source-control/model/worktrees";
 import { isRemoteProjectPath } from "../../../../features/projects/model/recents";
+import { beginNativeManagedTurn } from "../../../../features/workspaces/model/nativeManagedTurn";
+import { t } from "../../../../shared/i18n";
 
 export async function runSubmitDispatch(
   ctx: SubmitDeps,
@@ -93,17 +95,25 @@ export async function runSubmitDispatch(
     contextReplay,
     planEventKey,
   } = events;
+  let finishManagedTurn: ((interrupted: boolean) => Promise<void>) | undefined;
   try {
+    const latest = sessionsRef.current.find((session) => session.id === sessionId) ?? current;
+    if (latest.workspaceId && editedResend)
+      throw new Error(t("Rewind conversation and files before resending an edited turn."));
+    if (latest.workspaceId && !isRemoteProjectPath(latest.cwd))
+      finishManagedTurn = await beginNativeManagedTurn(latest, checkpointTurnId);
     const preparation = await prepareLocalTurn({
       traceId,
-      checkpoint: () =>
-        !current.inboxAsk && !orchestrator.forSession(sessionId)
+      checkpoint: async () => {
+        if (finishManagedTurn) return;
+        return !current.inboxAsk && !orchestrator.forSession(sessionId)
           ? ((turn.checkpointStarted = true),
             beginSessionTurn(sessionId, workCwd, checkpointTurnId)).catch((error) => {
               if (String(error).includes("checkpoint-coordination:")) throw error;
               console.warn("App operation failed", error);
             })
-          : Promise.resolve(),
+          : Promise.resolve();
+      },
       attachments: () => prepareAttachments(attachments),
       prompt: () =>
         intent === "build" && approvedPlan
@@ -287,26 +297,42 @@ export async function runSubmitDispatch(
       text: turn.controlText.trim(),
       ...(turn.providerFailureSeen ? { error: turn.controlOutcome.error } : {}),
     };
-    // A failed provider can leave its process alive with a dead event
-    // stream or poisoned turn state. Park it now; the next prompt will
-    // reconnect and resume through a fresh transport.
+    // Managed capture needs a settled writer even after a successful turn.
+    // Stop through the adapter first so intentional exit events are muted;
+    // native retirement then waits for process exit and Host acknowledgement.
     const finalizedCurrentTurn = await finalizeLocalTurn({
       isCurrent: () => turnGen.current.get(sessionId) === gen,
       retire: () =>
-        turn.providerFailureSeen || turnGen.current.get(sessionId) !== gen
+        finishManagedTurn || turn.providerFailureSeen || turnGen.current.get(sessionId) !== gen
           ? stopHarnessSession(current.harness, sessionId).catch(() => {
               turn.checkpointRetirementUncertain = true;
             })
           : Promise.resolve(),
-      settle: () =>
-        turn.checkpointStarted
+      settle: async () => {
+        if (finishManagedTurn) {
+          try {
+            await finishManagedTurn(turn.checkpointRetirementUncertain);
+          } catch (error) {
+            turn.providerFailureSeen = true;
+            turn.controlOutcome = {
+              status: "failed",
+              text: turn.controlText,
+              error: String(error),
+            };
+            enqueueHarnessEvent(sessionId, { type: "session.error", message: String(error) });
+            flushHarnessEvents();
+          }
+          return;
+        }
+        return turn.checkpointStarted
           ? finishSessionTurn(
               sessionId,
               workCwd,
               checkpointTurnId,
               turn.checkpointRetirementUncertain,
             ).catch((error) => console.warn("Workspace checkpoint failed", error))
-          : Promise.resolve(),
+          : Promise.resolve();
+      },
       checkpoint: () => flushSessionCheckpoint(sessionId),
       commit: () =>
         setSessions((prev) =>

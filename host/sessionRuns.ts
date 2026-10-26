@@ -22,6 +22,9 @@ export type SessionRunSpec = {
   runtimeMode: RuntimeMode;
   title: string;
   prompt: string;
+  /** The Host derives execution identity from the authoritative registry. */
+  workspaceId?: string;
+  workspaceMode?: "current" | "worktree";
   /** A worktree of the project to run in, instead of the project folder. */
   worktreeCwd?: string;
 };
@@ -61,6 +64,8 @@ export async function launchSessionRun(
         type: "create",
         commandId: spec.requestId ? `${spec.requestId}:create` : randomUUID(),
         projectId: spec.projectId,
+        ...(spec.workspaceId ? { workspaceId: spec.workspaceId } : {}),
+        ...(spec.workspaceMode ? { workspaceMode: spec.workspaceMode } : {}),
         ...(spec.worktreeCwd ? { worktreeCwd: spec.worktreeCwd } : {}),
         harness: spec.harness,
         ...(spec.providerAccountId === undefined

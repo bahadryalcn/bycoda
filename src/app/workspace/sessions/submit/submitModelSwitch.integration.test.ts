@@ -64,6 +64,7 @@ let actions: ReturnType<typeof useSessionModelActions>;
 let ctx: SubmitDeps;
 let events: Map<string, HarnessEvent[]>;
 const sends: Array<{ harness: string; input: SendTurnInput }> = [];
+const stoppedSessions: string[] = [];
 
 function adapter(id: "codex" | "antigravity"): HarnessAdapter {
   return {
@@ -88,7 +89,9 @@ function adapter(id: "codex" | "antigravity"): HarnessAdapter {
       }
     },
     async cancelTurn() {},
-    async stopSession() {},
+    async stopSession(sessionId) {
+      stoppedSessions.push(sessionId);
+    },
     async forgetSession() {},
     respondApproval() {},
     respondQuestion() {},
@@ -136,6 +139,7 @@ function initialSession(): Session {
 
 beforeEach(async () => {
   sends.length = 0;
+  stoppedSessions.length = 0;
   events = new Map();
   native.invoke.mockReset();
   native.invoke.mockImplementation(async (command: string) => {
@@ -193,13 +197,16 @@ afterEach(async () => {
   document.body.innerHTML = "";
 });
 
-async function submit(): Promise<void> {
+async function submit(
+  status = "completed",
+  overrides: Partial<SubmitInput["options"]> = {},
+): Promise<void> {
   const settled = vi.fn();
   const input: SubmitInput = {
     sessionId: getSessions()[0].id,
     text: "Continue our earlier work without repeating the context",
     attachments: [],
-    options: { onSettled: settled },
+    options: { ...overrides, onSettled: settled },
   };
   const preflight = prepareSubmitPreflight(ctx, input);
   if (preflight.settled) throw new Error("Preflight rejected the request");
@@ -207,8 +214,81 @@ async function submit(): Promise<void> {
   if (preparation.settled) throw new Error("Turn preparation rejected the request");
   startSubmittedTurn(ctx, input, preflight.pre, preparation.setup);
   await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
-  expect(settled.mock.calls[0][0]).toMatchObject({ status: "completed" });
+  expect(settled.mock.calls[0][0]).toMatchObject({ status });
 }
+
+it("admits a managed native provider only after its accepted boundary is durable, and ends the same run", async () => {
+  const original = {
+    ...getSessions()[0],
+    workspaceId: "managed",
+    workspaceRevision: 7,
+    worktreeCwd: "/owned/worktree",
+  };
+  resetSessionsStore([original]);
+  native.invoke.mockImplementation(async (command: string, args: Record<string, any>) => {
+    if (command === "session_upsert")
+      return { ...args.session, createdAt: 1, updatedAt: 2, transcriptRevision: 1 };
+    if (command === "managed_turn_begin") {
+      expect(sends).toHaveLength(0);
+      expect(args.userBlockId).not.toBe("original-user");
+    }
+    if (command === "managed_turn_end") {
+      expect(sends).toHaveLength(1);
+      expect(stoppedSessions).toContain(original.id);
+    }
+    return null;
+  });
+  await submit();
+  const saved = native.invoke.mock.calls.find(([command]) => command === "session_upsert");
+  expect(saved?.[1].session).toMatchObject({ workspaceId: "managed", workspaceRevision: 7 });
+  const began = native.invoke.mock.calls.find(([command]) => command === "managed_turn_begin");
+  expect(began?.[1]).toMatchObject({
+    sessionId: original.id,
+    userBlockId: expect.any(String),
+    runId: expect.any(String),
+  });
+  expect(
+    saved?.[1].session.blocks.some((block: { id: string }) => block.id === began?.[1].userBlockId),
+  ).toBe(true);
+  expect(native.invoke).toHaveBeenCalledWith("managed_turn_end", began?.[1]);
+  expect(sends[0].input.cwd).toBe("/owned/worktree");
+});
+
+it("does not invoke a managed provider when native admission has an unknown outcome", async () => {
+  resetSessionsStore([
+    { ...getSessions()[0], workspaceId: "managed", worktreeCwd: "/owned/worktree" },
+  ]);
+  native.invoke.mockImplementation(async (command: string, args: Record<string, any>) => {
+    if (command === "session_upsert")
+      return { ...args.session, createdAt: 1, updatedAt: 2, transcriptRevision: 1 };
+    if (command === "managed_turn_begin")
+      throw new Error("Capture outcome is unknown; recover first");
+    return null;
+  });
+  await submit("failed");
+  expect(sends).toHaveLength(0);
+  expect(native.invoke.mock.calls.some(([command]) => command === "managed_turn_end")).toBe(false);
+});
+
+it("refuses opaque managed edited-resend before native capture or provider rewind", async () => {
+  const original = {
+    ...getSessions()[0],
+    workspaceId: "managed",
+    worktreeCwd: "/owned/worktree",
+    blocks: getSessions()[0].blocks.map((block) =>
+      block.id === "original-user" ? { ...block, providerTurnId: "original-provider-turn" } : block,
+    ),
+  };
+  resetSessionsStore([original]);
+  const rejected = vi.fn();
+  await submit("failed", { resendEdited: true, onResendRejected: rejected });
+  expect(sends).toHaveLength(0);
+  expect(native.invoke.mock.calls.some(([command]) => command === "managed_turn_begin")).toBe(
+    false,
+  );
+  expect(rejected).toHaveBeenCalledWith({ providerRewound: false });
+  expect(getSessions()[0].blocks.slice(0, 3)).toEqual(original.blocks);
+});
 
 describe("actual desktop model-picker to submit routing", () => {
   it("keeps a late Codex binding on the outgoing turn after selecting Gemini, then dispatches the correct pair", async () => {

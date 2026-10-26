@@ -11,6 +11,142 @@ type HostCall = {
   };
 };
 const fixture = "/tests/browser/tasks.html";
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`suspended merge preferences require review in forms at ${width}px ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await openTasks(page, `${fixture}?boardControls&renewedApprovalSettings&suspendedForms`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await mkdir("temp/verification/s5", { recursive: true });
+      for (const kind of ["task", "goal"] as const) {
+        await openCreate(page, kind);
+        const form = page.getByRole("form", { name: `New ${kind}`, exact: true });
+        if (kind === "task")
+          await form.getByRole("button", { name: "Agent settings", exact: true }).click();
+        const preference = form.getByRole("checkbox", { name: /^Merge automatically/ });
+        await expect(preference).toBeDisabled();
+        await preference.scrollIntoViewIfNeeded();
+        await expect(form).toContainText("Review changes to renew approval");
+        await page.screenshot({
+          path: `temp/verification/s5/${kind}-suspended-merge-${width}-${theme}.png`,
+          animations: "disabled",
+        });
+        await form.getByRole("button", { name: "Cancel", exact: true }).click();
+      }
+      await page.getByRole("button", { name: "Edit goal settings", exact: true }).click();
+      const settings = page.getByRole("form", { name: "Edit goal settings", exact: true });
+      await expect(settings).toContainText("Delivery requires approval");
+      const existing = settings.getByRole("checkbox", { name: /^Merge automatically/ });
+      await expect(existing).toBeChecked();
+      await existing.focus();
+      await page.keyboard.press("Space");
+      await expect(existing).not.toBeChecked();
+      await expect(existing).toBeDisabled();
+      await page.screenshot({
+        path: `temp/verification/s5/goal-settings-suspended-merge-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+      await page.getByRole("menuitemcheckbox", { name: "Stewards", exact: true }).click();
+      await page.getByRole("button", { name: "Add steward", exact: true }).click();
+      const steward = page.getByRole("form", { name: "New steward", exact: true });
+      const preference = steward.getByRole("checkbox", { name: /^Merge automatically/ });
+      await expect(preference).toBeDisabled();
+      await preference.evaluate((node) =>
+        node.closest("label")?.scrollIntoView({ block: "center" }),
+      );
+      const section = page.getByRole("region", { name: "Stewards", exact: true });
+      await section.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+      });
+      await page.screenshot({
+        path: `temp/verification/s5/steward-suspended-merge-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`managed task list keeps completion and delivery visible at ${width}px ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await openTasks(page, `${fixture}?managedDelivery`);
+      await page.getByRole("radio", { name: "List view", exact: true }).click();
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const list = page.getByRole("list", { name: "Tasks", exact: true });
+      await expect(list).toContainText("Implementation finished · Not delivered");
+      await expect(list).toContainText("renew approval");
+      await mkdir("temp/verification/s5", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/s5/tasks-list-delivery-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      await list
+        .getByRole("button", { name: "Finished implementation awaiting delivery", exact: true })
+        .focus();
+      await page.keyboard.press("Enter");
+      await expect(
+        page.getByRole("complementary", { name: "Task details", exact: true }),
+      ).toContainText("Not delivered");
+    });
+  }
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`managed tasks separate completion and approval at ${width}px ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await openTasks(page, `${fixture}?managedDelivery`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const task = page.getByRole("article", {
+        name: "Finished implementation awaiting delivery",
+        exact: true,
+      });
+      await expect(task.locator("[data-task-completion]")).toHaveText("Implementation finished");
+      await expect(task.locator("[data-task-delivery]")).toHaveText("Not delivered");
+      await expect(task.locator("[data-task-renewed-approval]")).toContainText("renew approval");
+      await expect(task.getByRole("button", { name: "Review changes", exact: true })).toBeVisible();
+      await mkdir("temp/verification/i2a", { recursive: true });
+      await task.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/i2a/tasks-delivery-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      await task.click();
+      const details = page.getByRole("complementary", { name: "Task details", exact: true });
+      await expect(details).toContainText("Completion");
+      await expect(details).toContainText("Not delivered");
+      await page.screenshot({
+        path: `temp/verification/i2a/task-detail-delivery-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      await details.getByRole("button", { name: "Mark finished", exact: true }).click();
+      const calls = () =>
+        page.evaluate(
+          () => (window as unknown as { taskFixtureCalls: HostCall[] }).taskFixtureCalls,
+        );
+      await expect
+        .poll(async () => (await calls()).some((call) => call.args.method === "workspaces.finish"))
+        .toBe(true);
+      expect((await calls()).some((call) => call.args.method === "tasks.move")).toBe(false);
+    });
+  }
 /** Legacy workflow checks explicitly choose the global board; the product now opens a project backlog. */
 async function openTasks(page: Page, url: string) {
   await page.goto(url);
@@ -574,7 +710,7 @@ for (const width of [390, 768, 1440]) {
     test(`existing goal settings at ${width}px in ${theme} theme`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await openTasks(page, `${fixture}?boardControls`);
+      await openTasks(page, `${fixture}?boardControls&renewedApprovalSettings`);
       await page.evaluate(
         (theme) => document.documentElement.classList.toggle("theme-light", theme === "light"),
         theme,
@@ -587,7 +723,7 @@ for (const width of [390, 768, 1440]) {
       const merge = form.getByRole("checkbox", { name: /^Merge automatically/ });
       await merge.focus();
       await page.keyboard.press("Space");
-      await expect(merge).toBeChecked();
+      await expect(merge).not.toBeChecked();
       await choose(
         page,
         form.getByRole("button", { name: /^Concurrent tasks in this goal:/ }),
@@ -614,7 +750,7 @@ for (const width of [390, 768, 1440]) {
         params: {
           goalId: "controls-goal",
           expectedUpdatedAt: 1,
-          settings: { autoMerge: true, maxRunningTasks: 3, maxRunMinutes: 25 },
+          settings: { autoMerge: false, maxRunningTasks: 3, maxRunMinutes: 25 },
         },
       });
       await expect(edit).toBeFocused();
@@ -640,7 +776,7 @@ test("execution mode is selectable in task and goal dialogs", async ({ page }, t
     if (kind === "task")
       await form.getByRole("button", { name: "Agent settings", exact: true }).click();
     const merge = form.getByRole("checkbox", { name: /^Merge automatically/ });
-    await expect(merge).toBeEnabled();
+    await expect(merge).toBeDisabled();
     await form.getByRole("radio", { name: "Shared checkout", exact: true }).click();
     await expect(merge).toBeDisabled();
     await page.screenshot({

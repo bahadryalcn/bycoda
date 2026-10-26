@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: "tasks.spec.ts",
+  testMatch: ["tasks.spec.ts", "transcript-rewind.spec.ts"],
   outputDir: "../../temp/test-results/browser-tasks",
   workers: 1,
   timeout: 30_000,

@@ -1,19 +1,16 @@
-import { runGitText } from "../src/shared/lib/processExecution.node";
 import { assertExpectedConfiguration } from "./configurationConflict";
 import { randomUUID } from "node:crypto";
-import { realpathSync, statSync } from "node:fs";
 import { nextAutomationRunAt } from "../src/features/automations/model/automationSchedule";
 import {
   MAX_DECLINED,
   normalizeStewardTitle,
   parseHostSteward,
   parseStewardProposals,
-  type HostSteward,
+  type HostSteward as StoredHostSteward,
   type StewardRunStatus,
 } from "../src/features/tasks/model/hostStewards";
 import { DAILY_LIMIT_SKIP } from "../src/features/tasks/model/hostSettings";
 import type { HostTask } from "../src/features/tasks/model/hostTasks";
-import { createHostWorktree, invalidateHostWorktrees } from "./git-worktrees";
 import type { HostEngine } from "./engine";
 import {
   cancelSessionRun,
@@ -24,6 +21,22 @@ import {
 } from "./sessionRuns";
 import type { HostStore } from "./store";
 import type { HostTasks } from "./tasks";
+import type {
+  ExecutionActivityReservations,
+  WorkspaceRegistry,
+  WorkspaceRemovalService,
+} from "./workspace-service-contracts";
+type ManagedStewardRun = NonNullable<HostSteward["run"]> & {
+  workspaceId?: string;
+  activityId?: string;
+};
+type HostSteward = StoredHostSteward & { deliveryApprovalRequired?: boolean };
+export interface StewardWorkspaceServices {
+  registry: WorkspaceRegistry;
+  activity: ExecutionActivityReservations;
+  removal: WorkspaceRemovalService;
+  environmentId: string;
+}
 
 const TICK_MS = 30_000;
 /** How long a steward run may go on. */
@@ -36,36 +49,6 @@ export const openLimitSkip = (maxOpen: number) =>
   `Skipped: ${maxOpen} suggestions are still waiting to be started or declined.`;
 
 const OPEN_STATUSES = new Set(["todo", "queued", "running", "verifying", "review", "blocked"]);
-
-async function git(cwd: string, args: string[]): Promise<string> {
-  const stdout = await runGitText(args, {
-    cwd,
-    timeout: 30_000,
-    maxBuffer: 4 * 1024 * 1024,
-    windowsHide: true,
-  });
-  return stdout.trim();
-}
-
-function available(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-/** Whether the folder is the top of a git working copy with a commit. */
-async function isRepository(cwd: string): Promise<boolean> {
-  try {
-    const top = await git(cwd, ["rev-parse", "--show-toplevel"]);
-    if (realpathSync.native(top) !== realpathSync.native(cwd)) return false;
-    await git(cwd, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function stewardPrompt(
   steward: HostSteward,
@@ -85,7 +68,7 @@ function stewardPrompt(
     `You are the steward of the project “${project.name}”. Your job is to look at the project and propose the next pieces of work for coding agents to carry out. You only propose; you do not do the work.`,
     "",
     checkout
-      ? `You are in ${checkout}, a throwaway checkout of the project at its latest commit.`
+      ? `You are in ${checkout}, your managed worktree of the project at its selected committed base. Its branch is retained after directory retirement.`
       : `You are in ${project.cwd}, the project folder itself.`,
     "You must NOT modify, create or delete any files, and you must NOT run commands that change state (no installs, builds that write files, commits, branch changes or network writes). Read files and run read-only commands only.",
     "",
@@ -132,6 +115,7 @@ export class HostStewards {
     private readonly engine: SessionRunEngine & Pick<HostEngine, "waitForRun">,
     private readonly tasks: HostTasks,
     private readonly now: () => number = Date.now,
+    private readonly workspaces?: StewardWorkspaceServices,
   ) {
     this.ready = (async () => {
       await store.ready;
@@ -139,6 +123,9 @@ export class HostStewards {
       await store.db.scope(async () => {
         await store.db.exec(
           "CREATE TABLE IF NOT EXISTS stewards (id TEXT PRIMARY KEY, value TEXT NOT NULL);",
+        );
+        await store.db.exec(
+          "UPDATE stewards SET value=json_set(json_remove(value, '$.autoMerge'), '$.deliveryApprovalRequired', json('true')) WHERE json_extract(value, '$.autoMerge')=1",
         );
         tasks.limits.track(async () =>
           (await this.list()).flatMap((steward) => (steward.run ? [steward.run.startedAt] : [])),
@@ -215,6 +202,7 @@ export class HostStewards {
         throw new Error("Wait for the steward run to finish before changing its project.");
       return await this.write({
         ...input,
+        deliveryApprovalRequired: previous?.deliveryApprovalRequired,
         nextRunAt: nextAutomationRunAt(input, now),
         lastRunAt: previous?.lastRunAt,
         lastRunStatus: previous?.lastRunStatus,
@@ -348,6 +336,8 @@ export class HostStewards {
   }
 
   private async write(steward: HostSteward): Promise<HostSteward> {
+    if (steward.autoMerge)
+      steward = { ...steward, autoMerge: undefined, deliveryApprovalRequired: true };
     await this.store.db
       .prepare(
         "INSERT INTO stewards VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
@@ -422,13 +412,51 @@ export class HostStewards {
         return;
       }
       const project = await this.store.project(steward.projectId);
-      let worktree: { path: string; branch: string } | undefined;
+      let worktree: { path: string; branch: string; workspaceId: string; activityId?: string };
       try {
-        if (await isRepository(project.cwd)) {
-          const branch = `mc/${randomUUID().replace(/-/g, "").slice(0, 8)}`;
-          const tree = await createHostWorktree(project.cwd, branch, "HEAD", false);
-          worktree = { path: tree.path, branch };
-        }
+        if (!this.workspaces)
+          throw new Error("Update the Host to enable managed steward workspaces.");
+        const ownerId = randomUUID();
+        const { workspace } = await this.workspaces.registry.prepare({
+          idempotencyKey: `steward:${ownerId}`,
+          projectId: steward.projectId,
+          environmentId: this.workspaces.environmentId,
+          owner: { kind: "stewardRun", id: ownerId },
+          slug: `steward-${project.name}`,
+          choice: { defaultMode: "worktree" },
+        });
+        if (
+          workspace.owner.kind !== "stewardRun" ||
+          workspace.owner.id !== ownerId ||
+          workspace.projectId !== steward.projectId ||
+          workspace.directoryState !== "present"
+        )
+          throw new Error("The managed workspace does not belong to this steward run.");
+        worktree = { path: workspace.path, branch: workspace.branchRef, workspaceId: workspace.id };
+        await this.write({
+          ...steward,
+          run: {
+            startedAt: now,
+            worktreeCwd: workspace.path,
+            branch: workspace.branchRef,
+            ...{ workspaceId: workspace.id },
+          },
+        });
+        const activity = await this.workspaces.activity.start({
+          workspaceId: workspace.id,
+          kind: "provider",
+          ownerId,
+        });
+        worktree.activityId = activity.id;
+        await this.write({
+          ...steward,
+          run: {
+            startedAt: now,
+            worktreeCwd: workspace.path,
+            branch: workspace.branchRef,
+            ...{ workspaceId: workspace.id, activityId: activity.id },
+          },
+        });
       } catch (error) {
         await this.finish(
           steward,
@@ -438,21 +466,17 @@ export class HostStewards {
         );
         return;
       }
+      const prepared = {
+        startedAt: now,
+        worktreeCwd: worktree.path,
+        branch: worktree.branch,
+        workspaceId: worktree.workspaceId,
+        activityId: worktree.activityId,
+      };
+      const prompt = stewardPrompt(steward, project, await this.tasks.list(), worktree.path);
       if (this.closing) {
-        if (worktree)
-          await this.removeWorktree(steward.projectId, {
-            worktreeCwd: worktree.path,
-            branch: worktree.branch,
-          });
-        return;
-      }
-      const prompt = stewardPrompt(steward, project, await this.tasks.list(), worktree?.path);
-      if (this.closing) {
-        if (worktree)
-          await this.removeWorktree(steward.projectId, {
-            worktreeCwd: worktree.path,
-            branch: worktree.branch,
-          });
+        await this.removeWorktree(steward.projectId, prepared);
+        await this.finish(steward, "cancelled", "Host is stopping.", now);
         return;
       }
       const started = await launchSessionRun(
@@ -466,24 +490,20 @@ export class HostStewards {
           runtimeMode: steward.runtimeMode,
           title: `Steward: ${project.name}`.slice(0, 200),
           prompt,
-          ...(worktree ? { worktreeCwd: worktree.path } : {}),
+          worktreeCwd: worktree.path,
+          workspaceId: worktree.workspaceId,
         },
         () => !this.closing,
       );
       if (started.deferred) {
-        if (worktree)
-          await this.removeWorktree(steward.projectId, {
-            worktreeCwd: worktree.path,
-            branch: worktree.branch,
-          });
+        await this.removeWorktree(steward.projectId, prepared);
+        await this.finish(steward, "cancelled", "Host is stopping.", now);
         return;
       }
-      const run = {
+      const run: ManagedStewardRun = {
+        ...prepared,
         sessionId: started.sessionId,
         runId: started.runId,
-        startedAt: now,
-        worktreeCwd: worktree?.path,
-        branch: worktree?.branch,
       };
       if (started.error !== undefined) {
         await this.removeWorktree(steward.projectId, run);
@@ -591,7 +611,8 @@ export class HostStewards {
         maxRunMinutes: 0,
         isolate: true,
         review: true,
-        ...(latest.autoMerge ? { autoMerge: true } : {}),
+        // Persistent preferences cannot authorize a new delivery.
+        ...(latest.deliveryApprovalRequired ? { deliveryApprovalRequired: true } : {}),
         source: "steward",
         stewardId: latest.id,
         // A proposal without a description cannot be started by an agent.
@@ -602,28 +623,37 @@ export class HostStewards {
     return created;
   }
 
-  /** Removes a run's throwaway checkout and its branch. */
+  /** Retire through S4. Unregistered legacy work and every branch are retained. */
   private async removeWorktree(
-    projectId: string,
-    run?: { worktreeCwd?: string; branch?: string },
+    _projectId: string,
+    run?: { worktreeCwd?: string; branch?: string; workspaceId?: string; activityId?: string },
   ): Promise<void> {
-    const { worktreeCwd, branch } = run ?? {};
-    if (!worktreeCwd && !branch) return;
-    let cwd: string;
+    if (!run?.workspaceId || !this.workspaces) return;
+    if (run.activityId) await this.workspaces.activity.stop(run.activityId);
+    const workspace = await this.workspaces.registry.get({ workspaceId: run.workspaceId });
+    if (!workspace) return;
+    const closed = await this.workspaces.registry.close({
+      workspaceId: workspace.id,
+      expectedRevision: workspace.revision,
+      idempotencyKey: `steward:${workspace.id}:close`,
+    });
     try {
-      cwd = (await this.store.project(projectId)).cwd;
-    } catch {
-      return;
+      const plan = await this.workspaces.removal.plan({
+        workspaceId: closed.id,
+        expectedRevision: closed.revision,
+      });
+      if (!plan.blockers.length && !plan.dirty)
+        await this.workspaces.removal.apply(
+          {
+            workspaceId: closed.id,
+            expectedRevision: closed.revision,
+            idempotencyKey: `steward:${workspace.id}:retire`,
+            planToken: plan.token,
+          },
+          { kind: "retentionScheduler" },
+        );
+    } catch (error) {
+      console.error("Steward workspace retained:", errorMessage(error));
     }
-    if (worktreeCwd && available(worktreeCwd))
-      await git(cwd, ["worktree", "remove", "--force", "--", worktreeCwd]).catch((error) =>
-        console.error("Could not remove a steward checkout:", errorMessage(error)),
-      );
-    await git(cwd, ["worktree", "prune"]).catch(() => {});
-    invalidateHostWorktrees(cwd);
-    if (branch)
-      await git(cwd, ["branch", "-D", "--", branch]).catch((error) =>
-        console.error("Could not delete a steward branch:", errorMessage(error)),
-      );
   }
 }

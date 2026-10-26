@@ -15,6 +15,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { REMOTE_PROVIDERS, type RemoteProvider } from "../src/features/connections/model/protocol";
 import { version } from "../package.json";
+import { readHostBuildIdentity } from "./build-identity";
 
 process.umask(0o077);
 // npm-based providers can launch Node subprocesses without a separate Node
@@ -31,8 +32,10 @@ const option = (name: string, fallback: string): string => {
   if (!args[i + 1] || args[i + 1].startsWith("--")) throw new Error(`Missing --${name} value`);
   return args[i + 1];
 };
-const directory = resolve(option("data-dir", join(homedir(), ".bycoda-host")));
-const port = Number(option("port", "3776"));
+const directory = resolve(
+  option("data-dir", process.env.BYCODA_HOST_DIR ?? join(homedir(), ".bycoda-host")),
+);
+const port = Number(option("port", process.env.BYCODA_DEV_HOST_PORT ?? "3776"));
 const statePath = join(directory, "running.json");
 type Running = { pid: number; port: number; secret: string };
 const readRunning = (): Running | undefined => {
@@ -63,6 +66,16 @@ async function main() {
     console.log(version);
     return;
   }
+  if (command === "build-info") {
+    console.log(
+      JSON.stringify({
+        version,
+        buildIdentity: readHostBuildIdentity(entryPath),
+        sourceIdentity: readHostBuildIdentity(entryPath) ? "known" : "source identity unknown",
+      }),
+    );
+    return;
+  }
   if (command === "help" || command === "--help") {
     console.log(`Bycoda Host (experimental; Node 24+; Windows/Linux/macOS)
   serve                 Run in foreground on 127.0.0.1
@@ -70,6 +83,7 @@ async function main() {
   service install       Install/start the persistent user service
   service uninstall     Stop the host and remove its service; keeps data
   connection-info       Print the running host's port (JSON)
+  build-info            Print packaged source identity (no service access)
   status                Check the running host
   stop                  Stop the host and interrupt its running turns
   pair --name <device>  Issue a device credential (shown once)
@@ -246,10 +260,6 @@ Connect another computer using an SSH forward to the loopback port.`);
   const { HostEngine } = await import("./engine");
   const { hostProviders } = await import("./providers");
   const { createHostServer } = await import("./server");
-  const { HostAutomations } = await import("./automations");
-  const { HostTasks } = await import("./tasks");
-  const { HostGoals } = await import("./goals");
-  const { HostStewards } = await import("./stewards");
   const releaseOwner = await acquireHostOwner(directory);
   try {
     const { installAppSkills } = await import("./app-skills");
@@ -286,11 +296,6 @@ Connect another computer using an SSH forward to the loopback port.`);
     }
     const engine = new HostEngine(store, hostProviders);
     await engine.ready;
-    const automations = new HostAutomations(store, engine);
-    const tasks = new HostTasks(store, engine);
-    // Goals run on the task board's timer.
-    const goals = new HostGoals(store, engine, tasks);
-    const stewards = new HostStewards(store, engine, tasks);
     const secret = randomBytes(32).toString("base64url");
     let stopping: Promise<void> | undefined;
     let stop: () => Promise<void>;
@@ -325,6 +330,7 @@ Connect another computer using an SSH forward to the loopback port.`);
                 pid: process.pid,
                 version,
                 runtime: entryPath,
+                buildIdentity: readHostBuildIdentity(entryPath),
               }),
             );
             if (action === "stop") void stop();
@@ -333,12 +339,13 @@ Connect another computer using an SSH forward to the loopback port.`);
           }
         });
       },
-      automations,
-      tasks,
       undefined,
-      goals,
-      stewards,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
     );
+    const { automations, tasks, stewards } = server;
     backend.setSocialAccess(server.social, `http://127.0.0.1:${port}`);
     backend.setRuntimeLogAccess(server.runtimeLogAccess, `http://127.0.0.1:${port}`);
     backend.setConversationAccess(server.conversationAccess, `http://127.0.0.1:${port}`);
