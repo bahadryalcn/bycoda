@@ -5,6 +5,8 @@ and execution directory. The project remains the same project; edits, terminals,
 checks and development servers run in the assigned directory. Existing `current`
 sessions remain in their checkout until explicitly migrated.
 Clearing a conversation preserves that execution identity, including after restart.
+Upgrading also retains current-checkout identity for legacy sessions cleared by
+an older app; it does not assign managed ownership to them.
 
 This guide describes the integrated managed-workspace workflow. A connected Host
 must advertise the

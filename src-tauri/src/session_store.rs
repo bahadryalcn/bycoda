@@ -1638,8 +1638,9 @@ fn migrate_versions(conn: &Connection) -> rusqlite::Result<()> {
     ensure_session_column(conn, "workspace_revision", "INTEGER")?;
     ensure_session_column(conn, "workspace_mode", "TEXT")?;
     if current < 20 {
-        // Existing execution is retained independently of transcript clearing.
-        conn.execute("UPDATE sessions SET workspace_mode='current' WHERE workspace_mode IS NULL AND workspace_id IS NULL AND worktree_cwd IS NULL AND has_user_message=1 AND is_draft=0", [])?;
+        // Existing execution is retained independently of transcript clearing,
+        // including sessions cleared by an older build before this migration.
+        conn.execute("UPDATE sessions SET workspace_mode='current' WHERE workspace_mode IS NULL AND workspace_id IS NULL AND worktree_cwd IS NULL AND is_draft=0", [])?;
         conn.execute("DROP INDEX IF EXISTS sessions_cwd_cover_idx", [])?;
         conn.execute(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (20, ?1)",
@@ -3818,6 +3819,38 @@ mod tests {
         assert_eq!(record.workspace_mode.as_deref(), Some("current"));
         assert!(record.workspace_id.is_none());
         assert!(record.workspace_revision.is_none());
+    }
+
+    #[test]
+    fn execution_mode_migration_retains_an_already_cleared_legacy_session() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let mut session = sample(
+            "legacy-already-cleared",
+            "/tmp/project",
+            "Existing current session",
+        );
+        upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+        // Older /clear persisted an empty transcript without any workspace mode.
+        session.blocks = json!([]);
+        session.provider_session_id = None;
+        upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+        let mut draft = sample("legacy-unstarted-draft", "/tmp/project", "Draft");
+        draft.blocks = json!([{"id":"draft-user","role":"user","text":"Unsent","draft":true}]);
+        upsert_session_with_git(&conn, &draft, crate::fs::GitInfo::default(), None).unwrap();
+        conn.execute("DELETE FROM schema_migrations WHERE version=20", [])
+            .unwrap();
+        migrate(&conn).unwrap();
+        let record = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(record.blocks, json!([]));
+        assert_eq!(record.workspace_mode.as_deref(), Some("current"));
+        assert!(record.workspace_id.is_none());
+        assert!(record.worktree_cwd.is_none());
+        assert!(get_session(&conn, &draft.id)
+            .unwrap()
+            .unwrap()
+            .workspace_mode
+            .is_none());
     }
 
     #[test]

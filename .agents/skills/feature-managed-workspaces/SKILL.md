@@ -285,7 +285,9 @@ delivery only; product/runtime acceptance remains as described above.
   remain unchanged (`69e6f537`). The real-Git goal suite passes 68 cases.
 - Established current execution identity survives clear, persistence and restart
   through native `workspace_mode`; migration assigns no managed ownership.
-  Implemented in `3221e80b`.
+  Migration also retains legacy sessions already cleared by an older app, while
+  leaving unsent drafts unclassified. Implemented in `3221e80b` with the native
+  migration/reopen regressions in `src-tauri/src/session_store.rs`.
 - Crew workers commit their owned branches. Acceptance waits for owner-approved
   managed branch delivery and rechecks unapproved commits; directory cleanup
   retains branches. Implemented in `8c386465` and `1c0a2d9a`.
