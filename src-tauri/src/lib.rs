@@ -3,6 +3,7 @@ use tauri::Manager;
 mod account_identity;
 mod automations;
 mod azure_devops;
+pub mod build_info;
 mod bundled_host;
 mod chat_background;
 mod checkpoint;
@@ -11,6 +12,7 @@ mod control;
 pub mod control_cli;
 mod conversation_tools_bridge;
 mod cursor_store;
+mod debug_profile;
 mod desktop_inbox_review;
 mod external_editor;
 mod file_access;
@@ -417,6 +419,7 @@ pub fn run() {
             html_preview::respond(request)
         })
         .invoke_handler(tauri::generate_handler![
+            build_info::build_identity,
             remote::remote_machines,
             server_inventory::server_inventory_list,
             termius_import::termius_import_preview,
@@ -912,7 +915,9 @@ pub fn run() {
             project_logo::remove_project_logo,
             project_logo::forget_logo_file,
         ])
-        .build(webview_debug_context(tauri::generate_context!()))
+        .build(webview_debug_context(debug_profile::context(
+            tauri::generate_context!(),
+        )))
         .expect("error while building bycoda");
 
     app.run(|handle, event| match event {

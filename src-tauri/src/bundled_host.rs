@@ -237,6 +237,9 @@ fn installation_confirmed(installed: Option<&str>, bundled: &str, healthy: bool)
 }
 
 fn data_dir() -> Option<PathBuf> {
+    if crate::debug_profile::profile_id().is_some() {
+        return crate::debug_profile::host_data_dir();
+    }
     #[cfg(windows)]
     let home = std::env::var("USERPROFILE").ok()?;
     #[cfg(not(windows))]
@@ -486,6 +489,14 @@ fn record(status: BundledHostStatus) {
 
 /// One attempt; returns the delay before another useful probe.
 fn ensure_once(app: &AppHandle) -> Option<Duration> {
+    if crate::debug_profile::profile_id().is_some() {
+        // The dev supervisor owns its child Host. Never install a system service.
+        record(BundledHostStatus {
+            state: "unavailable".into(),
+            ..Default::default()
+        });
+        return None;
+    }
     let bundled = app.package_info().version.to_string();
     let name = archive_name()?;
     let archive = match app.path().resource_dir() {
