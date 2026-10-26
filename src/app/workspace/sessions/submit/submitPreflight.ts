@@ -2,7 +2,11 @@ import type { PreflightResult, SubmitDeps, SubmitInput } from "./submitTypes";
 
 import { composeNoteMessage } from "../../../../features/notes";
 import { orchestrator } from "../../../../features/orchestration/model/orchestration";
-import { providerAccountExists, sessionProviderAccountId, supportsProviderAccounts } from "../../../../features/providers/model/providerAccounts";
+import {
+  providerAccountExists,
+  sessionProviderAccountId,
+  supportsProviderAccounts,
+} from "../../../../features/providers/model/providerAccounts";
 import { createEditedResendAttempt } from "../../../../features/sessions/model/editLastTurn";
 import { isPreparingHandoff } from "../../../../features/sessions/model/handoff";
 import {
@@ -13,17 +17,26 @@ import {
 import { steerAppliesModelSettings } from "../../../../integrations/harness";
 import { saveRecentModelChoice } from "../../../../features/sessions/model/models";
 import { consumeDelegationCommand } from "../../../../features/sessions/model/delegationCommands";
-import { consumeOperatorCommand, operatorEnabledInThread } from "../../../../features/sessions/model/operatorCommand";
+import {
+  consumeOperatorCommand,
+  operatorEnabledInThread,
+} from "../../../../features/sessions/model/operatorCommand";
 import { approvedPlanForMessage, isBuildablePlan } from "../../../../features/sessions/model/plan";
 import { sessionWorkCwd } from "../../../../features/sessions/model/session";
-import { sessionsRef } from "../../../../features/sessions/model/sessionsStore";
+import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
+import { repairSessionModelIdentity } from "../../../../features/sessions/model/sessionModelIdentity";
 import { pendingShellRuns, withShellContext } from "../../../../features/sessions/model/shellRun";
 import { isNativeCommandPrompt } from "../../../../features/skills/model/skills";
 import { isEqualOrInside } from "../../../../shared/lib/paths";
 import { withPlanBuildTarget } from "../../helpers/sessionHelpers";
 
 export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): PreflightResult {
-  const { workspaceNavigation, enqueueHarnessEvent, flushHarnessEvents, setProviderAccountRecovery } = ctx;
+  const {
+    workspaceNavigation,
+    enqueueHarnessEvent,
+    flushHarnessEvents,
+    setProviderAccountRecovery,
+  } = ctx;
   const { editedResends, removingSessionIds, switchingWorktrees, removingWorktreePaths } = ctx.refs;
   const { sessionId, text, attachments, options } = input;
   if (editedResends.isActive(sessionId)) return { settled: true, value: false };
@@ -59,7 +72,12 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
     workspaceNavigation.isSwitching(sessionId)
   )
     return { settled: true, value: false };
-  const storedCurrent = sessionsRef.current.find((s) => s.id === sessionId);
+  const foundCurrent = sessionsRef.current.find((s) => s.id === sessionId);
+  const storedCurrent = foundCurrent ? repairSessionModelIdentity(foundCurrent) : undefined;
+  if (storedCurrent && storedCurrent !== foundCurrent)
+    setSessions((previous) =>
+      previous.map((session) => (session === foundCurrent ? storedCurrent : session)),
+    );
   // Automated sends never start a local turn while the host runs this one.
   if (options?.appRequestId && (storedCurrent?.busy || storedCurrent?.continuingElsewhere))
     return { settled: true, value: false };
@@ -113,11 +131,7 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
     const running = runningTargetOf(current);
     const route =
       current.busy && options?.followUpBehavior === "steer"
-        ? queuedSteerRoute(
-            current,
-            queuedMessage,
-            steerAppliesModelSettings(running.harness),
-          )
+        ? queuedSteerRoute(current, queuedMessage, steerAppliesModelSettings(running.harness))
         : undefined;
     if (route === "restart") return { settled: true, value: false };
     current =
@@ -138,19 +152,22 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   if (editedResend) {
     current = { ...current, blocks: editedResend.blocks };
   }
-  const messagePlan = (options?.intent ?? "default") === "default" &&
-    !options?.managed && !options?.resendEdited && !options?.ciRepair &&
-    !current.inboxAsk && !orchestrator.forSession(sessionId) && attachments.length === 0
+  const messagePlan =
+    (options?.intent ?? "default") === "default" &&
+    !options?.managed &&
+    !options?.resendEdited &&
+    !options?.ciRepair &&
+    !current.inboxAsk &&
+    !orchestrator.forSession(sessionId) &&
+    attachments.length === 0
       ? approvedPlanForMessage(current, text)
       : undefined;
-  const intent = messagePlan ? "build" : options?.intent ?? "default";
+  const intent = messagePlan ? "build" : (options?.intent ?? "default");
   if (intent === "orchestrate") {
     try {
       const run = orchestrator.forSession(sessionId);
       if (run && ["active", "paused"].includes(run.status))
-        throw new Error(
-          "Stop the current orchestration run before preparing another proposal.",
-        );
+        throw new Error("Stop the current orchestration run before preparing another proposal.");
     } catch (error) {
       enqueueHarnessEvent(sessionId, {
         type: "status",
@@ -181,9 +198,7 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   saveRecentModelChoice(current.harness, current.model);
   const initialWorkCwd = sessionWorkCwd(current);
   const createDraftWorktree = !current.worktreeCwd && current.workspaceMode === "worktree";
-  const accountProvider = supportsProviderAccounts(current.harness)
-    ? current.harness
-    : undefined;
+  const accountProvider = supportsProviderAccounts(current.harness) ? current.harness : undefined;
   const providerAccountId = accountProvider
     ? sessionProviderAccountId(accountProvider, current)
     : undefined;
@@ -257,11 +272,27 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   return {
     settled: false,
     pre: {
-      storedCurrent, draftBlock, current, submitTarget, editedResend, editedProviderTurnId, intent,
-      approvedPlan, noteCard, handoffCard, providerAccountId, initialWorkCwd, createDraftWorktree,
-      submittedText, operatorCommand, operatorAccess, promptText, rawCommand, ciContext, harnessText,
+      storedCurrent,
+      draftBlock,
+      current,
+      submitTarget,
+      editedResend,
+      editedProviderTurnId,
+      intent,
+      approvedPlan,
+      noteCard,
+      handoffCard,
+      providerAccountId,
+      initialWorkCwd,
+      createDraftWorktree,
+      submittedText,
+      operatorCommand,
+      operatorAccess,
+      promptText,
+      rawCommand,
+      ciContext,
+      harnessText,
       pendingSwitch,
     },
   };
 }
-

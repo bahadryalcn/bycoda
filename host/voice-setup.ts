@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { ensureVoicePython } from "./voice-python-install";
 import {
   inspectVoiceRuntime,
   voiceRuntimeConfig,
@@ -25,6 +26,7 @@ type Dependencies = {
   mkdir: (path: string) => Promise<unknown>;
   home: string;
   platform: NodeJS.Platform;
+  preparePython: typeof ensureVoicePython;
 };
 
 /** Only invoked by the owner's explicit Install action, never by detection. */
@@ -39,6 +41,38 @@ if c.get('natural', True) and not c.get('ttsPath'):
 print(json.dumps(c))
 `;
 
+function installationFailure(stderr: string): string {
+  // Installer output can include authenticated registry URLs or local secrets.
+  // Classify a bounded tail into fixed recovery guidance; never return raw text.
+  if (/no space left|disk (?:is )?full|not enough (?:disk )?space|errno 28/i.test(stderr))
+    return "Not enough disk space for voice setup. Free space and try again.";
+  if (/permission denied|access is denied|winerror 5/i.test(stderr))
+    return "Voice setup could not write its files. Check permissions for the bycoda voice folder and try again.";
+  if (/no module named ['"]?ensurepip|ensurepip is not available/i.test(stderr))
+    return "Python virtual-environment support is missing. Repair your Python installation and try again.";
+  if (/no module named ['"]?pip\b/i.test(stderr))
+    return "Python package support (pip) is missing. Repair your Python installation and try again.";
+  if (
+    /resolutionimpossible|conflicting dependencies|no matching distribution|requires a different python/i.test(
+      stderr,
+    )
+  )
+    return "The voice packages are incompatible with this Python installation. Choose Python 3.10–3.12 and try again.";
+  if (
+    /certificate_verify_failed|sslcertverificationerror|connectionerror|connection (?:refused|reset)|name resolution|network is unreachable|readtimeout|connecttimeout|timed out/i.test(
+      stderr,
+    )
+  )
+    return "Voice files could not be downloaded. Check your connection, proxy and certificate settings, then try again.";
+  if (
+    /failed building wheel|could not build wheels|microsoft visual c\+\+|subprocess-exited-with-error/i.test(
+      stderr,
+    )
+  )
+    return "A voice dependency could not be built. Check the Python build prerequisites or choose another supported Python installation.";
+  return "Installation failed. Check your connection and available disk space, then try again.";
+}
+
 /** Shell-free, bounded, cancellable child commands. Pip never targets system Python. */
 const run: Run = (program, args, signal) =>
   new Promise((resolve, reject) => {
@@ -51,9 +85,13 @@ const run: Run = (program, args, signal) =>
         PYTHONNOUSERSITE: "1",
         PIP_NO_INPUT: "1",
         HF_HUB_DISABLE_IMPLICIT_TOKEN: "1",
+        // Use the standard resumable HTTP transport. XET repeatedly failed to
+        // start large model transfers on the verified macOS setup path.
+        HF_HUB_DISABLE_XET: "1",
       },
     });
     let output = "";
+    let stderr = "";
     let settled = false;
     const kill = () => {
       if (!child.pid) return;
@@ -89,16 +127,12 @@ const run: Run = (program, args, signal) =>
       // Keep a bounded tail; only the fixed download script's final JSON is read.
       output = (output + chunk.toString()).slice(-32_000);
     });
-    child.stderr.on("data", () => {});
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = (stderr + chunk.toString()).slice(-32_000);
+    });
     child.on("error", () => finish(new Error("The voice installer could not start.")));
     child.on("close", (code) =>
-      finish(
-        code === 0
-          ? undefined
-          : new Error(
-              "Installation failed. Check your connection and available disk space, then try again.",
-            ),
-      ),
+      finish(code === 0 ? undefined : new Error(installationFailure(stderr))),
     );
   });
 
@@ -116,6 +150,7 @@ export class VoiceSetupService {
       mkdir: (path) => mkdir(path, { recursive: true }),
       home: homedir(),
       platform: process.platform,
+      preparePython: ensureVoicePython,
       ...dependencies,
     };
   }
@@ -153,14 +188,25 @@ export class VoiceSetupService {
   }
 
   private async install(config: VoiceRuntimeConfig, controller: AbortController) {
-    const { inspect, run, mkdir, home, platform } = this.dependencies;
+    const { inspect, run, mkdir, home, platform, preparePython } = this.dependencies;
     const signal = controller.signal;
     const stage = (value: VoiceSetupStatus["stage"]) => {
       signal.throwIfAborted();
       this.value = { state: "installing", stage: value, requestedConfig: config };
     };
-    const found = await inspect(config);
+    let found = await inspect(config);
     signal.throwIfAborted();
+    if (!found.python && !config.python) {
+      const python = await preparePython({
+        directory: join(home, ".bycoda", "voice", "python-runtime"),
+        signal,
+        run,
+        platform,
+      });
+      signal.throwIfAborted();
+      found = await inspect({ ...config, python });
+      signal.throwIfAborted();
+    }
     if (!found.python) {
       this.value = { state: "error", requestedConfig: config, error: "python_missing" };
       return;

@@ -985,13 +985,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
               />
             </details>
             {triggerCapability?.status === "unsupported" ? (
-              <Alert tone="danger">
-                {account?.connection === "browser"
-                  ? t(
-                      "The browser connection cannot read the inbox automatically. This trigger needs an official API connection.",
-                    )
-                  : triggerCapability.reason}
-              </Alert>
+              <Alert tone="danger">{triggerCapability.reason}</Alert>
             ) : null}
             {mode === "automatic" && !canAutomate ? (
               <Alert tone="danger">

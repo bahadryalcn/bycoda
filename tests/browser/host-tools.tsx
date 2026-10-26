@@ -8,6 +8,7 @@ import "../../src/styles/index.css";
 import { ToolsWorkspace } from "../../src/features/host-tools/ToolsWorkspace";
 import HostToolsWindow from "../../src/features/host-tools/HostToolsWindow";
 import { registerBrowserComposer } from "../../src/features/host-tools/browserComposer";
+import { registerDeviceImageComposer } from "../../src/features/devices/deviceImageComposer";
 import { requestToolsUi } from "../../src/features/host-tools/toolsUiControl";
 
 const query = new URLSearchParams(location.search);
@@ -22,6 +23,10 @@ registerLogsComposer("G:/demo/example", "fixture-session", (text) => {
 });
 registerBrowserComposer("G:/demo/example", "fixture-session", (file) => {
   Object.assign(window, { hostBrowserDraft: file });
+  return true;
+});
+registerDeviceImageComposer("G:/demo/example", "fixture-session", (file, context) => {
+  Object.assign(window, { hostDeviceImageDraft: { file, context } });
   return true;
 });
 const tools = {

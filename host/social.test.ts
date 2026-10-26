@@ -13,6 +13,7 @@ import {
   type SocialAdapters,
 } from "../src/integrations/social/adapter";
 import { platformRequirements } from "../src/integrations/social/capabilities";
+import { browserScopes } from "../src/integrations/social/browserCapabilities";
 import type { SocialCredential, SocialCredentialStore } from "./social-credentials";
 import type {
   SocialAccount,
@@ -53,7 +54,10 @@ async function seedThreadCopies(store: HostStore, source: SocialThread, count: n
     }
   });
 }
-async function fixture(generateText?: import("./social-generation").SocialTextGenerator) {
+async function fixture(
+  generateText?: import("./social-generation").SocialTextGenerator,
+  browserAdapter?: SocialAdapter,
+) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-social-"));
   const database = join(directory, "host.db");
   let store = new HostStore(database);
@@ -99,6 +103,7 @@ async function fixture(generateText?: import("./social-generation").SocialTextGe
     undefined,
     () => clock.value,
     generateText,
+    browserAdapter,
   );
   cleanups.push(async () => {
     await social.dispose();
@@ -152,7 +157,7 @@ async function fixture(generateText?: import("./social-generation").SocialTextGe
     await social.connectAccount(
       created.id,
       {
-        platformId: `${platform}-${created.id}`,
+        platformId: platform === "snapchat" ? created.id : `${platform}-${created.id}`,
         name,
         scopes,
         accessApproved: true,
@@ -254,6 +259,7 @@ async function fixture(generateText?: import("./social-generation").SocialTextGe
         undefined,
         () => clock.value,
         generateText,
+        browserAdapter,
       );
       const initialTick = vi.spyOn(social, "tick");
       try {
@@ -265,6 +271,109 @@ async function fixture(generateText?: import("./social-generation").SocialTextGe
     },
   };
 }
+describe("remaining browser publishing contracts", () => {
+  it("keeps PDF upload owner-only and validates the complete document before storing it", async () => {
+    const f = await fixture();
+    const pdf = Buffer.from("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n");
+    const session = await f.session();
+    await expect(
+      f.social.uploadImage(session.principal, pdf.toString("base64"), "document"),
+    ).rejects.toThrow();
+    await expect(
+      f.social.uploadImage(
+        owner,
+        Buffer.from("%PDF-1.7\ntruncated").toString("base64"),
+        "document",
+      ),
+    ).rejects.toThrow("complete PDF");
+    await expect(f.social.uploadImage(owner, pdf.toString("base64"))).rejects.toThrow("JPEG/PNG");
+    const uploaded = await f.social.uploadImage(owner, pdf.toString("base64"), "document");
+    expect(Buffer.from(await f.social.readOwnerMedia(owner, uploaded.uploadId))).toEqual(pdf);
+    expect(f.send).not.toHaveBeenCalled();
+  });
+  it("preserves the reviewed PDF title and Snapchat destination through campaign queueing", async () => {
+    const f = await fixture();
+    const linkedin = await f.call<SocialAccount>("accounts.create", {
+      platform: "linkedin",
+      accountType: "member",
+      connection: "browser",
+      name: "Bycoda LI",
+      projectIds: [f.a.id],
+    });
+    const snap = await f.call<SocialAccount>("accounts.create", {
+      platform: "snapchat",
+      accountType: "public_profile",
+      connection: "browser",
+      name: "Bycoda Snap",
+      projectIds: [f.a.id],
+    });
+    for (const account of [linkedin, snap]) {
+      await f.social.connectAccount(
+        account.id,
+        {
+          platformId:
+            account.id === linkedin.id
+              ? "web:linkedin:in:bycoda"
+              : "web:snapchat:public_profile:11111111-1111-1111-1111-111111111111",
+          name: account.name,
+          connection: "browser",
+          scopes: browserScopes(account.platform as "linkedin" | "snapchat"),
+          accessApproved: true,
+        },
+        { accessToken: "browser-session" },
+      );
+      await f.call("accounts.grants", {
+        accountId: account.id,
+        projectId: f.a.id,
+        permissions: ["read", "draft", "publish"],
+      });
+    }
+    const media = await f.social.uploadImage(
+      owner,
+      Buffer.from("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n").toString("base64"),
+      "document",
+    );
+    const snapchat = { target: "story" as const, durationSeconds: 10, width: 540, height: 960 };
+    const campaign = await f.call<SocialCampaign>("campaigns.create", {
+      name: "Reviewed files",
+      projectIds: [f.a.id],
+      variants: [
+        {
+          accountId: linkedin.id,
+          text: "Public product guide",
+          media: [{ kind: "document", uploadId: media.uploadId, title: "Bycoda guide" }],
+          factIds: [],
+          scheduledAt: f.clock.value,
+        },
+        {
+          accountId: snap.id,
+          text: "",
+          media: [{ kind: "video", uploadId: "22222222-2222-2222-2222-222222222222" }],
+          snapchat,
+          factIds: [],
+          scheduledAt: f.clock.value,
+        },
+      ],
+    });
+    await f.call("campaigns.approveReviewed", {
+      id: campaign.id,
+      expectedRevision: campaign.revision,
+    });
+    await f.enable();
+    const jobs = await f.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
+    expect(jobs.find((job) => job.accountId === linkedin.id)?.payload.media[0]).toMatchObject({
+      kind: "document",
+      title: "Bycoda guide",
+      uploadId: media.uploadId,
+    });
+    expect(jobs.find((job) => job.accountId === snap.id)?.payload).toMatchObject({
+      text: "",
+      snapchat,
+    });
+    expect(f.send).not.toHaveBeenCalled();
+  });
+});
+
 describe("campaign dispatch fairness", () => {
   it("rechecks native request authority after account lookup before a credential write", async () => {
     const f = await fixture();
@@ -1998,31 +2107,62 @@ describe("Merkezi sosyal servis", () => {
       s.call("drafts.update", { id: draft.id, text: "After dispatch." }),
     ).rejects.toThrow("dispatched");
   });
-  it("draft attachment changes revoke exact approval and reach the authorized queued send", async () => {
-    const s = await fixture();
-    const account = await s.account("x");
-    const thread = await s.thread(account);
-    const draft = await s.call<SocialDraft>("replies.draft", {
-      threadId: thread.id,
-      text: "Image reply.",
-    });
-    await s.approveDraft(draft.id);
-    const media = [{ kind: "image", uploadId: "00000000-0000-4000-8000-000000000001" }];
-    const edited = await s.call<SocialDraft>("drafts.update", {
-      id: draft.id,
-      text: draft.text,
-      media,
-    });
-    expect(edited.media).toEqual(media);
-    expect(edited.approvedAt).toBeUndefined();
-    await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("approval");
-    await s.approveDraft(draft.id);
-    const queued = await s.call<SocialJob>("replies.send", { id: draft.id });
-    expect(queued.payload.media).toEqual(media);
-    await s.enable();
-    await s.social.tick();
-    expect(s.send.mock.calls[0][1].payload.media).toEqual(media);
-  });
+  it.each(["x", "whatsapp", "telegram"] as const)(
+    "%s draft attachment changes revoke exact approval and reach the authorized queued send",
+    async (platform) => {
+      const s = await fixture();
+      const account = await s.account(platform);
+      const thread = await s.thread(account);
+      const draft = await s.call<SocialDraft>("replies.draft", {
+        threadId: thread.id,
+        text: "Image reply.",
+      });
+      await s.approveDraft(draft.id);
+      const media = [{ kind: "image", uploadId: "00000000-0000-4000-8000-000000000001" }];
+      const edited = await s.call<SocialDraft>("drafts.update", {
+        id: draft.id,
+        text: draft.text,
+        media,
+      });
+      expect(edited.media).toEqual(media);
+      expect(edited.approvedAt).toBeUndefined();
+      await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("approval");
+      await s.approveDraft(draft.id);
+      const queued = await s.call<SocialJob>("replies.send", { id: draft.id });
+      expect(queued.payload.media).toEqual(media);
+      await s.enable();
+      await s.social.tick();
+      expect(s.send.mock.calls[0][1].payload.media).toEqual(media);
+    },
+  );
+  it.each(["whatsapp", "telegram"] as const)(
+    "%s attachment-only drafts retain media, enforce caption edits and require fresh approval",
+    async (platform) => {
+      const s = await fixture();
+      const account = await s.account(platform);
+      const thread = await s.thread(account);
+      const draft = await s.call<SocialDraft>("replies.draft", {
+        threadId: thread.id,
+        text: "Review attachment.",
+      });
+      await s.approveDraft(draft.id);
+      const media = [{ kind: "image", uploadId: "00000000-0000-4000-8000-000000000001" }];
+      const edited = await s.call<SocialDraft>("drafts.update", { id: draft.id, text: "", media });
+      expect(edited.text).toBe("");
+      expect(edited.media).toEqual(media);
+      await expect(
+        s.call("drafts.update", { id: draft.id, text: "x".repeat(1025) }),
+      ).rejects.toThrow("1024");
+      await expect(s.call("drafts.update", { id: draft.id, text: "", media: [] })).rejects.toThrow(
+        "draft text",
+      );
+      await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("approval");
+      await s.approveDraft(draft.id);
+      const queued = await s.call<SocialJob>("replies.send", { id: draft.id });
+      expect(queued.payload).toMatchObject({ text: "", media });
+      expect(s.send).not.toHaveBeenCalled();
+    },
+  );
   it("a manual edit retains conversation review and newer inbound guards", async () => {
     const s = await fixture();
     const account = await s.account();
@@ -3015,6 +3155,168 @@ describe("Merkezi sosyal servis", () => {
     expect(pending).toMatchObject({ status: "succeeded", platformId: "publish-1" });
     expect(initializations).toBe(1);
   });
+  it("preserves explicit Facebook Reel approval metadata and reconciles a submitted video without another publication", async () => {
+    const s = await fixture();
+    const account = await s.call<SocialAccount>("accounts.create", {
+      platform: "facebook", name: "Bycoda Page", accountType: "page", projectIds: [s.a.id],
+    });
+    await s.social.connectAccount(account.id, {
+      platformId: "61595536696896", name: "Bycoda Page", accessApproved: true,
+      scopes: [...new Set(Object.values(platformRequirements("facebook", "page")).flatMap((item) => item.scopes))],
+    }, { accessToken: "synthetic-private-token", expiresAt: s.clock.value + 3600000 });
+    await s.call("accounts.grants", { accountId: account.id, projectId: s.a.id, permissions: ["read", "draft", "publish"] });
+    const facebook = {
+      target: "reel" as const,
+      durationSeconds: 12,
+      width: 1080,
+      height: 1920,
+      frameRate: 30,
+    };
+    const variant = {
+      accountId: account.id,
+      text: "",
+      scheduledAt: s.clock.value,
+      factIds: [],
+      media: [{ kind: "video", uploadId: "00000000-0000-4000-8000-000000000001" }],
+      facebook,
+    };
+    for (const invalid of [
+      { ...facebook, target: "feed" },
+      { ...facebook, frameRate: 22 },
+      { ...facebook, durationSeconds: 61 },
+      { ...facebook, width: 1081 },
+      { ...facebook, height: Infinity },
+      { ...facebook, hidden: true },
+    ]) {
+      await expect(
+        s.call("campaigns.create", {
+          name: "Invalid Reel",
+          projectIds: [s.a.id],
+          variants: [{ ...variant, facebook: invalid }],
+        }),
+      ).rejects.toThrow();
+    }
+    const campaign = await s.call<SocialCampaign>("campaigns.create", {
+      name: "Explicit Reel",
+      projectIds: [s.a.id],
+      variants: [variant],
+    });
+    expect(campaign.variants[0].facebook).toEqual(facebook);
+    await s.call("campaigns.approve", { id: campaign.id });
+    await s.call("campaigns.schedule", { id: campaign.id });
+    let publications = 0;
+    s.send.mockImplementation(async (_account, job, _token, _media, checkpoint) => {
+      expect(job.payload.facebook).toEqual(facebook);
+      expect(job.payload.text).toBe("");
+      if (!job.preparation?.facebookReel) {
+        publications++;
+        await checkpoint?.({
+          facebookReel: {
+            actorId: _account.platformId,
+            signature: "exact-content",
+            videoId: "123456",
+            stage: "submitted",
+            createdAt: s.clock.value,
+          },
+        });
+        throw new SocialPlatformError("processing", s.clock.value + 30000);
+      }
+      return { platformId: "123456", url: "https://www.facebook.com/reel/123456" };
+    });
+    await s.enable();
+    await s.social.tick();
+    const pending = (await s.social.snapshot(owner)).jobs[0];
+    expect(pending).toMatchObject({
+      status: "queued",
+      preparation: { facebookReel: { videoId: "123456", stage: "submitted" } },
+    });
+    await expect(s.call("jobs.cancel", { id: pending.id })).rejects.toThrow("cannot be recalled");
+    s.clock.value += 31000;
+    await s.social.tick();
+    expect((await s.social.snapshot(owner)).jobs[0]).toMatchObject({
+      status: "succeeded",
+      platformId: "123456",
+    });
+    expect(publications).toBe(1);
+  });
+  it("retains an accepted Snapchat Spotlight ID through processing and denies cancellation without publishing twice", async () => {
+    const s = await fixture();
+    const created = await s.account("snapchat");
+    const current = (await s.call<SocialAccount[]>("accounts.list")).find(
+      (item) => item.id === created.id,
+    )!;
+    const actorId = current.platformId;
+    await s.social.connectAccount(
+      created.id,
+      { ...current, platformId: actorId },
+      {
+        accessToken: "synthetic-private-token",
+        expiresAt: s.clock.value + 3_600_000,
+      },
+    );
+    const variant = {
+      accountId: created.id,
+      text: "Bycoda Spotlight",
+      scheduledAt: s.clock.value,
+      factIds: [],
+      media: [{ kind: "video", uploadId: "00000000-0000-4000-8000-000000000001" }],
+      snapchat: {
+        target: "spotlight",
+        locale: "tr_TR",
+        durationSeconds: 6,
+        width: 540,
+        height: 960,
+      },
+    };
+    await expect(
+      s.call("campaigns.create", {
+        name: "Missing locale",
+        projectIds: [s.a.id],
+        variants: [{ ...variant, snapchat: { ...variant.snapchat, locale: undefined } }],
+      }),
+    ).rejects.toThrow("explicit locale");
+    const campaign = await s.call<SocialCampaign>("campaigns.create", {
+      name: "Spotlight",
+      projectIds: [s.a.id],
+      variants: [variant],
+    });
+    await s.call("campaigns.approve", { id: campaign.id });
+    await s.call("campaigns.schedule", { id: campaign.id });
+    let posts = 0;
+    s.send.mockImplementation(async (_account, job, _token, _media, checkpoint) => {
+      expect(job.payload.snapchat?.locale).toBe("tr_TR");
+      if (!job.preparation?.snapchatMedia?.spotlightId) {
+        posts++;
+        await checkpoint?.({
+          snapchatMedia: {
+            actorId,
+            signature: "fixture-signature",
+            mediaId: "00000000-0000-4000-8000-000000000003",
+            createdAt: s.clock.value,
+            spotlightId: "spotlight-1",
+          },
+        });
+        throw new SocialPlatformError("processing", s.clock.value + 60_000);
+      }
+      return { platformId: "spotlight-1" };
+    });
+    await s.enable();
+    await s.social.tick();
+    const queued = (await s.social.snapshot(owner)).jobs[0];
+    expect(queued).toMatchObject({
+      status: "queued",
+      dispatchedAt: s.clock.value,
+      preparation: { snapchatMedia: { spotlightId: "spotlight-1" } },
+    });
+    await expect(s.call("jobs.cancel", { id: queued.id })).rejects.toThrow("cannot be recalled");
+    s.clock.value += 61_000;
+    await s.social.tick();
+    expect((await s.social.snapshot(owner)).jobs[0]).toMatchObject({
+      status: "succeeded",
+      platformId: "spotlight-1",
+    });
+    expect(posts).toBe(1);
+  });
   it("WhatsApp signed messages deduplicate and an expired response window blocks queued dispatch", async () => {
     const s = await fixture();
     const account = await s.account("whatsapp");
@@ -3388,5 +3690,234 @@ describe("Merkezi sosyal servis", () => {
     await expect(
       s.call("contacts.upsert", { ...args, name: "Other" }, owner, "stable-request"),
     ).rejects.toThrow("another operation");
+  });
+});
+
+describe("multi-platform browser dispatch", () => {
+  async function webAccount(
+    s: Awaited<ReturnType<typeof fixture>>,
+    platform: "facebook" | "telegram",
+  ) {
+    const account = await s.call<SocialAccount>("accounts.create", {
+      platform,
+      accountType: "member",
+      name: "Web",
+      projectIds: [s.a.id],
+    });
+    await s.social.connectAccount(
+      account.id,
+      {
+        platformId: `web:${platform}:123`,
+        name: "Verified web owner",
+        connection: "browser",
+        accessApproved: true,
+        scopes: browserScopes(platform),
+      },
+      { accessToken: "browser-session" },
+    );
+    await s.call("accounts.grants", {
+      accountId: account.id,
+      projectId: s.a.id,
+      permissions: ["read", "draft", "publish", "reply", "message", "comment"],
+    });
+    return account;
+  }
+  it("routes an approved Facebook web campaign through the browser adapter without an API token", async () => {
+    const send = vi.fn<SocialAdapter["send"]>(
+      async (_account, _job, _token, _media, _checkpoint, guard) => {
+        await guard?.();
+        return { platformId: "persisted-web-post" };
+      },
+    );
+    const s = await fixture(undefined, { send, poll: vi.fn(async () => ({ events: [] })) });
+    const account = await webAccount(s, "facebook");
+    const campaign = await s.campaign([account]);
+    await s.enable();
+    await s.call("campaigns.schedule", { id: campaign.id });
+    await s.social.tick();
+    expect(send).toHaveBeenCalledOnce();
+    expect(s.send).not.toHaveBeenCalled();
+    expect((await s.call<SocialJob[]>("jobs.status"))[0]).toMatchObject({
+      status: "succeeded",
+      platformId: "persisted-web-post",
+    });
+  });
+  it("keeps the approval gate on a web campaign rather than treating login as send approval", async () => {
+    const send = vi.fn<SocialAdapter["send"]>();
+    const s = await fixture(undefined, { send, poll: vi.fn(async () => ({ events: [] })) });
+    const account = await webAccount(s, "facebook");
+    const campaign = await s.call<SocialCampaign>("campaigns.create", {
+      name: "Unapproved",
+      projectIds: [s.a.id],
+      variants: [
+        {
+          accountId: account.id,
+          text: "Requires review",
+          media: [],
+          scheduledAt: s.clock.value,
+          factIds: [],
+        },
+      ],
+    });
+    await s.enable();
+    await expect(s.call("campaigns.schedule", { id: campaign.id })).rejects.toThrow(
+      /approv|review/i,
+    );
+    await s.social.tick();
+    expect(send).not.toHaveBeenCalled();
+  });
+  it("ingests a Telegram personal web conversation through the same project-scoped inbox", async () => {
+    const poll = vi.fn<SocialAdapter["poll"]>(async () => ({
+      events: [
+        {
+          eventId: "web-message-1",
+          threadId: "web-chat-2",
+          contactId: "2",
+          contactName: "Contact",
+          kind: "message",
+          text: "Incoming web message",
+          at: 1,
+        },
+      ],
+    }));
+    const s = await fixture(undefined, { send: vi.fn(), poll });
+    const account = await webAccount(s, "telegram");
+    await s.call("inbox.sync", { accountId: account.id });
+    expect(poll).toHaveBeenCalledOnce();
+    expect(s.poll).not.toHaveBeenCalled();
+    expect((await s.call<SocialThread[]>("inbox.list"))[0].events[0].text).toBe(
+      "Incoming web message",
+    );
+  });
+  it("discards a long browser read when the account is paused before it finishes", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((done) => {
+      entered = done;
+    });
+    const waiting = new Promise<void>((done) => {
+      release = done;
+    });
+    const poll = vi.fn<SocialAdapter["poll"]>(async () => {
+      entered();
+      await waiting;
+      return {
+        events: [
+          {
+            eventId: "late-event",
+            threadId: "chat",
+            contactId: "contact",
+            contactName: "Contact",
+            kind: "message",
+            text: "Must not be ingested",
+            at: 1,
+          },
+        ],
+      };
+    });
+    const s = await fixture(undefined, { send: vi.fn(), poll });
+    const account = await webAccount(s, "telegram");
+    const pending = s.social.pollAccount(account.id);
+    const rejected = expect(pending).rejects.toThrow("changed while polling");
+    await started;
+    await s.call("accounts.pause", { accountId: account.id, paused: true });
+    release();
+    await rejected;
+    expect(await s.call("inbox.list")).toEqual([]);
+  });
+  it("renews an Instagram access-token credential without requiring a separate refresh token", async () => {
+    const s = await fixture();
+    const account = await s.account("instagram");
+    s.tokens.set(account.id, {
+      accessToken: "old-synthetic-token",
+      expiresAt: s.clock.value + 10_000,
+    });
+    const stored = (await s.call<SocialAccount[]>("accounts.list")).find(
+      (item) => item.id === account.id,
+    )!;
+    await s.store.db
+      .prepare("UPDATE social_records SET value=? WHERE kind='account' AND id=?")
+      .run(JSON.stringify({ ...stored, expiresAt: s.clock.value + 10_000 }), account.id);
+    s.social.refreshCredential = vi.fn(async () => ({
+      accessToken: "new-synthetic-token",
+      expiresAt: s.clock.value + 60 * 24 * 60 * 60_000,
+    }));
+    await s.social.tick();
+    expect(s.social.refreshCredential).toHaveBeenCalledOnce();
+    expect(s.tokens.get(account.id)?.accessToken).toBe("new-synthetic-token");
+  });
+  it("reconciles signed WhatsApp delivery separately without resending or accepting another recipient's receipt", async () => {
+    const s = await fixture();
+    const account = await s.account("whatsapp");
+    const current = (await s.call<SocialAccount[]>("accounts.list"))[0];
+    const job: SocialJob = {
+      id: "delivery-job",
+      accountId: account.id,
+      projectIds: [s.a.id],
+      operationId: "operation",
+      dedupeKey: "delivery-key",
+      provider: "owner",
+      actorId: "owner",
+      kind: "reply",
+      payload: { text: "Exact reply", media: [], recipientId: "905551234567" },
+      status: "succeeded",
+      platformId: "wamid.outgoing",
+      scheduledAt: s.clock.value,
+      createdAt: s.clock.value,
+      attempts: 1,
+      delivery: { status: "accepted", at: s.clock.value },
+    };
+    await s.store.db
+      .prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)")
+      .run(job.id, job.dedupeKey, job.accountId, job.status, job.scheduledAt, JSON.stringify(job));
+    const receipt = async (
+      status: string,
+      recipient = "905551234567",
+      timestamp = s.clock.value / 1000,
+    ) => {
+      const raw = Buffer.from(
+        JSON.stringify({
+          object: "whatsapp_business_account",
+          entry: [
+            {
+              changes: [
+                {
+                  field: "messages",
+                  value: {
+                    messaging_product: "whatsapp",
+                    metadata: { phone_number_id: current.platformId },
+                    statuses: [
+                      {
+                        id: job.platformId,
+                        recipient_id: recipient,
+                        timestamp: String(timestamp),
+                        status,
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      return s.social.webhook(
+        "whatsapp",
+        raw,
+        `sha256=${createHmac("sha256", "synthetic-secret").update(raw).digest("hex")}`,
+        "synthetic-secret",
+      );
+    };
+    await receipt("delivered", "905559999999");
+    expect((await s.call<SocialJob[]>("jobs.status"))[0].delivery?.status).toBe("accepted");
+    // A wrong recipient's signed receipt must not poison later matching receipts.
+    await receipt("read");
+    const read = (await s.call<SocialJob[]>("jobs.status"))[0];
+    expect(read).toMatchObject({ status: "succeeded", delivery: { status: "read" } });
+    await receipt("sent", "905551234567", s.clock.value / 1000 + 1);
+    await receipt("failed", "905551234567", s.clock.value / 1000 + 2);
+    expect((await s.call<SocialJob[]>("jobs.status"))[0].delivery?.status).toBe("read");
+    await s.social.tick();
+    expect(s.send).not.toHaveBeenCalled();
   });
 });

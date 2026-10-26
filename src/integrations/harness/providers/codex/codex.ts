@@ -1,4 +1,9 @@
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
+import {
+  deliverQuestionReply,
+  QuestionReplyValidationError,
+  type QuestionDelivery,
+} from "../questionDelivery";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { t } from "../../../../shared/i18n";
@@ -41,7 +46,7 @@ import {
   type CodexApprovalKind,
   type CodexTurnUsageState,
 } from "./codexProtocol";
-import { JsonRpcClient, type JsonRpcId } from "../../core/jsonRpc";
+import { JsonRpcClient, JsonRpcResponseError, type JsonRpcId } from "../../core/jsonRpc";
 import {
   deleteHarnessGeneratedImages as deleteGeneratedImages,
   saveHarnessGeneratedImage as saveGeneratedImage,
@@ -80,7 +85,7 @@ type PendingApproval = {
   resolve: (decision: ApprovalOutcome) => void;
 };
 
-type PendingQuestion = {
+type PendingQuestion = QuestionDelivery & {
   /** Async agentMessage questions have no pending server request. */
   rpcId: JsonRpcId | null;
   threadId: string;
@@ -114,6 +119,7 @@ type Live = {
   /** A successful provider turn ended, but its async questions still need replies. */
   awaitingAsyncAnswers: boolean;
   asyncAnswerTexts: string[];
+  queuedAsyncAnswers: Map<number, { pending: PendingQuestion; reply: UserQuestionReply }>;
   turnUsage: CodexTurnUsageState;
   /** A written turn/start still needs its response/notification turn identity. */
   pendingTurnStart: boolean;
@@ -329,7 +335,18 @@ export function respondCodexQuestion(
   const live = liveByThread.get(sessionId);
   const pending = live?.questions.get(requestId);
   if (!live || !pending || pending.sending) return;
-  if (pending.rpcId !== null || reply.kind === "skipped") {
+  if (pending.rpcId !== null) {
+    deliverQuestionReply(
+      pending,
+      requestId,
+      reply,
+      live.onEvent,
+      () => live.questions.get(requestId) === pending && !live.cancelled && !live.muteUpdates,
+      () => pending.resolve(reply),
+    );
+    return;
+  }
+  if (reply.kind === "skipped") {
     pending.resolve(reply);
     return;
   }
@@ -344,7 +361,10 @@ export function respondCodexQuestion(
     // queued questions have been answered or skipped.
     pending.sending = true;
     live.asyncAnswerTexts.push(text);
-    pending.resolve(reply);
+    live.queuedAsyncAnswers.set(requestId, { pending, reply });
+    live.onEvent({ type: "question.updated", requestId, delivery: "queued" });
+    showNextQuestion(live);
+    settleAsyncAnswers(live);
     return;
   }
   const turnId = pending.turnId;
@@ -353,6 +373,7 @@ export function respondCodexQuestion(
     return;
   }
   pending.sending = true;
+  live.onEvent({ type: "question.updated", requestId, delivery: "sending" });
   keepCodexQuestionOpen(sessionId, requestId);
   void live.rpc
     .request(
@@ -367,11 +388,17 @@ export function respondCodexQuestion(
       if (live.questions.get(requestId) === pending) pending.resolve(reply);
     })
     .catch((error: unknown) => {
-      pending.sending = false;
       if (live.questions.get(requestId) !== pending) return;
+      const rejected =
+        error instanceof JsonRpcResponseError && [-32600, -32601, -32602].includes(error.code ?? 0);
+      if (rejected) pending.sending = false;
       live.onEvent({
-        type: "status",
-        text: `Could not send your answer to Codex: ${error instanceof Error ? error.message : String(error)}`,
+        type: "question.updated",
+        requestId,
+        delivery: rejected ? "failed" : "unknown",
+        error: rejected
+          ? "The provider rejected this answer. You can edit it and try again."
+          : "Answer delivery could not be confirmed. Check the connection before continuing.",
       });
     });
 }
@@ -392,6 +419,7 @@ function clearServerRequests(live: Live, preserveAsyncQuestions = false): void {
     clearTimeout(pending.timer);
     pending.resolve("cancelled");
     live.questions.delete(id);
+    live.queuedAsyncAnswers.delete(id);
   }
   live.approvals.clear();
   if (live.visibleQuestionId !== null && !live.questions.has(live.visibleQuestionId))
@@ -399,12 +427,29 @@ function clearServerRequests(live: Live, preserveAsyncQuestions = false): void {
 }
 
 function settleAsyncAnswers(live: Live): void {
-  if (live.awaitingAsyncAnswers && !live.questions.size) finishActiveTurn(live);
+  if (
+    live.awaitingAsyncAnswers &&
+    Array.from(live.questions.keys()).every((id) => live.queuedAsyncAnswers.has(id))
+  ) {
+    // The completed provider turn is ready for one continuation with all explicit answers.
+    // Keep submitted questions alive until that continuation has been accepted.
+    live.turnEndPending = false;
+    live.activeTurnId = null;
+    live.awaitingAsyncAnswers = false;
+    TurnLatch.finish(live);
+  }
 }
 
 function showNextQuestion(live: Live): void {
-  if (live.visibleQuestionId !== null && live.questions.has(live.visibleQuestionId)) return;
-  const next = live.questions.entries().next().value;
+  if (
+    live.visibleQuestionId !== null &&
+    live.questions.has(live.visibleQuestionId) &&
+    !live.queuedAsyncAnswers.has(live.visibleQuestionId)
+  )
+    return;
+  const next = Array.from(live.questions.entries()).find(
+    ([id]) => !live.queuedAsyncAnswers.has(id),
+  );
   live.visibleQuestionId = next?.[0] ?? null;
   if (next) {
     // Non-blocking means the agent can keep working, not that silence is a
@@ -722,6 +767,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       activeTurnId: null,
       awaitingAsyncAnswers: false,
       asyncAnswerTexts: [],
+      queuedAsyncAnswers: new Map(),
       turnUsage: {},
       pendingTurnStart: false,
       turns: Promise.resolve(),
@@ -865,6 +911,17 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
     await turnPromise;
   } catch (error) {
     if (live.cancelled) return;
+    // Preserve submitted answers before the session error settles the host run.
+    // These have not crossed the continuation's turn/start acceptance boundary.
+    for (const [requestId, { pending }] of live.queuedAsyncAnswers) {
+      if (live.questions.get(requestId) !== pending) continue;
+      live.onEvent({
+        type: "question.updated",
+        requestId,
+        delivery: "unknown",
+        error: "Answer delivery could not be confirmed. Check the connection before continuing.",
+      });
+    }
     live.onEvent({
       type: "session.error",
       message: error instanceof Error ? error.message : String(error),
@@ -877,12 +934,18 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
   }
   if (!live.cancelled && !live.muteUpdates && live.asyncAnswerTexts.length) {
     const text = live.asyncAnswerTexts.join("\n\n");
+    const queued = new Map(live.queuedAsyncAnswers);
     await runTurn(live, {
       ...input,
       text,
       attachments: [],
       runtimeInstructions: undefined,
-      onAccepted: undefined,
+      onAccepted: () => {
+        for (const [id, { pending, reply }] of queued) {
+          if (live.questions.get(id) === pending) pending.resolve(reply);
+          live.queuedAsyncAnswers.delete(id);
+        }
+      },
     });
   }
 }
@@ -1059,6 +1122,9 @@ function showCodexAsyncQuestion(live: Live, rec: Record<string, unknown> | null)
     title: questionPromptTitle(questions),
     questions,
     callId: itemId,
+    providerTurnId: turnId,
+    behavior: "nonBlocking",
+    dismissAction: "skip",
   };
   const outcome = new Promise<UserQuestionReply | "cancelled">((resolve) => {
     live.questions.set(uiId, {
@@ -1388,6 +1454,9 @@ async function handleServerRequest(
       title: questionPromptTitle(questions),
       questions,
       callId: stringField(asRecord(params), "itemId"),
+      providerTurnId: stringField(asRecord(params), "turnId"),
+      behavior: asRecord(params)?.isBlocking === false ? "nonBlocking" : "blocking",
+      dismissAction: "skip",
     };
     const outcome = new Promise<UserQuestionReply | "cancelled">((resolve) => {
       live.questions.set(uiId, {
@@ -1395,6 +1464,7 @@ async function handleServerRequest(
         threadId,
         event,
         resolve,
+        deliver: (reply) => live.rpc.respond(id, codexQuestionResponse(questions, reply)),
         // Older servers omit this field and must keep their blocking behavior.
         isBlocking: asRecord(params)?.isBlocking !== false,
       });
@@ -1412,7 +1482,6 @@ async function handleServerRequest(
       ...(reply !== "cancelled" && reply.kind === "answered" ? { reply } : {}),
     });
     showNextQuestion(live);
-    if (reply !== "cancelled") await live.rpc.respond(id, codexQuestionResponse(questions, reply));
     return;
   }
 
@@ -1572,6 +1641,8 @@ async function handleMcpForm(
       requestId: uiId,
       title: form.title,
       questions: form.questions,
+      behavior: "blocking",
+      dismissAction: "decline",
     };
     const outcome = new Promise<UserQuestionReply | "cancelled">((resolve) => {
       live.questions.set(uiId, {
@@ -1580,6 +1651,17 @@ async function handleMcpForm(
         event,
         resolve,
         isBlocking: true,
+        deliver: (reply) => {
+          let response;
+          try {
+            response = codexMcpFormResponse(form, reply);
+          } catch (error) {
+            throw new QuestionReplyValidationError(
+              error instanceof Error ? error.message : t("Check the form values."),
+            );
+          }
+          return live.rpc.respond(rpcId, response);
+        },
       });
     }).finally(() => {
       live.questions.delete(uiId);
@@ -1595,17 +1677,6 @@ async function handleMcpForm(
     });
     showNextQuestion(live);
     if (reply === "cancelled" || live.cancelled || live.muteUpdates) return;
-    let response;
-    try {
-      response = codexMcpFormResponse(form, reply);
-    } catch (error) {
-      live.onEvent({
-        type: "status",
-        text: error instanceof Error ? error.message : t("Check the form values."),
-      });
-      continue;
-    }
-    await live.rpc.respond(rpcId, response);
     return;
   }
 }

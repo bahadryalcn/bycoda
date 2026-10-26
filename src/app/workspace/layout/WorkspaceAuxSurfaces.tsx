@@ -16,6 +16,7 @@ export interface WorkspaceAuxSurfacesProps {
   // Live search
   searchViewOpen: boolean;
   searchDialogOpen?: boolean;
+  searchRequest?: SearchProps["request"];
   onExpandSearch?: () => void;
   onCompactSearch?: () => void;
   gitCwd: string;
@@ -44,6 +45,7 @@ export interface WorkspaceAuxSurfacesProps {
 function WorkspaceAuxSurfacesComponent({
   searchViewOpen,
   searchDialogOpen = false,
+  searchRequest,
   onExpandSearch,
   onCompactSearch,
   gitCwd,
@@ -72,6 +74,7 @@ function WorkspaceAuxSurfacesComponent({
         <LiveSearchView
           open
           presentation={searchDialogOpen ? "dialog" : "page"}
+          request={searchRequest}
           onExpand={onExpandSearch}
           onCompact={onCompactSearch}
           cwd={gitCwd}

@@ -15,7 +15,7 @@ import {
 } from "./runtimeGuidance";
 import type { GeneratedSessionTitle } from "../../../features/sessions/model/sessionTitle";
 import type { PrContent } from "../../../features/source-control/model/gitText";
-import { hasLiveCatalog } from "../../../features/sessions/model/models";
+import { hasLiveCatalog, modelBelongsToHarness } from "../../../features/sessions/model/models";
 import type { UserQuestionReply } from "../../../features/sessions/model/userQuestion";
 import type { NativeCommandProvider } from "./nativeCommands";
 import { loadSkillRestrictions } from "../../../features/skills/model/skillPreferences";
@@ -309,6 +309,11 @@ export function listHarnesses(): HarnessAdapter[] {
   return [...adapters.values()];
 }
 
+function assertHarnessModel(harness: HarnessId, model?: string): void {
+  if (model !== undefined && !modelBelongsToHarness(harness, model))
+    throw new Error(`Model "${model}" does not belong to provider "${harness}". Select a matching provider and model.`);
+}
+
 export function sendHarnessTurn(input: SendTurnInput & { harness: HarnessId }) {
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   let ready!: () => void;
@@ -318,6 +323,7 @@ export function sendHarnessTurn(input: SendTurnInput & { harness: HarnessId }) {
   turnReady.set(input.sessionId, started);
   return queueSessionOperation(input.sessionId, async () => {
     try {
+      assertHarnessModel(input.harness, input.model);
       if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
         throw new Error("Turn cancelled before it started");
       const adapter = requireHarness(input.harness);
@@ -402,6 +408,7 @@ export function compactHarnessContext(
 ): Promise<void> {
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   return queueSessionOperation(input.sessionId, async () => {
+    assertHarnessModel(input.harness, input.model);
     if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
       throw new Error("Compaction cancelled before it started");
     const adapter = requireHarness(input.harness);
@@ -446,6 +453,7 @@ export function rewindHarnessLastTurn(
   input: RewindLastTurnInput & { harness: HarnessId },
 ): Promise<RewindLastTurnResult> {
   return queueSessionOperation(input.sessionId, async () => {
+    assertHarnessModel(input.harness, input.model);
     const adapter = requireHarness(input.harness);
     if (!adapter.rewindLastTurn) {
       throw new Error(`${input.harness} does not support editing the last message`);
@@ -472,6 +480,7 @@ export function rewindHarnessLastTurn(
 export function steerHarnessTurn(input: SteerTurnInput & { harness: HarnessId }): Promise<void> {
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   return queueSteerOperation(input.sessionId, async () => {
+    assertHarnessModel(input.harness, input.model);
     if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
       throw new Error("Follow-up cancelled because the turn was stopped");
     const adapter = requireHarness(input.harness);
@@ -691,6 +700,7 @@ function cancelledTextPrompt(): Error {
 export async function runHarnessTextPrompt(
   input: TextPromptInput & { harness: HarnessId },
 ): Promise<string> {
+  assertHarnessModel(input.harness, input.model);
   const adapter = requireHarness(input.harness);
   if (!adapter.live) {
     throw new Error(`${input.harness} is not connected yet`);

@@ -41,6 +41,7 @@ describe("live background preference", () => {
     "floating-lines",
     "neural-tree",
     "latent-face",
+    "code-visage",
     "thought-weaver",
     "ascii-mask",
     "dot-grid",

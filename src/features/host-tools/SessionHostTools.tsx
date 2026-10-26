@@ -18,19 +18,19 @@ import type { RemoteMachine } from "../connections/model/protocol";
 import { lazySurface } from "../../shared/ui/lazySurface";
 import type { DevicePanelApi } from "../devices/types";
 import { attachDeviceToComposer } from "../devices/deviceComposer";
+import { attachDeviceImageAcrossWindows } from "../devices/deviceImageComposer";
 import {
   Gauge,
   Globe,
   AppWindow,
   Terminal,
-  Wrench,
+  ChevronDown,
   Server,
   PanelRight,
   RefreshCw,
 } from "../../shared/ui/icons";
 import { Button } from "../../shared/ui/Button";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
-import { Select } from "../../shared/ui/Select";
 import type { OpenFileFn } from "../search/model/search";
 import "./host-tools.css";
 import { dockHostTools, openHostToolsWindow } from "./ToolsWorkspace";
@@ -101,6 +101,22 @@ function ConversationHostTools({
   const [presentationError, setPresentationError] = useState("");
   const [placementOpen, setPlacementOpen] = useState(false);
   const placementTrigger = useRef<HTMLButtonElement>(null);
+  const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const toolMenuTrigger = useRef<HTMLButtonElement>(null);
+  const toolLabels = {
+    devices: "Devices",
+    browser: "Host browser",
+    servers: "Development servers",
+    logs: "Logs",
+    resources: "Resource usage",
+  } as const;
+  const ToolIcon = {
+    devices: AppWindow,
+    browser: Globe,
+    servers: Server,
+    logs: Terminal,
+    resources: Gauge,
+  }[tab];
   const hostScoped =
     tab === "devices" || tab === "browser" || tab === "logs" || tab === "resources";
   const conversationKey = JSON.stringify([cwd, sessionId]);
@@ -206,30 +222,112 @@ function ConversationHostTools({
     <div className="host-tools host-tools-docked font-sans" data-active-tool={tab}>
       <section aria-label={t("Conversation tools")} className="host-tools-section">
         <div className="host-tools-topbar">
-          {!hideHeading ? (
-            <header className="host-tools-heading">
-              <Wrench className="icon-md shrink-0" aria-hidden />
-              <strong>{onlyTab ? t("Logs") : t("Conversation tools")}</strong>
-              <span className="host-tools-context" title={`${title}\n${cwd}`}>
-                {title}
-              </span>
-              {!hidePresentation ? (
+          {hostScoped ? (
+            <div className="host-tools-machine" aria-busy={machinesLoading}>
+              <div className="host-tool-toolbar host-tools-machine-toolbar">
+                <div className="host-tool-field host-tools-machine-field">
+                  <SearchableSelect
+                    label={t("Tool machine")}
+                    variant="transparent"
+                    triggerProps={{ title: `${hostLabel}\n${title}\n${cwd}` }}
+                    value={targetValue}
+                    onChange={setTargetValue}
+                    searchable={machines.length > 5}
+                    options={[
+                      { value: "project", label: ownerLabel, description: t("Project host") },
+                      { value: "local", label: t("This computer") },
+                      ...machines
+                        .filter((machine) => !isLocalSyncMachine(machine))
+                        .map((machine) => ({
+                          value: `machine:${machine.id}`,
+                          label: machine.name,
+                        })),
+                      ...(target.kind === "machine" && !selectedMachine
+                        ? [
+                            {
+                              value: targetValue,
+                              label: `${t("Selected machine unavailable")} · ${target.machineId}`,
+                            },
+                          ]
+                        : []),
+                    ]}
+                  />
+                </div>
                 <Button
                   variant="ghost"
                   iconOnly
-                  label={t("Panel placement")}
-                  tooltip={t("Panel placement")}
-                  ref={placementTrigger}
-                  type="button"
-                  className="host-tools-placement-trigger"
-                  aria-haspopup="menu"
-                  aria-expanded={placementOpen}
-                  onClick={() => setPlacementOpen((value) => !value)}
+                  label={machinesError ? t("Retry") : t("Refresh")}
+                  tooltip={machinesError ? t("Retry") : t("Refresh")}
+                  className="host-tools-machine-refresh"
+                  loading={machinesLoading}
+                  disabled={machinesLoading}
+                  onClick={() => setMachinesRefresh((value) => value + 1)}
                 >
-                  <PanelRight className="icon-md" aria-hidden />
+                  <RefreshCw className="icon-md" aria-hidden />
                 </Button>
+              </div>
+            </div>
+          ) : (
+            <span className="host-tools-context" title={`${title}\n${cwd}`}>
+              {!hideHeading ? title : null}
+            </span>
+          )}
+          {!onlyTab ? (
+            <>
+              <Button
+                variant="ghost"
+                ref={toolMenuTrigger}
+                className="host-tools-tool-picker"
+                aria-label={t("Conversation tool selection")}
+                tooltip={`${t("Conversation tool selection")}: ${t(toolLabels[tab])}`}
+                aria-haspopup="menu"
+                aria-expanded={toolMenuOpen}
+                onClick={() => setToolMenuOpen((value) => !value)}
+              >
+                <ToolIcon className="icon-md" aria-hidden />
+                <span className="host-tools-current-tool">{t(toolLabels[tab])}</span>
+                <ChevronDown className="icon-sm" aria-hidden />
+              </Button>
+              {toolMenuOpen ? (
+                <DropdownMenu
+                  anchor={toolMenuTrigger}
+                  label={t("Conversation tool selection")}
+                  returnFocusRef={toolMenuTrigger}
+                  align="end"
+                  onClose={() => setToolMenuOpen(false)}
+                  onPick={(id) => {
+                    setToolMenuOpen(false);
+                    setTab(id as Tab);
+                  }}
+                  items={(["devices", "browser", "servers", "logs", "resources"] as const).map(
+                    (id) => ({
+                      kind: "item" as const,
+                      id,
+                      label: t(toolLabels[id]),
+                      checked: id === tab,
+                      selectionRole: "radio" as const,
+                    }),
+                  )}
+                />
               ) : null}
-            </header>
+            </>
+          ) : (
+            <span className="host-tools-current-tool">{t("Logs")}</span>
+          )}
+          {!hidePresentation ? (
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Panel placement")}
+              tooltip={t("Panel placement")}
+              ref={placementTrigger}
+              className="host-tools-placement-trigger"
+              aria-haspopup="menu"
+              aria-expanded={placementOpen}
+              onClick={() => setPlacementOpen((value) => !value)}
+            >
+              <PanelRight className="icon-md" aria-hidden />
+            </Button>
           ) : null}
           {placementOpen && !hidePresentation ? (
             <DropdownMenu
@@ -261,169 +359,32 @@ function ConversationHostTools({
               ]}
             />
           ) : null}
-          {presentationError ? (
-            <Alert tone="danger" role="alert">
-              {presentationError}
-            </Alert>
-          ) : null}
-          {!onlyTab ? (
-            <div className="host-tools-compact-selector">
-              <Select
-                label={t("Conversation tool selection")}
-                value={tab}
-                onValueChange={(value) => setTab(value as Tab)}
-                options={(["devices", "browser", "servers", "logs", "resources"] as const).map(
-                  (id) => ({
-                    value: id,
-                    label: t(
-                      {
-                        devices: "Devices",
-                        browser: "Host browser",
-                        servers: "Development servers",
-                        logs: "Logs",
-                        resources: "Resource usage",
-                      }[id],
-                    ),
-                  }),
-                )}
-              />
-            </div>
-          ) : null}
-          {!onlyTab ? (
-            <nav
-              role="tablist"
-              aria-label={t("Conversation tool selection")}
-              className="host-tools-tabs"
-            >
-              {(onlyTab
-                ? [onlyTab]
-                : (["devices", "browser", "servers", "logs", "resources"] as const)
-              ).map((id, index, tabs) => {
-                const Icon = {
-                  devices: AppWindow,
-                  browser: Globe,
-                  servers: Server,
-                  logs: Terminal,
-                  resources: Gauge,
-                }[id];
-                return (
-                  <Button
-                    variant="tab"
-                    motion="none"
-                    key={id}
-                    id={`${panelId}-${id}`}
-                    type="button"
-                    role="tab"
-                    aria-selected={tab === id}
-                    title={t(
-                      {
-                        devices: "Devices",
-                        browser: "Host browser",
-                        servers: "Development servers",
-                        logs: "Logs",
-                        resources: "Resource usage",
-                      }[id],
-                    )}
-                    aria-controls={`${panelId}-panel`}
-                    tabIndex={tab === id ? 0 : -1}
-                    onClick={() => setTab(id)}
-                    onKeyDown={(event) => {
-                      const next =
-                        event.key === "ArrowRight"
-                          ? (index + 1) % tabs.length
-                          : event.key === "ArrowLeft"
-                            ? (index + tabs.length - 1) % tabs.length
-                            : event.key === "Home"
-                              ? 0
-                              : event.key === "End"
-                                ? tabs.length - 1
-                                : -1;
-                      if (next < 0) return;
-                      event.preventDefault();
-                      setTab(tabs[next]);
-                      document.getElementById(`${panelId}-${tabs[next]}`)?.focus();
-                    }}
-                  >
-                    <Icon className="size-3.5 shrink-0" aria-hidden />
-                    <span className="host-tools-tab-label">
-                      {t(
-                        {
-                          devices: "Devices",
-                          browser: "Host browser",
-                          servers: "Development servers",
-                          logs: "Logs",
-                          resources: "Resource usage",
-                        }[id],
-                      )}
-                    </span>
-                  </Button>
-                );
-              })}
-            </nav>
-          ) : null}
-          {hostScoped ? (
-            <div className="host-tools-machine" aria-busy={machinesLoading}>
-              <div className="host-tool-toolbar host-tools-machine-toolbar">
-                <div className="host-tool-field host-tools-machine-field">
-                  <SearchableSelect
-                    label={t("Tool machine")}
-                    value={targetValue}
-                    onChange={setTargetValue}
-                    searchable={machines.length > 5}
-                    options={[
-                      { value: "project", label: `${t("Project host")} · ${ownerLabel}` },
-                      { value: "local", label: t("This computer") },
-                      ...machines
-                        .filter((machine) => !isLocalSyncMachine(machine))
-                        .map((machine) => ({
-                          value: `machine:${machine.id}`,
-                          label: machine.name,
-                        })),
-                      ...(target.kind === "machine" && !selectedMachine
-                        ? [
-                            {
-                              value: targetValue,
-                              label: `${t("Selected machine unavailable")} · ${target.machineId}`,
-                            },
-                          ]
-                        : []),
-                    ]}
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={machinesError ? t("Retry") : t("Refresh")}
-                  className="host-tools-machine-refresh"
-                  disabled={machinesLoading}
-                  onClick={() => setMachinesRefresh((value) => value + 1)}
-                >
-                  <RefreshCw className="icon-md" aria-hidden />
-                </Button>
-              </div>
-              {machinesError ? (
-                <Alert tone="danger" role="alert">
-                  {machinesError}
-                </Alert>
-              ) : null}
-              {target.kind === "machine" && !selectedMachine && !machinesLoading ? (
-                <Alert tone="danger" role="alert">
-                  {t("Selected machine unavailable")}
-                </Alert>
-              ) : null}
-            </div>
-          ) : null}
         </div>
+        {presentationError ? (
+          <Alert tone="danger" role="alert">
+            {presentationError}
+          </Alert>
+        ) : null}
+        {hostScoped && machinesError ? (
+          <Alert tone="danger" role="alert">
+            {machinesError}
+          </Alert>
+        ) : null}
+        {hostScoped && target.kind === "machine" && !selectedMachine && !machinesLoading ? (
+          <Alert tone="danger" role="alert">
+            {t("Selected machine unavailable")}
+          </Alert>
+        ) : null}
         <div
           id={`${panelId}-panel`}
           role="tabpanel"
-          aria-labelledby={onlyTab ? undefined : `${panelId}-${tab}`}
-          aria-label={onlyTab ? t("Logs") : undefined}
+          aria-label={t(toolLabels[tab])}
           className={`host-tools-content${tab === "devices" ? " host-tools-content-devices" : tab === "browser" ? " host-tools-content-browser" : ""}`}
           tabIndex={0}
         >
           {tab === "devices" ? (
             <DevicePanel
+              draftScope={JSON.stringify([cwd, composerSessionId ?? sessionId, targetKey])}
               key={JSON.stringify([cwd, sessionId, targetKey])}
               api={api}
               hostLabel={hostLabel}
@@ -433,6 +394,14 @@ function ConversationHostTools({
                   composerSessionId ?? sessionId,
                   device,
                   { label: hostLabel, target },
+                  composerWindow,
+                )
+              }
+              onAddImage={(device, frame, comment) =>
+                attachDeviceImageAcrossWindows(
+                  cwd,
+                  composerSessionId ?? sessionId,
+                  { device, computer: { label: hostLabel, target }, frame, comment },
                   composerWindow,
                 )
               }

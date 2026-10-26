@@ -44,7 +44,7 @@ it("samples only on request and offers retry after a failed read", async () => {
     });
   await act(async () => container.querySelector("button")!.click());
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Host offline");
-  expect(container.querySelector("button")!.textContent).toBe("Retry");
+  expect(container.querySelector("button")!.getAttribute("aria-label")).toBe("Retry");
   await act(async () => container.querySelector("button")!.click());
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).toContain("Measuring…");
@@ -108,7 +108,11 @@ it("routes explicit machine samples without a conversation identity and drops pr
   );
   await act(async () => finish({ samples: [sample] }));
   expect(container.querySelector("dl")).toBeNull();
-  expect(container.textContent).toContain("Resource usageThis computer");
+  expect(container.textContent).not.toContain("Resource usage");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Measurement details"]')!.click(),
+  );
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("This computer");
   await act(async () => container.querySelector("button")!.click());
   expect(hostToolRequest).toHaveBeenLastCalledWith(
     "remote://macbook/repo",
@@ -138,15 +142,16 @@ it("plots real history with CPU gaps and displays system memory separately", asy
   expect(cpu.querySelectorAll("circle")[1].getAttribute("cx")).toBe("312");
   expect(container.querySelector("[role=meter]")!.getAttribute("aria-valuenow")).toBe("50");
   expect(container.querySelector(".resource-history-caption")?.textContent).toContain("4 / 60");
-  const details = container.querySelector<HTMLButtonElement>(
-    "button[aria-controls][aria-expanded]",
-  )!;
+  const details = container.querySelector<HTMLButtonElement>('[aria-label="Measurement details"]')!;
   expect(details.getAttribute("aria-expanded")).toBe("false");
-  expect(
-    container
-      .querySelector(`[id="${details.getAttribute("aria-controls")}"]`)!
-      .hasAttribute("inert"),
-  ).toBe(true);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => details.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Node heap");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Logical CPUs8");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Samples only when requested.",
+  );
+  expect(details.getAttribute("aria-expanded")).toBe("true");
 });
 
 it("keeps the previous charts visible when refreshing fails", async () => {

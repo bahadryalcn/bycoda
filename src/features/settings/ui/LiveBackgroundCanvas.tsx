@@ -37,6 +37,8 @@ function pixelRatio(width: number, height: number): number {
 const STILL_TIME = 12;
 /** The calm activity envelope reaches rest before the loop stops. */
 const SETTLE_SECONDS = 2;
+/** A provider may remain busy while waiting for a tool or approval. */
+const ACTIVITY_GRACE_SECONDS = 1.5;
 /** Ordinary still frames retain the resting composition of a quiet conversation. */
 const STILL_SIGNAL: LiveSignal = CLOSED_SIGNAL;
 /** Picker demos show their identifying artwork without animating or changing chat rest. */
@@ -82,8 +84,8 @@ function demoSpeechLength(time: number): number {
  *
  * `speech` is the length of the reply being streamed (-1 when idle). Its active
  * state drives presence; new text adds bounded, eased motion energy. `activity` is everything the
- * running turn has streamed, including reasoning and tools (-1 when idle); it keeps
- * the scene awake between replies and defaults to `speech`.
+ * running turn has streamed, including reasoning and tools (-1 when idle). New
+ * activity keeps the scene awake; an unchanged busy turn settles during waits.
  */
 export function LiveBackgroundCanvas({
   effect,
@@ -115,11 +117,10 @@ export function LiveBackgroundCanvas({
   const activeRef = useRef(active);
   activeRef.current = active;
   const updateLoopRef = useRef<(() => void) | null>(null);
-  // Stream state wakes a settled scene or switches ambient motion to reply cadence.
-  const idle = !demoSpeech && speech < 0 && activity < 0;
+  // Every new chunk can wake a settled scene without rebuilding its renderer.
   useEffect(() => {
     updateLoopRef.current?.();
-  }, [active, idle]);
+  }, [active, speech, activity]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -184,11 +185,25 @@ export function LiveBackgroundCanvas({
     let width = 0;
     let height = 0;
     let frame = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let last = 0;
+    let nextDraw = 0;
     let time = STILL_TIME;
     let intersects = typeof IntersectionObserver === "undefined";
     let idleFor = 0;
-    const busy = () => demoSpeech || speechRef.current >= 0 || activityRef.current >= 0;
+    let quietFor = 0;
+    let previousSpeech = speechRef.current;
+    let previousActivity = activityRef.current;
+    const busy = () =>
+      demoSpeech ||
+      (quietFor < ACTIVITY_GRACE_SECONDS && (speechRef.current >= 0 || activityRef.current >= 0));
+    const refreshActivity = () => {
+      if (previousSpeech === speechRef.current && previousActivity === activityRef.current) return;
+      previousSpeech = speechRef.current;
+      previousActivity = activityRef.current;
+      quietFor = 0;
+      idleFor = 0;
+    };
     // Refresh on gate notifications, not every frame (the snapshot reads storage).
     let animate = decorativeMotionEnabled();
     // Repainting every cell each frame is the largest idle cost of a window behind another
@@ -198,8 +213,8 @@ export function LiveBackgroundCanvas({
 
     const paint = (delta: number) => {
       if (width === 0 || height === 0) return;
-      const length = demoSpeech ? demoSpeechLength(time) : speechRef.current;
-      const work = demoSpeech ? length : activityRef.current;
+      const length = demoSpeech ? demoSpeechLength(time) : busy() ? speechRef.current : -1;
+      const work = demoSpeech ? length : busy() ? activityRef.current : -1;
       renderer?.draw(
         time,
         delta,
@@ -234,35 +249,49 @@ export function LiveBackgroundCanvas({
     const tick = (now: number) => {
       frame = 0;
       if (!running()) return;
-      frame = requestAnimationFrame(tick);
-      const interval = ambient() && !busy() ? 1000 / 12 : FRAME_INTERVAL;
-      if (last !== 0 && now - last < interval) return;
       // Long pauses (hidden tabs, sleep) resume smoothly instead of jumping.
       const delta = last === 0 ? 0 : Math.min((now - last) / 1000, 0.1);
       last = now;
       time += delta;
+      quietFor += delta;
       idleFor = busy() ? 0 : idleFor + delta;
       paint(delta);
       // The last frame stays on screen; no frame is requested until work resumes.
       if (settled()) {
-        cancelAnimationFrame(frame);
-        frame = 0;
         last = 0;
+        nextDraw = 0;
+        return;
       }
+      const interval = ambient() && !busy() ? 1000 / 12 : FRAME_INTERVAL;
+      // Keep a deadline instead of adding a whole interval after each vsync.
+      // A timer sleeps between draws; only the due draw requests a browser frame.
+      nextDraw = Math.max((nextDraw || now) + interval, now);
+      timer = setTimeout(
+        () => {
+          timer = undefined;
+          if (running()) frame = requestAnimationFrame(tick);
+        },
+        Math.max(0, nextDraw - performance.now()),
+      );
     };
 
     const start = () => {
       if (busy()) idleFor = 0;
-      if (frame !== 0 || !running()) return;
+      if (frame !== 0 || timer !== undefined || !running()) return;
       last = 0;
+      nextDraw = 0;
       frame = requestAnimationFrame(tick);
     };
     // Pausing cancels work without rebuilding the scene or replacing its last frame.
     const updateLoop = () => {
+      refreshActivity();
       if (!running()) {
         if (frame !== 0) cancelAnimationFrame(frame);
+        if (timer !== undefined) clearTimeout(timer);
         frame = 0;
+        timer = undefined;
         last = 0;
+        nextDraw = 0;
       } else start();
     };
     updateLoopRef.current = updateLoop;
@@ -327,6 +356,7 @@ export function LiveBackgroundCanvas({
 
     return () => {
       if (frame !== 0) cancelAnimationFrame(frame);
+      if (timer !== undefined) clearTimeout(timer);
       renderer?.dispose();
       canvas.removeEventListener("webglcontextlost", loseContext);
       canvas.removeEventListener("webglcontextrestored", restoreContext);

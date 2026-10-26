@@ -126,8 +126,8 @@ export async function checkHarnessVersions({
               error: "The CLI reported no version.",
             };
           }
-          // OpenCode 1 and 2 publish separately. Resolve the installed channel
-          // before asking for the release its own updater can install.
+          // Include the installed version for native updater planning. OpenCode
+          // V1 may be offered V2 through the supported major migration.
           const latestOutput = await latestVersion(harness, installed);
           const latest = parseHarnessVersion(harness, latestOutput);
           if (!latest) {

@@ -21,10 +21,22 @@ export type UserQuestion = {
   options: UserQuestionOption[];
 };
 
+/** Provider-owned execution semantics; omission means the provider did not report it. */
+export type UserQuestionBehavior = "blocking" | "nonBlocking";
+export type UserQuestionDelivery = "sending" | "queued" | "failed" | "unknown";
+export type UserQuestionDismissAction = "skip" | "cancel" | "decline";
+
 export type UserQuestionPrompt = {
   requestId: number;
   title?: string;
   questions: UserQuestion[];
+  behavior?: UserQuestionBehavior;
+  dismissAction?: UserQuestionDismissAction;
+  providerTurnId?: string;
+  callId?: string;
+  /** Transport state, never a claim that the model consumed the answer. */
+  delivery?: UserQuestionDelivery;
+  error?: string;
   /** Deadline owned by the harness; interaction can disable automatic skipping. */
   autoResolveAt?: number;
 };

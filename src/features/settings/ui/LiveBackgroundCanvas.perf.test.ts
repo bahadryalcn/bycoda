@@ -40,6 +40,7 @@ function runFor(ms: number): number {
   const before = scheduled;
   for (const end = clock + ms; clock < end;) {
     clock += VSYNC_MS;
+    vi.advanceTimersByTime(VSYNC_MS);
     const due = frameQueue;
     frameQueue = [];
     act(() => due.forEach(({ callback }) => callback(clock)));
@@ -48,6 +49,7 @@ function runFor(ms: number): number {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.draw.mockClear();
   state.focused = true;
@@ -56,6 +58,7 @@ beforeEach(() => {
   nextFrame = 0;
   scheduled = 0;
   clock = 1000;
+  vi.spyOn(performance, "now").mockImplementation(() => clock);
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     const id = ++nextFrame;
     scheduled++;
@@ -91,6 +94,7 @@ afterEach(() => {
   container.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 const render = (props: { active?: boolean; speech?: number; activity?: number } = {}) =>
@@ -122,6 +126,28 @@ describe("live background frame loop", () => {
     render({ speech: -1, activity: -1 });
     runFor(5_000);
     expect(runFor(2_000)).toBe(0);
+  });
+
+  it("settles during a busy turn without new output and wakes for the next chunk", () => {
+    render({ speech: 40, activity: 80 });
+    runFor(5_000);
+    state.draw.mockClear();
+    expect(runFor(2_000)).toBe(0);
+    expect(state.draw).not.toHaveBeenCalled();
+    render({ speech: 60, activity: 100 });
+    expect(runFor(500)).toBeGreaterThan(0);
+    expect(state.draw).toHaveBeenCalled();
+  });
+
+  it("settles while a tool or approval waits without changing activity", () => {
+    render({ speech: -1, activity: 80 });
+    runFor(5_000);
+    state.draw.mockClear();
+    expect(runFor(2_000)).toBe(0);
+    expect(state.draw).not.toHaveBeenCalled();
+    render({ speech: -1, activity: 92 });
+    expect(runFor(500)).toBeGreaterThan(0);
+    expect(state.draw).toHaveBeenCalled();
   });
 
   it("keeps animating while a reply is streaming", () => {

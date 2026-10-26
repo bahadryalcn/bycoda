@@ -37,6 +37,7 @@ import {
   mergeModelSettings,
   modelEffortSetting,
   modelPickerTabs,
+  modelBelongsToHarness,
   nativeModelId,
   preferredModelId,
   preferredModelSettings,
@@ -52,6 +53,17 @@ import {
   stepModelPickerTab,
   type AgentModel,
 } from "./models";
+
+describe("model provider ownership", () => {
+  it("rejects only explicit known foreign provider keys", () => {
+    expect(modelBelongsToHarness("codex", "antigravity:gemini-3.8-flash-high")).toBe(false);
+    expect(modelBelongsToHarness("codex", " claude:opus-5-5 ")).toBe(false);
+    expect(modelBelongsToHarness("codex", "codex:custom")).toBe(true);
+    expect(modelBelongsToHarness("codex", "my-private-model")).toBe(true);
+    expect(modelBelongsToHarness("codex", "openrouter:vendor/custom-model")).toBe(true);
+    expect(modelBelongsToHarness("opencode", "vendor/custom-model")).toBe(true);
+  });
+});
 
 it("nativeId ve id çakışmasında katalog sırasını korur, değişen katalog indeksini yeniler", () => {
   try {

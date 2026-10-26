@@ -56,9 +56,9 @@ function find(harnesses: HarnessId[]) {
 
 describe("harness update check", () => {
   it.each([
-    ["1.18.33", "1.19.0"],
+    ["1.18.33", "2.1.4"],
     ["opencode v2.0.18", "2.0.26"],
-  ])("checks the installed channel when OpenCode reports %s", async (installed, latest) => {
+  ])("offers updates and major migration when OpenCode reports %s", async (installed, latest) => {
     const latestVersion = vi.fn(async () => latest);
     expect(
       await findHarnessUpdates({

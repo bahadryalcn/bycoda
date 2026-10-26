@@ -61,6 +61,7 @@ mod search;
 mod server_inventory;
 mod session_import;
 mod session_store;
+mod session_tools_bridge;
 mod session_transfer;
 mod skills;
 mod social_bridge;

@@ -21,6 +21,32 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
+
+// Each stage runs real Git and starts a distinct provider session. Await the
+// complete tick before testing its deadline: vi.waitFor can expire while its
+// async callback is still settling, racing fixture teardown with the last tick.
+async function waitForReview(tasks: HostTasks, store: HostStore, taskId: string) {
+  const started = Date.now();
+  const deadline = started + 45_000;
+  while (true) {
+    await tasks.tick();
+    await tasks.idle();
+    const task = await tasks.get(taskId);
+    if (task?.status === "review") return;
+    if (task?.status === "blocked" || Date.now() >= deadline) {
+      const stages = {
+        status: task?.status,
+        error: task?.error,
+        worker: task?.sessionId ? (await store.session(task.sessionId)).status : undefined,
+        reviewer: task?.reviewer?.sessionId
+          ? (await store.session(task.reviewer.sessionId)).status
+          : undefined,
+      };
+      throw new Error(`Crew fixture did not reach review after ${Date.now() - started}ms: ${JSON.stringify(stages)}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
 async function setup() {
   const root = resolve("temp/test-results");
   mkdirSync(root, { recursive: true });
@@ -120,14 +146,7 @@ async function setup() {
     },
     principal,
   );
-  await vi.waitFor(
-    async () => {
-      await tasks.tick();
-      await tasks.idle();
-      expect((await tasks.list())[0]?.status).toBe("review");
-    },
-    { timeout: 15000, interval: 100 },
-  );
+  await waitForReview(tasks, store, assignment.taskId);
   return { crews, tasks, project, principal, assignment, cwd, reviewer, worker, store };
 }
 
@@ -145,7 +164,7 @@ it("runs a distinct selected reviewer and accepts scoped results despite unrelat
     f.principal,
   );
   expect((await f.tasks.list())[0]?.status).toBe("done");
-}, 30000);
+}, 90000);
 
 it("invalidates stale review when owned content changes and requires an independent recheck", async () => {
   const f = await setup();
@@ -162,14 +181,7 @@ it("invalidates stale review when owned content changes and requires an independ
   ).rejects.toThrow("changed");
   expect((await f.tasks.list())[0]?.status).toBe("blocked");
   await f.tasks.recheckReview(f.assignment.taskId);
-  await vi.waitFor(
-    async () => {
-      await f.tasks.tick();
-      await f.tasks.idle();
-      expect((await f.tasks.list())[0]?.status).toBe("review");
-    },
-    { timeout: 15000 },
-  );
+  await waitForReview(f.tasks, f.store, f.assignment.taskId);
   await f.crews.call(
     "crews.accept",
     { runId: "run", taskId: f.assignment.taskId },
@@ -177,7 +189,7 @@ it("invalidates stale review when owned content changes and requires an independ
     f.principal,
   );
   expect(f.reviewer.send).toHaveBeenCalledTimes(2);
-}, 30000);
+}, 90000);
 
 it("starts one independent coordinator on a retried owner launch", async () => {
   const f = await setup();
@@ -207,7 +219,7 @@ it("starts one independent coordinator on a retried owner launch", async () => {
     },
   );
   expect(f.worker.send).toHaveBeenCalledTimes(2);
-}, 30000);
+}, 90000);
 
 it("lets an agent launch a separate coordinator and reuses host-wide crews in another project", async () => {
   const f = await setup();
@@ -251,7 +263,7 @@ it("lets an agent launch a separate coordinator and reuses host-wide crews in an
     "supervised",
   );
   expect((await f.store.session(remoteRun.coordinatorSessionId!)).projectId).toBe(other.id);
-}, 30000);
+}, 90000);
 
 it("runs crew tasks with one worker slot and completes only after crew acceptance", async () => {
   const f = await setup();
@@ -309,14 +321,7 @@ it("runs crew tasks with one worker slot and completes only after crew acceptanc
     },
     principal,
   );
-  await vi.waitFor(
-    async () => {
-      await f.tasks.tick();
-      await f.tasks.idle();
-      expect((await f.tasks.get(child.taskId))?.status).toBe("review");
-    },
-    { timeout: 15000 },
-  );
+  await waitForReview(f.tasks, f.store, child.taskId);
   await f.crews.call(
     "crews.accept",
     { runId: parent.crewExecutionId, taskId: child.taskId },
@@ -326,7 +331,7 @@ it("runs crew tasks with one worker slot and completes only after crew acceptanc
   await f.crews.call("crews.finish", { runId: parent.crewExecutionId }, f.project.id, principal);
   await f.tasks.tick();
   expect((await f.tasks.get("parent"))?.status).toBe("done");
-}, 30000);
+}, 90000);
 
 it("starts independent crew tasks and retries a stopped task with a fresh run", async () => {
   const f = await setup();
@@ -369,4 +374,4 @@ it("starts independent crew tasks and retries a stopped task with a fresh run", 
   await f.tasks.idle();
   expect((await f.tasks.get("one"))?.crewExecutionId).not.toBe(first.crewExecutionId);
   expect((await f.tasks.get("one"))?.status).toBe("running");
-}, 30000);
+}, 90000);

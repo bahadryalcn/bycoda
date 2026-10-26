@@ -41,7 +41,11 @@ import { registerStreamingTextUpdate } from "../../../features/sessions/model/st
 import { registerBlockChanges } from "../../../features/sessions/model/blockChanges";
 import { taskListText } from "../../../features/sessions/model/taskList";
 import { isReviewablePlan } from "../../../features/sessions/model/plan";
-import { resolveModel } from "../../../features/sessions/model/models";
+import { modelBelongsToHarness, resolveModel } from "../../../features/sessions/model/models";
+import {
+  queuedModelTarget,
+  sameQueuedModelTarget,
+} from "../../../features/sessions/model/messageQueue";
 import { loadResumeAtReset } from "../../../features/settings/model/settings";
 import { selectedAnswerLabels } from "../../../features/sessions/model/userQuestion";
 import type { HarnessEvent } from "./types";
@@ -165,24 +169,55 @@ export function applyHarnessEvent(
         pendingQuestion: {
           requestId: event.requestId,
           questions: event.questions,
+          ...(event.behavior ? { behavior: event.behavior } : {}),
+          ...(event.dismissAction ? { dismissAction: event.dismissAction } : {}),
+          ...(event.providerTurnId ? { providerTurnId: event.providerTurnId } : {}),
+          ...(event.callId ? { callId: event.callId } : {}),
           ...(event.title ? { title: event.title } : {}),
           ...(event.autoResolveAt != null ? { autoResolveAt: event.autoResolveAt } : {}),
         },
       };
-    case "question.updated":
-      return session.pendingQuestion?.requestId === event.requestId &&
-        session.pendingQuestion.autoResolveAt !== event.autoResolveAt
-        ? {
-            ...session,
-            pendingQuestion: {
-              ...session.pendingQuestion,
-              autoResolveAt: event.autoResolveAt,
-            },
-          }
-        : session;
+    case "question.updated": {
+      const pending =
+        session.pendingQuestion?.requestId === event.requestId
+          ? session.pendingQuestion
+          : session.submittedQuestions?.find((question) => question.requestId === event.requestId);
+      if (!pending) return session;
+      const updated = {
+        ...pending,
+        // A delivery-only update must not remove the provider's deadline.
+        ...("autoResolveAt" in event ? { autoResolveAt: event.autoResolveAt } : {}),
+        ...(event.delivery ? { delivery: event.delivery, error: event.error } : {}),
+        ...("error" in event ? { error: event.error } : {}),
+      };
+      const submitted = session.submittedQuestions ?? [];
+      const retain =
+        event.delivery === "queued" ||
+        submitted.some((question) => question.requestId === event.requestId);
+      return {
+        ...session,
+        ...(session.pendingQuestion?.requestId === event.requestId
+          ? { pendingQuestion: updated }
+          : {}),
+        ...(retain
+          ? {
+              submittedQuestions: [
+                ...submitted.filter((question) => question.requestId !== event.requestId),
+                updated,
+              ],
+            }
+          : {}),
+      };
+    }
     case "question.resolved": {
-      const pending = session.pendingQuestion;
-      if (pending?.requestId !== event.requestId) return session;
+      const pending =
+        session.pendingQuestion?.requestId === event.requestId
+          ? session.pendingQuestion
+          : session.submittedQuestions?.find((question) => question.requestId === event.requestId);
+      if (!pending) return session;
+      // Automatic transport retirement cannot establish whether an earlier write arrived.
+      // Explicit owner Stop and new turns clear these held records separately.
+      if (event.decision === "cancelled" && pending.delivery === "unknown") return session;
       const reply = event.decision === "answered" ? event.reply : undefined;
       const questionAnswers = reply
         ? pending.questions.flatMap((question) => {
@@ -193,7 +228,18 @@ export function applyHarnessEvent(
       const text = questionAnswers
         .map(({ prompt, answers }) => `${prompt}\n${answers.join("\n")}`)
         .join("\n\n");
-      const next = { ...session, pendingQuestion: undefined };
+      const remaining = session.submittedQuestions?.filter(
+        (question) => question.requestId !== event.requestId,
+      );
+      const next = {
+        ...session,
+        ...(session.pendingQuestion?.requestId === event.requestId
+          ? { pendingQuestion: undefined }
+          : {}),
+        ...(session.submittedQuestions
+          ? { submittedQuestions: remaining?.length ? remaining : undefined }
+          : {}),
+      };
       // Keep the running turn and its streaming blocks intact. This answer is
       // a mid-turn user message, not a newly submitted turn.
       if (!text) return next;
@@ -262,10 +308,24 @@ export function applyHarnessEvent(
         text: event.message,
         notice: "error",
       });
-    case "session.providerBound":
+    case "session.providerBound": {
+      const running = session.busy ? session.runningModelTarget : undefined;
+      if (running && running.harness !== session.harness) {
+        const source = session.pendingSwitch;
+        if (
+          source?.from !== running.harness ||
+          source.fromProviderSessionId === event.providerSessionId
+        )
+          return session;
+        return {
+          ...session,
+          pendingSwitch: { ...source, fromProviderSessionId: event.providerSessionId },
+        };
+      }
       return session.providerSessionId === event.providerSessionId
         ? session
         : { ...session, providerSessionId: event.providerSessionId };
+    }
     case "turn.started": {
       const index = lastMatchingBlock(session.blocks, (block) => block.role === "user");
       if (index < 0) return session;
@@ -275,7 +335,21 @@ export function applyHarnessEvent(
       blocks[index] = { ...block, providerTurnId: event.providerTurnId };
       return { ...session, blocks };
     }
-    case "session.configChanged":
+    case "session.configChanged": {
+      const running = session.busy ? session.runningModelTarget : undefined;
+      const receiver = running ?? queuedModelTarget(session);
+      if (event.model && !modelBelongsToHarness(receiver.harness, event.model)) return session;
+      const updated = {
+        ...receiver,
+        model: event.model ?? receiver.model,
+        modelSettings: { ...receiver.modelSettings, ...event.modelSettings },
+      };
+      // The picker can select the next target while this turn is still active.
+      // Runtime updates belong to that active target, not to the unsent choice.
+      if (running && !sameQueuedModelTarget(running, queuedModelTarget(session)))
+        return sameQueuedModelTarget(running, updated)
+          ? session
+          : { ...session, runningModelTarget: updated };
       if (
         (!event.model || event.model === session.model) &&
         (!event.modelSettings ||
@@ -287,6 +361,7 @@ export function applyHarnessEvent(
         return session;
       return {
         ...session,
+        ...(running ? { runningModelTarget: updated } : {}),
         ...(event.model ? { model: event.model } : {}),
         ...(event.model && event.model !== session.model
           ? { context: dropContextWindow(session.context) }
@@ -300,6 +375,7 @@ export function applyHarnessEvent(
             }
           : {}),
       };
+    }
     case "status":
       if (event.key === "provider-retry")
         return session.retryMessage === event.text
@@ -565,7 +641,13 @@ export function appendUser(
 ): Session {
   session = settlePendingApprovals(session);
   return appendBlock(
-    { ...session, busy: true, retryMessage: undefined },
+    {
+      ...session,
+      busy: true,
+      retryMessage: undefined,
+      pendingQuestion: undefined,
+      submittedQuestions: undefined,
+    },
     {
       id: crypto.randomUUID(),
       role: "user",
@@ -604,17 +686,31 @@ export function appendSteerUser(
   };
 }
 
-export function stopStreaming(session: Session, endedAt = Date.now()): Session {
+export function stopStreaming(
+  session: Session,
+  endedAt = Date.now(),
+  retainQuestionDelivery = false,
+): Session {
   const {
     backgroundTasks: _cleared,
     backgroundAgents: _agents,
     ...settled
   } = settlePendingApprovals(session);
+  const submitted = retainQuestionDelivery
+    ? session.submittedQuestions?.map((question) => ({ ...question, delivery: "unknown" as const }))
+    : undefined;
+  const held =
+    retainQuestionDelivery &&
+    session.pendingQuestion &&
+    ["sending", "queued", "unknown"].includes(session.pendingQuestion.delivery ?? "")
+      ? { ...session.pendingQuestion, delivery: "unknown" as const }
+      : undefined;
   return {
     ...settled,
     busy: false,
     retryMessage: undefined,
-    pendingQuestion: undefined,
+    pendingQuestion: held ?? submitted?.[submitted.length - 1],
+    submittedQuestions: submitted,
     blocks: stampTurnDuration(
       settled.blocks
         .filter((block) => !isBareProseStream(block))
@@ -677,7 +773,7 @@ function failStreaming(session: Session): Session {
         : [];
     }),
   );
-  const stopped = stopStreaming(session);
+  const stopped = stopStreaming(session, Date.now(), true);
   return {
     ...stopped,
     blocks: stopped.blocks.map((block) => {

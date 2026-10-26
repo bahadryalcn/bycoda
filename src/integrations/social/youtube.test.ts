@@ -3,6 +3,7 @@ import type { SocialAccount, SocialJob } from "../../features/social/model/socia
 import { SocialHttp } from "./adapter";
 import { accountCapabilities } from "./capabilities";
 import { contentSupport, createSocialAdapters } from "./platformAdapters";
+import { createYouTubeAdapter } from "./youtube";
 
 const account: SocialAccount = {
   id: "account",
@@ -47,11 +48,34 @@ const job = (kind: SocialJob["kind"] = "publish"): SocialJob => ({
   createdAt: 1,
 });
 const mp4 = new Uint8Array([0, 0, 0, 20, 102, 116, 121, 112, 105, 115, 111, 109, 0, 0, 0, 0]);
+const videoStatus = (
+  processingStatus = "succeeded",
+  uploadStatus = "processed",
+  privacyStatus = "private",
+  channelId = "UCowner",
+  id = "video-result",
+) => ({
+  items: [
+    {
+      id,
+      snippet: { channelId },
+      status: { uploadStatus, privacyStatus },
+      processingDetails: { processingStatus },
+    },
+  ],
+});
 describe("YouTube official API adapter", () => {
   it("uploads to the verified channel with explicit metadata and reports actual privacy", async () => {
+    const checkpoint = vi.fn(async () => {});
     const fetcher = vi.fn(async (raw: string | URL | Request, init?: RequestInit) => {
       const url = new URL(String(raw));
       if (url.pathname.endsWith("/channels")) return Response.json({ items: [{ id: "UCowner" }] });
+      if (url.pathname.endsWith("/videos") && !init?.method) {
+        expect(checkpoint).toHaveBeenCalledOnce();
+        expect(url.searchParams.get("part")).toBe("processingDetails,status,snippet");
+        expect(url.searchParams.get("id")).toBe("video-result");
+        return Response.json(videoStatus());
+      }
       if (init?.method === "POST") {
         expect(JSON.parse(String(init.body))).toMatchObject({
           snippet: {
@@ -87,6 +111,7 @@ describe("YouTube official API adapter", () => {
       job(),
       "synthetic-token",
       async () => mp4,
+      checkpoint,
     );
     expect(result).toEqual({
       platformId: "video-result",
@@ -94,7 +119,7 @@ describe("YouTube official API adapter", () => {
       url: "https://www.youtube.com/watch?v=video-result",
     });
     expect(JSON.stringify(result)).not.toContain("secret");
-    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher).toHaveBeenCalledTimes(4);
   });
   it("rejects another channel and credential-bearing or foreign upload URLs before sending bytes", async () => {
     const mismatched = vi.fn(async () => Response.json({ items: [{ id: "UCother" }] }));
@@ -123,6 +148,7 @@ describe("YouTube official API adapter", () => {
           job(),
           "token",
           async () => mp4,
+          () => {},
         ),
       ).rejects.toMatchObject({ code: "denied" });
       expect(fetcher).toHaveBeenCalledTimes(2);
@@ -267,6 +293,7 @@ describe("YouTube official API adapter", () => {
         job(),
         "token",
         async () => mp4,
+        () => {},
       ),
     ).rejects.toMatchObject({ code: "unknown" });
     expect(fetcher).toHaveBeenCalledTimes(3);
@@ -287,6 +314,7 @@ describe("YouTube official API adapter", () => {
         job(),
         "token",
         async () => mp4,
+        () => {},
       ),
     ).rejects.toMatchObject({ code: "unknown" });
   });
@@ -305,5 +333,211 @@ describe("YouTube official API adapter", () => {
       accountCapabilities({ ...account, scopes: [] }).find((c) => c.operation === "publish")
         ?.status,
     ).toBe("pending");
+  });
+  it("awaits the durable accepted-ID checkpoint before polling and never uploads again after a processing retry", async () => {
+    let processing = true,
+      release!: () => void;
+    let saved: SocialJob["preparation"];
+    const persisted = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetcher = vi.fn(async (raw: string | URL | Request) => {
+      const url = new URL(String(raw));
+      if (url.pathname.endsWith("/channels")) return Response.json({ items: [{ id: "UCowner" }] });
+      expect(saved?.youtubeVideoId).toBe("video-result");
+      return Response.json(
+        videoStatus(processing ? "processing" : "succeeded", processing ? "uploaded" : "processed"),
+      );
+    });
+    const http = new SocialHttp(fetcher),
+      upload = vi.spyOn(http, "uploadYouTubeVideo").mockResolvedValue({
+        headers: new Headers(),
+        value: { id: "video-result", status: { privacyStatus: "private" } },
+      });
+    const checkpoint = vi.fn(async (state: NonNullable<SocialJob["preparation"]>) => {
+      saved = JSON.parse(JSON.stringify(state));
+      await persisted;
+    });
+    const adapter = createYouTubeAdapter(http, () => 1000),
+      request = job(),
+      bytes = vi.fn(async () => mp4);
+    const pending = adapter.send(account, request, "token", bytes, checkpoint);
+    await vi.waitFor(() => expect(checkpoint).toHaveBeenCalledOnce());
+    expect(fetcher).toHaveBeenCalledOnce(); // No processing read while durable save is pending.
+    expect(saved).toEqual({ youtubeVideoId: "video-result", youtubeVisibility: "private" });
+    release();
+    await expect(pending).rejects.toMatchObject({ code: "processing", retryAt: 61_000 });
+    processing = false;
+    const recovered = { ...job(), preparation: JSON.parse(JSON.stringify(saved)) };
+    await expect(adapter.send(account, recovered, "token", bytes)).resolves.toEqual({
+      platformId: "video-result",
+      visibility: "private",
+      url: "https://www.youtube.com/watch?v=video-result",
+    });
+    expect(upload).toHaveBeenCalledOnce();
+    expect(bytes).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls.filter(([raw]) => String(raw).includes("/channels?"))).toHaveLength(
+      1,
+    );
+  });
+  it("requires durable checkpoint support before uploading any new video", async () => {
+    const http = new SocialHttp(async () => Response.json({ items: [{ id: "UCowner" }] }));
+    const upload = vi.spyOn(http, "uploadYouTubeVideo"),
+      bytes = vi.fn(async () => mp4);
+    await expect(
+      createYouTubeAdapter(http).send(account, job(), "token", bytes),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    expect(upload).not.toHaveBeenCalled();
+    expect(bytes).not.toHaveBeenCalled();
+  });
+  it("retains the accepted ID after a checkpoint failure and performs only a read on a later explicit retry", async () => {
+    const fetcher = vi.fn(async (raw: string | URL | Request) =>
+      Response.json(
+        String(raw).includes("/channels?") ? { items: [{ id: "UCowner" }] } : videoStatus(),
+      ),
+    );
+    const http = new SocialHttp(fetcher),
+      upload = vi.spyOn(http, "uploadYouTubeVideo").mockResolvedValue({
+        headers: new Headers(),
+        value: { id: "video-result", status: { privacyStatus: "private" } },
+      });
+    const request = job(),
+      adapter = createYouTubeAdapter(http),
+      bytes = vi.fn(async () => mp4);
+    await expect(
+      adapter.send(account, request, "token", bytes, async () => {
+        throw new Error("Store unavailable");
+      }),
+    ).rejects.toMatchObject({ code: "unknown" });
+    expect(request.preparation?.youtubeVideoId).toBe("video-result");
+    expect(fetcher).toHaveBeenCalledOnce();
+    await expect(adapter.send(account, request, "token", bytes)).resolves.toMatchObject({
+      platformId: "video-result",
+    });
+    expect(upload).toHaveBeenCalledOnce();
+    expect(bytes).toHaveBeenCalledOnce();
+  });
+  it.each([
+    ["failed", "uploaded", "UCowner", "video-result", "rejected"],
+    ["processing", "rejected", "UCowner", "video-result", "rejected"],
+    ["terminated", "processed", "UCowner", "video-result", "unknown"],
+    ["succeeded", "processed", "UCother", "video-result", "denied"],
+    ["succeeded", "processed", "UCowner", "another-video", "unknown"],
+  ])(
+    "does not reupload accepted videos after %s / %s / %s / %s",
+    async (processing, status, channel, id, code) => {
+      const fetcher = vi.fn(async () =>
+        Response.json(videoStatus(processing, status, "private", channel, id)),
+      );
+      const http = new SocialHttp(fetcher),
+        upload = vi.spyOn(http, "uploadYouTubeVideo"),
+        bytes = vi.fn(async () => mp4);
+      const adapter = createYouTubeAdapter(http),
+        request = job();
+      request.preparation = { youtubeVideoId: "video-result", youtubeVisibility: "private" };
+      for (let attempt = 0; attempt < 2; attempt++)
+        await expect(adapter.send(account, request, "token", bytes)).rejects.toMatchObject({
+          code,
+        });
+      expect(upload).not.toHaveBeenCalled();
+      expect(bytes).not.toHaveBeenCalled();
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(request.preparation.youtubeVideoId).toBe("video-result");
+    },
+  );
+  it("keeps an accepted upload without a returned ID uncertain rather than guessing or reconciling by title", async () => {
+    const http = new SocialHttp(async () => Response.json({ items: [{ id: "UCowner" }] }));
+    const upload = vi.spyOn(http, "uploadYouTubeVideo").mockResolvedValue({
+      headers: new Headers(),
+      value: { status: { privacyStatus: "private" } },
+    });
+    const adapter = createYouTubeAdapter(http),
+      request = job(),
+      checkpoint = vi.fn();
+    await expect(
+      adapter.send(account, request, "token", async () => mp4, checkpoint),
+    ).rejects.toMatchObject({ code: "unknown" });
+    expect(request.preparation).toBeUndefined();
+    expect(checkpoint).not.toHaveBeenCalled();
+    await expect(adapter.reconcile!(account, request, "token")).resolves.toBeUndefined();
+    expect(upload).toHaveBeenCalledOnce();
+  });
+  it("reconciles an existing accepted ID read-only and reports the video's actual visibility", async () => {
+    const fetcher = vi.fn(async (raw: string | URL | Request) => {
+      const url = new URL(String(raw));
+      expect(url.pathname).toBe("/youtube/v3/videos");
+      expect(url.searchParams.get("id")).toBe("video-result");
+      expect(url.searchParams.get("part")).toBe("processingDetails,status,snippet");
+      return Response.json(videoStatus("succeeded", "processed", "unlisted"));
+    });
+    const http = new SocialHttp(fetcher),
+      upload = vi.spyOn(http, "uploadYouTubeVideo"),
+      request = job();
+    request.preparation = { youtubeVideoId: "video-result", youtubeVisibility: "private" };
+    await expect(
+      createYouTubeAdapter(http).reconcile!(account, request, "token"),
+    ).resolves.toMatchObject({
+      platformId: "video-result",
+      visibility: "unlisted",
+    });
+    expect(upload).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it("persists a known accepted ID even if the upload response omits visibility, then verifies it by ID", async () => {
+    const fetcher = vi.fn(async (raw: string | URL | Request) =>
+      Response.json(
+        String(raw).includes("/channels?") ? { items: [{ id: "UCowner" }] } : videoStatus(),
+      ),
+    );
+    const http = new SocialHttp(fetcher);
+    vi.spyOn(http, "uploadYouTubeVideo").mockResolvedValue({
+      headers: new Headers(),
+      value: { id: "video-result" },
+    });
+    const checkpoint = vi.fn(),
+      request = job();
+    await expect(
+      createYouTubeAdapter(http).send(account, request, "token", async () => mp4, checkpoint),
+    ).resolves.toMatchObject({ platformId: "video-result", visibility: "private" });
+    expect(checkpoint).toHaveBeenCalledWith({ youtubeVideoId: "video-result" });
+  });
+  it("treats a transient completion-read outage as a bounded read-only processing retry", async () => {
+    const fetcher = vi.fn(async (): Promise<Response> => {
+      throw new Error("secret-network-detail");
+    });
+    const http = new SocialHttp(fetcher),
+      upload = vi.spyOn(http, "uploadYouTubeVideo"),
+      request = job();
+    request.preparation = { youtubeVideoId: "video-result" };
+    const adapter = createYouTubeAdapter(http, () => 1000);
+    await expect(adapter.send(account, request, "token", async () => mp4)).rejects.toMatchObject({
+      code: "processing",
+      retryAt: 61_000,
+    });
+    expect(upload).not.toHaveBeenCalled();
+    fetcher.mockResolvedValue(Response.json(videoStatus()));
+    await expect(adapter.send(account, request, "token", async () => mp4)).resolves.toMatchObject({
+      platformId: "video-result",
+    });
+    expect(upload).not.toHaveBeenCalled();
+  });
+  it("rechecks submission authority after reading local media and before starting upload", async () => {
+    const http = new SocialHttp(async () => Response.json({ items: [{ id: "UCowner" }] }));
+    const upload = vi.spyOn(http, "uploadYouTubeVideo"),
+      bytes = vi.fn(async () => mp4);
+    await expect(
+      createYouTubeAdapter(http).send(
+        account,
+        job(),
+        "token",
+        bytes,
+        () => {},
+        async () => {
+          throw new Error("Stopped");
+        },
+      ),
+    ).rejects.toThrow("Stopped");
+    expect(bytes).toHaveBeenCalledOnce();
+    expect(upload).not.toHaveBeenCalled();
   });
 });

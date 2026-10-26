@@ -1,0 +1,200 @@
+.host-tool-panel.host-browser-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 0;
+  padding: 0;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+.host-browser-panel > .host-browser-toolbar {
+  order: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  flex: none;
+  gap: 2px;
+  padding: 3px 6px;
+  border-block-end: 1px solid var(--color-stroke);
+}
+
+.host-browser-panel .host-browser-toolbar .host-browser-url {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+.host-browser-panel > .host-browser-view-actions {
+  order: 4;
+  display: flex;
+  align-items: center;
+  flex: none;
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 3px 6px;
+  border-block-start: 1px solid var(--color-stroke);
+}
+
+.host-browser-control-status {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-micro);
+  color: var(--ui-text-secondary);
+}
+
+.host-browser-panel > .host-browser-workspace {
+  order: 3;
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
+  gap: 0;
+}
+
+.host-browser-panel .host-browser-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  position: relative;
+  min-block-size: 0;
+  min-inline-size: 0;
+  padding: 0;
+  gap: 0;
+  border-radius: 0;
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+
+.host-browser-panel .host-browser-preview {
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  inline-size: 100%;
+  block-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 0;
+  max-block-size: none;
+  border: 0;
+  border-radius: 0;
+  padding: 3px;
+  overflow: auto;
+}
+
+.host-browser-panel .host-browser-preview .host-browser-surface {
+  inline-size: min(100cqw, calc(100cqh * var(--host-browser-aspect)));
+  block-size: auto;
+  flex: none;
+}
+
+.host-browser-panel .host-browser-preview[data-actual-size="true"] {
+  align-items: start;
+  justify-content: start;
+}
+
+.host-browser-panel .host-browser-preview[data-actual-size="true"] .host-browser-surface {
+  inline-size: max(100%, var(--host-browser-width));
+}
+
+.host-browser-panel .host-browser-empty {
+  flex: 1;
+  min-block-size: 0;
+  padding: 16px;
+  gap: 8px;
+}
+
+.host-browser-panel .host-browser-empty p {
+  margin: 0;
+  font-size: var(--ui-font-caption);
+}
+
+.host-browser-selection-mode {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 6px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-inline-start: 8px;
+  background: var(--ui-surface-raised);
+  border-radius: var(--ui-radius-popup);
+  font-size: var(--ui-font-micro);
+  white-space: nowrap;
+}
+
+.host-browser-selection-popover {
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.host-browser-selection-popover .host-browser-side-section {
+  padding: 0;
+  gap: 8px;
+  background: none;
+  border-radius: 0;
+}
+
+.host-browser-selection-popover .host-browser-target {
+  margin: 0;
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+
+.host-browser-panel > :is(.host-browser-notice, .host-browser-error, .host-browser-setup) {
+  order: 1;
+  flex: none;
+  padding: 6px 10px;
+  margin: 0;
+  font-size: var(--ui-font-caption);
+}
+
+.host-browser-error {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  color: var(--color-danger);
+}
+
+.host-browser-error details {
+  flex: 1;
+  min-inline-size: 0;
+  max-block-size: 140px;
+  overflow: auto;
+}
+
+.host-browser-error summary {
+  cursor: pointer;
+}
+
+.host-browser-error pre {
+  margin-block: 6px 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--color-content);
+  font: inherit;
+}
+
+.host-browser-setup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.host-browser-setup strong {
+  font-weight: 500;
+}
+
+.host-browser-location {
+  flex-basis: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--ui-font-caption);
+}

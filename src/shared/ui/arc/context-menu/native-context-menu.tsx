@@ -1,4 +1,5 @@
 import { Button } from "../../Button";
+import { TextField } from "../../TextField";
 import {
   useEffect,
   useId,
@@ -30,7 +31,10 @@ type MenuSeparator = { kind: "sep" };
 
 export type ContextMenuItem =
   | MenuSeparator
-  | (MenuAction & { submenu?: (MenuAction | MenuSeparator)[] });
+  | (MenuAction & {
+      submenu?: (MenuAction | MenuSeparator)[];
+      submenuSearch?: { placeholder: string; emptyLabel: string };
+    });
 
 export type ContextMenuProps = (
   | { x: number; y: number; anchor?: never }
@@ -94,8 +98,33 @@ export function NativeContextMenu({
     anchor: HTMLButtonElement;
   } | null>(null);
   const [submenuActive, setSubmenuActive] = useState(-1);
+  const [submenuQuery, setSubmenuQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const submenuItem = submenu ? items[submenu.index] : undefined;
-  const submenuItems = submenuItem?.kind === "item" ? submenuItem.submenu : undefined;
+  const submenuSearch = submenuItem?.kind === "item" ? submenuItem.submenuSearch : undefined;
+  const submenuItems =
+    submenuItem?.kind === "item"
+      ? submenuItem.submenu?.filter(
+          (item) =>
+            !submenuSearch ||
+            !submenuQuery.trim() ||
+            (item.kind === "item" &&
+              item.label.toLocaleLowerCase().includes(submenuQuery.trim().toLocaleLowerCase())),
+        )
+      : undefined;
+
+  useEffect(() => {
+    setSubmenuQuery("");
+    if (submenuSearch) searchRef.current?.focus();
+  }, [submenu?.index, submenuSearch?.placeholder]);
+
+  useEffect(() => {
+    if (submenuActive >= 0) {
+      submenuRef.current
+        ?.querySelector(`[data-menu-index="${submenuActive}"]`)
+        ?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [submenuActive]);
 
   const cancelClose = () => {
     if (closeTimer.current != null) clearTimeout(closeTimer.current);
@@ -133,6 +162,9 @@ export function NativeContextMenu({
   };
 
   const onMenuKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    // Text editing retains spaces and caret navigation; up/down selects results.
+    if (e.target === searchRef.current && !["ArrowDown", "ArrowUp", "Enter"].includes(e.key))
+      return;
     if (e.key === "ArrowLeft" && !submenuItems && onBack) {
       e.preventDefault();
       e.stopPropagation();
@@ -198,7 +230,10 @@ export function NativeContextMenu({
   };
 
   const renderItem = (
-    item: MenuAction & { submenu?: unknown[] },
+    item: MenuAction & {
+      submenu?: unknown[];
+      submenuSearch?: { placeholder: string; emptyLabel: string };
+    },
     index: number,
     inSubmenu = false,
   ) => {
@@ -223,17 +258,18 @@ export function NativeContextMenu({
         aria-expanded={hasSubmenu ? submenu?.index === index : undefined}
         aria-controls={hasSubmenu && submenu?.index === index ? `${menuId}-submenu` : undefined}
         disabled={item.disabled}
-        title={item.title}
+        title={item.title ?? item.label}
         onMouseDown={(e) => e.preventDefault()}
         onMouseEnter={(e) => {
           cancelClose();
           if (inSubmenu) {
             setSubmenuActive(index);
-            submenuRef.current?.focus();
+            if (!submenuSearch) submenuRef.current?.focus();
             return;
           }
           setActive(index);
           if (hasSubmenu && !item.disabled) {
+            if (submenu?.index !== index) setSubmenuQuery("");
             setSubmenu({ index, anchor: e.currentTarget });
             setSubmenuActive(-1);
           } else {
@@ -246,7 +282,8 @@ export function NativeContextMenu({
             cancelClose();
             setSubmenu({ index, anchor: e.currentTarget });
             setSubmenuActive(0);
-            submenuRef.current?.focus();
+            if (item.submenuSearch) searchRef.current?.focus();
+            else submenuRef.current?.focus();
           } else {
             onPick(item.id);
           }
@@ -343,6 +380,9 @@ export function NativeContextMenu({
           width={MENU_WIDTH}
           layer={LAYER.submenu}
           autoFocus
+          onFocus={(event) => {
+            if (submenuSearch && event.target === event.currentTarget) searchRef.current?.focus();
+          }}
           role="menu"
           tabIndex={-1}
           aria-label={submenuItem.label}
@@ -365,6 +405,27 @@ export function NativeContextMenu({
           }}
           className="overflow-y-auto overscroll-none p-1"
         >
+          {submenuSearch ? (
+            <div className="sticky top-0 z-10 bg-[var(--ui-surface)] pb-1">
+              <TextField
+                ref={searchRef}
+                label={submenuSearch.placeholder}
+                hideLabel
+                value={submenuQuery}
+                placeholder={submenuSearch.placeholder}
+                aria-label={submenuSearch.placeholder}
+                onChange={(event) => {
+                  setSubmenuQuery(event.target.value);
+                  setSubmenuActive(-1);
+                }}
+              />
+            </div>
+          ) : null}
+          {submenuItems.length === 0 && submenuSearch ? (
+            <div role="status" className="p-2 text-[var(--ui-text-secondary)]">
+              {submenuSearch.emptyLabel}
+            </div>
+          ) : null}
           {submenuItems.map((item, index) =>
             item.kind === "sep" ? (
               <div

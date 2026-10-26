@@ -189,6 +189,7 @@ type Props = {
   onRenameProjectFolder?: (path: string, name: string) => Promise<void>;
   recoveryControl?: ReactNode;
   visible?: boolean;
+  resizable?: boolean;
   cwd: string;
   recents: RecentProject[];
   inboxUnseen?: boolean;
@@ -239,6 +240,7 @@ export function ProjectRail({
   onRenameProjectFolder,
   recoveryControl,
   visible = true,
+  resizable = true,
   cwd,
   recents,
   inboxUnseen = false,
@@ -1145,15 +1147,17 @@ export function ProjectRail({
           }}
         />
       ) : null}
-      <div
-        {...resize.separatorProps}
-        aria-label={t("Resize project sidebar")}
-        className={`absolute inset-y-0 end-0 z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-content/15" : "hover:bg-(--ui-surface-hover)"
-        }`}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
-      />
+      {resizable ? (
+        <div
+          {...resize.separatorProps}
+          aria-label={t("Resize project sidebar")}
+          className={`absolute inset-y-0 end-0 z-10 w-1.5 cursor-col-resize touch-none ${
+            resize.dragging ? "bg-content/15" : "hover:bg-(--ui-surface-hover)"
+          }`}
+          onPointerDown={resize.onPointerDown}
+          onDoubleClick={resize.onDoubleClick}
+        />
+      ) : null}
     </nav>
   );
 }

@@ -23,7 +23,13 @@ import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSessio
 import { taskSessionIds } from "../../tasks/model/backgroundSession";
 import { useProjectCrews, type CrewRunView } from "../model/crewClient";
 import { crewRunTitle } from "../model/crewRoster";
-import { crewWorkStatus, crewWorkStatusLabel } from "../model/crewPresentation";
+import {
+  crewCanStop,
+  crewActivityKnown,
+  crewHasRunningWork,
+  crewWorkStatus,
+  crewWorkStatusLabel,
+} from "../model/crewPresentation";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 
 const CrewEditDialog = lazySurface(async () => ({
@@ -63,7 +69,9 @@ function progressLabel(run: CrewRunView) {
         p0: run.tasks.filter((task) => task.status === "done").length,
         p1: run.tasks.length,
       })
-    : t("Planning");
+    : run.status === "active" && run.coordinatorStatus === "running"
+      ? t("Planning")
+      : t("No assignments yet");
 }
 function taskStatusLabel(status: string) {
   return status === "verifying"
@@ -132,7 +140,7 @@ export function CrewSessions({
     .filter(
       (run) =>
         !q ||
-        `${crewRunTitle(run)} ${run.definition.name} ${run.tasks.map((task) => task.title).join(" ")} ${run.definition.agents.map((agent) => agent.name).join(" ")} ${run.assignments.map((assignment) => assignment.title).join(" ")}`
+        `${crewRunTitle(run)} ${run.launch?.prompt ?? ""} ${run.definition.name} ${run.tasks.map((task) => task.title).join(" ")} ${run.definition.agents.map((agent) => agent.name).join(" ")} ${run.assignments.map((assignment) => assignment.title).join(" ")}`
           .toLocaleLowerCase()
           .includes(q),
     )
@@ -243,8 +251,11 @@ export function CrewManagementDialog({
   const all = [...(data?.runs ?? [])]
     .filter((run) => run.definition.id === crew?.id)
     .sort((a, b) => b.updatedAt - a.updatedAt);
+  const pinned = all.find((run) => run.id === selectedId);
+  const selectedView = pinned ? (pinned.status === "finished" ? "finished" : "ongoing") : view;
+  if (selectedView !== view) setView(selectedView);
   const listed = all.filter((run) =>
-    view === "finished" ? run.status === "finished" : run.status !== "finished",
+    selectedView === "finished" ? run.status === "finished" : run.status !== "finished",
   );
   const selected = listed.find((run) => run.id === selectedId) ?? listed[0];
   const resolvedRunId = selected?.id;
@@ -360,7 +371,7 @@ export function CrewManagementDialog({
             </Button>
             {savedCrew ? (
               <Button
-                variant="primary"
+                variant={selected ? "secondary" : "primary"}
                 disabled={!crew || pending}
                 startIcon={<Plus className="icon-sm" />}
                 onClick={() => setPage("start")}
@@ -393,7 +404,7 @@ export function CrewManagementDialog({
               <div className="px-3 pb-2 pt-3">
                 <SegmentedControl
                   label={t("Crew work view")}
-                  value={view}
+                  value={selectedView}
                   options={[
                     {
                       value: "ongoing",
@@ -451,8 +462,16 @@ export function CrewManagementDialog({
                 ) : null}
               </div>
             </nav>
-            <div className="min-w-0 p-4 @min-[640px]/crew-management:min-h-80">
+            <div className="min-w-0 p-4 @min-[640px]/crew-management:min-h-64">
               {error ? <Alert tone="danger">{error}</Alert> : null}
+              {data.catalogError ? (
+                <Alert tone="warning">
+                  {data.catalogError}
+                  <Button variant="ghost" onClick={() => void state.refetch()}>
+                    {t("Retry")}
+                  </Button>
+                </Alert>
+              ) : null}
               {state.error ? (
                 <Alert tone="warning">
                   {state.error.message}
@@ -543,24 +562,43 @@ function CrewWorkDetail({
   const title = crewRunTitle(run);
   const requests = run.messages.filter((message) => !message.resolvedAt);
   const blocked = run.tasks.filter((task) => task.status === "blocked");
+  const running = crewHasRunningWork(run);
+  const canStop = crewCanStop(run);
+  const request = run.launch?.prompt?.trim();
   const canRemove =
     run.status !== "active" &&
-    run.coordinatorStatus !== "running" &&
-    !run.tasks.some((task) => task.status === "running" || task.status === "verifying");
+    crewActivityKnown(run) &&
+    !running &&
+    !run.tasks.some((task) => task.status === "queued");
   return (
     <section data-crew-run={run.id} aria-label={title} className="min-w-0">
-      <h3 className="break-words text-ui-title font-medium text-content">{title}</h3>
+      <h3 className="break-words text-ui-title font-medium text-content [overflow-wrap:anywhere]">
+        {title}
+      </h3>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Badge tone={statusTone(run)}>{runStatus(run)}</Badge>
         <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
           {progressLabel(run)}
         </span>
       </div>
+      {run.status === "paused" && crewActivityKnown(run) ? (
+        <p role="status" className="mt-2 text-ui-caption text-(--ui-text-secondary)">
+          {running
+            ? t("New assignments are paused. Running work can still finish.")
+            : t("Work is paused. Nothing is running.")}
+        </p>
+      ) : null}
+      {request && request !== title ? (
+        <details className="mt-3 text-ui-caption text-(--ui-text-secondary)">
+          <summary className="cursor-pointer">{t("Work request")}</summary>
+          <p className="mt-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{request}</p>
+        </details>
+      ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-1 border-b border-(--ui-tone-neutral-border) pb-3">
         {run.status !== "finished" ? (
           <>
             <Button
-              variant="secondary"
+              variant={run.status === "paused" ? "primary" : "secondary"}
               size="sm"
               disabled={pending}
               loading={pendingAction === `pause:${run.id}`}
@@ -576,26 +614,28 @@ function CrewWorkDetail({
             >
               {run.status === "paused" ? t("Resume work") : t("Pause")}
             </Button>
-            <Button
-              variant="ghost"
-              tone="danger"
-              size="sm"
-              disabled={pending}
-              loading={pendingAction === `stop:${run.id}`}
-              startIcon={<Square className="icon-sm" />}
-              tooltip={t("Stop work and cancel running assignments")}
-              onClick={() =>
-                void confirm({
-                  title: t("Stop work"),
-                  message: `${title}\n${t("Stop work and cancel running assignments")}`,
-                  confirmLabel: t("Stop work"),
-                }).then((ok) => {
-                  if (ok) onStop();
-                })
-              }
-            >
-              {t("Stop work")}
-            </Button>
+            {canStop ? (
+              <Button
+                variant="ghost"
+                tone="danger"
+                size="sm"
+                disabled={pending}
+                loading={pendingAction === `stop:${run.id}`}
+                startIcon={<Square className="icon-sm" />}
+                tooltip={t("Stop work and cancel running assignments")}
+                onClick={() =>
+                  void confirm({
+                    title: t("Stop work"),
+                    message: `${title}\n${t("Stop work and cancel running assignments")}`,
+                    confirmLabel: t("Stop work"),
+                  }).then((ok) => {
+                    if (ok) onStop();
+                  })
+                }
+              >
+                {t("Stop work")}
+              </Button>
+            ) : null}
           </>
         ) : null}
         {canDelete ? (
@@ -674,11 +714,15 @@ function CrewWorkDetail({
             <span className="min-w-0 flex-1 text-start">
               <span className="block font-medium">{t("Coordinator")}</span>
               <span className="block text-ui-caption text-(--ui-text-secondary)">
-                {run.coordinatorStatus === "running"
-                  ? t("Working")
-                  : run.coordinatorStatus === "interrupted"
-                    ? t("Interrupted")
-                    : t("Conversation")}
+                {!run.coordinatorSessionId
+                  ? t("Session unavailable")
+                  : run.coordinatorStatus === "running"
+                    ? t("Working")
+                    : run.coordinatorStatus === "interrupted"
+                      ? t("Interrupted")
+                      : run.status === "paused" && run.coordinatorStatus === "idle"
+                        ? t("Nothing running")
+                        : t("Conversation")}
               </span>
             </span>
             <ChevronRight className="icon-sm shrink-0" />
@@ -734,11 +778,13 @@ function CrewWorkDetail({
                     </span>
                   </span>
                   <span className="text-ui-caption text-(--ui-text-secondary)">
-                    {task.verification?.review?.verdict === "pass"
-                      ? t("Passed")
-                      : task.verification?.review?.verdict === "fail"
-                        ? t("Changes needed")
-                        : t("Reviewing")}
+                    {task.status === "verifying"
+                      ? t("Reviewing")
+                      : task.verification?.review?.verdict === "pass"
+                        ? t("Passed")
+                        : task.verification?.review?.verdict === "fail"
+                          ? t("Changes needed")
+                          : t("Reviewing")}
                   </span>
                   <ChevronRight className="icon-sm shrink-0" />
                 </Button>

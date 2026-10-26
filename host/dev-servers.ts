@@ -921,9 +921,13 @@ export class DevServersService {
       );
     }
     // Validate replacement inputs before stopping the currently running command.
+    const requestedCommand =
+      params.command === undefined ? selected.managed?.server.command : params.command;
+    const command = typeof requestedCommand === "string" ? requestedCommand.trim() : "";
+    if (!command) throw new Error("A dev server command is required.");
     const replacement = {
       ...params,
-      command: selected.managed?.server.command ?? params.command,
+      command,
       cwd: selected.managed?.server.cwd ?? params.cwd,
       projectId: selected.managed?.server.projectId ?? params.projectId,
       name: selected.managed?.server.name ?? params.name,

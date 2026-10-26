@@ -1,5 +1,274 @@
 import { test, expect, type Page } from "@playwright/test";
 const shots = "temp/verification/2026-10-25-crew-management-v2";
+
+async function openStart(page: Page) {
+  const row = page.getByRole("listitem").filter({ hasText: "Website Crew" });
+  await row.getByRole("button", { name: "Start work with Website Crew" }).click();
+  return page.getByRole("dialog", { name: "Start crew work", exact: true });
+}
+
+test("a new review shows current activity and opens the current reviewer", async ({ page }) => {
+  await page.goto("/tests/browser/crews.html?reviewingAgain");
+  const management = await openWork(page);
+  const work = management.locator('[data-crew-run="run"]');
+  const reviewer = work.getByRole("button", { name: /Reviewer.*Build settings.*Reviewing/ });
+  await expect(reviewer).toBeVisible();
+  await expect(work.getByRole("button", { name: /Reviewer.*Passed/ })).toHaveCount(0);
+  await reviewer.click();
+  await expect(page.getByLabel("Opened session")).toHaveText("current-review-session");
+});
+
+test("partial library group updates retry only the remaining profiles", async ({ page }) => {
+  await page.goto("/tests/browser/crews.html?groupRetry");
+  await page.getByRole("button", { name: "Crew settings page", exact: true }).click();
+  await page.getByRole("button", { name: /^Member group:/ }).click();
+  await page.getByRole("option", { name: "UI", exact: true }).click();
+  await page.getByRole("button", { name: "Group options", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Rename group", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Rename group", exact: true });
+  await dialog.getByRole("textbox", { name: "Group name", exact: true }).fill("Interface");
+  await dialog.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Second profile unavailable");
+  await expect(dialog.getByRole("textbox", { name: "Group name", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const snapshot = await page.evaluate(() =>
+    (
+      window as unknown as {
+        crewFixtureSnapshot: () => {
+          agents: { id: string; groups: string[] }[];
+          agentSaveCounts: Record<string, number>;
+        };
+      }
+    ).crewFixtureSnapshot(),
+  );
+  expect(snapshot.agents.every((agent) => agent.groups.includes("Interface"))).toBe(true);
+  expect(snapshot.agentSaveCounts["lib-ui"]).toBe(1);
+  expect(snapshot.agentSaveCounts["lib-api"]).toBe(2);
+});
+
+test("library copy reconciles an uncertain saved profile without a second save", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews.html?copyUnknown");
+  await page.getByRole("button", { name: "Crew settings page", exact: true }).click();
+  await page
+    .locator(".settings-row")
+    .filter({ hasText: "API engineer" })
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "API engineer", exact: true });
+  await dialog.getByRole("button", { name: "Copy to all projects", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Profile save response unavailable");
+  await dialog.getByRole("button", { name: "Copy to all projects", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const snapshot = await page.evaluate(() =>
+    (
+      window as unknown as {
+        crewFixtureSnapshot: () => {
+          agents: { id: string }[];
+          agentSaveCounts: Record<string, number>;
+        };
+      }
+    ).crewFixtureSnapshot(),
+  );
+  expect(snapshot.agents).toHaveLength(3);
+  expect(Object.values(snapshot.agentSaveCounts)).toEqual([1]);
+});
+
+test("model catalog failure leaves existing work controls and sessions usable", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews.html?catalogUnavailable");
+  const management = await openWork(page);
+  await expect(
+    management.getByRole("status").filter({ hasText: "Model catalog temporarily unavailable" }),
+  ).toBeVisible();
+  const work = management.locator('[data-crew-run="run"]');
+  await work.getByRole("button", { name: "Pause new assignments" }).click();
+  await expect(work.getByRole("button", { name: "Resume work" })).toBeVisible();
+  await work.getByRole("button", { name: /Coordinator/ }).click();
+  await expect(page.getByLabel("Opened session")).toHaveText("lead-session");
+});
+
+test("navigation failure retries opening the acknowledged run without starting twice", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews.html?openFailsOnce");
+  const start = await openStart(page);
+  await start
+    .getByRole("textbox", { name: "What should the crew deliver?" })
+    .fill("Review mobile navigation");
+  await start.getByRole("button", { name: "Start work", exact: true }).click();
+  await expect(
+    start.getByText("Conversation temporarily unavailable", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Started work")).toHaveText("1");
+  await start.getByRole("button", { name: "Open conversation", exact: true }).click();
+  await expect(start).toHaveCount(0);
+  await expect(page.getByLabel("Opened session")).toHaveText("started-1");
+  await expect(page.getByLabel("Started work")).toHaveText("1");
+});
+
+test("uncertain start keeps its receipt when closed and reopened", async ({ page }) => {
+  await page.goto("/tests/browser/crews.html?startUnknownOnce");
+  let start = await openStart(page);
+  await start
+    .getByRole("textbox", { name: "What should the crew deliver?" })
+    .fill("Review mobile navigation");
+  await start.getByRole("button", { name: "Start work", exact: true }).click();
+  await expect(start.getByText("Start response unavailable. Delivery unknown.")).toBeVisible();
+  await start.getByRole("button", { name: "Close", exact: true }).click();
+  start = await openStart(page);
+  await expect(start.getByRole("textbox", { name: "What should the crew deliver?" })).toHaveValue(
+    "Review mobile navigation",
+  );
+  await start.getByRole("button", { name: "Start work", exact: true }).click();
+  await expect(page.getByLabel("Opened session")).toHaveText("started-1");
+  await expect(page.getByLabel("Started work")).toHaveText("1");
+  const ids = await page.evaluate(
+    () =>
+      (window as unknown as { crewFixtureStartRequestIds: string[] }).crewFixtureStartRequestIds,
+  );
+  expect(ids).toHaveLength(2);
+  expect(ids[0]).toBe(ids[1]);
+});
+
+test("work stays selected when a poll moves it to finished history", async ({ page }) => {
+  await page.goto("/tests/browser/crews.html?multiple");
+  const management = await openWork(page);
+  await page.evaluate(() =>
+    (window as unknown as { simulateRunFinish: (id: string) => void }).simulateRunFinish("run"),
+  );
+  await expect(management.getByRole("radio", { name: "Finished", exact: true })).toBeChecked({
+    timeout: 12000,
+  });
+  await expect(management.locator('[data-crew-run="run"]')).toBeVisible();
+  await expect(management.locator('[data-crew-run="second-run"]')).toHaveCount(0);
+});
+
+test("legacy activity omission does not claim stopped or permit deleting a session", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews.html?pausedPlanning&unknownActivity");
+  const management = await openWork(page);
+  const work = management.locator('[data-crew-run="run"]');
+  await expect(work.getByText("Work is paused. Nothing is running.")).toHaveCount(0);
+  await expect(work.getByRole("button", { name: "Stop work", exact: true })).toBeVisible();
+  await expect(work.getByRole("button", { name: "Delete work", exact: true })).toBeDisabled();
+});
+
+test("an externally deleted crew cannot start new work", async ({ page }) => {
+  await page.goto("/tests/browser/crews.html");
+  const start = await openStart(page);
+  await start
+    .getByRole("textbox", { name: "What should the crew deliver?" })
+    .fill("Keep my request");
+  await page.evaluate(() =>
+    (window as unknown as { simulateCrewDelete: () => void }).simulateCrewDelete(),
+  );
+  await expect(start.getByText("This crew is no longer available.")).toBeVisible({
+    timeout: 12000,
+  });
+  await expect(start.getByRole("button", { name: "Start work", exact: true })).toBeDisabled();
+  await start.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByLabel("Started work")).toHaveText("0");
+});
+
+test("deleted crew edits can be preserved under a new identity", async ({ page }) => {
+  await page.goto("/tests/browser/crews.html");
+  const start = await openStart(page);
+  await start.getByRole("button", { name: "Edit crew", exact: true }).click();
+  const edit = editor(page);
+  await edit
+    .getByRole("textbox", { name: "Crew name", exact: true })
+    .fill("Website Crew local edits");
+  await page.evaluate(() =>
+    (window as unknown as { simulateCrewDelete: () => void }).simulateCrewDelete(),
+  );
+  await expect(edit.getByText("This crew is no longer available.")).toBeVisible({ timeout: 12000 });
+  await expect(edit.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await edit.getByRole("button", { name: "Keep edits as new crew", exact: true }).click();
+  await expect(edit.getByRole("textbox", { name: "Crew name", exact: true })).toHaveValue(
+    "Website Crew local edits",
+  );
+  await edit.getByRole("button", { name: "Create crew", exact: true }).click();
+  await expect(edit.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+  await expect(page.getByLabel("Started work")).toHaveText("0");
+});
+
+test("save and start shows progress only in its own action", async ({ page }) => {
+  await page.goto("/tests/browser/crews.html?slowOperation=crews.save");
+  const start = await openStart(page);
+  await start.getByRole("button", { name: "Edit crew", exact: true }).click();
+  const edit = editor(page);
+  await edit.getByRole("textbox", { name: "Crew name", exact: true }).fill("Website Crew revised");
+  const save = edit.getByRole("button", { name: "Save", exact: true });
+  const saveStart = edit.getByRole("button", { name: "Save and start work", exact: true });
+  await saveStart.click();
+  await expect(saveStart).toHaveAttribute("aria-busy", "true");
+  await expect(save).not.toHaveAttribute("aria-busy", "true");
+  await page.evaluate(() =>
+    (
+      window as unknown as { crewFixtureReleaseOperation: () => void }
+    ).crewFixtureReleaseOperation(),
+  );
+  await expect(page.getByRole("dialog", { name: "Start crew work", exact: true })).toBeVisible();
+});
+for (const theme of ["light", "dark"]) {
+  test(`paused planning work explains its idle state in ${theme}`, async ({ page }, testInfo) => {
+    for (const width of [390, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/crews.html?pausedPlanning&theme=${theme}`);
+      const management = await openWork(page);
+      const work = management.locator('[data-crew-run="run"]');
+      await expect(work.getByRole("status")).toHaveText("Work is paused. Nothing is running.");
+      await expect(work.getByRole("button", { name: "Stop work", exact: true })).toHaveCount(0);
+      await expect(work.getByRole("button", { name: "Resume work" })).toBeEnabled();
+      await expect(work.getByRole("button", { name: "Resume work" })).toHaveAttribute(
+        "data-button-hierarchy",
+        "primary",
+      );
+      await expect(work.getByRole("button", { name: "Delete work", exact: true })).toBeEnabled();
+      await expect(work.getByText("Planning", { exact: true })).toHaveCount(0);
+      await expect(work).toContainText("No assignments yet");
+      await work.getByText("Work request", { exact: true }).click();
+      await expect(work.getByText(/Keep current drafts and provider selections\./)).toBeVisible();
+      expect(await management.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      await page.screenshot({
+        path: `temp/verification/2026-10-26-crew-stop/paused-${theme}-${width}-${testInfo.project.name}.png`,
+      });
+    }
+  });
+}
+
+test("paused work keeps cancellation available while its coordinator is running", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews.html?pausedPlanning&running&slowOperation=crews.stop");
+  const management = await openWork(page);
+  const work = management.locator('[data-crew-run="run"]');
+  await expect(work.getByRole("status")).toHaveText(
+    "New assignments are paused. Running work can still finish.",
+  );
+  await work.getByRole("button", { name: "Stop work", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Stop work", exact: true })
+    .getByRole("button", { name: "Stop work", exact: true })
+    .click();
+  await expect(work.getByRole("button", { name: "Stop work", exact: true })).toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  await page.evaluate(() =>
+    (
+      window as unknown as { crewFixtureReleaseOperation: () => void }
+    ).crewFixtureReleaseOperation(),
+  );
+  await expect(work.getByRole("status")).toHaveText("Work is paused. Nothing is running.");
+  await expect(work.getByRole("button", { name: "Stop work", exact: true })).toHaveCount(0);
+});
 for (const theme of ["light", "dark"] as const) {
   test(`crew work shows only the initiating operation pending in ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 950 });

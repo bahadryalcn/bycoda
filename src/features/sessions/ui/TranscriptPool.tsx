@@ -116,6 +116,7 @@ type PooledProps = {
   blocks?: Block[];
   busy?: boolean;
   pendingQuestion?: boolean;
+  questionBehavior?: "blocking" | "nonBlocking";
   backgroundTasks?: string[];
   backgroundAgents?: number;
 };
@@ -274,8 +275,7 @@ export class TranscriptPool {
     // First seen while hidden (a restored background tab): wait until shown,
     // unless it needs to stay live. Mounting every restored transcript at boot
     // was the largest startup cost with many tabs.
-    const mounted =
-      visible || !!previous?.mounted || this.protectedIds.has(id);
+    const mounted = visible || !!previous?.mounted || this.protectedIds.has(id);
     // Attach before the pane's passive effects run, so anything that looks
     // for the transcript in the pane already finds a revisited one.
     if (container.parentElement !== host) host.appendChild(container);

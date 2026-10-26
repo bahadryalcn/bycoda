@@ -1,258 +1,223 @@
-.host-tools-content-devices {
-  display: flex;
-  flex-direction: column;
-}
-
-/* The machine picker is a compact control, not a page-wide field. */
-.host-tools-content-devices .host-tools-machine {
-  flex: none;
-  padding-block: 6px;
-}
-
-.host-tools-content-devices .host-tools-machine-toolbar {
-  flex-wrap: nowrap;
-  gap: 6px;
-}
-
-.host-tools-content-devices .host-tools-machine-field {
-  flex: 0 1 360px;
-  min-inline-size: 0;
-}
-
-.host-tools-content-devices .host-tools-machine-field > span {
-  display: none;
-}
-
-.host-tools-content-devices .host-tools-machine-field > div {
-  flex-basis: 0;
-}
-
 .host-tool-panel.device-panel {
   display: flex;
   flex-direction: column;
   flex: 1;
-  gap: 10px;
-  padding: 10px var(--host-tool-gutter) var(--host-tool-gutter);
-  min-block-size: min-content;
+  gap: 0;
+  padding: 0;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: hidden;
 }
-
-.device-panel > :not(.device-panel-preview) {
-  flex-shrink: 0;
-}
-
-/* One action row: the device, its frequent actions, then the two opt-in switches. */
-.device-panel-bar {
+.device-panel-bar,
+.device-panel-toolbar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-}
-
-.device-panel-choice {
-  flex: 1 1 220px;
-  max-inline-size: 420px;
+  flex: none;
+  gap: 2px;
+  padding: 3px 6px;
   min-inline-size: 0;
 }
-
+.device-panel-bar {
+  border-block-end: 1px solid var(--color-stroke);
+}
+.device-panel-toolbar {
+  border-block-start: 1px solid var(--color-stroke);
+}
+.device-panel-toolbar-spacer {
+  flex: 1;
+}
+.device-panel-choice {
+  flex: 1;
+  min-inline-size: 0;
+}
 .device-panel-choice > div {
   inline-size: 100%;
   min-inline-size: 0;
 }
-
 .device-panel-bar-text {
-  flex: 1 1 260px;
+  flex: 1;
   margin: 0;
+  font-size: var(--ui-font-caption);
+}
+.device-panel-stage {
+  position: relative;
+  flex: 1;
+  min-block-size: 0;
   min-inline-size: 0;
+  overflow: hidden;
+  background: var(--ui-surface);
 }
-
-.device-panel-actions {
+.device-panel-viewport {
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: auto;
+}
+.device-panel-canvas {
+  container-type: size;
   display: flex;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: 3px;
 }
-
-.device-panel-actions > .device-panel-boot {
-  margin-inline-end: 4px;
+.device-panel-canvas > img {
+  display: block;
+  max-inline-size: 100%;
+  max-block-size: 100%;
+  inline-size: min(100cqw, calc(100cqh * var(--device-aspect, 0.46)));
+  block-size: min(100cqh, calc(100cqw / var(--device-aspect, 0.46)));
+  object-fit: contain;
 }
-
-.device-panel-toggles {
+.device-panel-canvas > img.host-frame-interactive {
+  touch-action: none;
+  cursor: pointer;
+  user-select: none;
+}
+.device-panel-annotation {
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 0;
+}
+.device-panel-frame-state {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  max-inline-size: calc(100% - 16px);
+  padding: 2px 8px;
+  border-radius: var(--ui-radius-popup);
+  background: var(--ui-surface-raised);
+  color: var(--color-content);
+  font-size: var(--ui-font-micro);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.device-panel-mark-tools {
+  position: absolute;
+  inset-block-end: 8px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  margin-inline-start: auto;
+  gap: 1px;
+  max-inline-size: calc(100% - 12px);
+  overflow-x: auto;
+  padding: 3px;
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--ui-radius-popup);
 }
-
-.device-panel-toggle {
+.device-panel-mark-tools > button {
+  flex: none;
+}
+.device-panel-redo {
+  transform: scaleX(-1);
+}
+.device-panel-popover {
+  padding: 12px;
+  max-inline-size: calc(100% - 16px);
+  overflow-y: auto;
+}
+.device-panel-popover .host-tool-muted {
   font-size: var(--ui-font-caption);
+  margin-block: 8px 0;
 }
-
-.device-panel-note {
-  margin: 0;
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
-}
-
-.device-panel-setup-control {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-}
-
-.device-panel-state {
+.device-panel-menu-actions,
+.device-panel-command,
+.device-panel-setup-body {
   display: grid;
   gap: 8px;
-  justify-items: start;
+}
+.device-panel-command > p {
   margin: 0;
-  padding: 24px 0;
   font-size: var(--ui-font-caption);
-  color: var(--ui-text-muted);
 }
-
-.device-panel-state-title {
-  margin: 0;
-  font-size: var(--ui-font-body);
-  font-weight: 600;
-  color: var(--color-content);
-}
-
-.device-panel-state .host-tool-muted {
-  margin: 0;
-  max-inline-size: 60ch;
-  text-wrap: pretty;
-}
-
-.device-panel-error {
-  display: grid;
+.device-panel-zoom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
+  margin-block-start: 8px;
 }
-
-.device-panel-error > p {
+.device-panel-setup > summary {
+  cursor: pointer;
+  font-size: var(--ui-font-body);
+  margin-block-end: 8px;
+}
+.device-panel-setup-summary {
+  display: block;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.device-panel-setup-body > p {
   margin: 0;
-  white-space: normal;
+  font-size: var(--ui-font-caption);
 }
-
+.device-panel-state {
+  margin: 0;
+  padding: 20px 16px;
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  font-size: var(--ui-font-caption);
+  overflow-y: auto;
+}
+.device-panel-state p {
+  margin: 0;
+}
+.device-panel-state-title {
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+}
+.device-panel-waiting {
+  padding: 16px;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+  text-align: center;
+}
+.device-panel-error {
+  flex: none;
+  max-block-size: 120px;
+  overflow-y: auto;
+  font-size: var(--ui-font-caption);
+  background: var(--ui-surface);
+  color: var(--color-danger);
+  padding: 6px 10px;
+}
 .device-panel-error summary {
   cursor: pointer;
-  color: var(--ui-text-muted);
 }
-
 .device-panel-error pre,
 .device-panel-output {
-  max-block-size: 180px;
-  margin-block: 6px 0;
+  max-block-size: 240px;
   overflow: auto;
+  margin: 8px 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: var(--ui-font-micro);
+  color: var(--color-content);
 }
-
-/* The screen is the page: a flat tone step, no frame, as much height as the panel gives. */
-.device-panel .device-panel-preview {
-  flex: 1 0 240px;
-  min-block-size: 240px;
-  container-type: size;
+.device-panel-setup-control {
+  flex: none;
+  padding: 8px;
   display: grid;
-  place-items: center;
-  overflow: clip;
-  border: 0;
-  background: var(--ui-surface);
-  padding: 12px;
-  min-inline-size: 0;
-}
-
-.device-panel-preview > img {
-  display: block;
-  max-inline-size: 100%;
-  inline-size: auto;
-  block-size: auto;
-  max-block-size: 100cqh;
-  object-fit: contain;
-}
-
-.device-panel-waiting {
-  color: var(--ui-text-muted);
+  gap: 8px;
   font-size: var(--ui-font-caption);
-  text-align: center;
-  padding-inline: 24px;
 }
-
-.device-panel-manual {
-  display: grid;
-  gap: 8px;
-}
-
-/* Keep each input beside its own command as the available panel width changes. */
-.device-panel-command-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-  gap: 8px 16px;
-}
-
-.device-panel-command {
+.device-panel-notice {
+  flex: none;
   display: flex;
-  align-items: end;
-  gap: 8px;
-  min-inline-size: 0;
-}
-
-.device-panel-command > button {
-  flex-shrink: 0;
-}
-
-.device-panel-manual .host-tool-help {
-  padding-block-start: 0;
-  border: 0;
-}
-
-.device-panel-manual > p,
-.device-panel-setup-body > p {
+  align-items: center;
+  justify-content: space-between;
   margin: 0;
+  padding-inline: 8px;
+  font-size: var(--ui-font-caption);
 }
-
-.device-panel-setup {
-  order: 10;
-  margin-block-start: auto;
-}
-
-.device-panel-setup > summary {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 2px 10px;
-}
-
-.device-panel-setup-summary {
-  font-size: var(--ui-font-micro);
-  overflow: clip;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-inline-size: 0;
-}
-
-.device-panel-setup-body {
-  display: grid;
-  gap: 10px;
-  padding-block-start: 10px;
-}
-
-.device-panel-setup-body > p {
-  max-inline-size: 75ch;
-  text-wrap: pretty;
-}
-
-@container (width < 600px) {
-  .host-tools:has(.host-tools-content-devices) .host-tools-tabs {
-    justify-content: space-between;
-  }
-
-  .device-panel-choice {
-    max-inline-size: none;
-    flex-basis: 100%;
-  }
-
-  .device-panel-toggles {
-    margin-inline-start: 0;
+@media (pointer: coarse) {
+  .device-panel-mark-tools {
+    flex-wrap: wrap;
+    inline-size: max-content;
+    justify-content: center;
   }
 }

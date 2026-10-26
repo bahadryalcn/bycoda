@@ -53,7 +53,7 @@ export function ChatFilterBar({
       <Button
         ref={trigger}
         variant="ghost"
-        iconOnly
+        size="sm"
         label={t("Chat search filters")}
         tooltip={t("Chat search filters")}
         selected={active}
@@ -61,6 +61,7 @@ export function ChatFilterBar({
         onClick={() => setFilterOpen((value) => !value)}
       >
         <SlidersHorizontal className="size-3.5" />
+        <span>{t(SCOPE_LABEL[filters.scope])}</span>
       </Button>
       {filterOpen ? (
         <Popover anchor={trigger} align="end" onDismiss={() => setFilterOpen(false)}>
@@ -76,7 +77,7 @@ export function ChatFilterBar({
             >
               {(Object.keys(SCOPE_LABEL) as ChatScope[]).map((scope) => (
                 <option key={scope} value={scope} disabled={scope === "group" && !inGroup}>
-                  {SCOPE_LABEL[scope]}
+                  {t(SCOPE_LABEL[scope])}
                 </option>
               ))}
             </NativeSelect>
@@ -106,7 +107,7 @@ export function ChatFilterBar({
             >
               {(Object.keys(RANGE_LABEL) as ChatDateRange[]).map((range) => (
                 <option key={range} value={range}>
-                  {RANGE_LABEL[range]}
+                  {t(RANGE_LABEL[range])}
                 </option>
               ))}
             </NativeSelect>

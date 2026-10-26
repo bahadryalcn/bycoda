@@ -64,7 +64,7 @@ import {
   type ComposerTurnOptions,
 } from "../model/session";
 import { sessionHasBtwThreads, supportsBtwHarness } from "../model/btw";
-import { sessionRetryNotice } from "../model/sessionIssue";
+import { ProviderRetryNotice } from "./ProviderRetryNotice";
 import {
   sameSessionIgnoringStreamingText,
   sameBlocksIgnoringStreamingText,
@@ -218,6 +218,7 @@ export type SessionPaneProps = {
   onRewindMessage?: (sessionId: string, blockId: string) => Promise<boolean>;
   onApproval: (sessionId: string, requestId: number, decision: ApprovalDecision) => void;
   onQuestionReply: (sessionId: string, requestId: number, reply: UserQuestionReply) => void;
+  questionDraftScope?: string;
   onQuestionInteraction?: (sessionId: string, requestId: number) => void;
   onOpenFile: OpenFileFn;
   onOpenDiff: (path?: string, session?: { sessionId: string; cwd: string }) => void;
@@ -433,6 +434,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onDeleteSession,
   onApproval,
   onQuestionReply,
+  questionDraftScope,
   onQuestionInteraction,
   onOpenFile,
   onOpenDiff,
@@ -468,7 +470,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
       sameCheckout(orchestrationCheckoutCwd(run), sessionWorkCwd(session)),
   );
   const title = sessionDisplayTitle(session.title, session.harness);
-  const retryNotice = sessionRetryNotice(session.retryMessage);
   const isEmpty = session.blocks.length === 0;
   const remote = remoteSession;
   const activeSessionIdRef = useRef(session.id);
@@ -1008,6 +1009,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           blocks={stableBlocks}
           busy={sessionBusy}
           pendingQuestion={hasPendingQuestion}
+          questionPresented={hasPendingQuestion}
           deliveryUnconfirmed={stableSession.queuedMessages?.some(
             (message) => message.deliveryUnknown,
           )}
@@ -1112,6 +1114,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       noteCard={session.noteCard}
       handoffCard={session.handoffCard}
       question={session.pendingQuestion}
+      questionDraftScope={questionDraftScope ?? session.id}
       onQuoteRequestConsumed={acknowledgeQuote}
       onInboxCardDismiss={composerInboxCardDismiss}
       onNoteCardDismiss={composerNoteCardDismiss}
@@ -1373,20 +1376,17 @@ const LocalSessionPane = memo(function LocalSessionPane({
             />
           ) : null}
           {session.retryMessage && (session.busy || session.continuingElsewhere) ? (
-            <div
-              role="status"
-              className="shrink-0 border-b border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle) px-3 py-2 text-xs text-(--ui-tone-warning-fg)"
-            >
-              <strong>
-                {t(
-                  retryNotice.reconnecting
-                    ? "Reconnecting to {provider}"
-                    : "{provider} is retrying",
-                  { provider: HARNESS_TITLE[session.harness] },
-                )}
-              </strong>
-              {retryNotice.detail ? <> · {retryNotice.detail}</> : null}
-            </div>
+            <ProviderRetryNotice
+              key={session.id}
+              provider={HARNESS_TITLE[session.harness]}
+              message={session.retryMessage}
+              onStop={() => onStop(session.id)}
+              onRefresh={
+                session.continuingElsewhere && !session.busy && onRefreshAdoptedSession
+                  ? () => onRefreshAdoptedSession(session.id)
+                  : undefined
+              }
+            />
           ) : null}
           {session.rewindHistory?.length ? (
             <RewoundHistoryDisclosure
@@ -1448,6 +1448,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   modelSettings={session.modelSettings}
                   providerAccountId={session.providerAccountId}
                   pendingQuestion={!!session.pendingQuestion}
+                  questionBehavior={session.pendingQuestion?.behavior}
                   liveStatusInDock
                   backgroundTasks={session.backgroundTasks}
                   backgroundAgents={session.backgroundAgents}

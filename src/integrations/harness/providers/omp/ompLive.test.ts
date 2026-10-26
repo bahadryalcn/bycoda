@@ -745,6 +745,64 @@ describe("OMP live command inventories", () => {
 });
 
 describe("OMP workflow dialogs", () => {
+  it("honors provider cancellation without sending a late response", async () => {
+    const running = await started();
+    frame("omp-test", {
+      type: "extension_ui_request",
+      id: "retired",
+      method: "input",
+      title: "Instructions",
+    });
+    const question = events.find((event) => event.type === "question.asked")!;
+    frame("omp-test", { type: "extension_ui_request", id: "retired", method: "cancel" });
+    await vi.waitFor(() =>
+      expect(events).toContainEqual({
+        type: "question.resolved",
+        requestId: question.requestId,
+        decision: "cancelled",
+      }),
+    );
+    respondQuestion(OMP_FLAVOR, "omp-test", question.requestId, {
+      kind: "answered",
+      answers: {},
+      custom: { retired: "late" },
+    });
+    expect(
+      transport.requests.some((request) => request.command.type === "extension_ui_response"),
+    ).toBe(false);
+    frame("omp-test", { type: "prompt_result", id: running.request.id, agentInvoked: false });
+    await running.turn;
+  });
+
+  it("queues concurrent workflow questions and preserves the next request", async () => {
+    const running = await started();
+    for (const id of ["first", "second"])
+      frame("omp-test", {
+        type: "extension_ui_request",
+        id,
+        method: "input",
+        title: id,
+      });
+    expect(events.filter((event) => event.type === "question.asked")).toHaveLength(1);
+    const first = events.find((event) => event.type === "question.asked")!;
+    respondQuestion(OMP_FLAVOR, "omp-test", first.requestId, {
+      kind: "answered",
+      answers: {},
+      custom: { first: "saved" },
+    });
+    await vi.waitFor(() =>
+      expect(events.filter((event) => event.type === "question.asked")).toHaveLength(2),
+    );
+    const second = events.filter((event) => event.type === "question.asked")[1];
+    expect(second.questions[0].id).toBe("second");
+    respondQuestion(OMP_FLAVOR, "omp-test", second.requestId, { kind: "skipped" });
+    await vi.waitFor(() =>
+      expect(events.filter((event) => event.type === "question.resolved")).toHaveLength(2),
+    );
+    frame("omp-test", { type: "prompt_result", id: running.request.id, agentInvoked: false });
+    await running.turn;
+  });
+
   it("returns the actual selected option with its original text", async () => {
     const running = await started();
     frame("omp-test", {

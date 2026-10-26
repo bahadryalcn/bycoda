@@ -41,15 +41,9 @@ fn version_feed(provider: &str) -> Option<VersionFeed> {
 
 fn version_feed_for_installed(
     provider: &str,
-    installed_version: Option<&str>,
+    _installed_version: Option<&str>,
 ) -> Option<VersionFeed> {
-    // OpenCode 1's updater stays on its own package/install channel. Comparing
-    // it with V2 would offer a migration that a regular `upgrade` cannot do.
-    if provider == "opencode"
-        && installed_version.is_some_and(|version| version.trim().starts_with("1."))
-    {
-        return Some(VersionFeed::Npm("opencode-ai"));
-    }
+    // V1 is offered V2 as well: the updater performs the supported major migration.
     version_feed(provider)
 }
 
@@ -179,7 +173,7 @@ pub async fn harness_update(
             .then(|| resolved.as_deref().and_then(opencode_npm_prefix))
             .flatten()
             .map(|prefix| prefix.to_string_lossy().into_owned());
-        let mut args = if npm_prefix.is_some() {
+        let args = if npm_prefix.is_some() {
             vec![
                 "upgrade".to_string(),
                 "--method".to_string(),
@@ -188,32 +182,110 @@ pub async fn harness_update(
         } else {
             args
         };
-        if binary_provider == "opencode" {
-            if let Some(target) = target_version.as_deref() {
-                validate_update_target(target)?;
-                // V1's implicit latest lookup may point at V2. Update exactly
-                // the release checked and displayed by this window instead.
-                args.insert(1, target.to_string());
-            }
-        }
         // Updating with the machine's default prefix can install a second copy
         // while leaving the binary Bycoda actually uses unchanged.
         let env: Vec<_> = npm_prefix
             .as_deref()
             .map(|prefix| vec![("NPM_CONFIG_PREFIX", prefix)])
             .unwrap_or_default();
-        let output = exec_output_with_env(&command, &args, None, UPDATE_TIMEOUT, &env)?;
-        if output.status.success() {
-            return Ok(());
+        let execute = |args: &[String]| {
+            let output = exec_output_with_env(&command, args, None, UPDATE_TIMEOUT, &env)?;
+            if output.status.success() {
+                return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+            }
+            Err(format!(
+                "{binary_provider} update failed ({}):\n{}",
+                output.status,
+                update_failure(&output.stdout, &output.stderr)
+            ))
+        };
+        if binary_provider == "opencode" {
+            if let Some(target) = target_version.as_deref() {
+                validate_update_target(target)?;
+                let installed = execute(&["--version".into()])?;
+                if numeric_version(&installed)?.0 == 1 && numeric_version(target)?.0 >= 2 {
+                    // Upstream removes the V1 package. A package-internal override
+                    // would become invalid; require its stable launcher instead.
+                    let path = command.replace('\\', "/").to_ascii_lowercase();
+                    if path.contains("/node_modules/opencode-ai/") {
+                        return Err("OpenCode migration requires the stable opencode launcher path, not a file inside node_modules/opencode-ai. Update the binary path in Settings and retry.".into());
+                    }
+                }
+                return update_opencode(target, &args, &installed, || {
+                    let text = fetch_text(&format!("{REGISTRY_URL}/opencode-ai/latest"), "application/json")?;
+                    let body: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+                    latest_version(&body).ok_or_else(|| "No OpenCode V1 bootstrap version returned".into())
+                }, execute);
+            }
         }
-        Err(format!(
-            "{binary_provider} update failed ({}):\n{}",
-            output.status,
-            update_failure(&output.stdout, &output.stderr)
-        ))
+        execute(&args).map(|_| ())
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn numeric_version(text: &str) -> Result<(u64, u64, u64), String> {
+    text.split(|c: char| !c.is_ascii_digit() && c != '.')
+        .find_map(|part| {
+            let mut parts = part.split('.');
+            let version = (
+                parts.next()?.parse().ok()?,
+                parts.next()?.parse().ok()?,
+                parts.next()?.parse().ok()?,
+            );
+            parts.next().is_none().then_some(version)
+        })
+        .ok_or_else(|| format!("OpenCode reported an invalid version: {}", text.trim()))
+}
+
+/// V1 cannot install a V2 target with ordinary upgrade. Bootstrap the migration
+/// command if needed, then verify each stage: V1 sometimes exits zero on failure.
+fn update_opencode(
+    target: &str,
+    base_args: &[String],
+    installed: &str,
+    legacy_release: impl FnOnce() -> Result<String, String>,
+    mut execute: impl FnMut(&[String]) -> Result<String, String>,
+) -> Result<(), String> {
+    let target_version = numeric_version(target)?;
+    let mut version = numeric_version(installed)?;
+    // Another window may already have updated this CLI since the check.
+    if version >= target_version {
+        return Ok(());
+    }
+    let with_target = |target: &str| {
+        let mut args = base_args.to_vec();
+        args.insert(1, target.to_string());
+        args
+    };
+    if version.0 == 1 && target_version.0 >= 2 {
+        if version < (1, 19, 0) {
+            let bootstrap = legacy_release()?;
+            validate_update_target(&bootstrap)?;
+            let expected = numeric_version(&bootstrap)?;
+            if expected.0 != 1 || expected < (1, 19, 0) {
+                return Err("No OpenCode V1 release supporting migration is available".into());
+            }
+            execute(&with_target(&bootstrap))?;
+            version = numeric_version(&execute(&["--version".into()])?)?;
+            if version.0 != 1 || version < (1, 19, 0) {
+                return Err("OpenCode V1 bootstrap did not install a migration-capable version. Retry the update.".into());
+            }
+        }
+        let mut args = base_args.to_vec();
+        args.push("--major".into());
+        execute(&args)?;
+        version = numeric_version(&execute(&["--version".into()])?)?;
+        if version.0 < 2 {
+            return Err("OpenCode migration did not install V2. Check the installation permissions and retry.".into());
+        }
+        // --major installs latest and ignores target. Keep a newer V2; otherwise
+        // finish with the displayed target through V2's own updater.
+        if version >= target_version {
+            return Ok(());
+        }
+    }
+    execute(&with_target(target)).map(|_| ())
 }
 
 fn validate_update_target(target: &str) -> Result<(), String> {
@@ -325,11 +397,11 @@ mod tests {
     }
 
     #[test]
-    fn opencode_keeps_the_installed_major_release_channel() {
+    fn opencode_offers_v2_for_both_installed_major_versions() {
         for version in ["1.18.33", "1.19.0"] {
             assert_eq!(
                 version_feed_for_installed("opencode", Some(version)),
-                Some(VersionFeed::Npm("opencode-ai"))
+                Some(VersionFeed::Npm("@opencode/cli"))
             );
         }
         for version in [Some("2.1.4"), None] {
@@ -342,6 +414,116 @@ mod tests {
             version_feed_for_installed("codex", Some("1.0.0")),
             Some(VersionFeed::Npm("@openai/codex"))
         );
+    }
+
+    #[test]
+    fn migrates_old_v1_through_a_bootstrap_without_downgrading_newer_v2() {
+        let mut calls = Vec::new();
+        let mut versions = ["1.19.4", "2.1.5"].into_iter();
+        update_opencode(
+            "2.1.4",
+            &["upgrade".into(), "--method".into(), "bun".into()],
+            "1.18.33",
+            || Ok("1.19.4".into()),
+            |args| {
+                calls.push(args.to_vec());
+                Ok(if args == ["--version"] {
+                    versions.next().unwrap().into()
+                } else {
+                    String::new()
+                })
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            calls,
+            vec![
+                vec!["upgrade", "1.19.4", "--method", "bun"],
+                vec!["--version"],
+                vec!["upgrade", "--method", "bun", "--major"],
+                vec!["--version"],
+            ]
+        );
+    }
+
+    #[test]
+    fn migration_capable_v1_skips_bootstrap_and_finishes_an_older_v2() {
+        let mut calls = Vec::new();
+        update_opencode(
+            "2.1.4",
+            &["upgrade".into()],
+            "1.19.0",
+            || panic!("unnecessary bootstrap"),
+            |args| {
+                calls.push(args.to_vec());
+                Ok(if args == ["--version"] {
+                    "opencode v2.1.3".into()
+                } else {
+                    String::new()
+                })
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            calls,
+            vec![
+                vec!["upgrade", "--major"],
+                vec!["--version"],
+                vec!["upgrade", "2.1.4"]
+            ]
+        );
+    }
+
+    #[test]
+    fn v2_updates_use_the_pinned_target_without_major_migration() {
+        let mut calls = Vec::new();
+        update_opencode(
+            "2.1.4",
+            &["upgrade".into()],
+            "opencode v2.1.3",
+            || panic!("unnecessary bootstrap"),
+            |args| {
+                calls.push(args.to_vec());
+                Ok(String::new())
+            },
+        )
+        .unwrap();
+        assert_eq!(calls, vec![vec!["upgrade", "2.1.4"]]);
+    }
+
+    #[test]
+    fn stale_update_targets_do_not_downgrade_an_existing_v2() {
+        update_opencode(
+            "2.1.4",
+            &["upgrade".into()],
+            "opencode v2.1.5",
+            || panic!("unnecessary bootstrap"),
+            |_| panic!("a newer installed version must not be changed"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn migration_stops_when_bootstrap_or_major_update_silently_fails() {
+        for installed in ["1.18.33", "1.19.4"] {
+            let mut calls = Vec::new();
+            let result = update_opencode(
+                "2.1.4",
+                &["upgrade".into()],
+                installed,
+                || Ok("1.19.4".into()),
+                |args| {
+                    calls.push(args.to_vec());
+                    Ok(if args == ["--version"] {
+                        installed.into()
+                    } else {
+                        "Upgrade failed".into()
+                    })
+                },
+            );
+            assert!(result.is_err());
+            assert_eq!(calls.len(), 2);
+        }
     }
 
     #[test]

@@ -17,6 +17,6 @@ export default defineConfig({
     command: "node tests/browser/serve-tasks.mjs",
     url: "http://127.0.0.1:1438/tests/browser/tasks.html",
     timeout: 180_000,
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.BYCODA_TASKS_REUSE_SERVER === "1",
   },
 });

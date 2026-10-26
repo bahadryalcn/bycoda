@@ -2,6 +2,8 @@ import { useLayoutEffect, useState, type MutableRefObject } from "react";
 import { HarnessEventQueue } from "../../model/harnessFlush";
 import { TranscriptPool } from "../../../features/sessions/ui/TranscriptPool";
 import { applyHarnessEvents } from "../../../integrations/harness";
+import { discardQuestionDraft } from "../../../features/sessions/model/questionDrafts";
+import type { UserQuestionPrompt } from "../../../features/sessions/model/userQuestion";
 import { syncDockBadge } from "../../../features/notifications/model/dockBadge";
 import { leafIds, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
@@ -57,7 +59,35 @@ export function useHarnessEventQueue({
           const prev = sessionsRef.current;
           const next = prev.map((session) => {
             const events = batches.get(session.id);
-            return events ? applyHarnessEvents(session, events) : session;
+            if (events) {
+              const questions = new Map<number, UserQuestionPrompt>(
+                [
+                  ...(session.submittedQuestions ?? []),
+                  ...(session.pendingQuestion ? [session.pendingQuestion] : []),
+                ].map((question) => [question.requestId, question]),
+              );
+              for (const event of events) {
+                if (event.type === "question.asked") questions.set(event.requestId, event);
+              }
+              const next = applyHarnessEvents(session, events);
+              const retained = [
+                ...(next.submittedQuestions ?? []),
+                ...(next.pendingQuestion ? [next.pendingQuestion] : []),
+              ];
+              for (const question of questions.values()) {
+                if (
+                  !retained.some(
+                    (current) =>
+                      current.requestId === question.requestId &&
+                      current.callId === question.callId &&
+                      current.providerTurnId === question.providerTurnId,
+                  )
+                )
+                  discardQuestionDraft(session.id, question);
+              }
+              return next;
+            }
+            return session;
           });
           if (!next.some((session, index) => session !== prev[index])) return;
           sessionsRef.current = next;

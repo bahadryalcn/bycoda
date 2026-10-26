@@ -381,6 +381,64 @@ it("checks queued request authority after preceding admissions commit revocation
   expect(operation).not.toHaveBeenCalled();
 });
 
+it("prepares a scoped guard outside SQL ownership and rechecks revocation after preparation", async () => {
+  const { store } = await fixture();
+  const device = await store.issueDevice("prepared request");
+  const entered = gate(),
+    release = gate();
+  const check = vi.fn(() => store.authenticated(device.token));
+  const prepare = vi.fn(async () => {
+    expect(store.db.ownsScope).toBe(false);
+    entered.resolve();
+    await release.promise;
+    return check;
+  });
+  const operation = vi.fn(() => store.projects());
+  const work = store.db.withAuthorization({ prepare, check }, () => store.db.scope(operation));
+  const rejected = expect(work).rejects.toBeInstanceOf(RequestAuthorizationError);
+  await entered.promise;
+  try {
+    expect(await store.revokeDevice(device.id)).toBe(true);
+  } finally {
+    release.resolve();
+  }
+  await rejected;
+  expect(operation).not.toHaveBeenCalled();
+  expect(check).toHaveBeenCalledTimes(1);
+});
+
+it("never runs external guard preparation from an existing transaction owner", async () => {
+  const { store } = await fixture();
+  const prepare = vi.fn(async () => () => true);
+  const check = vi.fn(() => false);
+  await store.transaction(async () => {
+    await expect(
+      store.db.withAuthorization({ prepare, check }, () => store.db.checkAuthorization()),
+    ).rejects.toBeInstanceOf(RequestAuthorizationError);
+    expect(store.db.ownsScope).toBe(true);
+  });
+  expect(prepare).not.toHaveBeenCalled();
+  expect(check).toHaveBeenCalledTimes(1);
+});
+
+it("refreshes a prepared guard for an explicit check after external work", async () => {
+  const { store } = await fixture();
+  let generation = 0;
+  const check = vi.fn(() => false);
+  const prepare = vi.fn(async () => {
+    expect(store.db.ownsScope).toBe(false);
+    const prepared = generation;
+    return () => store.db.ownsScope && prepared === generation;
+  });
+  await store.db.withAuthorization({ prepare, check }, async () => {
+    await store.projects();
+    generation++;
+    await store.db.checkAuthorization();
+  });
+  expect(prepare).toHaveBeenCalledTimes(2);
+  expect(check).not.toHaveBeenCalled();
+});
+
 it("permits nested authentication reads and explicit authority checks without recursive admission", async () => {
   const { store } = await fixture();
   const device = await store.issueDevice("nested request");

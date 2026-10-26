@@ -202,18 +202,35 @@ it("shares close and joins accepted preparation before reporting a child-kill fa
 
 it("discovers Social MCP for a resolved desktop session and numeric child suffix", async () => {
   const backend = new HostChildBackend();
-  const sessionIdentity = vi.fn((id: string) => {
+  const issueSessionGrant = vi.fn(async (id: string) => {
     if (id !== "desktop-session") throw new Error("Unknown session");
-    return {};
+    return {
+      token: "private-social",
+      expiresAt: Date.now() + 1000,
+      scope: {
+        sessionId: id,
+        projectId: "project",
+        provider: "codex",
+        environmentId: "environment",
+      },
+    };
   });
-  backend.setSocialAccess({ sessionIdentity } as unknown as SocialService, "http://127.0.0.1:1234");
-  expect(
-    await backend.invoke("harness_social_bridge", { sessionId: "desktop-session#2" }),
-  ).toMatchObject({
-    mcpUrl: "http://127.0.0.1:1234/mcp/social",
-  });
-  expect(sessionIdentity).toHaveBeenCalledWith("desktop-session");
-  expect(await backend.invoke("harness_social_bridge", { sessionId: "unknown" })).toBeNull();
+  backend.setSocialAccess(
+    { issueSessionGrant } as unknown as SocialService,
+    "http://127.0.0.1:1234",
+  );
+  try {
+    const bridge = await backend.invoke<{ mcpUrl: string }>("harness_social_bridge", {
+      sessionId: "desktop-session#2",
+    });
+    expect(new URL(bridge.mcpUrl).hostname).toBe("127.0.0.1");
+    expect(new URL(bridge.mcpUrl).pathname).toBe("/mcp/social");
+    expect(new URL(bridge.mcpUrl).port).not.toBe("1234");
+    expect(issueSessionGrant).toHaveBeenCalledWith("desktop-session");
+    expect(await backend.invoke("harness_social_bridge", { sessionId: "unknown" })).toBeNull();
+  } finally {
+    await backend.close();
+  }
 });
 
 it("reads bounded task output tails and rejects mismatched task paths", async () => {

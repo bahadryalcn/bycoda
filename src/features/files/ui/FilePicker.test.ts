@@ -117,6 +117,7 @@ it("reports a failed refresh without hiding cached files and retries without los
   retry.focus();
   await act(async () => retry.click());
   expect(retry.getAttribute("aria-busy")).toBe("true");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain("File index unavailable");
   expect(document.activeElement).toBe(retry);
   expect(field.value).toBe("App");
   await act(async () => finish(projectFiles));

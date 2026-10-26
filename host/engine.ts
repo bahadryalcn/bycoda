@@ -27,7 +27,7 @@ import {
   planTurnPrompt,
 } from "../src/features/sessions/model/plan";
 import { changedBlocks, type BlockChanges } from "../src/features/sessions/model/blockChanges";
-import { resolveModel } from "../src/features/sessions/model/models";
+import { modelBelongsToHarness, resolveModel } from "../src/features/sessions/model/models";
 import {
   appendReadyHandoff,
   buildDeterministicHandoff,
@@ -109,6 +109,12 @@ import {
 // Streamed output is written in batches. Anything a user may need to act on
 // (approvals, questions, errors, completion) is written immediately.
 const FLUSH_MS = 120;
+function assertModelProvider(harness: RemoteProvider, model: string): void {
+  if (!modelBelongsToHarness(harness, model))
+    throw new Error(
+      `Model "${model}" does not belong to provider "${harness}". Select a matching provider and model.`,
+    );
+}
 const BATCHED = new Set<string>([
   "message.delta",
   "reasoning.delta",
@@ -819,8 +825,16 @@ export class HostEngine {
         const same =
           stale ||
           (session.title === current.session.title &&
+            session.harness === current.session.harness &&
             session.providerSessionId === current.session.providerSessionId &&
+            session.providerAccountId === current.session.providerAccountId &&
             session.model === current.session.model &&
+            JSON.stringify(session.modelSettings ?? {}) ===
+              JSON.stringify(current.session.modelSettings ?? {}) &&
+            session.runtimeMode === current.session.runtimeMode &&
+            session.pendingContextReplay === current.session.pendingContextReplay &&
+            JSON.stringify(session.pendingSwitch) ===
+              JSON.stringify(current.session.pendingSwitch) &&
             sameBlocks());
         // A remote turn or failure recorded here may be absent from a desktop copy
         // saved before it mirrored them. Newer is not enough to replace them; only
@@ -873,6 +887,7 @@ export class HostEngine {
         }
         const agreed =
           (accepted || verdict === "equal") && mine ? headOfDigests(mine) : current.desktop.base;
+        if (accepted) assertModelProvider(session.harness, session.model);
         const saved = await this.save(
           {
             ...current,
@@ -883,12 +898,19 @@ export class HostEngine {
                   session: {
                     ...current.session,
                     title: session.title,
+                    harness: session.harness,
                     model: session.model,
                     modelSettings: session.modelSettings,
                     runtimeMode: session.runtimeMode,
                     blocks: session.blocks,
                     providerSessionId: session.providerSessionId,
                     providerAccountId: session.providerAccountId,
+                    pendingSwitch: session.pendingSwitch,
+                    pendingContextReplay: session.pendingContextReplay,
+                    ...(session.harness !== current.session.harness ||
+                    session.model !== current.session.model
+                      ? { context: session.context, usageLimit: undefined }
+                      : {}),
                   },
                 }),
             desktop: {
@@ -905,13 +927,23 @@ export class HostEngine {
           },
           { type: accepted ? "desktopRefreshed" : same ? "desktopSeen" : "desktopDiverged" },
         );
-        if (accepted && saved.session.providerSessionId)
-          this.provider(saved.session.harness).bind(
-            id,
-            saved.session.providerSessionId,
-            saved.session.cwd,
-            saved.session.providerAccountId,
-          );
+        if (accepted) {
+          // A desktop provider switch must move its resume identity with its
+          // adapter. Otherwise the next mirror sees a third, mixed identity.
+          if (
+            current.session.harness !== saved.session.harness ||
+            current.session.providerSessionId !== saved.session.providerSessionId ||
+            current.session.providerAccountId !== saved.session.providerAccountId
+          )
+            await this.provider(current.session.harness).stop(id);
+          if (saved.session.providerSessionId)
+            this.provider(saved.session.harness).bind(
+              id,
+              saved.session.providerSessionId,
+              saved.session.cwd,
+              saved.session.providerAccountId,
+            );
+        }
         return saved;
       }),
     );
@@ -1096,6 +1128,7 @@ export class HostEngine {
           const { receipt, saved } = await this.store.transaction(async () => {
             let value: HostSession;
             if (command.type === "create") {
+              assertModelProvider(command.harness, command.model);
               const project = await this.store.project(command.projectId);
               if (this.switchingProjects.has(project.id))
                 throw new Error("Wait for the branch switch to finish");
@@ -1151,6 +1184,7 @@ export class HostEngine {
                 if (value.status === "running")
                   throw new Error("Wait for the current turn before changing settings");
                 const harness = command.harness ?? value.session.harness;
+                assertModelProvider(harness, command.model);
                 this.provider(harness);
                 const plan = planComposerSwitch(value.session, harness);
                 const changedHarness = value.session.harness !== harness;
@@ -1266,6 +1300,9 @@ export class HostEngine {
                     command.line,
                   );
               } else if (command.type === "send" || command.type === "compact") {
+                // Legacy storage may contain a mixed provider/model identity.
+                // Refuse it before consuming handoff/replay or dispatching a turn.
+                assertModelProvider(value.session.harness, value.session.model);
                 if (value.status === "running") throw new Error("This session is already running");
                 if (command.type === "compact" && !provider.compact)
                   throw new Error("Context compaction is unavailable for this provider");
@@ -1391,6 +1428,7 @@ export class HostEngine {
                     ...current,
                     busy: true,
                     pendingQuestion: undefined,
+                    submittedQuestions: undefined,
                     title:
                       firstTurn && placeholderTitle
                         ? titleFromPrompt(command.text, value.session.harness, attachments)
@@ -1553,6 +1591,7 @@ export class HostEngine {
                       });
                   };
                 } else if (command.type === "steer") {
+                  assertModelProvider(value.session.harness, value.session.model);
                   const active = this.running.get(command.sessionId);
                   if (!provider.steer) throw new Error("This provider cannot steer an active turn");
                   if (!active || active.cancelled || active.ending)
@@ -1669,17 +1708,28 @@ export class HostEngine {
                 } else {
                   if (value.session.pendingQuestion?.requestId !== command.requestId)
                     throw new Error("Question is already resolved");
+                  if (["sending", "queued", "unknown"].includes(value.session.pendingQuestion.delivery ?? ""))
+                    throw new Error("Question answer is already pending delivery");
                   value = {
                     ...value,
                     session: applyHarnessEvent(value.session, {
-                      type: "question.resolved",
+                      type: "question.updated",
                       requestId: command.requestId,
-                      decision: command.reply.kind,
-                      ...(command.reply.kind === "answered" ? { reply: command.reply } : {}),
+                      delivery: "sending",
                     }),
                   };
-                  effect = () =>
-                    provider.answer(command.sessionId, command.requestId, command.reply);
+                  effect = () => {
+                    try {
+                      provider.answer(command.sessionId, command.requestId, command.reply);
+                    } catch {
+                      this.event(command.sessionId, command.runId, {
+                        type: "question.updated",
+                        requestId: command.requestId,
+                        delivery: "unknown",
+                        error: "Answer delivery could not be confirmed. Check the connection before continuing.",
+                      });
+                    }
+                  };
                 }
               }
             }
@@ -2374,7 +2424,7 @@ export class HostEngine {
     endedAt = Date.now(),
     notice: "error" | "interrupt" = "interrupt",
   ): HostSession {
-    const stopped = stopStreaming(value.session, endedAt);
+    const stopped = stopStreaming(value.session, endedAt, notice === "error" && !!message);
     const session = {
       ...stopped,
       blocks: stopped.blocks.map((block) =>

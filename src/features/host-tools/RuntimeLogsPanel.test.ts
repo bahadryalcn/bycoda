@@ -88,9 +88,14 @@ const result = (events = entries, cursor = 4): RuntimeLogSnapshot => ({
   sources: [browser, server, external],
 });
 const button = (label: string) =>
-  [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+  // Filters and website capture controls are rendered through shared Popover portals.
+  [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent === label || node.getAttribute("aria-label") === label,
   )!;
+const openMonitors = async () => {
+  if (!document.querySelector('[role="dialog"][aria-label="Website monitors"]'))
+    await act(async () => button("Website monitors").click());
+};
 const menuAction = async (label: string) => {
   await act(async () => button("More actions").click());
   await act(async () =>
@@ -117,7 +122,7 @@ const mount = async (
   if (start && button("Read logs")) await act(async () => button("Read logs").click());
 };
 const edit = (label: string, value: string) => {
-  const input = container.querySelector<HTMLInputElement>('input[aria-label="' + label + '"]')!;
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="' + label + '"]')!;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
 };
@@ -248,7 +253,7 @@ it("sends the retained stream generation and replaces equal-cursor history after
   expect(container.textContent).not.toContain("Failed to fetch account");
 });
 
-it("starts live reads on mount and exposes capture and compact filters without opening a browser", async () => {
+it("starts live reads with a source chooser and keeps monitor setup and filters behind compact controls", async () => {
   await mount({}, false);
   expect(hostToolRequest).toHaveBeenCalledWith(
     "/repo",
@@ -258,13 +263,17 @@ it("starts live reads on mount and exposes capture and compact filters without o
     { kind: "project" },
   );
   expect(container.textContent).toContain("Live");
-  expect(container.querySelector(".runtime-logs-monitor-setup")!.tagName).toBe("SECTION");
+  expect(container.querySelector(".runtime-logs-heading")).toBeNull();
+  expect(document.querySelector(".runtime-logs-monitor-setup")).toBeNull();
+  expect(container.querySelector('button[aria-label^="Log source:"]')).not.toBeNull();
   expect(container.querySelector('[role="dialog"]')).toBeNull();
   expect(container.querySelector(".runtime-logs-options")).toBeNull();
   await act(async () => button("Filters").click());
   expect(document.querySelector('[role="dialog"][aria-label="Log filters"]')).not.toBeNull();
   expect(document.querySelector('button[aria-label="Log level: All levels"]')).not.toBeNull();
-  await act(async () => button("Filters").click());
+  await openMonitors();
+  expect(document.querySelector(".runtime-logs-monitor-setup")!.tagName).toBe("SECTION");
+  expect(document.querySelector('[role="dialog"][aria-label="Log filters"]')).toBeNull();
   expect(hostFeatureRequest).toHaveBeenCalledWith(
     "/repo",
     "runtime.logs.monitors",
@@ -291,16 +300,17 @@ it("stops automatic retries after a missing session or disconnected host error",
 
 it("explains an unavailable website while retaining technical details and the entered URL", async () => {
   await mount({}, false);
+  await openMonitors();
   vi.mocked(hostFeatureRequest).mockRejectedValueOnce(
     new Error("page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3000/"),
   );
-  const input = container.querySelector<HTMLInputElement>(".runtime-logs-monitor-setup input")!;
+  const input = document.querySelector<HTMLInputElement>(".runtime-logs-monitor-setup input")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "3000");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () =>
-    container
+    document
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
@@ -317,18 +327,19 @@ it("explains an unavailable website while retaining technical details and the en
 
 it("starts independent URL monitors explicitly and displays their target and stop action", async () => {
   await mount({}, false);
+  await openMonitors();
   vi.mocked(hostFeatureRequest)
     .mockResolvedValueOnce({ id: "watch", url: "http://localhost:5173/" })
     .mockResolvedValueOnce([
       { id: "watch", url: "http://localhost:5173/", sourceId: "browser-one" },
     ]);
-  const input = container.querySelector<HTMLInputElement>(".runtime-logs-monitor-setup input")!;
+  const input = document.querySelector<HTMLInputElement>(".runtime-logs-monitor-setup input")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "5173");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () =>
-    container
+    document
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
@@ -338,18 +349,19 @@ it("starts independent URL monitors explicitly and displays their target and sto
     "runtimeLogs.monitors.start",
     { url: "5173" },
   );
-  expect(container.textContent).toContain("http://localhost:5173/");
+  expect(document.body.textContent).toContain("http://localhost:5173/");
   expect(
     container.querySelector('button[aria-label="Filters"]')?.getAttribute("data-selected"),
   ).not.toBe("true");
   expect(rows().some((row) => row.textContent?.includes("Cache miss"))).toBe(true);
   await act(async () =>
-    container.querySelector<HTMLButtonElement>(".runtime-logs-monitor-name")!.click(),
+    document.querySelector<HTMLButtonElement>(".runtime-logs-monitor-name")!.click(),
   );
   await act(async () => button("Filters").click());
   expect(
     document.querySelector('button[aria-label^="Log source:"]')?.getAttribute("aria-label"),
   ).toBe("Log source: Preview");
+  await openMonitors();
   vi.mocked(hostFeatureRequest).mockResolvedValueOnce({ stopped: true }).mockResolvedValueOnce([]);
   await act(async () => button("Stop monitor").click());
   expect(hostFeatureRequest).toHaveBeenCalledWith(
@@ -417,7 +429,10 @@ it("adds selected grouped errors as an untrusted draft only after an explicit cl
         .click(),
     );
     expect(container.textContent).toContain("2 selected logs");
-    await act(async () => button("Add to conversation").click());
+    await act(async () => {
+      button("Add to conversation").click();
+      button("Add to conversation").click();
+    });
     expect(receive).toHaveBeenCalledOnce();
     const draft = receive.mock.calls[0][0];
     const payload = JSON.parse(draft.slice(draft.indexOf("{")));
@@ -458,7 +473,10 @@ it("serializes polling and discards a late response from a previously selected c
   await mount();
   await act(async () => vi.advanceTimersByTimeAsync(9_000));
   expect(hostToolRequest).toHaveBeenCalledOnce();
-  expect(button("Refresh").disabled).toBe(true);
+  expect(button("Refresh").getAttribute("aria-disabled")).toBe("true");
+  expect(button("Refresh").getAttribute("aria-busy")).toBe("true");
+  await act(async () => button("Refresh").click());
+  expect(hostToolRequest).toHaveBeenCalledOnce();
   vi.mocked(hostToolRequest).mockResolvedValueOnce(
     result([{ ...base, message: "New computer event" }], 1),
   );
@@ -585,16 +603,37 @@ it("loads existing monitors and ignores a late inventory after a new capture sta
     }),
   );
   await mount();
+  await openMonitors();
   vi.mocked(hostFeatureRequest)
     .mockResolvedValueOnce({ id: "new" })
     .mockResolvedValueOnce([{ id: "new", url: "http://localhost:3000/", sourceId: "browser-one" }]);
   await act(async () => edit("Website port or URL", "3000"));
   await act(async () =>
-    container
+    document
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
   await act(async () => release([]));
-  expect(container.textContent).toContain("http://localhost:3000/");
+  expect(document.body.textContent).toContain("http://localhost:3000/");
   expect(button("Stop monitor")).toBeDefined();
+});
+
+it("keeps an unfinished monitor URL while its popover is closed and limits capture controls to the project host", async () => {
+  await mount();
+  await openMonitors();
+  await act(async () => edit("Website port or URL", "http://localhost:3000/unfinished"));
+  await act(async () => button("Website monitors").click());
+  expect(document.querySelector('[role="dialog"][aria-label="Website monitors"]')).toBeNull();
+  await openMonitors();
+  expect(
+    document.querySelector<HTMLInputElement>('input[aria-label="Website port or URL"]')!.value,
+  ).toBe("http://localhost:3000/unfinished");
+  expect(
+    vi
+      .mocked(hostFeatureRequest)
+      .mock.calls.every((call) => call[2] === "runtimeLogs.monitors.list"),
+  ).toBe(true);
+  await mount({ target: { kind: "machine", machineId: "remote" } });
+  expect(button("Website monitors")).toBeUndefined();
+  expect(document.querySelector(".runtime-logs-monitor-setup")).toBeNull();
 });

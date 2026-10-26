@@ -55,6 +55,10 @@ import { cleanupTaskWorktree, sameHostPath } from "./task-worktree-cleanup";
 import { resolve } from "node:path";
 import { parseTaskWorkspace } from "../src/features/tasks/model/taskWorkspace";
 import type { HostGoal } from "../src/features/tasks/model/hostGoals";
+import type {
+  SprintSourceEvent,
+  SprintTaskSnapshot,
+} from "../src/features/tasks/model/hostSprints";
 import { HostLimits } from "./limits";
 import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
 import { HostTaskBudgets } from "./task-budgets";
@@ -645,6 +649,37 @@ export class HostTasks {
         WHERE json_extract(value, '$.status')='done' AND json_extract(value, '$.merged')=1
           AND (json_extract(value, '$.worktreeCwd') IS NOT NULL OR json_array_length(value, '$.historyRecovery')>0);
     `);
+        // SQLite owns the journal so every writer (including recovery and DELETE)
+        // commits the task change and its history together. Do not journal prompts,
+        // credentials or session output: planning only needs this compact projection.
+        await store.db.exec(`
+          CREATE TABLE IF NOT EXISTS task_history_meta (id INTEGER PRIMARY KEY CHECK(id=1), available_from INTEGER NOT NULL);
+          CREATE TABLE IF NOT EXISTS task_history (sequence INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, task_id TEXT NOT NULL, status TEXT NOT NULL, effective_at INTEGER NOT NULL, deleted INTEGER NOT NULL, task TEXT NOT NULL);
+          CREATE TRIGGER IF NOT EXISTS task_history_insert AFTER INSERT ON tasks BEGIN
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+              json_extract(NEW.value,'$.projectId'),NEW.id,json_extract(NEW.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),0,
+              json_object('id',NEW.id,'projectId',json_extract(NEW.value,'$.projectId'),'title',json_extract(NEW.value,'$.title'),'status',json_extract(NEW.value,'$.status'),'updatedAt',json_extract(NEW.value,'$.updatedAt'),'goalId',json_extract(NEW.value,'$.goalId')));
+          END;
+          CREATE TRIGGER IF NOT EXISTS task_history_update AFTER UPDATE ON tasks BEGIN
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+              json_extract(NEW.value,'$.projectId'),NEW.id,json_extract(NEW.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),0,
+              json_object('id',NEW.id,'projectId',json_extract(NEW.value,'$.projectId'),'title',json_extract(NEW.value,'$.title'),'status',json_extract(NEW.value,'$.status'),'updatedAt',json_extract(NEW.value,'$.updatedAt'),'goalId',json_extract(NEW.value,'$.goalId')));
+          END;
+          CREATE TRIGGER IF NOT EXISTS task_history_transfer BEFORE UPDATE ON tasks
+          WHEN json_extract(OLD.value,'$.projectId') IS NOT json_extract(NEW.value,'$.projectId') BEGIN
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+              json_extract(OLD.value,'$.projectId'),OLD.id,json_extract(OLD.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),1,
+              json_object('id',OLD.id,'projectId',json_extract(OLD.value,'$.projectId'),'title',json_extract(OLD.value,'$.title'),'status',json_extract(OLD.value,'$.status'),'updatedAt',json_extract(OLD.value,'$.updatedAt'),'goalId',json_extract(OLD.value,'$.goalId')));
+          END;
+          CREATE TRIGGER IF NOT EXISTS task_history_delete AFTER DELETE ON tasks BEGIN
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+              json_extract(OLD.value,'$.projectId'),OLD.id,json_extract(OLD.value,'$.status'),CAST(unixepoch('subsec')*1000 AS INTEGER),1,
+              json_object('id',OLD.id,'projectId',json_extract(OLD.value,'$.projectId'),'title',json_extract(OLD.value,'$.title'),'status',json_extract(OLD.value,'$.status'),'updatedAt',json_extract(OLD.value,'$.updatedAt'),'goalId',json_extract(OLD.value,'$.goalId')));
+          END;
+        `);
+        await store.db
+          .prepare("INSERT OR IGNORE INTO task_history_meta VALUES (1, ?)")
+          .run(this.now());
         const legacyRuns = await store.db
           .prepare(`SELECT value FROM tasks WHERE
       (json_extract(value, '$.startedAt') IS NOT NULL OR json_extract(value, '$.sessionId') IS NOT NULL)
@@ -826,6 +861,82 @@ export class HostTasks {
     });
   }
   /** Oldest first. */
+  async snapshotWithCursor(): Promise<{
+    tasks: SprintTaskSnapshot[];
+    cursor: number;
+    historyAvailableFrom: number;
+  }> {
+    await this.ready;
+    return this.store.transaction(async () => {
+      const rows = await this.store.db
+        .prepare(
+          "SELECT id, json_extract(value,'$.projectId') AS projectId, json_extract(value,'$.title') AS title, json_extract(value,'$.status') AS status, json_extract(value,'$.updatedAt') AS updatedAt, json_extract(value,'$.goalId') AS goalId FROM tasks ORDER BY id",
+        )
+        .all();
+      const watermark = await this.store.db
+        .prepare("SELECT coalesce(max(sequence),0) AS cursor FROM task_history")
+        .get();
+      const meta = await this.store.db
+        .prepare("SELECT available_from FROM task_history_meta WHERE id=1")
+        .get();
+      return {
+        tasks: rows.map(({ goalId, ...task }) => ({
+          ...task,
+          ...(typeof goalId === "string" ? { goalId } : {}),
+        })) as SprintTaskSnapshot[],
+        cursor: Number(watermark!.cursor),
+        historyAvailableFrom: Number(meta!.available_from),
+      };
+    });
+  }
+  async events(
+    after: number,
+    limit = 500,
+  ): Promise<{
+    events: SprintSourceEvent[];
+    cursor: number;
+    hasMore: boolean;
+    historyAvailableFrom: number;
+  }> {
+    await this.ready;
+    if (!Number.isSafeInteger(after) || after < 0) throw new Error("Invalid task history cursor.");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000)
+      throw new Error("Task history page size must be between 1 and 1000.");
+    return this.store.transaction(async () => {
+      const watermark = await this.store.db
+        .prepare("SELECT coalesce(max(sequence),0) AS cursor FROM task_history")
+        .get();
+      if (after > Number(watermark!.cursor))
+        throw new Error(
+          "Task history cursor is ahead of this source. Reconnect the original environment.",
+        );
+      const rows = await this.store.db
+        .prepare("SELECT * FROM task_history WHERE sequence>? ORDER BY sequence LIMIT ?")
+        .all(after, limit + 1);
+      const events: SprintSourceEvent[] = rows.slice(0, limit).map((row) => ({
+        sequence: Number(row.sequence),
+        projectId: String(row.project_id),
+        taskId: String(row.task_id),
+        status: row.status,
+        effectiveAt: Number(row.effective_at),
+        deleted: row.deleted === 1,
+        task: (() => {
+          const task = JSON.parse(String(row.task));
+          if (task.goalId === null) delete task.goalId;
+          return task as SprintTaskSnapshot;
+        })(),
+      }));
+      const meta = await this.store.db
+        .prepare("SELECT available_from FROM task_history_meta WHERE id=1")
+        .get();
+      return {
+        events,
+        cursor: events.at(-1)?.sequence ?? after,
+        hasMore: rows.length > limit,
+        historyAvailableFrom: Number(meta!.available_from),
+      };
+    });
+  }
   async list(projectId?: string): Promise<HostTask[]> {
     await this.ready;
 

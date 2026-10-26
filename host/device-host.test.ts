@@ -15,21 +15,19 @@ describe("device boundaries", () => {
   it("captures iOS through an owned native screenshot file without a healthy hub", async () => {
     const directory = await mkdtemp(join(tmpdir(), "bycoda-native-capture-"));
     const host = new DeviceHost(directory, { platform: "darwin", env: {} });
-    const list = vi
-      .spyOn(host, "list")
-      .mockResolvedValue({
-        devices: [
-          {
-            id: "sim",
-            name: "iPhone",
-            platform: "ios",
-            version: "27",
-            booted: true,
-            physical: false,
-          },
-        ],
-        errors: ["Hub stopped"],
-      });
+    const list = vi.spyOn(host, "list").mockResolvedValue({
+      devices: [
+        {
+          id: "sim",
+          name: "iPhone",
+          platform: "ios",
+          version: "27",
+          booted: true,
+          physical: false,
+        },
+      ],
+      errors: ["Hub stopped"],
+    });
     const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
     const command = vi
       .spyOn(deviceProcesses, "deviceCommand")
@@ -319,6 +317,165 @@ describe("device boundaries", () => {
       command.mockRestore();
       fetch.mockRestore();
       status.mockRestore();
+    }
+  });
+  it("keeps slow native results visible while resolving selected devices authoritatively", async () => {
+    vi.useFakeTimers();
+    const host = new DeviceHost("/nonexistent-bycoda-device-cache", {
+      env: { ANDROID_HOME: "/existing-sdk" },
+      platform: "darwin",
+    });
+    Object.assign(host, { origin: "http://127.0.0.1:12345" });
+    const status = vi.spyOn(host, "status").mockResolvedValue({
+      running: true,
+      installed: true,
+      agentInstalled: false,
+      platform: "darwin",
+      platforms: [{ platform: "ios", available: true }],
+    });
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({}));
+    let finishNative!: (value: string) => void;
+    let native = new Promise<string>((resolve) => {
+      finishNative = resolve;
+    });
+    const command = vi
+      .spyOn(deviceProcesses, "deviceCommand")
+      .mockImplementation(async (_exe, args) =>
+        args[0] === "simctl" ? native : "List of devices attached\nphone\tdevice model:Galaxy\n",
+      );
+    const simulator = JSON.stringify({
+      devices: {
+        "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+          { udid: "sim", name: "iPhone", state: "Booted", isAvailable: true },
+        ],
+      },
+    });
+    try {
+      const listed = host.list();
+      await vi.advanceTimersByTimeAsync(100);
+      expect((await listed).devices.map((device) => device.id)).toEqual(["phone"]);
+      let settled = false;
+      const selected = host.preflight("sim").then((result) => {
+        settled = true;
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(settled).toBe(false);
+      finishNative(simulator);
+      expect((await selected).device).toMatchObject({ id: "sim", booted: true });
+      expect((await host.preflight("missing")).checks.device).toBe(false);
+      // The Devices UI polls after cache expiry. Fast ADB must not hide iOS
+      // indefinitely when native discovery completes between those polls.
+      for (let refresh = 0; refresh < 2; refresh++) {
+        await vi.advanceTimersByTimeAsync(1_001);
+        native = new Promise<string>((resolve) => {
+          finishNative = resolve;
+        });
+        const refreshing = host.list();
+        await vi.advanceTimersByTimeAsync(100);
+        const inventory = await refreshing;
+        expect(inventory.devices.map((device) => device.id)).toEqual(["sim", "phone"]);
+        expect(inventory.errors).toContain(
+          "Native device discovery is still running; refresh to include its results.",
+        );
+        finishNative(simulator);
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      // A known native target does not depend on a slow optional hub refresh.
+      await vi.advanceTimersByTimeAsync(1_001);
+      let finishHub!: (response: Response) => void;
+      fetch.mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          finishHub = resolve;
+        }),
+      );
+      settled = false;
+      const nativeOnly = host.preflight("sim").then((result) => {
+        settled = true;
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(settled).toBe(true);
+      expect((await nativeOnly).checks.device).toBe(true);
+      finishHub(Response.json({}));
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1_001);
+      native = new Promise<string>((resolve) => {
+        finishNative = resolve;
+      });
+      settled = false;
+      const removed = host.action("sim", { type: "snapshot" }).then(
+        () => "unexpected action",
+        (error: Error) => {
+          settled = true;
+          return error.message;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      expect(settled).toBe(false);
+      finishNative(JSON.stringify({ devices: {} }));
+      expect(await removed).toContain("Device is no longer available");
+      expect((await host.list()).devices.map((device) => device.id)).toEqual(["phone"]);
+      expect((await host.preflight("sim")).checks.device).toBe(false);
+    } finally {
+      command.mockRestore();
+      fetch.mockRestore();
+      status.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+  it("reconciles a fast hub target with authoritative native absence before selection", async () => {
+    vi.useFakeTimers();
+    const host = new DeviceHost("/nonexistent-bycoda-device-cache", {
+      env: {},
+      platform: "darwin",
+    });
+    Object.assign(host, { origin: "http://127.0.0.1:12345" });
+    const status = vi.spyOn(host, "status").mockResolvedValue({
+      running: true,
+      installed: true,
+      agentInstalled: false,
+      platform: "darwin",
+      platforms: [{ platform: "ios", available: true }],
+    });
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        simulators: [{ id: "sim", name: "iPhone", platform: "ios", booted: true, physical: false }],
+      }),
+    );
+    let finishNative!: (value: string) => void;
+    const command = vi.spyOn(deviceProcesses, "deviceCommand").mockReturnValue(
+      new Promise<string>((resolve) => {
+        finishNative = resolve;
+      }),
+    );
+    const installed = vi
+      .spyOn(host as unknown as { installed: () => Promise<boolean> }, "installed")
+      .mockResolvedValue(false);
+    try {
+      let preflightSettled = false;
+      let actionSettled = false;
+      const selected = host.preflight("sim").then((result) => {
+        preflightSettled = true;
+        return result;
+      });
+      const action = host.action("sim", { type: "snapshot" }).catch((error: Error) => {
+        actionSettled = true;
+        return error.message;
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(preflightSettled).toBe(false);
+      expect(actionSettled).toBe(false);
+      finishNative(JSON.stringify({ devices: {} }));
+      expect((await selected).checks.device).toBe(false);
+      expect(await action).toContain("Device is no longer available");
+      expect(installed).not.toHaveBeenCalled();
+    } finally {
+      command.mockRestore();
+      fetch.mockRestore();
+      status.mockRestore();
+      installed.mockRestore();
+      vi.useRealTimers();
     }
   });
   it("discovers Windows AVDs through native executables without avdmanager.bat", async () => {

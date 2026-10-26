@@ -59,6 +59,8 @@ describe("Sosyal OAuth güven sınırı", () => {
       const s = await fixture(platform);
       const scope =
         platform === "tiktok" ? "user.info.basic,video.publish" : "snapchat-profile-api";
+      const profileId =
+        platform === "snapchat" ? "00000000-0000-4000-8000-000000000001" : "profile-1";
       const fetcher = vi.fn(async (raw: unknown, options?: RequestInit) => {
         const url = String(raw);
         if (url.includes("token")) {
@@ -79,7 +81,10 @@ describe("Sosyal OAuth güven sınırı", () => {
                 data: { user: { open_id: "profile-1", display_name: "Creator" } },
                 error: { code: "ok" },
               }
-            : { public_profile: { id: "profile-1", display_name: "Creator" } },
+            : {
+                request_status: "SUCCESS",
+                public_profile: { id: profileId, display_name: "Creator" },
+              },
         );
       });
       const oauth = new SocialOAuth(s.social, { [platform]: s.config }, fetcher);
@@ -91,12 +96,12 @@ describe("Sosyal OAuth güven sınırı", () => {
       );
       expect(s.tokens.size).toBe(0);
       expect((await oauth.status(owner, s.account.id)).candidates).toEqual([
-        { id: "profile-1", name: "Creator" },
+        { id: profileId, name: "Creator" },
       ]);
-      const connected = await oauth.select(owner, s.account.id, "profile-1");
+      const connected = await oauth.select(owner, s.account.id, profileId);
       expect(connected).toMatchObject({
         connected: true,
-        platformId: "profile-1",
+        platformId: profileId,
         scopes: scope.split(","),
       });
       expect(JSON.stringify(connected)).not.toContain("secret");
@@ -106,6 +111,35 @@ describe("Sosyal OAuth güven sınırı", () => {
           new URLSearchParams({ state: auth.searchParams.get("state")!, code: "code" }),
         ),
       ).rejects.toThrow("state");
+    },
+  );
+  it.each([
+    { request_status: "PARTIAL", public_profile: { id: "00000000-0000-4000-8000-000000000001" } },
+    { request_status: "SUCCESS", public_profile: { id: "browser-handle" } },
+    { request_status: "SUCCESS", public_profile: {} },
+  ])(
+    "rejects unverified Snapchat API identity before offering an account candidate",
+    async (profile) => {
+      const s = await fixture("snapchat");
+      const fetcher = vi.fn(async (raw: unknown) =>
+        String(raw).includes("token")
+          ? Response.json({
+              access_token: "synthetic-secret",
+              expires_in: 3600,
+              scope: "snapchat-profile-api",
+            })
+          : Response.json(profile),
+      );
+      const oauth = new SocialOAuth(s.social, { snapchat: s.config }, fetcher);
+      const auth = new URL((await oauth.begin(owner, s.account.id)).url);
+      await expect(
+        oauth.callback(
+          "snapchat",
+          new URLSearchParams({ state: auth.searchParams.get("state")!, code: "synthetic-code" }),
+        ),
+      ).rejects.toThrow("OAuth verification failed");
+      expect((await oauth.status(owner, s.account.id)).candidates ?? []).toEqual([]);
+      expect(s.tokens.size).toBe(0);
     },
   );
   it("verifies a host-configured Telegram bot, keeps its existing webhook, and denies session administration", async () => {
@@ -226,6 +260,288 @@ describe("Sosyal OAuth güven sınırı", () => {
     expect(s.tokens.size).toBe(0);
     expect(JSON.stringify(await oauth.status(owner, s.account.id))).not.toContain(
       "synthetic-secret",
+    );
+  });
+  it("exchanges an Instagram Login token for a long-lived token before identity selection", async () => {
+    const s = await fixture("instagram"),
+      now = 123_000;
+    const fetcher = vi.fn(async (raw: string | URL | Request, options?: RequestInit) => {
+      const url = new URL(String(raw));
+      if (url.hostname === "api.instagram.com")
+        return Response.json({
+          access_token: "synthetic-short",
+          user_id: "ig123",
+          expires_in: 3600,
+          permissions: ["instagram_business_basic", "instagram_business_content_publish"],
+        });
+      if (url.pathname === "/access_token") {
+        expect(options?.method).toBe("GET");
+        expect(options?.redirect).toBe("error");
+        expect(options?.cache).toBe("no-store");
+        expect(url.searchParams.get("grant_type")).toBe("ig_exchange_token");
+        expect(url.searchParams.get("access_token")).toBe("synthetic-short");
+        expect(url.searchParams.get("client_secret")).toBe(s.config.clientSecret);
+        return Response.json({
+          access_token: "synthetic-long",
+          token_type: "bearer",
+          expires_in: 5_184_000,
+        });
+      }
+      expect(options?.headers).toMatchObject({ Authorization: "Bearer synthetic-long" });
+      return Response.json({ user_id: "ig123", username: "verified", account_type: "BUSINESS" });
+    });
+    const oauth = new SocialOAuth(s.social, { instagram: s.config }, fetcher, () => now);
+    const state = new URL((await oauth.begin(owner, s.account.id)).url).searchParams.get("state")!;
+    await oauth.callback("instagram", new URLSearchParams({ state, code: "code" }));
+    expect(s.tokens.size).toBe(0);
+    expect(JSON.stringify(await oauth.status(owner, s.account.id))).not.toContain("synthetic-long");
+    const connected = await oauth.select(owner, s.account.id, "ig123");
+    expect(connected.instagramAccountType).toBe("BUSINESS");
+    expect(s.tokens.get(connected.id)).toEqual({
+      accessToken: "synthetic-long",
+      expiresAt: now + 5_184_000_000,
+    });
+    expect(connected.scopes).toEqual([
+      "instagram_business_basic",
+      "instagram_business_content_publish",
+    ]);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+  it.each(["BUSINESS", "MEDIA_CREATOR", "CREATOR"] as const)(
+    "persists verified %s metadata and clears it when reconnect verification omits the type",
+    async (accountType) => {
+      const s = await fixture("instagram");
+      let verifiedType: string | undefined = accountType;
+      const fetcher = vi.fn(async (raw: string | URL | Request) => {
+        const url = new URL(String(raw));
+        if (url.hostname === "api.instagram.com")
+          return Response.json({
+            access_token: "short",
+            user_id: "ig123",
+            permissions: ["instagram_business_basic"],
+          });
+        if (url.pathname === "/access_token")
+          return Response.json({ access_token: "long", expires_in: 5_184_000 });
+        return Response.json({
+          user_id: "ig123",
+          username: "verified",
+          account_type: verifiedType,
+        });
+      });
+      const oauth = new SocialOAuth(s.social, { instagram: s.config }, fetcher);
+      const connect = async () => {
+        const state = new URL((await oauth.begin(owner, s.account.id)).url).searchParams.get(
+          "state",
+        )!;
+        await oauth.callback("instagram", new URLSearchParams({ state, code: "code" }));
+        return oauth.select(owner, s.account.id, "ig123");
+      };
+      expect((await connect()).instagramAccountType).toBe(accountType);
+      expect((await s.social.accountForOAuth(owner, s.account.id)).instagramAccountType).toBe(
+        accountType,
+      );
+      verifiedType = undefined;
+      expect(await connect()).not.toHaveProperty("instagramAccountType");
+      expect(await s.social.accountForOAuth(owner, s.account.id)).not.toHaveProperty(
+        "instagramAccountType",
+      );
+    },
+  );
+  it.each(["PERSONAL", "", null, {}, 42])(
+    "rejects invalid Instagram provider type %j before connecting",
+    async (accountType) => {
+      const s = await fixture("instagram");
+      const fetcher = vi.fn(async (raw: string | URL | Request) => {
+        const url = new URL(String(raw));
+        if (url.hostname === "api.instagram.com")
+          return Response.json({
+            access_token: "short",
+            permissions: ["instagram_business_basic"],
+          });
+        if (url.pathname === "/access_token")
+          return Response.json({ access_token: "long", expires_in: 5_184_000 });
+        return Response.json({ user_id: "ig123", username: "verified", account_type: accountType });
+      });
+      const oauth = new SocialOAuth(s.social, { instagram: s.config }, fetcher);
+      const state = new URL((await oauth.begin(owner, s.account.id)).url).searchParams.get(
+        "state",
+      )!;
+      await expect(
+        oauth.callback("instagram", new URLSearchParams({ state, code: "code" })),
+      ).rejects.toThrow("professional account");
+      expect(s.tokens.size).toBe(0);
+      expect(await s.social.accountForOAuth(owner, s.account.id)).not.toHaveProperty(
+        "instagramAccountType",
+      );
+    },
+  );
+  it.each(["x", "facebook", "telegram"] as const)(
+    "rejects Instagram metadata on a %s connection before credential writes",
+    async (platform) => {
+      const s = await fixture(platform);
+      await expect(
+        s.social.connectAccount(
+          s.account.id,
+          {
+            platformId: "123",
+            name: "verified",
+            scopes: [],
+            accessApproved: true,
+            instagramAccountType: "BUSINESS",
+          },
+          { accessToken: "synthetic" },
+        ),
+      ).rejects.toThrow("Invalid verified Instagram account type");
+      expect(s.tokens.size).toBe(0);
+    },
+  );
+  it.each(["browser", "token"] as const)(
+    "does not accept verified OAuth metadata from an Instagram %s connection",
+    async (connection) => {
+      const s = await fixture("instagram");
+      await expect(
+        s.social.connectAccount(
+          s.account.id,
+          {
+            platformId: "ig123",
+            name: "verified",
+            scopes: [],
+            accessApproved: true,
+            instagramAccountType: "BUSINESS",
+            connection,
+          },
+          { accessToken: "synthetic" },
+        ),
+      ).rejects.toThrow("Invalid verified Instagram account type");
+      expect(s.tokens.size).toBe(0);
+    },
+  );
+  it("rejects owner-injected Instagram subtype metadata at account creation", async () => {
+    const s = await fixture("instagram");
+    await expect(
+      s.social.call(owner, "accounts.create", {
+        platform: "instagram",
+        name: "Injected",
+        accountType: "professional",
+        projectIds: [],
+        instagramAccountType: "BUSINESS",
+      }),
+    ).rejects.toThrow();
+    expect(s.tokens.size).toBe(0);
+  });
+  it("refreshes an unexpired Instagram access token without a separate refresh token or scope widening", async () => {
+    const s = await fixture("instagram"),
+      now = 123_000;
+    s.account.scopes = ["instagram_business_basic", "instagram_business_content_publish"];
+    const fetcher = vi.fn(async (raw: string | URL | Request, options?: RequestInit) => {
+      const url = new URL(String(raw));
+      expect(url.origin + url.pathname).toBe("https://graph.instagram.com/refresh_access_token");
+      expect(url.searchParams.get("grant_type")).toBe("ig_refresh_token");
+      expect(url.searchParams.get("access_token")).toBe("synthetic-long");
+      expect(url.searchParams.has("client_secret")).toBe(false);
+      expect(options?.redirect).toBe("error");
+      return Response.json({
+        access_token: "synthetic-renewed",
+        token_type: "bearer",
+        expires_in: 5_184_000,
+      });
+    });
+    const oauth = new SocialOAuth(s.social, { instagram: s.config }, fetcher, () => now);
+    await expect(
+      oauth.refresh(s.account, { accessToken: "synthetic-long", expiresAt: now + 30_000 }),
+    ).resolves.toEqual({ accessToken: "synthetic-renewed", expiresAt: now + 5_184_000_000 });
+    expect(s.account.scopes).toEqual([
+      "instagram_business_basic",
+      "instagram_business_content_publish",
+    ]);
+    await expect(
+      oauth.refresh(s.account, { accessToken: "synthetic-long", expiresAt: now }),
+    ).rejects.toThrow("expired");
+    expect(fetcher).toHaveBeenCalledOnce();
+    fetcher.mockResolvedValue(
+      Response.json({
+        access_token: "wider-token",
+        expires_in: 5_184_000,
+        scope: "ungranted-permission",
+      }),
+    );
+    await expect(
+      oauth.refresh(s.account, { accessToken: "synthetic-long", expiresAt: now + 30_000 }),
+    ).rejects.toThrow("Instagram token refresh failed");
+    expect(s.account.scopes).toEqual([
+      "instagram_business_basic",
+      "instagram_business_content_publish",
+    ]);
+  });
+  it("keeps Instagram exchange failures out of candidates and sanitizes URL, response and network secrets", async () => {
+    for (const failure of ["network", "response", "invalid"] as const) {
+      const s = await fixture("instagram");
+      const fetcher = vi.fn(async (raw: string | URL | Request) => {
+        const url = new URL(String(raw));
+        if (url.hostname === "api.instagram.com")
+          return Response.json({
+            access_token: "synthetic-short-secret",
+            permissions: ["instagram_business_basic"],
+          });
+        if (failure === "network") throw new Error(`GET ${url} synthetic-network-secret`);
+        if (failure === "response")
+          return Response.json(
+            { error: { message: "synthetic-provider-secret" } },
+            { status: 400 },
+          );
+        return Response.json({ access_token: "synthetic-invalid-secret", expires_in: 0 });
+      });
+      const oauth = new SocialOAuth(s.social, { instagram: s.config }, fetcher);
+      const state = new URL((await oauth.begin(owner, s.account.id)).url).searchParams.get(
+        "state",
+      )!;
+      await expect(
+        oauth.callback("instagram", new URLSearchParams({ state, code: "code" })),
+      ).rejects.toThrow("Instagram long-lived token exchange failed");
+      const status = await oauth.status(owner, s.account.id);
+      expect(status).toMatchObject({ status: "failed", candidates: [] });
+      expect(JSON.stringify(status)).not.toContain("synthetic");
+      expect(JSON.stringify(status)).not.toContain("graph.instagram.com");
+      expect(s.tokens.size).toBe(0);
+    }
+  });
+  it("does not accept an Instagram identity changed by the token exchange", async () => {
+    const s = await fixture("instagram");
+    const fetcher = vi.fn(async (raw: string | URL | Request) => {
+      const url = new URL(String(raw));
+      if (url.hostname === "api.instagram.com")
+        return Response.json({
+          access_token: "short",
+          user_id: "original",
+          permissions: ["instagram_business_basic"],
+        });
+      if (url.pathname === "/access_token")
+        return Response.json({ access_token: "long", expires_in: 5_184_000 });
+      return Response.json({
+        user_id: "different",
+        username: "different",
+        account_type: "BUSINESS",
+      });
+    });
+    const oauth = new SocialOAuth(s.social, { instagram: s.config }, fetcher);
+    const state = new URL((await oauth.begin(owner, s.account.id)).url).searchParams.get("state")!;
+    await expect(
+      oauth.callback("instagram", new URLSearchParams({ state, code: "code" })),
+    ).rejects.toThrow("identity changed");
+    expect(s.tokens.size).toBe(0);
+  });
+  it("requests LinkedIn organization post-discovery permission together with comment polling", async () => {
+    const s = await fixture("linkedin");
+    const organization = (await s.social.call(owner, "accounts.create", {
+      platform: "linkedin",
+      name: "Organization",
+      accountType: "organization",
+      projectIds: [],
+    })) as SocialAccount;
+    const oauth = new SocialOAuth(s.social, { linkedin: s.config }, vi.fn());
+    const url = new URL((await oauth.begin(owner, organization.id, "123", ["poll"])).url);
+    expect(url.searchParams.get("scope")?.split(" ")).toEqual(
+      expect.arrayContaining(["r_organization_social_feed", "r_organization_social"]),
     );
   });
   it.each(["x", "instagram", "facebook", "linkedin", "youtube"] as const)(

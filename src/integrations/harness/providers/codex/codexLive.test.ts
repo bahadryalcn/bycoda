@@ -1003,13 +1003,16 @@ describe("codex live turn sequence", () => {
       }),
     );
     await waitFor(
-      () => events.some((event) => event.type === "status"),
+      () =>
+        events.some((event) => event.type === "question.updated" && event.delivery === "failed"),
       "failed async answer delivery",
     );
     expect(events.some((event) => event.type === "question.resolved")).toBe(false);
     expect(events).toContainEqual({
-      type: "status",
-      text: "Could not send your answer to Codex: Try again",
+      type: "question.updated",
+      requestId: question.requestId,
+      delivery: "failed",
+      error: "The provider rejected this answer. You can edit it and try again.",
     });
     respondCodexQuestion("codex-live", question.requestId, answer);
     const retry = parse().filter((message) => message.method === "turn/steer")[1];
@@ -1023,6 +1026,44 @@ describe("codex live turn sequence", () => {
     );
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
+  });
+
+  it("retains a blocking question when its response write is uncertain and prevents resend", async () => {
+    const { events, turn } = await startTurn("codex-live");
+    onLine!(
+      JSON.stringify({
+        id: "question-write",
+        method: "item/tool/requestUserInput",
+        params: {
+          threadId: "thr_1",
+          turnId: "turn_1",
+          itemId: "question-item",
+          questions: [{ id: "scope", question: "Which scope?", options: [{ label: "Local" }] }],
+        },
+      }),
+    );
+    const question = events.find((event) => event.type === "question.asked")!;
+    expect(question).toMatchObject({ behavior: "blocking", providerTurnId: "turn_1" });
+    writeChild.mockRejectedValueOnce(new Error("write interrupted"));
+    const answer = { kind: "answered" as const, answers: { scope: ["Local"] } };
+    const before = writeChild.mock.calls.length;
+    respondCodexQuestion("codex-live", question.requestId, answer);
+    await waitFor(
+      () =>
+        events.some((event) => event.type === "question.updated" && event.delivery === "unknown"),
+      "uncertain question delivery",
+    );
+    expect(events.some((event) => event.type === "question.resolved")).toBe(false);
+    respondCodexQuestion("codex-live", question.requestId, answer);
+    await Promise.resolve();
+    expect(writeChild.mock.calls.length).toBe(before + 1);
+    notify("turn/completed", { turn: { id: "turn_1", status: "interrupted" } });
+    await turn;
+    expect(events).toContainEqual({
+      type: "question.resolved",
+      requestId: question.requestId,
+      decision: "cancelled",
+    });
   });
 
   it.each([false, true])("keeps async questions open with interaction=%s", async (interact) => {
@@ -1070,7 +1111,13 @@ describe("codex live turn sequence", () => {
       model: "gpt-5.4",
     });
     expect(parse().some((message) => message.method === "turn/steer")).toBe(false);
+    expect(events.some((event) => event.type === "question.resolved")).toBe(false);
     reply(continuation.id as number, { turn: { id: "turn_2" } });
+    await waitFor(
+      () =>
+        events.some((event) => event.type === "question.resolved" && event.decision === "answered"),
+      "continuation accepted answer",
+    );
     notify("turn/started", { turn: { id: "turn_2", status: "inProgress" } });
     // Asking again in the continuation must survive its immediate completion too.
     notifyAsyncQuestion("async_question", "turn_2");
@@ -1105,7 +1152,12 @@ describe("codex live turn sequence", () => {
     });
     await waitFor(() => asked().length === 2, "second async question");
     expect(parse().filter((message) => message.method === "turn/start")).toHaveLength(1);
-    expect(events.filter((event) => event.type === "question.resolved")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "question.resolved")).toHaveLength(0);
+    expect(events).toContainEqual({
+      type: "question.updated",
+      requestId: asked()[0].requestId,
+      delivery: "queued",
+    });
     respondCodexQuestion("codex-live", asked()[1].requestId, { kind: "skipped" });
     await waitFor(
       () => parse().filter((message) => message.method === "turn/start").length === 2,
@@ -1118,6 +1170,45 @@ describe("codex live turn sequence", () => {
     reply(continuation.id as number, { turn: { id: "turn_2" } });
     notify("turn/completed", { turn: { id: "turn_2", status: "completed" } });
     await turn;
+  });
+
+  it("marks an unaccepted continuation unknown before session failure without recording an answered transcript", async () => {
+    const { events, turn } = await startTurn("codex-live");
+    const outcome = turn.catch(() => undefined);
+    notifyAsyncQuestion("queued_failure");
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    const question = events.find((event) => event.type === "question.asked")!;
+    respondCodexQuestion("codex-live", question.requestId, {
+      kind: "answered",
+      answers: { q1: ["Local"] },
+    });
+    await waitFor(
+      () => parse().filter((message) => message.method === "turn/start").length === 2,
+      "failed continuation start",
+    );
+    const continuation = parse().filter((message) => message.method === "turn/start")[1];
+    onLine!(
+      JSON.stringify({
+        id: continuation.id,
+        error: { code: -32000, message: "provider unavailable" },
+      }),
+    );
+    await outcome;
+    const unknown = events.findIndex(
+      (event) => event.type === "question.updated" && event.delivery === "unknown",
+    );
+    const failed = events.findIndex((event) => event.type === "session.error");
+    expect(unknown).toBeGreaterThan(-1);
+    expect(unknown).toBeLessThan(failed);
+    expect(
+      events.some((event) => event.type === "question.resolved" && event.decision === "answered"),
+    ).toBe(false);
+    const session = events.reduce(applyHarnessEvent, newSession("codex", "/repo"));
+    expect(session.pendingQuestion).toMatchObject({
+      requestId: question.requestId,
+      delivery: "unknown",
+    });
+    expect(session.blocks.some((block) => block.questionAnswers?.length)).toBe(false);
   });
 
   it("stops a completed turn waiting for an async answer without starting another turn", async () => {
@@ -2777,11 +2868,13 @@ describe("Codex failure recovery", () => {
       custom: { mcp_field_0: "99", mcp_field_1: "project" },
     });
     await waitFor(
-      () => events.filter((event) => event.type === "question.asked").length === 2,
+      () =>
+        events.some((event) => event.type === "question.updated" && event.delivery === "failed"),
       "corrected form",
     );
     expect(parse().some((message) => message.id === 902 && message.result)).toBe(false);
-    const retry = events.filter((event) => event.type === "question.asked")[1];
+    expect(events.some((event) => event.type === "question.resolved")).toBe(false);
+    const retry = question;
     respondCodexQuestion("codex-live", retry.requestId, {
       kind: "answered",
       answers: { mcp_field_0: ["__custom__"], mcp_field_1: ["__custom__"] },

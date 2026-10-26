@@ -713,11 +713,16 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           {t("Process identity unavailable; process control is disabled.")}
         </p>
       ) : null}
-      {(server.command ?? server.process?.command) ? (
-        <code className="dev-server-command">{server.command ?? server.process?.command}</code>
-      ) : null}
-      {(server.cwd ?? server.process?.cwd) ? (
-        <p className="host-tool-location">{server.cwd ?? server.process?.cwd}</p>
+      {(server.command ?? server.process?.command ?? server.cwd ?? server.process?.cwd) ? (
+        <details className="dev-server-context">
+          <summary>{t("Details")}</summary>
+          {(server.command ?? server.process?.command) ? (
+            <code className="dev-server-command">{server.command ?? server.process?.command}</code>
+          ) : null}
+          {(server.cwd ?? server.process?.cwd) ? (
+            <p className="host-tool-location">{server.cwd ?? server.process?.cwd}</p>
+          ) : null}
+        </details>
       ) : null}
       {server.error ? (
         <Alert tone="danger" role="alert">
@@ -733,8 +738,8 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
       aria-label={t("Development servers")}
       aria-busy={disabled || (!scan && scanning)}
     >
-      <header className="dev-servers-header">
-        <div className="dev-servers-title">
+      <header className="dev-servers-header" title={cwd}>
+        <div className="dev-servers-title sr-only">
           <h3 className="sr-only">{t("Development servers")}</h3>
           <span className="host-tool-muted">
             {scanning && !scan
@@ -804,6 +809,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             variant="ghost"
             iconOnly
             label={t("External tunnels")}
+            tooltip={t("External tunnels")}
             disabled={disabled}
             onClick={() => setSharing("3000")}
           >
@@ -811,12 +817,14 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           </Button>
           <Button
             variant="primary"
-            startIcon={<Plus />}
+            iconOnly
+            label={t("Start server")}
+            tooltip={t("Start server")}
             disabled={disabled}
             aria-expanded={showStart}
             onClick={() => setShowStart((value) => !value)}
           >
-            {t("Start server")}
+            <Plus className="icon-md" aria-hidden />
           </Button>
         </div>
       </header>

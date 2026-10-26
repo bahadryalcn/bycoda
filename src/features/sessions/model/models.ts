@@ -563,6 +563,16 @@ export function modelContextWindow(id: string): number | undefined {
   return window && window > 0 ? window : undefined;
 }
 
+/** Explicit bycoda provider keys cannot cross adapters. Native/custom model ids
+ * remain valid even when discovery has not advertised them yet. */
+export function modelBelongsToHarness(harness: HarnessId, modelId: string): boolean {
+  const requested = modelId.trim();
+  const colon = requested.indexOf(":");
+  if (colon < 0) return true;
+  const owner = requested.slice(0, colon).toLowerCase() as HarnessId;
+  return !HARNESSES.includes(owner) || owner === harness;
+}
+
 export function nativeModelId(model: AgentModel | string): string {
   if (typeof model !== "string") {
     return claudeNativeId(model.harness, model.nativeId ?? nativeIdFrom(model.id));

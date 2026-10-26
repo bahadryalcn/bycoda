@@ -24,7 +24,7 @@ export class SocialPlatformError extends Error {
         denied: "Platform permissions or account role do not allow this operation.",
         rate_limit: "Platform rate limit reached.",
         processing:
-          "Platform accepted the video and is processing it. Awaiting publication confirmation.",
+          "Platform accepted the media and is processing it. Awaiting publication confirmation.",
         unsupported: "This content or operation is unsupported by the platform adapter.",
         comments_disabled: "Comments are disabled on the target YouTube video.",
         unknown: "Platform outcome is uncertain. Review before another send.",
@@ -61,7 +61,9 @@ export interface SocialAdapter {
     job: SocialJob,
     token: string,
     media: (id: string) => Promise<Uint8Array>,
-    checkpoint?: (state: NonNullable<SocialJob["preparation"]>) => void,
+    checkpoint?: (state: NonNullable<SocialJob["preparation"]>) => void | Promise<void>,
+    /** Long browser flows must revalidate Stop, policy and grants immediately before submitting. */
+    beforeSubmit?: () => Promise<void>,
   ): Promise<SocialSendResult>;
   poll(
     account: SocialAccount,
@@ -99,17 +101,25 @@ export class SocialHttp {
   ) {}
   /** Bot tokens occur in Telegram paths. Never expose fetch errors or response bodies. */
   async telegram(
-    method: "getMe" | "getWebhookInfo" | "getUpdates" | "sendMessage",
+    method:
+      | "getMe"
+      | "getChat"
+      | "getChatMember"
+      | "getWebhookInfo"
+      | "getUpdates"
+      | "sendMessage"
+      | "sendPhoto"
+      | "sendVideo",
     token: string,
-    body: Record<string, unknown> = {},
+    body: Record<string, unknown> | FormData = {},
   ): Promise<Record<string, any>> {
     if (!/^\d+:[A-Za-z0-9_-]+$/.test(token)) throw new SocialPlatformError("denied");
     let response: Response;
     try {
       response = await this.fetcher(`https://api.telegram.org/bot${token}/${method}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        ...(body instanceof FormData ? {} : { headers: { "Content-Type": "application/json" } }),
+        body: body instanceof FormData ? body : JSON.stringify(body),
         redirect: "error",
         signal: AbortSignal.timeout(30_000),
       });
@@ -292,6 +302,52 @@ export class SocialHttp {
       },
       body: new Uint8Array(bytes),
     });
+  }
+  /** Reels transfer uses a fixed host/path, never a server-provided arbitrary upload URL. */
+  async uploadFacebookReel(
+    version: string,
+    videoId: string,
+    token: string,
+    bytes: Uint8Array,
+  ): Promise<void> {
+    if (
+      !/^v\d{1,3}\.\d{1,2}$/.test(version) ||
+      !/^[1-9]\d{0,24}$/.test(videoId) ||
+      bytes.length < 12 ||
+      bytes.length > 64 * 1024 * 1024 ||
+      new TextDecoder().decode(bytes.subarray(4, 8)) !== "ftyp"
+    )
+      throw new SocialPlatformError("unsupported");
+    let response: Response;
+    try {
+      response = await this.fetcher(
+        `https://rupload.facebook.com/video-upload/${version}/${videoId}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `OAuth ${token}`,
+            offset: "0",
+            file_size: String(bytes.length),
+            "Content-Type": "application/octet-stream",
+          },
+          body: new Uint8Array(bytes),
+          redirect: "error",
+          signal: AbortSignal.timeout(120_000),
+        },
+      );
+    } catch {
+      throw new SocialPlatformError("unknown");
+    }
+    if (response.status === 401) throw new SocialPlatformError("expired");
+    if (response.status === 403) throw new SocialPlatformError("denied");
+    if (response.status === 429)
+      throw new SocialPlatformError("rate_limit", retryAfter(response.headers, this.now()));
+    if (!response.ok)
+      throw new SocialPlatformError(response.status >= 500 ? "unknown" : "rejected");
+    const result = await response.json().catch(() => {
+      throw new SocialPlatformError("unknown");
+    });
+    if (result?.success !== true) throw new SocialPlatformError("unknown");
   }
   async uploadLinkedInImage(url: string, token: string, bytes: Uint8Array): Promise<void> {
     const parsed = new URL(url);

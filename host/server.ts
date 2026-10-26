@@ -54,6 +54,7 @@ import { HostEngine, parseCommand } from "./engine";
 import { isClearSessionCommand } from "../src/features/sessions/model/newSessionCommand";
 import { HostAutomations } from "./automations";
 import { SocialService, type SocialPrincipal } from "./social";
+import { createSessionAuthorityResolver } from "./session-authority";
 import { socialAgentGenerator } from "./social-agent";
 import { OsSocialCredentials } from "./social-credentials";
 import { SocialTransport } from "./social-transport";
@@ -61,6 +62,8 @@ import { XBrowserSessions } from "./social-browser";
 import { SocialPeers } from "./social-peers";
 import { createSocialAdapters } from "../src/integrations/social/platformAdapters";
 import { HostTasks } from "./tasks";
+import { HostSprints } from "./sprints";
+import type { SprintCreateInput, SprintUpdateInput, SprintCommand, SprintCompleteInput, SprintPlanInput, SprintIngestInput, SprintGoalContextInput } from "../src/features/tasks/model/hostSprints";
 import { AttachmentOwnership } from "./attachment-ownership";
 import { HostGoals } from "./goals";
 import { HostStewards } from "./stewards";
@@ -264,6 +267,8 @@ export async function createHostServer(
   await automations.ready;
   const tasks = tasksOverride ?? new HostTasks(engine.store, engine);
   await tasks.ready;
+  const sprints = new HostSprints(engine.store);
+  await sprints.ready;
   const goals = goalsOverride ?? new HostGoals(engine.store, engine, tasks);
   await goals.ready;
   const stewards = stewardsOverride ?? new HostStewards(engine.store, engine, tasks);
@@ -318,12 +323,7 @@ export async function createHostServer(
     ? new WebControl(process.env.BYCODA_WEB_CONTROL_ORIGIN)
     : undefined;
   const inHost = async (id: string) => {
-    try {
-      await engine.store.session(id);
-      return true;
-    } catch {
-      return false;
-    }
+    return !!(await engine.store.sessionAuthority(id));
   };
   const desktopDelete = new DesktopDelete();
   const sessionQueues = new SessionQueues(engine.store.db);
@@ -396,6 +396,9 @@ export async function createHostServer(
       xBrowser.adapter(),
     );
   await social.ready;
+  social.setSessionAuthorityResolver(
+    createSessionAuthorityResolver(engine.store, desktop, providers),
+  );
   social.forgetBrowserSession ??= async (accountId) => {
     await xBrowser.workflows.cancelAccount(social, accountId);
     await xBrowser.forget(accountId);
@@ -1245,7 +1248,7 @@ export async function createHostServer(
               !peerIdentity &&
               !(await engine.store.authenticated(token)))
           ) {
-            response.writeHead(401).end(
+            response.writeHead(401, { "X-Bycoda-Auth-Stage": "before-dispatch" }).end(
               JSON.stringify({
                 error: "Device credential is invalid or revoked",
               }),
@@ -1270,7 +1273,7 @@ export async function createHostServer(
             !peerIdentity &&
             !(await engine.store.authenticated(token))
           ) {
-            response.writeHead(401).end(
+            response.writeHead(401, { "X-Bycoda-Auth-Stage": "before-dispatch" }).end(
               JSON.stringify({
                 error: "Device credential is invalid or revoked",
               }),
@@ -1315,7 +1318,7 @@ export async function createHostServer(
               throw new Error("A scoped conversation credential is required.");
             const boundPrincipal = conversationPrincipal;
             return await engine.store.db.withAuthorization(
-              async () => !!(await conversationAccess.principalForToken(token)),
+              conversationAccess.authorization(token),
               async () => {
                 const action = String(params.action ?? "");
                 const args = params.input as Record<string, unknown>;
@@ -1816,10 +1819,9 @@ export async function createHostServer(
           }
           if (typeof input.method === "string" && input.method.startsWith("social.")) {
             return await engine.store.db.withAuthorization(
-              async () =>
-                socialPrincipal
-                  ? !!(await social.principalForToken(token))
-                  : await engine.store.authenticated(token),
+              socialPrincipal
+                ? social.authorization(token)
+                : async () => await engine.store.authenticated(token),
               async () => {
                 const principal: SocialPrincipal = socialPrincipal ?? {
                   kind: "owner",
@@ -1832,6 +1834,8 @@ export async function createHostServer(
                 } else if (input.method === "social.access.issue") {
                   if (principal.kind !== "owner")
                     throw new Error("Only a native owner device can issue social access.");
+                  if (params.expectedScope !== undefined && (await social.isDelegated?.()))
+                    throw new Error("Delegated social grants require an explicit reconnect.");
                   const sessionId = String(params.sessionId ?? "");
                   // The desktop database supplies the cwd; a tool cannot register a
                   // project by claiming a path in its request.
@@ -1843,6 +1847,7 @@ export async function createHostServer(
                     ...(await social.issueSessionGrant(
                       sessionId,
                       createHash("sha256").update(token).digest("hex"),
+                      params.expectedScope,
                     )),
                     environmentId: engine.store.environmentId,
                   };
@@ -1955,6 +1960,7 @@ export async function createHostServer(
                     ...(await conversationAccess.issueSessionGrant(
                       sessionId,
                       createHash("sha256").update(token).digest("hex"),
+                      params.expectedScope,
                     )),
                     environmentId: engine.store.environmentId,
                     command: process.execPath,
@@ -1985,6 +1991,7 @@ export async function createHostServer(
                     ...(await runtimeLogAccess.issueSessionGrant(
                       sessionId,
                       createHash("sha256").update(token).digest("hex"),
+                      params.expectedScope,
                     )),
                     environmentId: engine.store.environmentId,
                     command: process.execPath,
@@ -2209,6 +2216,8 @@ export async function createHostServer(
                       "automations",
                       "tasks",
                       "tasks.todo",
+                      "tasks.history.v1",
+                      "tasks.sprints.v1",
                       "tasks.workspaces",
                       "tasks.provider-accounts",
                       "goals.direct-checkout",
@@ -3814,6 +3823,7 @@ export async function createHostServer(
                 case "crews.inspect":
                 case "crews.save":
                 case "crews.delete":
+                case "crews.deleteRun":
                 case "crews.agent.save":
                 case "crews.agent.delete":
                 case "crews.start":
@@ -3829,6 +3839,47 @@ export async function createHostServer(
                 case "crews.accept":
                 case "crews.finish":
                   result = await crews.call(input.method, params, String(params.projectId ?? ""));
+                  break;
+                // These cross-project planning routes belong only to paired owner
+                // dispatch. Project-scoped conversation tools have their own allowlist.
+                case "sprints.list":
+                  result = await sprints.list();
+                  break;
+                case "sprints.get":
+                  result = await sprints.get(String(params.id ?? ""));
+                  break;
+                case "sprints.create":
+                  result = await sprints.create(params.input as SprintCreateInput);
+                  break;
+                case "sprints.update":
+                  result = await sprints.update(String(params.id ?? ""), params.input as SprintUpdateInput);
+                  break;
+                case "sprints.start":
+                  result = await sprints.start(String(params.id ?? ""), params.input as SprintCommand);
+                  break;
+                case "sprints.complete":
+                  result = await sprints.complete(String(params.id ?? ""), params.input as SprintCompleteInput);
+                  break;
+                case "sprints.archive":
+                  result = await sprints.archive(String(params.id ?? ""), params.input as SprintCommand);
+                  break;
+                case "sprints.plan":
+                  result = await sprints.plan(params.input as SprintPlanInput);
+                  break;
+                case "sprints.report":
+                  result = await sprints.report(String(params.id ?? ""));
+                  break;
+                case "sprints.ingest":
+                  result = await sprints.ingest(params.input as SprintIngestInput);
+                  break;
+                case "sprints.goalContext":
+                  result = await sprints.setGoalContext(params.input as SprintGoalContextInput);
+                  break;
+                case "tasks.snapshotWithCursor":
+                  result = await tasks.snapshotWithCursor();
+                  break;
+                case "tasks.events":
+                  result = await tasks.events(params.after as number, params.limit as number | undefined);
                   break;
                 case "tasks.list":
                   if (params.projectId !== undefined)
@@ -4305,7 +4356,7 @@ export async function createHostServer(
       drain(() => conversationDesktop.close());
       drain(async () => await hostNotes.close());
       drain(async () => await social.stop());
-      drain(async () => await xBrowser.workflows.stop(social));
+      drain(async () => await xBrowser.stop(social));
       // Attach rejection handlers immediately while startup is still settling.
       const drained = Promise.allSettled(pending);
       const requested = Promise.allSettled([...requests]);

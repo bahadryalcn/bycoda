@@ -24,8 +24,13 @@ vi.mock("./cursorStore", () => ({
   readStoredCursorSubagentRuns: stores.subagents,
 }));
 
-const { sendCursorTurn, cancelCursorTurn, stopCursorSession, __cursorTestReset } =
-  await import("./cursor");
+const {
+  sendCursorTurn,
+  cancelCursorTurn,
+  respondCursorQuestion,
+  stopCursorSession,
+  __cursorTestReset,
+} = await import("./cursor");
 import type { HarnessEvent } from "../../core/types";
 import { newSession } from "../../../../features/sessions/model/session";
 import { applyHarnessEvent } from "../../core/apply";
@@ -127,6 +132,31 @@ beforeEach(() => {
 afterEach(async () => {
   await stopCursorSession("cursor-live");
   __cursorTestReset();
+});
+
+it("keeps concurrent Cursor questions reachable until each native response is written", async () => {
+  const { events, promptId, turn } = await startTurn("cursor-live");
+  for (const id of [71, 72])
+    request(id, "cursor/ask_question", {
+      questions: [{ id: String(id), question: `Question ${id}`, options: [{ label: "Local" }] }],
+    });
+  expect(events.filter((event) => event.type === "question.asked")).toHaveLength(1);
+  respondCursorQuestion("cursor-live", 71, { kind: "answered", answers: { "71": ["Local"] } });
+  await waitFor(
+    () => events.filter((event) => event.type === "question.asked").length === 2,
+    "second queued question",
+  );
+  expect(parse()).toContainEqual(expect.objectContaining({ id: 71, result: expect.anything() }));
+  respondCursorQuestion("cursor-live", 72, { kind: "skipped" });
+  await waitFor(
+    () => events.filter((event) => event.type === "question.resolved").length === 2,
+    "both responses acknowledged",
+  );
+  expect(
+    events.reduce(applyHarnessEvent, newSession("cursor", "/repo")).pendingQuestion,
+  ).toBeUndefined();
+  reply(promptId, { stopReason: "end_turn" });
+  await turn;
 });
 
 describe("cursor background subagents", () => {

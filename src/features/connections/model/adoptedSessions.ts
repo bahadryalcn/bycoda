@@ -1,5 +1,6 @@
 import type { AdoptedDivergence, Block, Session } from "../../sessions/model/session";
 import { isTurnInterruptMessage } from "../../sessions/model/inFlight";
+import { sessionActivityAt } from "../../sessions/model/sessionActivity";
 import type { HostSession } from "./protocol";
 import { canonicalJson } from "../../sync/model/canonicalJson";
 import { persistableAttachment } from "../../sessions/model/attachments";
@@ -33,6 +34,23 @@ export const ADOPTED_CAPABILITY = "sessions.desktop";
  * host from another computer is first saved here. */
 export const ADOPTED_SESSION_ADDED = "bycoda:adopted-session-added";
 
+/** Copying history to this desktop is not new conversation activity. */
+export function adoptedSessionTimes(
+  host: HostSession,
+): { createdAt: number; updatedAt: number } | undefined {
+  const valid = (value: number | undefined): value is number =>
+    typeof value === "number" && Number.isFinite(value) && value > 0;
+  const updatedAt = valid(host.updatedAt) ? host.updatedAt : sessionActivityAt(host.session);
+  if (!valid(updatedAt)) return undefined;
+  const starts = host.session.blocks
+    .filter((block) => block.role === "user" && !block.draft && valid(block.startedAt))
+    .map((block) => block.startedAt!);
+  const createdAt = valid(host.createdAt)
+    ? host.createdAt
+    : starts.reduce((first, at) => Math.min(first, at), updatedAt);
+  return { createdAt: Math.min(createdAt, updatedAt), updatedAt };
+}
+
 /** The desktop copy of a session the host started: the project folder as the
  * session's place, and the host's working copy as its worktree when different. */
 export function desktopCopyOf(
@@ -42,7 +60,12 @@ export function desktopCopyOf(
 ): Session {
   const remote = host.session;
   const workCwd = remote.worktreeCwd || remote.cwd;
-  const { busy: _busy, pendingQuestion: _question, ...rest } = remote;
+  const {
+    busy: _busy,
+    pendingQuestion: _question,
+    submittedQuestions: _submitted,
+    ...rest
+  } = remote;
   return {
     ...rest,
     cwd: projectCwd,
@@ -309,10 +332,10 @@ export function adoptedLocalAhead(local: Session, host: HostSession): boolean {
   return adoptedTranscriptLead(local, host.session) === "local";
 }
 
-/** A merge baseline records the transcript the host held, so a sealed local
- * turn kept over a stale host copy still counts as local on the next pass. */
-function baselineOf(merged: Session, host: HostSession): Session {
-  return { ...merged, blocks: host.session.blocks };
+/** Remember what the host actually acknowledged. Retained local configuration
+ * must stay a local edit until the host sends it back, even across several saves. */
+function baselineOf(host: HostSession): Session {
+  return host.session;
 }
 
 export function mergeAdoptedSession(
@@ -349,10 +372,27 @@ export function mergeAdoptedSession(
   // edit conflicting with a host edit needs an explicit refresh, just like a
   // divergent transcript; never bind a host thread through a retained adapter.
   const provider = providerIdentity;
-  const localChanged = !!base && provider(local) !== provider(base);
-  if (localChanged && provider(remote) !== provider(base) && provider(remote) !== provider(local))
+  // A restart loses the in-memory baseline, but an unsent provider switch keeps
+  // recovery context and has no native thread yet. With identical idle history,
+  // the old host configuration is no acknowledgement of the user's new choice.
+  // Running or newer host turns remain authoritative; never replace their work.
+  const recoveringChoice =
+    !base &&
+    host.status !== "running" &&
+    !local.providerSessionId &&
+    !!(local.pendingContextReplay || local.pendingSwitch) &&
+    (verdict === "equal" || sameTranscript(local.blocks, remote.blocks)) &&
+    (local.harness !== remote.harness || local.model !== remote.model);
+  const localChanged = recoveringChoice || (!!base && provider(local) !== provider(base));
+  if (
+    base &&
+    localChanged &&
+    provider(remote) !== provider(base) &&
+    provider(remote) !== provider(local)
+  )
     return undefined;
   const configuration = localChanged ? local : remote;
+  const keepLocalHandoff = !!local.pendingSwitch && provider(local) === provider(configuration);
   // The host sends a shrunk form of blocks with files or large output: this
   // desktop's full content stays wherever that is all that differs.
   const blocks = settled
@@ -382,7 +422,7 @@ export function mergeAdoptedSession(
     historyPartial: undefined,
     historyLoading: undefined,
     historyLoadError: undefined,
-    title: fromHost("title") || local.title,
+    title: (recoveringChoice ? local.title : fromHost("title")) || local.title,
     harness: configuration.harness,
     model: configuration.model,
     modelSettings: configuration.modelSettings,
@@ -391,8 +431,18 @@ export function mergeAdoptedSession(
       configuration.harness === local.harness ? local.providerAccountId : undefined,
     runtimeMode: fromHost("runtimeMode") ?? local.runtimeMode,
     rewindHistory: fromHost("rewindHistory"),
-    pendingContextReplay: fromHost("pendingContextReplay"),
-    ...(remote.context ? { context: remote.context } : {}),
+    pendingSwitch: keepLocalHandoff ? local.pendingSwitch : configuration.pendingSwitch,
+    // Storage carries a recovery replay for an unsent provider switch. The open
+    // desktop already owns its live handoff; importing that fallback would send
+    // the same history twice. A reopened conversation has no pendingSwitch.
+    pendingContextReplay: keepLocalHandoff
+      ? local.pendingContextReplay
+      : localChanged
+        ? local.pendingContextReplay
+        : remote.pendingContextReplay,
+    ...(remote.context && !(localChanged && provider(local) !== provider(remote))
+      ? { context: remote.context }
+      : {}),
     continuingElsewhere: host.status === "running" || undefined,
     adoptedRunId: host.status === "running" ? host.runId : undefined,
     retryMessage: host.status === "running" ? remote.retryMessage : undefined,
@@ -564,7 +614,8 @@ export function adoptedBranchId(sessionId: string, key: string): string {
   const seed = `${sessionId}\0${key}`;
   const part = (salt: number) => {
     let hash = (0x811c9dc5 ^ salt) >>> 0;
-    for (let i = 0; i < seed.length; i++) hash = Math.imul(hash ^ seed.charCodeAt(i), 0x01000193) >>> 0;
+    for (let i = 0; i < seed.length; i++)
+      hash = Math.imul(hash ^ seed.charCodeAt(i), 0x01000193) >>> 0;
     return hash.toString(16).padStart(8, "0");
   };
   const hex = [1, 2, 3, 4].map(part).join("");
@@ -684,7 +735,7 @@ async function applyAdoptedSnapshot(
   deps.apply(merged, before);
   let bases = baselines.get(deps.mirrored);
   if (!bases) baselines.set(deps.mirrored, (bases = new Map()));
-  bases.set(sessionId, baselineOf(merged, host));
+  bases.set(sessionId, baselineOf(host));
   // Drop any older delta base; the next automatic pass starts from a full copy.
   snapshots.get(deps.mirrored)?.delete(sessionId);
   deps.mirrored.set(sessionId, host.revision);
@@ -718,7 +769,10 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
   // flagged as a conflict, which waits for an explicit sync instead.
   const held = () => {
     const flagged = new Set(
-      deps.local().filter((session) => session.adoptedSyncConflict).map((session) => session.id),
+      deps
+        .local()
+        .filter((session) => session.adoptedSyncConflict)
+        .map((session) => session.id),
     );
     for (const [id, since] of awaiting) {
       const entry = listed.get(id);
@@ -801,7 +855,7 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
       }
       deps.apply(merged, current);
       remember(entry.id, host);
-      base.set(entry.id, baselineOf(merged, host));
+      base.set(entry.id, baselineOf(host));
       deps.mirrored.set(entry.id, host.revision);
     } catch {
       // Retried on the next pass.
@@ -879,13 +933,16 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
           }
           // Another window may have written since: the save then refuses and
           // the next pass starts over from the newer stored copy.
-          const saved = await deps.save({ ...merged, continuingElsewhere: undefined, adoptedRunId: undefined }, stamp);
+          const saved = await deps.save(
+            { ...merged, continuingElsewhere: undefined, adoptedRunId: undefined },
+            stamp,
+          );
           if (saved === false) continue;
           remember(entry.id, host);
           // Opening during the save may have loaded the previous stored copy.
           // Keep its old baseline/revision so the next pass catches the tab up.
           if (deps.local().some((session) => session.id === entry.id)) continue;
-          base.set(entry.id, baselineOf(merged, host));
+          base.set(entry.id, baselineOf(host));
           deps.mirrored.set(entry.id, host.revision);
           continue;
         }

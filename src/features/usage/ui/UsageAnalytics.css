@@ -69,6 +69,8 @@
   text-align: start;
 }
 .usage-metrics strong {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
   font-size: clamp(1.125rem, 2.5cqi, 1.5rem);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -337,6 +339,9 @@
   }
 }
 @container (max-width: 540px) {
+  .usage-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .usage-metrics > div {
     padding: 8px 6px;
     gap: 4px;

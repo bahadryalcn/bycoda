@@ -14,13 +14,100 @@ import {
   stopStreaming,
 } from "./apply";
 import type { HarnessEvent } from "./types";
+import { planComposerSwitch, withHarnessChoice } from "../../../features/sessions/model/handoff";
 
 let now = 0;
 
+it("keeps a late outgoing Codex thread identity out of the newly selected Gemini provider", () => {
+  const source = {
+    ...newSession("codex", "/repo"),
+    busy: true,
+    model: "codex:gpt-6.1-sol",
+    blocks: [{ id: "u", role: "user" as const, text: "Preserve this conversation" }],
+    runningModelTarget: {
+      harness: "codex" as const,
+      model: "codex:gpt-6.1-sol",
+      modelSettings: {},
+    },
+  };
+  const plan = planComposerSwitch(source, "antigravity");
+  if (plan.kind !== "arm") throw new Error("expected provider handoff");
+  const selected = {
+    ...withHarnessChoice(source, "antigravity", "antigravity:gemini-3.8-flash-high", {}),
+    pendingSwitch: plan.pending,
+  };
+  const result = applyHarnessEvent(selected, {
+    type: "session.providerBound",
+    providerSessionId: "codex-late-thread",
+  });
+  expect(result.harness).toBe("antigravity");
+  expect(result.model).toBe(selected.model);
+  expect(result.providerSessionId).toBeUndefined();
+  expect(result.pendingSwitch?.fromProviderSessionId).toBe("codex-late-thread");
+  expect(result.blocks).toBe(source.blocks);
+});
+
+it.each(["pi", "antigravity"] as const)(
+  "keeps next selected %s model/settings when the running Pi config changes",
+  (harness) => {
+    const selected = {
+      ...newSession(harness, "/repo"),
+      busy: true,
+      model: harness === "pi" ? "pi:provider/next" : "antigravity:gemini-3.8-flash-high",
+      modelSettings: { thinking: "high" },
+      runningModelTarget: {
+        harness: "pi" as const,
+        model: "pi:provider/old",
+        modelSettings: { thinking: "medium" },
+      },
+    };
+    const result = applyHarnessEvent(selected, {
+      type: "session.configChanged",
+      model: "pi:provider/fallback",
+      modelSettings: { thinking: "low" },
+    });
+    expect(result.harness).toBe(harness);
+    expect(result.model).toBe(selected.model);
+    expect(result.modelSettings).toEqual(selected.modelSettings);
+    expect(result.runningModelTarget).toMatchObject({
+      harness: "pi",
+      model: "pi:provider/fallback",
+      modelSettings: { thinking: "low" },
+    });
+  },
+);
+
 it("drops model-specific context capacity on provider model changes but retains usage", () => {
-  const original = { ...newSession("pi", "/repo"), model: "pi:provider/old", context: { used: 100_000, window: 200_000 } };
-  expect(applyHarnessEvent(original, { type: "session.configChanged", model: "pi:provider/new" })).toMatchObject({ model: "pi:provider/new", context: { used: 100_000 } });
-  expect(applyHarnessEvent(original, { type: "session.configChanged", model: original.model, modelSettings: { thinking: "high" } }).context).toEqual(original.context);
+  const original = {
+    ...newSession("pi", "/repo"),
+    model: "pi:provider/old",
+    context: { used: 100_000, window: 200_000 },
+  };
+  expect(
+    applyHarnessEvent(original, { type: "session.configChanged", model: "pi:provider/new" }),
+  ).toMatchObject({ model: "pi:provider/new", context: { used: 100_000 } });
+  expect(
+    applyHarnessEvent(original, {
+      type: "session.configChanged",
+      model: original.model,
+      modelSettings: { thinking: "high" },
+    }).context,
+  ).toEqual(original.context);
+});
+
+it("updates both active and selected targets when the provider changes its current model", () => {
+  const original = {
+    ...newSession("pi", "/repo"),
+    busy: true,
+    model: "pi:provider/old",
+    runningModelTarget: { harness: "pi" as const, model: "pi:provider/old", modelSettings: {} },
+  };
+  const result = applyHarnessEvent(original, {
+    type: "session.configChanged",
+    model: "pi:provider/fallback",
+  });
+  expect(result.model).toBe("pi:provider/fallback");
+  expect(result.runningModelTarget?.model).toBe("pi:provider/fallback");
 });
 
 it.each([
@@ -1299,6 +1386,120 @@ describe("clarifying questions", () => {
       ],
     },
   ];
+
+  it("retains provider behavior and delivery state without losing the question deadline", () => {
+    let session = applyHarnessEvent(newSession("codex", "/repo"), {
+      type: "question.asked",
+      requestId: 3,
+      questions,
+      behavior: "nonBlocking",
+      dismissAction: "skip",
+      callId: "item-3",
+      providerTurnId: "turn-1",
+      autoResolveAt: 12345,
+    });
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "sending",
+    });
+    expect(session.pendingQuestion).toMatchObject({
+      behavior: "nonBlocking",
+      dismissAction: "skip",
+      callId: "item-3",
+      providerTurnId: "turn-1",
+      delivery: "sending",
+      autoResolveAt: 12345,
+    });
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "unknown",
+      error: "Delivery unconfirmed",
+    });
+    expect(session.pendingQuestion?.error).toBe("Delivery unconfirmed");
+    expect(session.blocks).toEqual([]);
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      autoResolveAt: undefined,
+    });
+    expect(session.pendingQuestion?.autoResolveAt).toBeUndefined();
+    expect(session.pendingQuestion?.delivery).toBe("unknown");
+  });
+
+  it("records queued answers only after provider acceptance without hiding a newer question", () => {
+    let session = applyHarnessEvent(newSession("codex", "/repo"), {
+      type: "question.asked",
+      requestId: 3,
+      questions,
+    });
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "queued",
+    });
+    session = applyHarnessEvent(session, { type: "question.asked", requestId: 4, questions });
+    expect(session.blocks).toEqual([]);
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "unknown",
+      error: "Connection lost",
+    });
+    expect(session.pendingQuestion?.requestId).toBe(4);
+    expect(session.submittedQuestions?.[0].delivery).toBe("unknown");
+    const accepted: HarnessEvent = {
+      type: "question.resolved",
+      requestId: 3,
+      decision: "answered",
+      reply: { kind: "answered", answers: { "Which file?": ["a.ts"] } },
+    };
+    session = applyHarnessEvent(session, accepted);
+    expect(session.pendingQuestion?.requestId).toBe(4);
+    expect(session.submittedQuestions).toBeUndefined();
+    expect(session.blocks.at(-1)?.questionAnswers).toEqual([
+      { prompt: "Which file?", answers: ["a.ts"] },
+    ]);
+    expect(applyHarnessEvent(session, accepted)).toBe(session);
+    expect(stopStreaming(session).submittedQuestions).toBeUndefined();
+  });
+
+  it("retains an uncertain answer through provider failure and automatic retirement until explicit stop or a new turn", () => {
+    let session = applyHarnessEvent(newSession("codex", "/repo"), {
+      type: "question.asked",
+      requestId: 3,
+      questions,
+      behavior: "nonBlocking",
+    });
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "queued",
+    });
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "unknown",
+    });
+    session = applyHarnessEvent(session, {
+      type: "session.error",
+      message: "Provider disconnected",
+    });
+    expect(session.busy).toBe(false);
+    expect(session.pendingQuestion).toMatchObject({ requestId: 3, delivery: "unknown" });
+    session = applyHarnessEvent(session, {
+      type: "question.resolved",
+      requestId: 3,
+      decision: "cancelled",
+    });
+    expect(session.pendingQuestion?.delivery).toBe("unknown");
+    expect(stopStreaming(session).pendingQuestion).toBeUndefined();
+    const next = appendUser(session, "Continue after inspecting the provider");
+    expect(next.pendingQuestion).toBeUndefined();
+    expect(next.submittedQuestions).toBeUndefined();
+    expect(next.blocks.some((block) => block.questionAnswers?.length)).toBe(false);
+  });
 
   it("parks the prompt on the session instead of an Allow/Deny row", () => {
     let session = newSession("claude", "/repo");

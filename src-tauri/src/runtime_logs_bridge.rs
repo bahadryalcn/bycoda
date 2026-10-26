@@ -11,6 +11,16 @@ fn grants() -> &'static Mutex<HashMap<String, Value>> {
     GRANTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub(crate) fn clear_grants(session: Option<&str>) {
+    if let Ok(mut map) = grants().lock() {
+        if let Some(session) = session {
+            map.remove(session);
+        } else {
+            map.clear();
+        }
+    }
+}
+
 pub fn authorize_acp_frame(session_id: &str, line: String) -> String {
     let grant = grants()
         .lock()
@@ -68,24 +78,6 @@ fn decorate_frame(line: String, grant: &Value) -> String {
     request.to_string()
 }
 
-pub fn redact_lines(session_id: &str, lines: Vec<String>) -> Vec<String> {
-    let token = grants().lock().ok().and_then(|map| {
-        map.get(session_id)
-            .and_then(|grant| grant.get("token"))
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-    });
-    lines
-        .into_iter()
-        .map(|line| {
-            token
-                .as_ref()
-                .map(|token| line.replace(token, "[runtime log credential redacted]"))
-                .unwrap_or(line)
-        })
-        .collect()
-}
-
 #[tauri::command(async)]
 pub fn harness_runtime_logs_bridge(
     app: AppHandle,
@@ -96,13 +88,20 @@ pub fn harness_runtime_logs_bridge(
     }
     let value =
         crate::remote::local_runtime_logs_rpc(&app, "runtimeLogs.bridge.describe", json!({}));
-    Ok(value.ok())
+    Ok(value.ok().map(|value| {
+        crate::session_tools_bridge::metadata(
+            value,
+            crate::session_tools_bridge::Group::RuntimeLogs,
+        )
+    }))
 }
 
-pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command) {
-    if let Ok(mut map) = grants().lock() {
-        map.remove(session_id);
-    }
+pub fn configure_child(
+    app: &AppHandle,
+    session_id: &str,
+    command: &mut Command,
+    stamp: (u64, u64),
+) {
     let keys: Vec<String> = std::env::vars()
         .map(|(key, _)| key)
         .chain(
@@ -127,6 +126,15 @@ pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command)
     ) else {
         return;
     };
+    let Ok(grant) = crate::session_tools_bridge::register(
+        app,
+        session_id,
+        stamp,
+        crate::session_tools_bridge::Group::RuntimeLogs,
+        grant,
+    ) else {
+        return;
+    };
     let (Some(token), Some(endpoint), Some(environment)) = (
         grant.get("token").and_then(Value::as_str),
         grant.get("endpoint").and_then(Value::as_str),
@@ -138,9 +146,7 @@ pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command)
         .env("BYCODA_RUNTIME_LOGS_TOKEN", token)
         .env("BYCODA_RUNTIME_LOGS_ENDPOINT", endpoint)
         .env("BYCODA_RUNTIME_LOGS_ENVIRONMENT", environment);
-    if let Ok(mut map) = grants().lock() {
-        map.insert(session_id.to_owned(), grant);
-    }
+    crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
 }
 
 #[cfg(test)]

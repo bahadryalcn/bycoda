@@ -15,6 +15,7 @@ import {
 import { sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { isActivityBlock, isNoticeBlock } from "../src/features/sessions/model/transcriptActivity";
 import { conversationHead } from "../src/features/sync/model/conversationDigest";
+import { mergeAdoptedSession } from "../src/features/connections/model/adoptedSessions";
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -1081,7 +1082,10 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function setup(harness: RemoteProvider = "codex") {
+async function setup(
+  harness: RemoteProvider = "codex",
+  overrides: Partial<Record<RemoteProvider, HostProvider>> = {},
+) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-engine-test-"));
   const store = new HostStore(join(directory, "host.db"));
   const project = await store.addProject(directory, "Test");
@@ -1105,7 +1109,7 @@ async function setup(harness: RemoteProvider = "codex") {
   };
   const engine = new HostEngine(
     store,
-    Object.fromEntries(REMOTE_PROVIDERS.map((id) => [id, provider])),
+    Object.fromEntries(REMOTE_PROVIDERS.map((id) => [id, overrides[id] ?? provider])),
   );
   await engine.ready;
   const created = await engine.command({
@@ -1133,6 +1137,147 @@ async function setup(harness: RemoteProvider = "codex") {
 }
 
 describe("headless session ownership", () => {
+  it("rejects explicit foreign models at creation and configuration without changing the conversation", async () => {
+    const { engine, store, project, provider, id } = await setup("codex");
+    const before = await store.session(id);
+    await expect(
+      engine.command({
+        type: "create",
+        commandId: "foreign-create",
+        projectId: project.id,
+        harness: "codex",
+        model: "antigravity:gemini-3.8-flash-high",
+        runtimeMode: "supervised",
+      }),
+    ).rejects.toThrow("does not belong to provider");
+    await expect(
+      engine.command({
+        type: "configure",
+        commandId: "foreign-configure",
+        sessionId: id,
+        harness: "codex",
+        model: "antigravity:gemini-3.8-flash-high",
+        modelSettings: {},
+        runtimeMode: "supervised",
+      }),
+    ).rejects.toThrow("does not belong to provider");
+    expect(await store.session(id)).toEqual(before);
+    expect(await store.sessions()).toHaveLength(1);
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
+  it.each(["send", "compact"] as const)(
+    "refuses a stored mixed identity before %s consumes context or calls a provider",
+    async (type) => {
+      const { engine, store, provider, id } = await setup("codex");
+      provider.compact = vi.fn(async () => {});
+      const original = await store.session(id);
+      const corrupted = await store.save(
+        {
+          ...original,
+          revision: original.revision + 1,
+          session: {
+            ...original.session,
+            model: "antigravity:gemini-3.8-flash-high",
+            pendingContextReplay: "Earlier request must be retained",
+            pendingSwitch: { from: "codex", fromModel: "codex:test", fromSettings: {} },
+            blocks: [{ id: "earlier", role: "user", text: "Earlier request must be retained" }],
+          },
+        },
+        { type: "test.corrupt-model" },
+      );
+      await expect(
+        engine.command({
+          type,
+          commandId: `foreign-${type}`,
+          sessionId: id,
+          ...(type === "send" ? { text: "Continue" } : {}),
+        }),
+      ).rejects.toThrow("does not belong to provider");
+      expect(await store.session(id)).toEqual(corrupted);
+      expect(provider.send).not.toHaveBeenCalled();
+      expect(provider.compact).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an accepted desktop snapshot with a foreign model without copying a mixed identity", async () => {
+    const { engine, store, provider, id } = await setup("codex");
+    const original = await store.session(id);
+    const before = await store.save(
+      {
+        ...original,
+        revision: original.revision + 1,
+        desktop: { updatedAt: 1, revision: original.revision + 1 },
+      },
+      { type: "test.desktop" },
+    );
+    const snapshot = structuredClone(before);
+    snapshot.updatedAt = before.updatedAt + 1000;
+    snapshot.session.model = "antigravity:gemini-3.8-flash-high";
+    await expect(engine.refreshFromDesktop(snapshot)).rejects.toThrow(
+      "does not belong to provider",
+    );
+    expect(await store.session(id)).toEqual(before);
+    expect(provider.bind).not.toHaveBeenCalled();
+  });
+
+  it("dispatches a Codex to Gemini handoff only through the Gemini adapter with its selected model", async () => {
+    const target: HostProvider = {
+      send: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+      stop: vi.fn(async () => {}),
+      bind: vi.fn(),
+      approve: vi.fn(),
+      answer: vi.fn(),
+    };
+    const { engine, store, provider, id } = await setup("codex", { antigravity: target });
+    const original = await store.session(id);
+    await store.save(
+      {
+        ...original,
+        revision: original.revision + 1,
+        session: {
+          ...original.session,
+          providerSessionId: "codex-native-thread",
+          blocks: [
+            { id: "original-request", role: "user", text: "Keep project marker SKY-7421" },
+            { id: "original-answer", role: "assistant", text: "Keep the original parser contract" },
+          ],
+        },
+      },
+      { type: "test.history" },
+    );
+    await engine.command({
+      type: "configure",
+      commandId: "gemini-choice",
+      sessionId: id,
+      harness: "antigravity",
+      model: "antigravity:gemini-3.8-flash-high",
+      modelSettings: {},
+      runtimeMode: "supervised",
+    });
+    await engine.command({
+      type: "send",
+      commandId: "gemini-send",
+      sessionId: id,
+      text: "Continue the earlier work",
+    });
+    await vi.waitFor(() => expect(target.send).toHaveBeenCalledTimes(1));
+    const input = vi.mocked(target.send).mock.calls[0][0];
+    expect(input.model).toBe("antigravity:gemini-3.8-flash-high");
+    expect(input.sessionId).toBe(id);
+    expect(input.text).toContain("SKY-7421");
+    expect(input.text).toContain("original parser contract");
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(target.bind).not.toHaveBeenCalled();
+    const final = await store.session(id);
+    expect(final.session.blocks.slice(0, 2).map((block) => block.id)).toEqual([
+      "original-request",
+      "original-answer",
+    ]);
+    expect(await store.sessions()).toHaveLength(1);
+  });
+
   it.each(REMOTE_PROVIDERS)(
     "rewinds durably and sends only retained context for %s",
     async (harness) => {
@@ -1447,6 +1592,126 @@ describe("headless session ownership", () => {
       const refreshed = (await engine.refreshFromDesktop(snapshot))!;
       expect(refreshed.session.blocks).toEqual(snapshot.session.blocks);
       expect(refreshed.session.blocks).not.toEqual(adopted.session.blocks);
+    },
+  );
+
+  it("refreshes a desktop provider switch atomically and binds the new thread only to its adapter", async () => {
+    const target: HostProvider = {
+      send: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+      stop: vi.fn(async () => {}),
+      bind: vi.fn(),
+      approve: vi.fn(),
+      answer: vi.fn(),
+    };
+    const { engine, store, id, provider } = await setup("claude", { codex: target });
+    const initial = await store.session(id);
+    const adopted = await store.save(
+      {
+        ...initial,
+        revision: initial.revision + 1,
+        desktop: { updatedAt: 1, revision: initial.revision + 1 },
+        session: {
+          ...initial.session,
+          providerSessionId: "claude-thread",
+          blocks: [{ id: "original", role: "user", text: "Remember the original request" }],
+        },
+      },
+      { type: "test.adopted" },
+    );
+    const snapshot = structuredClone(adopted);
+    snapshot.updatedAt = adopted.updatedAt + 1000;
+    snapshot.session = {
+      ...snapshot.session,
+      harness: "codex",
+      model: "codex:new",
+      modelSettings: { reasoningEffort: "high" },
+      providerSessionId: "codex-thread",
+      providerAccountId: "work",
+      pendingContextReplay: "Retained conversation context",
+    };
+    const refreshed = (await engine.refreshFromDesktop(snapshot))!;
+    expect(refreshed.session).toMatchObject(snapshot.session);
+    expect(refreshed.session.id).toBe(id);
+    expect(refreshed.session.blocks).toEqual(adopted.session.blocks);
+    expect(provider.stop).toHaveBeenCalledWith(id);
+    expect(provider.bind).not.toHaveBeenCalled();
+    expect(target.bind).toHaveBeenCalledWith(id, "codex-thread", initial.session.cwd, "work");
+  });
+
+  it("continues the same adopted chat with retained context after a desktop provider switch", async () => {
+    const { engine, store, id, turns, provider } = await setup("claude");
+    const initial = await store.session(id);
+    const adopted = await store.save(
+      {
+        ...initial,
+        revision: initial.revision + 1,
+        desktop: { updatedAt: 1, revision: initial.revision + 1 },
+        session: {
+          ...initial.session,
+          providerSessionId: "claude-thread",
+          blocks: [
+            { id: "original", role: "user", text: "Remember the original request" },
+            { id: "answer", role: "assistant", text: "The earlier answer" },
+          ],
+        },
+      },
+      { type: "test.adopted" },
+    );
+    const snapshot = structuredClone(adopted);
+    snapshot.updatedAt = adopted.updatedAt + 1000;
+    snapshot.session.harness = "codex";
+    snapshot.session.model = "codex:new";
+    snapshot.session.providerSessionId = undefined;
+    snapshot.session.pendingContextReplay =
+      "USER: Remember the original request\nASSISTANT: The earlier answer";
+    const refreshed = (await engine.refreshFromDesktop(snapshot))!;
+    expect(mergeAdoptedSession(snapshot.session, refreshed, adopted.session)).toMatchObject({
+      id,
+      harness: "codex",
+      model: "codex:new",
+      blocks: adopted.session.blocks,
+    });
+    expect(provider.stop).toHaveBeenCalledWith(id);
+    expect(provider.bind).not.toHaveBeenCalled();
+    await engine.command({
+      type: "send",
+      commandId: "continue-switched",
+      sessionId: id,
+      text: "Continue",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.model).toBe("codex:new");
+    expect(turns[0].input.text).toContain("Remember the original request");
+    expect(turns[0].input.text).toContain("The earlier answer");
+    const continued = await store.session(id);
+    expect(continued.session.id).toBe(id);
+    expect(continued.session.blocks.slice(0, 2)).toEqual(adopted.session.blocks);
+    turns[0].finish();
+  });
+
+  it.each(["settings", "account", "runtime", "replay"])(
+    "refreshes desktop %s changes even when the transcript and model are unchanged",
+    async (change) => {
+      const { engine, store, id } = await setup();
+      const initial = await store.session(id);
+      const adopted = await store.save(
+        {
+          ...initial,
+          revision: initial.revision + 1,
+          desktop: { updatedAt: 1, revision: initial.revision + 1 },
+        },
+        { type: "test.adopted" },
+      );
+      const snapshot = structuredClone(adopted);
+      snapshot.updatedAt = adopted.updatedAt + 1000;
+      if (change === "settings") snapshot.session.modelSettings = { reasoningEffort: "high" };
+      if (change === "account") snapshot.session.providerAccountId = "work";
+      if (change === "runtime") snapshot.session.runtimeMode = "full-access";
+      if (change === "replay")
+        snapshot.session.pendingContextReplay = "Remember the earlier discussion";
+      const refreshed = (await engine.refreshFromDesktop(snapshot))!;
+      expect(refreshed.session).toEqual(snapshot.session);
     },
   );
 
@@ -2709,11 +2974,14 @@ describe("headless session ownership", () => {
       reply: { kind: "answered", answers: { q1: ["yes"] } },
     };
     await engine.command(reply);
-    expect((await store.session(id)).session.pendingQuestion).toBeUndefined();
-    expect((await store.session(id)).session.blocks.at(-1)).toMatchObject({
-      role: "user",
-      text: "Choose\nYes",
+    expect((await store.session(id)).session.pendingQuestion).toMatchObject({
+      requestId: 3,
+      delivery: "sending",
     });
+    expect((await store.session(id)).session.blocks.at(-1)?.text).toBe("Work");
+    await expect(engine.command({ ...reply, commandId: "concurrent-answer" })).rejects.toThrow(
+      "already pending delivery",
+    );
     const blockCount = (await store.session(id)).session.blocks.length;
     turns[0].input.onEvent({
       type: "question.resolved",
@@ -2721,7 +2989,12 @@ describe("headless session ownership", () => {
       decision: "answered",
       reply: { kind: "answered", answers: { q1: ["yes"] } },
     });
-    expect((await store.session(id)).session.blocks).toHaveLength(blockCount);
+    await vi.waitFor(async () => {
+      const accepted = (await store.session(id)).session;
+      expect(accepted.pendingQuestion).toBeUndefined();
+      expect(accepted.blocks).toHaveLength(blockCount + 1);
+      expect(accepted.blocks.at(-1)).toMatchObject({ role: "user", text: "Choose\nYes" });
+    });
     await expect(engine.command({ ...reply, commandId: "other-answer" })).rejects.toThrow(
       "already resolved",
     );

@@ -1,4 +1,9 @@
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
+import {
+  deliverQuestionReply,
+  showNextQueuedQuestion,
+  type QuestionDelivery,
+} from "../questionDelivery";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { taskListFromToolInput } from "../../../../features/sessions/model/taskList";
@@ -91,7 +96,15 @@ type Live = {
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
   approvals: Map<number, PendingApproval>;
-  questions: Map<number, { id: string; resolve: (reply: UserQuestionReply) => void }>;
+  questions: Map<
+    number,
+    QuestionDelivery & {
+      id: string;
+      providerCancelled?: boolean;
+      resolve: (reply: UserQuestionReply) => void;
+    }
+  >;
+  visibleQuestionId?: number;
   availableCommands?: NativeCommand[];
   promptId: string | null;
   nextApprovalUiId: number;
@@ -377,7 +390,17 @@ export function respondQuestion(
   requestId: number,
   reply: UserQuestionReply,
 ): void {
-  stateFor(flavor).liveByThread.get(sessionId)?.questions.get(requestId)?.resolve(reply);
+  const live = stateFor(flavor).liveByThread.get(sessionId);
+  const pending = live?.questions.get(requestId);
+  if (!live || !pending) return;
+  deliverQuestionReply(
+    pending,
+    requestId,
+    reply,
+    live.onEvent,
+    () => live.questions.get(requestId) === pending && !live.cancelled && !live.muteUpdates,
+    () => pending.resolve(reply),
+  );
 }
 
 export async function cancelTurn(flavor: PiFlavor, sessionId: string): Promise<void> {
@@ -397,7 +420,12 @@ export async function cancelTurn(flavor: PiFlavor, sessionId: string): Promise<v
   live.settleToken += 1;
   for (const [, pending] of live.approvals) pending.resolve("deny");
   live.approvals.clear();
-  for (const question of live.questions.values()) question.resolve({ kind: "skipped" });
+  for (const question of live.questions.values()) {
+    // Release extension dialogs before aborting their workflow. Never overwrite an
+    // answer whose delivery is already in flight or uncertain.
+    if (!question.sending) await question.deliver?.({ kind: "skipped" }).catch(() => undefined);
+    question.resolve({ kind: "skipped" });
+  }
   live.questions.clear();
   await live.rpc.request({ type: "abort" }, 5_000).catch(() => undefined);
   finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
@@ -815,7 +843,10 @@ function handleFrame(
   }
   if (flavor.id === "omp" && rec.type === "extension_ui_request" && rec.method === "cancel") {
     for (const question of live.questions.values()) {
-      if (question.id === rec.id) question.resolve({ kind: "skipped" });
+      if (question.id === rec.id) {
+        question.providerCancelled = true;
+        question.resolve({ kind: "skipped" });
+      }
     }
     return;
   }
@@ -1107,12 +1138,35 @@ async function handleExtensionUi(
   ) {
     const uiId = live.nextApprovalUiId++;
     const replyPromise = new Promise<UserQuestionReply>((resolve) => {
-      live.questions.set(uiId, { id: request.id, resolve });
+      live.questions.set(uiId, {
+        id: request.id,
+        resolve,
+        deliver: async (reply) => {
+          let value: string | undefined;
+          if (reply.kind === "answered") {
+            if (request.method === "select") {
+              const selected = reply.answers[request.id]?.[0];
+              if (selected !== undefined && /^\d+$/.test(selected))
+                value = request.options[Number(selected)];
+            } else value = reply.custom?.[request.id];
+          }
+          await writeChild(
+            sessionId,
+            JSON.stringify({
+              type: "extension_ui_response",
+              id: request.id,
+              ...(value === undefined ? { cancelled: true } : { value }),
+            }),
+          );
+        },
+      });
     });
-    live.onEvent({
+    const event: Extract<HarnessEvent, { type: "question.asked" }> = {
       type: "question.asked",
       requestId: uiId,
       title: extensionUiTitle(request),
+      behavior: "blocking",
+      dismissAction: "cancel",
       questions: [
         {
           id: request.id,
@@ -1132,8 +1186,11 @@ async function handleExtensionUi(
               : [],
         },
       ],
-    });
+    };
+    live.questions.get(uiId)!.event = event;
+    showNextQueuedQuestion(live);
     const reply = await replyPromise;
+    const providerCancelled = live.questions.get(uiId)?.providerCancelled;
     live.questions.delete(uiId);
     let value: string | undefined;
     if (reply.kind === "answered") {
@@ -1148,17 +1205,15 @@ async function handleExtensionUi(
     live.onEvent({
       type: "question.resolved",
       requestId: uiId,
-      decision: value === undefined ? "skipped" : "answered",
+      decision:
+        live.cancelled || live.muteUpdates || providerCancelled
+          ? "cancelled"
+          : value === undefined
+            ? "skipped"
+            : "answered",
       ...(value !== undefined && reply.kind === "answered" ? { reply } : {}),
     });
-    await writeChild(
-      sessionId,
-      JSON.stringify({
-        type: "extension_ui_response",
-        id: request.id,
-        ...(value === undefined ? { cancelled: true } : { value }),
-      }),
-    ).catch(() => undefined);
+    showNextQueuedQuestion(live);
     return;
   }
 

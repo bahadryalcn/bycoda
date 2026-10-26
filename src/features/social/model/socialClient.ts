@@ -4,6 +4,7 @@ import type {
   SocialBrowserIntent,
   SocialBrowserState,
   SocialBrowserWorkflow,
+  SocialRegistrationProfile,
 } from "./socialBrowser";
 import type {
   SocialOperation,
@@ -27,6 +28,7 @@ export function socialClient(machineId: string) {
         "programs.list",
         "programs.status",
         "programs.features",
+        "programs.media-preview",
         "programs.preview-schedule",
       ].includes(action)
         ? {}
@@ -34,6 +36,33 @@ export function socialClient(machineId: string) {
     });
   return {
     request,
+    browserProfileRead: (accountId: string) =>
+      remoteRequest<import("./socialBrowser").XProfileState>(
+        machineId,
+        "social.browser.profile.read",
+        { accountId },
+      ),
+    browserProfileUpdate: (
+      accountId: string,
+      platform: "x" | "linkedin" | "facebook" | "instagram",
+      patch: import("./socialBrowser").XProfilePatch,
+    ) =>
+      remoteRequest<import("./socialBrowser").XProfileState>(
+        machineId,
+        "social.browser.profile.update",
+        {
+          accountId,
+          patch,
+          confirm:
+            platform === "linkedin"
+              ? "UPDATE_LINKEDIN_PROFILE"
+              : platform === "facebook"
+                ? "UPDATE_FACEBOOK_PROFILE"
+                : platform === "instagram"
+                  ? "UPDATE_INSTAGRAM_PROFILE"
+                  : "UPDATE_X_PROFILE",
+        },
+      ),
     xProfileRead: (accountId: string) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,
@@ -56,8 +85,17 @@ export function socialClient(machineId: string) {
       remoteRequest<import("./social").SocialMonitorStatus>(machineId, "social.monitoring.status", {
         accountId,
       }),
-    tokenConnect: (accountId: string) =>
-      remoteRequest(machineId, "social.token.connect", { accountId }),
+    tokenConnect: (accountId: string, reviewId?: string) =>
+      remoteRequest(machineId, "social.token.connect", {
+        accountId,
+        ...(reviewId ? { reviewId } : {}),
+      }),
+    tokenInspect: (accountId: string, target: string) =>
+      remoteRequest<import("./social").SocialTelegramChannelReview>(
+        machineId,
+        "social.token.inspect",
+        { accountId, target },
+      ),
     tiktokCreator: (accountId: string) =>
       remoteRequest<import("./social").TikTokCreatorInfo>(machineId, "social.tiktok.creator", {
         accountId,
@@ -100,21 +138,71 @@ export function socialClient(machineId: string) {
         "social.browser.availability",
         {},
       ),
-    browserWorkflowBegin: (accountId: string, intent: SocialBrowserIntent, targetUrl?: string) =>
+    browserWorkflowBegin: (
+      accountId: string,
+      intent: SocialBrowserIntent,
+      targetUrl?: string,
+      registration?: SocialRegistrationProfile,
+    ) =>
       remoteRequest<SocialBrowserWorkflow>(machineId, "social.browser.workflow.begin", {
         accountId,
         intent,
         targetUrl,
         acknowledgeRisk: true,
+        ...(registration ? { registration } : {}),
+      }),
+    browserRegistrationAdvance: (
+      accountId: string,
+      workflowId: string,
+      expectedUpdatedAt: number,
+      registration: SocialRegistrationProfile,
+    ) =>
+      remoteRequest<SocialBrowserWorkflow>(machineId, "social.browser.registration.advance", {
+        accountId,
+        workflowId,
+        expectedUpdatedAt,
+        registration,
+      }),
+    browserRegistrationReview: (accountId: string, workflowId: string, expectedUpdatedAt: number) =>
+      remoteRequest<import("./socialBrowser").SocialRegistrationReview>(
+        machineId,
+        "social.browser.registration.review",
+        { accountId, workflowId, expectedUpdatedAt },
+      ),
+    browserRegistrationSubmit: (
+      accountId: string,
+      workflowId: string,
+      expectedUpdatedAt: number,
+      reviewId: string,
+    ) =>
+      remoteRequest<SocialBrowserWorkflow>(machineId, "social.browser.registration.submit", {
+        accountId,
+        workflowId,
+        expectedUpdatedAt,
+        reviewId,
+        confirm: "CREATE_LINKEDIN_PAGE",
+      }),
+    browserRegistrationReconcile: (
+      accountId: string,
+      workflowId: string,
+      expectedUpdatedAt: number,
+      resourceId: string,
+    ) =>
+      remoteRequest<SocialBrowserWorkflow>(machineId, "social.browser.registration.reconcile", {
+        accountId,
+        workflowId,
+        expectedUpdatedAt,
+        resourceId,
       }),
     browserWorkflowStatus: (accountId: string) =>
       remoteRequest<SocialBrowserState>(machineId, "social.browser.workflow.status", { accountId }),
     browserWorkflowCancel: (accountId: string) =>
       remoteRequest<void>(machineId, "social.browser.workflow.cancel", { accountId }),
-    browserBegin: (accountId: string) =>
+    browserBegin: (accountId: string, resourceId?: string) =>
       remoteRequest<{ status: string; expiresAt: number }>(machineId, "social.browser.begin", {
         accountId,
         acknowledgeRisk: true,
+        ...(resourceId ? { resourceId } : {}),
       }),
     browserStatus: (accountId: string) =>
       remoteRequest<{ status: string; error?: string }>(machineId, "social.browser.status", {
@@ -126,6 +214,17 @@ export function socialClient(machineId: string) {
       let binary = "";
       for (const byte of bytes) binary += String.fromCharCode(byte);
       return remoteRequest<{ uploadId: string }>(machineId, "social.media.upload", {
+        base64: btoa(binary),
+      });
+    },
+    uploadDocument: async (file: File) => {
+      if (file.type !== "application/pdf" || !file.size || file.size > 5 * 1024 * 1024)
+        throw new Error(t("Select a PDF document up to 5 MiB."));
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return remoteRequest<{ uploadId: string }>(machineId, "social.media.upload", {
+        kind: "document",
         base64: btoa(binary),
       });
     },

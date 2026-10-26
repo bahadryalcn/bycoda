@@ -1,8 +1,8 @@
 .dev-servers-header {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: 4px;
   min-inline-size: 0;
 }
 .dev-servers-title {
@@ -23,14 +23,14 @@
   white-space: nowrap;
 }
 .dev-server-search {
-  flex: 1 1 220px;
+  flex: 1 1 0;
   min-inline-size: 0;
 }
 .dev-server-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-inline-size: 0;
 }
 .dev-server-actions-gap {
@@ -50,10 +50,9 @@
   display: grid;
   min-inline-size: 0;
   margin: 0;
-  padding: 4px;
+  padding: 0;
   list-style: none;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-panel);
+  border: 0;
   background: var(--ui-surface);
 }
 .dev-server-row {
@@ -96,6 +95,9 @@
   background: var(--ui-surface);
 }
 .dev-server-selection {
+  border: 0;
+  border-inline-start: 1px solid var(--color-stroke);
+  border-radius: 0;
   position: sticky;
   inset-block-start: 0;
 }
@@ -205,6 +207,8 @@
   }
   /* Narrow layouts keep the selected server's actions above the list. */
   .dev-server-selection {
+    border-inline-start: 0;
+    border-block-end: 1px solid var(--color-stroke);
     position: static;
     order: -1;
   }

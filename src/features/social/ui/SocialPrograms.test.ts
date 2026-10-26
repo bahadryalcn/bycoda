@@ -28,7 +28,7 @@ async function render(
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  const request = vi.fn(async (action: string) =>
+  const request = vi.fn(async (action: string, _input?: unknown) =>
     action === "programs.status" ? detail : detail ? [detail.program] : [],
   );
   const commits = vi.fn();
@@ -164,6 +164,8 @@ it("keeps generated image previews separate and recovers a failed preview withou
               media: [
                 { kind: "image", uploadId: "a", alt: "First" },
                 { kind: "image", uploadId: "b", alt: "Second" },
+                { kind: "image", alt: "Missing" },
+                { kind: "image", url: "https://example.test/image.png", alt: "Remote" },
               ],
             },
           },
@@ -184,7 +186,7 @@ it("keeps generated image previews separate and recovers a failed preview withou
   expect(previews()).toHaveLength(2);
   request.mockResolvedValueOnce({ mime: "image/png", base64: "YQ==" } as never);
   await act(async () => previews()[0].click());
-  expect(host.querySelectorAll(".social-program-target img")).toHaveLength(1);
+  expect(host.querySelectorAll(".social-program-target img")).toHaveLength(2);
   expect(host.querySelector('img[alt="First"]')?.getAttribute("src")).toContain("YQ==");
   expect(previews()).toHaveLength(1);
   request.mockRejectedValueOnce(new Error("offline"));
@@ -201,6 +203,28 @@ it("keeps generated image previews separate and recovers a failed preview withou
   expect(host.querySelector<HTMLTextAreaElement>(".social-program-target textarea")?.value).toBe(
     "Keep my content",
   );
+  expect(host.textContent).toContain("No image");
+  const first = host.querySelector('img[alt="First"]')!;
+  await act(async () => first.dispatchEvent(new Event("error")));
+  expect(host.querySelector('img[alt="First"]')).toBeNull();
+  expect(host.querySelector('img[alt="Second"]')).not.toBeNull();
+  const remote = host.querySelector('img[alt="Remote"]')!;
+  await act(async () => remote.dispatchEvent(new Event("error")));
+  expect(host.querySelector('img[alt="Remote"]')).toBeNull();
+  const retryButtons = Array.from(
+    host.querySelectorAll<HTMLButtonElement>(".social-program-target button"),
+  ).filter((b) => b.textContent === "Retry");
+  const remoteRetry = retryButtons[retryButtons.length - 1];
+  await act(async () => remoteRetry.click());
+  expect(remoteRetry.getAttribute("aria-busy")).toBe("true");
+  await act(async () => host.querySelector('img[alt="Remote"]')!.dispatchEvent(new Event("load")));
+  expect(host.querySelector('img[alt="Remote"]')).not.toBeNull();
+  expect(
+    request.mock.calls.some(
+      ([action, args]) =>
+        action === "programs.media-preview" && !(args as { uploadId?: string })?.uploadId,
+    ),
+  ).toBe(false);
 });
 
 it("guides first campaign setup inline and preserves content while changing steps", async () => {

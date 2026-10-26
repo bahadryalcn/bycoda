@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLatentFaceScene } from "./latentFace";
+import { createCodeVisageScene, createLatentFaceScene, mouthOpening } from "./latentFace";
 import { createNeuralTreeScene } from "./neuralTree";
 import { createThoughtWeaverScene } from "./thoughtWeaver";
 import type { LiveBackgroundPalette } from "./types";
@@ -27,6 +27,7 @@ function recordingContext() {
 
 const scenes = [
   ["latent face", createLatentFaceScene],
+  ["code visage", createCodeVisageScene],
   ["neural tree", createNeuralTreeScene],
   ["thought weaver", createThoughtWeaverScene],
 ] as const;
@@ -69,16 +70,44 @@ describe.each(scenes)("%s conversation response", (_name, createScene) => {
   });
 });
 
-it("closes the portrait's mouth when the conversation rests", () => {
-  const scene = createLatentFaceScene(palette);
-  scene.resize(1440, 900);
-  const initial = recordingContext();
-  const active = recordingContext();
-  const resting = recordingContext();
-  scene.draw(initial.context, 0, 0, { presence: 0 });
-  scene.draw(active.context, 0.15, 0.1, { presence: 1 });
-  scene.draw(resting.context, 8, 0.1, { presence: 0 });
-  const lips = (calls: unknown[][]) => calls.filter(([name]) => name === "fillText").slice(-38);
-  expect(lips(active.calls)).not.toEqual(lips(initial.calls));
-  expect(lips(resting.calls)).toEqual(lips(initial.calls));
+describe.each([
+  ["latent face", createLatentFaceScene],
+  ["code visage", createCodeVisageScene],
+] as const)("%s figure", (_name, createScene) => {
+  const glyphs = (calls: unknown[][]) => calls.filter(([name]) => name === "fillText").length;
+
+  it("appears only during a reply and leaves the pane empty at rest", () => {
+    const scene = createScene(palette);
+    scene.resize(1440, 900);
+    const initial = recordingContext();
+    const active = recordingContext();
+    const resting = recordingContext();
+    scene.draw(initial.context, 0, 0, { presence: 0 });
+    scene.draw(active.context, 0.15, 0.1, { presence: 1 });
+    scene.draw(resting.context, 8, 0.1, { presence: 0 });
+    expect(initial.calls.map(([name]) => name)).toEqual(["clearRect"]);
+    expect(glyphs(active.calls)).toBeGreaterThan(300);
+    expect(resting.calls).toEqual(initial.calls);
+  });
+
+  it("kindles gradually as the reply fades in", () => {
+    const scene = createScene(palette);
+    scene.resize(1440, 900);
+    const faint = recordingContext();
+    const full = recordingContext();
+    scene.draw(faint.context, 1, 0, { presence: 0.25 });
+    scene.draw(full.context, 1, 0, { presence: 1 });
+    expect(glyphs(faint.calls)).toBeGreaterThan(0);
+    expect(glyphs(faint.calls)).toBeLessThan(glyphs(full.calls) * 0.6);
+  });
+});
+
+it("moves the lips only during a reply", () => {
+  const openings = new Set<number>();
+  for (let frame = 0; frame < 120; frame++) {
+    expect(mouthOpening(frame / 30, 0)).toBe(0);
+    openings.add(Math.round(mouthOpening(frame / 30, 1) * 10));
+  }
+  expect(openings.has(0)).toBe(true);
+  expect(openings.size).toBeGreaterThanOrEqual(5);
 });

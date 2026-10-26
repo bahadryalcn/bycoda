@@ -136,6 +136,20 @@ describe("application language", () => {
       expect.arrayContaining(["interface-language", "git-language", "technical-language"]),
     );
   });
+  it("names the provider in reconnect and retry notices in every language", async () => {
+    for (const language of LANGUAGES) {
+      await setLanguagePreference(language.value);
+      for (const message of ["Reconnecting to {p0}", "{p0} is retrying"]) {
+        const label = t(message, { p0: "Codex" });
+        expect(label, language.value).toContain("Codex");
+        expect(label, language.value).not.toMatch(/\{(?:provider|p0)\}/);
+      }
+    }
+    await setLanguagePreference("en");
+    expect(t("Reconnecting to {p0}", { p0: "Codex" })).toBe("Reconnecting to Codex");
+    await setLanguagePreference("tr");
+    expect(t("Reconnecting to {p0}", { p0: "Codex" })).toBe("Codex bağlantısı yeniden kuruluyor");
+  });
   it("preserves values, braces and unknown provider text", async () => {
     await setLanguagePreference("tr");
     const value = "C:\\work\\{p1} <script> literal";

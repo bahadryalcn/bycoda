@@ -39,11 +39,19 @@ it("preserves the current surface for dialog search and leaves it only on expand
       expect(setter).not.toHaveBeenCalled();
     }
     expect(deps.setSearchViewOpen).toHaveBeenLastCalledWith(false);
+    act(() => actions.onSearchConversations("needle"));
+    expect(actions.searchDialogOpen).toBe(true);
+    expect(actions.searchRequest).toEqual({
+      scope: "conversations",
+      conversationScope: "project",
+      query: "needle",
+    });
     act(() => actions.onExpandSearch());
     expect(actions.searchDialogOpen).toBe(false);
     expect(deps.setSearchViewOpen).toHaveBeenLastCalledWith(true);
     expect(deps.setServersViewOpen).toHaveBeenLastCalledWith(false);
     act(() => actions.onOpenSearch());
+    expect(actions.searchRequest).toBeUndefined();
     act(() => actions.onLeaveSearch());
     expect(actions.searchDialogOpen).toBe(false);
     expect(deps.setSearchViewOpen).toHaveBeenLastCalledWith(false);

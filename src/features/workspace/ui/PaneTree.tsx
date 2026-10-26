@@ -367,11 +367,8 @@ function PaneTreeComponent({
   );
   const sashes = maximum ? [] : layoutSashes(tree);
   const inSplit = leaves.length > 1;
-  // Keep saved split ratios and mounted drafts; narrow windows can scroll the
-  // layout or use the existing maximize control instead of crushing each input.
-  const minimumLayoutWidth = inSplit && !maximum
-    ? Math.max(...leaves.map((pane) => 320 / Math.max(pane.rect.w, 0.1)))
-    : undefined;
+  // Split rectangles follow the available workspace width. Keep saved ratios
+  // and mounted drafts as the sidebar grows; each pane owns its content overflow.
   // Only this tree's sessions (its panes, tab groups and agent file tabs), so a
   // status change in an unrelated session leaves the tree alone.
   // A hidden tree keeps what it last showed, as the memo below keeps its props.
@@ -594,11 +591,10 @@ function PaneTreeComponent({
   }, []);
 
   return (
-    <div className="h-full min-h-0 min-w-0 overflow-x-auto">
+    <div className="h-full min-h-0 min-w-0 overflow-hidden">
     <div
       ref={treeRef}
       className="relative h-full min-h-0 min-w-0"
-      style={{ minWidth: minimumLayoutWidth }}
       data-pane-maximized={maximum?.id}
     >
       {renderLeaves.map((leaf) => {

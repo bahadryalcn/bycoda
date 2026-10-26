@@ -86,7 +86,6 @@ export function HarnessUpdateNotice({
   if (!visible) return null;
 
   const stateOf = (harness: HarnessId): HarnessUpdateRun => runs[harness] ?? { status: "idle" };
-  const busy = updates.some((update) => stateOf(update.harness).status === "updating");
   const pending = updates.filter((update) => {
     const status = stateOf(update.harness).status;
     return status === "idle" || status === "failed";
@@ -113,7 +112,6 @@ export function HarnessUpdateNotice({
       width="lg"
       offset={topOffset}
       onDismiss={dismiss}
-      dismissDisabled={busy}
       onHeightChange={onHeightChange}
       actions={
         pending.length > 1 ? (

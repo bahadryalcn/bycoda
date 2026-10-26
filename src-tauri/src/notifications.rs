@@ -102,7 +102,11 @@ pub fn set_taskbar_attention(
     {
         use tauri::image::Image;
         use tauri::UserAttentionType;
-        let icon = (count > 0).then(|| Image::new_owned(badge_rgba(count), BADGE_SIZE, BADGE_SIZE));
+        let icon = if count > 0 {
+            Some(Image::new_owned(badge_rgba(count)?, BADGE_SIZE, BADGE_SIZE))
+        } else {
+            None
+        };
         window
             .set_overlay_icon(icon)
             .map_err(|err| err.to_string())?;
@@ -121,90 +125,59 @@ pub fn set_taskbar_attention(
 #[cfg(any(target_os = "windows", test))]
 const BADGE_SIZE: u32 = 32;
 
-/// 3x5 glyphs for `0`-`9` and `+`, one row per entry, MSB-first in 3 bits.
+/// Pre-rendered Segoe UI badges, with optical padding and antialiased edges.
+/// Embedding the atlas keeps rendering independent of installed fonts, theme,
+/// and display settings. Regenerate with scripts/build/generate-taskbar-badges.ps1.
 #[cfg(any(target_os = "windows", test))]
-const GLYPHS: [[u8; 5]; 11] = [
-    [0b111, 0b101, 0b101, 0b101, 0b111],
-    [0b010, 0b110, 0b010, 0b010, 0b111],
-    [0b111, 0b001, 0b111, 0b100, 0b111],
-    [0b111, 0b001, 0b111, 0b001, 0b111],
-    [0b101, 0b101, 0b111, 0b001, 0b001],
-    [0b111, 0b100, 0b111, 0b001, 0b111],
-    [0b111, 0b100, 0b111, 0b101, 0b111],
-    [0b111, 0b001, 0b010, 0b010, 0b010],
-    [0b111, 0b101, 0b111, 0b101, 0b111],
-    [0b111, 0b101, 0b111, 0b001, 0b111],
-    [0b000, 0b010, 0b111, 0b010, 0b000],
-];
-
-/// Red disc with the count in white (`9+` above nine), as RGBA pixels.
-#[cfg(any(target_os = "windows", test))]
-fn badge_rgba(count: u32) -> Vec<u8> {
-    let size = BADGE_SIZE as i32;
-    let glyphs: Vec<usize> = if count > 9 {
-        vec![9, 10]
-    } else {
-        vec![count as usize]
-    };
-    let scale = if glyphs.len() == 1 { 5 } else { 4 };
-    let width = glyphs.len() as i32 * 3 * scale + (glyphs.len() as i32 - 1) * scale;
-    let (left, top) = ((size - width) / 2, (size - 5 * scale) / 2);
-    let mut pixels = vec![0u8; (size * size * 4) as usize];
-    let radius = size as f32 / 2.0;
-    for y in 0..size {
-        for x in 0..size {
-            let (dx, dy) = (x as f32 + 0.5 - radius, y as f32 + 0.5 - radius);
-            if dx * dx + dy * dy > radius * radius {
-                continue;
-            }
-            let (gx, gy) = (x - left, y - top);
-            let lit = gx >= 0 && gy >= 0 && gy < 5 * scale && gx < width && {
-                let slot = gx / (4 * scale);
-                let col = (gx % (4 * scale)) / scale;
-                col < 3
-                    && GLYPHS[glyphs[slot as usize]][(gy / scale) as usize] >> (2 - col) & 1 == 1
-            };
-            let rgba: [u8; 4] = if lit {
-                [255, 255, 255, 255]
-            } else {
-                [215, 38, 61, 255]
-            };
-            let at = ((y * size + x) * 4) as usize;
-            pixels[at..at + 4].copy_from_slice(&rgba);
-        }
+fn badge_rgba(count: u32) -> Result<Vec<u8>, String> {
+    use std::sync::OnceLock;
+    static ATLAS: OnceLock<Result<image::RgbaImage, String>> = OnceLock::new();
+    if count == 0 {
+        return Ok(vec![0; (BADGE_SIZE * BADGE_SIZE * 4) as usize]);
     }
-    pixels
+    let atlas = ATLAS.get_or_init(|| {
+        image::load_from_memory(include_bytes!("../icons/taskbar-badges.png"))
+            .map(|image| image.into_rgba8())
+            .map_err(|error| format!("Could not decode taskbar badges: {error}"))
+    });
+    let atlas = atlas.as_ref().map_err(Clone::clone)?;
+    let slot = count.min(10) - 1;
+    Ok(
+        image::imageops::crop_imm(atlas, slot * BADGE_SIZE, 0, BADGE_SIZE, BADGE_SIZE)
+            .to_image()
+            .into_raw(),
+    )
 }
 
 #[cfg(test)]
 mod badge_tests {
     use super::{badge_rgba, BADGE_SIZE};
 
-    fn white(pixels: &[u8]) -> usize {
-        pixels
-            .chunks(4)
-            .filter(|p| p == &[255, 255, 255, 255])
-            .count()
+    #[test]
+    fn every_badge_has_transparent_padding_and_smooth_edges() {
+        for count in 1..=10 {
+            let pixels = badge_rgba(count).unwrap();
+            assert_eq!(pixels.len(), (BADGE_SIZE * BADGE_SIZE * 4) as usize);
+            let row = (BADGE_SIZE * 4) as usize;
+            assert!(pixels[..row].iter().all(|&byte| byte == 0));
+            assert!(pixels[pixels.len() - row..].iter().all(|&byte| byte == 0));
+            assert!(pixels
+                .chunks_exact(4)
+                .any(|pixel| pixel[3] > 0 && pixel[3] < 255));
+            assert!(pixels
+                .chunks_exact(4)
+                .any(|pixel| pixel == [255, 255, 255, 255]));
+        }
     }
 
     #[test]
-    fn badge_is_a_square_rgba_buffer_with_transparent_corners() {
-        let pixels = badge_rgba(3);
-        assert_eq!(pixels.len(), (BADGE_SIZE * BADGE_SIZE * 4) as usize);
-        assert_eq!(&pixels[..4], &[0, 0, 0, 0]);
-        // The glyph for `1` lights 8 cells, each 5x5 pixels.
-        assert_eq!(white(&badge_rgba(1)), 8 * 25);
-    }
-
-    #[test]
-    fn digits_draw_different_glyphs_and_overflow_collapses_to_nine_plus() {
-        assert_ne!(badge_rgba(1), badge_rgba(2));
-        assert_eq!(badge_rgba(10), badge_rgba(99));
-        assert_ne!(badge_rgba(10), badge_rgba(9));
-        assert!(white(&badge_rgba(10)) > 0);
+    fn zero_clears_and_counts_above_nine_share_the_overflow_badge() {
+        assert!(badge_rgba(0).unwrap().iter().all(|&byte| byte == 0));
+        assert_ne!(badge_rgba(1).unwrap(), badge_rgba(2).unwrap());
+        assert_ne!(badge_rgba(9).unwrap(), badge_rgba(10).unwrap());
+        assert_eq!(badge_rgba(10).unwrap(), badge_rgba(u32::MAX).unwrap());
     }
 }
-
 #[cfg(target_os = "macos")]
 mod platform {
     use std::cell::RefCell;

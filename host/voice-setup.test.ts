@@ -1,7 +1,13 @@
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { join } from "node:path";
 import { VoiceSetupService } from "./voice-setup";
 import type { VoiceRuntimeConfig } from "./voice-runtime";
+
+const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
+vi.mock("node:child_process", () => ({ spawn }));
+afterEach(() => spawn.mockReset());
 
 const home = join("test-home", "owner");
 const python = join(home, ".bycoda", "voice", "Scripts/python.exe");
@@ -28,8 +34,16 @@ function fixture(natural = true) {
     });
   });
   const mkdir = vi.fn(async () => {});
-  const service = new VoiceSetupService({ inspect, run, mkdir, home, platform: "win32" });
-  return { service, inspect, run, mkdir };
+  const preparePython = vi.fn(async () => "downloaded-python");
+  const service = new VoiceSetupService({
+    inspect,
+    run,
+    mkdir,
+    home,
+    platform: "win32",
+    preparePython,
+  });
+  return { service, inspect, run, mkdir, preparePython };
 }
 
 it("does no work until explicitly started and deduplicates concurrent install requests", async () => {
@@ -87,15 +101,40 @@ it("preserves existing selected model folders instead of downloading replacement
   });
 });
 
-it("reports missing compatible Python without running installers or creating directories", async () => {
-  const { service, inspect, run, mkdir } = fixture();
+it("preserves an invalid explicit Python location without downloading a replacement", async () => {
+  const { service, inspect, run, mkdir, preparePython } = fixture();
   inspect.mockResolvedValue({ missing: ["Python 3.10–3.12"], ready: false });
-  service.start({ natural: true });
+  service.start({ natural: true, python: "selected-python" });
   await vi.waitFor(() =>
     expect(service.status()).toMatchObject({ state: "error", error: "python_missing" }),
   );
   expect(run).not.toHaveBeenCalled();
   expect(mkdir).not.toHaveBeenCalled();
+  expect(preparePython).not.toHaveBeenCalled();
+});
+
+it("prepares private Python when automatic detection finds none and completes setup", async () => {
+  const { service, inspect, run, preparePython } = fixture(false);
+  inspect.mockResolvedValueOnce({ missing: ["Python 3.10–3.12"], ready: false });
+  service.start({ natural: false });
+  await vi.waitFor(() => expect(service.status().state).toBe("ready"));
+  expect(preparePython).toHaveBeenCalledExactlyOnceWith({
+    directory: join(home, ".bycoda", "voice", "python-runtime"),
+    signal: expect.any(AbortSignal),
+    run,
+    platform: "win32",
+  });
+  expect(run.mock.calls[0][0]).toBe("downloaded-python");
+});
+
+it("reports a private Python download failure without running package installers", async () => {
+  const { service, inspect, run, preparePython } = fixture(false);
+  inspect.mockResolvedValueOnce({ missing: ["Python 3.10–3.12"], ready: false });
+  preparePython.mockRejectedValueOnce(new Error("Python download failed. Try again."));
+  service.start({ natural: false });
+  await vi.waitFor(() => expect(service.status().state).toBe("error"));
+  expect(service.status().detail).toContain("Python download failed");
+  expect(run).not.toHaveBeenCalled();
 });
 
 it("rejects incomplete explicitly selected folders before installing and allows a corrected retry", async () => {
@@ -145,4 +184,35 @@ it("does not report ready when final verification fails", async () => {
     expect(service.status()).toMatchObject({ state: "error", error: "install_failed" }),
   );
   expect(service.status().config).toBeUndefined();
+});
+
+it.each([
+  ["ERROR: No matching distribution found for voxcpm", "incompatible"],
+  ["OSError: [Errno 28] No space left on device", "disk space"],
+  ["SSLCertVerificationError: CERTIFICATE_VERIFY_FAILED", "certificate settings"],
+  ["No module named ensurepip", "virtual-environment support"],
+  ["No module named pip", "package support (pip)"],
+  ["error: Microsoft Visual C++ 14.0 is required", "build prerequisites"],
+])("classifies installer failures with safe recovery guidance: %s", async (stderr, expected) => {
+  spawn.mockImplementation(() => {
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: vi.fn(),
+    });
+    queueMicrotask(() => {
+      child.stderr.write(
+        `https://user:private-secret@registry.invalid/path?token=hidden\n${stderr}`,
+      );
+      child.emit("close", 1);
+    });
+    return child;
+  });
+  const { inspect, mkdir } = fixture(false);
+  const service = new VoiceSetupService({ inspect, mkdir, home, platform: "win32" });
+  service.start({ natural: false });
+  await vi.waitFor(() => expect(service.status().state).toBe("error"));
+  expect(service.status().detail).toContain(expected);
+  expect(service.status().detail).not.toMatch(/private-secret|registry\.invalid|hidden/);
+  expect(spawn.mock.calls[0][2].env.HF_HUB_DISABLE_XET).toBe("1");
 });

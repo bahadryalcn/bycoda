@@ -3,13 +3,13 @@ import { previewSession } from "../../../../host/transcriptPage";
 import type { AdoptedDivergence, Attachment, Block, Session } from "../../sessions/model/session";
 import type { AdoptedMirrorDeps } from "./adoptedSessions";
 import type { HostSession } from "./protocol";
+import { planComposerSwitch, withHarnessChoice } from "../../sessions/model/handoff";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 
-const { keepAdoptedDivergence, mirrorAdoptedSessions, refreshAdoptedSession } = await import(
-  "./adoptedSessions"
-);
+const { keepAdoptedDivergence, mirrorAdoptedSessions, refreshAdoptedSession } =
+  await import("./adoptedSessions");
 const { getSession, sanitizeSessionForPersist } = await import("../../sessions/data/sessionStore");
 
 /**
@@ -125,8 +125,14 @@ function desktop(initial: Session) {
     copies,
     flags,
     session: () => current,
-    setHost: (blocks: Block[], status: HostSession["status"], revision: number) => {
+    setHost: (
+      blocks: Block[],
+      status: HostSession["status"],
+      revision: number,
+      configuration: Partial<Session> = {},
+    ) => {
       host = wireOf(blocks, status, revision);
+      host.session = { ...host.session, ...configuration };
     },
     /** The user types in this desktop's own copy. */
     edit: (update: (session: Session) => Session) => {
@@ -168,6 +174,65 @@ describe("the wire form the desktop reads back from its own host", () => {
 });
 
 describe("a conversation with attachments continued from another computer", () => {
+  it("restores and mirrors an unsent provider choice before the old host acknowledges it", async () => {
+    const original = transcript();
+    const app = desktop(desktopSession(original));
+    await app.pass();
+    app.edit((session) => {
+      const plan = planComposerSwitch(session, "codex");
+      return {
+        ...withHarnessChoice(session, "codex", "gpt", {}),
+        ...(plan.kind === "arm" ? { pendingSwitch: plan.pending } : {}),
+      };
+    });
+    await app.restart();
+    expect(app.session().pendingContextReplay).toContain("question");
+    await app.pass(new Map());
+    expect(app.session().id).toBe("s1");
+    expect(app.session().harness).toBe("codex");
+    expect(app.session().model).toBe("gpt");
+    expect(app.session().providerSessionId).toBeUndefined();
+    expect(app.session().pendingContextReplay).toContain("question");
+    expect(app.session().blocks).toEqual(original);
+    expect(app.flags).toHaveLength(0);
+    expect(app.copies).toHaveLength(0);
+  });
+  it("switches providers in the same chat while stale and acknowledged host copies retain all local content", async () => {
+    const original = transcript();
+    const app = desktop(desktopSession(original));
+    await app.pass();
+    app.edit((session) => {
+      const plan = planComposerSwitch(session, "codex");
+      expect(plan.kind).toBe("arm");
+      return {
+        ...withHarnessChoice(session, "codex", "gpt", { reasoningEffort: "high" }),
+        ...(plan.kind === "arm" ? { pendingSwitch: plan.pending } : {}),
+      };
+    });
+    for (const revision of [2, 3]) {
+      app.setHost(original, "idle", revision);
+      await app.pass();
+      expect(app.session().harness).toBe("codex");
+      expect(app.session().model).toBe("gpt");
+      expect(app.session().pendingSwitch?.from).toBe("claude");
+    }
+    app.setHost(original, "idle", 4, {
+      harness: "codex",
+      model: "gpt",
+      modelSettings: { reasoningEffort: "high" },
+      providerSessionId: undefined,
+      pendingContextReplay: "storage-only recovery context",
+    });
+    await app.pass();
+    expect(app.session().id).toBe("s1");
+    expect(app.session().blocks).toEqual(original);
+    expect(filePaths(app.session())).toEqual(attachments().map((file) => file.path));
+    expect(app.session().providerSessionId).toBeUndefined();
+    expect(app.session().pendingSwitch?.from).toBe("claude");
+    expect(app.session().pendingContextReplay).toBeUndefined();
+    expect(app.flags).toHaveLength(0);
+    expect(app.copies).toHaveLength(0);
+  });
   it("is left alone when nothing changed: no copy, no flag, files kept", async () => {
     const app = desktop(desktopSession(transcript()));
     await app.pass();
@@ -398,8 +463,6 @@ describe("typing on the desktop during a turn the other computer runs", () => {
       [...transcript(), ...macTurn()].map((block) => block.id),
     );
     // The message waits in the queue for the dispatcher; nothing was lost or sent twice.
-    expect(app.session().queuedMessages?.map((row) => row.text)).toEqual([
-      "typed on the desktop",
-    ]);
+    expect(app.session().queuedMessages?.map((row) => row.text)).toEqual(["typed on the desktop"]);
   });
 });

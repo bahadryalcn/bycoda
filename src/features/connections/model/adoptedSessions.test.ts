@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Attachment, Block, Session } from "../../sessions/model/session";
 import {
   ADOPTED_FLAGGED_REFETCH_MS,
+  adoptedSessionTimes,
   adoptedBranchId,
   adoptedDivergenceKey,
   adoptedTranscriptLead,
@@ -51,6 +52,34 @@ const entry = (over: Partial<AdoptedEntry> = {}): AdoptedEntry => ({
   updatedAt: 10,
   status: "idle",
   ...over,
+});
+
+describe("adopted history timestamps", () => {
+  it("keeps the host's original dates instead of the time of the desktop copy", () => {
+    expect(adoptedSessionTimes({ ...host({}), createdAt: 100, updatedAt: 200 })).toEqual({
+      createdAt: 100,
+      updatedAt: 200,
+    });
+  });
+
+  it("recovers missing dates from submitted turns, excluding drafts", () => {
+    const snapshot = host({
+      blocks: [
+        { id: "old", role: "user", text: "old", startedAt: 100, durationMs: 25 },
+        { id: "new", role: "user", text: "new", startedAt: 200, durationMs: 50 },
+        { id: "draft", role: "user", text: "draft", startedAt: 900, draft: true },
+      ],
+    });
+    expect(adoptedSessionTimes({ ...snapshot, updatedAt: NaN })).toEqual({
+      createdAt: 100,
+      updatedAt: 250,
+    });
+    expect(adoptedSessionTimes({ ...snapshot, createdAt: 500, updatedAt: 200 })).toEqual({
+      createdAt: 200,
+      updatedAt: 200,
+    });
+    expect(adoptedSessionTimes({ ...host({}), updatedAt: 0 })).toBeUndefined();
+  });
 });
 
 describe("refreshAdoptedSession", () => {
@@ -410,6 +439,93 @@ describe("mergeAdoptedSession", () => {
       ),
     ).toBeUndefined();
   });
+  it("retains a recovered unsent provider choice over an idle host with identical history", () => {
+    const remote = local({ providerSessionId: "old-thread", context: { used: 100, window: 1000 } });
+    const recovered = local({
+      harness: "codex",
+      model: "gpt",
+      providerSessionId: undefined,
+      pendingContextReplay: "Retained earlier conversation",
+      title: "New provider · Local",
+    });
+    const merged = mergeAdoptedSession(recovered, host(remote))!;
+    expect(merged).toMatchObject({
+      harness: "codex",
+      model: "gpt",
+      pendingContextReplay: recovered.pendingContextReplay,
+    });
+    expect(merged.providerSessionId).toBeUndefined();
+    expect(merged.blocks).toEqual(recovered.blocks);
+    expect(merged.title).toBe(recovered.title);
+    expect(merged.context).toBeUndefined();
+  });
+  it("keeps a repaired legacy identity while its old Host copy still has mixed provider metadata", () => {
+    const remote = local({
+      harness: "codex",
+      model: "antigravity:gemini-3.8-flash-high",
+      providerSessionId: "codex-thread",
+    });
+    const repaired = {
+      ...remote,
+      harness: "antigravity" as const,
+      providerSessionId: undefined,
+      pendingSwitch: { from: "codex" as const, fromModel: remote.model, fromSettings: {} },
+    };
+    const merged = mergeAdoptedSession(repaired, host(remote))!;
+    expect(merged.harness).toBe("antigravity");
+    expect(merged.model).toBe(remote.model);
+    expect(merged.providerSessionId).toBeUndefined();
+    expect(merged.pendingSwitch).toEqual(repaired.pendingSwitch);
+    expect(merged.blocks).toEqual(remote.blocks);
+  });
+  it.each(["running", "host-ahead"])(
+    "does not override %s host execution with recovered model intent",
+    (kind) => {
+      const recovered = local({
+        harness: "codex",
+        model: "gpt",
+        providerSessionId: undefined,
+        pendingContextReplay: "Retained earlier conversation",
+      });
+      const remote = host(
+        {
+          providerSessionId: "old-thread",
+          blocks:
+            kind === "host-ahead"
+              ? [...recovered.blocks, block("new-host-turn")]
+              : recovered.blocks,
+        },
+        kind === "running" ? "running" : "idle",
+      );
+      const merged = mergeAdoptedSession(recovered, remote)!;
+      expect(merged.harness).toBe("claude");
+      expect(merged.providerSessionId).toBe("old-thread");
+      expect(merged.blocks).toEqual(remote.session.blocks);
+    },
+  );
+  it("keeps a pending local provider handoff separate from the host's recovery replay", () => {
+    const base = local({ providerSessionId: "old-thread" });
+    const pendingSwitch = { from: "claude" as const, fromModel: "old", fromSettings: {} };
+    const edited = local({
+      harness: "codex",
+      model: "gpt",
+      pendingSwitch,
+      providerSessionId: undefined,
+    });
+    const merged = mergeAdoptedSession(
+      edited,
+      host({
+        ...base,
+        blocks: base.blocks,
+        pendingContextReplay: "persisted recovery context",
+      }),
+      base,
+    )!;
+    expect(merged.harness).toBe("codex");
+    expect(merged.pendingSwitch).toEqual(pendingSwitch);
+    expect(merged.pendingContextReplay).toBeUndefined();
+    expect(merged.blocks).toEqual(base.blocks);
+  });
   it("rejects equal-length divergent text, and accepts a rewind only with an unchanged baseline", () => {
     const edited = local({
       blocks: [{ id: "a", role: "user", text: "new local" } as never],
@@ -445,12 +561,14 @@ describe("mergeAdoptedSession", () => {
     expect(merged.historyLoadError).toBeUndefined();
   });
   it("adopts rewind archives and pending replay metadata from the host", () => {
-    const history = [{
-      id: "rewind-1",
-      fromBlockId: "b",
-      createdAt: 10,
-      blocks: [block("b")],
-    }];
+    const history = [
+      {
+        id: "rewind-1",
+        fromBlockId: "b",
+        createdAt: 10,
+        blocks: [block("b")],
+      },
+    ];
     const merged = mergeAdoptedSession(
       local(),
       host({ rewindHistory: history, pendingContextReplay: "retained prefix" }),
@@ -723,6 +841,42 @@ describe("adopted sessions after quitting mid-turn or with a lagging host", () =
 });
 
 describe("mirrorAdoptedSessions", () => {
+  it("retains a local model choice through repeated stale host revisions until acknowledged", async () => {
+    let current = local({ providerSessionId: "thread" });
+    let remote = host({ ...current });
+    const conflict = vi.fn();
+    const preserve = vi.fn();
+    const deps: AdoptedMirrorDeps = {
+      list: async () => [entry({ revision: remote.revision })],
+      load: async () => remote,
+      local: () => [current],
+      apply: (merged) => {
+        current = merged;
+      },
+      mirrored: new Map(),
+      conflict,
+      preserve,
+    };
+    await mirrorAdoptedSessions(deps);
+    current = { ...current, model: "chosen-model", modelSettings: { effort: "high" } };
+    const blocks = current.blocks;
+    for (const revision of [6, 7]) {
+      remote = { ...remote, revision };
+      await mirrorAdoptedSessions(deps);
+      expect(current.model).toBe("chosen-model");
+      expect(current.modelSettings).toEqual({ effort: "high" });
+      expect(current.blocks).toBe(blocks);
+      expect(current.providerSessionId).toBe("thread");
+    }
+    remote = { ...remote, revision: 8, session: { ...current } };
+    await mirrorAdoptedSessions(deps);
+    // A later deliberate host selection still propagates after acknowledgement.
+    remote = { ...remote, revision: 9, session: { ...current, model: "remote-model" } };
+    await mirrorAdoptedSessions(deps);
+    expect(current.model).toBe("remote-model");
+    expect(conflict).not.toHaveBeenCalled();
+    expect(preserve).not.toHaveBeenCalled();
+  });
   it("reports live status before loading a conflicting transcript", async () => {
     const onRunning = vi.fn();
     const conflict = vi.fn();
@@ -1272,10 +1426,15 @@ describe("divergence judged by conversation content", () => {
 
   it("still treats an edited prompt or a different assistant reply as divergence", () => {
     const edited = { ...prompt, text: "Review the other plan" } as Block;
-    expect(mergeAdoptedSession(local({ blocks: [edited] }), host({ blocks: [prompt, reply] }))).toBeUndefined();
+    expect(
+      mergeAdoptedSession(local({ blocks: [edited] }), host({ blocks: [prompt, reply] })),
+    ).toBeUndefined();
     const other = { ...reply, text: "Something else." } as Block;
     expect(
-      mergeAdoptedSession(local({ blocks: [prompt, other, block("x")] }), host({ blocks: [prompt, reply] })),
+      mergeAdoptedSession(
+        local({ blocks: [prompt, other, block("x")] }),
+        host({ blocks: [prompt, reply] }),
+      ),
     ).toBeUndefined();
   });
 
@@ -1347,9 +1506,7 @@ describe("a session adopted while the host was still writing it", () => {
   // Desktop storage drops the stream flag: the restored reply is closed but cut short.
   const stored = (session: Session): Session => ({
     ...session,
-    blocks: session.blocks.map(
-      ({ streaming: _streaming, ...rest }) => rest as Block,
-    ),
+    blocks: session.blocks.map(({ streaming: _streaming, ...rest }) => rest as Block),
   });
 
   it("takes the host's finished reply without saving a local copy", async () => {
@@ -1361,15 +1518,11 @@ describe("a session adopted while the host was still writing it", () => {
     const preserve = vi.fn(async () => true);
     const conflict = vi.fn();
     const deps: AdoptedMirrorDeps = {
-      list: async () => [
-        entry({ revision: snapshot.revision, status: snapshot.status }),
-      ],
+      list: async () => [entry({ revision: snapshot.revision, status: snapshot.status })],
       load: async () => snapshot,
       local: () => loaded,
       apply: (merged) => {
-        loaded = loaded.map((session) =>
-          session.id === merged.id ? merged : session,
-        );
+        loaded = loaded.map((session) => (session.id === merged.id ? merged : session));
       },
       mirrored: new Map(),
       stored: async () => saved,
@@ -1469,10 +1622,7 @@ describe("a host turn that just finished", () => {
   it("stays continuing elsewhere until its transcript is applied here", async () => {
     let current = local({ blocks: [block("a")] });
     let listing = entry({ status: "running" });
-    let snapshot: HostSession | Error = host(
-      { blocks: [block("a")] },
-      "running",
-    );
+    let snapshot: HostSession | Error = host({ blocks: [block("a")] }, "running");
     const reported: string[][] = [];
     const deps: AdoptedMirrorDeps = {
       list: async () => [listing],

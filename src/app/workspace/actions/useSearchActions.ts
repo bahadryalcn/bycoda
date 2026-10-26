@@ -1,4 +1,5 @@
 import { useCallback, useState, startTransition, type Dispatch, type SetStateAction } from "react";
+import type { SearchRequest } from "../../../features/search/model/appSearch";
 
 export interface SearchActionDeps {
   activeTabId: string | null | undefined;
@@ -17,11 +18,14 @@ export interface SearchActionDeps {
 export function useSearchActions(deps: SearchActionDeps): {
   onCloseCurrentTab: () => unknown;
   onOpenSearch: () => void;
+  onSearchConversations: (query?: string) => void;
+  searchRequest: SearchRequest | undefined;
   onLeaveSearch: () => void;
   searchDialogOpen: boolean;
   onExpandSearch: () => void;
 } {
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const [searchRequest, setSearchRequest] = useState<SearchRequest>();
   const {
     activeTabId,
     onCloseTab,
@@ -42,6 +46,17 @@ export function useSearchActions(deps: SearchActionDeps): {
 
   const onOpenSearch = useCallback(() => {
     startTransition(() => {
+      setSearchRequest(undefined);
+      setFilePickerOpen(false);
+      setSearchViewOpen(false);
+      setSearchDialogOpen(true);
+      setSearchViewFocusToken((token) => token + 1);
+    });
+  }, []);
+
+  const onSearchConversations = useCallback((query?: string) => {
+    startTransition(() => {
+      setSearchRequest({ scope: "conversations", conversationScope: "project", query });
       setFilePickerOpen(false);
       setSearchViewOpen(false);
       setSearchDialogOpen(true);
@@ -67,5 +82,13 @@ export function useSearchActions(deps: SearchActionDeps): {
     setSearchViewOpen(false);
   }, []);
 
-  return { onCloseCurrentTab, onOpenSearch, onLeaveSearch, searchDialogOpen, onExpandSearch };
+  return {
+    onCloseCurrentTab,
+    onOpenSearch,
+    onSearchConversations,
+    searchRequest,
+    onLeaveSearch,
+    searchDialogOpen,
+    onExpandSearch,
+  };
 }

@@ -17,9 +17,10 @@
   background: var(--color-background-base);
   flex: 1 1 0;
   block-size: auto;
-  gap: clamp(6px, 1cqi, 10px);
+  gap: 4px;
   min-block-size: 0;
-  padding-block: 8px;
+  padding: 4px;
+  --host-tool-content: 100%;
 }
 
 .runtime-logs-panel > :not(.runtime-logs-timeline) {
@@ -149,7 +150,24 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+}
+
+.runtime-logs-source-picker {
+  flex: 0 1 180px;
+  min-inline-size: 0;
+}
+
+.runtime-logs-controls > .runtime-logs-search {
+  order: 1;
+}
+
+.runtime-logs-controls > button {
+  order: 2;
+}
+
+.runtime-logs-controls > .runtime-logs-stream-actions {
+  order: 3;
 }
 
 .runtime-logs-search {
@@ -168,7 +186,8 @@
 
 .runtime-logs-stream-actions,
 .runtime-logs-footer-actions {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  gap: 0;
 }
 
 .runtime-logs-filters {
@@ -213,7 +232,7 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-panel);
+  border-radius: 0;
   background: var(--color-background-base);
 }
 
@@ -633,6 +652,53 @@
   gap: 12px;
   padding: 12px;
   min-inline-size: 0;
+}
+
+.runtime-logs-monitors-popover {
+  padding: 12px;
+}
+
+.runtime-logs-monitors-popover .runtime-logs-monitor-setup {
+  display: grid;
+  gap: 10px;
+}
+
+.runtime-logs-monitors-popover .runtime-logs-capture-form > .bycoda-arc-field {
+  flex-basis: 160px;
+}
+
+.runtime-logs-monitors-popover .runtime-logs-monitor-name {
+  min-inline-size: 0;
+  max-inline-size: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.runtime-logs-footer {
+  justify-content: start;
+  min-block-size: 24px;
+  padding-inline: 4px;
+  font-size: var(--ui-font-micro);
+}
+
+.runtime-logs-footer .runtime-logs-totals {
+  gap: 6px;
+  margin-inline-start: auto;
+  font-size: var(--ui-font-micro);
+}
+
+@container (max-width: 620px) {
+  .runtime-logs-source-picker {
+    flex: 1 1 120px;
+    max-inline-size: 180px;
+  }
+  .runtime-logs-controls > .runtime-logs-search {
+    flex: 1 1 140px;
+  }
+  .runtime-logs-controls > .runtime-logs-stream-actions {
+    flex: 1 1 auto;
+    justify-content: end;
+  }
 }
 .runtime-logs-capture-form > .bycoda-arc-field {
   flex: 1 1 120px;

@@ -8,6 +8,7 @@ import { platformRequirements } from "../src/integrations/social/capabilities";
 import { SocialHttp } from "../src/integrations/social/adapter";
 import {
   SOCIAL_PLATFORMS,
+  SOCIAL_API_ACCOUNT_TYPES,
   PROFILE_ONLY_PLATFORMS,
   TOKEN_PLATFORMS,
 } from "../src/features/social/model/social";
@@ -22,7 +23,12 @@ export type SocialOAuthConfig = {
   graphVersion: string;
   linkedinVersion: string;
 };
-type Candidate = { id: string; name: string; credential: SocialCredential };
+type Candidate = {
+  id: string;
+  name: string;
+  credential: SocialCredential;
+  instagramAccountType?: SocialAccount["instagramAccountType"];
+};
 type Flow = {
   accountId: string;
   platform: SocialPlatform;
@@ -80,6 +86,20 @@ export class SocialOAuth {
   }
   async refresh(account: SocialAccount, credential: SocialCredential): Promise<SocialCredential> {
     const config = this.configs[account.platform];
+    if (account.platform === "instagram") {
+      if (
+        !config ||
+        !credential.accessToken ||
+        !account.scopes.includes("instagram_business_basic") ||
+        credential.expiresAt === undefined ||
+        credential.expiresAt <= this.now()
+      )
+        throw new Error(
+          "Instagram connection expired or is missing permission. Reconnect the account.",
+        );
+      // Instagram Login renews its unexpired long-lived access token; it does not issue a separate refresh token.
+      return this.instagramToken("refresh", credential.accessToken, undefined, account.scopes);
+    }
     if (
       !config ||
       !credential.refreshToken ||
@@ -141,6 +161,75 @@ export class SocialOAuth {
       expiresAt: this.now() + Number(result.expires_in) * 1000,
     };
   }
+
+  /** Token URLs never leave the host, and provider/network errors must not echo their query secrets. */
+  private async instagramToken(
+    kind: "exchange" | "refresh",
+    accessToken: string,
+    clientSecret?: string,
+    expectedScopes?: readonly string[],
+  ): Promise<SocialCredential> {
+    const message =
+      kind === "exchange"
+        ? "Instagram long-lived token exchange failed. Reconnect the account."
+        : "Instagram token refresh failed. Reconnect the account.";
+    if (!accessToken || (kind === "exchange" && !clientSecret)) throw new Error(message);
+    try {
+      const url = new URL(
+        `https://graph.instagram.com/${kind === "exchange" ? "access_token" : "refresh_access_token"}`,
+      );
+      url.searchParams.set(
+        "grant_type",
+        kind === "exchange" ? "ig_exchange_token" : "ig_refresh_token",
+      );
+      url.searchParams.set("access_token", accessToken);
+      if (kind === "exchange") url.searchParams.set("client_secret", clientSecret!);
+      const response = await this.fetcher(url.toString(), {
+        method: "GET",
+        redirect: "error",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) throw new Error(message);
+      const result = (await response.json()) as {
+        access_token?: unknown;
+        expires_in?: unknown;
+        token_type?: unknown;
+        scope?: unknown;
+        permissions?: unknown;
+      };
+      const seconds = Number(result.expires_in),
+        expiresAt = this.now() + seconds * 1000;
+      if (
+        typeof result.access_token !== "string" ||
+        !result.access_token ||
+        !Number.isFinite(seconds) ||
+        seconds <= 0 ||
+        !Number.isSafeInteger(expiresAt) ||
+        (result.token_type !== undefined && String(result.token_type).toLowerCase() !== "bearer")
+      )
+        throw new Error(message);
+      const returnedScopes =
+        typeof result.scope === "string"
+          ? result.scope.split(/[ ,]+/).filter(Boolean)
+          : Array.isArray(result.permissions) &&
+              result.permissions.every((scope) => typeof scope === "string")
+            ? (result.permissions as string[])
+            : undefined;
+      if (
+        expectedScopes &&
+        (result.scope !== undefined || result.permissions !== undefined) &&
+        (!returnedScopes ||
+          JSON.stringify([...new Set(returnedScopes)].sort()) !==
+            JSON.stringify([...new Set(expectedScopes)].sort()))
+      )
+        throw new Error(message);
+      return { accessToken: result.access_token, expiresAt };
+    } catch {
+      throw new Error(message);
+    }
+  }
   availability() {
     return Object.fromEntries(
       SOCIAL_PLATFORMS.filter((id) => !TOKEN_PLATFORMS.includes(id)).map((platform) => {
@@ -165,6 +254,12 @@ export class SocialOAuth {
     operations: SocialOperation[] = ["publish"],
   ): Promise<{ url: string; expiresAt: number }> {
     const account = await this.social.accountForOAuth(p, accountId);
+    if (
+      !(SOCIAL_API_ACCOUNT_TYPES[account.platform] as readonly string[]).includes(
+        account.accountType,
+      )
+    )
+      throw new Error("This account type requires a browser session, not an API connection.");
     if (TOKEN_PLATFORMS.includes(account.platform))
       throw new Error("Use the host token connection for this account.");
     const profileOnly = PROFILE_ONLY_PLATFORMS.includes(account.platform);
@@ -194,7 +289,8 @@ export class SocialOAuth {
     const scopes = [...new Set(operations.flatMap((operation) => requirements[operation].scopes))];
     if (account.platform === "tiktok" && !scopes.includes("user.info.basic"))
       scopes.push("user.info.basic");
-    if (account.platform === "snapchat") scopes.push("snapchat-profile-api");
+    if (account.platform === "snapchat" && !scopes.includes("snapchat-profile-api"))
+      scopes.push("snapchat-profile-api");
     if (account.platform === "instagram") scopes.push("instagram_business_basic");
     if (account.platform === "x") scopes.push("offline.access");
     if (account.platform === "youtube")
@@ -395,6 +491,13 @@ export class SocialOAuth {
           credential.accessToken,
         );
         const profile = platform === "tiktok" ? value.data?.user : value.public_profile;
+        if (
+          platform === "snapchat" &&
+          (value.request_status !== "SUCCESS" ||
+            typeof profile?.id !== "string" ||
+            !/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(profile.id))
+        )
+          throw new Error("Snapchat did not verify an API Public Profile UUID.");
         const scope = platform === "tiktok" ? "user.info.basic" : "snapchat-profile-api";
         if (!flow.scopes.includes(scope))
           throw new Error("OAuth did not grant the profile permission.");
@@ -407,24 +510,38 @@ export class SocialOAuth {
         ];
         credential.expiresAt ??= this.now() + 60 * 60_000;
       } else if (platform === "instagram") {
+        Object.assign(
+          credential,
+          await this.instagramToken(
+            "exchange",
+            credential.accessToken,
+            config.clientSecret,
+            flow.scopes,
+          ),
+        );
+        delete credential.refreshToken;
         const { value } = await http.request(
           `https://graph.instagram.com/${config.graphVersion}/me?fields=user_id,username,account_type`,
           credential.accessToken,
         );
         if (
-          value.account_type &&
+          value.account_type !== undefined &&
           !["BUSINESS", "MEDIA_CREATOR", "CREATOR"].includes(value.account_type)
         )
           throw new Error("Instagram requires a professional account.");
+        if (
+          result.user_id !== undefined &&
+          String(result.user_id) !== String(value.user_id ?? value.id ?? "")
+        )
+          throw new Error("Instagram OAuth identity changed during token exchange.");
         flow.candidates = [
           {
             id: String(value.user_id ?? value.id ?? ""),
             name: String(value.username ?? ""),
+            instagramAccountType: value.account_type,
             credential,
           },
         ];
-        // Short-lived Instagram tokens are conservatively expired if no TTL was supplied.
-        credential.expiresAt ??= this.now() + 60 * 60_000;
       } else if (platform === "facebook") {
         const granted = await http.request(
           `https://graph.facebook.com/${config.graphVersion}/me/permissions`,
@@ -547,6 +664,7 @@ export class SocialOAuth {
         name: candidate.name,
         scopes: flow.scopes,
         accessApproved: this.configs[flow.platform]!.approved,
+        instagramAccountType: candidate.instagramAccountType,
       },
       candidate.credential,
     );

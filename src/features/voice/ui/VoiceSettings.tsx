@@ -69,6 +69,7 @@ export function VoiceSettings() {
   const request = useRef(0);
   const mounted = useRef(true);
   const starting = useRef(false);
+  const setupAttempt = useRef(0);
   const configKey = JSON.stringify(voiceRuntimeSettings(settings));
   const currentKey = useRef(configKey);
   currentKey.current = configKey;
@@ -88,12 +89,21 @@ export function VoiceSettings() {
     setBusy(true);
     setError(undefined);
     setResult(undefined);
+    // Native host discovery can stall before an RPC timeout exists. Keep a
+    // recovery action reachable and discard an eventual answer to this check.
+    const timeout = setTimeout(() => {
+      if (!mounted.current || id !== request.current) return;
+      request.current++;
+      setError(checkFailure(new Error("Voice setup check timed out.")));
+      setBusy(false);
+    }, 20_000);
     try {
       const found = await localVoiceBackend.inspect(JSON.parse(configKey));
       if (mounted.current && id === request.current) setResult(found);
     } catch (cause) {
       if (mounted.current && id === request.current) setError(checkFailure(cause));
     } finally {
+      clearTimeout(timeout);
       if (mounted.current && id === request.current) setBusy(false);
     }
   }, [configKey]);
@@ -125,10 +135,15 @@ export function VoiceSettings() {
   useEffect(() => {
     if (!settings.enabled) return;
     let active = true;
+    const attempt = setupAttempt.current;
     void localVoiceBackend
       .setupStatus()
       .then((status) => {
-        if (active && (status.state === "installing" || status.state === "ready"))
+        if (
+          active &&
+          attempt === setupAttempt.current &&
+          (status.state === "installing" || status.state === "ready")
+        )
           acceptJob(status);
       })
       .catch(() => {});
@@ -166,6 +181,7 @@ export function VoiceSettings() {
   async function install() {
     if (starting.current || installing) return;
     starting.current = true;
+    setupAttempt.current++;
     request.current++;
     setBusy(false);
     setError(undefined);
@@ -223,7 +239,9 @@ export function VoiceSettings() {
           : !checked || busy
             ? t("Checking voice setup…")
             : t("Voice setup is needed"));
-  const detail = visibleError?.detail ?? (setupFailed ? job.detail : undefined);
+  const detail =
+    visibleError?.detail ??
+    (setupFailed ? job.detail : checked && !busy ? result?.missing.join(", ") : undefined);
   const paths: [PathKey, string, string][] = [
     ["python", "Python", "voice-python"],
     ["whisperPath", "Speech recognition model", "voice-whisper"],
@@ -304,7 +322,7 @@ export function VoiceSettings() {
                   >
                     {t("Get Python")}
                   </Button>
-                ) : !ready && checked && !busy && !visibleError ? (
+                ) : !ready && !visibleError ? (
                   <Button variant="primary" onClick={() => void install()}>
                     {t("Install")}
                   </Button>
@@ -324,7 +342,7 @@ export function VoiceSettings() {
                 ) : null}
               </div>
             ) : null}
-            {installing || (!ready && !visibleError && !busy && checked && !pythonMissing) ? (
+            {installing || (!ready && !visibleError && !pythonMissing) ? (
               <p className={styles.hint}>
                 {installing
                   ? t("You can leave this page. Setup will continue.")

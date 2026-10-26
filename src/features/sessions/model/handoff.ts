@@ -3,6 +3,7 @@ import { compactCiRepairContext } from "../../inbox/model/ciRepair";
 import { limitSection } from "../../../shared/lib/jsonText";
 import { displayPath } from "../../../shared/lib/paths";
 import { dropContextWindow } from "./contextUsage";
+import { modelBelongsToHarness } from "./models";
 import {
   HARNESS_LABEL,
   HARNESS_TITLE,
@@ -266,6 +267,9 @@ export function hasSessionEdits(session: Session): boolean {
 }
 
 export function shouldAskOutgoingAgent(session: Session): boolean {
+  const source = session.pendingSwitch;
+  if (!modelBelongsToHarness(source?.from ?? session.harness, source?.fromModel ?? session.model))
+    return false;
   // A rate-limited agent cannot write the brief; go straight to the packet.
   if (session.usageLimit || session.pendingSwitch?.fromUsageLimited) {
     return false;

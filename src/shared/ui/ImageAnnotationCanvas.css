@@ -1,0 +1,91 @@
+.image-annotation-canvas {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 0;
+  min-block-size: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+}
+
+.image-annotation-canvas-frame {
+  position: relative;
+  max-inline-size: 100%;
+  max-block-size: 100%;
+  flex: none;
+}
+
+.image-annotation-canvas-frame > img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.image-annotation-canvas-layer {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.image-annotation-canvas-layer[aria-disabled="true"] {
+  cursor: default;
+}
+
+.image-annotation-canvas-marks,
+.image-annotation-canvas-halo {
+  fill: none;
+  stroke: var(--ui-tone-accent-solid);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.image-annotation-canvas-halo {
+  stroke: var(--color-background-base);
+}
+
+.image-annotation-canvas-pin > circle,
+.image-annotation-canvas-dot {
+  fill: var(--ui-tone-accent-solid);
+  stroke: none;
+}
+
+.image-annotation-canvas-halo .image-annotation-canvas-pin > circle,
+.image-annotation-canvas-halo .image-annotation-canvas-dot {
+  fill: var(--color-background-base);
+  stroke: var(--color-background-base);
+}
+
+.image-annotation-canvas-halo .image-annotation-canvas-dot {
+  stroke: none;
+}
+
+.image-annotation-canvas-pin > text {
+  fill: var(--ui-tone-accent-on-solid);
+  stroke: none;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.image-annotation-canvas-cursor {
+  stroke: var(--color-content);
+}
+
+.image-annotation-canvas-help {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

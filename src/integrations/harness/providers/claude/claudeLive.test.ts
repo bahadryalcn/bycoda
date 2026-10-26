@@ -944,10 +944,24 @@ describe("claude startup failures", () => {
   it("rejects a typed OAuth failure even when the CLI follows it with a success result", async () => {
     const { events, turn } = await startTurn("s1");
     const failed = expect(turn).rejects.toThrow("OAuth session expired");
-    emit({ type: "assistant", error: "authentication_failed", message: { content: [{ type: "text", text: "Failed to authenticate: OAuth session expired and could not be refreshed" }] } });
+    emit({
+      type: "assistant",
+      error: "authentication_failed",
+      message: {
+        content: [
+          {
+            type: "text",
+            text: "Failed to authenticate: OAuth session expired and could not be refreshed",
+          },
+        ],
+      },
+    });
     emit({ type: "result", subtype: "success" });
     await failed;
-    expect(events).toContainEqual({ type: "session.error", message: "Failed to authenticate: OAuth session expired and could not be refreshed" });
+    expect(events).toContainEqual({
+      type: "session.error",
+      message: "Failed to authenticate: OAuth session expired and could not be refreshed",
+    });
   });
   function send(events: HarnessEvent[]) {
     return sendClaudeTurn({
@@ -1347,6 +1361,54 @@ describe("claude subagents", () => {
     expect(
       events.reduce(applyHarnessEvent, newSession("claude", "/repo")).pendingQuestion,
     ).toBeUndefined();
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+  });
+
+  it("acknowledges a question only after its control response write and ignores duplicate submission", async () => {
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "control_request",
+      request_id: "question-delivery",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "AskUserQuestion",
+        input: { questions: [{ question: "Which scope?", options: [{ label: "Local" }] }] },
+      },
+    });
+    const question = events.find((event) => event.type === "question.asked")!;
+    expect(question).toMatchObject({ behavior: "blocking", dismissAction: "cancel" });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    writeChild.mockImplementationOnce(async (_id, line) => {
+      sent.push(line);
+      await gate;
+    });
+    const answer = { kind: "answered" as const, answers: { "Which scope?": ["Local"] } };
+    respondClaudeQuestion("s1", question.requestId, answer);
+    respondClaudeQuestion("s1", question.requestId, answer);
+    await waitFor(
+      () =>
+        parse().some(
+          (message) =>
+            (message.response as Record<string, unknown>)?.request_id === "question-delivery",
+        ),
+      "control response write",
+    );
+    expect(events.some((event) => event.type === "question.resolved")).toBe(false);
+    release();
+    await waitFor(
+      () => events.some((event) => event.type === "question.resolved"),
+      "control response acknowledged",
+    );
+    expect(
+      parse().filter(
+        (message) =>
+          (message.response as Record<string, unknown>)?.request_id === "question-delivery",
+      ),
+    ).toHaveLength(1);
     emit({ type: "result", subtype: "success", session_id: "sess_1" });
     await turn;
   });

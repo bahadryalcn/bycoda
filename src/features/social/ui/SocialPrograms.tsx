@@ -1597,7 +1597,8 @@ function TargetEditor({
   const [variant, setVariant] = useState<CampaignVariant | undefined>(target.variant),
     [selectedSteps, setSelectedSteps] = useState<string[]>([]),
     [images, setImages] = useState<Record<string, string>>({}),
-    [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
+    [imageErrors, setImageErrors] = useState<Record<string, boolean>>({}),
+    [urlRetries, setUrlRetries] = useState<Record<string, boolean>>({});
   const dirty = useRef(false);
   const imageVersion = useRef(0);
   const mediaKey = target.variant?.media.map((m) => m.uploadId ?? m.url).join("|");
@@ -1605,6 +1606,7 @@ function TargetEditor({
     imageVersion.current++;
     setImages({});
     setImageErrors({});
+    setUrlRetries({});
     return () => {
       imageVersion.current++;
     };
@@ -1743,11 +1745,30 @@ function TargetEditor({
             <div key={i}>
               {media.kind === "image" ? (
                 <>
-                  {media.url ? (
-                    <img src={media.url} alt={media.alt ?? ""} referrerPolicy="no-referrer" />
-                  ) : media.uploadId && images[media.uploadId] ? (
-                    <img src={images[media.uploadId]} alt={media.alt ?? ""} />
-                  ) : (
+                  {media.url && (!imageErrors[media.url] || urlRetries[media.url]) ? (
+                    <img
+                      src={media.url}
+                      alt={media.alt ?? ""}
+                      referrerPolicy="no-referrer"
+                      onLoad={() => {
+                        setImageErrors((current) => ({ ...current, [media.url!]: false }));
+                        setUrlRetries((current) => ({ ...current, [media.url!]: false }));
+                      }}
+                      onError={() => {
+                        setImageErrors((current) => ({ ...current, [media.url!]: true }));
+                        setUrlRetries((current) => ({ ...current, [media.url!]: false }));
+                      }}
+                    />
+                  ) : media.url ? null : media.uploadId && images[media.uploadId] ? (
+                    <img
+                      src={images[media.uploadId]}
+                      alt={media.alt ?? ""}
+                      onError={() => {
+                        setImages((current) => ({ ...current, [media.uploadId!]: "" }));
+                        setImageErrors((current) => ({ ...current, [media.uploadId!]: true }));
+                      }}
+                    />
+                  ) : media.uploadId ? (
                     <Button
                       type="button"
                       variant="secondary"
@@ -1763,8 +1784,23 @@ function TargetEditor({
                         ? t("Retry")
                         : t("Preview generated image")}
                     </Button>
+                  ) : (
+                    <Notice kind="warning">{t("No image")}</Notice>
                   )}
-                  {media.uploadId && imageErrors[media.uploadId] ? (
+                  {media.url && imageErrors[media.url] ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      loading={!!urlRetries[media.url]}
+                      disabled={socialLocked || busy}
+                      onClick={() =>
+                        setUrlRetries((current) => ({ ...current, [media.url!]: true }))
+                      }
+                    >
+                      {t("Retry")}
+                    </Button>
+                  ) : null}
+                  {imageErrors[media.url ?? media.uploadId ?? ""] ? (
                     <Notice kind="error">
                       {t("Preview generated image")}: {t("Failed")}
                     </Notice>

@@ -189,11 +189,11 @@ export function FilePicker({
     setQuery(initialQuery);
     setActive(0);
     setRetrying(false);
+    setError(null);
   }, [open, cwd, initialQuery]);
 
   useEffect(() => {
     if (!open) return;
-    setError(null);
     const searchable = looksLikeProject(cwd);
     const cached = peekFiles();
     if (cached) {
@@ -212,6 +212,7 @@ export function FilePicker({
       .then((next) => {
         if (cancelled) return;
         setFiles(next);
+        setError(null);
         setLoading(false);
         setRetrying(false);
       })

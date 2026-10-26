@@ -85,18 +85,24 @@ async function render() {
   await act(async () => {});
 }
 
-it("keeps Servers reachable in the compact rail before opening a project", async () => {
+it("keeps Servers reachable through compact rail Tools before opening a project", async () => {
   props.cwd = "";
   props.projectRailOpen = false;
   props.compactProjectRail = true;
   props.onOpenServers = vi.fn();
   props.serversActive = true;
   await render();
-  const button = container.querySelector<HTMLButtonElement>('button[aria-label="Servers"]')!;
+  const tools = container.querySelector<HTMLButtonElement>('button[aria-label="Tools"]')!;
+  expect(tools.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => tools.click());
+  const dialog = document.querySelector('[role="dialog"][aria-label="Tools"]')!;
+  const button = dialog.querySelector<HTMLButtonElement>('button[aria-label="Servers"]')!;
   expect(button).not.toBeNull();
   await act(async () => button.click());
   expect(props.onOpenServers).toHaveBeenCalledOnce();
   expect(props.onSelectProject).not.toHaveBeenCalled();
+  expect(tools.getAttribute("aria-expanded")).toBe("false");
+  expect(document.querySelector('[role="dialog"][aria-label="Tools"]')).toBeNull();
 });
 
 it("keeps Explorer and Changes reachable from the workspace beside a compact rail", async () => {
@@ -170,7 +176,7 @@ it("counts each working conversation once in this workspace and clears on comple
   props.approvalSessionIds = new Set(["waiting"]);
   await render();
   expect(badge()?.getAttribute("aria-label")).toMatch(/^3 working session/);
-    expect(badge()?.closest('[role="tab"]')?.textContent).toContain("Sessions");
+  expect(badge()?.closest('[role="tab"]')?.textContent).toContain("Sessions");
   expect(container.querySelectorAll("[data-workspace-working-count]")).toHaveLength(1);
 
   props.busySessionIds = new Set(["first"]);

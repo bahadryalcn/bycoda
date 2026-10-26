@@ -39,6 +39,7 @@ import {
   canRewindHarnessLastTurn,
   canStopHarnessBackgroundWork,
   compactHarnessContext,
+  rewindHarnessLastTurn,
   isLiveHarness,
   listHarnesses,
   refreshHarnessCatalogs,
@@ -72,6 +73,35 @@ function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapte
 }
 
 describe("harness registry", () => {
+  it("rejects a Gemini model on Codex before any provider operation", async () => {
+    const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+    const steerTurn = vi.fn(async (_input: SteerTurnInput) => {});
+    const compactContext = vi.fn(async () => {});
+    const rewindLastTurn = vi.fn(async () => ({ submitted: false }));
+    const runTextPrompt = vi.fn(async () => "unexpected");
+    registerHarness(stub("codex", { sendTurn, steerTurn, compactContext, rewindLastTurn, runTextPrompt }));
+    const input = { harness: "codex" as const, sessionId: "foreign-model-guard", cwd: "/tmp",
+      model: "antigravity:gemini-3.8-flash-high", runtimeMode: "supervised" as const,
+      text: "Continue the same chat", onEvent: vi.fn() };
+    await expect(sendHarnessTurn(input)).rejects.toThrow('does not belong to provider "codex"');
+    await expect(steerHarnessTurn(input)).rejects.toThrow('does not belong to provider "codex"');
+    await expect(compactHarnessContext(input)).rejects.toThrow('does not belong to provider "codex"');
+    await expect(rewindHarnessLastTurn(input)).rejects.toThrow('does not belong to provider "codex"');
+    await expect(runHarnessTextPrompt({ ...input, prompt: "Recap" })).rejects.toThrow('does not belong to provider "codex"');
+    for (const operation of [sendTurn, steerTurn, compactContext, rewindLastTurn, runTextPrompt])
+      expect(operation).not.toHaveBeenCalled();
+  });
+
+  it.each(["my-private-model", "openrouter:vendor/custom-model", "codex:custom-model"])(
+    "keeps valid/custom Codex models unchanged: %s", async (model) => {
+      const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+      registerHarness(stub("codex", { sendTurn }));
+      await sendHarnessTurn({ harness: "codex", sessionId: `custom-model-${model}`, cwd: "/tmp",
+        model, runtimeMode: "supervised", text: "Continue", onEvent: vi.fn() });
+      expect(sendTurn).toHaveBeenCalledOnce();
+      expect(sendTurn.mock.calls[0][0].model).toBe(model);
+    },
+  );
   it("deduplicates in-flight Stop but retries a rejected cancellation", async () => {
     let finish!: () => void;
     let fail!: (error: Error) => void;

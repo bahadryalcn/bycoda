@@ -5,7 +5,10 @@ import type { SQLInputValue } from "node:sqlite";
 
 export type StoreRow = Record<string, any>;
 type Owner = { id: string; phase: "open" | "closing" | "closed" };
-type Authorization = () => boolean | Promise<boolean>;
+type AuthorizationCheck = () => boolean | Promise<boolean>;
+export type StoreAuthorization =
+  | AuthorizationCheck
+  | { prepare(): Promise<AuthorizationCheck>; check: AuthorizationCheck };
 type Reply = { id?: number; ready?: boolean; value?: any; error?: string; code?: string };
 
 export class RequestAuthorizationError extends Error {
@@ -23,7 +26,7 @@ export class StoreDatabase {
   private readonly worker: Worker;
   private readonly owners = new AsyncLocalStorage<Owner>();
   private readonly internal = new AsyncLocalStorage<boolean>();
-  private readonly authorizations = new AsyncLocalStorage<Authorization>();
+  private readonly authorizations = new AsyncLocalStorage<StoreAuthorization>();
   onMutation?: (sql: string) => void;
   onCommit?: (effect: () => void | Promise<void>) => void;
   private tail: Promise<unknown> = Promise.resolve();
@@ -110,16 +113,25 @@ export class StoreDatabase {
     return this.owners.exit(() => this.internal.exit(() => this.authorizations.exit(work)));
   }
   /** Preserve request authority across external preparation without holding SQL admission. */
-  withAuthorization<T>(guard: Authorization, work: () => T): T {
+  withAuthorization<T>(guard: StoreAuthorization, work: () => T): T {
     return this.authorizations.run(guard, work);
   }
-  checkAuthorization(): Promise<void> {
-    return this.authorize(this.authorizations.getStore());
+  async checkAuthorization(): Promise<void> {
+    const authorization = this.authorizations.getStore();
+    if (authorization && typeof authorization !== "function" && !this.ownsScope) {
+      const prepared = await this.authorizations.exit(() => authorization.prepare());
+      return this.authorizations.exit(() => this.scope(() => this.authorize(prepared)));
+    }
+    return this.authorize(authorization);
   }
-  private async authorize(guard?: Authorization): Promise<void> {
+  private async authorize(guard?: StoreAuthorization): Promise<void> {
     // The guard may read this Store. Keep the live SQL owner, but prevent the
     // guard's own reads from recursively checking that same request guard.
-    if (guard && !(await this.authorizations.exit(guard))) throw new RequestAuthorizationError();
+    if (
+      guard &&
+      !(await this.authorizations.exit(typeof guard === "function" ? guard : guard.check))
+    )
+      throw new RequestAuthorizationError();
   }
   storeScope<T>(work: () => T | Promise<T>): Promise<T> {
     return this.scope(() => this.internal.run(true, work));
@@ -144,6 +156,12 @@ export class StoreDatabase {
     }
     if (this.closing) return Promise.reject(new Error("Host database is closing."));
     const authorization = this.authorizations.getStore();
+    // A scoped credential may need metadata from a different database/worker.
+    // Prepare it before joining the SQL FIFO, then recheck authority on admission.
+    if (authorization && typeof authorization !== "function")
+      return this.authorizations
+        .exit(() => authorization.prepare())
+        .then((prepared) => this.authorizations.run(prepared, () => this.scope(work)));
     this.admissionVersion++;
     const pending = this.tail.then(async () => {
       if (this.failed) throw this.failed;

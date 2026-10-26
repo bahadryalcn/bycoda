@@ -1,7 +1,6 @@
-import { Button } from "../../../shared/ui/Button";
+import { Select } from "../../../shared/ui/Select";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useSyncExternalStore } from "react";
-import { SplitSquare } from "../../../shared/ui/icons";
+import { useEffect, useState, useSyncExternalStore, type RefObject } from "react";
 import {
   loadDiffLayout,
   saveDiffLayout,
@@ -14,26 +13,48 @@ export function useDiffLayout(): DiffLayout {
   return useSyncExternalStore(subscribeDiffLayout, loadDiffLayout, loadDiffLayout);
 }
 
-/** Flips every diff between one column and before | after. */
+export const DIFF_INLINE_BREAKPOINT = 900;
+
+/** Automatic follows the editor's available width, without changing the saved choice. */
+export function useResponsiveDiffLayout(
+  surface: RefObject<HTMLElement | null>,
+  mounted = true,
+): "inline" | "split" {
+  const preference = useDiffLayout();
+  const [automatic, setAutomatic] = useState<"inline" | "split">("inline");
+  useEffect(() => {
+    const element = surface.current;
+    if (!mounted || !element || preference !== "auto") return;
+    const update = (width: number) => {
+      // Hidden tabs keep their current editor and drafts until shown again.
+      if (width > 0) setAutomatic(width < DIFF_INLINE_BREAKPOINT ? "inline" : "split");
+    };
+    update(element.getBoundingClientRect().width);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) update(entry.contentRect.width);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [mounted, preference, surface]);
+  return preference === "auto" ? automatic : preference;
+}
+
+/** Three stable layout choices use the shared keyboard-accessible Select. */
 export function DiffLayoutToggle({ className = "" }: { className?: string }) {
   useLocale();
-  const split = useDiffLayout() === "split";
+  const preference = useDiffLayout();
   return (
-    <Button
-      iconOnly
-      label={t("Side-by-side view")}
-      variant="ghost"
-      motion="none"
-      type="button"
-      title={t("Side-by-side view")}
-      aria-label={t("Side-by-side view")}
-      aria-pressed={split}
-      // Keep the caret where it is when this sits next to an editor.
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={() => saveDiffLayout(split ? "inline" : "split")}
-      className={`  grid size-6 place-items-center  ${className}   `}
-    >
-      <SplitSquare className="size-3.5" strokeWidth={1.75} />
-    </Button>
+    <Select
+      label={t("Diff view")}
+      value={preference}
+      options={[
+        { value: "auto", label: t("Automatic") },
+        { value: "inline", label: t("Inline") },
+        { value: "split", label: t("Side-by-side view") },
+      ]}
+      onValueChange={(value) => saveDiffLayout(value as DiffLayout)}
+      className={`min-w-0 shrink-0 ${className}`}
+    />
   );
 }

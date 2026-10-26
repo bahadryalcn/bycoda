@@ -133,7 +133,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
           <div className="social-list-tools">
             <label>
               {t("Find a conversation")}
-              <SearchInput disabled={socialLocked}
+              <SearchInput
+                disabled={socialLocked}
                 appearance="field"
                 type="search"
                 value={query}
@@ -150,7 +151,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
             >
               <label>
                 {t("Account")}
-                <SearchableSelect disabled={socialLocked}
+                <SearchableSelect
+                  disabled={socialLocked}
                   value={accountFilter}
                   label={t("Account")}
                   options={[
@@ -166,7 +168,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               </label>
               <label>
                 {t("Message type")}
-                <NativeSelect disabled={socialLocked}
+                <NativeSelect
+                  disabled={socialLocked}
                   value={kindFilter}
                   onChange={(event) => setKindFilter(event.target.value)}
                 >
@@ -176,7 +179,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                 </NativeSelect>
               </label>
             </SocialFilters>
-            <Button disabled={socialLocked}
+            <Button
+              disabled={socialLocked}
               type="button"
               variant={selecting ? "secondary" : "ghost"}
               aria-pressed={selecting}
@@ -194,7 +198,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               iconOnly
               label={syncing ? t("Refreshing…") : t("Refresh conversations")}
               loading={pendingUi.is("inbox.refresh")}
-              disabled={socialLocked || (!snapshot.hostOnline || !syncAccounts.length || syncing)}
+              disabled={socialLocked || !snapshot.hostOnline || !syncAccounts.length || syncing}
               onClick={() => void pendingUi.run("inbox.refresh", () => synchronize())}
             >
               <RefreshCw aria-hidden="true" />
@@ -211,18 +215,14 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                   kind="warning"
                   title={t("{p0} · Inbox unavailable", { p0: item.name })}
                 >
-                  {item.connection === "browser"
-                    ? t(
-                        "X browser connections can publish; they cannot read messages or incoming comments. Connect an official API account for those.",
-                      )
-                    : !item.connected || item.paused
-                      ? t("Check the account connection in the Accounts section.")
-                      : snapshot.capabilities[item.id]?.find(
-                          (capability) => capability.operation === "poll",
-                        )?.reason ||
-                        t(
-                          "This account has no permission to read its inbox. Check the account's access.",
-                        )}
+                  {!item.connected || item.paused
+                    ? t("Check the account connection in the Accounts section.")
+                    : snapshot.capabilities[item.id]?.find(
+                        (capability) => capability.operation === "poll",
+                      )?.reason ||
+                      t(
+                        "This account has no permission to read its inbox. Check the account's access.",
+                      )}
                 </Notice>
               ))}
             </details>
@@ -255,7 +255,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                 checked={
                   threads.length > 0 && threads.every((item) => checkedIds.includes(item.id))
                 }
-                disabled={socialLocked || (!threads.length)}
+                disabled={socialLocked || !threads.length}
                 onChange={(event) =>
                   setCheckedIds(event.target.checked ? threads.map((item) => item.id) : [])
                 }
@@ -269,7 +269,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               <Button
                 type="button"
                 variant="ghost"
-                disabled={socialLocked || (!checkedIds.length)}
+                disabled={socialLocked || !checkedIds.length}
                 onClick={() => setCheckedIds([])}
               >
                 {t("Clear selection")}
@@ -292,7 +292,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                 <div className="social-selection-row" key={item.id}>
                   {selecting || checkedIds.length ? (
                     <label>
-                      <Checkbox disabled={socialLocked}
+                      <Checkbox
+                        disabled={socialLocked}
                         aria-label={t("Select conversation with {p0}", {
                           p0: contacts.get(item.contactId)?.name ?? t("Contact person"),
                         })}
@@ -307,7 +308,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                       />
                     </label>
                   ) : null}
-                  <Button disabled={socialLocked}
+                  <Button
+                    disabled={socialLocked}
                     type="button"
                     variant="tab"
                     layout="stacked"
@@ -377,7 +379,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               <p className="social-muted">
                 {thread.kind === "message" ? t("Direct message") : t("Comment")} · {account?.name} ·{" "}
                 {account ? names[account.platform] : ""}
-                {thread.replyUntil
+                {account?.connection !== "browser" && thread.replyUntil
                   ? ` · ${t("Reply deadline {p0}", { p0: time(thread.replyUntil) })}`
                   : ""}
               </p>
@@ -393,7 +395,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               ) : null}
               <label>
                 {t("Related project")}
-                <SearchableSelect disabled={socialLocked || pendingUi.is(`thread.assign:${thread.id}`)}
+                <SearchableSelect
+                  disabled={socialLocked || pendingUi.is(`thread.assign:${thread.id}`)}
                   value={thread.projectId ?? ""}
                   label={t("Related project")}
                   options={[
@@ -406,14 +409,16 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                       })),
                   ]}
                   onChange={(nextValue) =>
-                    void pendingUi.run(`thread.assign:${thread.id}`, () => run(
-                      () =>
-                        client.request("thread.assign", {
-                          id: thread.id,
-                          projectId: nextValue,
-                        }),
-                      t("Conversation project updated."),
-                    ))
+                    void pendingUi.run(`thread.assign:${thread.id}`, () =>
+                      run(
+                        () =>
+                          client.request("thread.assign", {
+                            id: thread.id,
+                            projectId: nextValue,
+                          }),
+                        t("Conversation project updated."),
+                      ),
+                    )
                   }
                   searchLocale={getLocale()}
                 />

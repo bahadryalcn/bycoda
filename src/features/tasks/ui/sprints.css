@@ -1,0 +1,215 @@
+.sprint-management,
+.sprint-report,
+.sprint-planning {
+  min-width: 0;
+  color: var(--ui-tone-neutral-fg);
+  font-size: var(--ui-font-secondary);
+}
+.sprint-management {
+  min-block-size: 0;
+  max-block-size: min(45vh, 24rem);
+  flex-shrink: 1;
+  overflow: auto;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--ui-tone-neutral-border);
+}
+.sprint-heading,
+.sprint-actions,
+.sprint-planning-fields {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.sprint-heading {
+  justify-content: space-between;
+}
+.sprint-heading h2 {
+  min-inline-size: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 0;
+  font-size: inherit;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.sprint-goal-copy {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.sprint-goal-disclosure {
+  margin-block-start: 0.5rem;
+}
+.sprint-goal-scroll {
+  max-block-size: 12rem;
+  overflow: auto;
+}
+.sprint-heading p,
+.sprint-planning p {
+  margin: 0.375rem 0 0;
+}
+.sprint-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  color: var(--ui-text-secondary);
+}
+.sprint-source {
+  max-width: 19rem;
+  min-width: 10rem;
+}
+.sprint-collection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 15rem;
+  overflow: auto;
+}
+.sprint-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid var(--ui-tone-neutral-border);
+}
+.sprint-row > div {
+  min-width: 0;
+}
+.sprint-row p {
+  margin: 0.125rem 0 0;
+  color: var(--ui-text-secondary);
+}
+.sprint-muted {
+  color: var(--ui-text-secondary);
+}
+.sprint-errors {
+  color: var(--ui-tone-danger-fg);
+  overflow-wrap: anywhere;
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+.sprint-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.sprint-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0.75rem;
+}
+.sprint-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.sprint-form footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.sprint-project-budget {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(6rem, 9rem);
+  align-items: center;
+  gap: 0.5rem;
+}
+.sprint-project-budget span {
+  overflow-wrap: anywhere;
+}
+.sprint-planning {
+  padding: 0.625rem 0;
+}
+.sprint-planning-fields > div {
+  flex: 1;
+  min-width: 9rem;
+}
+.sprint-report {
+  padding: 0.75rem;
+  overflow: auto;
+}
+.sprint-report h2,
+.sprint-report h3 {
+  font-size: inherit;
+  font-weight: 500;
+  margin: 0 0 0.5rem;
+}
+.sprint-report h3 {
+  margin-block-start: 1.25rem;
+}
+.sprint-summary {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 0.5rem 0 1rem;
+}
+.sprint-summary div {
+  display: flex;
+  gap: 0.375rem;
+}
+.sprint-summary dt {
+  color: var(--ui-text-secondary);
+}
+.sprint-summary dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.sprint-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.sprint-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.sprint-table th,
+.sprint-table td {
+  padding: 0.5rem;
+  text-align: start;
+  border-bottom: 1px solid var(--ui-tone-neutral-border);
+}
+.sprint-table th {
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+}
+.sprint-complete-tasks {
+  max-height: 18rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sprint-complete-tasks label {
+  flex-direction: row;
+  align-items: flex-start;
+  padding: 0.375rem 0;
+}
+@media (max-width: 560px) {
+  .sprint-source {
+    max-width: 100%;
+    width: 100%;
+  }
+  .sprint-project-budget {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sprint-row {
+    align-items: flex-start;
+  }
+  .sprint-planning-fields {
+    align-items: stretch;
+  }
+  .sprint-planning-fields > div {
+    flex-basis: 100%;
+  }
+}

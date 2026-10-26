@@ -25,63 +25,48 @@
 }
 .host-tools-topbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px 16px;
-  padding: 8px 12px;
-  flex-shrink: 0;
+  gap: 4px;
+  padding: 3px 6px;
+  flex: none;
+  min-block-size: var(--ui-control-height-compact);
   border-block-end: 1px solid var(--color-stroke);
-  background: var(--ui-surface-raised);
-}
-.host-tools-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 240px;
-  min-inline-size: 0;
-}
-.host-tools-heading strong {
-  font-size: var(--ui-font-secondary);
-  font-weight: 600;
-  white-space: nowrap;
+  background: var(--ui-surface);
 }
 .host-tools-context {
-  margin-inline-start: auto;
-  color: var(--host-tool-muted);
-  overflow: clip;
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-inline-size: 0;
-  flex: 1;
-  font-size: var(--ui-font-micro);
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
 }
-.host-tools-tabs {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 4px;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
-  flex: 0 1 auto;
-  min-inline-size: 0;
-  max-inline-size: 100%;
-}
-.host-tools-tabs button {
-  white-space: nowrap;
+.host-tools-tool-picker {
+  margin-inline-start: auto;
+  max-inline-size: 50%;
   flex: none;
 }
-.host-tools-compact-selector {
-  display: none;
-  flex-basis: 100%;
+.host-tools-current-tool {
+  display: block;
   min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-@container (max-width: 720px) {
-  .host-tools-compact-selector {
-    display: block;
-  }
-  .host-tools-tabs {
-    display: none;
-  }
+.host-tools-topbar .host-tools-placement-trigger {
+  flex: none;
+  margin-inline-start: 0;
+}
+.host-tools-content-devices,
+.host-tools-content-browser {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.host-tools-content-devices > .device-panel {
+  min-block-size: 0;
 }
 .host-tools-content {
   min-block-size: 0;
@@ -131,7 +116,7 @@
   min-inline-size: 0;
 }
 .host-tools-topbar .host-tools-machine {
-  flex: 1 1 280px;
+  flex: 1 1 0;
   grid-template-columns: [content-start] minmax(0, 1fr) [content-end];
   min-inline-size: 0;
   padding: 0;
@@ -139,10 +124,12 @@
   background: none;
 }
 .host-tools-topbar .host-tools-machine-toolbar {
+  gap: 2px;
   flex-wrap: nowrap;
 }
 .host-tools-topbar .host-tools-machine-field {
-  flex: 1;
+  min-inline-size: 0;
+  flex: 1 1 0;
 }
 .host-tools-topbar .host-tools-machine-field > span {
   display: none;

@@ -8,6 +8,7 @@ import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { TextField } from "../../../shared/ui/TextField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { socialQueryScope } from "../model/socialQuery";
@@ -52,7 +53,8 @@ import { pathKey } from "../../../shared/lib/paths";
 import { socialClient } from "../model/socialClient";
 import {
   SOCIAL_PLATFORMS,
-  SOCIAL_ACCOUNT_TYPES,
+  SOCIAL_API_ACCOUNT_TYPES,
+  SOCIAL_BROWSER_ACCOUNT_TYPES,
   PROFILE_ONLY_PLATFORMS,
   TOKEN_PLATFORMS,
   type SocialAccount,
@@ -91,6 +93,7 @@ import {
   type RefreshScheduler,
 } from "../../automations/model/refreshScheduler";
 import type { SocialClient } from "../model/socialClient";
+import { TelegramChannelConnection } from "./TelegramChannelConnection";
 import { scopeSocialSnapshot } from "../model/socialWorkspace";
 
 type Tab = "Accounts" | "Campaigns" | "Inbox" | "Audience" | "Automations" | "Settings";
@@ -1210,6 +1213,7 @@ function Accounts({
   const [oauthOperations, setOAuthOperations] = useState<SocialOperation[]>(["publish"]);
   const [resourceId, setResourceId] = useState("");
   const [platform, setPlatform] = useState<SocialAccount["platform"]>("x");
+  const [newConnection, setNewConnection] = useState<"browser" | "api">("browser");
   const [selectedProjects, setSelectedProjects] = useState<string[]>(
     initialProject ? [initialProject] : [],
   );
@@ -1252,11 +1256,15 @@ function Accounts({
   useEffect(() => {
     if (retainedGrantAccount.current !== account?.id) {
       retainedGrantAccount.current = account?.id ?? "";
+      setResourceId("");
       if (account) setGrantPermissions(account.grants[grantProject] ?? []);
       setDisconnecting(false);
     }
   }, [account?.id]);
-  const browserAccount = account?.platform === "x" ? account.id : "";
+  const browserAccount = account?.id ?? "";
+  const apiAccountType =
+    !!account &&
+    (SOCIAL_API_ACCOUNT_TYPES[account.platform] as readonly string[]).includes(account.accountType);
   const queryClient = useQueryClient();
   const scope = socialQueryScope(client);
   const active = useContext(SocialPanelActiveContext);
@@ -1282,7 +1290,12 @@ function Accounts({
       }
     },
     enabled:
-      active && visible && !!selected && !!account && !TOKEN_PLATFORMS.includes(account.platform),
+      active &&
+      visible &&
+      !!selected &&
+      !!account &&
+      apiAccountType &&
+      !TOKEN_PLATFORMS.includes(account.platform),
     staleTime: 5_000,
     refetchInterval: (query) => (query.state.data?.status === "waiting" ? 5_000 : false),
   });
@@ -1354,6 +1367,12 @@ function Accounts({
                     platform,
                     name: data.get("name"),
                     accountType: data.get("type"),
+                    connection:
+                      newConnection === "browser"
+                        ? "browser"
+                        : TOKEN_PLATFORMS.includes(platform)
+                          ? "token"
+                          : "oauth",
                     projectIds: selectedProjects,
                   });
                   setSelected(created.id);
@@ -1380,6 +1399,19 @@ function Accounts({
               options={SOCIAL_PLATFORMS.map((id) => ({ value: id, label: names[id] }))}
             />
           </label>
+          <fieldset disabled={socialLocked}>
+            <legend>{t("Connection method")}</legend>
+            <SegmentedControl
+              label={t("Connection method")}
+              value={newConnection}
+              selectionRole="radio"
+              onValueChange={(value) => setNewConnection(value === "api" ? "api" : "browser")}
+              options={[
+                { value: "browser", label: t("Browser connection") },
+                { value: "api", label: t("API connection") },
+              ]}
+            />
+          </fieldset>
           <TextField
             disabled={socialLocked}
             label={t("Account name")}
@@ -1389,8 +1421,11 @@ function Accounts({
           />
           <label>
             {t("Account type")}
-            <NativeSelect disabled={socialLocked} name="type" key={platform}>
-              {SOCIAL_ACCOUNT_TYPES[platform].map((id) => (
+            <NativeSelect disabled={socialLocked} name="type" key={`${platform}:${newConnection}`}>
+              {(newConnection === "browser"
+                ? SOCIAL_BROWSER_ACCOUNT_TYPES[platform]
+                : SOCIAL_API_ACCOUNT_TYPES[platform]
+              ).map((id) => (
                 <option key={id} value={id}>
                   {accountTypeLabel(id)}
                 </option>
@@ -1512,7 +1547,7 @@ function Accounts({
                         </div>
                       ))}
                   </div>
-                  {account.connection === "browser" ? (
+                  {account.connection === "browser" && account.platform === "x" ? (
                     <p className="social-muted">
                       {t(
                         "Posting and replying to posts are supported. Mentions and legacy web messaging are followed through recognized reply formats; encrypted Chat is not supported.",
@@ -1522,26 +1557,48 @@ function Accounts({
                 </section>
               ) : null}
               <SocialBrowserWorkspace key={account.id} account={account} client={client} />
-              {account.platform === "x" ? (
+              {
                 <details className="social-connection" open={!account.connected || undefined}>
                   <summary>{t("Manage browser connection")}</summary>
                   <strong>
                     {account.connected && account.connection === "browser"
-                      ? t("X account connected")
-                      : t("Connect your X account")}
+                      ? account.platform === "x"
+                        ? t("X account connected")
+                        : t("Account connected")
+                      : account.platform === "x"
+                        ? t("Connect your X account")
+                        : t("Connect {p0} in the browser", { p0: names[account.platform] })}
                   </strong>
                   <details>
                     <summary>{t("How the browser connection works")}</summary>
                     <p>
-                      {t(
-                        "Because the X API is paid, you can connect the account with your own X session. A separate Edge/Chrome window opens on the selected host; you sign in to X there yourself and close the window. Your password is never entered into bycoda. Approved posts are shared in the background with this session. Only post/image sharing and replies to a post ID are supported. Mentions and legacy web messaging are read through recognized reply formats; encrypted Chat is not supported. Continuous publishing and replies depend on an active publishing program and automation rules.",
-                      )}
+                      {account.platform === "x"
+                        ? t(
+                            "Because the X API is paid, you can connect the account with your own X session. A separate Edge/Chrome window opens on the selected host; you sign in to X there yourself and close the window. Your password is never entered into bycoda. Approved posts are shared in the background with this session. Only post/image sharing and replies to a post ID are supported. Mentions and legacy web messaging are read through recognized reply formats; encrypted Chat is not supported. Continuous publishing and replies depend on an active publishing program and automation rules.",
+                          )
+                        : t(
+                            "Use your own web session without an API subscription. Sign in in the separate Edge/Chrome window and close it when finished. The host verifies the saved identity. Supported actions use the existing approval queue; account identity, recipient and platform acknowledgement are checked before success is recorded.",
+                          )}
                     </p>
                   </details>
+                  {account.platform === "linkedin" && account.accountType === "organization" ? (
+                    <TextField
+                      label={t("LinkedIn Page ID or URL name")}
+                      value={resourceId}
+                      maxLength={100}
+                      placeholder="bycoda"
+                      disabled={socialLocked || browser?.status === "waiting"}
+                      onChange={(event) => setResourceId(event.target.value.trim())}
+                    />
+                  ) : null}
                   <Notice kind="warning" title={t("Risk confirmation for browser connection")}>
-                    {t(
-                      "This method is unofficial. If X detects automation, it may restrict or suspend the account.",
-                    )}
+                    {account.platform === "x"
+                      ? t(
+                          "This method is unofficial. If X detects automation, it may restrict or suspend the account.",
+                        )
+                      : t(
+                          "Browser automation is unofficial. The platform may require manual verification or restrict the account.",
+                        )}
                   </Notice>
                   <label className="social-inline-check">
                     <Checkbox
@@ -1569,13 +1626,20 @@ function Accounts({
                         socialLocked ||
                         !browserRisk ||
                         !browserAvailability?.available ||
+                        (account.platform === "linkedin" &&
+                          account.accountType === "organization" &&
+                          !/^web:linkedin:company:[\w-]+$/.test(account.platformId) &&
+                          !/^[\w-]{1,100}$/.test(resourceId)) ||
                         browser?.status === "waiting"
                       }
                       onClick={() =>
                         void pendingUi.run("accounts.sign-in-again-in-the-browser", () =>
                           run(async () => {
                             await queryClient.cancelQueries({ queryKey: browserKey });
-                            const status = await client.browserBegin(account.id);
+                            const status = await (account.platform === "linkedin" &&
+                            account.accountType === "organization"
+                              ? client.browserBegin(account.id, resourceId || undefined)
+                              : client.browserBegin(account.id));
                             await queryClient.cancelQueries({ queryKey: browserKey });
                             setBrowser(status);
                           }),
@@ -1584,7 +1648,9 @@ function Accounts({
                     >
                       {account.connected && account.connection === "browser"
                         ? t("Sign in again in the browser")
-                        : t("Sign in to X in the browser")}
+                        : account.platform === "x"
+                          ? t("Sign in to X in the browser")
+                          : t("Sign in in the browser")}
                     </Button>
                     <Button
                       loading={pendingUi.is("accounts.check-browser-connection")}
@@ -1608,31 +1674,43 @@ function Accounts({
                       {browser.error ||
                         (
                           {
-                            waiting: t(
-                              "Sign in to X in the Chrome window that opened (Google sign-in works too). Close the window yourself when you are done; bycoda then checks the session.",
-                            ),
-                            connected: t("X account connected with the browser session."),
+                            waiting:
+                              account.platform === "x"
+                                ? t(
+                                    "Sign in to X in the Chrome window that opened (Google sign-in works too). Close the window yourself when you are done; bycoda then checks the session.",
+                                  )
+                                : t(
+                                    "Complete sign-in and any verification in the opened browser. Close that window when finished; bycoda then verifies the saved account identity.",
+                                  ),
+                            connected:
+                              account.platform === "x"
+                                ? t("X account connected with the browser session.")
+                                : t("Account connected"),
                             failed: t("Connection failed"),
                           } as Record<string, string>
                         )[browser.status]}
                     </p>
                   ) : null}
                 </details>
-              ) : null}
-              {TOKEN_PLATFORMS.includes(account.platform) ? (
+              }
+              {apiAccountType && TOKEN_PLATFORMS.includes(account.platform) ? (
                 <div className="social-connection">
                   <strong>
                     {availabilityError ||
                       accountConnectionStatus(account, availability[account.platform])}
                   </strong>
                   <p>
-                    {account.platform === "telegram"
+                    {account.platform === "telegram" && account.accountType === "channel"
                       ? t(
-                          "Read and reply to text messages with a bot account. Reading is off when a webhook already exists; bycoda does not delete other apps' webhooks.",
+                          "Publish to a verified Telegram channel with its administrator bot. Channel monitoring and private messages are separate capabilities.",
                         )
-                      : t(
-                          "Reply to incoming text messages with a WhatsApp Business account within the 24-hour reply window. Personal accounts, template messages and bulk first messages are not supported.",
-                        )}
+                      : account.platform === "telegram"
+                        ? t(
+                            "Read and reply to text messages with a bot account. Reading is off when a webhook already exists; bycoda does not delete other apps' webhooks.",
+                          )
+                        : t(
+                            "Reply to incoming text messages with a WhatsApp Business account within the 24-hour reply window. Personal accounts, template messages and bulk first messages are not supported.",
+                          )}
                   </p>
                   <details>
                     <summary>{t("Host connection settings")}</summary>
@@ -1660,31 +1738,48 @@ function Accounts({
                       </>
                     ) : null}
                   </details>
-                  <div className="social-actions">
-                    <Button
-                      loading={pendingUi.is("accounts.reconnect-host-account")}
-                      type="button"
-                      variant="primary"
+                  {account.platform === "telegram" && account.accountType === "channel" ? (
+                    <TelegramChannelConnection
+                      key={account.id}
+                      account={account}
+                      client={client}
                       disabled={
                         socialLocked ||
                         !availability[account.platform]?.configured ||
                         !!availabilityError
                       }
-                      onClick={() =>
-                        void pendingUi.run("accounts.reconnect-host-account", () =>
-                          run(async () => {
-                            await client.tokenConnect(account.id);
-                          }),
-                        )
-                      }
-                    >
-                      {account.connected ? t("Reconnect host account") : t("Connect host account")}
-                    </Button>
-                  </div>
+                      onRefresh={() => run(async () => undefined)}
+                    />
+                  ) : (
+                    <div className="social-actions">
+                      <Button
+                        loading={pendingUi.is("accounts.reconnect-host-account")}
+                        type="button"
+                        variant="primary"
+                        disabled={
+                          socialLocked ||
+                          !availability[account.platform]?.configured ||
+                          !!availabilityError
+                        }
+                        onClick={() =>
+                          void pendingUi.run("accounts.reconnect-host-account", () =>
+                            run(async () => {
+                              await client.tokenConnect(account.id);
+                            }),
+                          )
+                        }
+                      >
+                        {account.connected
+                          ? t("Reconnect host account")
+                          : t("Connect host account")}
+                      </Button>
+                    </div>
+                  )}
                 </div>
-              ) : account.platform === "x" &&
-                account.connected &&
-                account.connection === "browser" ? null : (
+              ) : !apiAccountType ||
+                (account.platform === "x" &&
+                  account.connected &&
+                  account.connection === "browser") ? null : (
                 <Collapsible
                   collapsed={account.platform === "x"}
                   summary={t("Connect with the official X API (requires a paid developer app)")}

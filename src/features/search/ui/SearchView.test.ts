@@ -282,3 +282,51 @@ it("keeps file index failures scoped to All and Files", async () => {
     else expect(host.textContent).toContain("File index offline");
   }
 });
+
+it("opens contextual conversation search then broadens in the same surface without losing text", async () => {
+  const request = {
+    scope: "conversations" as const,
+    conversationScope: "project" as const,
+    query: "needle",
+  };
+  await render("/repo", true, { request });
+  expect(host.querySelector("input")!.value).toBe("needle");
+  const filters = host.querySelector<HTMLButtonElement>('[aria-label="Chat search filters"]')!;
+  expect(filters.textContent).toContain("This project");
+  act(() => filters.click());
+  const scopeSelect = document.body.querySelector<HTMLSelectElement>(
+    'select[aria-label="Search in"]',
+  )!;
+  expect(scopeSelect.value).toBe("project");
+  act(() => {
+    scopeSelect.value = "everywhere";
+    scopeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(filters.textContent).toContain("Everywhere");
+  act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  act(() =>
+    [...host.querySelectorAll("button")].find((node) => node.textContent === "All")!.click(),
+  );
+  await render("/repo", true, { request, focusToken: 1 });
+  expect(host.querySelector("input")!.value).toBe("needle");
+  expect(
+    [...host.querySelectorAll("button")]
+      .find((node) => node.textContent === "All")!
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  act(() =>
+    [...host.querySelectorAll("button")]
+      .find((node) => node.textContent === "Conversations")!
+      .click(),
+  );
+  expect(filters.textContent).toContain("Everywhere");
+});
+
+it("retains shared search text when a contextual entry omits a query", async () => {
+  await render();
+  await typeQuery("draft");
+  await render("/repo", true, {
+    request: { scope: "conversations", conversationScope: "project" },
+  });
+  expect(host.querySelector("input")!.value).toBe("draft");
+});

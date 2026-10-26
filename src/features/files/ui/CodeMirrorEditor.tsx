@@ -51,7 +51,10 @@ import {
   DiffCommentComposer,
   type DiffCommentComposerTarget,
 } from "../../source-control/ui/DiffCommentComposer";
-import { DiffLayoutToggle, useDiffLayout } from "../../source-control/ui/DiffLayoutToggle";
+import {
+  DiffLayoutToggle,
+  useResponsiveDiffLayout,
+} from "../../source-control/ui/DiffLayoutToggle";
 import { hasConflictMarkers } from "../../source-control/model/conflictMarkers";
 import { nextConflictedFile } from "../../source-control/model/conflictSection";
 import { requestOpenCommit } from "../../source-control/ui/GitFileInspector";
@@ -249,7 +252,7 @@ function StandardCodeMirrorEditor({
   const carryRef = useRef<EditorCarry | null>(null);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const colorScheme = useColorScheme();
-  const diffLayout = useDiffLayout();
+  const diffLayout = useResponsiveDiffLayout(hostRef);
   // Keep the editable result in the conflict-aware editor. Sources use their own
   // read-only panes; resolving the last block must not rebuild the result as a diff.
   const [conflictInline, setConflictInline] = useState(() => hasConflictMarkers(value));
@@ -686,6 +689,7 @@ function StandardCodeMirrorEditor({
     // Source-control previews keep keyboard navigation in the changed-file list.
     if (
       activeRef.current &&
+      (!carry || carry.focused) &&
       !(showDiffRef.current && document.activeElement?.matches("[data-git-file]"))
     )
       view.focus();
@@ -716,6 +720,7 @@ function StandardCodeMirrorEditor({
         saved: savedDocumentRef.current,
         state: view.state,
         topLine: topVisibleLine(view, scrollerRef.current ?? view.scrollDOM),
+        focused: view.hasFocus || Boolean(split?.a.hasFocus),
       };
       viewRef.current = null;
       leftViewRef.current = null;
@@ -997,7 +1002,11 @@ function StandardCodeMirrorEditor({
           </p>
         ) : null}
         <ConflictLayoutFrame path={path} sources={conflictSources}>
-          <div ref={hostRef} className="relative min-h-0 flex-1" />
+          <div
+            ref={hostRef}
+            data-diff-layout={diffLayout}
+            className="relative min-h-0 min-w-0 flex-1"
+          />
         </ConflictLayoutFrame>
       </div>
       {commentTarget ? (
@@ -1192,6 +1201,7 @@ type EditorCarry = {
   saved: Text | null;
   state: EditorState;
   topLine: number;
+  focused: boolean;
 };
 
 const wrappedLineIndent = StateField.define<DecorationSet>({

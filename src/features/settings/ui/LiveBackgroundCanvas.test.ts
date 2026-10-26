@@ -32,6 +32,7 @@ let root: Root, container: HTMLDivElement;
 let intersection: (entries: Array<{ isIntersecting: boolean }>) => void;
 let raf: ReturnType<typeof vi.fn>, cancel: ReturnType<typeof vi.fn>;
 beforeEach(() => {
+  vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.enabled = true;
   state.focused = true;
@@ -76,6 +77,7 @@ afterEach(() => {
   container.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 const render = (active = true) =>
   act(() =>
@@ -142,14 +144,17 @@ it("stops immediately through the central gate without repainting, and cleans su
 });
 
 it("caps painting at 30 fps even on a faster display", () => {
+  vi.spyOn(performance, "now").mockReturnValue(100);
   render();
   intersect(true);
   state.draw.mockClear();
   raf.mock.calls[0][0](100);
-  raf.mock.calls[1][0](116);
-  raf.mock.calls[2][0](132);
+  vi.advanceTimersByTime(32);
+  expect(raf).toHaveBeenCalledOnce();
   expect(state.draw).toHaveBeenCalledOnce();
-  raf.mock.calls[3][0](134);
+  vi.advanceTimersByTime(2);
+  expect(raf).toHaveBeenCalledTimes(2);
+  raf.mock.calls[1][0](134);
   expect(state.draw).toHaveBeenCalledTimes(2);
 });
 

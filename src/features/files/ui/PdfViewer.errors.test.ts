@@ -49,6 +49,7 @@ beforeEach(() => {
   pdf.pages = 2;
   observers = [];
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(632);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(632);
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({

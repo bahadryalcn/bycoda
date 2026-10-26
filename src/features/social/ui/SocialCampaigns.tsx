@@ -1,4 +1,3 @@
-import { Progress } from "../../../shared/ui/Progress";
 import { useSocialPending } from "./useSocialPending";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
@@ -19,6 +18,9 @@ import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
 import { SocialPrograms } from "./SocialPrograms";
 import { TikTokPublishingFields } from "./TikTokPublishingFields";
 import { XMediaFields } from "./XMediaFields";
+import { MetaPublishingFields } from "./MetaPublishingFields";
+import { FacebookReelFields, validFacebookReel } from "./FacebookReelFields";
+import { SocialUploadImagePreview } from "./SocialUploadImagePreview";
 import { useQueryClient } from "@tanstack/react-query";
 import { socialQueryScope } from "../model/socialQuery";
 import type {
@@ -132,23 +134,107 @@ export function Campaigns({
     selectedProjects.every((id) =>
       snapshot.accounts.find((account) => account.id === accountId)?.grants[id]?.includes("draft"),
     );
+  const accountFor = (variant: CampaignVariant) =>
+    snapshot.accounts.find((account) => account.id === variant.accountId);
+  const apiLinkedInUpload = (variant: CampaignVariant) => {
+    const account = accountFor(variant);
+    return (
+      account?.platform === "linkedin" &&
+      account.accountType === "organization" &&
+      account.connection !== "browser" &&
+      snapshot.capabilities[account.id]?.some(
+        (item) => item.operation === "media" && item.status === "available",
+      )
+    );
+  };
+  const apiSnapchatUpload = (variant: CampaignVariant) => {
+    const account = accountFor(variant);
+    return (
+      account?.platform === "snapchat" &&
+      account.connection !== "browser" &&
+      account.accountType === "public_profile" &&
+      account.connected &&
+      snapshot.capabilities[account.id]?.some(
+        (item) => item.operation === "media" && item.status === "available",
+      )
+    );
+  };
+  const apiTelegramChannelUpload = (variant: CampaignVariant) => {
+    const account = accountFor(variant);
+    return (
+      account?.platform === "telegram" &&
+      account.accountType === "channel" &&
+      account.connection === "token" &&
+      account.connected &&
+      snapshot.capabilities[account.id]?.some(
+        (item) => item.operation === "media" && item.status === "available",
+      )
+    );
+  };
+  const browserUpload = (variant: CampaignVariant) => {
+    const account = accountFor(variant);
+    const capabilities = snapshot.capabilities[variant.accountId] ?? [];
+    return (
+      account?.connection === "browser" &&
+      account.connected &&
+      !["youtube", "tiktok"].includes(account.platform) &&
+      capabilities.some((item) => item.operation === "media" && item.status === "available") &&
+      capabilities.some((item) => item.operation === "publish" && item.status === "available")
+    );
+  };
   const variantLimit = (variant: CampaignVariant) => {
     const account = snapshot.accounts.find((item) => item.id === variant.accountId);
-    return account
+    const configured = account
       ? socialLimit(
           effectiveSocialPolicy(snapshot.policies ?? DEFAULT_SOCIAL_POLICIES, account.platform),
           "content",
         )
       : undefined;
+    if (
+      account?.platform === "facebook" &&
+      account.connection !== "browser" &&
+      variant.facebook?.target === "reel"
+    )
+      return Math.min(configured ?? Infinity, 2200);
+    return account?.platform === "telegram" &&
+      account.accountType === "channel" &&
+      account.connection === "token"
+      ? Math.min(configured ?? Infinity, variant.media.length ? 1024 : 4096)
+      : configured;
   };
-  const variantCount = (variant: CampaignVariant) =>
-    socialCharacterCount([variant.text, variant.link].filter(Boolean).join("\n"));
+  const variantCount = (variant: CampaignVariant) => {
+    const content = [variant.text, variant.link].filter(Boolean).join("\n");
+    const account = accountFor(variant);
+    if (
+      account?.platform === "facebook" &&
+      account.connection !== "browser" &&
+      variant.facebook?.target === "reel"
+    )
+      return content.length;
+    return account?.platform === "telegram" &&
+      account.accountType === "channel" &&
+      account.connection === "token"
+      ? content.length
+      : socialCharacterCount(content);
+  };
   const invalidVariants = variants.some((variant) => {
     const limit = variantLimit(variant);
     return (
       !snapshot.accounts.some((account) => account.id === variant.accountId) ||
       !hasDraftAccess(variant.accountId) ||
-      !variant.text.trim() ||
+      (accountFor(variant)?.platform === "facebook" &&
+        accountFor(variant)?.connection !== "browser" &&
+        !validFacebookReel(variant)) ||
+      (!variant.text.trim() &&
+        !(apiTelegramChannelUpload(variant) && variant.media.length) &&
+        !(
+          accountFor(variant)?.platform === "facebook" &&
+          accountFor(variant)?.connection !== "browser" &&
+          variant.facebook?.target === "reel" &&
+          variant.media.length === 1 &&
+          variant.media[0].kind === "video"
+        ) &&
+        !(accountFor(variant)?.platform === "snapchat" && variant.snapchat?.target === "story")) ||
       !Number.isFinite(variant.scheduledAt) ||
       (limit !== undefined && variantCount(variant) > limit) ||
       variant.factIds.some((id) => !publicFacts.some((fact) => fact.id === id))
@@ -309,7 +395,21 @@ export function Campaigns({
                           const { effective } = await client.request<{
                             effective: SocialPolicy;
                           }>("policy.get", { accountId: variant.accountId });
-                          const limit = socialLimit(effective, "content");
+                          const policyLimit = socialLimit(effective, "content");
+                          const account = accountFor(variant);
+                          const limit =
+                            account?.platform === "facebook" &&
+                            account.connection !== "browser" &&
+                            variant.facebook?.target === "reel"
+                              ? Math.min(policyLimit ?? Infinity, 2200)
+                              : account?.platform === "telegram" &&
+                                  account.accountType === "channel" &&
+                                  account.connection === "token"
+                                ? Math.min(
+                                    policyLimit ?? Infinity,
+                                    variant.media.length ? 1024 : 4096,
+                                  )
+                                : policyLimit;
                           if (limit !== undefined && variantCount(variant) > limit)
                             throw new Error(
                               t("Content for this account can be at most {p0} characters.", {
@@ -529,10 +629,29 @@ export function Campaigns({
                     disabled={socialLocked}
                     label={t("Content for this account")}
                     value={variant.text}
-                    required
+                    required={
+                      !(
+                        (accountFor(variant)?.platform === "snapchat" &&
+                          variant.snapchat?.target === "story") ||
+                        (apiTelegramChannelUpload(variant) && variant.media.length > 0) ||
+                        (accountFor(variant)?.platform === "facebook" &&
+                          accountFor(variant)?.connection !== "browser" &&
+                          variant.facebook?.target === "reel" &&
+                          variant.media.length === 1 &&
+                          variant.media[0].kind === "video")
+                      )
+                    }
                     rows={4}
                     onChange={(event) => update(variant.accountId, { text: event.target.value })}
                   />
+                  {accountFor(variant)?.platform === "snapchat" &&
+                  variant.snapchat?.target === "story" ? (
+                    <small>
+                      {t(
+                        "Public Story uploads have no caption or link and last 24 hours. Clear the content and link before approval.",
+                      )}
+                    </small>
+                  ) : null}
                   <small role="status">
                     {variantLimit(variant) !== undefined
                       ? t("{p0} / {p1} characters · link included", {
@@ -553,7 +672,33 @@ export function Campaigns({
                   <TikTokPublishingFields
                     variant={variant}
                     client={client}
+                    connection={accountFor(variant)?.connection}
+                    onBusyChange={(busy) =>
+                      setVideoProgress((current) => {
+                        const next = { ...current };
+                        if (busy) next[variant.accountId] = 0;
+                        else delete next[variant.accountId];
+                        return next;
+                      })
+                    }
                     onChange={(patch) => update(variant.accountId, patch)}
+                  />
+                ) : null}
+                {accountFor(variant)?.platform === "facebook" &&
+                accountFor(variant)?.connection !== "browser" ? (
+                  <FacebookReelFields
+                    variant={variant}
+                    client={client}
+                    disabled={socialLocked}
+                    onChange={(patch) => update(variant.accountId, patch)}
+                    onBusyChange={(busy) =>
+                      setVideoProgress((current) => {
+                        const next = { ...current };
+                        if (busy) next[variant.accountId] = 0;
+                        else delete next[variant.accountId];
+                        return next;
+                      })
+                    }
                   />
                 ) : null}
                 <details className="social-settings">
@@ -582,10 +727,18 @@ export function Campaigns({
                       })
                     }
                   />
-                  {!snapshot.accounts.some(
+                  {accountFor(variant)?.connection !== "browser" &&
+                  !snapshot.accounts.some(
                     (account) =>
                       account.id === variant.accountId &&
-                      ["youtube", "tiktok"].includes(account.platform),
+                      [
+                        "youtube",
+                        "tiktok",
+                        "instagram",
+                        "facebook",
+                        "linkedin",
+                        "snapchat",
+                      ].includes(account.platform),
                   ) ? (
                     <TextField
                       disabled={socialLocked}
@@ -602,54 +755,149 @@ export function Campaigns({
                       }
                     />
                   ) : null}
-                  {snapshot.accounts.find((account) => account.id === variant.accountId)
-                    ?.platform === "x" ? (
-                    <XMediaFields
+                  {accountFor(variant)?.connection !== "browser" &&
+                  ["instagram", "facebook"].includes(accountFor(variant)?.platform ?? "") &&
+                  !variant.facebook ? (
+                    <MetaPublishingFields
+                      platform={accountFor(variant)!.platform as "instagram" | "facebook"}
                       value={variant.media}
-                      client={client}
                       onChange={(media) => update(variant.accountId, { media })}
-                      onBusyChange={(busy) =>
-                        setVideoProgress((current) => {
-                          const next = { ...current };
-                          if (busy) next[variant.accountId] = 0;
-                          else delete next[variant.accountId];
-                          return next;
+                      disabled={socialLocked}
+                    />
+                  ) : null}
+                  {apiSnapchatUpload(variant) ? (
+                    <TextField
+                      disabled={socialLocked}
+                      label={t("Spotlight locale")}
+                      placeholder="tr_TR"
+                      required
+                      pattern="[a-z]{2}_[A-Z]{2}"
+                      value={variant.snapchat?.locale ?? ""}
+                      onChange={(event) =>
+                        update(variant.accountId, {
+                          snapchat: {
+                            durationSeconds: 0,
+                            width: 0,
+                            height: 0,
+                            ...variant.snapchat,
+                            target: "spotlight",
+                            locale: event.target.value,
+                          },
                         })
                       }
                     />
                   ) : null}
-                  {snapshot.accounts.some(
-                    (account) =>
-                      account.id === variant.accountId &&
-                      account.platform === "linkedin" &&
-                      account.accountType === "organization",
-                  ) ? (
-                    <div>
-                      <TextField
-                        disabled={socialLocked}
-                        label={t("Upload the image to the host")}
-                        type="file"
-                        accept="image/jpeg,image/png"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (file)
-                            void pendingUi.run(`campaign.upload-image:${variant.accountId}`, () =>
-                              run(async () => {
-                                const upload = await client.upload(file);
-                                update(variant.accountId, {
-                                  media: [{ kind: "image", uploadId: upload.uploadId }],
-                                });
-                              }),
-                            );
-                        }}
+                  {accountFor(variant)?.platform === "x" ||
+                  browserUpload(variant) ||
+                  apiLinkedInUpload(variant) ||
+                  apiTelegramChannelUpload(variant) ||
+                  apiSnapchatUpload(variant) ? (
+                    <>
+                      {accountFor(variant)?.platform === "snapchat" &&
+                      !apiSnapchatUpload(variant) ? (
+                        <fieldset disabled={socialLocked}>
+                          <legend>{t("Snapchat destination")}</legend>
+                          <SegmentedControl
+                            aria-label={t("Snapchat destination")}
+                            value={variant.snapchat?.target ?? ""}
+                            options={[
+                              { value: "spotlight", label: "Spotlight" },
+                              { value: "story", label: t("Public Story") },
+                            ]}
+                            onValueChange={(target) =>
+                              update(variant.accountId, {
+                                snapchat: {
+                                  durationSeconds: 0,
+                                  width: 0,
+                                  height: 0,
+                                  ...variant.snapchat,
+                                  target: target as "spotlight" | "story",
+                                },
+                              })
+                            }
+                          />
+                          <small>
+                            {t(
+                              "Choose one destination. Use a 5–60 second MP4 of at least 540 × 960 pixels.",
+                            )}
+                          </small>
+                        </fieldset>
+                      ) : null}
+                      <XMediaFields
+                        value={variant.media}
+                        client={client}
+                        label={
+                          accountFor(variant)?.platform === "x"
+                            ? undefined
+                            : t("{p0} attachments", { p0: names[accountFor(variant)!.platform] })
+                        }
+                        help={
+                          accountFor(variant)?.platform === "x" || apiLinkedInUpload(variant)
+                            ? undefined
+                            : apiTelegramChannelUpload(variant)
+                              ? t(
+                                  "Publish text or one JPEG/PNG up to 5 MiB or MP4 up to 50 MiB to the connected channel. Media captions can contain up to 1024 UTF-16 units.",
+                                )
+                              : apiSnapchatUpload(variant)
+                                ? t(
+                                    "Choose a locale and upload a 6–60 second MP4 of at least 540 × 960 pixels. API publishing targets Spotlight.",
+                                  )
+                                : t(
+                                    "Files are uploaded to the selected host and attached through the browser.",
+                                  )
+                        }
+                        maxCount={
+                          accountFor(variant)?.platform === "snapchat" ||
+                          apiTelegramChannelUpload(variant)
+                            ? 1
+                            : undefined
+                        }
+                        maxVideoMiB={apiTelegramChannelUpload(variant) ? 50 : undefined}
+                        videoOnly={accountFor(variant)?.platform === "snapchat"}
+                        imagesOnly={!!apiLinkedInUpload(variant)}
+                        disabled={
+                          accountFor(variant)?.platform === "snapchat" &&
+                          (!variant.snapchat?.target ||
+                            (apiSnapchatUpload(variant) &&
+                              !/^[a-z]{2}_[A-Z]{2}$/.test(variant.snapchat?.locale ?? "")))
+                        }
+                        showPreview={accountFor(variant)?.platform === "snapchat"}
+                        onVideoMetadataChange={
+                          accountFor(variant)?.platform === "snapchat"
+                            ? (metadata) => {
+                                if (variant.snapchat)
+                                  update(variant.accountId, {
+                                    snapchat: {
+                                      ...variant.snapchat,
+                                      durationSeconds: metadata?.durationSeconds ?? 0,
+                                      width: metadata?.width ?? 0,
+                                      height: metadata?.height ?? 0,
+                                    },
+                                  });
+                              }
+                            : undefined
+                        }
+                        allowAltText={
+                          accountFor(variant)?.platform === "x" ||
+                          (accountFor(variant)?.platform === "linkedin" &&
+                            (accountFor(variant)?.connection !== "browser" ||
+                              variant.media.length <= 1))
+                        }
+                        allowDocuments={
+                          accountFor(variant)?.platform === "linkedin" &&
+                          accountFor(variant)?.connection === "browser"
+                        }
+                        onChange={(media) => update(variant.accountId, { media })}
+                        onBusyChange={(busy) =>
+                          setVideoProgress((current) => {
+                            const next = { ...current };
+                            if (busy) next[variant.accountId] = 0;
+                            else delete next[variant.accountId];
+                            return next;
+                          })
+                        }
                       />
-                      {pendingUi.is(`campaign.upload-image:${variant.accountId}`) ? (
-                        <Progress label={t("Operation in progress…")} />
-                      ) : null}
-                      {variant.media[0]?.uploadId ? (
-                        <small>{t("Image uploaded to the host")}</small>
-                      ) : null}
-                    </div>
+                    </>
                   ) : null}
                   <label>
                     {t("Verified fact")}
@@ -889,12 +1137,73 @@ export function Campaigns({
                               {variant.youtube.containsSyntheticMedia ? t("Yes") : t("No")}
                             </p>
                           ) : null}
+                          {variant.tiktok ? (
+                            <p>
+                              {variant.tiktok.mediaType === "photo" ? t("Photos") : t("Video")} ·{" "}
+                              {t("Visibility")}: {variant.tiktok.privacy}
+                              {variant.tiktok.mediaType === "photo"
+                                ? ` · ${variant.tiktok.photoTitle ?? ""} · ${t("Cover photo")}: ${(variant.tiktok.photoCoverIndex ?? 0) + 1} · ${t("Let TikTok add recommended music")}: ${variant.tiktok.autoAddMusic ? t("Yes") : t("No")}`
+                                : ""}
+                              {` · ${t("Contains altered or synthetic media")}: ${variant.tiktok.isAigc ? t("Yes") : t("No")}`}
+                            </p>
+                          ) : null}
+                          {variant.snapchat ? (
+                            <p>
+                              {t("Snapchat destination")}:{" "}
+                              {variant.snapchat.target === "story"
+                                ? t("Public Story")
+                                : "Spotlight"}{" "}
+                              · {variant.snapchat.durationSeconds}s · {variant.snapchat.width} ×{" "}
+                              {variant.snapchat.height}
+                              {variant.snapchat.target === "story" ? ` · ${t("24 hours")}` : ""}
+                              {variant.snapchat.locale ? ` · ${variant.snapchat.locale}` : ""}
+                            </p>
+                          ) : null}
+                          {snapshot.accounts.some(
+                            (account) =>
+                              account.id === variant.accountId &&
+                              account.platform === "facebook" &&
+                              account.connection !== "browser",
+                          ) ? (
+                            <p>
+                              {t("Facebook destination")}:{" "}
+                              {variant.facebook
+                                ? `Reel · ${variant.facebook.durationSeconds}s · ${variant.facebook.width} × ${variant.facebook.height} · ${variant.facebook.frameRate} fps`
+                                : t("Page feed")}
+                            </p>
+                          ) : null}
+                          {variant.media.length === 1 &&
+                          variant.media[0].kind === "video" &&
+                          snapshot.accounts.some(
+                            (account) =>
+                              account.id === variant.accountId &&
+                              account.platform === "instagram" &&
+                              account.connection !== "browser",
+                          ) ? (
+                            <p>{t("This video will publish as a Reel and appear in the feed.")}</p>
+                          ) : null}
                           <p className="social-message">{variant.text}</p>
                           {variant.media.map((media, index) => (
-                            <p key={index}>
-                              {media.kind === "video" ? t("Video") : t("Image")}:{" "}
-                              {media.url ?? t("File uploaded to the host")}
-                            </p>
+                            <div key={`${index}:${media.uploadId ?? media.url ?? media.kind}`}>
+                              {media.kind === "image" && media.uploadId && !media.url ? (
+                                <SocialUploadImagePreview
+                                  client={client}
+                                  uploadId={media.uploadId}
+                                  alt={media.alt}
+                                  active={active}
+                                />
+                              ) : null}
+                              <p>
+                                {media.kind === "document"
+                                  ? t("PDF document")
+                                  : media.kind === "video"
+                                    ? t("Video")
+                                    : t("Image")}
+                                : {media.url ?? t("File uploaded to the host")}
+                                {media.title ? ` · ${media.title}` : ""}
+                                {media.alt ? ` · ${t("Image alt text")}: ${media.alt}` : ""}
+                              </p>
+                            </div>
                           ))}
                           {variant.link ? <p className="social-message">{variant.link}</p> : null}
                           <small>
@@ -985,7 +1294,12 @@ export function Campaigns({
                             onClick={() =>
                               void pendingUi.run("campaign.approve", () =>
                                 run(async () => {
-                                  await client.request("campaigns.approve", { id: selected.id });
+                                  if (!currentPreview || !preview?.campaign)
+                                    throw new Error(t("Run the account and content check first."));
+                                  await client.request("campaigns.approveReviewed", {
+                                    id: selected.id,
+                                    expectedRevision: preview.campaign.revision,
+                                  });
                                   setPreview(
                                     await client.request("campaigns.preview", { id: selected.id }),
                                   );

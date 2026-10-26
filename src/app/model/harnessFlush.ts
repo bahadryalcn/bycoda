@@ -35,6 +35,7 @@ export class HarnessEventQueue {
       event.type === "approval.requested" ||
       event.type === "approval.resolved" ||
       event.type === "question.asked" ||
+      event.type === "question.updated" ||
       event.type === "question.resolved"
     ) {
       // Deliver the preceding output too, preserving this session's ordering.

@@ -41,7 +41,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function render(visible: boolean, liveStatusInDock = false, pendingQuestion = false) {
+function render(
+  visible: boolean,
+  liveStatusInDock = false,
+  pendingQuestion = false,
+  questionBehavior?: "blocking" | "nonBlocking",
+) {
   act(() =>
     root.render(
       createElement(AgentTranscript, {
@@ -50,6 +55,7 @@ function render(visible: boolean, liveStatusInDock = false, pendingQuestion = fa
         visible,
         liveStatusInDock,
         pendingQuestion,
+        questionBehavior,
         backgroundTasks: ["npm run dev"],
       }),
     ),
@@ -74,7 +80,16 @@ describe("AgentTranscript background clock", () => {
     render(true, true);
     expect(container.textContent).not.toContain("Working for");
     expect(container.textContent).toContain("It is running.");
-    render(true, true, true);
+    render(true, true, true, "blocking");
     expect(container.textContent).toContain("Waiting for answers");
   });
+
+  it.each([undefined, "nonBlocking"] as const)(
+    "does not report the run paused for question behavior=%s",
+    (behavior) => {
+      render(true, false, true, behavior);
+      expect(container.textContent).not.toContain("Waiting for answers");
+      expect(container.textContent).toContain("Working for 1m 35s");
+    },
+  );
 });

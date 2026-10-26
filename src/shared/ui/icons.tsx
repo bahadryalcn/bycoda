@@ -65,6 +65,7 @@ import {
   Globe as LucideGlobe,
   Globe as LucideInternet,
   ImagePlus as LucideImagePlus,
+  Home as LucideHome,
   Inbox as LucideInbox,
   BellOff as LucideBellOff,
   Keyboard as LucideKeyboard,
@@ -166,6 +167,7 @@ export const ArrowDownCircle = wrap(LucideArrowDownCircle, "ArrowDownCircle");
 export const ArrowDown = wrap(LucideArrowDown, "ArrowDown");
 export const ArrowLeft = wrap(LucideArrowLeft, "ArrowLeft");
 export const ArrowUp = wrap(LucideArrowUp, "ArrowUp");
+export const Home = wrap(LucideHome, "Home");
 export const BlockQuote = wrap(LucideBlockQuote, "BlockQuote");
 export const Bold = wrap(LucideBold, "Bold");
 export const Bot = wrap(LucideBot, "Bot");

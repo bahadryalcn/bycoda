@@ -26,6 +26,8 @@ export function xMediaFormat(bytes: Uint8Array): "png" | "jpg" | "mp4" {
   throw new SocialPlatformError("rejected");
 }
 export function xMediaIssue(items: SocialMedia[], message = false): string | undefined {
+  if (items.some((item) => item.kind !== "image" && item.kind !== "video"))
+    return "X supports uploaded images or MP4 videos, not native documents.";
   if (items.some((item) => item.alt && (item.kind !== "image" || item.alt.length > 1000)))
     return "X alternative text supports images and at most 1000 characters.";
   if (items.some((item) => !item.uploadId || item.url)) return "X requires host-uploaded media.";
@@ -46,14 +48,14 @@ export async function uploadXMedia(
   token: string,
   read: (id: string) => Promise<Uint8Array>,
   message: boolean,
-  checkpoint?: (state: NonNullable<SocialJob["preparation"]>) => void,
+  checkpoint?: (state: NonNullable<SocialJob["preparation"]>) => void | Promise<void>,
   now = Date.now,
 ): Promise<string[]> {
   if (xMediaIssue(job.payload.media, message)) throw new SocialPlatformError("unsupported");
   let state = { ...job.preparation };
-  const save = () => {
+  const save = async () => {
     job.preparation = { ...state };
-    checkpoint?.(job.preparation);
+    await checkpoint?.(job.preparation);
   };
   const ids = [...(state.mediaIds ?? [])];
   for (const item of job.payload.media.slice(ids.length)) {
@@ -112,7 +114,7 @@ export async function uploadXMedia(
           { method: "POST" },
         );
         state.xVideo = { id, expiresAt: now() + expiry * 1000 };
-        save();
+        await save();
         processing = finalized.value.data?.processing_info;
       }
       if (processing && processing.state !== "succeeded") {
@@ -127,7 +129,7 @@ export async function uploadXMedia(
       ids.push(state.xVideo!.id);
     }
     state = { ...state, mediaIds: [...ids] };
-    save();
+    await save();
   }
   if (state.xVideo && state.xVideo.expiresAt <= now()) throw new SocialPlatformError("rejected");
   for (const [index, item] of job.payload.media.entries()) {
@@ -143,7 +145,7 @@ export async function uploadXMedia(
     });
     if (value.data?.id !== id) throw new SocialPlatformError("unknown");
     state = { ...state, xAltText: { ...state.xAltText, [id]: item.alt } };
-    save();
+    await save();
   }
   return ids;
 }

@@ -15,8 +15,9 @@ its local recognizer without stopping coding work.
 The local bycoda Host runs Faster Whisper in an on-demand hidden Python process.
 It uses an already cached multilingual `Systran/faster-whisper-small`, `base` or
 `tiny` model, in that preference order. It tries CUDA and falls back to CPU int8.
-It never downloads a model or uses Hugging Face credentials automatically.
-Python, `faster-whisper` and a cached model must already be available to the host.
+Detection and voice playback never download models or use Hugging Face credentials.
+Choose **Install** in voice settings to prepare missing Python, packages and public
+models before starting voice.
 `BYCODA_VOICE_PYTHON` can select an existing Python executable. The installed host
 must include the `voice.local.v1` capability.
 
@@ -25,10 +26,10 @@ Recognition detects the spoken language independently of the interface language.
 Natural replies use local **VoxCPM2** with incremental PCM playback. Its model
 loads on start and stays warm during the connection. Speaking again or choosing
 **Silence** cancels synthesis and scheduled audio. A late response cannot restart
-cancelled playback. The GPU synthesizer is shared between desktop windows; a busy
+cancelled playback. The synthesizer is shared between desktop windows; a busy
 window reports that state instead of interrupting another window's voice.
 
-Alternatively, choose **Installed system voice** in settings to use an installed
+Alternatively, choose **System voice** in settings to use an installed
 local voice matching the recognized language. If none is available, the reply
 stays visible with an explanation. The app never silently switches to a network
 voice or downgrades natural voice to the system engine. Remote projects still
@@ -40,22 +41,28 @@ The settings page checks existing Python environments and the local Hugging Face
 model cache when enabled. This check does not load models into GPU memory, request
 the microphone, download files or use a Hugging Face token. It checks an explicitly
 selected executable first; otherwise it tries `BYCODA_VOICE_PYTHON`, an active
-virtual environment, `~/.bycoda/voice`, PATH and standard Windows Python folders.
+virtual environment, `~/.bycoda/voice`, PATH and standard Windows Python folders
+and launcher versions. The scan has a total time limit. A settings check that
+cannot finish offers **Try again**; **Install** remains available while checking.
 
-Missing Python, packages and models are listed separately. Under **Installation
-paths and setup**, choose the Python executable and model directories or enter
-their paths. Blank paths mean automatic detection. A custom model path must point
-to the actual model files, such as a cache snapshot, rather than a repository's
-parent cache directory. Changing the engine or paths disconnects an active voice
+Use **Locate existing** to choose the Python executable and model directories or
+enter their paths. Blank paths mean automatic detection. Missing components and
+failure details are available behind **Technical details**. A custom model path
+must point to the actual model files, such as a cache snapshot, rather than a
+repository's parent cache directory. Changing the engine or paths disconnects an active voice
 connection; reconnect explicitly after checking the installation.
 
-Use Python **3.10–3.12**. The page provides manual package and model download
-commands. In the chosen environment, install `faster-whisper`; natural replies also
-require `voxcpm` and its dependencies. Download `Systran/faster-whisper-small` and,
-for natural replies, `openbmb/VoxCPM2`, or select existing local copies. Model
-downloads can be several GB. No automatic installation is performed. GPU
-acceleration is recommended for natural replies; CPU performance depends on the
-machine. Detection confirms discoverable files/packages; starting voice checks
+**Install** creates a private environment under `~/.bycoda/voice`, installs
+`faster-whisper` and `huggingface-hub`, and adds `voxcpm` for natural replies. If
+no compatible Python is found, setup downloads a checksum-pinned uv tool and uses
+it to prepare private Python 3.12, without changing system Python, PATH or registry
+entries. An explicitly selected Python path is preserved rather than replaced.
+Setup reuses complete model folders and downloads missing public
+`Systran/faster-whisper-small` and, for natural replies, `openbmb/VoxCPM2` files.
+Model downloads can be several GB. Setup continues when leaving settings; return
+to see its stage or retry a failure. GPU acceleration is recommended for natural
+replies; CPU performance depends on the machine. Detection confirms discoverable
+files/packages; starting voice checks
 that the runtime can actually load them.
 
 Initial model loading and the selected conversation provider add latency. A warm

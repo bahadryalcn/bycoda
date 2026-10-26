@@ -16,6 +16,8 @@ import { pathKey } from "../../../shared/lib/paths";
 import { persistableAttachment } from "../model/attachments";
 import { boundedToolPreview } from "../model/toolInspection";
 import { clearComposerDraft } from "../model/draftCache";
+import { buildConversationReplay } from "../model/conversationRewind";
+import { repairSessionModelIdentity } from "../model/sessionModelIdentity";
 import {
   markMissingAttachments,
   persistableQueue,
@@ -169,6 +171,12 @@ export function isPersistableId(value: string): boolean {
 }
 
 function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks"> {
+  // The picker arms a handoff in memory; a restart before Send loses that
+  // transient plan. Store recovery context without adding it to the live turn,
+  // whose normal handoff already supplies the history.
+  const pendingContextReplay =
+    session.pendingContextReplay ||
+    (session.pendingSwitch ? buildConversationReplay(session.blocks) : "");
   const linkedWorkItem = sanitizeLinkedWorkItem(session.linkedWorkItem);
   const rewindHistory = sanitizeRewindHistory(session.rewindHistory);
   return {
@@ -195,8 +203,8 @@ function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks">
       ? { automationId: session.automationId }
       : {}),
     ...(rewindHistory ? { rewindHistory } : {}),
-    ...(typeof session.pendingContextReplay === "string" && session.pendingContextReplay
-      ? { pendingContextReplay: session.pendingContextReplay.slice(0, 24_000) }
+    ...(pendingContextReplay
+      ? { pendingContextReplay: pendingContextReplay.slice(0, 24_000) }
       : {}),
     ...(session.adoptedDivergence
       ? { adoptedDivergence: JSON.stringify(session.adoptedDivergence) }
@@ -369,8 +377,12 @@ function enqueueSessionWrite<T>(
   return run;
 }
 
-export function upsertSession(session: Session): Promise<SessionSummary | null> {
-  return persistSession(session);
+/** Initial timestamps are used only when the native store creates a missing row. */
+export function upsertSession(
+  session: Session,
+  initialTimes?: { createdAt: number; updatedAt: number },
+): Promise<SessionSummary | null> {
+  return persistSession(session, undefined, false, initialTimes);
 }
 
 /** Explicit /clear must overwrite an existing transcript even though it is empty. */
@@ -508,6 +520,7 @@ async function persistSession(
   session: Session,
   guard?: { expectedUpdatedAt: number; expectedRevision?: number } | { expectMissing: true },
   allowEmpty = false,
+  initialTimes?: { createdAt: number; updatedAt: number },
 ): Promise<SessionSummary | null> {
   if ((!allowEmpty && !shouldPersistSession(session)) || deletedSessionIds.has(session.id)) {
     return null;
@@ -524,6 +537,7 @@ async function persistSession(
     const summary = await invoke<SessionSummary | null>("session_upsert", {
       session: {
         ...payload,
+        ...initialTimes,
         blocks: payload.blocks.map((block) =>
           block.orchestrationLeadId && deletedSessionIds.has(block.orchestrationLeadId)
             ? { ...block, orchestrationLeadId: undefined }
@@ -852,12 +866,12 @@ async function hydrateStoredSession(
     repairStoredSession(session, expectedUpdatedAt, expectedRevision),
     withStoredQueue(session),
   ]);
-  return {
+  return repairSessionModelIdentity({
     ...repaired,
     ...(queued.queuedMessages
       ? { queuedMessages: queued.queuedMessages, queueStatus: "restored" as const }
       : {}),
-  };
+  });
 }
 
 /** Which of `paths` still exist on disk. */

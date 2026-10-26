@@ -41,7 +41,17 @@ export class SocialTransport {
     if (method === "social.oauth.availability")
       return { ...this.oauth.availability(), ...this.tokens.availability() };
     if (method === "social.token.connect")
-      return this.tokens.connect(p, String(params.accountId ?? ""));
+      return this.tokens.connect(
+        p,
+        String(params.accountId ?? ""),
+        typeof params.reviewId === "string" ? params.reviewId : undefined,
+      );
+    if (method === "social.token.inspect")
+      return this.tokens.inspectTelegramChannel(
+        p,
+        String(params.accountId ?? ""),
+        typeof params.target === "string" ? params.target : "",
+      );
     if (method === "social.monitoring.status")
       return this.service.monitoringStatus(p, String(params.accountId ?? ""));
     if (method === "social.tiktok.creator")
@@ -82,17 +92,47 @@ export class SocialTransport {
           params.intent as SocialBrowserIntent,
           params.targetUrl,
           params.acknowledgeRisk,
+          params.registration,
         );
       if (method === "social.browser.workflow.status")
         return this.browser.workflows.status(this.service, p, String(params.accountId ?? ""));
       if (method === "social.browser.workflow.cancel")
         return this.browser.workflows.cancel(this.service, p, String(params.accountId ?? ""));
+      if (method === "social.browser.registration.review")
+        return this.browser.workflows.reviewRegistration(this.service, p, {
+          accountId: String(params.accountId ?? ""),
+          workflowId: String(params.workflowId ?? ""),
+          expectedUpdatedAt: Number(params.expectedUpdatedAt),
+        });
+      if (method === "social.browser.registration.submit")
+        return this.browser.workflows.submitRegistration(this.service, p, {
+          accountId: String(params.accountId ?? ""),
+          workflowId: String(params.workflowId ?? ""),
+          expectedUpdatedAt: Number(params.expectedUpdatedAt),
+          reviewId: params.reviewId,
+          confirm: params.confirm,
+        });
+      if (method === "social.browser.registration.advance")
+        return this.browser.workflows.advanceRegistration(this.service, p, {
+          accountId: String(params.accountId ?? ""),
+          workflowId: String(params.workflowId ?? ""),
+          expectedUpdatedAt: Number(params.expectedUpdatedAt),
+          registration: params.registration,
+        });
+      if (method === "social.browser.registration.reconcile")
+        return this.browser.workflows.reconcileRegistration(this.service, p, {
+          accountId: String(params.accountId ?? ""),
+          workflowId: String(params.workflowId ?? ""),
+          expectedUpdatedAt: Number(params.expectedUpdatedAt),
+          resourceId: params.resourceId,
+        });
       if (method === "social.browser.begin")
         return this.browser.begin(
           this.service,
           p,
           String(params.accountId ?? ""),
           params.acknowledgeRisk,
+          typeof params.resourceId === "string" ? params.resourceId : undefined,
         );
       if (method === "social.browser.status")
         return this.browser.status(this.service, p, String(params.accountId ?? ""));
@@ -100,7 +140,11 @@ export class SocialTransport {
     if (method === "social.media.upload")
       return params.mode
         ? this.service.uploadVideo(p, params)
-        : this.service.uploadImage(p, String(params.base64 ?? ""));
+        : this.service.uploadImage(
+            p,
+            String(params.base64 ?? ""),
+            params.kind === "document" ? "document" : "image",
+          );
     throw new Error("Unsupported social transport operation.");
   }
   private input(value: unknown): Record<string, unknown> {

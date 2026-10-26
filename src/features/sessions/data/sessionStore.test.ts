@@ -2,6 +2,7 @@ import { appendUser, applyHarnessEvents } from "../../../integrations/harness/co
 import { describe, expect, it } from "vitest";
 import { mapCodexNotification } from "../../../integrations/harness/providers/codex/codexProtocol";
 import { toolCallLabel } from "../model/transcriptActivity";
+import { conversationReplayPrompt } from "../model/conversationRewind";
 import { newSession, type Block, type BtwThread, type Session } from "../model/session";
 import {
   backfillClaudeShellCommands,
@@ -73,6 +74,37 @@ describe("Claude Shell row recovery", () => {
 });
 
 describe("conversation rewind persistence", () => {
+  it("stores recovery context for an unsent provider switch without duplicating the live handoff", () => {
+    const session = newSession("claude", "/repo");
+    session.blocks = [
+      { id: "u1", role: "user", text: "Keep the existing parser contract" },
+      { id: "a1", role: "assistant", text: "Updated the parser and verified its callers" },
+    ];
+    session.pendingSwitch = { from: "codex", fromModel: "gpt", fromSettings: {} };
+    const payload = sanitizeSessionForPersist(session);
+    expect(payload.pendingContextReplay).toContain("Keep the existing parser contract");
+    expect(payload.pendingContextReplay).toContain("verified its callers");
+    expect(payload.blocks).toEqual(session.blocks);
+    expect(session.pendingContextReplay).toBeUndefined();
+    expect(conversationReplayPrompt(session)).toBe("");
+    expect(session.pendingSwitch.from).toBe("codex");
+    expect(persistFingerprint(session)).not.toBe(
+      persistFingerprint({ ...session, pendingSwitch: undefined }),
+    );
+
+    session.pendingContextReplay = "previously retained context";
+    expect(sanitizeSessionForPersist(session).pendingContextReplay).toBe(
+      "previously retained context",
+    );
+    expect(
+      sanitizeSessionForPersist({
+        ...session,
+        pendingSwitch: undefined,
+        pendingContextReplay: undefined,
+      }),
+    ).not.toHaveProperty("pendingContextReplay");
+  });
+
   it("persists sanitized archived blocks and stop markers outside the active transcript", () => {
     const session = newSession("codex", "/repo");
     session.blocks = [

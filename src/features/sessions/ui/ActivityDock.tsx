@@ -15,7 +15,7 @@ import {
 import { useActivityDock, useDockCountLabel, useStopAllControl } from "../model/reactiveReads";
 import { type ActivityDock as ActivityDockModel, type DockAgent } from "../model/activityDock";
 import { canStopAgent } from "../model/backgroundStop";
-import type { Block } from "../model/session";
+import { hasPendingApproval, type Block } from "../model/session";
 import { AgentClock } from "./AgentClock";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
 import { STOP_ALL, useStopRequests } from "./useStopRequests";
@@ -30,6 +30,8 @@ type Props = {
   blocks: Block[];
   busy: boolean;
   pendingQuestion: boolean;
+  /** A visible question form already owns its status; keep only additional activity here. */
+  questionPresented?: boolean;
   /** The previous turn ended, but a queued send still has no delivery acknowledgement. */
   deliveryUnconfirmed?: boolean;
   backgroundTasks?: string[];
@@ -60,6 +62,7 @@ export const ActivityDock = memo(function ActivityDock({
   blocks,
   busy,
   pendingQuestion,
+  questionPresented = false,
   deliveryUnconfirmed = false,
   backgroundTasks,
   backgroundAgents,
@@ -119,15 +122,23 @@ export const ActivityDock = memo(function ActivityDock({
     dock.state === "done" && deliveryUnconfirmed
       ? `${t("Turn activity")}: ${t("Finished")}`
       : label;
+  const questionOnlyNotice =
+    questionPresented &&
+    pendingQuestion &&
+    dock.state === "needs-input" &&
+    !hasPendingApproval(blocks) &&
+    dock.agents.length === 0 &&
+    dock.backgroundCount === 0 &&
+    !backgroundAgents;
 
   return (
     <div ref={root}>
       {/* Always mounted, so a state change is announced rather than the dock
           appearing. The ticking clock stays out of it. */}
       <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {displayLabel}
+        {questionOnlyNotice ? "" : displayLabel}
       </span>
-      {dock.state === "idle" ? null : (
+      {dock.state === "idle" || questionOnlyNotice ? null : (
         <DockBody
           key={dock.state === "done" ? "done" : "live"}
           sessionId={sessionId}

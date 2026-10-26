@@ -5,17 +5,15 @@
 }
 .resource-header {
   display: flex;
-  flex-wrap: wrap;
-  align-items: start;
-  gap: 12px 24px;
-}
-.resource-sampling {
-  display: grid;
-  justify-items: end;
+  align-items: center;
   gap: 6px;
-  margin-inline-start: auto;
+  min-inline-size: 0;
 }
-.resource-sampling [role="status"] {
+.resource-sample-status {
+  flex: 1;
+  min-inline-size: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .resource-empty {
@@ -25,26 +23,22 @@
 .resource-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: 12px;
+  gap: 20px;
 }
 .resource-card {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   min-inline-size: 0;
-  padding: 16px;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-panel);
-  background: var(--bycoda-panel, var(--color-background-base));
 }
-.resource-card h4 {
+.resource-card h3 {
   margin: 0;
   color: var(--host-tool-muted);
   font-size: var(--ui-font-caption);
   font-weight: 500;
 }
 .resource-value {
-  font-size: clamp(22px, 3cqi, 28px);
-  font-weight: 600;
+  font-size: var(--ui-font-heading);
+  font-weight: 500;
   letter-spacing: -0.035em;
   line-height: 1.25;
   font-variant-numeric: tabular-nums;
@@ -89,7 +83,7 @@
 }
 .resource-chart-point {
   fill: var(--chart-color);
-  stroke: var(--bycoda-panel, var(--color-background-base));
+  stroke: var(--ui-surface);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
@@ -132,11 +126,4 @@
   margin-inline-start: 6px;
   color: var(--color-content);
   font-weight: 500;
-}
-.host-resources .host-tool-help {
-  margin: 0;
-}
-.host-resources .host-tool-help summary:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
 }

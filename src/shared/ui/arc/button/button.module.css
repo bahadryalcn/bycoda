@@ -17,10 +17,8 @@
 .button[aria-busy="true"] { cursor: progress; }
 /* Anchors of floating layers never scale: Radix opens on pointerdown and would measure a shrunken trigger. */
 .button:is([aria-haspopup]:not([aria-haspopup="false"]), [data-state], [role="combobox"]) { transform: none !important; }
-/* The slot's width follows the incoming label on a spring. The label stays centered and may overflow evenly while the slot catches up;
-   the outgoing label pops out of flow against the slot itself, so it keeps its place instead of following the new content box. */
+/* Intrinsic label changes settle in one layout update; pending keeps that space. */
 .labelSlot { position: relative; display: inline-flex; min-width: 0; align-items: center; justify-content: center; transition: opacity var(--duration-fast) var(--ease-standard); }
-.labelSlot[data-morphing] { clip-path: inset(-50% calc(var(--space-3) * -1)); }
 .labelContent { display: inline-flex; flex: none; align-items: center; }
 .labelPhase { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); white-space: nowrap; }
 .labelPhase svg { flex: none; }

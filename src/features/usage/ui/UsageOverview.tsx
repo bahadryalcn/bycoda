@@ -16,8 +16,6 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select } from "../../../shared/ui/Select";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { SlotText } from "../../../shared/ui/SlotText";
-import { useDecorativeMotionPreference } from "../../settings/model/decorativeMotion";
 import { DateTimeRangePicker } from "../../../shared/ui/DateTimeRangePicker";
 import { ArrowDownCircle, ListFilter, RefreshCw } from "../../../shared/ui/icons";
 import {
@@ -115,7 +113,6 @@ export function UsageOverview({
   limitsOnly?: boolean;
 }) {
   const locale = useLocale();
-  const decorativeMotion = useDecorativeMotionPreference();
   const revealed = useContext(RevealedSetting);
   const [selection, setSelection] = useState({ view: "overview", revealed });
   const view = limitsOnly ? "limits" : selection.view;
@@ -674,17 +671,12 @@ export function UsageOverview({
                         {t(metricNames[key])}
                       </Button>
                       <strong>
-                        <SlotText
-                          motion={decorativeMotion ? "auto" : "none"}
-                          value={
-                            !load.refreshedAt ||
-                            (key !== "duration" && !!load.error && !filtered.length) ||
-                            (key === "duration" && load.turns === null) ||
-                            (key === "cost" && unpriced.length > 0 && pricedTokens === 0)
-                              ? "—"
-                              : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`
-                          }
-                        />
+                        {!load.refreshedAt ||
+                        (key !== "duration" && !!load.error && !filtered.length) ||
+                        (key === "duration" && load.turns === null) ||
+                        (key === "cost" && unpriced.length > 0 && pricedTokens === 0)
+                          ? "—"
+                          : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`}
                       </strong>
                       <small>
                         {change == null

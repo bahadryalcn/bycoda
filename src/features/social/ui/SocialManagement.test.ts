@@ -396,7 +396,11 @@ describe("Social management workflows", () => {
       ],
     });
     await click("Give publishing approval");
-    expect(request).toHaveBeenCalledWith("campaigns.approve", { id: campaign.id });
+    expect(request).toHaveBeenCalledWith("campaigns.approveReviewed", {
+      id: campaign.id,
+      expectedRevision: campaign.revision,
+    });
+    expect(request).not.toHaveBeenCalledWith("campaigns.approve", expect.anything());
     expect(request).not.toHaveBeenCalledWith("campaigns.schedule", expect.anything());
     expect(schedule().disabled).toBe(false);
     await click("Schedule posts");

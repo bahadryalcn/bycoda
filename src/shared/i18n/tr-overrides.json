@@ -1064,5 +1064,9 @@
   "File change saved. Refresh failed.": "Dosya değişikliği kaydedildi. Liste yenilenemedi.",
   "Could not save the terminal profile. Select it again to retry.": "Terminal profili kaydedilemedi. Yeniden denemek için tekrar seçin.",
   "Could not read the conversation. Open Resume again to retry.\n\n{p0}": "Konuşma okunamadı. Yeniden denemek için Devam Et penceresini tekrar açın.\n\n{p0}",
-  "Project logo could not be loaded": "Proje logosu yüklenemedi"
+  "Project logo could not be loaded": "Proje logosu yüklenemedi",
+  "No assignments yet": "Henüz görev atanmadı",
+  "Work request": "İş talebi",
+  "Work is paused. Nothing is running.": "İş duraklatıldı. Çalışan bir işlem yok.",
+  "New assignments are paused. Running work can still finish.": "Yeni görev atamaları duraklatıldı. Devam eden işler tamamlanabilir."
 }

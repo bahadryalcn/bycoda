@@ -234,14 +234,19 @@ export class McpHttp {
     if (selected && !(MCP_GROUPS as readonly string[]).includes(selected))
       return reject(404, "Unknown MCP group.");
     const token = request.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
-    if (!token) return reject(401, "MCP credential required.");
+    if (!token) {
+      response.setHeader("X-Bycoda-Auth-Stage", "before-dispatch");
+      return reject(401, "MCP credential required.");
+    }
     const groups = selected ? [selected as McpGroup] : [...MCP_GROUPS];
     const groupIdentities = await Promise.all(
       groups.map(async (group) => await this.identity(token, group)),
     );
     const allowed = groups.filter((_group, index) => !!groupIdentities[index]);
-    if (!allowed.length)
+    if (!allowed.length) {
+      response.setHeader("X-Bycoda-Auth-Stage", "before-dispatch");
       return reject(401, "MCP credential is invalid, expired or outside this scope.");
+    }
     const now = this.now();
     if (now - this.window.start >= 60_000) this.window = { ...this.window, start: now, count: 0 };
     if (++this.window.count > 240 || this.window.active >= 16) {

@@ -1,4 +1,5 @@
-import type { SocialAdapter, SocialInbound } from "./adapter";
+import type { SocialAccount, SocialJob } from "../../features/social/model/social";
+import type { SocialAdapter, SocialInbound, SocialSendResult } from "./adapter";
 import { SocialHttp, SocialPlatformError } from "./adapter";
 
 const endpoint = "https://www.googleapis.com/youtube/v3/";
@@ -35,11 +36,65 @@ function cursorState(cursor?: string): Cursor {
   }
   return { replies: [] };
 }
-export function createYouTubeAdapter(http: SocialHttp): SocialAdapter {
+const visibility = (value: unknown): value is "private" | "unlisted" | "public" =>
+  typeof value === "string" && ["private", "unlisted", "public"].includes(value);
+
+export function createYouTubeAdapter(http: SocialHttp, now = Date.now): SocialAdapter {
+  /** An accepted upload is never repeated: only the bound video resource may be read after checkpointing. */
+  const processedVideo = async (
+    account: SocialAccount,
+    job: SocialJob,
+    token: string,
+  ): Promise<SocialSendResult> => {
+    const videoId = resultIdentity(job.preparation?.youtubeVideoId);
+    const params = new URLSearchParams({ part: "processingDetails,status,snippet", id: videoId });
+    let value: Record<string, any>;
+    try {
+      value = (await http.request(`${endpoint}videos?${params}`, token)).value;
+    } catch (error) {
+      // Retrying a status read for a known accepted ID cannot duplicate the upload.
+      if (error instanceof SocialPlatformError && error.code === "unknown")
+        throw new SocialPlatformError("processing", now() + 60_000);
+      throw error;
+    }
+    if (!Array.isArray(value.items) || value.items.length !== 1 || value.items[0]?.id !== videoId)
+      throw new SocialPlatformError("unknown");
+    const video = value.items[0];
+    if (typeof video.snippet?.channelId !== "string") throw new SocialPlatformError("unknown");
+    if (video.snippet.channelId !== account.platformId) throw new SocialPlatformError("denied");
+    if (
+      ["failed", "rejected", "deleted"].includes(video.status?.uploadStatus) ||
+      video.processingDetails?.processingStatus === "failed"
+    )
+      throw new SocialPlatformError("rejected");
+    if (video.processingDetails?.processingStatus === "processing") {
+      const estimate = Number(video.processingDetails.processingProgress?.timeLeftMs);
+      const delay =
+        Number.isFinite(estimate) && estimate > 0
+          ? Math.max(5000, Math.min(60_000, estimate))
+          : 60_000;
+      throw new SocialPlatformError("processing", now() + delay);
+    }
+    if (
+      video.processingDetails?.processingStatus !== "succeeded" ||
+      video.status?.uploadStatus !== "processed" ||
+      !visibility(video.status?.privacyStatus)
+    )
+      throw new SocialPlatformError("unknown");
+    return {
+      platformId: videoId,
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+      visibility: video.status.privacyStatus,
+    };
+  };
   return {
-    async send(account, job, token, media) {
+    async send(account, job, token, media, checkpoint, beforeSubmit) {
       const content = [job.payload.text, job.payload.link].filter(Boolean).join("\n");
       if (job.kind === "publish") {
+        if (job.preparation?.youtubeVideoId !== undefined)
+          return processedVideo(account, job, token);
+        if (job.preparation?.youtubeVisibility !== undefined)
+          throw new SocialPlatformError("unknown");
         const options = job.payload.youtube;
         const asset = job.payload.media[0];
         if (
@@ -56,6 +111,10 @@ export function createYouTubeAdapter(http: SocialHttp): SocialAdapter {
         );
         if (channel.items?.length !== 1 || channel.items[0].id !== account.platformId)
           throw new SocialPlatformError("denied");
+        // Without durable checkpointing, a later processing retry could upload the video twice.
+        if (!checkpoint) throw new SocialPlatformError("unsupported");
+        const bytes = await media(asset.uploadId);
+        await beforeSubmit?.();
         const { value } = await http.uploadYouTubeVideo(
           token,
           {
@@ -70,17 +129,23 @@ export function createYouTubeAdapter(http: SocialHttp): SocialAdapter {
               containsSyntheticMedia: options.containsSyntheticMedia,
             },
           },
-          await media(asset.uploadId),
+          bytes,
         );
         const platformId = resultIdentity(value.id);
-        const visibility = value.status?.privacyStatus;
-        if (!["private", "unlisted", "public"].includes(visibility))
-          throw new SocialPlatformError("unknown");
-        return {
-          platformId,
-          url: `https://www.youtube.com/watch?v=${platformId}`,
-          visibility,
+        const preparation: NonNullable<SocialJob["preparation"]> = {
+          ...job.preparation,
+          youtubeVideoId: platformId,
+          ...(visibility(value.status?.privacyStatus)
+            ? { youtubeVisibility: value.status.privacyStatus }
+            : {}),
         };
+        job.preparation = preparation;
+        try {
+          await checkpoint(preparation);
+        } catch {
+          throw new SocialPlatformError("unknown");
+        }
+        return processedVideo(account, job, token);
       }
       if (job.kind === "message" || !job.payload.postId || job.payload.media.length)
         throw new SocialPlatformError("unsupported");
@@ -121,6 +186,10 @@ export function createYouTubeAdapter(http: SocialHttp): SocialAdapter {
         platformId,
         url: `https://www.youtube.com/watch?v=${video}&lc=${platformId}`,
       };
+    },
+    async reconcile(account, job, token) {
+      if (job.kind !== "publish" || job.preparation?.youtubeVideoId === undefined) return undefined;
+      return processedVideo(account, job, token);
     },
     async poll(account, token, _posts, cursor) {
       const state = cursorState(cursor);
