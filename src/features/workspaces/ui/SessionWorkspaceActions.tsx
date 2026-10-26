@@ -143,7 +143,11 @@ export function SessionWorkspaceActions({
   if (!workspace && !error && !pending) return null;
   const removed = workspace?.directoryState === "removed";
   const quickDelete =
-    workspace && (workspace.state === "merged" || workspace.state === "abandoned") && !removed;
+    workspace &&
+    (workspace.state === "finished" ||
+      workspace.state === "merged" ||
+      workspace.state === "abandoned") &&
+    !removed;
   const lifecycleLabel = workspace
     ? {
         active: t("Active"),
