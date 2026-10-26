@@ -2,7 +2,7 @@ import { forEachAsync, mapAsync, someAsync } from "./async-collections";
 import { runGitText } from "../src/shared/lib/processExecution.node";
 import { assertExpectedConfiguration } from "./configurationConflict";
 import { createHash, randomUUID } from "node:crypto";
-import { constants, realpathSync, statSync } from "node:fs";
+import { constants, statSync } from "node:fs";
 import { access, lstat, readdir, readFile } from "node:fs/promises";
 import { setImmediate as yieldFingerprint } from "node:timers/promises";
 import { join } from "node:path";
@@ -24,6 +24,7 @@ import {
   parseReviewVerdict,
   type HostTask,
   type HostTaskInput,
+  type TaskDeliveryReview,
   type TaskVerification,
 } from "../src/features/tasks/model/hostTasks";
 import { DEFAULT_MAX_RUNNING_TASKS } from "../src/features/tasks/model/hostSettings";
@@ -43,16 +44,14 @@ import {
   reviewFindings,
   reviewRepairStop,
 } from "../src/features/tasks/model/taskReviewNotes";
-import {
-  createHostWorktree,
-  invalidateHostWorktrees,
-  resolveHostWorktreeAsync,
-} from "./git-worktrees";
+import { createHostWorktree } from "./git-worktrees";
 import { taskWorkspace } from "./task-workspace";
-import { hashTaskArtifact, transferTaskArtifacts } from "./task-artifacts";
+import { transferTaskArtifacts } from "./task-artifacts";
+import {
+  previewTaskDeliveryArtifacts,
+  validateTaskDeliveryArtifacts,
+} from "./task-delivery-artifacts";
 import { acceptanceOutputFingerprint } from "./task-acceptance-snapshot";
-import { cleanupTaskWorktree, sameHostPath } from "./task-worktree-cleanup";
-import { resolve } from "node:path";
 import { parseTaskWorkspace } from "../src/features/tasks/model/taskWorkspace";
 import type { HostGoal } from "../src/features/tasks/model/hostGoals";
 import type {
@@ -76,6 +75,14 @@ import {
 } from "./sessionRuns";
 import { runHostShell } from "./shell";
 import type { HostStore } from "./store";
+import {
+  previewTaskFinalization,
+  suspendedTaskDelivery,
+  type TaskWorkspaceServices,
+} from "./task-workspace-runtime";
+import type { WorkspaceOwnerAuthorization } from "./workspace-service-contracts";
+import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
+import type { BranchMergeReceipt } from "./workspace-contracts";
 const TICK_MS = 30000;
 /** How many tasks a machine works on at once until its owner changes it. */
 export const MAX_RUNNING_TASKS = DEFAULT_MAX_RUNNING_TASKS;
@@ -164,16 +171,8 @@ async function fingerprintPaths(
   }
   return true;
 }
-class MergeConflict extends Error {
-  constructor(
-    message: string,
-    readonly conflicts: string[],
-  ) {
-    super(message);
-  }
-}
 class UnresolvedMerge extends Error {}
-class ReplacedHistory extends MergeConflict {}
+class TaskPreparationSuperseded extends Error {}
 async function git(cwd: string, args: string[], timeout = 30000): Promise<string> {
   const stdout = await runGitText(args, {
     cwd,
@@ -183,156 +182,12 @@ async function git(cwd: string, args: string[], timeout = 30000): Promise<string
   });
   return stdout.trim();
 }
-/** A read-only query: optional locks off, so `status` never rewrites the index. */
-function gitRead(cwd: string, args: string[]): Promise<string> {
-  return runGitText(args, {
-    cwd,
-    timeout: 30000,
-    maxBuffer: 4 * 1024 * 1024,
-    windowsHide: true,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
-  }).then((stdout) => stdout.trim());
-}
-/** Within a merge retry's cooldown, how often its fingerprint is re-read. */
-const MERGE_PROBE_MS = 2 * 60000;
-/** What git said when a command failed, on one line. */
-function gitError(error: unknown): string {
-  const stderr = (
-    error as {
-      stderr?: unknown;
-    } | null
-  )?.stderr;
-  const text = typeof stderr === "string" && stderr.trim() ? stderr : "";
-  return (text || errorMessage(error)).trim().split(/\r?\n/).at(-1)!.trim();
-}
 function available(path: string): boolean {
   try {
     return statSync(path).isDirectory();
   } catch {
     return false;
   }
-}
-/** The branch and commit a project checkout is on, or null when the folder is
- * not the top of a git working copy. Throws when it is one a task branch
- * cannot start from or be merged back into. */
-async function checkoutBase(cwd: string): Promise<{
-  baseBranch: string;
-} | null> {
-  try {
-    const top = await git(cwd, ["rev-parse", "--show-toplevel"]);
-    if (realpathSync.native(top) !== realpathSync.native(cwd)) return null;
-  } catch {
-    return null;
-  }
-  try {
-    await git(cwd, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
-  } catch {
-    throw new Error(
-      "This project has no commits yet. Commit once, or turn off “Run on its own branch”.",
-    );
-  }
-  try {
-    return {
-      baseBranch: await git(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
-    };
-  } catch {
-    throw new Error(
-      "This project is not on a branch. Check one out, or turn off “Run on its own branch”.",
-    );
-  }
-}
-/** Commits whatever the agent left uncommitted, so the task branch holds the
- * whole result. */
-async function commitLeftovers(cwd: string, branch: string, title: string): Promise<void> {
-  const current = await git(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => "");
-  if (current !== branch)
-    throw new Error(
-      `The agent left the working copy on ${current || "no branch"} instead of ${branch}.`,
-    );
-  if (!(await git(cwd, ["status", "--porcelain"]))) return;
-  if (await git(cwd, ["diff", "--name-only", "--diff-filter=U"]))
-    throw new UnresolvedMerge("Unresolved merge conflicts remain; the task's work is retained.");
-  try {
-    await git(cwd, ["add", "-A"]);
-    await git(cwd, ["commit", "-q", "-m", title], 120000);
-  } catch (error) {
-    throw new Error(`Could not commit the agent’s changes: ${gitError(error)}`);
-  }
-}
-/** Merges a task branch into the branch it started from, in the project
- * checkout. Throws, leaving the checkout as it was, when it cannot. */
-async function mergeTaskBranch(cwd: string, branch: string, baseBranch: string): Promise<void> {
-  const current = await git(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => "");
-  if (current !== baseBranch)
-    throw new Error(
-      `The project is on ${current || "no branch"}. Check out ${baseBranch} there, then merge again.`,
-    );
-  if (await git(cwd, ["rev-parse", "--verify", "MERGE_HEAD"]).catch(() => ""))
-    throw new Error(
-      "The project already has a merge in progress. Finish it before delivery retries.",
-    );
-  // Validate refs separately: a missing ref or Git failure is not evidence of
-  // replaced history and must never trigger an automatic replay.
-  await git(cwd, ["rev-parse", "--verify", `${branch}^{commit}`]);
-  try {
-    await git(cwd, ["merge-base", "HEAD", branch]);
-  } catch (error) {
-    if (
-      (
-        error as {
-          code?: unknown;
-        }
-      ).code !== 1
-    )
-      throw error;
-    throw new ReplacedHistory(
-      `${branch} has no common history with ${baseBranch}. The host will replay the recorded task changes in a separate checkout and verify them before delivery.`,
-      [],
-    );
-  }
-  // The owner's uncommitted edits stay where they are. Git merges around dirty
-  // files it does not touch; when the merge would touch one of them, delivery
-  // is blocked instead of stashing or reverting the owner's work.
-  const overlap = await overlappingEdits(cwd, branch);
-  if (overlap.length)
-    throw new Error(
-      `Uncommitted edits in ${baseBranch} overlap files this task changes (${overlap.join(", ")}). Commit or stash them, then merge again. Nothing was merged.`,
-    );
-  try {
-    await git(cwd, ["merge", "--no-ff", "--no-edit", branch], 120000);
-  } catch (error) {
-    const conflicts = await git(cwd, ["diff", "--name-only", "--diff-filter=U"]).catch(() => "");
-    if (await git(cwd, ["rev-parse", "--verify", "MERGE_HEAD"]).catch(() => ""))
-      await git(cwd, ["merge", "--abort"]);
-    if (conflicts)
-      throw new MergeConflict(
-        `${branch} conflicts with ${baseBranch} in ${conflicts.split(/\r?\n/).join(", ")}. Nothing was merged.`,
-        conflicts.split(/\r?\n/),
-      );
-    throw new Error(`Could not merge ${branch}: ${gitError(error)}`);
-  }
-}
-/** Files the merge of `branch` would change that the checkout also has
- * uncommitted edits to, including untracked files the merge would create. */
-async function overlappingEdits(cwd: string, branch: string): Promise<string[]> {
-  const read = (args: string[]) =>
-    runGitText(args, { cwd, timeout: 30000, maxBuffer: 4 * 1024 * 1024, windowsHide: true });
-  const incoming = (await read(["diff", "--no-renames", "-z", "--name-only", `HEAD...${branch}`]))
-    .split("\0")
-    .filter(Boolean);
-  if (!incoming.length) return [];
-  // Untracked and staged entries are listed too; renames contribute both paths.
-  const entries = (await read(["status", "--porcelain", "-z", "--untracked-files=all"])).split(
-    "\0",
-  );
-  const dirty = new Set<string>();
-  for (let index = 0; index < entries.length; index++) {
-    const entry = entries[index];
-    if (!entry) continue;
-    dirty.add(entry.slice(3));
-    if (entry[0] === "R" || entry[0] === "C") dirty.add(entries[++index] ?? "");
-  }
-  return incoming.filter((path) => dirty.has(path));
 }
 function reviewPrompt(task: HostTask): string {
   const changes =
@@ -373,7 +228,7 @@ function workerPrompt(task: HostTask, projectCwd: string, sharedEdits: string[] 
     : "";
   if (task.blockedTakeover)
     return [
-      `Work only in ${task.worktreeCwd ?? projectCwd}${task.branch ? ` on ${task.branch}` : ""}. The host owns delivery; retain all existing work.`,
+      `Work only in ${task.worktreeCwd ?? projectCwd}${task.branch ? ` on ${task.branch}` : ""}. Commit scoped changes on your assigned branch and finish with a clean source tree. Never merge into the integration checkout, push or create PRs. The owner approves delivery separately; retain all existing work.`,
       taskContract(task),
       blockedHandoff(task),
       task.retryFeedback ?? "",
@@ -399,7 +254,7 @@ function workerPrompt(task: HostTask, projectCwd: string, sharedEdits: string[] 
       ? `Work directly in ${task.worktreeCwd ?? projectCwd}, the selected checkout shared with other sessions. Preserve their uncommitted work and change only your assigned scope. Do not create another worktree or switch branches. Leave changes uncommitted for the owner's review; do not stage, commit, merge or push.\n\n${taskContract(task)}`
       : task.worktreeCwd
         ? [
-            `You are working in ${task.worktreeCwd}, a separate checkout of the project at ${projectCwd}${task.branch ? ` on the branch ${task.branch}` : ""}. Make every change in this folder. Do not edit, commit in or switch branches in ${projectCwd}: paths under it in the task below mean the same files under this folder.`,
+            `You are working in ${task.worktreeCwd}, a separate checkout of the project at ${projectCwd}${task.branch ? ` on the branch ${task.branch}` : ""}. Make every change in this folder. Commit scoped changes on this branch and finish with a clean source tree. Never merge into the integration checkout, push or create PRs. Do not edit, commit in or switch branches in ${projectCwd}: paths under it in the task below mean the same files under this folder.`,
             ...(shared ? [shared] : []),
             "",
             taskContract(task),
@@ -459,9 +314,6 @@ export class HostTasks {
   private readonly jobControllers = new Map<string, AbortController>();
   /** Tasks being merged. */
   private readonly delivering = new Set<string>();
-  private readonly mergingProjects = new Set<string>();
-  /** When each cooling-down merge retry last re-read its fingerprint. */
-  private readonly mergeProbes = new Map<string, number>();
   /** Runs on every tick once running tasks are settled, before queued ones
    * start, so work it queues can start in the same tick. */
   private beforeStart?: () => Promise<void> | void;
@@ -625,6 +477,7 @@ export class HostTasks {
     private readonly engine: SessionRunEngine,
     private readonly now: () => number = Date.now,
     private readonly verifyTimeoutMs = VERIFY_TIMEOUT_MS,
+    private readonly managed?: TaskWorkspaceServices,
   ) {
     this.limits = new HostLimits(store, now);
     this.budgets = new HostTaskBudgets(store, now);
@@ -680,6 +533,10 @@ export class HostTasks {
         await store.db
           .prepare("INSERT OR IGNORE INTO task_history_meta VALUES (1, ?)")
           .run(this.now());
+        await store.db
+          .exec(`UPDATE tasks SET value=json_set(json_remove(value, '$.autoMerge', '$.deliveryRequested'),
+          '$.deliveryApprovalRequired', json('true'), '$.deliveryState', CASE WHEN json_extract(value, '$.merged')=1 THEN 'merged' ELSE 'awaitingOwner' END)
+          WHERE json_extract(value, '$.autoMerge')=1 OR json_extract(value, '$.deliveryRequested')=1;`);
         const legacyRuns = await store.db
           .prepare(`SELECT value FROM tasks WHERE
       (json_extract(value, '$.startedAt') IS NOT NULL OR json_extract(value, '$.sessionId') IS NOT NULL)
@@ -1239,6 +1096,10 @@ export class HostTasks {
     const task = await this.find(id);
     if (!task) throw new Error("Task not found.");
     if (!isTaskStatus(to)) throw new Error("Invalid task status");
+    if (task.artifactDeliveryPending && ["todo", "queued", "done"].includes(to))
+      throw new Error(
+        "Finish the recorded artifact delivery before restarting or completing this task.",
+      );
     if ((task.crewRunId || task.crewDefinitionId) && to === "done")
       throw new Error(
         "Accept this assignment through its crew coordinator after independent review.",
@@ -1309,6 +1170,15 @@ export class HostTasks {
       const {
         branch,
         worktreeCwd,
+        workspaceId: _workspaceId,
+        workspaceGenerationId: _workspaceGenerationId,
+        workspaceActivityId: _workspaceActivityId,
+        deliveryState: _deliveryState,
+        deliveryOperationId: _deliveryOperationId,
+        deliveryArtifacts: _deliveryArtifacts,
+        artifactDeliveryPending: _artifactDeliveryPending,
+        artifactDeliveryActivityId: _artifactDeliveryActivityId,
+        finalization: _finalization,
         baseBranch,
         baseCommit,
         deliveryCwd: _deliveryCwd,
@@ -1354,16 +1224,9 @@ export class HostTasks {
       return await this.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);
     }
     if (to === "done" && hasUnmergedBranch(task)) {
-      try {
-        await this.recoverMerge(task, now, false);
-      } catch (error) {
-        const latest = await this.find(id);
-        if (latest?.status === "review")
-          await this.write({ ...latest, mergeError: errorMessage(error) });
-        throw error;
-      }
-      await this.tick();
-      return (await this.get(id))!;
+      throw new Error(
+        "Task completion does not authorize delivery. Review changes and approve the exact delivery plan.",
+      );
     }
     return await this.write({
       ...task,
@@ -1427,14 +1290,19 @@ export class HostTasks {
     });
   }
   /** Retarget a reviewed result without launching another worker. */
-  async retarget(id: string, raw: unknown, autoMerge?: unknown): Promise<HostTask> {
+  async retarget(
+    id: string,
+    raw: unknown,
+    autoMerge?: unknown,
+    owner?: WorkspaceOwnerAuthorization,
+  ): Promise<HostTask> {
     await this.ready;
 
     const task = await this.get(id);
+    const expected = await this.taskValue(id);
     if (!task || task.status !== "review" || !hasUnmergedBranch(task))
       throw new Error("Only a reviewed branch can change its delivery target.");
-    if (this.delivering.has(id) || this.mergingProjects.has(task.projectId))
-      throw new Error("Wait for the current delivery to finish.");
+    if (this.delivering.has(id)) throw new Error("Wait for the current delivery to finish.");
     if (autoMerge !== undefined && typeof autoMerge !== "boolean")
       throw new Error("Invalid merge option");
     if (raw === undefined && autoMerge !== undefined)
@@ -1453,7 +1321,34 @@ export class HostTasks {
     if ((await this.get(id))?.updatedAt !== task.updatedAt)
       throw new Error("Task changed; refresh before choosing a target.");
     const selected = { checkoutCwd: target.cwd, baseBranch: target.branch };
+    if (task.workspaceId) {
+      if (!this.managed?.retargetWorkspace || !owner)
+        throw new Error(
+          "Update this host to retarget a managed workspace with authenticated owner approval.",
+        );
+      const registered = await this.managed.registry.get({ workspaceId: task.workspaceId });
+      if (!registered) throw new Error("Managed task workspace is unavailable.");
+      const changed = await this.managed.retargetWorkspace(
+        {
+          workspaceId: registered.id,
+          expectedRevision: registered.revision,
+          idempotencyKey: `task-retarget:${task.id}:${registered.revision}:${target.branch}`,
+          targetBranchRef: `refs/heads/${target.branch}`,
+          targetDirectory: target.cwd,
+        },
+        owner,
+      );
+      if (
+        changed.id !== registered.id ||
+        changed.branchRef !== registered.branchRef ||
+        changed.targetBranchRef !== `refs/heads/${target.branch}` ||
+        changed.revision <= registered.revision
+      )
+        throw new Error("The registry did not record the selected delivery target.");
+    }
     return await this.transaction(async () => {
+      if (!(await this.unchangedTask(id, expected)))
+        throw new Error("Task changed; refresh the recorded workspace target.");
       // Pending dependent work must inherit the same integration target.
       if (task.goalId) {
         for (const pending of await this.list())
@@ -1494,12 +1389,15 @@ export class HostTasks {
       });
     });
   }
-  /** A task whose branch was never merged is only deleted with `discard`,
-   * which removes that branch and its worktree. */
+  /** Discard explicitly closes the managed workspace; branch and recovery refs remain. */
   async delete(id: string, discard = false, expectedUpdatedAt?: number): Promise<void> {
     await this.ready;
 
     const task = await this.find(id);
+    if (task?.artifactDeliveryPending || task?.artifactDeliveryActivityId)
+      throw new Error(
+        "Reconcile the recorded artifact delivery before deleting this task; its source is retained.",
+      );
     if (
       expectedUpdatedAt !== undefined &&
       (!Number.isSafeInteger(expectedUpdatedAt) || expectedUpdatedAt < 0)
@@ -1759,7 +1657,10 @@ export class HostTasks {
     const hasUnfinishedDependencies = async (task: HostTask) =>
       await someAsync(task.dependsOn ?? [], async (id) => {
         const dependency = await this.scheduledTask(id);
-        return dependency !== undefined && dependency.status !== "done";
+        return (
+          dependency !== undefined &&
+          (dependency.status !== "done" || hasUnmergedBranch(dependency))
+        );
       });
     // A newly failed task remains visibly blocked until the next scheduler tick.
     const takeoverCandidates = new Set(
@@ -2148,6 +2049,8 @@ export class HostTasks {
     return await this.write({ ...task, reviewNotes: notes });
   }
   private async write(task: HostTask, persisted?: Map<string, string>): Promise<HostTask> {
+    task = suspendedTaskDelivery(task);
+    task = { ...task, workspaceGenerationId: task.workspaceGenerationId ?? randomUUID() };
     return await this.store.db.scope(async () => {
       if (task.evaluation && task.status !== "done" && task.status !== "review")
         task = { ...task, evaluation: undefined };
@@ -2199,6 +2102,22 @@ export class HostTasks {
     now: number,
     retainReviewer = false,
   ): Promise<HostTask> {
+    if (task.workspaceActivityId && this.managed && !this.jobs.has(task.id)) {
+      const run = task.reviewer ?? task;
+      if (
+        (
+          await sessionRunState(
+            this.store,
+            { ...run, startedAt: run.startedAt ?? task.createdAt },
+            0,
+            now,
+          )
+        ).state === "finished"
+      ) {
+        await this.stopWorkspaceActivity(task);
+        task = { ...task, workspaceActivityId: undefined };
+      }
+    }
     return await this.write({
       ...task,
       status: "blocked",
@@ -2370,7 +2289,75 @@ export class HostTasks {
   /** Gives the task its working copy: the worktree it already has, a new one
    * on a new branch, or none when it runs in the project folder. */
   private async workingCopy(task: HostTask): Promise<HostTask> {
+    const expected = await this.taskValue(task.id);
     const project = await this.store.project(task.projectId);
+    if (this.managed && (task.isolate !== false || task.workspaceId)) {
+      const selected = task.workspace
+        ? await taskWorkspace(project.cwd, task.workspace)
+        : undefined;
+      if (!task.workspaceId && task.workspace?.branchName)
+        throw new Error(
+          "Managed tasks generate an owned branch name. Remove the legacy custom branch name before starting.",
+        );
+      let workspace = task.workspaceId
+        ? await this.managed.registry.get({ workspaceId: task.workspaceId })
+        : (
+            await this.managed.registry.prepare({
+              idempotencyKey: `task-workspace:${task.id}:${task.workspaceGenerationId ?? task.createdAt}`,
+              projectId: task.projectId,
+              environmentId: this.managed.environmentId,
+              owner: { kind: "task", id: task.id },
+              slug: task.title,
+              choice: {
+                defaultMode: "worktree",
+                ...(selected ? { integrationBranchRef: `refs/heads/${selected.branch}` } : {}),
+              },
+              ...(selected ? { baseRef: `refs/heads/${selected.branch}` } : {}),
+            })
+          ).workspace;
+      if (
+        !workspace ||
+        workspace.owner.kind !== "task" ||
+        workspace.owner.id !== task.id ||
+        workspace.projectId !== task.projectId
+      )
+        throw new Error("The managed workspace does not belong to this task.");
+      if (workspace.directoryState !== "present" || workspace.state !== "active")
+        workspace = await this.managed.registry.resume({
+          workspaceId: workspace.id,
+          expectedRevision: workspace.revision,
+          idempotencyKey: `task-resume:${task.id}:${workspace.revision}`,
+        });
+      for (const id of task.dependsOn ?? []) {
+        const dependency = await this.scheduledTask(id);
+        if (dependency?.projectId === task.projectId && dependency.deliveredCommit)
+          await git(workspace.path, [
+            "merge-base",
+            "--is-ancestor",
+            dependency.deliveredCommit,
+            "HEAD",
+          ]);
+      }
+      return this.transaction(async () => {
+        const current = await this.unchangedTask(task.id, expected);
+        if (!current)
+          throw new TaskPreparationSuperseded("Task changed during workspace preparation.");
+        return this.write({
+          ...current,
+          isolate: true,
+          workspaceId: workspace.id,
+          branch: workspace.branchRef.replace(/^refs\/heads\//, ""),
+          worktreeCwd: workspace.path,
+          baseBranch: workspace.targetBranchRef.replace(/^refs\/heads\//, ""),
+          baseCommit: workspace.baseCommit,
+          deliveryCwd: selected?.cwd ?? task.deliveryCwd ?? project.cwd,
+        });
+      });
+    }
+    if (task.isolate !== false && !task.branch)
+      throw new Error(
+        "Update this host to create a managed task workspace. No work was started in the project checkout.",
+      );
     if (hasUnmergedBranch(task)) {
       if (task.worktreeCwd && available(task.worktreeCwd)) return task;
       // The worktree was removed; the branch still holds the work.
@@ -2397,22 +2384,30 @@ export class HostTasks {
     }
     if (task.isolate === false)
       return { ...task, worktreeCwd: targetCwd !== project.cwd ? targetCwd : undefined };
-    const base = await checkoutBase(targetCwd);
-    if (!base) {
+    throw new Error(
+      "Update this host to create a managed task workspace. The legacy branch is retained.",
+    );
+  }
+  async finalizationPreview(id: string) {
+    const task = await this.get(id);
+    if (!task?.branch || !task.worktreeCwd)
+      throw new Error("This task has no materialized branch to finalize.");
+    return previewTaskFinalization(task.worktreeCwd, task.branch);
+  }
+  private async requireFinalized(task: HostTask, cwd: string): Promise<void> {
+    const preview = await previewTaskFinalization(cwd, task.branch!);
+    const latest = await this.find(task.id);
+    if (!latest || latest.updatedAt !== task.updatedAt)
+      throw new Error("Task changed during finalization.");
+    await this.write({ ...latest, finalization: preview });
+    if (!preview.clean)
       throw new Error(
-        "Cannot create an isolated task workspace here. Open the Git repository root and verify Git can read it, or turn off “Run on its own branch”.",
+        "Finalization requires review: uncommitted task changes remain. Inspect the finalization preview, commit only the intended files on the assigned branch, and retry. The Host did not stage or commit any files.",
       );
-    }
-    const branch = task.workspace?.branchName ?? `mc/${randomUUID().replace(/-/g, "").slice(0, 8)}`;
-    const tree = await createHostWorktree(targetCwd, branch, "HEAD", false);
-    return {
-      ...task,
-      branch,
-      worktreeCwd: tree.path,
-      baseBranch: base.baseBranch,
-      baseCommit: tree.head,
-      deliveryCwd: targetCwd,
-    };
+  }
+  private async stopWorkspaceActivity(task: HostTask): Promise<void> {
+    if (this.managed && task.workspaceActivityId)
+      await this.managed.activity.stop(task.workspaceActivityId);
   }
   private async launch(
     task: HostTask,
@@ -2478,6 +2473,7 @@ export class HostTasks {
     try {
       ready = await this.workingCopy(task);
     } catch (error) {
+      if (error instanceof TaskPreparationSuperseded) return (await this.find(task.id)) ?? task;
       if ((await this.find(task.id))?.updatedAt !== task.updatedAt) return task;
       return await this.block({ ...task, startedAt: now }, errorMessage(error), now);
     }
@@ -2585,8 +2581,7 @@ export class HostTasks {
           mergeRepair: { ...ready.mergeRepair!, prepared: true },
         };
         if (!(await git(cwd, ["diff", "--name-only", "--diff-filter=U"]))) {
-          if (ready.mergeRepair!.replayCommit)
-            await commitLeftovers(cwd, ready.branch!, `Recover delivery: ${ready.title}`);
+          if (ready.mergeRepair!.replayCommit) await this.requireFinalized(ready, cwd);
           if ((await this.find(task.id))?.updatedAt !== task.updatedAt)
             return (await this.find(task.id)) ?? task;
           const next = await this.write({
@@ -2627,6 +2622,19 @@ export class HostTasks {
     if (finalLaunchBudget) return await this.budgetBlock(ready, finalLaunchBudget, this.now());
     const resumable = await this.canResumeAfterHostStop(ready);
     if (this.closing) return await this.write({ ...ready, status: "queued" });
+    if (ready.workspaceId && this.managed && !ready.workspaceActivityId) {
+      const activity = await this.managed.activity.start({
+        workspaceId: ready.workspaceId,
+        kind: "provider",
+        ownerId: ready.id,
+      });
+      try {
+        ready = await this.write({ ...ready, workspaceActivityId: activity.id });
+      } catch (error) {
+        await this.managed.activity.stop(activity.id);
+        throw error;
+      }
+    }
     const started = resumable
       ? await this.resumeInterrupted(ready)
       : await launchSessionRun(
@@ -2638,7 +2646,10 @@ export class HostTasks {
           },
           () => !this.closing,
         );
-    if (started.deferred) return await this.write({ ...ready, status: "queued" });
+    if (started.deferred) {
+      await this.stopWorkspaceActivity(ready);
+      return await this.write({ ...ready, workspaceActivityId: undefined, status: "queued" });
+    }
     const next = {
       ...ready,
       awaitingOwnerRestart: undefined,
@@ -2802,7 +2813,7 @@ export class HostTasks {
     const { id } = task;
     if (this.jobs.has(id)) return;
     const controller = new AbortController();
-    const expected = await this.taskValue(id);
+    let expected = await this.taskValue(id);
     if (this.closing) return;
     this.jobControllers.set(id, controller);
     /** The task, while this job still owns its verification. */
@@ -2829,7 +2840,8 @@ export class HostTasks {
             !(await this.unchangedTask(id, expected))
           )
             return;
-          await commitLeftovers(cwd, task.branch!, task.title);
+          await this.requireFinalized(task, cwd);
+          expected = await this.taskValue(id);
         });
       // The repository lease can wait behind another operation. Stop must still
       // prevent a new check command or reviewer from starting after that wait.
@@ -3000,7 +3012,24 @@ export class HostTasks {
           }
         })
         .catch((error) => console.error("Could not verify a task:", errorMessage(error)))
-        .finally(() => {
+        .finally(async () => {
+          const latest = await this.find(id);
+          if (latest?.workspaceActivityId && latest.status === "blocked") {
+            const run = latest.reviewer ?? latest;
+            if (
+              (
+                await sessionRunState(
+                  this.store,
+                  { ...run, startedAt: run.startedAt ?? latest.createdAt },
+                  0,
+                  this.now(),
+                )
+              ).state === "finished"
+            ) {
+              await this.stopWorkspaceActivity(latest);
+              await this.write({ ...latest, workspaceActivityId: undefined });
+            }
+          }
           if (this.jobs.get(id) === job) {
             this.jobs.delete(id);
             this.jobControllers.delete(id);
@@ -3354,6 +3383,23 @@ export class HostTasks {
    * own is merged right away, when every configured check passed; it then goes
    * straight to done. When it cannot be merged it waits in review, with why. */
   private async enterReview(task: HostTask): Promise<HostTask> {
+    if (task.workspaceId && this.managed) {
+      await this.stopWorkspaceActivity(task);
+      const workspace = await this.managed.registry.get({ workspaceId: task.workspaceId });
+      if (!workspace) throw new Error("The task workspace is unavailable.");
+      await this.managed.registry.finish({
+        workspaceId: workspace.id,
+        expectedRevision: workspace.revision,
+        idempotencyKey: `task-finish:${task.id}:${workspace.revision}`,
+      });
+      task = {
+        ...task,
+        workspaceActivityId: undefined,
+        deliveryState: "awaitingOwner",
+        deliveryOperationId: undefined,
+        deliveryApprovalRequired: true,
+      };
+    }
     const now = this.now();
     const reviewing: HostTask = {
       ...task,
@@ -3370,189 +3416,12 @@ export class HostTasks {
     // Direct work is already available to dependent tasks after checks pass.
     if (task.isolate === false && !task.crewRunId && !hasUnmergedBranch(task))
       return await this.write({ ...reviewing, status: "done", mergeError: undefined });
-    if (!(task.autoMerge || task.deliveryRequested) || !hasUnmergedBranch(task))
-      return await this.write(reviewing);
-    const blocker = autoMergeBlocker(task);
-    if (blocker) return await this.write({ ...reviewing, mergeError: blocker });
-    try {
-      return await this.deliver(
-        { ...task, retryFeedback: undefined, completedAt: now, updatedAt: now },
-        Boolean(task.autoMerge),
-      );
-    } catch (error) {
-      return await this.write({ ...reviewing, mergeError: errorMessage(error) });
-    }
+    return await this.write(reviewing);
   }
-  /** Retry old/stale review cards without rerunning completed work. */
-  private async recoverMerge(task: HostTask, now: number, auto = true): Promise<void> {
-    const expected = await this.taskValue(task.id);
-    await withHostGitMutation((await this.store.project(task.projectId)).cwd, async () => {
-      const fresh = await this.unchangedTask(task.id, expected);
-      if (fresh) await this.recoverMergeSerialized(fresh, now, auto);
-    });
-  }
-  private async recoverMergeSerialized(task: HostTask, now: number, auto: boolean): Promise<void> {
-    const blocker = autoMergeBlocker(task);
-    if (blocker) {
-      if (!auto) throw new Error(blocker);
-      return;
-    }
-    if (this.mergingProjects.has(task.projectId)) {
-      if (!auto)
-        throw new Error("Another task is being merged into this project. Delivery will retry.");
-      return;
-    }
-    if (
-      task.goalId &&
-      (await this.store.db
-        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='goals'")
-        .get())
-    ) {
-      const owner = await this.store.db
-        .prepare("SELECT value FROM goals WHERE id=?")
-        .get(task.goalId);
-      if (owner && JSON.parse(String(owner.value)).status === "cancelled") return;
-    }
-    // Cooling down: the fingerprint below costs four git processes per tick, so
-    // it is re-read only now and then to notice a fix that should retry early.
-    if (auto && task.mergeRetry && now < task.mergeRetry.after) {
-      if (now - (this.mergeProbes.get(task.id) ?? -Infinity) < MERGE_PROBE_MS) return;
-      this.mergeProbes.set(task.id, now);
-    } else this.mergeProbes.delete(task.id);
-    const project = await this.store.project(task.projectId);
-    const cwd = await resolveHostWorktreeAsync(project.cwd, task.deliveryCwd);
-    let baseHead = await git(cwd, ["rev-parse", "--verify", `${task.baseBranch}^{commit}`]);
-    const fingerprint = createHash("sha256")
-      .update(
-        [
-          baseHead,
-          await git(cwd, ["rev-parse", "--verify", `${task.branch}^{commit}`]),
-          await git(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => ""),
-          await gitRead(cwd, ["status", "--porcelain"]),
-        ].join("\n"),
-      )
-      .digest("hex");
-    if (auto && task.mergeRetry?.fingerprint === fingerprint && now < task.mergeRetry.after) return;
-    const current = await this.find(task.id);
-    if (current?.status !== "review" || current.updatedAt !== task.updatedAt) return;
-    // Persist before attempting Git, so restarting a host cannot cause a hot loop.
-    const retrying = await this.write({
-      ...task,
-      ...(!auto ? { deliveryRequested: true } : {}),
-      mergeRetry: { fingerprint, after: now + 5 * 60000 },
-    });
-    try {
-      await this.deliver(retrying, Boolean(task.autoMerge));
-    } catch (error) {
-      const latest = await this.find(task.id);
-      if (latest?.status !== "review" || latest.updatedAt !== retrying.updatedAt) return;
-      if (!(error instanceof MergeConflict)) {
-        if (!auto) throw error;
-        return;
-      }
-      const attempts = task.mergeRepair?.attempts ?? 0;
-      if (attempts >= MAX_REPAIR_ATTEMPTS) {
-        await this.block(
-          {
-            ...latest,
-            repairStop: {
-              reason: "limit",
-              message: "Automatic integration correction limit reached. All work is retained.",
-            },
-          },
-          error.message,
-          now,
-        );
-        return;
-      }
-      let recovered = latest;
-      let replayCommit: string | undefined;
-      if (error instanceof ReplacedHistory) {
-        try {
-          if (!task.baseCommit)
-            throw new Error(
-              "The recorded task base is missing; work is retained and cannot be replayed safely.",
-            );
-          await git(cwd, ["merge-base", "--is-ancestor", task.baseCommit, task.branch!]);
-          if (task.worktreeCwd && available(task.worktreeCwd)) {
-            if (
-              (await git(task.worktreeCwd, ["symbolic-ref", "--quiet", "--short", "HEAD"])) !==
-                task.branch ||
-              (await git(task.worktreeCwd, ["status", "--porcelain"]))
-            )
-              throw new Error(
-                "The original task checkout changed after review. All work is retained; history recovery cannot overwrite it.",
-              );
-          }
-          const head = await git(cwd, ["rev-parse", `${task.branch}^{commit}`]);
-          // Flatten only the task's recorded delta, not every commit in the old
-          // project history. Cherry-pick performs a three-way application.
-          replayCommit = await git(cwd, [
-            "commit-tree",
-            `${head}^{tree}`,
-            "-p",
-            task.baseCommit,
-            "-m",
-            `Recover delivery: ${task.title}`,
-          ]);
-          const branch = `mc/${randomUUID().replace(/-/g, "").slice(0, 8)}`;
-          const tree = await createHostWorktree(cwd, branch, task.baseBranch!, false);
-          if (task.worktreeCwd) await transferTaskArtifacts(task.worktreeCwd, tree.path);
-          // Use the actual captured target head if it advanced during recovery.
-          recovered = {
-            ...latest,
-            branch,
-            worktreeCwd: tree.path,
-            historyRecovery: [
-              ...(task.historyRecovery ?? []),
-              {
-                branch: task.branch!,
-                worktreeCwd: task.worktreeCwd,
-                baseCommit: task.baseCommit,
-                head,
-              },
-            ],
-          };
-          // The replay checkout is pinned; later target changes are handled by
-          // the ordinary integration correction flow.
-          baseHead = tree.head;
-        } catch (recoveryError) {
-          await this.block(
-            { ...latest, repairStop: { reason: "external", message: errorMessage(recoveryError) } },
-            errorMessage(recoveryError),
-            now,
-          );
-          return;
-        }
-      }
-      if (
-        (await this.find(task.id))?.updatedAt !== retrying.updatedAt ||
-        (await this.find(task.id))?.status !== "review"
-      )
-        return;
-      await this.write({
-        ...recovered,
-        status: "queued",
-        mergeRepair: {
-          baseHead,
-          conflicts: error.conflicts,
-          attempts: attempts + 1,
-          replayCommit,
-        },
-        baseCommit: baseHead,
-        sessionId: undefined,
-        runId: undefined,
-        reviewer: undefined,
-        verification: undefined,
-        startedAt: undefined,
-        completedAt: undefined,
-        retryFeedback: undefined,
-        reviewOnly: undefined,
-        mergeRetry: undefined,
-        error: undefined,
-        updatedAt: now,
-      });
-    }
+  /** Old persisted approval booleans cannot authorize Git mutations. */
+  private async recoverMerge(task: HostTask, _now: number, _auto = true): Promise<void> {
+    if (task.autoMerge || task.deliveryRequested)
+      await this.write({ ...suspendedTaskDelivery(task), mergeRetry: undefined });
   }
   /** What the task branch changes since it left the project's branch. */
   /** Covers the repository snapshot plus explicit local deliverables, including ignored outputs.
@@ -3665,189 +3534,320 @@ export class HostTasks {
       return undefined;
     }
   }
-  /** Merges an approved task's branch into the project, then removes the
-   * branch and its worktree. A failed merge leaves the task in review. */
-  private async deliver(task: HostTask, auto = false): Promise<HostTask> {
-    const expected = await this.taskValue(task.id);
-    return withHostGitMutation((await this.store.project(task.projectId)).cwd, async () => {
-      if (!(await this.unchangedTask(task.id, expected))) return (await this.find(task.id)) ?? task;
-      return await this.deliverSerialized(task, auto);
+  /** Review implementation and delivery independently; this read never authorizes a merge. */
+  async reviewDelivery(id: string): Promise<TaskDeliveryReview> {
+    const task = await this.get(id);
+    if (!task?.workspaceId || !this.managed)
+      throw new Error("Update this host to review managed task delivery.");
+    const workspace = await this.managed.registry.get({ workspaceId: task.workspaceId });
+    if (!workspace) throw new Error("The task workspace is unavailable.");
+    const plan = await this.managed.delivery.review({
+      workspaceId: workspace.id,
+      expectedRevision: workspace.revision,
+      action: "merge",
     });
-  }
-  private async deliverSerialized(task: HostTask, auto: boolean): Promise<HostTask> {
-    if (this.delivering.has(task.id)) throw new Error("This task is already being merged.");
-    if (this.mergingProjects.has(task.projectId))
-      throw new Error("Another task is being merged into this project. Delivery will retry.");
-    this.delivering.add(task.id);
-    this.mergingProjects.add(task.projectId);
-    try {
-      const project = await this.store.project(task.projectId);
-      let cwd: string;
-      let artifactPaths: string[] = [];
-      let artifactHashes: Record<string, string> = {};
-      try {
-        cwd = await resolveHostWorktreeAsync(project.cwd, task.deliveryCwd);
-        if (!task.baseBranch) throw new Error("This task does not know which branch it left.");
-        if (task.worktreeCwd) artifactPaths = await transferTaskArtifacts(task.worktreeCwd, cwd);
-        for (const path of artifactPaths)
-          artifactHashes[path] = await hashTaskArtifact(join(cwd, path));
-        await mergeTaskBranch(cwd, task.branch!, task.baseBranch);
-      } catch (error) {
-        const latest = await this.find(task.id);
-        if (latest?.status === "review")
-          await this.write({ ...latest, mergeError: errorMessage(error) });
-        throw error;
-      }
-      const {
-        worktreeCwd: removed,
-        mergeError,
-        mergeRetry,
-        mergeRepair,
-        cleanupError: previousCleanup,
-        deliveryRequested,
-        ...rest
-      } = task;
-      const now = this.now();
-      const delivered = await this.write({
-        ...rest,
-        worktreeCwd: task.worktreeCwd,
-        status: "done",
-        merged: true,
-        mergedAt: now,
-        deliveredCommit: await git(cwd, ["rev-parse", "HEAD"]),
-        deliveryNote: undefined,
-        ...(artifactPaths.length ? { artifactPaths, artifactHashes } : {}),
-        ...(auto ? { autoMerged: true } : {}),
-        updatedAt: now,
+    if (workspace.directoryState === "removed") return plan;
+    const targetDirectory =
+      (plan as typeof plan & { targetDirectory?: string }).targetDirectory ??
+      task.deliveryCwd ??
+      (await this.store.project(task.projectId)).cwd;
+    const artifacts = await previewTaskDeliveryArtifacts(workspace.path, targetDirectory);
+    const latest = await this.get(id);
+    if (!latest || latest.workspaceId !== workspace.id || latest.updatedAt !== task.updatedAt)
+      throw new Error("Task changed while reviewing its delivery artifacts.");
+    if (
+      artifacts.paths.length ||
+      artifacts.blockers.length ||
+      task.artifactDeliveryPending ||
+      task.deliveryArtifacts
+    ) {
+      await this.write({
+        ...latest,
+        deliveryArtifacts: {
+          ...artifacts,
+          planToken: plan.token,
+          sourceHead: plan.sourceHead,
+          targetDirectory,
+        },
       });
-      return await this.cleanupDelivered(delivered, now);
-    } finally {
-      this.delivering.delete(task.id);
-      this.mergingProjects.delete(task.projectId);
+      return { ...plan, artifacts, blockers: [...plan.blockers, ...artifacts.blockers] };
     }
+    return plan;
+  }
+  /** Owner transport must supply proof separately. No persistent boolean authorizes this method. */
+  async mergeDelivery(
+    id: string,
+    request: WorkspaceRpcRequest<"workspaces.delivery.merge">,
+    owner: WorkspaceOwnerAuthorization,
+  ): Promise<HostTask> {
+    const task = await this.get(id);
+    if (!task?.workspaceId || !this.managed || request.workspaceId !== task.workspaceId)
+      throw new Error("The delivery plan does not belong to this task.");
+    if (!["review", "done"].includes(task.status))
+      throw new Error("Finish task verification before delivery.");
+    const blocker = autoMergeBlocker(task);
+    if (blocker) throw new Error(blocker);
+    if (this.delivering.has(id)) throw new Error("This task is already being delivered.");
+    this.delivering.add(id);
+    try {
+      const artifacts = task.deliveryArtifacts;
+      if (artifacts) {
+        if (artifacts.planToken !== request.planToken || !task.worktreeCwd)
+          throw new Error("Review task artifacts again before delivery.");
+        const previous = await this.managed.registry.findOperation({
+          workspaceId: task.workspaceId,
+          kind: "delivery",
+          idempotencyKey: request.idempotencyKey,
+        });
+        await validateTaskDeliveryArtifacts(
+          artifacts,
+          task.worktreeCwd,
+          artifacts.targetDirectory,
+          { allowCopied: previous?.kind === "delivery" && Boolean(previous.merge) },
+        );
+      }
+      const receipt = await this.managed.delivery.merge(request, owner);
+      const latest = await this.get(id);
+      if (!latest || latest.workspaceId !== task.workspaceId)
+        throw new Error("Task changed during delivery; the workspace receipt is retained.");
+      return await this.finishDeliveryReceipt(latest, receipt, request.planToken);
+    } finally {
+      this.delivering.delete(id);
+    }
+  }
+  private async finishDeliveryReceipt(
+    task: HostTask,
+    receipt: BranchMergeReceipt,
+    planToken: string,
+  ): Promise<HostTask> {
+    const delivered: HostTask = {
+      ...task,
+      status: "review",
+      merged: true,
+      deliveredCommit: receipt.targetHead,
+      mergedAt: this.now(),
+      deliveryState: "merged",
+      deliveryOperationId: receipt.operationId,
+      deliveryApprovalRequired: undefined,
+      mergeError: undefined,
+      updatedAt: this.now(),
+    };
+    await this.write(delivered);
+    const target =
+      task.deliveryArtifacts?.targetDirectory ??
+      task.deliveryCwd ??
+      (await this.store.project(task.projectId)).cwd;
+    if (!task.worktreeCwd)
+      return this.write(
+        task.artifactDeliveryPending
+          ? {
+              ...delivered,
+              artifactDeliveryPending: true,
+              mergeError: "The artifact source is unavailable; the Git receipt is retained.",
+            }
+          : { ...delivered, status: "done" },
+      );
+    let activityId = task.artifactDeliveryActivityId;
+    try {
+      activityId ??= (
+        await this.managed!.activity.start({
+          workspaceId: task.workspaceId!,
+          kind: "operation",
+          ownerId: `task-artifacts:${receipt.operationId}`,
+        })
+      ).id;
+      await this.write({
+        ...delivered,
+        artifactDeliveryPending: true,
+        artifactDeliveryActivityId: activityId,
+      });
+      const preview = await previewTaskDeliveryArtifacts(task.worktreeCwd, target);
+      if (preview.blockers.length) throw new Error(preview.blockers.join("; "));
+      let artifactPaths: string[] = [];
+      const approved = task.deliveryArtifacts;
+      if (preview.paths.length) {
+        if (
+          !approved ||
+          approved.planToken !== planToken ||
+          approved.sourceHead !== receipt.sourceHead
+        ) {
+          return this.write({
+            ...delivered,
+            artifactDeliveryPending: true,
+            artifactDeliveryActivityId: activityId,
+            mergeError:
+              "The Git receipt is retained. Review local task artifacts before completing delivery.",
+          });
+        }
+        await validateTaskDeliveryArtifacts(approved, task.worktreeCwd, target, {
+          allowCopied: true,
+        });
+        artifactPaths = await transferTaskArtifacts(
+          task.worktreeCwd,
+          target,
+          approved.paths,
+          approved.hashes,
+        );
+      } else if (approved?.paths.length) {
+        throw new Error(
+          "Reviewed artifact sources disappeared. The Git receipt and directory reservation are retained.",
+        );
+      }
+      const completed = await this.write({
+        ...delivered,
+        status: "done",
+        artifactDeliveryPending: undefined,
+        cleanupError: undefined,
+        cleanupRetryAfter: undefined,
+        artifactDeliveryActivityId: activityId,
+        ...(artifactPaths.length ? { artifactPaths, artifactHashes: approved!.hashes } : {}),
+      });
+      await this.managed!.activity.stop(activityId);
+      return await this.write({ ...completed, artifactDeliveryActivityId: undefined });
+    } catch (error) {
+      await this.write({
+        ...delivered,
+        artifactDeliveryPending: true,
+        artifactDeliveryActivityId: activityId,
+        mergeError: `Git delivery is recorded; artifact delivery must resume: ${errorMessage(error)}`,
+      });
+      // A pending operation retains its activity fence: global retention must not race recovery.
+      throw error;
+    }
+  }
+  /** Called by S1 after generic workspace delivery and on recovery. Trust only the durable registry receipt. */
+  async reconcileDelivery(workspaceId: string): Promise<HostTask | undefined> {
+    if (!this.managed) throw new Error("Managed task delivery is unavailable.");
+    const workspace = await this.managed.registry.get({ workspaceId });
+    if (
+      !workspace ||
+      workspace.owner.kind !== "task" ||
+      !["finished", "merged"].includes(workspace.state)
+    )
+      return;
+    const task = await this.get(workspace.owner.id);
+    if (!task || task.workspaceId !== workspace.id || !["review", "done"].includes(task.status))
+      return;
+    const operations = await this.managed.registry.listOperations(workspace.id);
+    const delivery = operations.find(
+      (entry) =>
+        entry.kind === "delivery" &&
+        entry.phase === "complete" &&
+        workspace.state === "merged" &&
+        entry.merge?.targetHead === workspace.deliveredCommit,
+    );
+    if (!delivery || delivery.kind !== "delivery" || !delivery.merge) {
+      const publication = operations.find(
+        (entry) =>
+          entry.kind === "delivery" &&
+          entry.phase === "complete" &&
+          entry.plan.action === "publish" &&
+          entry.publication?.status === "complete" &&
+          entry.expectedRevision === workspace.revision,
+      );
+      if (!publication || publication.kind !== "delivery") return task;
+      return this.write({
+        ...task,
+        status: "done",
+        deliveryState: "published",
+        deliveryOperationId: publication.id,
+        deliveryApprovalRequired: undefined,
+        updatedAt: this.now(),
+      });
+    }
+    return this.finishDeliveryReceipt(task, delivery.merge, delivery.plan.token);
   }
   /** Retire delivered task checkouts, retrying Windows locks without discarding changed work. */
   private async cleanupDelivered(task: HostTask, now: number): Promise<HostTask> {
-    const expected = await this.taskValue(task.id);
-    return withHostGitMutation((await this.store.project(task.projectId)).cwd, async () => {
-      const fresh = await this.unchangedTask(task.id, expected);
-      return fresh
-        ? await this.cleanupDeliveredSerialized(fresh, now)
-        : ((await this.find(task.id)) ?? task);
-    });
-  }
-  private async cleanupDeliveredSerialized(task: HostTask, now: number): Promise<HostTask> {
-    if (task.status !== "done" || !task.merged || (task.cleanupRetryAfter ?? 0) > now) return task;
-    const project = await this.store.project(task.projectId);
-    const same = (a: string | undefined, b: string) => a != null && sameHostPath(a, b);
-    const inUse = async (path: string) =>
-      (
-        await this.store.db
-          .prepare(`SELECT
-        json_extract(value, '$.worktreeCwd') AS worktree,
-        json_extract(value, '$.deliveryCwd') AS delivery,
-        json_extract(value, '$.workspace.checkoutCwd') AS checkout,
-        (SELECT json_group_array(json_extract(peer.value, '$.worktreeCwd'))
-          FROM json_each(tasks.value, '$.historyRecovery') peer) AS recovery
-        FROM tasks WHERE id<>? AND json_extract(value, '$.status') IN ('todo','queued','running','verifying','review','blocked')`)
-          .all(task.id)
-      ).some((row) => {
-        const paths: unknown[] = [
-          row.worktree,
-          row.delivery,
-          row.checkout,
-          ...JSON.parse(String(row.recovery)),
-        ];
-        return paths.some((candidate) => typeof candidate === "string" && same(candidate, path));
-      }) ||
-      (await this.store.startupStates()).some(
-        (session) =>
-          (session.running || session.shellRunning) &&
-          session.cwd != null &&
-          (same(session.cwd, path) ||
-            resolve(session.cwd)
-              .toLowerCase()
-              .startsWith(
-                `${resolve(path).toLowerCase()}${process.platform === "win32" ? "\\" : "/"}`,
-              )),
-      );
-    let current = task;
-    const errors: string[] = [];
-    const candidates = [
-      ...(task.worktreeCwd && task.branch
-        ? [
-            {
-              path: task.worktreeCwd,
-              branch: task.branch,
-              primary: true,
-              head: undefined as string | undefined,
-            },
-          ]
-        : []),
-      ...(task.historyRecovery ?? []).flatMap((entry) =>
-        entry.worktreeCwd
-          ? [{ path: entry.worktreeCwd, branch: entry.branch, primary: false, head: entry.head }]
-          : [],
-      ),
-    ];
-    for (const candidate of candidates) {
-      try {
-        if (await inUse(candidate.path))
-          throw new Error("The task checkout is still in use; cleanup will retry when it is idle.");
-        const archives = await cleanupTaskWorktree(
-          project.cwd,
-          task.id,
-          candidate.path,
-          candidate.branch,
-          candidate.primary
-            ? { deliveredCommit: task.deliveredCommit ?? "HEAD" }
-            : { head: candidate.head },
-          async () => await inUse(candidate.path),
-        );
-        current = await this.write({
-          ...current,
-          ...(candidate.primary
-            ? { worktreeCwd: undefined }
-            : {
-                historyRecovery: current.historyRecovery?.map((entry) =>
-                  same(entry.worktreeCwd, candidate.path)
-                    ? { ...entry, worktreeCwd: undefined }
-                    : entry,
-                ),
-              }),
-          cleanupArchives: [...(current.cleanupArchives ?? []), ...archives],
-          updatedAt: now,
-        });
-        if (candidate.primary)
-          await git(project.cwd, ["branch", "-d", "--", candidate.branch]).catch(() => {});
-      } catch (error) {
-        errors.push(errorMessage(error));
-      }
-    }
-    return await this.write({
-      ...current,
-      cleanupError: errors.length ? errors.join("\n") : undefined,
-      cleanupRetryAfter: errors.length ? now + 2 * 60000 : undefined,
-      updatedAt: now,
-    });
-  }
-  /** Removes a task's worktree and branch, with whatever is on them. */
-  private async discard(task: HostTask): Promise<void> {
-    let cwd: string;
+    if (!task.workspaceId || !this.managed || (task.cleanupRetryAfter ?? 0) > now) return task;
     try {
-      cwd = (await this.store.project(task.projectId)).cwd;
-    } catch {
-      // The project is gone from this machine, and its repository with it.
-      return;
-    }
-    if (task.worktreeCwd && available(task.worktreeCwd))
-      await git(cwd, ["worktree", "remove", "--force", "--", task.worktreeCwd]).catch((error) =>
-        console.error("Could not remove a task worktree:", gitError(error)),
+      const workspace = await this.managed.registry.get({ workspaceId: task.workspaceId });
+      if (!workspace || workspace.directoryState === "removed") return task;
+      if (task.artifactDeliveryPending)
+        throw new Error(
+          "Task artifacts have not been delivered; the source directory is retained.",
+        );
+      const target =
+        task.deliveryArtifacts?.targetDirectory ??
+        task.deliveryCwd ??
+        (await this.store.project(task.projectId)).cwd;
+      const artifacts = await previewTaskDeliveryArtifacts(workspace.path, target);
+      if (artifacts.blockers.length) throw new Error(artifacts.blockers.join("; "));
+      if (artifacts.paths.length) {
+        if (!task.deliveryArtifacts)
+          throw new Error(
+            "Ignored task outputs require an owner-reviewed delivery before retirement.",
+          );
+        await validateTaskDeliveryArtifacts(task.deliveryArtifacts, workspace.path, target, {
+          allowCopied: true,
+        });
+        if (
+          artifacts.paths.some(
+            (path) => artifacts.targetHashes[path] !== task.deliveryArtifacts!.hashes[path],
+          )
+        )
+          throw new Error(
+            "Task artifacts are not safely delivered; the source directory is retained.",
+          );
+      }
+      const plan = await this.managed.removal.plan({
+        workspaceId: workspace.id,
+        expectedRevision: workspace.revision,
+      });
+      if (plan.blockers.length || plan.dirty) return task;
+      await this.managed.removal.apply(
+        {
+          workspaceId: workspace.id,
+          expectedRevision: workspace.revision,
+          idempotencyKey: `task-retire:${task.id}:${plan.token}`,
+          planToken: plan.token,
+        },
+        { kind: "retentionScheduler" },
       );
-    await git(cwd, ["worktree", "prune"]).catch(() => {});
-    invalidateHostWorktrees(cwd);
-    await git(cwd, ["branch", "-D", "--", task.branch!]).catch((error) =>
-      console.error("Could not delete a task branch:", gitError(error)),
+      return this.write({
+        ...task,
+        worktreeCwd: undefined,
+        cleanupError: undefined,
+        cleanupRetryAfter: undefined,
+      });
+    } catch (error) {
+      return this.write({
+        ...task,
+        cleanupError: errorMessage(error),
+        cleanupRetryAfter: now + 2 * 60000,
+      });
+    }
+  }
+  /** Closing preserves the local branch and recovery refs. S4 alone owns directory retirement. */
+  private async discard(task: HostTask): Promise<void> {
+    if (!task.workspaceId || !this.managed)
+      throw new Error(
+        "This legacy branch is retained. Register it as a managed workspace before directory retirement.",
+      );
+    let workspace = await this.managed.registry.get({ workspaceId: task.workspaceId });
+    if (!workspace)
+      throw new Error("The managed task workspace is unavailable; its branch is retained.");
+    workspace = await this.managed.registry.close({
+      workspaceId: workspace.id,
+      expectedRevision: workspace.revision,
+      idempotencyKey: `task-close:${task.id}:${workspace.revision}`,
+    });
+    const plan = await this.managed.removal.plan({
+      workspaceId: workspace.id,
+      expectedRevision: workspace.revision,
+    });
+    if (plan.blockers.length || plan.dirty)
+      throw new Error(
+        `The task branch is retained. Directory removal blocked: ${plan.blockers.join("; ") || "uncommitted changes"}`,
+      );
+    await this.managed.removal.apply(
+      {
+        workspaceId: workspace.id,
+        expectedRevision: workspace.revision,
+        idempotencyKey: `task-discard:${task.id}:${plan.token}`,
+        planToken: plan.token,
+      },
+      { kind: "retentionScheduler" },
     );
   }
 }

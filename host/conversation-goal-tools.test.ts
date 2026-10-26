@@ -59,6 +59,21 @@ function setup() {
 }
 
 describe("conversation goal writes", () => {
+  it("refuses direct execution, integration delivery and publication requested through conversation tools", async () => {
+    const f = setup();
+    for (const patch of [
+      { isolate: false },
+      { autoMerge: true },
+      { deliveryRequested: true },
+      { push: "origin" },
+      { createPr: true },
+    ])
+      await expect(
+        f.call("goals.create", { goalId: "goal", title: "Deliver", prompt: "Implement", ...patch }),
+      ).rejects.toThrow("owner UI");
+    expect(f.goals.create).not.toHaveBeenCalled();
+  });
+
   it("pins the caller account rather than using the unauthenticated host default", async () => {
     const f = setup();
     await f.create();
@@ -97,7 +112,6 @@ describe("conversation goal writes", () => {
       projectIds: [principal.projectId],
       approvePlan: true,
       manualStart: true,
-      isolate: false,
     });
     expect(f.goals.create).toHaveBeenCalledWith(expect.objectContaining({ autoMerge: false }));
     resolve.mockReturnValue({ ...caller, projectId: "foreign" });
@@ -135,7 +149,6 @@ describe("conversation goal writes", () => {
       goalId: "goal",
       expectedUpdatedAt: 1,
       maxRunningTasks: 3,
-      autoMerge: true,
       continueUntilDone: true,
     });
     expect(f.goals.update).toHaveBeenCalledWith(
@@ -202,7 +215,7 @@ describe("conversation goal writes", () => {
     );
     expect(f.goals.delete).not.toHaveBeenCalled();
   });
-  it("inherits caller identity and fixes owner plan approval, manual start and direct execution", async () => {
+  it("inherits caller identity and fixes owner plan approval, manual start and managed worktree execution", async () => {
     const f = setup();
     const result = await f.call("goals.create", {
       goalId: "goal",
@@ -212,9 +225,7 @@ describe("conversation goal writes", () => {
       runtimeMode: "auto",
       model: "other",
       approvePlan: false,
-      autoMerge: true,
       manualStart: false,
-      isolate: true,
     });
     expect(result).toMatchObject({
       id: "goal",
@@ -224,7 +235,6 @@ describe("conversation goal writes", () => {
       model: "current-model",
       modelSettings: { effort: "medium" },
       runtimeMode: "supervised",
-      isolate: false,
       approvePlan: true,
       manualStart: true,
       verifyDefaults: { review: true },
@@ -313,7 +323,7 @@ describe("conversation goal writes", () => {
       { approvePlan: false },
       { manualStart: false },
       { autoMerge: true },
-      { isolate: true },
+      { isolate: false },
       { continueUntilDone: true },
       { runtimeMode: "auto" },
       { model: "foreign" },

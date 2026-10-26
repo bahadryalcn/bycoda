@@ -5,6 +5,16 @@ import { dirname, join, resolve } from "node:path";
 const active = new AsyncLocalStorage<string>();
 const tails = new Map<string, Promise<unknown>>();
 export type GitMutationScope = "local" | "fetch" | "exclusive";
+
+/** These legacy commands must not bypass managed workspace review/receipts. */
+export const isBranchDeliveryCommand = (command: string) =>
+  ["git_merge", "git_push", "git_sync", "git_pr_create"].includes(command);
+
+export const isManagedWorkspaceBranch = (reference: unknown): reference is string =>
+  typeof reference === "string" && /^(?:refs\/heads\/)?bycoda\/[st]\//.test(reference);
+
+export const MANAGED_DELIVERY_REVIEW_REQUIRED =
+  "Managed workspace delivery requires a fresh review plan and authenticated owner approval. Use workspaces.delivery.review, then workspaces.delivery.merge or workspaces.delivery.publish.";
 const LOCAL_MUTATIONS = new Set([
   "git_commit",
   "git_stage_file",

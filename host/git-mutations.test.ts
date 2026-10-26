@@ -2,9 +2,30 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { gitMutationScope, isHostGitMutation, withHostGitMutation } from "./git-mutations";
+import {
+  gitMutationScope,
+  isBranchDeliveryCommand,
+  isHostGitMutation,
+  isManagedWorkspaceBranch,
+  withHostGitMutation,
+} from "./git-mutations";
 
 const roots: string[] = [];
+
+it("identifies managed delivery without treating ordinary branch names as authority", () => {
+  for (const command of ["git_merge", "git_push", "git_sync", "git_pr_create"])
+    expect(isBranchDeliveryCommand(command)).toBe(true);
+  expect(isBranchDeliveryCommand("git_commit")).toBe(false);
+  for (const reference of ["bycoda/s/name-123456789012", "refs/heads/bycoda/t/task-123456789012"])
+    expect(isManagedWorkspaceBranch(reference)).toBe(true);
+  for (const reference of [
+    true,
+    "main",
+    "feature/bycoda/t/task",
+    "refs/remotes/origin/bycoda/t/task",
+  ])
+    expect(isManagedWorkspaceBranch(reference)).toBe(false);
+});
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });

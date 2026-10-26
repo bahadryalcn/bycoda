@@ -9,7 +9,7 @@ import {
   parseGoalPlan,
   parseHostGoal,
   type GoalPlan,
-  type HostGoal,
+  type HostGoal as StoredHostGoal,
   type GoalSettings,
 } from "../src/features/tasks/model/hostGoals";
 import {
@@ -23,6 +23,7 @@ import {
 } from "./sessionRuns";
 import type { HostStore } from "./store";
 import type { HostTasks } from "./tasks";
+type HostGoal = StoredHostGoal & { deliveryApprovalRequired?: boolean };
 import {
   NO_VERDICT,
   parseReviewVerdict,
@@ -186,6 +187,9 @@ export class HostGoals {
         await store.db.exec(
           "CREATE INDEX IF NOT EXISTS goals_scheduler_status ON goals(json_extract(value, '$.status'))",
         );
+        await store.db.exec(
+          "UPDATE goals SET value=json_set(json_remove(value, '$.autoMerge'), '$.deliveryApprovalRequired', json('true')) WHERE json_extract(value, '$.autoMerge')=1",
+        );
         // An upgraded host must not turn unrecorded planner/final-review history into zero usage.
         const hasRecordedRun = store.db.prepare(
           "SELECT 1 FROM task_run_budget_ledger WHERE session_id=? AND run_id=? AND goal_id=?",
@@ -313,9 +317,7 @@ export class HostGoals {
     const now = this.now();
     const updated = await this.tasks.transaction(async () => {
       await this.tasks.updateGoalSettings(goal.id, goal.taskIds, {
-        ...(Boolean(goal.autoMerge) !== settings.autoMerge
-          ? { autoMerge: settings.autoMerge }
-          : {}),
+        autoMerge: false,
         ...(Boolean(goal.continueUntilDone) !== settings.continueUntilDone
           ? { continueUntilDone: settings.continueUntilDone }
           : {}),
@@ -325,7 +327,8 @@ export class HostGoals {
       });
       return await this.write({
         ...goal,
-        autoMerge: parsed.autoMerge,
+        autoMerge: undefined,
+        deliveryApprovalRequired: parsed.autoMerge || goal.deliveryApprovalRequired || undefined,
         continueUntilDone: parsed.continueUntilDone,
         maxRunningTasks: parsed.maxRunningTasks,
         maxRunMinutes: parsed.maxRunMinutes,
@@ -532,6 +535,7 @@ export class HostGoals {
     });
   }
   private async write(goal: HostGoal): Promise<HostGoal> {
+    if (goal.autoMerge) goal = { ...goal, autoMerge: undefined, deliveryApprovalRequired: true };
     return await this.store.db.scope(async () => {
       await this.store.db
         .prepare(
@@ -851,7 +855,7 @@ export class HostGoals {
           ...(goal.manualStart ? { status: "todo" } : {}),
           ...(command ? { verifyCommand: command } : {}),
           review,
-          ...(goal.autoMerge && goal.isolate !== false ? { autoMerge: true } : {}),
+          ...(goal.deliveryApprovalRequired ? { deliveryApprovalRequired: true } : {}),
           ...(goal.continueUntilDone ? { continueUntilDone: true } : {}),
           goalId: goal.id,
           ...(dependsOn.length ? { dependsOn } : {}),
