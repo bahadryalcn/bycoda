@@ -41,7 +41,7 @@ async function fixture() {
     pinned: false,
   };
   let probe: WorkspaceActivity[] = [];
-  const open = async () => {
+  const open = async (canReconcileActivity?: (activity: WorkspaceActivity) => Promise<boolean>) => {
     const store = new HostStore(join(root, "host.db"));
     stores.push(store);
     await store.ready;
@@ -54,6 +54,7 @@ async function fixture() {
         ),
       operation: (id) => store.workspaceOperation(id),
       persistence: store.workspaceActivityPersistence(),
+      canReconcileActivity,
     });
     return { store, gate };
   };
@@ -227,6 +228,177 @@ it("retains unknown activity after restart until its owner reconciles it", async
   await expect(reopened.gate.reserve(f.request)).rejects.toThrow("still in use");
   await reopened.gate.stop(activity.id);
   await reopened.gate.reserve(f.request);
+});
+
+it("reconciles only prior-runtime activities with authoritative stopped-process proof", async () => {
+  const f = await fixture(),
+    first = await f.open();
+  const provider = await first.gate.start({
+    workspaceId: f.workspace.id,
+    ownerId: "session",
+    kind: "provider",
+  });
+  await first.store.close();
+  const confirmed: string[] = [];
+  const reopened = await f.open(async (activity) => {
+    confirmed.push(activity.id);
+    return true;
+  });
+  expect(await reopened.gate.reconcilePreviousActivities()).toEqual({
+    released: [provider.id],
+    blocked: [],
+  });
+  expect((await reopened.store.workspaceActivityPersistence().load()).activities).toEqual([]);
+  const current = await reopened.gate.start({
+    workspaceId: f.workspace.id,
+    ownerId: "session",
+    kind: "provider",
+  });
+  expect(await reopened.gate.reconcilePreviousActivities()).toEqual({ released: [], blocked: [] });
+  expect(await reopened.gate.list(f.workspace.id)).toEqual([current]);
+  expect(confirmed).toEqual([provider.id]);
+});
+
+it("retains editors and process activities without sufficient ownership proof", async () => {
+  const f = await fixture(),
+    first = await f.open();
+  const editor = await first.gate.start({
+    workspaceId: f.workspace.id,
+    ownerId: "native-editor",
+    kind: "editor",
+    dirtyBuffer: true,
+  });
+  const shell = await first.gate.start({
+    workspaceId: f.workspace.id,
+    ownerId: "unknown-shell",
+    kind: "shell",
+  });
+  const server = await first.gate.start({
+    workspaceId: f.workspace.id,
+    ownerId: "unknown-server",
+    kind: "devServer",
+  });
+  await first.store.close();
+  const unknown = await f.open();
+  expect(await unknown.gate.reconcilePreviousActivities()).toMatchObject({
+    released: [],
+    blocked: expect.any(Array),
+  });
+  expect(await unknown.gate.list(f.workspace.id)).toHaveLength(3);
+  await unknown.store.close();
+  const checked: string[] = [];
+  const reopened = await f.open(async (activity) => {
+    checked.push(activity.id);
+    return false;
+  });
+  const result = await reopened.gate.reconcilePreviousActivities();
+  expect(result.released).toEqual([]);
+  expect(result.blocked.map((value) => value.activityId).sort()).toEqual(
+    [editor.id, shell.id, server.id].sort(),
+  );
+  expect(checked.sort()).toEqual([shell.id, server.id].sort());
+});
+
+it("requires fresh idle probes and excludes only the operation whose recovery owns the stale process", async () => {
+  const f = await fixture(),
+    first = await f.open();
+  const provider = await first.gate.start({
+    workspaceId: f.workspace.id,
+    ownerId: "session",
+    kind: "provider",
+  });
+  const operation: WorkspaceCreateOperation = {
+    id: "operation",
+    kind: "create",
+    phase: "registered",
+    workspaceId: f.workspace.id,
+    idempotencyKey: "create",
+    expectedRevision: 3,
+    plannedWorkspace: f.workspace,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  await first.store.saveWorkspaceOperation(operation, null);
+  await first.store.close();
+  const reopened = await f.open(async () => true);
+  expect((await reopened.gate.reconcilePreviousActivities()).blocked).toHaveLength(1);
+  f.probe([
+    { id: "live", workspaceId: f.workspace.id, ownerId: "live-shell", kind: "shell", startedAt: 1 },
+  ]);
+  expect(
+    await reopened.gate.reconcilePreviousActivities({
+      workspaceId: f.workspace.id,
+      operationId: operation.id,
+    }),
+  ).toMatchObject({
+    released: [],
+    blocked: [{ activityId: provider.id, reason: expect.stringContaining("still in use") }],
+  });
+  f.probe([]);
+  await reopened.store.saveWorkspaceOperation(
+    { ...operation, id: "other-operation", idempotencyKey: "other" },
+    null,
+  );
+  expect(
+    await reopened.gate.reconcilePreviousActivities({
+      workspaceId: f.workspace.id,
+      operationId: operation.id,
+    }),
+  ).toMatchObject({
+    released: [],
+    blocked: [
+      { activityId: provider.id, reason: expect.stringContaining("Another workspace operation") },
+    ],
+  });
+  await reopened.store.saveWorkspaceOperation(
+    { ...operation, id: "other-operation", idempotencyKey: "other", phase: "complete" },
+    "registered",
+  );
+  expect(
+    await reopened.gate.reconcilePreviousActivities({
+      workspaceId: f.workspace.id,
+      operationId: operation.id,
+    }),
+  ).toEqual({ released: [provider.id], blocked: [] });
+  await expect(
+    reopened.gate.start({ workspaceId: f.workspace.id, ownerId: "session", kind: "provider" }),
+  ).rejects.toThrow("recovery is pending");
+});
+
+it("fences new starts while stopped-process evidence is checked and retains current-runtime activities", async () => {
+  const f = await fixture(),
+    first = await f.open();
+  const previous = await first.gate.start({
+    workspaceId: f.workspace.id,
+    ownerId: "session",
+    kind: "provider",
+  });
+  await first.store.close();
+  let checked!: () => void, confirm!: (value: boolean) => void;
+  const checking = new Promise<void>((resolve) => {
+    checked = resolve;
+  });
+  const evidence = new Promise<boolean>((resolve) => {
+    confirm = resolve;
+  });
+  const reopened = await f.open(async () => {
+    checked();
+    return evidence;
+  });
+  const reconciliation = reopened.gate.reconcilePreviousActivities();
+  await checking;
+  await expect(
+    reopened.gate.start({ workspaceId: f.workspace.id, ownerId: "new-shell", kind: "shell" }),
+  ).rejects.toThrow("reserved");
+  confirm(true);
+  expect(await reconciliation).toEqual({ released: [previous.id], blocked: [] });
+  const current = await reopened.gate.start({
+    workspaceId: f.workspace.id,
+    ownerId: "new-shell",
+    kind: "shell",
+  });
+  expect(await reopened.gate.reconcilePreviousActivities()).toEqual({ released: [], blocked: [] });
+  expect(await reopened.gate.list(f.workspace.id)).toEqual([current]);
 });
 
 it("releases a crash-before-intent reservation only after fresh probes confirm idle state", async () => {

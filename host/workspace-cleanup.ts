@@ -29,7 +29,11 @@ import type {
   WorkspaceRegistry,
   WorkspaceRemovalService,
 } from "./workspace-service-contracts";
-import type { WorkspaceActivityPersistence } from "./workspace-activity-store";
+import type {
+  WorkspaceActivityPersistence,
+  WorkspaceActivityReconciliation,
+  WorkspaceActivityReconciliationRequest,
+} from "./workspace-activity-store";
 import type { WorkspaceMutation, WorkspaceOperation } from "./workspace-contracts";
 
 export const sameWorkspacePath = (a: string, b: string) =>
@@ -227,6 +231,9 @@ export function createExecutionActivityReservations(deps: {
   persistence?: WorkspaceActivityPersistence;
   /** Optional journal check prevents releasing an unfinished durable operation. */
   operation?(operationId: string): Promise<WorkspaceOperation | null>;
+  /** Authoritative proof that this prior-runtime host-owned process has ended.
+   * No callback, unknown ownership or uncertain process state must return false. */
+  canReconcileActivity?(activity: WorkspaceActivity): Promise<boolean>;
 }): ExecutionActivityReservations & {
   verifyReservation(
     request: Pick<WorkspaceMutation, "workspaceId" | "expectedRevision"> & {
@@ -237,13 +244,20 @@ export function createExecutionActivityReservations(deps: {
     released: string[];
     blocked: { reservationId: string; reason: string }[];
   }>;
+  reconcilePreviousActivities(
+    request?: WorkspaceActivityReconciliationRequest,
+  ): Promise<WorkspaceActivityReconciliation>;
 } {
   const activities = new Map<string, WorkspaceActivity>();
   const reservations = new Map<string, WorkspaceReservation>();
   const reserving = new Set<string>();
+  const previousActivityIds = new Set<string>();
   const ready = deps.persistence
     ? deps.persistence.load().then((saved) => {
-        for (const activity of saved.activities) activities.set(activity.id, activity);
+        for (const activity of saved.activities) {
+          activities.set(activity.id, activity);
+          previousActivityIds.add(activity.id);
+        }
         for (const reservation of saved.reservations) reservations.set(reservation.id, reservation);
       })
     : Promise.resolve();
@@ -282,6 +296,7 @@ export function createExecutionActivityReservations(deps: {
       await ready;
       await deps.persistence?.removeActivity(id);
       activities.delete(id);
+      previousActivityIds.delete(id);
     },
     async list(id) {
       await ready;
@@ -369,6 +384,60 @@ export function createExecutionActivityReservations(deps: {
             reservationId: reservation.id,
             reason: error instanceof Error ? error.message : String(error),
           });
+        }
+      }
+      return { released, blocked };
+    },
+    async reconcilePreviousActivities(request = {}) {
+      await ready;
+      const released: string[] = [];
+      const blocked: { activityId: string; reason: string }[] = [];
+      for (const id of [...previousActivityIds]) {
+        const activity = activities.get(id);
+        if (!activity || (request.workspaceId && activity.workspaceId !== request.workspaceId))
+          continue;
+        let acquired = false;
+        try {
+          if (!["provider", "shell", "devServer"].includes(activity.kind))
+            throw new Error(
+              "Editor, native or unknown activity requires explicit owner reconciliation.",
+            );
+          if (reserving.has(activity.workspaceId))
+            throw new Error("Workspace admission is in progress.");
+          reserving.add(activity.workspaceId);
+          acquired = true;
+          if (
+            [...activities.values()].some(
+              (current) =>
+                current.workspaceId === activity.workspaceId &&
+                !previousActivityIds.has(current.id),
+            )
+          )
+            throw new Error("Current-runtime activity is still in use.");
+          if (!deps.canReconcileActivity || !(await deps.canReconcileActivity(activity)))
+            throw new Error("Previous process ownership or stopped state is unknown.");
+          if ((await deps.probe(activity.workspaceId)).length)
+            throw new Error("Workspace is still in use or activity is unknown.");
+          if (request.operationId) {
+            const operation = await deps.operation?.(request.operationId);
+            if (!operation || operation.workspaceId !== activity.workspaceId)
+              throw new Error(
+                "Activity recovery journal belongs to another workspace or is missing.",
+              );
+          }
+          if (await deps.pending(activity.workspaceId, request.operationId))
+            throw new Error("Another workspace operation recovery is pending.");
+          await deps.persistence?.removeActivity(activity.id);
+          activities.delete(activity.id);
+          previousActivityIds.delete(activity.id);
+          released.push(activity.id);
+        } catch (error) {
+          blocked.push({
+            activityId: activity.id,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        } finally {
+          if (acquired) reserving.delete(activity.workspaceId);
         }
       }
       return { released, blocked };

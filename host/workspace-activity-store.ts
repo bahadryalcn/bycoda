@@ -10,3 +10,15 @@ export interface WorkspaceActivityPersistence {
   saveReservation(reservation: WorkspaceReservation): Promise<void>;
   removeReservation(reservationId: string): Promise<void>;
 }
+
+export interface WorkspaceActivityReconciliation {
+  released: string[];
+  blocked: { activityId: string; reason: string }[];
+}
+
+/** Startup may exclude the journal whose recovery needs this process fence;
+ * all other pending operations still prevent activity retirement. */
+export interface WorkspaceActivityReconciliationRequest {
+  workspaceId?: string;
+  operationId?: string;
+}
