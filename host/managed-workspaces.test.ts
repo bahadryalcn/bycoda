@@ -471,6 +471,27 @@ it("tracks meaningful activity, rejects active lifecycle transitions and require
   ).rejects.toThrow("reservation");
 });
 
+it("uses fresh activity evidence to finish a workspace whose cached state is still active", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  let active = true;
+  const registry = createManagedWorkspaceRegistry(f.store, f.policy, {
+    isActive: async () => active,
+  });
+  await registry.touchActivity(workspace.id);
+  const current = (await registry.get({ workspaceId: workspace.id }))!;
+  expect(current.state).toBe("active");
+  const request = {
+    workspaceId: current.id,
+    expectedRevision: current.revision,
+    idempotencyKey: "finish-cached-active",
+  };
+  await expect(registry.finish(request)).rejects.toThrow("idle");
+  active = false;
+  expect((await registry.get({ workspaceId: current.id }))?.state).toBe("active");
+  expect((await registry.finish(request)).state).toBe("finished");
+});
+
 it("releases live feature claims on close and fences overlapping operation journals", async () => {
   const f = await fixture();
   const { workspace } = await f.registry.prepare(f.request);

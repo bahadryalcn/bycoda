@@ -541,7 +541,7 @@ export function createManagedWorkspaceRegistry(
       await settled(current.id);
       if (
         active ||
-        current.state === "active" ||
+        (current.state === "active" && !options.isActive) ||
         current.state === "merged" ||
         ["removing", "pendingRemoval"].includes(current.directoryState)
       )
