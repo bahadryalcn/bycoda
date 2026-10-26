@@ -290,7 +290,10 @@ delivery only; product/runtime acceptance remains as described above.
   `native.buffers.retire` and `native.buffers.reconcile`.
 - Native rewind persists intent before Host preparation and discovers the same
   operation through authenticated `native.rewind.lookup` after restart
-  (`49826b7d`). Restore-owned index locks are journaled before admission and can
+  (`49826b7d`). Authenticated `native.rewind.cancelPreparation` durably tombstones
+  proven absent keys so rejected preparations permit a new preview while late
+  requests stay rejected (`e495936b`). Unknown or mismatched acknowledgements
+  retain the fence. Restore-owned index locks are journaled before admission and can
   be reclaimed only with matching lock evidence and positive process-death proof
   (`b4376caf`). Tests kill real native and Host subprocesses.
 - Cleanup validates tracked dependency-link detachment before forced Git removal

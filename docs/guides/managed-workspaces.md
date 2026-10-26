@@ -119,6 +119,10 @@ that same idempotency key, including when the app exited before saving its local
 rescue record. An interrupted restore can reclaim only its own journaled Git
 index lock after proving the former process dead and validating the restore
 state. Unrelated Git locks remain protected.
+If preparation was rejected before creating any Host operation, authenticated
+reconciliation records a durable cancellation for that key before releasing the
+native intent. Request a fresh preview afterward. Delayed requests with the old
+key cannot recreate it; uncertain outcomes continue to hold the fence.
 An expired preview explains why applying is disabled. Close it and request a
 fresh preview before continuing.
 Existing `current` sessions retain their legacy rewind confirmation. Per-file
