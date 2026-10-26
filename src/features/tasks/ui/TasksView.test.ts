@@ -784,7 +784,10 @@ it("shows a task being verified under Running", async () => {
   expect(container.querySelectorAll("[data-task-column]")).toHaveLength(6);
   expect(column("running").textContent).toContain("Verifying");
   expect(column("running").textContent).toContain("mc/abcd1234");
-  expect(Array.from(column("running").querySelectorAll("button"), buttonName)).toEqual(["Stop"]);
+  expect(Array.from(column("running").querySelectorAll("button"), buttonName)).toEqual([
+    "Review changes",
+    "Stop",
+  ]);
 });
 
 it("offers to merge a reviewed branch and shows what was checked", async () => {
@@ -816,11 +819,13 @@ it("offers to merge a reviewed branch and shows what was checked", async () => {
   expect(details.querySelector("details pre")!.textContent).toBe("12 tests passed");
   expect(details.textContent).toContain("The project has uncommitted changes.");
   await act(async () => button(details, "Close")!.click());
-  await act(async () => button(card, "Merge into main")!.click());
-  expect(requests).toContainEqual({
-    method: "tasks.move",
-    params: { taskId: "main", to: "done" },
-  });
+  expect(card.textContent).toContain("Implementation finished");
+  expect(card.textContent).toContain("Delivery is blocked");
+  await act(async () => button(card, "Review changes")!.click());
+  expect(card.textContent).toContain(
+    "Update bycoda Host to review and approve this task's delivery.",
+  );
+  expect(requests.some((request) => request.method === "tasks.move")).toBe(false);
 });
 
 it("confirms before discarding the branch of an unmerged task", async () => {
@@ -867,7 +872,7 @@ it("offers the branch, check and review options on a new task", async () => {
   const boxes = Array.from(form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
   expect(boxes.map((box) => box.parentElement!.textContent?.trim())).toEqual([
     "Review with a second agent",
-    "Merge automaticallyMerges into the base branch when every check passes",
+    "Merge automaticallyAutomatic merge is suspended. Review changes to renew approval.",
     "Continue until completeKeeps correcting while progress is made; asks for input when needed.",
   ]);
   expect(boxes.map((box) => box.checked)).toEqual([false, false, true]);
@@ -1161,13 +1166,15 @@ it("says so when the project's machine cannot take a task", async () => {
   expect(button(form, "Add and start")!.disabled).toBe(true);
 });
 
-it("shows a retained owner delivery request as automatic delivery and lets the owner pause it", async () => {
+it("suspends retained automatic delivery until the owner reviews changes again", async () => {
   host(
     [task({ status: "review", branch: "mc/pending", baseBranch: "main", deliveryRequested: true })],
     ["tasks", "tasks.todo", "tasks.workspaces"],
   );
   await render();
-  expect(column("review").textContent).toContain("Waiting for automatic delivery");
+  expect(column("review").textContent).toContain(
+    "Automatic merge is suspended. Review changes to renew approval.",
+  );
   expect(column("review").textContent).not.toContain("Waiting for your merge approval");
 
   await act(async () => button(column("review"), "More actions")!.click());
@@ -1180,7 +1187,7 @@ it("edits an existing goal on its own host without replanning", async () => {
   const requests = host(
     [],
     ["tasks", "goals", "goals.settings"],
-    [goal({ status: "running", isolate: true, autoMerge: false })],
+    [goal({ status: "running", isolate: true, autoMerge: true })],
   );
   await render();
   await act(async () =>
@@ -1188,7 +1195,7 @@ it("edits an existing goal on its own host without replanning", async () => {
   );
   const form = document.querySelector<HTMLFormElement>('form[aria-label="Edit goal settings"]')!;
   expect(form.textContent).toContain(
-    "Enabling automatic merge can deliver tasks that already passed review.",
+    "Delivery requires approval of the reviewed source and target.",
   );
   await act(async () => form.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
   await act(async () =>
@@ -1199,7 +1206,12 @@ it("edits an existing goal on its own host without replanning", async () => {
     params: {
       goalId: "launch",
       expectedUpdatedAt: 1,
-      settings: { autoMerge: true, continueUntilDone: false, maxRunningTasks: 0, maxRunMinutes: 0 },
+      settings: {
+        autoMerge: false,
+        continueUntilDone: false,
+        maxRunningTasks: 0,
+        maxRunMinutes: 0,
+      },
     },
   });
   expect(
@@ -1211,7 +1223,11 @@ it("edits an existing goal on its own host without replanning", async () => {
 });
 
 it("keeps goal settings and reports a failed save inline", async () => {
-  host([], ["tasks", "goals", "goals.settings"], [goal({ status: "running", isolate: true })]);
+  host(
+    [],
+    ["tasks", "goals", "goals.settings"],
+    [goal({ status: "running", isolate: true, autoMerge: true })],
+  );
   const originalInvoke = invoke.getMockImplementation()!;
   invoke.mockImplementation(async (command, args: any) => {
     if (command === "remote_request" && args?.method === "goals.update")
@@ -1228,7 +1244,7 @@ it("keeps goal settings and reports a failed save inline", async () => {
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
   expect(form.querySelector('[role="alert"]')?.textContent).toContain("Close and reopen settings");
-  expect(form.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
+  expect(form.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
   expect(button(form, "Save")!.disabled).toBe(false);
 });
 
@@ -1337,7 +1353,7 @@ it("defaults a new goal to direct work with final acceptance on and plan/task re
     "Verify the integrated result before completing this goal",
     "Review the plan before starting",
     "Review each task with a second agent",
-    "Merge automaticallyMerges into the base branch when every check passes",
+    "Merge automaticallyAutomatic merge is suspended. Review changes to renew approval.",
     "Continue until completeKeeps correcting while progress is made; asks for input when needed.",
   ]);
   expect(boxes.map((box) => box.checked)).toEqual([true, false, false, false, true]);
@@ -2070,7 +2086,7 @@ const LIMITS: HostSettingsState = {
 };
 const LIMIT_CAPABILITIES = ["tasks", "tasks.todo", "host.settings"];
 
-it("sends autoMerge from the new task form, only with its own branch", async () => {
+it("does not enable automatic delivery from a new task preference", async () => {
   const requests = host([]);
   await render();
   await act(async () => button(container, "New task")!.click());
@@ -2088,21 +2104,21 @@ it("sends autoMerge from the new task form, only with its own branch", async () 
   const [, merge] = boxes;
   expect(merge.disabled).toBe(true);
   await act(async () => branch.click());
-  expect(merge.disabled).toBe(false);
+  expect(merge.disabled).toBe(true);
   await act(async () => merge.click());
-  expect(merge.checked).toBe(true);
+  expect(merge.checked).toBe(false);
   // Without its own branch there is nothing to merge on its own.
   await act(async () => shared.click());
   expect(merge.disabled).toBe(true);
   expect(merge.checked).toBe(false);
   await act(async () => branch.click());
-  expect(merge.checked).toBe(true);
+  expect(merge.checked).toBe(false);
   await act(async () => button(form, "Add and start")!.click());
   const saved = requests.find((request) => request.method === "tasks.save")!;
   expect((saved.params as any).task).toMatchObject({
     isolate: true,
-    autoMerge: true,
   });
+  expect((saved.params as any).task.autoMerge).not.toBe(true);
 });
 
 it("sends direct goal execution and disables merge for the selected checkout", async () => {
@@ -2128,7 +2144,7 @@ it("sends direct goal execution and disables merge for the selected checkout", a
   expect((created.params as any).goal.autoMerge).toBeUndefined();
 });
 
-it("sends autoMerge from the goal and steward forms", async () => {
+it("does not enable automatic delivery from goal or steward preferences", async () => {
   const requests = host([], ["tasks", "goals", "stewards"]);
   await render();
   await pickAction(container, "New goal");
@@ -2140,6 +2156,7 @@ it("sends autoMerge from the goal and steward forms", async () => {
   const merge = goalBoxes.find((box) =>
     box.parentElement!.textContent?.trim().startsWith("Merge automatically"),
   )!;
+  expect(merge.disabled).toBe(true);
   await act(async () => merge.click());
   await act(async () =>
     type(goalForm.querySelector<HTMLInputElement>('input[aria-label="Goal title"]')!, "Launch"),
@@ -2152,7 +2169,7 @@ it("sends autoMerge from the goal and steward forms", async () => {
   );
   await act(async () => button(goalForm, "Plan it")!.click());
   const created = requests.find((request) => request.method === "goals.create")!;
-  expect((created.params as any).goal).toMatchObject({ autoMerge: true });
+  expect((created.params as any).goal.autoMerge).not.toBe(true);
 
   await pickAction(container, "Stewards");
   await act(async () => button(container, "Add steward")!.click());
@@ -2165,7 +2182,8 @@ it("sends autoMerge from the goal and steward forms", async () => {
   )!;
   expect(box.checked).toBe(false);
   await act(async () => box.click());
-  expect(box.checked).toBe(true);
+  expect(box.checked).toBe(false);
+  expect(box.disabled).toBe(true);
 });
 
 it("marks a task the host merged on its own, on its card and in its details", async () => {

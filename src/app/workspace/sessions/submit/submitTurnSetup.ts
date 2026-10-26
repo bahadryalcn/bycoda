@@ -1,20 +1,56 @@
-import type { SetupResult, SubmitDeps, SubmitInput, SubmitPreflight, SubmitTurn } from "./submitTypes";
+import type {
+  SetupResult,
+  SubmitDeps,
+  SubmitInput,
+  SubmitPreflight,
+  SubmitTurn,
+} from "./submitTypes";
 
 import { syncDockBadge } from "../../../../features/notifications/model/dockBadge";
-import { proposalBlock, type OrchestrationProposal } from "../../../../features/orchestration/model/orchestrationPlan";
-import { sessionProviderAccountId, supportsProviderAccounts } from "../../../../features/providers/model/providerAccounts";
+import {
+  proposalBlock,
+  type OrchestrationProposal,
+} from "../../../../features/orchestration/model/orchestrationPlan";
+import {
+  sessionProviderAccountId,
+  supportsProviderAccounts,
+} from "../../../../features/providers/model/providerAccounts";
 import { displayAttachments } from "../../../../features/sessions/model/attachments";
-import { appendPreparingHandoff, handoffTurnCard, pendingHandoff } from "../../../../features/sessions/model/handoff";
-import { queuedModelTarget, sentQueuedMessage } from "../../../../features/sessions/model/messageQueue";
+import {
+  appendPreparingHandoff,
+  handoffTurnCard,
+  pendingHandoff,
+} from "../../../../features/sessions/model/handoff";
+import {
+  queuedModelTarget,
+  sentQueuedMessage,
+} from "../../../../features/sessions/model/messageQueue";
 import { resolveModel } from "../../../../features/sessions/model/models";
 import { SECOND_OPINION_TITLE } from "../../../../features/sessions/model/secondOpinion";
-import { HARNESS_LABEL, canReplaceSessionTitle, formatSessionTitle, titleFromPrompt, type Session } from "../../../../features/sessions/model/session";
+import {
+  HARNESS_LABEL,
+  canReplaceSessionTitle,
+  formatSessionTitle,
+  titleFromPrompt,
+  type Session,
+} from "../../../../features/sessions/model/session";
 import { shouldGenerateSessionTitle } from "../../../../features/sessions/model/sessionTitle";
 import { resolveLinkedWorkItem } from "../../../../features/sessions/model/sessionWorkItem";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
-import { appendUser, canRewindHarnessLastTurn, cancelHarnessTurn, forgetHarnessSession, generateHarnessTitle, isLiveHarness, stopStreaming } from "../../../../integrations/harness";
+import {
+  appendUser,
+  canRewindHarnessLastTurn,
+  cancelHarnessTurn,
+  forgetHarnessSession,
+  generateHarnessTitle,
+  isLiveHarness,
+  stopStreaming,
+} from "../../../../integrations/harness";
 import { t } from "../../../../shared/i18n";
-import { beginSessionPerformanceTrace, recordPerformanceEvent } from "../../../../shared/lib/performanceTrace";
+import {
+  beginSessionPerformanceTrace,
+  recordPerformanceEvent,
+} from "../../../../shared/lib/performanceTrace";
 import { userTurnCards, withPlanBuildTarget } from "../../helpers/sessionHelpers";
 import { flushSync } from "react-dom";
 
@@ -26,7 +62,26 @@ export function prepareSubmittedTurn(
   const { dismissNoticesForContinuedSession } = ctx;
   const { editedResends, turnGen } = ctx.refs;
   const { sessionId, attachments, options } = input;
-  const { draftBlock, current, submitTarget, editedResend, intent, approvedPlan, noteCard, handoffCard, providerAccountId, initialWorkCwd, createDraftWorktree, submittedText, operatorCommand, promptText, rawCommand, ciContext, harnessText, pendingSwitch } = pre;
+  const {
+    draftBlock,
+    current,
+    submitTarget,
+    editedResend,
+    intent,
+    approvedPlan,
+    noteCard,
+    handoffCard,
+    providerAccountId,
+    initialWorkCwd,
+    createDraftWorktree,
+    submittedText,
+    operatorCommand,
+    promptText,
+    rawCommand,
+    ciContext,
+    harnessText,
+    pendingSwitch,
+  } = pre;
 
   const traceId = beginSessionPerformanceTrace(sessionId);
   recordPerformanceEvent("send-prepare", { phase: 0 }, traceId);
@@ -89,8 +144,7 @@ export function prepareSubmittedTurn(
         )
       : current.title;
   const visible = displayAttachments(attachments);
-  const card =
-    options?.secondOpinion ?? (handoffCard ? handoffTurnCard(handoffCard) : undefined);
+  const card = options?.secondOpinion ?? (handoffCard ? handoffTurnCard(handoffCard) : undefined);
   const visibleText = operatorCommand.matched
     ? promptText
     : card?.kind === "handoff"
@@ -139,6 +193,10 @@ export function prepareSubmittedTurn(
           },
           providerAccountId,
           usageLimit: undefined,
+          // Keep preparation failures retryable without falling back to the project checkout.
+          workspaceMode: createDraftWorktree
+            ? (selected.workspaceMode ?? "worktree")
+            : selected.workspaceMode,
           worktreePreparing: createDraftWorktree ? true : selected.worktreePreparing,
           inboxCard: rawCommand || options?.ciRepair ? s.inboxCard : undefined,
           noteCard: rawCommand || options?.ciRepair ? s.noteCard : undefined,
@@ -297,6 +355,16 @@ export function prepareSubmittedTurn(
     );
   }
 
-  return { settled: false, setup: { traceId, gen, proposalId, queuedHandoff, commitSubmittedTurn, launchTitleGeneration, turn } };
+  return {
+    settled: false,
+    setup: {
+      traceId,
+      gen,
+      proposalId,
+      queuedHandoff,
+      commitSubmittedTurn,
+      launchTitleGeneration,
+      turn,
+    },
+  };
 }
-

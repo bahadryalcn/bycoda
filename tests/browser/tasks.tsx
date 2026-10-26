@@ -26,6 +26,7 @@ import {
 } from "../../src/features/sessions/model/models";
 import { languageReady, setLanguagePreference } from "../../src/shared/i18n";
 import "../../src/styles/index.css";
+import type { ManagedWorkspace } from "../../src/features/workspaces/model/contracts";
 
 // All operations use fictitious in-memory hosts. These tests never connect to a
 // live provider, modify a user repository, or start background agent sessions.
@@ -76,15 +77,81 @@ const goals: Record<string, HostGoal[]> = {
 };
 const sprintFixture = query.has("sprints") ? new SprintFixture(machines, () => tasks) : null;
 if (sprintFixture) {
-  const demo = (id: string, projectId: string, title: string, status: TaskStatus = "todo"): HostTask => ({
-    id, projectId, title, prompt: `Synthetic sprint instructions for ${title}`,
-    harness: "claude", model: "claude:fixture", modelSettings: {}, runtimeMode: "auto",
-    maxRunMinutes: 0, isolate: false, review: false, status, createdAt: Date.now(), updatedAt: Date.now(),
+  const demo = (
+    id: string,
+    projectId: string,
+    title: string,
+    status: TaskStatus = "todo",
+  ): HostTask => ({
+    id,
+    projectId,
+    title,
+    prompt: `Synthetic sprint instructions for ${title}`,
+    harness: "claude",
+    model: "claude:fixture",
+    modelSettings: {},
+    runtimeMode: "auto",
+    maxRunMinutes: 0,
+    isolate: false,
+    review: false,
+    status,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
   });
-  tasks["machine-local"] = [demo("local-task", "local-project", "PC onboarding"), demo("docs-task", "local-docs", "Documentation cleanup")];
-  tasks["machine-remote"] = [demo("remote-task", "remote-project", "MacBook checkout"), demo("remote-done", "remote-project", "MacBook shipped task", "done"), demo("api-task", "remote-api", "API stability")];
+  tasks["machine-local"] = [
+    demo("local-task", "local-project", "PC onboarding"),
+    demo("docs-task", "local-docs", "Documentation cleanup"),
+  ];
+  tasks["machine-remote"] = [
+    demo("remote-task", "remote-project", "MacBook checkout"),
+    demo("remote-done", "remote-project", "MacBook shipped task", "done"),
+    demo("api-task", "remote-api", "API stability"),
+  ];
 }
 const trees = new Map<string, { path: string; branch: string }[]>();
+const managedWorkspace: ManagedWorkspace = {
+  id: "managed-task-workspace",
+  repositoryId: "fixture-repo",
+  projectId: "local-project",
+  environmentId: "env-local",
+  owner: { kind: "task", id: "managed-task" },
+  path: "C:/fixture/worktrees/wt-aabbccddeeff",
+  branchRef: "refs/heads/bycoda/t/managed-aabbccddeeff",
+  baseRef: "refs/heads/main",
+  baseCommit: "abc123",
+  targetBranchRef: "refs/heads/main",
+  state: "idle",
+  directoryState: "present",
+  revision: 3,
+  lastActivityAt: Date.now(),
+  pinned: false,
+};
+if (query.has("managedDelivery"))
+  tasks["machine-local"] = [
+    {
+      id: "managed-task",
+      title: "Finished implementation awaiting delivery",
+      prompt: "Keep completion separate from integration approval.",
+      projectId: "local-project",
+      harness: "claude",
+      model: "claude:fixture",
+      modelSettings: {},
+      runtimeMode: "auto",
+      maxRunMinutes: 0,
+      status: "review",
+      branch: "bycoda/t/managed-aabbccddeeff",
+      baseBranch: "main",
+      autoMerge: true,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...{
+        workspaceId: managedWorkspace.id,
+        completionState: "finished",
+        deliveryState: "review",
+        autoMergeSuspended: true,
+      },
+    },
+  ];
 const limits = new Map<string, { maxRunningTasks: number; dailyAgentMinutes: number }>();
 if (query.has("boardControls")) {
   const defaults: HostTaskInput = {
@@ -177,6 +244,7 @@ if (query.has("boardControls")) {
       modelSettings: {},
       runtimeMode: "auto",
       maxRunMinutes: 0,
+      autoMerge: query.has("renewedApprovalSettings"),
       verifyDefaults: { review: true },
       approvePlan: false,
       status: "running",
@@ -366,6 +434,8 @@ Object.assign(window, {
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args: structuredClone(args) });
       if (command === "remote_machines") return structuredClone(machines);
+      if (command === "local_host_connect")
+        return machines.find((machine) => machine.localHost) ?? null;
       if (command === "plugin:event|listen") return 1;
       if (command !== "remote_request") return null;
       const machineId = String(args.machineId);
@@ -374,7 +444,13 @@ Object.assign(window, {
       const params = (args.params ?? {}) as Record<string, unknown>;
       if (machineId === "machine-remote" && args.method === slowRemoteMethod) await remoteGate;
       if (args.method === query.get("slowOperation")) await remoteGate;
-      if (sprintFixture && (String(args.method).startsWith("sprints.") || args.method === "tasks.snapshotWithCursor" || args.method === "tasks.events")) return sprintFixture.rpc(String(args.method), machineId, params);
+      if (
+        sprintFixture &&
+        (String(args.method).startsWith("sprints.") ||
+          args.method === "tasks.snapshotWithCursor" ||
+          args.method === "tasks.events")
+      )
+        return sprintFixture.rpc(String(args.method), machineId, params);
       switch (args.method) {
         case "environment.describe":
           return requireHostDescriptor({
@@ -385,6 +461,10 @@ Object.assign(window, {
             platform: machine.localHost ? "win32" : "darwin",
             capabilities: [
               "tasks",
+              ...(query.has("suspendedForms") ? ["stewards"] : []),
+              ...(query.has("managedDelivery")
+                ? ["workspaces.managed.v1", "workspaces.delivery.v1"]
+                : []),
               "tasks.todo",
               ...(sprintFixture ? ["tasks.sprints.v1", "tasks.history.v1"] : []),
               "tasks.workspaces",
@@ -432,6 +512,18 @@ Object.assign(window, {
           };
         case "tasks.list":
           return structuredClone(tasks[machineId]);
+        case "stewards.list":
+          return [];
+        case "workspaces.get":
+          return structuredClone(managedWorkspace);
+        case "workspaces.finish": {
+          if (params.expectedRevision !== managedWorkspace.revision)
+            throw new Error("Workspace changed. Review it again.");
+          managedWorkspace.state = "finished";
+          managedWorkspace.revision++;
+          tasks["machine-local"][0].status = "done";
+          return structuredClone(managedWorkspace);
+        }
         case "goals.list":
           return structuredClone(goals[machineId]);
         case "tasks.preflight": {

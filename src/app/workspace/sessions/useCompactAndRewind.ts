@@ -1,4 +1,5 @@
 import { type MutableRefObject, useCallback } from "react";
+import { t } from "../../../shared/i18n";
 import {
   HARNESS_TITLE,
   sessionWorkCwd,
@@ -32,6 +33,15 @@ import { conversationRewindStrategy } from "../../../features/sessions/model/con
 import { shouldPersistSession, upsertSession } from "../../../features/sessions/data/sessionStore";
 import { flushSync } from "react-dom";
 import { notifyReviewChanged } from "../../../features/sessions/model/checkpoint";
+import {
+  applyWorkspaceRewind,
+  planWorkspaceRewind,
+} from "../../../features/workspaces/model/rewindClient";
+import {
+  offerWorkspaceRewindUndo,
+  clearWorkspaceRewindUndo,
+  requestWorkspaceRewindPreview,
+} from "../../../features/workspaces/ui/WorkspaceRewindPreview";
 export interface CompactAndRewindDeps {
   sessionsRef: MutableRefObject<Session[]>;
   setSessions: typeof setSessions;
@@ -179,6 +189,67 @@ export function useCompactAndRewind({
         orchestrator.submissionError(sessionId)
       )
         return false;
+      const workspaceId = (snapshot as Session & { workspaceId?: string }).workspaceId;
+      if (workspaceId) {
+        if (!editedResends.start(sessionId)) return false;
+        const reconcile = (next: Session) => {
+          turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
+          lastBoundProvider.current.delete(sessionId);
+          lastPersistedUserBlock.current.delete(sessionId);
+          sessionsRef.current = sessionsRef.current.map((session) =>
+            session.id === sessionId ? next : session,
+          );
+          flushSync(() =>
+            setSessions((prev) =>
+              prev.map((session) => (session.id === sessionId ? next : session)),
+            ),
+          );
+          notifyReviewChanged(sessionId);
+        };
+        try {
+          const plan = await planWorkspaceRewind(snapshot, workspaceId, { userBlockId: blockId });
+          const operationKey = crypto.randomUUID();
+          return await requestWorkspaceRewindPreview(
+            plan,
+            async () => {
+              const latest = sessionsRef.current.find((session) => session.id === sessionId);
+              if (!latest || latest.blocks !== snapshot.blocks || latest.busy)
+                throw new Error(t("The conversation changed. Close this preview and try again."));
+              const result = await applyWorkspaceRewind(latest, plan, operationKey);
+              reconcile(result.session);
+              const operationId = result.receipt.undoOperationId;
+              if (operationId)
+                offerWorkspaceRewindUndo(sessionId, async () => {
+                  const current = sessionsRef.current.find((session) => session.id === sessionId);
+                  if (!current || current.busy || !editedResends.start(sessionId))
+                    throw new Error(
+                      t("Wait for this session to finish before undoing the rewind."),
+                    );
+                  try {
+                    const undoPlan = await planWorkspaceRewind(current, workspaceId, {
+                      operationId,
+                    });
+                    const undoKey = crypto.randomUUID();
+                    await requestWorkspaceRewindPreview(
+                      undoPlan,
+                      async () => {
+                        const undone = await applyWorkspaceRewind(current, undoPlan, undoKey);
+                        reconcile(undone.session);
+                        clearWorkspaceRewindUndo(sessionId);
+                      },
+                      sessionId,
+                    );
+                  } finally {
+                    editedResends.finish(sessionId);
+                  }
+                });
+            },
+            sessionId,
+          );
+        } finally {
+          editedResends.finish(sessionId);
+        }
+      }
       if (remoteProjectFor(snapshot.cwd)) {
         return (await remoteSessionActions(sessionId)?.rewind(blockId)) ?? false;
       }

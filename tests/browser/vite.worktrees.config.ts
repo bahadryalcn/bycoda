@@ -7,7 +7,13 @@ export default defineConfig({
   build: {
     outDir: "temp/build/browser-worktrees",
     emptyOutDir: false,
-    rolldownOptions: { input: "tests/browser/worktrees.html" },
+    rolldownOptions: {
+      input: [
+        "tests/browser/worktrees.html",
+        "tests/browser/workspace-creation.html",
+        "tests/browser/workspace-actions.html",
+      ],
+    },
   },
   preview: { host: "127.0.0.1", port: 1497, strictPort: true },
 });
