@@ -237,6 +237,12 @@ for (const width of [1280, 800])
       await expect(
         page.getByRole("button", { name: "Workspace New worktree", exact: true }),
       ).toBeVisible();
+      // The lazy hero enters the centered layout after the composer. Wait for
+      // that fixture layout before Send so its pointer target cannot move mid-click.
+      await expect(page.locator('.crew-scene[data-variant="hero"]')).toHaveAttribute(
+        "data-art-status",
+        "ready",
+      );
       await page.locator("textarea").fill("Keep this work isolated from main");
       const send = page.getByRole("button", { name: "Send", exact: true });
       await expect(send).toBeEnabled();
