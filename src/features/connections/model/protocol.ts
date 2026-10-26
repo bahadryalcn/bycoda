@@ -2,6 +2,7 @@ import type { Block, Session, RuntimeMode, SecondOpinionMeta } from "../../sessi
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import type { AgentModel } from "../../sessions/model/models";
 import type { LinkedWorkItem } from "../../sessions/model/session";
+import type { BuildIdentity } from "../../workspaces/model/contracts";
 
 export const HOST_PROTOCOL_VERSION = 1;
 
@@ -48,6 +49,8 @@ export type HostDescriptor = {
   providers: RemoteProvider[];
   capabilities: string[];
   platform?: "win32" | "darwin" | "linux";
+  /** Absent on older hosts; semver alone does not identify the serving source. */
+  buildIdentity?: BuildIdentity;
 };
 export type HostProject = {
   id: string;
