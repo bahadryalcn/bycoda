@@ -164,6 +164,68 @@ async function waitFor(child, ready, signal, timeout = 30_000) {
   throw new Error("Development child readiness timed out");
 }
 
+/** CDP's target list may precede Playwright's page and native IPC discovery. */
+export async function waitForNativePage(
+  browser,
+  origin,
+  identity,
+  { signal, timeoutMs = 10_000, pollMs = 100 } = {},
+) {
+  const deadline = Date.now() + timeoutMs;
+  let identityUnavailable = false;
+  while (Date.now() < deadline) {
+    signal?.throwIfAborted();
+    const pages = browser.contexts().flatMap((context) => context.pages());
+    for (const page of pages) {
+      try {
+        if (new URL(page.url()).origin !== origin) continue;
+      } catch {
+        continue;
+      }
+      let timeout;
+      let aborted;
+      try {
+        await Promise.race([
+          verifyNativeIdentity(page, identity),
+          new Promise((_, reject) => {
+            timeout = setTimeout(
+              () => reject(new Error("Native identity lookup timed out")),
+              Math.max(1, deadline - Date.now()),
+            );
+            if (signal) {
+              aborted = () => reject(signal.reason);
+              signal.addEventListener("abort", aborted, { once: true });
+              if (signal.aborted) aborted();
+            }
+          }),
+        ]);
+        return page;
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (error.code === "NATIVE_IDENTITY_MISMATCH")
+          throw Object.assign(new Error("The CDP app identity belongs to a different run"), {
+            code: "EADDRINUSE",
+            cause: error,
+          });
+        identityUnavailable = true;
+      } finally {
+        clearTimeout(timeout);
+        if (aborted) signal.removeEventListener("abort", aborted);
+      }
+    }
+    await sleep(Math.min(pollMs, Math.max(1, deadline - Date.now())));
+  }
+  signal?.throwIfAborted();
+  throw Object.assign(
+    new Error(
+      identityUnavailable
+        ? "The native app identity did not become available; verify the embedded build manifest"
+        : "The native CDP page was not discovered before timeout",
+    ),
+    { code: identityUnavailable ? "NATIVE_IDENTITY_UNAVAILABLE" : "NATIVE_CDP_NOT_READY" },
+  );
+}
+
 export async function runNativeDev(args = process.argv.slice(2)) {
   const root = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), "../.."));
   const workspaceId = option(args, "--workspace-id", hash(root));
@@ -351,24 +413,9 @@ export async function runNativeDev(args = process.argv.slice(2)) {
               timeout: 5_000,
             });
             try {
-              const page = browser
-                .contexts()
-                .flatMap((context) => context.pages())
-                .find((page) => {
-                  try {
-                    return new URL(page.url()).origin === environment.devUrl;
-                  } catch {
-                    return false;
-                  }
-                });
-              if (!page) throw new Error("The CDP page belongs to a different run");
-              try {
-                await verifyNativeIdentity(page, manifest);
-              } catch {
-                throw Object.assign(new Error("The CDP app identity belongs to a different run"), {
-                  code: "EADDRINUSE",
-                });
-              }
+              await waitForNativePage(browser, environment.devUrl, manifest, {
+                signal: abort.signal,
+              });
             } finally {
               await browser.close();
             }

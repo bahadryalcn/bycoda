@@ -71,8 +71,11 @@ export async function verifyNativeIdentity(page, expected) {
     actual.sourceFingerprint !== expected.sourceFingerprint ||
     actual.head !== expected.head
   ) {
-    throw new Error(
-      "The native app identity does not match this run record; select the current run",
+    throw Object.assign(
+      new Error("The native app identity does not match this run record; select the current run"),
+      {
+        code: !actual || !expected ? "NATIVE_IDENTITY_UNAVAILABLE" : "NATIVE_IDENTITY_MISMATCH",
+      },
     );
   }
   return actual;

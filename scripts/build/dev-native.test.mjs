@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { nativeDevConfig, supervisedChild, completed, stopChildren } from "./dev-native.mjs";
+import {
+  nativeDevConfig,
+  supervisedChild,
+  completed,
+  stopChildren,
+  waitForNativePage,
+} from "./dev-native.mjs";
 import { loopbackUrl, screenshotOptions, verifyNativeIdentity } from "./dev-shot.mjs";
 
 test("leased native URLs and CSP agree while production CSP remains untouched", async () => {
@@ -67,6 +73,93 @@ test("native capture rejects stale records against the embedded running identity
   await assert.rejects(
     verifyNativeIdentity({ evaluate: async () => null }, identity),
     /does not match/,
+  );
+});
+
+const nativeIdentity = {
+  schemaVersion: 1,
+  buildId: "dev-discovery",
+  version: "1",
+  channel: "dev",
+  mode: "debug",
+  repositoryId: "repo",
+  branch: "branch",
+  head: "head",
+  sourceFingerprint: "fingerprint",
+  capturedAt: 1,
+  components: { web: "dev-discovery", native: "dev-discovery", host: "dev-discovery" },
+  dirtyPaths: [],
+  includedSources: [],
+};
+
+test("native CDP admission waits for target discovery and native IPC identity", async () => {
+  let discovered = false;
+  let reads = 0;
+  const expectedPage = {
+    url: () => "http://127.0.0.1:19001/",
+    evaluate: async () => (++reads === 1 ? null : nativeIdentity),
+  };
+  const unrelatedPage = {
+    url: () => "http://127.0.0.1:19002/",
+    evaluate: async () => assert.fail("Another app origin must not be evaluated"),
+  };
+  const browser = {
+    contexts: () => [{ pages: () => [unrelatedPage, ...(discovered ? [expectedPage] : [])] }],
+  };
+  queueMicrotask(() => (discovered = true));
+  assert.equal(
+    await waitForNativePage(browser, "http://127.0.0.1:19001", nativeIdentity, {
+      timeoutMs: 500,
+      pollMs: 1,
+    }),
+    expectedPage,
+  );
+  assert.equal(reads, 2);
+});
+
+test("native CDP admission rejects a concrete stale stamp without accepting its page", async () => {
+  const page = {
+    url: () => "http://127.0.0.1:19001/",
+    evaluate: async () => ({ ...nativeIdentity, buildId: "stale" }),
+  };
+  await assert.rejects(
+    waitForNativePage(
+      { contexts: () => [{ pages: () => [page] }] },
+      "http://127.0.0.1:19001",
+      nativeIdentity,
+    ),
+    { code: "EADDRINUSE" },
+  );
+});
+
+test("native CDP discovery and an unresponsive IPC both have bounded unavailable outcomes", async () => {
+  await assert.rejects(
+    waitForNativePage({ contexts: () => [] }, "http://127.0.0.1:19001", nativeIdentity, {
+      timeoutMs: 20,
+      pollMs: 1,
+    }),
+    { code: "NATIVE_CDP_NOT_READY" },
+  );
+  const page = {
+    url: () => "http://127.0.0.1:19001/",
+    evaluate: () => new Promise(() => {}),
+  };
+  await assert.rejects(
+    waitForNativePage(
+      { contexts: () => [{ pages: () => [page] }] },
+      "http://127.0.0.1:19001",
+      nativeIdentity,
+      { timeoutMs: 20, pollMs: 1 },
+    ),
+    { code: "NATIVE_IDENTITY_UNAVAILABLE" },
+  );
+  const controller = new AbortController();
+  controller.abort(new Error("Cancelled native launch"));
+  await assert.rejects(
+    waitForNativePage({ contexts: () => [] }, "http://127.0.0.1:19001", nativeIdentity, {
+      signal: controller.signal,
+    }),
+    /Cancelled native launch/,
   );
 });
 
