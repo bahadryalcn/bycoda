@@ -128,8 +128,9 @@ export async function buildStatus({
   timeoutMs = 1200,
 } = {}) {
   const started = Date.now();
+  const inspection = new AbortController();
   const work = Promise.all([
-    sourceIdentity(sourceRoot).catch(() => null),
+    sourceIdentity(sourceRoot, { signal: inspection.signal }).catch(() => null),
     readBuildIdentity(join(sourceRoot, "build/build-info.json")),
     installedComponent(hostDir, "app"),
     installedComponent(hostDir, "host"),
@@ -189,6 +190,7 @@ export async function buildStatus({
     };
   } finally {
     clearTimeout(timer);
+    inspection.abort();
   }
 }
 

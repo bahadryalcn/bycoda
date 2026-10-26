@@ -7,10 +7,11 @@ import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
-const git = async (root, args) => {
+const git = async (root, args, signal) => {
   const result = await exec("git", args, {
     cwd: root,
     windowsHide: true,
+    signal,
     timeout: 15000,
     maxBuffer: 8 * 1024 * 1024,
   });
@@ -83,23 +84,26 @@ export async function readBuildIdentity(path) {
   }
 }
 
-export async function sourceFiles(root) {
+export async function sourceFiles(root, { signal } = {}) {
   let names = (
-    await git(root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
+    await git(root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], signal)
   ).split("\0");
   const extra = (
-    await git(root, [
-      "rev-parse",
-      "--path-format=absolute",
-      "--git-path",
-      "info/local-build-sources",
-    ])
+    await git(
+      root,
+      ["rev-parse", "--path-format=absolute", "--git-path", "info/local-build-sources"],
+      signal,
+    )
   ).trim();
   try {
     await readFile(extra);
     names.push(
       ...(
-        await git(root, ["ls-files", "-z", "--others", "--ignored", `--exclude-from=${extra}`])
+        await git(
+          root,
+          ["ls-files", "-z", "--others", "--ignored", `--exclude-from=${extra}`],
+          signal,
+        )
       ).split("\0"),
     );
   } catch (error) {
@@ -121,7 +125,7 @@ export async function sourceFiles(root) {
     await Promise.all(
       selected.slice(offset, offset + 48).map(async (name) => {
         try {
-          files.set(name, await readFile(join(root, name)));
+          files.set(name, await readFile(join(root, name), { signal }));
         } catch (error) {
           if (!["ENOENT", "EISDIR"].includes(error.code)) throw error;
         }
@@ -141,14 +145,14 @@ export function fingerprintFiles(files) {
   return hash.digest("hex");
 }
 
-export async function sourceIdentity(sourceRoot) {
+export async function sourceIdentity(sourceRoot, { signal } = {}) {
   const root = resolve(sourceRoot);
   const [common, branch, head, status, files] = await Promise.all([
-    git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]),
-    git(root, ["rev-parse", "--abbrev-ref", "HEAD"]),
-    git(root, ["rev-parse", "HEAD"]),
-    git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    sourceFiles(root),
+    git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"], signal),
+    git(root, ["rev-parse", "--abbrev-ref", "HEAD"], signal),
+    git(root, ["rev-parse", "HEAD"], signal),
+    git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], signal),
+    sourceFiles(root, { signal }),
   ]);
   let canonical = (await realpath(common.trim())).replaceAll("\\", "/");
   if (process.platform === "win32") canonical = canonical.toLowerCase();
