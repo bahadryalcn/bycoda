@@ -186,7 +186,8 @@ def host_install(release, manifest, report):
         run([str(node), str(runtime/'host.mjs'), 'service', 'install', '--data-dir', str(BASE),
              '--port', str(PRODUCT_IDENTITY['hostPort'])])
         verify_host(runtime)
-        report('installed', runtime=str(runtime), firstInstall=True)
+        report('installed', runtime=str(runtime), firstInstall=True,
+               **installed_identity(manifest, runtime / 'bycoda-host.mjs', host=True))
         return
     wait_idle(BASE / 'host.db', "select count(*) from sessions where status='running' or shell_running=1", report)
     rollback = release / 'rollback-host'
@@ -264,7 +265,16 @@ def host_install(release, manifest, report):
                 prepare_posix_node(pathlib.Path(previous))
             run(['launchctl', 'bootstrap', domain, str(plist)])
             raise
-    report('installed', runtime=str(runtime))
+    report('installed', runtime=str(runtime), **installed_identity(manifest, runtime / 'bycoda-host.mjs', host=True))
+
+def installed_identity(manifest, binary, host=False):
+    """An observed executable receipt; no credentials or runtime authentication."""
+    result = {'binaryPath': str(binary.resolve()),
+              'binaryHash': digest(binary) if host or os.name != 'nt' else windows_binary_digest(binary),
+              'binaryHashKind': 'sha256' if host or os.name != 'nt' else 'tauri-normalized-sha256'}
+    if manifest.get('buildIdentity'):
+        result['buildIdentity'] = manifest['buildIdentity']
+    return result
 
 def verify_windows_host_process(runtime, pid):
     path = ps(f'(Get-Process -Id {pid}).Path')
@@ -330,7 +340,7 @@ def app_install(release, manifest, report):
         saved = rollback / 'installation'
         previous_hashes, already_installed = windows_app_snapshot(app, rollback, manifest)
         if already_installed:
-            report('installed', version=manifest['version'])
+            report('installed', version=manifest['version'], **installed_identity(manifest, app))
             return
         app_q = ps_quote(app)
         process_filter = windows_app_process_filter(app)
@@ -393,14 +403,15 @@ def app_install(release, manifest, report):
                 run(['open', '-a', str(app)])
             raise
         run(['open', '-a', str(app)])
-    report('installed', version=manifest['version'])
+    binary = app if windows else app / 'Contents/MacOS' / PRODUCT_IDENTITY['binaryName']
+    report('installed', version=manifest['version'], **installed_identity(manifest, binary))
 
 def main(launch_key=None):
     manifest_path = pathlib.Path(sys.argv[1]).resolve()
     release = manifest_path.parent
     manifest = read_json(manifest_path)
     package_identity(manifest)
-    if not re.fullmatch(r'[a-f0-9]{16}-(local|release)(-\d+)?', manifest['id']) or not re.fullmatch(r'\d+\.\d+\.\d+', manifest['version']):
+    if not re.fullmatch(r'[a-f0-9]{16,20}-(local|release)(-\d+)?', manifest['id']) or not re.fullmatch(r'\d+\.\d+\.\d+', manifest['version']):
         raise ValueError('Invalid package id/version')
     component = sys.argv[2]
     if component not in ('host', 'app'):

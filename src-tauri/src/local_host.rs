@@ -25,6 +25,10 @@ use crate::remote::{
 };
 
 fn host_data_dir() -> Option<PathBuf> {
+    if crate::debug_profile::profile_id().is_some() {
+        // Missing debug isolation is unknown, never a fallback to the owner's Host.
+        return crate::debug_profile::host_data_dir();
+    }
     #[cfg(windows)]
     let home = std::env::var("USERPROFILE").ok()?;
     #[cfg(not(windows))]
@@ -35,6 +39,11 @@ fn host_data_dir() -> Option<PathBuf> {
 /// The local launcher command (program, leading args), or `None` when
 /// nothing is installed at the expected location on this machine.
 fn launcher_command(data_dir: &Path) -> Option<(String, Vec<String>)> {
+    if crate::debug_profile::profile_id().is_some() {
+        let node = std::env::var("BYCODA_DEV_NODE_EXECUTABLE").ok()?;
+        let entry = std::env::var("BYCODA_DEV_HOST_ENTRY").ok()?;
+        return Some((node, vec![entry]));
+    }
     #[cfg(windows)]
     let launcher = data_dir.join("bin").join("bycoda-host.cmd");
     #[cfg(not(windows))]
@@ -329,6 +338,11 @@ pub fn local_host_start(app: AppHandle) -> Result<Option<Machine>, String> {
     let (program, base_args) =
         launcher_command(&data_dir).ok_or("bycoda Host is not installed on this computer.")?;
     if lifecycle_status(&data_dir).is_none() {
+        if crate::debug_profile::profile_id().is_some() {
+            return Err(
+                "The development host stopped. Restart pnpm dev:native for this workspace.".into(),
+            );
+        }
         if updating(&data_dir) {
             return Err(
                 "The host on this computer is being updated. Try again when it finishes.".into(),

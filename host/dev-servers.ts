@@ -14,6 +14,8 @@ import type {
   DevServerStop,
 } from "../src/features/host-tools/devServerTypes";
 import { DevServerDiscovery } from "./dev-server-discovery";
+import { DevPortLeases, portLeaseEnvironment } from "./dev-port-leases";
+import type { WorkspacePortKind, WorkspacePortLease } from "./workspace-contracts";
 import { resolveShellProfile, shellInvocation, type ShellProfile } from "./shellProfiles";
 import type { RuntimeLogLevel, RuntimeLogSource } from "../src/features/host-tools/runtimeLogTypes";
 import {
@@ -23,6 +25,16 @@ import {
 } from "./runtime-logs";
 
 export type DevServerProject = { id: string; name: string; path: string };
+export type WorkspaceDevServerRequest = {
+  workspaceId: string;
+  runId: string;
+  kinds: WorkspacePortKind[];
+  preferred?: Partial<Record<WorkspacePortKind, number>>;
+  command: string;
+  cwd: string;
+  projectId?: string;
+  name?: string;
+};
 export interface DevServerProcessDiscovery {
   listeners(): Promise<{ process: DevProcess; endpoints: DevServerEndpoint[] }[]>;
   processes(): Promise<DevProcess[]>;
@@ -52,6 +64,7 @@ export type DevServersOptions = {
   maxConcurrent?: number;
   queueTimeoutMs?: number;
   runtimeLogs?: RuntimeLogsService;
+  portLeases?: DevPortLeases;
 };
 
 const same = (a: DevProcessIdentity | undefined, b: DevProcessIdentity | undefined) =>
@@ -198,6 +211,9 @@ export class DevServersService {
   private readonly managed = new Map<string, ManagedServer>();
   private readonly observed = new Map<string, DevServer>();
   private readonly busy = new Set<string>();
+  readonly portLeases: DevPortLeases;
+  private readonly serverLeases = new Map<string, string>();
+  private readonly workspaceLaunches = new Map<string, WorkspaceDevServerRequest>();
   private active = 0;
   private readonly waiting: (() => void)[] = [];
   private cache?: { key: string; until: number; result: DevServerScan };
@@ -208,6 +224,47 @@ export class DevServersService {
   constructor(options: DevServersOptions = {}) {
     this.options = options;
     this.discovery = options.discovery ?? new DevServerDiscovery();
+    this.portLeases = options.portLeases ?? new DevPortLeases();
+  }
+
+  /** Internal workspace adapter. The authenticated Host resolves cwd before invoking this method. */
+  async startWorkspace(
+    request: WorkspaceDevServerRequest,
+    projects: DevServerProject[],
+  ): Promise<{ lease: WorkspacePortLease; result: DevServerStartResult }> {
+    return this.exclusive("start", () => this.startWorkspaceUnlocked(request, projects));
+  }
+
+  private async startWorkspaceUnlocked(
+    request: WorkspaceDevServerRequest,
+    projects: DevServerProject[],
+  ) {
+    const launched = await this.portLeases.launchWithRetry(request, async (lease) => {
+      const result = await this.start(
+        { ...request, expectedPort: lease.ports.vite ?? lease.ports.host },
+        projects,
+        portLeaseEnvironment(lease),
+      );
+      if (
+        result.conflict ||
+        (result.server?.state === "error" && /already in use/i.test(result.server.error ?? ""))
+      ) {
+        if (result.server) {
+          const stopped = await this.stop({ id: result.server.id, tree: true }, projects, false);
+          if (stopped.requiresForce)
+            throw new Error(
+              "The failed development process is still running; stop it before retrying.",
+            );
+        }
+        throw Object.assign(new Error("Development port bind race."), { code: "EADDRINUSE" });
+      }
+      if (!result.server || result.server.state === "error" || result.server.state === "stopped")
+        throw new Error(result.server?.error ?? "Development process did not start.");
+      this.serverLeases.set(result.server.id, lease.id);
+      this.workspaceLaunches.set(result.server.id, structuredClone(request));
+      return result;
+    });
+    return { lease: launched.lease, result: launched.value };
   }
 
   /** Call without awaiting from log polling. The first poll schedules discovery;
@@ -361,6 +418,10 @@ export class DevServersService {
         } else if (root && record.server.state !== "error") {
           record.server.state =
             record.exitCode === undefined || record.exitCode === 0 ? "stopped" : "error";
+        }
+        if (!owned.length && root && this.serverLeases.has(record.server.id)) {
+          await this.portLeases.release(this.serverLeases.get(record.server.id)!);
+          this.serverLeases.delete(record.server.id);
         }
         record.server.endpoints = this.endpoints(endpoints);
         servers.push({ ...record.server, endpoints: [...record.server.endpoints] });
@@ -564,7 +625,9 @@ export class DevServersService {
   ): Promise<DevServerStop> {
     const selected = await this.selection(params, projects, true);
     if (params.expectedImpact !== undefined && params.expectedImpact !== this.impact(selected))
-      throw new Error("The reviewed process tree or ports changed; refresh and review before continuing. No process was signalled.");
+      throw new Error(
+        "The reviewed process tree or ports changed; refresh and review before continuing. No process was signalled.",
+      );
     if (selected.targets.some((process) => !process.startedAt || process.pid <= 0))
       throw new Error(
         "A process birth identity in the selected tree is unavailable; no process was signalled.",
@@ -612,6 +675,10 @@ export class DevServersService {
         await sleep(this.options.pollMs ?? 100);
       }
       if (selected.managed) selected.managed.server.state = alive.length ? "running" : "stopped";
+      if (!alive.length && this.serverLeases.has(selected.server.id)) {
+        await this.portLeases.release(this.serverLeases.get(selected.server.id)!);
+        this.serverLeases.delete(selected.server.id);
+      }
       return {
         state: alive.length ? "running" : "stopped",
         requiresForce: alive.length > 0,
@@ -632,18 +699,25 @@ export class DevServersService {
   }
 
   private impact(selected: { server: DevServer; targets: DevProcess[]; affectedPorts: number[] }) {
-    return createHash("sha256").update(JSON.stringify({
-      id: selected.server.id,
-      command: selected.server.command,
-      cwd: selected.server.cwd,
-      targets: selected.targets.map(({ pid, startedAt }) => ({ pid, startedAt })).sort((a, b) => a.pid - b.pid),
-      ports: selected.affectedPorts,
-    })).digest("hex");
+    return createHash("sha256")
+      .update(
+        JSON.stringify({
+          id: selected.server.id,
+          command: selected.server.command,
+          cwd: selected.server.cwd,
+          targets: selected.targets
+            .map(({ pid, startedAt }) => ({ pid, startedAt }))
+            .sort((a, b) => a.pid - b.pid),
+          ports: selected.affectedPorts,
+        }),
+      )
+      .digest("hex");
   }
 
   private async start(
     params: Record<string, unknown>,
     projects: DevServerProject[],
+    environment?: Record<string, string>,
   ): Promise<DevServerStartResult> {
     const command = typeof params.command === "string" ? params.command.trim() : "";
     if (!command) throw new Error("A dev server command is required.");
@@ -691,7 +765,7 @@ export class DevServersService {
         };
     const child = (this.options.spawnProcess ?? spawn)(invocation.file, invocation.args, {
       cwd,
-      env: { ...process.env, ...invocation.env },
+      env: { ...process.env, ...invocation.env, ...environment },
       windowsVerbatimArguments: invocation.verbatim,
       windowsHide: true,
       // A dedicated command, separate from shared terminal tabs. No group-wide kills.
@@ -909,6 +983,7 @@ export class DevServersService {
     projects: DevServerProject[],
   ): Promise<DevServerStartResult> {
     const selected = await this.server(params, projects, true);
+    const workspaceLaunch = this.workspaceLaunches.get(selected.server.id);
     if (
       !selected.managed &&
       (typeof params.command !== "string" ||
@@ -950,6 +1025,13 @@ export class DevServersService {
       throw new Error(
         "The previous process is still running. Stop it with force before restarting.",
       );
+    if (workspaceLaunch)
+      return (
+        await this.startWorkspaceUnlocked(
+          { ...workspaceLaunch, command, name: replacement.name as string | undefined },
+          projects,
+        )
+      ).result;
     return this.start(replacement, projects);
   }
 }

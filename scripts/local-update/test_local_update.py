@@ -22,10 +22,112 @@ from local_install import wait_idle, stop_windows_host, host_install, verify_win
 from local_install import app_install, windows_app_process_filter, desktop_db, mac_app_update_paths
 from local_install import windows_app_snapshot
 from local_install import verify_desktop_backup, wait_broker_launch
-from local_update import install_job_status
+from local_update import install_job_status, git_identity, stamp_build_identity, inputs
+from local_install import installed_identity
 from local_update_lib import spawn_windows_updater, tree_hashes, UpdaterLaunchRefused, windows_installer_idle
 
 class LocalUpdateTests(unittest.TestCase):
+    def git_fixture(self, root):
+        options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+        def git(*args):
+            return subprocess.run(['git', *args], cwd=root, check=True, capture_output=True,
+                                  text=True, **options).stdout.strip()
+        git('init', '-b', 'main')
+        git('config', 'user.email', 'fixture@example.invalid')
+        git('config', 'user.name', 'Fixture')
+        (root / '.gitignore').write_text('state/\nsecret.txt\n')
+        (root / 'package.json').write_text('{"version":"0.1.0"}')
+        (root / 'source.ts').write_text('original')
+        git('add', '.')
+        git('commit', '-m', 'Fixture')
+        return git
+
+    def test_worktree_git_metadata_and_local_sources_use_common_git_directory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder) / 'repo'
+            root.mkdir()
+            git = self.git_fixture(root)
+            worktree = pathlib.Path(folder) / 'worktree'
+            git('worktree', 'add', '-b', 'work', str(worktree))
+            self.assertTrue((worktree / '.git').is_file())
+            (root / '.git/info/local-build-sources').write_text('secret.txt\n')
+            (worktree / 'secret.txt').write_text('fixture explicitly opted in')
+            self.assertIn('secret.txt', inputs(worktree))
+            self.assertEqual(git_identity(root)['repositoryId'], git_identity(worktree)['repositoryId'])
+            self.assertEqual(git_identity(worktree)['branch'], 'work')
+
+    def test_frozen_identity_matches_real_dirty_bytes_and_reuses_immutable_stamp(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            git = self.git_fixture(root)
+            git('mv', 'source.ts', 'renamed.ts')
+            (root / 'renamed.ts').write_text('dirty frozen bytes')
+            (root / ' Türkçe.ts').write_text('unicode source')
+            identity = {}
+            archive, source = snapshot(root, root / 'state', capture=identity)
+            self.assertEqual(identity['sourceFingerprint'], source)
+            self.assertEqual(identity['head'], git('rev-parse', 'HEAD'))
+            self.assertEqual(identity['schemaVersion'], 1)
+            self.assertEqual({row['path'] for row in identity['dirtyPaths']}, {'source.ts', 'renamed.ts', ' Türkçe.ts'})
+            again = {}
+            snapshot(root, root / 'state', capture=again)
+            self.assertEqual(identity, again)
+            workspace = root / 'state/source'
+            frozen = sync_source(archive, source, workspace)
+            path = stamp_build_identity(workspace, {'source': source, 'mode': 'local',
+                                        'buildIdentity': identity}, '0.1.0')
+            self.assertEqual(read_json(path), identity)
+            self.assertEqual(fingerprint(frozen), identity['sourceFingerprint'])
+            self.assertEqual(frozen['renamed.ts'], b'dirty frozen bytes')
+            self.assertNotIn('build/build-info.json', frozen)
+            with self.assertRaisesRegex(RuntimeError, 'does not match'):
+                stamp_build_identity(workspace, {'source': 'different', 'mode': 'local',
+                                     'buildIdentity': identity}, '0.1.0')
+            (root / 'renamed.ts').write_text('different same-version source')
+            changed = {}
+            snapshot(root, root / 'state', capture=changed)
+            self.assertNotEqual(identity['buildId'], changed['buildId'])
+
+    def test_source_edit_during_capture_is_rejected_without_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            self.git_fixture(root)
+            real_inputs = inputs
+            calls = 0
+            def editing_inputs(path):
+                nonlocal calls
+                result = real_inputs(path)
+                calls += 1
+                if calls == 1:
+                    (root / 'source.ts').write_text('concurrent writer')
+                return result
+            identity = {}
+            with patch('local_update.inputs', side_effect=editing_inputs):
+                with self.assertRaisesRegex(RuntimeError, 'Source changed during freeze'):
+                    snapshot(root, root / 'state', capture=identity)
+            self.assertEqual(identity, {})
+
+    def test_installed_receipt_binds_manifest_to_observed_binary_without_auth(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary = pathlib.Path(folder) / 'bycoda-host.mjs'
+            binary.write_bytes(b'fixture package')
+            identity = {'buildId': 'fixture'}
+            receipt = installed_identity({'buildIdentity': identity}, binary, host=True)
+            self.assertEqual(receipt, {'buildIdentity': identity, 'binaryPath': str(binary.resolve()),
+                                      'binaryHash': digest(binary), 'binaryHashKind': 'sha256'})
+            self.assertNotIn('buildIdentity', installed_identity({}, binary, host=True))
+
+    def test_archived_package_name_carries_build_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            setup = root / 'setup.exe'
+            setup.write_bytes(b'fixture')
+            target = archive_package(root, setup, '0.1.0', True, today='2026-10-26',
+                                     build_id='01234567890123456789-local')
+            self.assertIn('_01234567890123456789-local_', target.name)
+            with self.assertRaisesRegex(ValueError, 'Invalid build identity'):
+                archive_package(root, setup, '0.1.0', True, build_id='../unsafe')
+
     def test_dead_helper_does_not_allow_a_still_running_installer_or_unknown_nsis_child(self):
         release = pathlib.Path('C:/build/run')
         app = pathlib.Path('C:/local/bycoda/bycoda.exe')
@@ -406,6 +508,8 @@ class LocalUpdateTests(unittest.TestCase):
 
             def build_stage(name, command, cwd, env, release, timings):
                 stages.append(name)
+                if request.get('buildIdentity'):
+                    self.assertEqual(read_json(env['BYCODA_BUILD_MANIFEST']), request['buildIdentity'])
                 if name == 'host':
                     host.mkdir(parents=True, exist_ok=True)
                     (host / 'host.mjs').write_bytes(files['host/cli.ts'])
@@ -446,6 +550,20 @@ class LocalUpdateTests(unittest.TestCase):
                 stages.clear()
                 worker(dict(request, id='host-unchanged'))
                 self.assertEqual(stages, [])
+                identity = {'schemaVersion': 1, 'buildId': '01234567890123456789-local',
+                            'sourceFingerprint': 'fixture', 'version': '0.0.1', 'mode': 'local'}
+                request['buildIdentity'] = identity
+                worker(dict(request, id='stamped'))
+                self.assertEqual(stages, ['host', 'web', 'native'])
+                self.assertEqual(read_json(root / 'runs/stamped/build-info.json'), identity)
+                self.assertEqual(read_json(root / 'runs/stamped/manifest.json')['buildIdentity'], identity)
+                stages.clear()
+                worker(dict(request, id='stamped-reuse'))
+                self.assertEqual(stages, [])
+                # Equal versions and code cache hits do not permit stale component stamps.
+                request['buildIdentity'] = dict(identity, buildId='11234567890123456789-local')
+                worker(dict(request, id='different-stamp'))
+                self.assertEqual(stages, ['host', 'web', 'native'])
 
     def test_installer_cache_tracks_bundled_host_bytes_and_checksum(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -511,6 +629,7 @@ class LocalUpdateTests(unittest.TestCase):
                     (release / 'host/bin').mkdir(parents=True)
                     (release / 'host/bin/node').write_bytes(b'new node')
                     (release / 'host/host.mjs').write_text('new host')
+                    (release / 'host/bycoda-host.mjs').write_text('new host bundle')
                     system = SimpleNamespace(name='posix', getuid=lambda: 501,
                                              close=os.close, replace=os.replace)
                     health = RuntimeError('simulated health failure') if fail else None
@@ -935,7 +1054,10 @@ class LocalUpdateTests(unittest.TestCase):
             (base / 'bin/bycoda-host.cmd').write_text('previous-launcher')
             release = root / 'release'
             (release / 'host').mkdir(parents=True)
+            (release / 'host/host.mjs').write_text('// isolated fixture host')
+            (release / 'host/bycoda-host.mjs').write_text('// isolated executing fixture bundle')
             calls = []
+            reports = []
             def checked_runtime(runtime):
                 self.assertEqual((base / 'runtime-path').read_text(), 'previous-runtime')
                 calls.append('health')
@@ -945,9 +1067,12 @@ class LocalUpdateTests(unittest.TestCase):
                  patch('local_install.wait_idle'), patch('local_install.backup'), \
                  patch('local_install.run', side_effect=recorded_run), \
                  patch('local_install.verify_host', side_effect=checked_runtime):
-                host_install(release, {'version':'0.5.70','platform':'win32-x64','id':'fixed','hostHashes':{}}, lambda *a, **kw: None)
+                host_install(release, {'version':'0.5.70','platform':'win32-x64','id':'fixed','hostHashes':{}},
+                             lambda state, **values: reports.append((state, values)))
             self.assertEqual(calls, [['service', 'uninstall'], ['service', 'install'], 'health'])
             self.assertIn('fixed', (base / 'runtime-path').read_text())
+            self.assertEqual(pathlib.Path(reports[-1][1]['binaryPath']).name, 'bycoda-host.mjs')
+            self.assertEqual(reports[-1][1]['binaryHash'], digest(release / 'host/bycoda-host.mjs'))
 
     def test_build_only_does_not_schedule_installation(self):
         with patch('local_update.queue_install') as install:

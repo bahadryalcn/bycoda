@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile, chmod, copyFile, readdir, rm, utimes } from
 import { execFileSync } from "node:child_process";
 import { resolve, join } from "node:path";
 import { createTarArchive, extractTarMembers } from "./package-archive.mjs";
+import { readBuildIdentity } from "../scripts/build/build-info.mjs";
 
 // Official Node release checksums, pinned so release builds are reproducible.
 // https://nodejs.org/dist/v24.21.0/SHASUMS256.txt
@@ -46,6 +47,12 @@ const cache = resolve(process.env.BYCODA_HOST_RUNTIME_CACHE ?? "build/host-runti
 await mkdir(output, { recursive: true });
 await mkdir(cache, { recursive: true });
 const { version } = JSON.parse(await readFile("package.json", "utf8"));
+const manifestPath = process.env.BYCODA_BUILD_MANIFEST ?? resolve("build/build-info.json");
+const buildIdentity = await readBuildIdentity(manifestPath);
+if (process.env.BYCODA_BUILD_MANIFEST && !buildIdentity)
+  throw new Error("Build identity manifest is missing or invalid");
+if (buildIdentity && buildIdentity.version !== version)
+  throw new Error("Build identity version does not match the host package");
 for (const target of targets) {
   if (!(target in runtimes)) throw new Error(`Unsupported host target: ${target}`);
   const windows = target.startsWith("win32-");
@@ -96,7 +103,12 @@ for (const target of targets) {
   await copyFile("build/host/store-worker.mjs", join(folder, "store-worker.mjs"));
   await copyFile("host/provider-guard.mjs", join(folder, "provider-guard.mjs"));
   await copyFile("LICENSE", join(folder, "BYCODA-LICENSE"));
-  await writeFile(join(folder, "version.json"), JSON.stringify({ version, nodeVersion, target }));
+  await writeFile(
+    join(folder, "version.json"),
+    JSON.stringify({ version, nodeVersion, target, ...(buildIdentity ? { buildIdentity } : {}) }),
+  );
+  if (buildIdentity)
+    await writeFile(join(folder, "build-info.json"), JSON.stringify(buildIdentity));
   if (windows) {
     await writeFile(
       join(folder, "bycoda-host.cmd"),

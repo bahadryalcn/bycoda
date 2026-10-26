@@ -27,13 +27,21 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 TOOLS = ('local_update.py', 'local_update_lib.py', 'local_install.py')
 UPDATER_FEED = 'https://github.com/bahadryalcn/bycoda/releases/latest/download/latest.json'
 
+def git_output(root, *args):
+    # NUL-delimited paths and status columns must not be stripped or decoded
+    # with Windows' legacy console code page.
+    options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+    return subprocess.run(['git', *args], cwd=root, check=True,
+                          capture_output=True, **options).stdout.decode('utf-8')
+
 def inputs(root):
-    names = run(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], cwd=root).split('\0')
+    names = git_output(root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard').split('\0')
     # Locally excluded sources that local builds still need, one pattern per line
-    # in .git/info/local-build-sources (never committed).
-    extra = root / '.git' / 'info' / 'local-build-sources'
+    # Git resolves linked-worktree .git files and common-dir info correctly.
+    extra = pathlib.Path(git_output(root, 'rev-parse', '--path-format=absolute',
+                                   '--git-path', 'info/local-build-sources').rstrip('\r\n'))
     if extra.is_file():
-        names += run(['git', 'ls-files', '-z', '--others', '--ignored', f'--exclude-from={extra}'], cwd=root).split('\0')
+        names += git_output(root, 'ls-files', '-z', '--others', '--ignored', f'--exclude-from={extra}').split('\0')
     return {name: (root / name).read_bytes() for name in sorted(set(names))
             if name and not name.startswith(('.scratch/', 'build/', '.git/'))
             # The app bundles user guides (such as its policies); other docs are not inputs.
@@ -47,7 +55,56 @@ def fingerprint(files):
         value.update(name.encode() + b'\0' + hashlib.sha256(content).digest())
     return value.hexdigest()
 
-def snapshot(root, state, base_request=None, source_paths=None):
+def git_identity(root):
+    """Only source metadata; never read authentication or runtime files."""
+    common = pathlib.Path(git_output(root, 'rev-parse', '--path-format=absolute',
+                                    '--git-common-dir').rstrip('\r\n')).resolve()
+    canonical = common.as_posix().lower() if os.name == 'nt' else common.as_posix()
+    repository = hashlib.sha256(canonical.encode()).hexdigest()
+    branch = git_output(root, 'rev-parse', '--abbrev-ref', 'HEAD').rstrip('\r\n')
+    head = git_output(root, 'rev-parse', 'HEAD').rstrip('\r\n')
+    raw = git_output(root, 'status', '--porcelain=v1', '-z', '--untracked-files=all')
+    entries = iter(raw.split('\0'))
+    dirty = []
+    for entry in entries:
+        if not entry:
+            continue
+        status, name = entry[:2], entry[3:]
+        dirty.append({'path': name, 'status': status})
+        if 'R' in status or 'C' in status:
+            original = next(entries)
+            dirty.append({'path': original, 'status': status})
+    return {'repositoryId': repository, 'branch': branch, 'head': head,
+            'dirtyPaths': sorted(dirty, key=lambda item: (item['path'], item['status']))}
+
+def freeze_identity(files, metadata, state, mode, base_request=None):
+    source = fingerprint(files)
+    version = json.loads(files['package.json'])['version']
+    key = fingerprint({'identity': json.dumps(dict(metadata, source=source, mode=mode,
+                                                   overlay=base_request is not None),
+                                              sort_keys=True).encode()})[:20]
+    build_id = key + '-' + mode
+    path = state / 'incoming' / (build_id + '.build-info.json')
+    manifest = dict(schemaVersion=1, buildId=build_id, version=version,
+                    channel='local', mode=mode, sourceFingerprint=source, **metadata,
+                    capturedAt=int(time.time() * 1000),
+                    components={name: build_id + ':' + name for name in ('web', 'native', 'host')},
+                    includedSources=[])
+    if not base_request:
+        manifest['includedSources'] = [{'repositoryId': metadata['repositoryId'],
+                                        'sourceHead': metadata['head']}]
+    # An overlay is a synthetic tree, so neither root HEAD nor the previous HEAD
+    # proves complete source inclusion. Its exact fingerprint remains authoritative.
+    if path.exists():
+        previous = read_json(path)
+        if dict(previous, capturedAt=manifest['capturedAt']) != manifest:
+            raise RuntimeError('Immutable build identity collision')
+        return previous
+    write_json(path, manifest)
+    return manifest
+
+def snapshot(root, state, base_request=None, source_paths=None, *, capture=None, mode='local'):
+    metadata = git_identity(root) if capture is not None else None
     if base_request:
         archive = pathlib.Path(base_request['archive']).expanduser()
         if digest(archive) != base_request['archiveHash']:
@@ -69,6 +126,14 @@ def snapshot(root, state, base_request=None, source_paths=None):
             files[name] = current[name]
     else:
         files = inputs(root)
+    if capture is not None:
+        current = inputs(root)
+        if base_request:
+            stable = all(current.get(name) == files[name] for name in source_paths or [])
+        else:
+            stable = fingerprint(current) == fingerprint(files)
+        if not stable or git_identity(root) != metadata:
+            raise RuntimeError('Source changed during freeze; retry from a stable working copy')
     source = fingerprint(files)
     out = state / 'incoming' / (source + '.tar.gz')
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -79,7 +144,29 @@ def snapshot(root, state, base_request=None, source_paths=None):
                 entry.size = len(content)
                 entry.mode = 0o755 if name.endswith('.sh') else 0o644
                 tar.addfile(entry, io.BytesIO(content))
+    if capture is not None:
+        # Check again after archiving so metadata cannot silently drift while copying.
+        current = inputs(root)
+        stable = (all(current.get(name) == files[name] for name in source_paths or [])
+                  if base_request else fingerprint(current) == source)
+        if not stable or git_identity(root) != metadata:
+            raise RuntimeError('Source changed during freeze; retry from a stable working copy')
+        capture.update(freeze_identity(files, metadata, state, mode, base_request))
     return out, source
+
+def stamp_build_identity(workspace, request, version):
+    """Bind every cached stage to the same immutable frozen-source manifest."""
+    identity = request.get('buildIdentity')
+    if identity is None:
+        # Old saved snapshot requests may still be rebuilt, without inventing provenance.
+        (workspace / 'build/build-info.json').unlink(missing_ok=True)
+        return None
+    if (identity.get('schemaVersion') != 1 or identity.get('sourceFingerprint') != request['source']
+            or identity.get('version') != version or identity.get('mode') != request['mode']):
+        raise RuntimeError('Build identity does not match frozen request')
+    target = workspace / 'build/build-info.json'
+    write_json(target, identity)
+    return target
 
 def sync_source(archive, source, workspace):
     workspace.mkdir(parents=True, exist_ok=True)
@@ -299,13 +386,15 @@ def queue_install(release, components=('host', 'app')):
     write_json(release / 'install-jobs.json', results)
     print(f'[{sys.platform}] install jobs scheduled; state: {base}', flush=True)
 
-def archive_package(state, source, version, windows, today=None):
+def archive_package(state, source, version, windows, today=None, build_id=None):
     """Keep every built installer in one place, named by version and build date."""
     packages = state / 'packages'
     packages.mkdir(parents=True, exist_ok=True)
     stamp = (today or time.strftime('%Y-%m-%d'))
     suffix = '_x64-setup.exe' if windows else '_aarch64.app'
-    base = f"{PRODUCT_IDENTITY['productName']}_{version}_{stamp}"
+    if build_id is not None and not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', build_id):
+        raise ValueError('Invalid build identity for package name')
+    base = f"{PRODUCT_IDENTITY['productName']}_{version}_{stamp}" + (('_' + build_id) if build_id else '')
     expected = digest(source) if windows else tree_hashes(source)
     for attempt in range(100):
         target = packages / (base + (f'_{attempt + 1}' if attempt else '') + suffix)
@@ -359,14 +448,22 @@ def worker(request):
         files = sync_source(archive, request['source'], workspace)
         version = validate_versions(files)
         validate_product_identity(files, os.name == 'nt')
+        build_manifest = stamp_build_identity(workspace, request, version)
         workspace = state / 'source'
         env = os.environ.copy()
         env['PATH'] = str(pathlib.Path.home() / '.cargo/bin') + os.pathsep + env['PATH']
         if sys.platform == 'darwin':
             env['PATH'] = str(pathlib.Path.home() / 'Library/pnpm/bin') + ':/opt/homebrew/bin:' + env['PATH']
         env['PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN'] = 'false'
+        # Exact version is checked below. The pnpm self-management shim must not
+        # rewrite lockfile metadata after the source and identity were frozen.
+        env['pnpm_config_pm_on_fail'] = 'ignore'
         env['CARGO_TARGET_DIR'] = str(pathlib.Path(request['cargoTarget']).expanduser().resolve())
         env['BYCODA_HOST_RUNTIME_CACHE'] = str(state / 'runtime-cache')
+        if build_manifest:
+            env['BYCODA_BUILD_MANIFEST'] = str(build_manifest.resolve())
+        else:
+            env.pop('BYCODA_BUILD_MANIFEST', None)
         if os.name == 'nt':
             env['RUSTUP_TOOLCHAIN'] = 'stable-x86_64-pc-windows-msvc'
         # Local packages are unsigned; only the GitHub release workflow holds the updater key.
@@ -394,6 +491,12 @@ def worker(request):
                                 if not n.startswith(('host/', 'src-tauri/', 'Cargo.', 'scripts/', '.github/'))
                                 and n not in ('AGENTS.md', 'README.md', 'LICENSE')}),
         }
+        # Even reusable code/assets must carry this exact manifest, rather than
+        # an earlier equal-semver source stamp. Dependency caches stay independent.
+        if build_manifest:
+            identity_key = ':identity-v1:' + digest(build_manifest)
+            keys['host'] += identity_key
+            keys['web'] += identity_key
         toolchain = run(['rustc', '--version'], cwd=workspace, env=env)
         native = {n: b for n, b in shipped.items() if n.startswith(('src-tauri/', 'Cargo.'))}
         profile = {k: v for k, v in env.items() if k.startswith('CARGO_PROFILE_RELEASE_')}
@@ -480,8 +583,14 @@ def worker(request):
         manifest = {'identity': dict(PRODUCT_IDENTITY), 'id': request['id'], 'version': version, 'source': request['source'], 'mode': request['mode'],
                     'platform': target, 'hostHashes': tree_hashes(payload), 'appHashes': app_hashes,
                     'binaryHash': binary_hash, 'timings': timings}
+        if build_manifest:
+            manifest['buildIdentity'] = request['buildIdentity']
+            shutil.copy2(build_manifest, release / 'build-info.json')
         write_json(release / 'manifest.json', manifest)
-        archived = archive_package(state, release / 'setup.exe' if windows else destination, version, windows)
+        archived = archive_package(state, release / 'setup.exe' if windows else destination, version, windows,
+                                   build_id=request.get('buildIdentity', {}).get('buildId'))
+        if build_manifest:
+            write_json(pathlib.Path(str(archived) + '.build-info.json'), request['buildIdentity'])
         print(f'[{sys.platform}] package archived: {archived}', flush=True)
         write_json(cache_file, cache)
         write_json(state / 'latest.json', request)
@@ -565,9 +674,11 @@ def main():
         elif args.install_only:
             previous = read_json(state / 'coordinator-latest.json')
         else:
-            archive, source = snapshot(ROOT, state, read_json(args.base_snapshot) if args.base_snapshot else None, args.source_path)
+            identity = {}
+            archive, source = snapshot(ROOT, state, read_json(args.base_snapshot) if args.base_snapshot else None,
+                                       args.source_path, capture=identity, mode=mode)
             previous = {'archive': str(archive), 'archiveHash': digest(archive), 'source': source,
-                        'id': source[:16] + '-' + mode, 'mode': mode}
+                        'id': identity['buildId'], 'mode': mode, 'buildIdentity': identity}
             if args.force_build:
                 previous['id'] += '-' + str(time.time_ns())
         def update(platform):
