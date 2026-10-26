@@ -1518,26 +1518,10 @@ pub fn git_orchestration_worktree_remove(
 
 #[tauri::command(async)]
 pub async fn git_orchestration_branch_remove(cwd: String, branch: String) -> Result<(), String> {
-    crate::fs::spawn_git_mutation(cwd, move |root| {
-        let branch = branch.trim();
-        if !branch.starts_with("mc/orch-") {
-            return Err("Only orchestration temporary branches can be removed here".into());
-        }
-        git(root, &["check-ref-format", "--branch", branch])?;
-        let branch_ref = format!("refs/heads/{branch}");
-        if git(root, &["rev-parse", "--verify", &branch_ref]).is_err() {
-            return Ok(());
-        }
-        if list(root)?
-            .iter()
-            .any(|tree| tree.branch.as_deref() == Some(branch))
-        {
-            return Err("The orchestration branch still has a worktree".into());
-        }
-        git(root, &["branch", "-D", branch]).map(|_| ())
-    })
-    .await
-    .map_err(|error| error.to_string())?
+    let _ = (cwd, branch);
+    // Kept as a compatibility endpoint so older renderers fail safely. Directory
+    // retirement grants no authority to delete even an apparently merged branch.
+    Err("Branch deletion requires a separate owner-approved review bound to the expected tip and a recovery ref".into())
 }
 
 #[cfg(test)]
@@ -1571,6 +1555,24 @@ mod tests {
         )
         .unwrap();
         Repo(dir)
+    }
+
+    #[test]
+    fn orphaned_orchestration_cleanup_preserves_unmerged_branch() {
+        let repo = repo();
+        let root = repo.0.join("repo");
+        let branch = "mc/orch-retained";
+        let path = repo.0.join("worker");
+        git(&root, &["worktree", "add", "-b", branch, path.to_str().unwrap()]).unwrap();
+        git(&path, &["-c", "user.name=Test", "-c", "user.email=test@example.com",
+            "commit", "--allow-empty", "-m", "unmerged worker result"]).unwrap();
+        let tip = git(&path, &["rev-parse", "HEAD"]).unwrap();
+        git(&root, &["worktree", "remove", path.to_str().unwrap()]).unwrap();
+        // Retry the old cleanup endpoint after its directory has already gone.
+        let result = tauri::async_runtime::block_on(git_orchestration_branch_remove(
+            root.to_string_lossy().into_owned(), branch.into()));
+        assert!(result.is_err(), "directory cleanup must not authorize branch deletion");
+        assert_eq!(git(&root, &["rev-parse", branch]).unwrap(), tip);
     }
 
     #[test]

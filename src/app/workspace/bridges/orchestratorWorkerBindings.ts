@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { type SessionSummary, upsertSession, getSession, flushSessionWrites, shouldPersistSession } from "../../../features/sessions/data/sessionStore";
 import { orchestrator, orchestrationProjectCwd, orchestrationCheckoutCwd, workspaceIdentity } from "../../../features/orchestration/model/orchestration";
 import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
-import { listWorktrees, createOrchestrationWorktree, orchestrationWorktreeBranchName, removeOrchestrationWorktree, detachSessionWorktree, removeOrchestrationBranch } from "../../../features/source-control/model/worktrees";
+import { listWorktrees, createOrchestrationWorktree, orchestrationWorktreeBranchName, removeOrchestrationWorktree, detachSessionWorktree } from "../../../features/source-control/model/worktrees";
 import { pathKey } from "../../../shared/lib/paths";
 import { invoke } from "@tauri-apps/api/core";
 import { sameProjectPath } from "../../../features/projects/model/recents";
@@ -243,8 +243,7 @@ export function createOrchestratorWorkerBindings({
             if (shouldPersistSession(next)) await upsertSession(next);
           }
         }
-        if (workspace.branch)
-          await removeOrchestrationBranch(orchestrationCheckoutCwd(run), workspace.branch);
+        // Directory cleanup always retains the branch, including absent-directory retries.
         await forgetSessionCheckpoint(task.sessionId);
         notifyReviewChanged(task.sessionId);
         return true;
