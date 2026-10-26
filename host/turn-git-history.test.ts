@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { build } from "esbuild";
 import type { ManagedWorkspace } from "./workspace-contracts";
 import { GitTurnHistory, gitText, rewindRef, turnGit, turnRef } from "./turn-git-history";
 
@@ -52,6 +55,97 @@ describe("managed turn Git history", () => {
       runId,
       conversationRevision: 1,
     });
+
+  it.each(["locked", "head-restored", "files-restored"])(
+    "recovers its own index lock after real process death at %s and preserves unrelated Git locks",
+    async (phase) => {
+      const before = await history.capture(workspace);
+      await write("source.txt", "committed after\n");
+      await turnGit(repo, ["add", "."]);
+      await turnGit(repo, ["commit", "-m", "after"]);
+      await write("source.txt", "staged after\n");
+      await turnGit(repo, ["add", "source.txt"]);
+      await write("source.txt", "unstaged after\n");
+      await write("new.txt", "untracked after\n");
+      const after = await history.capture(workspace);
+      const childFile = join(root, "restore-child.mjs");
+      await build({
+        stdin: {
+          contents: `import { GitTurnHistory } from ${JSON.stringify(resolve("host/turn-git-history.ts"))};
+            const h = new GitTurnHistory({root:${JSON.stringify(join(root, "private"))},
+              workspace:async()=>(${JSON.stringify(workspace)}),
+              afterRestorePhase:async phase=>{if(phase===${JSON.stringify(phase)}) {
+                process.send({locked:true}); await new Promise(()=>{setInterval(()=>{},1000);});
+              }}});
+            await h.restore(${JSON.stringify(workspace)},${JSON.stringify(before)},${JSON.stringify(after)},"killed-restore");
+            process.send({unexpectedCompletion:true});`,
+          resolveDir: process.cwd(),
+          loader: "ts",
+        },
+        outfile: childFile,
+        bundle: true,
+        platform: "node",
+        format: "esm",
+      });
+      const child = spawn(process.execPath, [childFile], {
+        windowsHide: true,
+        stdio: ["ignore", "ignore", "pipe", "ipc"],
+      });
+      let stderr = "";
+      child.stderr!.on("data", (data) => {
+        stderr += data.toString();
+      });
+      try {
+        const message = await Promise.race([
+          once(child, "message").then(([value]) => value),
+          once(child, "exit").then(([code]) => {
+            throw new Error(`Child exited ${code}: ${stderr}`);
+          }),
+        ]);
+        expect(message).toEqual({ locked: true });
+        await expect(history.restore(workspace, before, after, "killed-restore")).rejects.toThrow(
+          "owner is still alive",
+        );
+        const closed = once(child, "exit");
+        child.kill("SIGKILL");
+        await closed;
+        const indexPath = await gitText(repo, [
+          "rev-parse",
+          "--path-format=absolute",
+          "--git-path",
+          "index",
+        ]);
+        expect(await readFile(`${indexPath}.lock`)).toBeDefined();
+        if (phase === "locked") {
+          await rename(`${indexPath}.lock`, `${indexPath}.saved-lock`);
+          await writeFile(`${indexPath}.lock`, "replacement Git lock");
+          await expect(history.restore(workspace, before, after, "killed-restore")).rejects.toThrow(
+            "not owned by this restore",
+          );
+          expect(await readFile(`${indexPath}.lock`, "utf8")).toBe("replacement Git lock");
+          await rm(`${indexPath}.lock`);
+          await rename(`${indexPath}.saved-lock`, `${indexPath}.lock`);
+        }
+        await history.restore(workspace, before, after, "killed-restore");
+        expect(await gitText(repo, ["rev-parse", "HEAD"])).toBe(before.head);
+        expect(await readFile(join(repo, "source.txt"), "utf8")).toBe("base\n");
+        await expect(readFile(join(repo, "new.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(readFile(`${indexPath}.lock`)).rejects.toMatchObject({ code: "ENOENT" });
+        await history.restore(workspace, after, before, "undo-killed-restore");
+        expect(await readFile(join(repo, "source.txt"), "utf8")).toBe("unstaged after\n");
+        expect(await gitText(repo, ["show", ":source.txt"])).toBe("staged after");
+        expect(await readFile(join(repo, "new.txt"), "utf8")).toBe("untracked after\n");
+        await writeFile(`${indexPath}.lock`, "another Git operation");
+        await expect(history.restore(workspace, before, after, "unrelated-lock")).rejects.toThrow();
+        expect(await readFile(`${indexPath}.lock`, "utf8")).toBe("another Git operation");
+        expect(await gitText(repo, ["rev-parse", "HEAD"])).toBe(after.head);
+      } finally {
+        child.kill("SIGKILL");
+        if (child.connected) child.disconnect();
+      }
+    },
+    120_000,
+  );
 
   it("idempotently verifies preexisting matching recovery refs and never replaces conflicting refs", async () => {
     const snapshot = await history.capture(workspace);

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   chmod,
+  link,
   lstat,
   mkdir,
   open,
@@ -15,6 +16,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { hostname } from "node:os";
 import type {
   ManagedWorkspace,
   RewindRefPhase,
@@ -197,6 +199,8 @@ async function sourceEntry(cwd: string, path: string): Promise<SourceEntry | nul
 }
 
 export interface GitTurnHistoryOptions {
+  /** Failure-injection boundary for subprocess crash recovery tests. */
+  afterRestorePhase?(phase: "locked" | "head-restored" | "files-restored"): Promise<void>;
   /** Private durable data outside the materialized workspace. Never a user checkout. */
   root: string;
   /** Fresh authoritative lookup must verify canonical common-Git identity and owned
@@ -681,8 +685,106 @@ export class GitTurnHistory implements TurnGitHistory {
       throw new Error("External index drift; recovery blocked");
     const indexPath = await this.indexPath(cwd);
     const lockPath = `${indexPath}.lock`;
-    const lock = await open(lockPath, "wx", 0o600);
+    const lockJournalPath = join(this.options.root, "restores", `${operationId}.lock.json`);
+    type LockOwner = {
+      operationId: string;
+      source: string;
+      target: string;
+      indexPath: string;
+      pid: number;
+      machine: string;
+      token: string;
+    };
+    const backingPath = (owner: LockOwner) =>
+      `${indexPath}.bycoda-rewind-${operationId}-${refComponent(owner.token)}.lock-owner`;
+    const sameFile = (a: Awaited<ReturnType<typeof lstat>>, b: Awaited<ReturnType<typeof lstat>>) =>
+      a.isFile() &&
+      b.isFile() &&
+      !a.isSymbolicLink() &&
+      !b.isSymbolicLink() &&
+      a.dev === b.dev &&
+      a.ino === b.ino;
+    const stat = (path: string) =>
+      lstat(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+    const previousLock = await optionalRead(lockJournalPath);
+    if (previousLock) {
+      const owner = JSON.parse(previousLock.toString()) as LockOwner;
+      if (
+        owner.operationId !== operationId ||
+        owner.source !== source.worktree ||
+        owner.target !== target.worktree ||
+        owner.indexPath !== indexPath ||
+        owner.machine !== hostname() ||
+        !Number.isSafeInteger(owner.pid) ||
+        owner.pid <= 0
+      )
+        throw new Error("Restore index lock ownership changed");
+      // ESRCH is positive process-death proof. A reused PID, access denial or unknown
+      // machine remains fenced; elapsed time alone never authorizes lock removal.
+      let dead = false;
+      try {
+        process.kill(owner.pid, 0);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") dead = true;
+        else throw error;
+      }
+      if (!dead) throw new Error("Restore index lock owner is still alive");
+      const backing = backingPath(owner);
+      const [lockInfo, backingInfo] = await Promise.all([stat(lockPath), stat(backing)]);
+      if (
+        lockInfo &&
+        (!backingInfo ||
+          !sameFile(lockInfo, backingInfo) ||
+          !(await readFile(backing)).equals(targetIndex))
+      )
+        throw new Error("Index lock is not owned by this restore operation");
+      if (
+        backingInfo &&
+        (!backingInfo.isFile() ||
+          backingInfo.isSymbolicLink() ||
+          !(await readFile(backing)).equals(targetIndex))
+      )
+        throw new Error("Restore index lock backing changed");
+      // HEAD, index, source bytes and staging state were all validated above. The
+      // hard link proves this exact lock belongs to the durable dead operation.
+      if (lockInfo) {
+        const fresh = await stat(lockPath);
+        if (!fresh || !sameFile(lockInfo, fresh))
+          throw new Error("Index lock changed during recovery");
+        await rm(lockPath);
+      }
+      if (backingInfo) await rm(backing);
+      await rm(lockJournalPath);
+    }
+    const owner: LockOwner = {
+      operationId,
+      source: source.worktree,
+      target: target.worktree,
+      indexPath,
+      pid: process.pid,
+      machine: hostname(),
+      token: randomUUID(),
+    };
+    const backing = backingPath(owner);
+    const lock = await open(backing, "wx", 0o600);
+    const journalCandidate = `${lockJournalPath}.${owner.token}.tmp`;
+    let admitted = false;
+    let journaled = false;
     try {
+      // Fully prepare and journal the inode BEFORE atomically admitting it as
+      // Git's exclusive lock. There is no open(index.lock)-then-journal crash gap.
+      await lock.writeFile(targetIndex);
+      await lock.sync();
+      await durableWrite(journalCandidate, JSON.stringify(owner));
+      await link(journalCandidate, lockJournalPath);
+      journaled = true;
+      await rm(journalCandidate);
+      await link(backing, lockPath);
+      admitted = true;
+      await this.options.afterRestorePhase?.("locked");
       const fresh = await this.assertBranch(workspace);
       if (fresh.head !== head || fresh.indexPath !== indexPath)
         throw new Error("Workspace branch or HEAD changed while acquiring index lock");
@@ -691,6 +793,7 @@ export class GitTurnHistory implements TurnGitHistory {
         throw new Error("Index changed while acquiring restore lock");
       // Git's CAS also protects against an external commit between validation and ref mutation.
       await turnGit(cwd, ["update-ref", workspace.branchRef, target.head, head]);
+      await this.options.afterRestorePhase?.("head-restored");
       // Remove captured leaves first, then only empty structural directories. This supports
       // file/directory renames without recursively deleting ignored or unknown content.
       for (const path of paths
@@ -741,9 +844,8 @@ export class GitTurnHistory implements TurnGitHistory {
           await rename(staging, join(cwd, path));
         }
       }
+      await this.options.afterRestorePhase?.("files-restored");
       if (targetIndex.length) {
-        await lock.writeFile(targetIndex);
-        await lock.sync();
         await lock.close();
         await rename(lockPath, indexPath);
       } else {
@@ -751,7 +853,12 @@ export class GitTurnHistory implements TurnGitHistory {
       }
     } finally {
       await lock.close().catch(() => undefined);
-      await rm(lockPath, { force: true });
+      const [lockInfo, backingInfo] = await Promise.all([stat(lockPath), stat(backing)]);
+      if (admitted && lockInfo && backingInfo && sameFile(lockInfo, backingInfo))
+        await rm(lockPath);
+      await rm(backing, { force: true });
+      await rm(journalCandidate, { force: true });
+      if (journaled) await rm(lockJournalPath, { force: true });
     }
     if ((await this.fingerprint(workspace)) !== this.snapshotFingerprint(workspace, target))
       throw new Error("Restored source does not match target snapshot");
