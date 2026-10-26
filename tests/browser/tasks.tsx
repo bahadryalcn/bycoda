@@ -146,9 +146,16 @@ if (query.has("managedDelivery"))
       updatedAt: Date.now(),
       ...{
         workspaceId: managedWorkspace.id,
-        completionState: "finished",
-        deliveryState: "review",
-        autoMergeSuspended: true,
+        finalization: {
+          branch: managedWorkspace.branchRef.replace(/^refs\/heads\//, ""),
+          head: "b".repeat(40),
+          status: "",
+          diff: "",
+          fingerprint: "managed-task-finished",
+          clean: true,
+        },
+        deliveryState: "awaitingOwner" as const,
+        deliveryApprovalRequired: true,
       },
     },
   ];
