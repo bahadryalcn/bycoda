@@ -162,6 +162,106 @@ it("requires an explicit current choice and gives a contextual legacy source an 
   expect((await f.store.session(created.sessionId)).session.cwd).toBe(f.root);
 });
 
+it("gives a reopened old Host row without workspaceMode an independent contextual workspace", async () => {
+  const f = await fixture();
+  const baseCommit = f.git("rev-parse", "HEAD");
+  // Seed the snapshot shape written by older Hosts, without passing through the
+  // current create command (which stamps an explicit compatibility mode).
+  await f.store.save(
+    {
+      projectId: f.project.id,
+      revision: 1,
+      status: "idle",
+      updatedAt: 1,
+      session: {
+        id: "old-host-session",
+        cwd: f.root,
+        harness: "claude",
+        model: "fixture",
+        runtimeMode: "supervised",
+        modelSettings: {},
+        title: "Old Host conversation",
+        blocks: [
+          { id: "old-user", role: "user", text: "Existing legacy work" },
+          { id: "old-reply", role: "assistant", text: "Legacy context to transfer" },
+        ],
+      },
+    },
+    { type: "test.old-host-snapshot" },
+  );
+  const store = new HostStore(join(f.root, "private", "host.db"));
+  const send = vi.fn(async () => {});
+  const legacySend = vi.fn(async () => {});
+  const provider = {
+    send,
+    bind: () => {},
+    stop: async () => {},
+    cancel: async () => {},
+    approve: () => {},
+    answer: () => {},
+  };
+  const engine = new HostEngine(store, {
+    codex: provider,
+    claude: { ...provider, send: legacySend },
+  });
+  const runtime = createManagedWorkspaceRuntime(store, engine);
+  cleanups.push(async () => {
+    runtime.retention.stop();
+    await engine.close();
+    await store.close();
+  });
+  await runtime.recover();
+  const source = await store.session("old-host-session");
+  expect(source.session).not.toHaveProperty("workspaceMode");
+  expect(source.session).not.toHaveProperty("workspaceId");
+  const input = {
+    sessionId: source.session.id,
+    sourceBlockId: "old-reply",
+    expectedRevision: source.revision,
+    mode: "handoff",
+    harness: "codex",
+    model: "fixture",
+    modelSettings: {},
+  };
+  const preview = await engine.previewContextual(input);
+  const destination = await engine.command({
+    ...input,
+    type: "contextual",
+    commandId: "old-host-handoff",
+    previewDigest: preview.digest,
+  });
+  const session = (await store.session(destination.sessionId)).session;
+  expect(session.workspaceId).toBeTruthy();
+  expect(session.cwd).not.toBe(f.root);
+  expect(session.worktreeCwd).toBe(session.cwd);
+  expect((await runtime.workspace(session.workspaceId!)).owner).toEqual({
+    kind: "session",
+    id: destination.sessionId,
+  });
+  expect(
+    execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: session.cwd,
+      encoding: "utf8",
+      windowsHide: true,
+    }).trim(),
+  ).toBe(baseCommit);
+  expect(send).not.toHaveBeenCalled();
+  await engine.command({
+    type: "send",
+    commandId: "old-host-contextual-send",
+    sessionId: destination.sessionId,
+    text: "Continue the transferred work",
+  });
+  await engine.waitForRun(
+    destination.sessionId,
+    (await store.session(destination.sessionId)).runId,
+  );
+  expect(send).toHaveBeenCalledWith(expect.objectContaining({ cwd: session.cwd }));
+  expect(legacySend).not.toHaveBeenCalled();
+  expect(await store.session(source.session.id)).toEqual(source);
+  expect(f.git("rev-parse", "HEAD")).toBe(baseCommit);
+});
+
 it("recovers a native receipt saved before Host finalization after reconstructing its adapter", async () => {
   const f = await fixture({
     afterNativeReceiptSaved: async () => {
