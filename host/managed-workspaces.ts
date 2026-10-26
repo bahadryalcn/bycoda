@@ -42,6 +42,7 @@ export function createManagedWorkspaceRegistry(
 ): WorkspaceRegistry & {
   touchActivity(workspaceId: string): Promise<void>;
   touchOwnerActivity(owner: WorkspaceOwner): Promise<void>;
+  recoverCreate(operationId: string): Promise<ManagedWorkspace>;
   pin(
     request: WorkspaceMutation & { pinned: boolean },
     owner: WorkspaceOwnerAuthorization,
@@ -155,6 +156,59 @@ export function createManagedWorkspaceRegistry(
   };
 
   const registry: ReturnType<typeof createManagedWorkspaceRegistry> = {
+    async recoverCreate(operationId) {
+      const stored = await store.workspaceOperation(operationId);
+      if (!stored || stored.kind !== "create")
+        throw new Error("Workspace creation operation not found");
+      const current = await required(stored.workspaceId);
+      const project = await store.project(current.projectId);
+      return withHostGitMutation(project.cwd, async () => {
+        const operation = await store.workspaceOperation(operationId);
+        if (!operation || operation.kind !== "create" || operation.workspaceId !== current.id)
+          throw new Error("Workspace creation operation identity changed");
+        const workspace = await required(operation.workspaceId);
+        const planned = operation.plannedWorkspace;
+        for (const key of [
+          "id",
+          "repositoryId",
+          "projectId",
+          "environmentId",
+          "path",
+          "branchRef",
+          "baseRef",
+          "baseCommit",
+        ] as const)
+          if (workspace[key] !== planned[key])
+            throw new Error(`Workspace creation identity changed: ${key}`);
+        if (
+          workspace.owner.kind !== planned.owner.kind ||
+          workspace.owner.id !== planned.owner.id ||
+          planned.id !== operation.workspaceId ||
+          planned.revision !== operation.expectedRevision
+        )
+          throw new Error("Workspace creation ownership or planned revision changed");
+        // Resume journals use this namespace and a retained post-creation revision.
+        // Initial caller-provided creation keys may coincidentally share the prefix.
+        const creating = !(operation.idempotencyKey.startsWith("resume:") && planned.revision > 0);
+        if (operation.phase === "complete") return complete(operation, project.cwd, creating);
+        revision(workspace, operation.expectedRevision);
+        if (workspace.targetBranchRef !== planned.targetBranchRef)
+          throw new Error("Workspace creation target identity changed");
+        if (
+          (await store.workspaceOperations(workspace.id)).some(
+            (other) =>
+              other.id !== operation.id &&
+              (other.phase !== "complete" ||
+                (other.kind === "rewind" &&
+                  !(other as typeof other & { finalized?: boolean }).finalized)),
+          )
+        )
+          throw new Error("Another workspace operation recovery is pending");
+        if (await options.isActive?.(workspace))
+          throw new Error("Workspace is still active or activity is unknown");
+        return complete(operation, project.cwd, creating);
+      });
+    },
     async prepare(request) {
       if (
         !request.environmentId?.trim() ||
