@@ -439,6 +439,7 @@ pub async fn git_worktree_rename_branch(
 }
 
 fn removal_target(root: &Path, path: &Path) -> Result<Worktree, String> {
+    crate::worktree_lifecycle::validate_removal_path(path)?;
     let tree = list(root)?
         .into_iter()
         .find(|tree| same_path(Path::new(&tree.path), path))
@@ -452,6 +453,15 @@ fn removal_target(root: &Path, path: &Path) -> Result<Worktree, String> {
     if tree.branch.is_none() {
         // There is no branch retaining detached commits after removal.
         return Err("Create a branch for this detached worktree before deleting it.".into());
+    }
+    if tree
+        .branch
+        .as_deref()
+        .is_some_and(|branch| branch.starts_with("bycoda/s/") || branch.starts_with("bycoda/t/"))
+    {
+        return Err(
+            "Managed workspaces must be removed through Host workspace cleanup plan/apply.".into(),
+        );
     }
     Ok(tree)
 }
@@ -597,7 +607,79 @@ pub fn git_worktree_removal_review(
 }
 
 fn remove(root: &Path, path: &Path, force: bool) -> Result<(), String> {
+    let result = remove_inner(root, path, force);
+    if result.is_ok() {
+        crate::worktree_lifecycle::finish_removal_recovery(path);
+    }
+    result
+}
+
+fn remove_inner(root: &Path, path: &Path, force: bool) -> Result<(), String> {
+    crate::worktree_lifecycle::validate_removal_path(path)?;
+    if !list(root)?
+        .iter()
+        .any(|entry| same_path(Path::new(&entry.path), path))
+    {
+        return recover_remnants(root, path);
+    }
     let tree = removal_target(root, path)?;
+    let path = Path::new(&tree.path);
+    crate::worktree_lifecycle::validate_removal_path(path)?;
+    if path.try_exists().map_err(|e| e.to_string())? {
+        // Status is read before detaching anything; failure is unknown, never clean.
+        let status = git(
+            path,
+            &[
+                "-c",
+                "core.longpaths=true",
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+            ],
+        )?;
+        if !force && !status.is_empty() {
+            return Err("Cleanup blocked: uncommitted changes".into());
+        }
+        let links = removal_links(path)?;
+        persist_native_removal(root, &tree)?;
+        crate::worktree_lifecycle::block_removal_recovery(path);
+        for link in &links {
+            detach_removal_link(link)?;
+        }
+        preserve_removal_evidence(root, path)?;
+        // A tracked symlink is now absent, but its committed state is retained on
+        // the local branch. The original source status was checked above.
+        return git_remove_and_reconcile(root, &tree, force || !links.is_empty());
+    }
+    persist_native_removal(root, &tree)?;
+    crate::worktree_lifecycle::block_removal_recovery(path);
+    git_remove_and_reconcile(root, &tree, force)
+}
+
+fn persist_native_removal(root: &Path, tree: &Worktree) -> Result<(), String> {
+    let journal = removal_journal_directory(root)?;
+    std::fs::create_dir_all(&journal).map_err(|e| e.to_string())?;
+    let receipt = journal.join(format!("{}.json", uuid::Uuid::new_v4()));
+    let saved = NativeRemovalJournal {
+        path: tree.path.clone(),
+        branch: tree
+            .branch
+            .clone()
+            .ok_or("Cannot retain a detached worktree")?,
+        head: tree.head.clone(),
+        manifest: native_removal_manifest(Path::new(&tree.path))?,
+    };
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&receipt)
+        .map_err(|e| e.to_string())?;
+    serde_json::to_writer(&file, &saved).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn git_remove_and_reconcile(root: &Path, tree: &Worktree, force: bool) -> Result<(), String> {
     // Git for Windows can unregister the worktree even when MAX_PATH prevents
     // deleting its contents. Enable long paths for this invocation only.
     let mut args = vec!["-c", "core.longpaths=true", "worktree", "remove"];
@@ -605,7 +687,320 @@ fn remove(root: &Path, path: &Path, force: bool) -> Result<(), String> {
         args.push("--force");
     }
     args.extend(["--", tree.path.as_str()]);
-    git_checked(root, &args)
+    let result = git_checked(root, &args);
+    let registered = list(root)?.iter().any(|entry| entry.path == tree.path);
+    if !registered {
+        return recover_remnants(root, Path::new(&tree.path));
+    }
+    result.and_then(|_| {
+        Err(
+            "Worktree removal left its Git registration; retry after releasing locked handles"
+                .into(),
+        )
+    })
+}
+
+#[derive(Serialize, Deserialize)]
+struct NativeRemovalJournal {
+    path: String,
+    branch: String,
+    head: String,
+    #[serde(default)]
+    manifest: std::collections::BTreeMap<String, String>,
+}
+
+fn native_removal_manifest(
+    root: &Path,
+) -> Result<std::collections::BTreeMap<String, String>, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut manifest = std::collections::BTreeMap::new();
+    if !root.try_exists().map_err(|e| e.to_string())? {
+        return Ok(manifest);
+    }
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        crate::worktree_lifecycle::validate_removal_path(&directory)?;
+        for entry in std::fs::read_dir(&directory).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            let metadata = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+            let key = path_to_js(path.strip_prefix(root).map_err(|e| e.to_string())?);
+            let fingerprint = if crate::worktree_lifecycle::is_link_or_reparse(&metadata) {
+                validate_removal_link(&path)?;
+                format!(
+                    "link:{}",
+                    std::fs::read_link(&path)
+                        .map_err(|e| e.to_string())?
+                        .display()
+                )
+            } else if metadata.is_dir() {
+                pending.push(path);
+                "directory".into()
+            } else if metadata.is_file() {
+                let mut options = std::fs::OpenOptions::new();
+                options.read(true);
+                #[cfg(windows)]
+                {
+                    use std::os::windows::fs::OpenOptionsExt;
+                    options.custom_flags(
+                        windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT,
+                    );
+                }
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    options.custom_flags(libc::O_NOFOLLOW);
+                }
+                let mut file = options.open(&path).map_err(|e| e.to_string())?;
+                let opened = file.metadata().map_err(|e| e.to_string())?;
+                if !opened.is_file() || crate::worktree_lifecycle::is_link_or_reparse(&opened) {
+                    return Err(
+                        "Cleanup blocked: source entry changed while capturing removal".into(),
+                    );
+                }
+                let mut hash = Sha256::new();
+                let mut buffer = [0u8; 65536];
+                loop {
+                    let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
+                    if count == 0 {
+                        break;
+                    }
+                    hash.update(&buffer[..count]);
+                }
+                format!("file:{:x}", hash.finalize())
+            } else {
+                return Err("Cleanup blocked: unsupported remnant entry".into());
+            };
+            manifest.insert(key, fingerprint);
+        }
+    }
+    Ok(manifest)
+}
+
+fn removal_journal_directory(root: &Path) -> Result<PathBuf, String> {
+    crate::worktree_lifecycle::validate_removal_path(root)?;
+    let common = git(
+        root,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    let directory = Path::new(common.trim()).join("bycoda-worktree-removals");
+    crate::worktree_lifecycle::validate_removal_path(&directory)?;
+    Ok(directory)
+}
+
+fn native_removal_receipts(root: &Path, path: &Path) -> Result<Vec<PathBuf>, String> {
+    let directory = removal_journal_directory(root)?;
+    let entries = match std::fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.to_string()),
+    };
+    let mut receipts = Vec::new();
+    for entry in entries {
+        let receipt = entry.map_err(|e| e.to_string())?.path();
+        crate::worktree_lifecycle::validate_removal_path(&receipt)?;
+        let saved: NativeRemovalJournal =
+            serde_json::from_slice(&std::fs::read(&receipt).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        if path_to_js(path) == saved.path {
+            receipts.push(receipt);
+        }
+    }
+    Ok(receipts)
+}
+
+fn finish_native_removal_receipts(root: &Path, path: &Path) -> Result<(), String> {
+    for receipt in native_removal_receipts(root, path)? {
+        std::fs::remove_file(receipt).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn recover_remnants(root: &Path, path: &Path) -> Result<(), String> {
+    let directory = removal_journal_directory(root)?;
+    let entries = std::fs::read_dir(&directory)
+        .map_err(|_| "This path is not a registered worktree of this repository".to_string())?;
+    for entry in entries {
+        let receipt = entry.map_err(|e| e.to_string())?.path();
+        crate::worktree_lifecycle::validate_removal_path(&receipt)?;
+        let saved: NativeRemovalJournal =
+            serde_json::from_slice(&std::fs::read(&receipt).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        if path_to_js(path) != saved.path {
+            continue;
+        }
+        let branch = format!("refs/heads/{}", saved.branch);
+        if git(
+            root,
+            &["rev-parse", "--verify", "--end-of-options", &branch],
+        )?
+        .trim()
+            != saved.head
+        {
+            return Err("Cleanup blocked: recovery branch changed".into());
+        }
+        let current = native_removal_manifest(path)?;
+        if current
+            .iter()
+            .any(|(path, fingerprint)| saved.manifest.get(path) != Some(fingerprint))
+        {
+            return Err("Cleanup blocked: directory remnants contain new or changed source".into());
+        }
+        remove_remnants(path)?;
+        finish_native_removal_receipts(root, path)?;
+        return Ok(());
+    }
+    Err("This path is not a registered worktree of this repository".into())
+}
+
+/// Preflight the complete tree before detaching any link. Unknown Windows reparse
+/// tags (cloud placeholders, volume mounts, filters, etc.) are never traversed.
+fn removal_links(path: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut links = Vec::new();
+    let mut pending = vec![path.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        crate::worktree_lifecycle::validate_removal_path(&directory)?;
+        for entry in std::fs::read_dir(&directory).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            let metadata = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+            if crate::worktree_lifecycle::is_link_or_reparse(&metadata) {
+                validate_removal_link(&path)?;
+                links.push(path);
+            } else if metadata.is_dir() {
+                pending.push(path);
+            } else if !metadata.is_file() {
+                return Err(format!(
+                    "Cleanup blocked: unsupported entry {}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    Ok(links)
+}
+
+#[cfg(windows)]
+fn validate_removal_link(path: &Path) -> Result<(), String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FileAttributeTagInfo, GetFileInformationByHandleEx, FILE_ATTRIBUTE_TAG_INFO,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    };
+    let file = std::fs::OpenOptions::new()
+        .access_mode(0)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|e| format!("Cannot inspect reparse point {}: {e}", path.display()))?;
+    let mut info: FILE_ATTRIBUTE_TAG_INFO = unsafe { std::mem::zeroed() };
+    let ok = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileAttributeTagInfo,
+            (&mut info as *mut FILE_ATTRIBUTE_TAG_INFO).cast(),
+            std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
+        )
+    };
+    if ok == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    // IO_REPARSE_TAG_SYMLINK and IO_REPARSE_TAG_MOUNT_POINT. The latter is
+    // accepted only for ordinary drive/UNC junction targets, not volume mounts.
+    let target = std::fs::read_link(path).map_err(|e| e.to_string())?;
+    let text = target.to_string_lossy().replace('/', "\\").to_lowercase();
+    if info.ReparseTag != 0xa000000c
+        && !(info.ReparseTag == 0xa0000003 && target.is_absolute() && !text.contains("volume{"))
+    {
+        return Err(format!(
+            "Cleanup blocked: unknown or unsafe reparse point {}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn validate_removal_link(path: &Path) -> Result<(), String> {
+    if !std::fs::symlink_metadata(path)
+        .map_err(|e| e.to_string())?
+        .file_type()
+        .is_symlink()
+    {
+        return Err(format!(
+            "Cleanup blocked: unsupported link {}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn detach_removal_link(path: &Path) -> Result<(), String> {
+    crate::worktree_lifecycle::validate_removal_path(path.parent().ok_or("Link has no parent")?)?;
+    validate_removal_link(path)?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        let metadata = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+        if metadata.file_attributes() & 0x10 != 0 {
+            return std::fs::remove_dir(path).map_err(|e| e.to_string());
+        }
+    }
+    std::fs::remove_file(path).map_err(|e| e.to_string())
+}
+
+fn preserve_removal_evidence(root: &Path, path: &Path) -> Result<(), String> {
+    let evidence = path.join("temp");
+    match std::fs::symlink_metadata(&evidence) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+        Ok(_) => {}
+    }
+    let common = git(
+        root,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    let archive = Path::new(common.trim()).join("bycoda-worktree-evidence");
+    crate::worktree_lifecycle::validate_removal_path(&archive)?;
+    if archive.starts_with(path) {
+        return Err("Cleanup blocked: evidence archive is inside the worktree".into());
+    }
+    std::fs::create_dir_all(&archive).map_err(|e| e.to_string())?;
+    let destination = archive.join(uuid::Uuid::new_v4().to_string());
+    std::fs::rename(&evidence, destination)
+        .map_err(|e| format!("Cannot preserve temp evidence: {e}"))
+}
+
+/// Retry-safe after Git has unregistered a partially deleted Windows directory.
+/// Never use recursive remove_dir_all on a tree containing unchecked reparse points.
+fn remove_remnants(path: &Path) -> Result<(), String> {
+    crate::worktree_lifecycle::validate_removal_path(path)?;
+    match std::fs::symlink_metadata(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+        Ok(metadata) if !metadata.is_dir() => {
+            return Err("Cleanup blocked: worktree remnant is not a directory".into())
+        }
+        Ok(_) => {}
+    }
+    for link in removal_links(path)? {
+        detach_removal_link(&link)?;
+    }
+    for entry in std::fs::read_dir(path).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        let metadata = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+        if crate::worktree_lifecycle::is_link_or_reparse(&metadata) {
+            return Err("Cleanup blocked: entry changed during removal".into());
+        }
+        if metadata.is_dir() {
+            remove_remnants(&path)?;
+        } else {
+            crate::worktree_lifecycle::validate_removal_path(path.parent().unwrap())?;
+            std::fs::remove_file(path)
+                .map_err(|e| format!("Cleanup pending; release locked handles and retry: {e}"))?;
+        }
+    }
+    std::fs::remove_dir(path)
+        .map_err(|e| format!("Cleanup pending; release locked handles and retry: {e}"))
 }
 
 #[derive(Serialize)]
@@ -615,7 +1010,7 @@ pub struct WorktreeRemoval {
     project_cwd: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct SessionBeforeRemoval {
     id: String,
     cwd: String,
@@ -629,6 +1024,28 @@ struct SessionBeforeRemoval {
     detached_cwd: String,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum SessionRemovalJournal {
+    Current {
+        project_cwd: String,
+        sessions: Vec<SessionBeforeRemoval>,
+    },
+    Legacy(Vec<SessionBeforeRemoval>),
+}
+
+impl SessionRemovalJournal {
+    fn into_parts(self) -> (Option<String>, Vec<SessionBeforeRemoval>) {
+        match self {
+            Self::Current {
+                project_cwd,
+                sessions,
+            } => (Some(project_cwd), sessions),
+            Self::Legacy(sessions) => (None, sessions),
+        }
+    }
+}
+
 /// Make sessions safe to reopen *before* touching Git. A small metadata journal
 /// lets a failed/interrupted deletion restore their original working context.
 fn prepare_removal(
@@ -637,6 +1054,21 @@ fn prepare_removal(
     project_cwd: &str,
     ids: &[String],
 ) -> Result<Vec<SessionBeforeRemoval>, String> {
+    use rusqlite::OptionalExtension;
+    let pending: Option<String> = conn
+        .query_row(
+            "SELECT sessions_json FROM worktree_removals WHERE path = ?1",
+            [path_to_js(path)],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if let Some(json) = pending {
+        return Ok(serde_json::from_str::<SessionRemovalJournal>(&json)
+            .map_err(|e| e.to_string())?
+            .into_parts()
+            .1);
+    }
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     let mut saved = Vec::new();
     for id in ids {
@@ -684,7 +1116,11 @@ fn prepare_removal(
         "INSERT INTO worktree_removals (path, sessions_json) VALUES (?1, ?2)",
         rusqlite::params![
             path_to_js(path),
-            serde_json::to_string(&saved).map_err(|e| e.to_string())?
+            serde_json::to_string(&SessionRemovalJournal::Current {
+                project_cwd: project_cwd.to_owned(),
+                sessions: saved.clone(),
+            })
+            .map_err(|e| e.to_string())?
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -750,6 +1186,34 @@ pub(crate) fn reconcile_removals(conn: &rusqlite::Connection) -> Result<(), Stri
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string())?;
     for (path, json) in pending {
+        let (project, saved) = serde_json::from_str::<SessionRemovalJournal>(&json)
+            .map_err(|e| e.to_string())?
+            .into_parts();
+        if let Some(project) = project {
+            let root = Path::new(&project);
+            match native_removal_receipts(root, Path::new(&path)) {
+                Ok(receipts) if !receipts.is_empty() => {
+                    crate::worktree_lifecycle::block_removal_recovery(Path::new(&path));
+                    // Registered partial removals need a fresh explicit review;
+                    // never force through new source changes during startup.
+                    let registered = list(root)?.iter().any(|entry| entry.path == path);
+                    if registered {
+                        continue;
+                    }
+                    if let Err(error) = recover_remnants(root, Path::new(&path)) {
+                        eprintln!("Worktree cleanup remains pending: {error}");
+                        continue;
+                    }
+                    crate::worktree_lifecycle::finish_removal_recovery(Path::new(&path));
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    crate::worktree_lifecycle::block_removal_recovery(Path::new(&path));
+                    eprintln!("Cannot reconcile pending worktree cleanup: {error}");
+                    continue;
+                }
+            }
+        }
         // A surviving Git link means removal did not finish. If the link/folder
         // is gone, the already-persisted detached sessions are the final state.
         let restore = if Path::new(&path)
@@ -757,7 +1221,7 @@ pub(crate) fn reconcile_removals(conn: &rusqlite::Connection) -> Result<(), Stri
             .try_exists()
             .map_err(|e| e.to_string())?
         {
-            serde_json::from_str::<Vec<SessionBeforeRemoval>>(&json).map_err(|e| e.to_string())?
+            saved
         } else {
             Vec::new()
         };
@@ -773,7 +1237,28 @@ fn remove_with_sessions(
     force: bool,
     keep_sessions: bool,
 ) -> Result<WorktreeRemoval, String> {
-    let tree = removal_target(root, path)?;
+    let tree = match removal_target(root, path) {
+        Ok(tree) => tree,
+        Err(error) => {
+            if native_removal_receipts(root, path)?.is_empty()
+                || list(root)?
+                    .iter()
+                    .any(|entry| same_path(Path::new(&entry.path), path))
+            {
+                return Err(error);
+            }
+            remove(root, path, force)?;
+            finish_removal(conn, &path_to_js(path), &[])?;
+            let main = list(root)?
+                .into_iter()
+                .find(|entry| entry.is_main)
+                .ok_or("No main working copy found")?;
+            return Ok(WorktreeRemoval {
+                session_ids: Vec::new(),
+                project_cwd: main.path,
+            });
+        }
+    };
     let worktrees = list(root)?;
     let main = worktrees
         .iter()
@@ -786,7 +1271,23 @@ fn remove_with_sessions(
     let saved = prepare_removal(conn, Path::new(&tree.path), &main.path, &ids)?;
     // Use the main copy even if Settings was opened directly on the target.
     if let Err(error) = remove(Path::new(&main.path), path, force) {
-        finish_removal(conn, &tree.path, &saved).map_err(|restore| {
+        if !native_removal_receipts(Path::new(&main.path), path)?.is_empty() {
+            // Keep the durable DB journal and process-start fence through partial
+            // failures; startup recovery or an explicit cleanup retry settles it.
+            return Err(error);
+        }
+        // A partial Windows deletion may already have removed .git/registration.
+        // Keep sessions detached in that case; restoring them would resume into
+        // a broken directory. The filesystem receipt retains retry authority.
+        let still_registered = list(Path::new(&main.path))?
+            .iter()
+            .any(|entry| entry.path == tree.path);
+        let restore = if still_registered {
+            saved.as_slice()
+        } else {
+            &[]
+        };
+        finish_removal(conn, &tree.path, restore).map_err(|restore| {
             format!("{error}. Sessions remain detached until recovery on restart: {restore}")
         })?;
         return Err(error);
@@ -858,19 +1359,9 @@ pub fn git_orchestration_worktree_remove(
                 "Close the terminals and agent processes using this worktree first.".into(),
             );
         }
-        let tree = removal_target(&root, &path)?;
-        let branch = tree.branch.clone();
         let conn = store.lock_conn()?;
-        let removed = remove_with_sessions(&conn, &root, &path, true, true)?;
-        if let Some(branch) = branch {
-            if branch.starts_with("mc/orch-") {
-                if let Err(error) = git(Path::new(&removed.project_cwd), &["branch", "-D", &branch])
-                {
-                    eprintln!("Orchestration worktree removed; temporary branch cleanup will need a retry: {error}");
-                }
-            }
-        }
-        Ok(removed)
+        // Directory retirement must retain the local branch and rescue refs.
+        remove_with_sessions(&conn, &root, &path, true, true)
     })
 }
 
@@ -1075,6 +1566,15 @@ mod tests {
         )
         .unwrap();
         let commit = git(path, &["rev-parse", "HEAD"]).unwrap();
+        git_checked(
+            &root,
+            &[
+                "update-ref",
+                "refs/bycoda/rewinds/native-removal/rescue-head",
+                commit.trim(),
+            ],
+        )
+        .unwrap();
         assert_ne!(commit, git(&root, &["rev-parse", "HEAD"]).unwrap());
         assert_eq!(
             git(&root, &["diff", "--cached", "--name-only"])
@@ -1093,6 +1593,210 @@ mod tests {
             git(&root, &["rev-parse", "--verify", "refs/heads/feature/test"]).unwrap(),
             commit
         );
+        assert_eq!(
+            git(
+                &root,
+                &[
+                    "rev-parse",
+                    "refs/bycoda/rewinds/native-removal/rescue-head"
+                ]
+            )
+            .unwrap(),
+            commit
+        );
+    }
+
+    #[cfg(windows)]
+    fn junction(link: &Path, target: &Path) {
+        let mut command = Command::new("cmd");
+        crate::hide_window_console(&mut command);
+        let output = command
+            .args(["/c", "mklink", "/J"])
+            .arg(link.to_string_lossy().replace('/', "\\"))
+            .arg(target.to_string_lossy().replace('/', "\\"))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn worktree_removal_detaches_node_modules_junction_and_preserves_external_sentinel() {
+        let repo = repo();
+        let root = repo.0.join("repo");
+        let tree = create(&root, "junction-sentinel", "main", false).unwrap();
+        let path = Path::new(&tree.path);
+        let sentinel = repo.0.join("main-node-modules");
+        std::fs::create_dir_all(sentinel.join("package")).unwrap();
+        std::fs::write(sentinel.join("package/sentinel.txt"), "must survive").unwrap();
+        std::fs::write(path.join(".gitignore"), "node_modules/\ntemp/\n").unwrap();
+        git_checked(path, &["add", ".gitignore"]).unwrap();
+        git_checked(
+            path,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                "ignore generated directories",
+            ],
+        )
+        .unwrap();
+        junction(&path.join("node_modules"), &sentinel);
+        std::fs::create_dir_all(path.join("temp/verification")).unwrap();
+        std::fs::write(
+            path.join("temp/verification/evidence.txt"),
+            "retained evidence",
+        )
+        .unwrap();
+        remove(&root, path, false).unwrap();
+        assert!(!path.exists());
+        assert_eq!(
+            std::fs::read_to_string(sentinel.join("package/sentinel.txt")).unwrap(),
+            "must survive"
+        );
+        let archives = std::fs::read_dir(root.join(".git/bycoda-worktree-evidence"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert_eq!(archives.len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(archives[0].join("verification/evidence.txt")).unwrap(),
+            "retained evidence"
+        );
+        assert!(git(&root, &["rev-parse", "refs/heads/junction-sentinel"]).is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn worktree_removal_rejects_linked_target_before_touching_external_directory() {
+        let repo = repo();
+        let sentinel = repo.0.join("sentinel");
+        std::fs::create_dir_all(&sentinel).unwrap();
+        std::fs::write(sentinel.join("keep"), "retained").unwrap();
+        let alias = repo.0.join("alias");
+        junction(&alias, &sentinel);
+        assert!(crate::worktree_lifecycle::reserve_removal(&alias).is_err());
+        assert!(remove(&repo.0.join("repo"), &alias, true).is_err());
+        assert_eq!(
+            std::fs::read_to_string(sentinel.join("keep")).unwrap(),
+            "retained"
+        );
+        std::fs::remove_dir(alias).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn worktree_removal_retries_after_a_real_windows_handle_is_released() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE};
+        let repo = repo();
+        let root = repo.0.join("repo");
+        let tree = create(&root, "locked-removal", "main", false).unwrap();
+        let path = Path::new(&tree.path);
+        std::fs::create_dir_all(path.join("generated")).unwrap();
+        let locked = path.join("generated/locked.bin");
+        std::fs::write(&locked, "handle blocks deletion").unwrap();
+        let handle = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(&locked)
+            .unwrap();
+        let database = repo.0.join("removal-sessions.db");
+        {
+            let store = SessionStore::open(database.clone()).unwrap();
+            let conn = store.lock_conn().unwrap();
+            assert!(remove_with_sessions(&conn, &root, path, true, true).is_err());
+            let count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM worktree_removals", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 1);
+        }
+        assert!(locked.exists());
+        assert!(crate::worktree_lifecycle::reserve_spawn(path).is_err());
+        assert!(git(&root, &["rev-parse", "refs/heads/locked-removal"]).is_ok());
+        // Startup must retain the durable retry journal and process-start fence.
+        let store = SessionStore::open(database).unwrap();
+        let conn = store.lock_conn().unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM worktree_removals", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 1);
+        assert!(crate::worktree_lifecycle::reserve_spawn(path).is_err());
+        drop(handle);
+        remove_with_sessions(&conn, &root, path, true, true).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM worktree_removals", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0);
+        assert!(!path.exists());
+        assert!(git(&root, &["rev-parse", "refs/heads/locked-removal"]).is_ok());
+    }
+
+    #[test]
+    fn worktree_managed_branches_require_authoritative_host_cleanup_even_with_force() {
+        let repo = repo();
+        let root = repo.0.join("repo");
+        for branch in ["bycoda/s/managed-session", "bycoda/t/managed-task"] {
+            let tree = create(&root, branch, "main", false).unwrap();
+            let path = Path::new(&tree.path);
+            std::fs::write(path.join("dirty-source"), "retained source").unwrap();
+            let error = remove(&root, path, true).unwrap_err();
+            assert!(error.contains("Host workspace cleanup plan/apply"));
+            assert!(path.join("dirty-source").exists());
+            assert!(check_removal(&root, path, true, false).is_err());
+        }
+    }
+
+    #[test]
+    fn worktree_removal_reconciles_only_journaled_unregistered_remnants() {
+        let repo = repo();
+        let root = repo.0.join("repo");
+        let tree = create(&root, "recover-remnants", "main", false).unwrap();
+        let path = Path::new(&tree.path);
+        let journal = removal_journal_directory(&root).unwrap();
+        std::fs::create_dir_all(&journal).unwrap();
+        let receipt = journal.join("interrupted.json");
+        std::fs::create_dir_all(path.join("nested")).unwrap();
+        std::fs::write(path.join("nested/remnant"), "generated").unwrap();
+        let saved = NativeRemovalJournal {
+            path: tree.path.clone(),
+            branch: "recover-remnants".into(),
+            head: tree.head.clone(),
+            manifest: native_removal_manifest(path).unwrap(),
+        };
+        std::fs::write(&receipt, serde_json::to_vec(&saved).unwrap()).unwrap();
+        git_checked(&root, &["worktree", "remove", "--force", "--", &tree.path]).unwrap();
+        // Model Git having unregistered a directory while a Windows handle left
+        // contents behind. A later retry must use the durable receipt, not adopt
+        // any arbitrary unregistered directory under the managed root.
+        std::fs::create_dir_all(path.join("nested")).unwrap();
+        std::fs::write(path.join("nested/remnant"), "generated").unwrap();
+        std::fs::write(path.join("new-source"), "must not be removed").unwrap();
+        assert!(remove(&root, path, false).is_err());
+        assert!(path.join("new-source").exists());
+        std::fs::remove_file(path.join("new-source")).unwrap();
+        remove(&root, path, false).unwrap();
+        assert!(!path.exists());
+        assert!(!receipt.exists());
+        assert!(git(&root, &["rev-parse", "refs/heads/recover-remnants"]).is_ok());
+        let unknown = repo.0.join("unknown");
+        std::fs::create_dir_all(&unknown).unwrap();
+        std::fs::write(unknown.join("keep"), "unknown source").unwrap();
+        assert!(remove(&root, &unknown, true).is_err());
+        assert!(unknown.join("keep").exists());
     }
 
     #[test]

@@ -6,10 +6,12 @@ use crate::worktrees::contains_working_dir;
 #[derive(Default)]
 struct Lifecycle {
     reservations: Mutex<Vec<(PathBuf, bool)>>,
+    recovery_blocks: Mutex<Vec<PathBuf>>,
 }
 
 static LIFECYCLE: Lifecycle = Lifecycle {
     reservations: Mutex::new(Vec::new()),
+    recovery_blocks: Mutex::new(Vec::new()),
 };
 
 /// Held from before process creation through host registration, or across the
@@ -22,6 +24,9 @@ pub(crate) struct Reservation<'a> {
 
 impl Lifecycle {
     fn reserve(&self, path: &Path, removing: bool) -> Result<Reservation<'_>, String> {
+        if removing {
+            validate_removal_path(path)?;
+        }
         let path = match path.canonicalize() {
             Ok(path) => path,
             // Git can remove a registered worktree whose folder is missing.
@@ -29,6 +34,16 @@ impl Lifecycle {
             Err(error) => return Err(format!("Cannot open working directory: {error}")),
         };
         let mut reservations = self.reservations.lock().unwrap_or_else(|e| e.into_inner());
+        if !removing
+            && self
+                .recovery_blocks
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .any(|blocked| contains_working_dir(blocked, &path))
+        {
+            return Err("This working copy has an unfinished removal. Retry cleanup before starting a process.".into());
+        }
         if reservations.iter().any(|(other, exclusive)| {
             (removing || *exclusive)
                 && (contains_working_dir(&path, other) || contains_working_dir(other, &path))
@@ -69,6 +84,64 @@ pub(crate) fn reserve_spawn(path: &Path) -> Result<Reservation<'static>, String>
 
 pub(crate) fn reserve_removal(path: &Path) -> Result<Reservation<'static>, String> {
     LIFECYCLE.reserve(path, true)
+}
+
+pub(crate) fn block_removal_recovery(path: &Path) {
+    let mut blocked = LIFECYCLE
+        .recovery_blocks
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if !blocked.iter().any(|entry| entry == path) {
+        blocked.push(path.to_path_buf());
+    }
+}
+
+pub(crate) fn finish_removal_recovery(path: &Path) {
+    LIFECYCLE
+        .recovery_blocks
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|entry| entry != path);
+}
+
+/// Validate the spelling before canonicalization: canonicalize would hide a junction
+/// in the target or one of its parents. Missing final components are recoverable.
+pub(crate) fn validate_removal_path(path: &Path) -> Result<(), String> {
+    use std::path::Component;
+    if !path.is_absolute() {
+        return Err("Worktree removal requires an absolute path".into());
+    }
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        if matches!(component, Component::ParentDir | Component::CurDir) {
+            return Err("Worktree removal requires a normalized absolute path".into());
+        }
+        current.push(component);
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if is_link_or_reparse(&metadata) => {
+                return Err(format!(
+                    "Cleanup blocked: linked removal path {}",
+                    current.display()
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("Cannot validate {}: {error}", current.display())),
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
+    }
 }
 
 #[cfg(test)]
