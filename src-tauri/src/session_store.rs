@@ -1632,18 +1632,20 @@ fn migrate_versions(conn: &Connection) -> rusqlite::Result<()> {
             params![now_millis()],
         )?;
     }
+    // Repair earlier columns before the next migration reads them, even when
+    // an older marker survived a partial schema upgrade.
+    ensure_session_column(conn, "workspace_id", "TEXT")?;
+    ensure_session_column(conn, "workspace_revision", "INTEGER")?;
     ensure_session_column(conn, "workspace_mode", "TEXT")?;
     if current < 20 {
         // Existing execution is retained independently of transcript clearing.
         conn.execute("UPDATE sessions SET workspace_mode='current' WHERE workspace_mode IS NULL AND workspace_id IS NULL AND worktree_cwd IS NULL AND has_user_message=1 AND is_draft=0", [])?;
+        conn.execute("DROP INDEX IF EXISTS sessions_cwd_cover_idx", [])?;
         conn.execute(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (20, ?1)",
             params![now_millis()],
         )?;
     }
-    // Repair databases whose migration marker survived a partial older upgrade.
-    ensure_session_column(conn, "workspace_id", "TEXT")?;
-    ensure_session_column(conn, "workspace_revision", "INTEGER")?;
     Ok(())
 }
 
@@ -1706,7 +1708,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
                         model, runtime_mode, title, provider_session_id,
                         created_at, branch, archived, pinned,
                         linked_work_item_json, worktree_cwd, worktree_removed,
-                        is_draft, automation_id, workspace_id, workspace_revision);",
+                        is_draft, automation_id, workspace_id, workspace_revision, workspace_mode);",
     )?;
     // `list_recent` and `list_linked` pin these; both are partial so they only
     // carry the rows those lists can return (live threads, linked threads).
@@ -3518,7 +3520,7 @@ mod tests {
                        ON sessions (cwd, has_user_message, updated_at DESC, id, harness,
                                     model, runtime_mode, title, provider_session_id,
                                     created_at, branch, archived, pinned, linked_work_item_json);
-                     DELETE FROM schema_migrations WHERE version IN (16, 17, 18, 19);",
+                     DELETE FROM schema_migrations WHERE version IN (16, 17, 18, 19, 20);",
                 )
                 .unwrap();
                 migrate(&conn).unwrap();
@@ -3529,7 +3531,7 @@ mod tests {
                  SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
                         created_at, updated_at, branch, archived, pinned,
                         linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
-                        automation_id, workspace_id, workspace_revision,
+                        automation_id, workspace_id, workspace_revision, workspace_mode,
                         (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id)
                  FROM sessions
                  WHERE cwd = ?1
@@ -3797,6 +3799,25 @@ mod tests {
         assert!(record.workspace_id.is_none());
         assert!(record.workspace_revision.is_none());
         assert_eq!(record.title, "Keep me");
+    }
+
+    #[test]
+    fn execution_mode_migration_repairs_partial_workspace_schema_first() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let session = sample("partial-current", "/tmp/project", "Retain checkout");
+        upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE sessions RENAME COLUMN workspace_id TO previous_workspace_id;
+            ALTER TABLE sessions RENAME COLUMN workspace_revision TO previous_workspace_revision;
+            DELETE FROM schema_migrations WHERE version=20;",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        let record = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(record.workspace_mode.as_deref(), Some("current"));
+        assert!(record.workspace_id.is_none());
+        assert!(record.workspace_revision.is_none());
     }
 
     #[test]
