@@ -8,6 +8,7 @@ import {
   prepareSessionWorkspace,
 } from "./sessionWorkspace";
 import { requireWorkspaceCapability, workspaceRequest } from "./workspaceClient";
+import { clearConversation } from "../../sessions/model/clearConversation";
 
 vi.mock("./workspaceClient", () => ({
   resolveWorkspaceContext: vi.fn(async () => ({
@@ -90,6 +91,32 @@ it("keeps established conversations in their existing checkout", async () => {
   expect(needsSessionWorkspace(old)).toBe(false);
   await expect(prepareSessionWorkspace(old)).resolves.toBeNull();
   expect(workspaceRequest).not.toHaveBeenCalled();
+});
+
+it("retains a legacy current checkout after clear and persistence reload", async () => {
+  const legacy = {
+    ...session,
+    blocks: [{ id: "turn", role: "user" as const, text: "Existing conversation" }],
+  };
+  expect(needsSessionWorkspace(legacy)).toBe(false);
+  const cleared = JSON.parse(JSON.stringify(clearConversation(legacy)));
+  expect(cleared.id).toBe(legacy.id);
+  expect(cleared.blocks).toEqual([]);
+  expect(cleared.workspaceMode).toBe("current");
+  expect(needsSessionWorkspace(cleared)).toBe(false);
+  await expect(prepareSessionWorkspace(cleared)).resolves.toBeNull();
+  expect(workspaceRequest).not.toHaveBeenCalled();
+});
+
+it("preserves explicit worktree migration and a fresh blank session across clear", () => {
+  expect(needsSessionWorkspace(clearConversation(session))).toBe(true);
+  const migration = clearConversation({
+    ...session,
+    workspaceMode: "worktree",
+    blocks: [{ id: "turn", role: "user" as const, text: "Existing conversation" }],
+  });
+  expect(migration.workspaceMode).toBe("worktree");
+  expect(needsSessionWorkspace(migration)).toBe(true);
 });
 
 it("honors current-checkout policy and explicit worktree override without creating a fallback", async () => {

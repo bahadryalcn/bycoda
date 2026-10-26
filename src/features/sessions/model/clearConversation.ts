@@ -21,6 +21,15 @@ export function canClearConversation(session: Session): boolean {
 export function clearConversation(session: Session): Session {
   return {
     ...session,
+    // Migrate established legacy execution identity before removing its evidence.
+    // This persisted choice survives an empty transcript and application restart.
+    workspaceMode:
+      session.workspaceMode ??
+      (!session.worktreeCwd &&
+      !session.workspaceId &&
+      (session.blocks.some((block) => block.role === "user") || session.rewindHistory?.length)
+        ? "current"
+        : undefined),
     blocks: [],
     providerSessionId: undefined,
     pendingSwitch: undefined,

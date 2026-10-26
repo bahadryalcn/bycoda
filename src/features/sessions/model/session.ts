@@ -540,7 +540,7 @@ export type Session = {
   workspaceRevision?: number;
   /** Selected working copy; cwd remains the project identity. */
   worktreeCwd?: string;
-  /** Blank-composer choice; consumed when the first turn starts. */
+  /** Workspace choice; current also persists established legacy execution identity across clear. */
   workspaceMode?: WorkspaceMode;
   /** Base ref for a worktree that will be created on first send. */
   worktreeBase?: string;

@@ -22,7 +22,9 @@ export function isNewWorkspaceSession(session: Session): boolean {
 
 export function needsSessionWorkspace(session: Session): boolean {
   return (
-    !session.worktreeCwd && (session.workspaceMode === "worktree" || isNewWorkspaceSession(session))
+    !session.worktreeCwd &&
+    session.workspaceMode !== "current" &&
+    (session.workspaceMode === "worktree" || isNewWorkspaceSession(session))
   );
 }
 

@@ -304,6 +304,8 @@ pub struct SessionUpsert {
     #[serde(default)]
     pub worktree_cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_revision: Option<i64>,
@@ -358,6 +360,8 @@ pub struct SessionSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_revision: Option<i64>,
@@ -408,6 +412,8 @@ pub struct SessionRecord {
     pub branch: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -496,6 +502,13 @@ fn validate_upsert(session: &SessionUpsert) -> Result<(), String> {
         if !automation_id.is_empty() {
             validate_id(automation_id, "automation")?;
         }
+    }
+    if session
+        .workspace_mode
+        .as_deref()
+        .is_some_and(|mode| !matches!(mode, "current" | "worktree"))
+    {
+        return Err("Invalid workspace mode".into());
     }
     if let Some(workspace_id) = &session.workspace_id {
         validate_id(workspace_id, "workspace")?;
@@ -1619,6 +1632,15 @@ fn migrate_versions(conn: &Connection) -> rusqlite::Result<()> {
             params![now_millis()],
         )?;
     }
+    ensure_session_column(conn, "workspace_mode", "TEXT")?;
+    if current < 20 {
+        // Existing execution is retained independently of transcript clearing.
+        conn.execute("UPDATE sessions SET workspace_mode='current' WHERE workspace_mode IS NULL AND workspace_id IS NULL AND worktree_cwd IS NULL AND has_user_message=1 AND is_draft=0", [])?;
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (20, ?1)",
+            params![now_millis()],
+        )?;
+    }
     // Repair databases whose migration marker survived a partial older upgrade.
     ensure_session_column(conn, "workspace_id", "TEXT")?;
     ensure_session_column(conn, "workspace_revision", "INTEGER")?;
@@ -1902,7 +1924,7 @@ pub(crate) fn session_metadata_unchanged(
             AND worktree_removed IS ?11 AND linked_work_item_json IS ?12
             AND automation_id IS ?13 AND rewind_history_json IS ?14
             AND pending_context_replay IS ?15
-            AND workspace_id IS ?16 AND workspace_revision IS ?17
+            AND workspace_id IS ?16 AND workspace_revision IS ?17 AND workspace_mode IS ?18
          FROM sessions WHERE id = ?1",
         params![
             session.id,
@@ -1922,6 +1944,7 @@ pub(crate) fn session_metadata_unchanged(
             session.pending_context_replay,
             session.workspace_id,
             session.workspace_revision,
+            session.workspace_mode,
         ],
         |row| row.get::<_, Option<bool>>(0),
     )
@@ -2048,8 +2071,8 @@ fn upsert_session_core(
            provider_session_id, blocks_json, created_at, updated_at, branch,
            context_used, context_window, worktree_cwd, has_user_message,
            linked_work_item_json, provider_account_id, worktree_removed, is_draft,
-           automation_id, rewind_history_json, pending_context_replay, adopted_divergence, adopted_base, workspace_id, workspace_revision
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+           automation_id, rewind_history_json, pending_context_replay, adopted_divergence, adopted_base, workspace_id, workspace_revision, workspace_mode
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)
          ON CONFLICT(id) DO UPDATE SET
            cwd = excluded.cwd,
            harness = excluded.harness,
@@ -2075,7 +2098,8 @@ fn upsert_session_core(
            adopted_divergence = excluded.adopted_divergence,
            adopted_base = excluded.adopted_base,
            workspace_id = excluded.workspace_id,
-           workspace_revision = excluded.workspace_revision",
+           workspace_revision = excluded.workspace_revision,
+           workspace_mode = COALESCE(excluded.workspace_mode, sessions.workspace_mode)",
     )?
     .execute(
         params![
@@ -2106,6 +2130,7 @@ fn upsert_session_core(
             session.adopted_base,
             session.workspace_id,
             session.workspace_revision,
+            session.workspace_mode,
         ],
     )?;
 
@@ -2123,6 +2148,7 @@ fn upsert_session_core(
         provider_session_id: provider_session_id.map(str::to_owned),
         branch: branch.map(str::to_owned),
         worktree_cwd: worktree_cwd.map(str::to_owned),
+        workspace_mode: session.workspace_mode.clone(),
         workspace_id: session.workspace_id.clone(),
         workspace_revision: session.workspace_revision,
         worktree_removed: session.worktree_removed,
@@ -2483,7 +2509,7 @@ fn list_by_project_with_git(
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision
+                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode
          FROM sessions
          WHERE cwd = ?1
            AND has_user_message = 1
@@ -2526,6 +2552,7 @@ fn list_by_project_with_git(
             automation_id: nonempty(row.get(17)?),
             workspace_id: row.get(18)?,
             workspace_revision: row.get(19)?,
+            workspace_mode: row.get(20)?,
         })
     })?;
     rows.collect()
@@ -2538,7 +2565,7 @@ const LIST_LINKED_SQL: &str = "SELECT id, cwd, harness, model, runtime_mode, tit
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision
+                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode
          FROM sessions INDEXED BY sessions_linked_idx
          WHERE has_user_message = 1
            AND linked_work_item_json IS NOT NULL
@@ -2577,6 +2604,7 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
             automation_id: nonempty(row.get(17)?),
             workspace_id: row.get(18)?,
             workspace_revision: row.get(19)?,
+            workspace_mode: row.get(20)?,
         })
     })?;
     rows.collect()
@@ -2603,7 +2631,7 @@ const RECENT_ROWS_SQL: &str =
     "SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
-                automation_id, workspace_id, workspace_revision
+                automation_id, workspace_id, workspace_revision, workspace_mode
          FROM sessions INDEXED BY sessions_recent_idx
          WHERE has_user_message = 1
            AND archived = 0
@@ -2652,6 +2680,7 @@ fn recent_rows(
             automation_id: nonempty(row.get(16)?),
             workspace_id: row.get(17)?,
             workspace_revision: row.get(18)?,
+            workspace_mode: row.get(19)?,
         })
     })?;
     rows.collect()
@@ -2858,7 +2887,7 @@ fn read_session_row_from(
                 context_used, context_window, branch, worktree_cwd,
                 linked_work_item_json, provider_account_id, worktree_removed,
                 automation_id, rewind_history_json, pending_context_replay, adopted_divergence,
-                adopted_base, workspace_id, workspace_revision
+                adopted_base, workspace_id, workspace_revision, workspace_mode
          FROM session_transcripts
          WHERE id = ?1 AND inbox_ask IS NULL",
         params![session_id,include_blocks],
@@ -2891,6 +2920,7 @@ fn read_session_row_from(
                 adopted_base: row.get(22)?,
                 workspace_id: row.get(23)?,
                 workspace_revision: row.get(24)?,
+                workspace_mode: row.get(25)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
             };
@@ -3151,6 +3181,7 @@ mod tests {
             context_window: None,
             branch: None,
             worktree_cwd: None,
+            workspace_mode: None,
             workspace_id: None,
             workspace_revision: None,
             worktree_removed: false,
@@ -3163,6 +3194,36 @@ mod tests {
             created_at: None,
             updated_at: None,
         }
+    }
+
+    #[test]
+    fn cleared_execution_identity_survives_database_reopen() {
+        let dir = std::env::temp_dir().join(format!(
+            "bycoda-clear-{}-{}",
+            std::process::id(),
+            now_millis()
+        ));
+        let path = dir.join("sessions.db");
+        {
+            let store = SessionStore::open(path.clone()).unwrap();
+            let conn = store.lock_conn().unwrap();
+            let mut session = sample("legacy-clear", "/tmp/project", "Existing");
+            upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+            session.blocks = json!([]);
+            session.provider_session_id = None;
+            session.workspace_mode = Some("current".into());
+            upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+        }
+        {
+            let store = SessionStore::open(path).unwrap();
+            let conn = store.lock_conn().unwrap();
+            let saved = get_session(&conn, "legacy-clear").unwrap().unwrap();
+            assert_eq!(saved.workspace_mode.as_deref(), Some("current"));
+            assert_eq!(saved.blocks, json!([]));
+            assert!(saved.workspace_id.is_none());
+            assert!(saved.worktree_cwd.is_none());
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -3668,7 +3729,7 @@ mod tests {
                         row.get(0)
                     })
                     .unwrap();
-                assert_eq!(latest, 19);
+                assert_eq!(latest, 20);
                 let count: i64 = conn
                     .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
                     .unwrap();
