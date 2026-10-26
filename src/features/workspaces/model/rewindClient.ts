@@ -1,4 +1,7 @@
 import type { Session } from "../../sessions/model/session";
+import { invoke } from "@tauri-apps/api/core";
+import { getSession, upsertSession } from "../../sessions/data/sessionStore";
+import { parseRemotePath } from "../../connections/model/remoteProjects";
 import { buildConversationReplay } from "../../sessions/model/conversationRewind";
 import { t } from "../../../shared/i18n";
 import type { HostSession } from "../../connections/model/protocol";
@@ -16,12 +19,44 @@ export async function planWorkspaceRewind(
   target: { userBlockId: string } | { operationId: string },
 ): Promise<SessionRewindPlan> {
   const context = { cwd: session.cwd };
+  const native = !parseRemotePath(session.cwd) && !remoteSessionFor(session.id);
   const capabilities = await getWorkspaceCapabilities(context);
   if (
     !capabilities.includes("sessions.git-rewind.v1") ||
+    (native && !capabilities.includes("sessions.native-rewind.v1")) ||
     ("operationId" in target && !capabilities.includes("sessions.git-rewind-undo.v1"))
   )
     throw new Error(t("Update bycoda Host to rewind this workspace and conversation safely."));
+  if (native) {
+    const workspace = await workspaceRequest("workspaces.get", { workspaceId }, context);
+    if (!workspace)
+      throw new Error(
+        t("The complete conversation could not be loaded. Retry the rewind preview."),
+      );
+    const persisted = await upsertSession({ ...session, workspaceRevision: workspace.revision });
+    if (!persisted)
+      throw new Error(
+        t("The complete conversation could not be loaded. Retry the rewind preview."),
+      );
+    const record = await invoke<{ transcriptRevision?: number } | null>("session_get", {
+      sessionId: session.id,
+    });
+    if (!record || !Number.isSafeInteger(record.transcriptRevision))
+      throw new Error(
+        t("The complete conversation could not be loaded. Retry the rewind preview."),
+      );
+    return invoke<SessionRewindPlan>("managed_rewind_plan", {
+      request: {
+        workspaceId,
+        sessionId: session.id,
+        expectedRevision: workspace.revision,
+        expectedConversationRevision: record.transcriptRevision,
+        ...("operationId" in target
+          ? { direction: "undo", operationId: target.operationId }
+          : { direction: "rewind", userBlockId: target.userBlockId }),
+      },
+    });
+  }
   const resolved = await resolveWorkspaceContext(session.cwd);
   const authoritativeSessionId = remoteSessionFor(session.id) ?? session.id;
   const [workspace, authoritative] = await Promise.all([
@@ -56,20 +91,49 @@ export async function applyWorkspaceRewind(
   session: Session,
   plan: SessionRewindPlan,
   idempotencyKey: string,
-): Promise<{ receipt: SessionRewindReceipt; session: Session }> {
+): Promise<{ receipt: SessionRewindReceipt; session: Session; snapshot?: HostSession }> {
   if (plan.blockers.length || plan.expiresAt <= Date.now())
     throw new Error(t("This rewind preview is blocked or expired. Refresh the preview."));
   const context = { cwd: session.cwd };
+  const native = !parseRemotePath(session.cwd) && !remoteSessionFor(session.id);
+  const mutation = {
+    workspaceId: plan.workspaceId,
+    expectedRevision: plan.expectedRevision,
+    idempotencyKey,
+    sessionId: plan.sessionId,
+    expectedConversationRevision: plan.expectedConversationRevision,
+    planToken: plan.token,
+  };
+  if (native) {
+    const receipt = await invoke<SessionRewindReceipt>(
+      plan.direction === "undo" ? "managed_rewind_undo" : "managed_rewind_apply",
+      { request: mutation },
+    );
+    const authoritative = await getSession(session.id);
+    const record = await invoke<{ transcriptRevision?: number } | null>("session_get", {
+      sessionId: session.id,
+    });
+    if (!authoritative || record?.transcriptRevision !== receipt.conversationRevision)
+      throw new Error(
+        t(
+          "Rewind was recorded, but the conversation has not synchronized. Reopen this session before continuing.",
+        ),
+      );
+    return {
+      receipt,
+      session: {
+        ...authoritative,
+        providerSessionId: undefined,
+        pendingContextReplay: buildConversationReplay(authoritative.blocks) || undefined,
+        pendingSwitch: undefined,
+        context: undefined,
+        busy: false,
+      },
+    };
+  }
   const receipt = await workspaceRequest(
     plan.direction === "undo" ? "sessions.rewind.undo" : "sessions.rewind.apply",
-    {
-      workspaceId: plan.workspaceId,
-      expectedRevision: plan.expectedRevision,
-      idempotencyKey,
-      sessionId: plan.sessionId,
-      expectedConversationRevision: plan.expectedConversationRevision,
-      planToken: plan.token,
-    },
+    mutation,
     context,
   );
   const resolved = await resolveWorkspaceContext(session.cwd);
@@ -93,6 +157,7 @@ export async function applyWorkspaceRewind(
     );
   return {
     receipt,
+    snapshot: authoritative,
     session: {
       ...session,
       ...authoritative.session,

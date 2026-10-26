@@ -266,6 +266,7 @@ type Props = SessionPaneProps & {
   /** An opened host conversation whose transcript has not arrived yet. */
   remoteSessionLoading?: boolean;
   remoteSessionStarted?: boolean;
+  managedWorkspaceCreationReady?: boolean;
   workingMachine?: string;
   headerStatus?: ReactNode;
   /** A host chat whose last turn the host lost: shows Continue, as a quit turn does locally. */
@@ -378,6 +379,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   remoteFeatures,
   remoteSessionLoading = false,
   remoteSessionStarted = false,
+  managedWorkspaceCreationReady = false,
   workingMachine,
   headerStatus,
   interruptedTurn,
@@ -903,6 +905,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
       const accepted = await onRewindMessage(requestedSessionId, pendingRewind.block.id);
       if (activeSessionIdRef.current !== requestedSessionId) return;
       if (!accepted) {
+        if (session.workspaceId) {
+          setPendingRewind(null);
+          return;
+        }
         setRewindError(t("The conversation could not be rewound. Try again."));
         return;
       }
@@ -920,6 +926,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
       setRewindingMessage(false);
     }
   }, [managed, onRewindMessage, pendingRewind, rewindingMessage, sendBlockedReason, session]);
+  // Managed rewind owns its file/conversation preview. Never show the legacy
+  // conversation-only confirmation (which promises to leave files unchanged).
+  useEffect(() => {
+    if (session.workspaceId && pendingRewind && !rewindingMessage && !rewindError)
+      void confirmMessageRewind();
+  }, [session.workspaceId, pendingRewind, rewindingMessage, rewindError, confirmMessageRewind]);
   const stopDockAgent = useStableCallback((agent: DockAgent) =>
     agent.callId ? stopBackground(agent.callId) : Promise.reject(new Error("No call to stop")),
   );
@@ -1060,6 +1072,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         windowMovingSessionIds?.has(session.id)
       }
       remoteSession={remoteSession}
+      managedWorkspaceCreationReady={managedWorkspaceCreationReady}
       sendBlockedReason={sendBlockedReason}
       sendHeldReason={
         windowMovingSessionIds?.has(session.id)
@@ -1586,7 +1599,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
         {pane}
         {showNotesPanel ? <SessionNotesPanel sessionId={session.id} cwd={session.cwd} /> : null}
       </div>
-      {pendingRewind ? (
+      {session.workspaceId && rewindError ? (
+        <Alert tone="danger" role="alert">
+          {rewindError}
+        </Alert>
+      ) : null}
+      {pendingRewind && !session.workspaceId ? (
         <Modal
           onClose={() => {
             if (!rewindingMessage) setPendingRewind(null);

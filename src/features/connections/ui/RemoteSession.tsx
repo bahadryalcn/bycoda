@@ -54,7 +54,15 @@ import {
   startPerformanceSpan,
   recordPerformanceEvent,
 } from "../../../shared/lib/performanceTrace";
-import { temporaryWorktreeBranchName } from "../../source-control/model/worktrees";
+import { prepareSessionWorkspace } from "../../workspaces/model/sessionWorkspace";
+import { applyWorkspaceRewind, planWorkspaceRewind } from "../../workspaces/model/rewindClient";
+import {
+  clearWorkspaceRewindUndo,
+  offerWorkspaceRewindUndo,
+  requestWorkspaceRewindPreview,
+  registerWorkspaceRewindUndoHandler,
+  type WorkspaceRewindUndoIdentity,
+} from "../../workspaces/ui/WorkspaceRewindPreview";
 import type { AgentModel } from "../../sessions/model/models";
 import { isModelEnabled } from "../../sessions/model/models";
 import { remoteSessionPollDelay } from "../model/remotePollingPolicy";
@@ -137,7 +145,6 @@ import {
   type HostDescriptor,
   type HostModelCatalog,
   type HostSession,
-  type HostWorktree,
   type RemoteAttachment,
   type RemoteMachine,
   type RemoteProvider,
@@ -148,6 +155,7 @@ export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
   remoteFeatures: { attachments: boolean; plan: boolean; draft: boolean; steer?: boolean };
   remoteSessionLoading: boolean;
   remoteSessionStarted: boolean;
+  managedWorkspaceCreationReady: boolean;
   workingMachine?: string;
   headerStatus?: ReactNode;
   /** The host recorded that this chat's last turn was lost; Continue is offered. */
@@ -506,8 +514,22 @@ function ConnectedRemoteSession({
   const [selectedCwd, setSelectedCwd] = useState(
     () => remotePendingWorktree(shell.id) ?? project.cwd,
   );
-  const [draftWorkspaceMode, setDraftWorkspaceMode] = useState<WorkspaceMode>("current");
-  const [draftWorktreeBase, setDraftWorktreeBase] = useState("HEAD");
+  const [draftWorkspaceMode, setDraftWorkspaceMode] = useState<WorkspaceMode | undefined>(
+    shell.workspaceMode,
+  );
+  // This identity survives preparation failures/reloads, before a create receipt
+  // exists. Hosts advertising managedCreation validate it before binding ownership.
+  const creationIdentityKey = `bycoda.managedCreate:${machine.environmentId}:${shell.id}`;
+  const managedCreateId = () => {
+    const existing = localStorage.getItem(creationIdentityKey);
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    localStorage.setItem(creationIdentityKey, id);
+    return id;
+  };
+  const [draftWorktreeBase, setDraftWorktreeBase] = useState<string | undefined>(
+    shell.worktreeBase,
+  );
   const [sending, setSending] = useState(false);
   const [rewinding, setRewinding] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ offset: number; size: number }>();
@@ -1316,6 +1338,8 @@ function ConnectedRemoteSession({
         }
       }
       if (!receipt) throw new Error(t("The host did not confirm the request."));
+      if (command.type === "create" && command.sessionId && receipt.sessionId !== command.sessionId)
+        throw new Error(t("The host did not confirm the request."));
       recordPerformanceEvent("host-ack", { revision: receipt.revision }, traceId);
       const stopped =
         (generation !== undefined && generation !== submissionGeneration.current) ||
@@ -1632,6 +1656,23 @@ function ConnectedRemoteSession({
       cachedRemoteSessionIds(shell.cwd),
     );
     try {
+      if (!descriptor?.capabilities.includes("sessions.managedCreation.v1"))
+        throw new Error(t("Update bycoda to create managed sessions on this remote Host."));
+      const reservedSessionId = managedCreateId();
+      const workspace = await prepareSessionWorkspace({
+        ...shell,
+        id: reservedSessionId,
+        cwd: project.key,
+        workspaceMode: draftWorkspaceMode,
+        worktreeBase: draftWorktreeBase,
+        worktreeCwd: selectedCwd !== project.cwd ? selectedCwd : undefined,
+      });
+      if (
+        !alive.current ||
+        version !== bindingVersion.current ||
+        generation !== submissionGeneration.current
+      )
+        return;
       const uploaded = await uploadRemoteAttachments(machine.id, turn.attachments, {
         environmentId: machine.environmentId,
         ownership,
@@ -1653,38 +1694,7 @@ function ConnectedRemoteSession({
       )
         return;
       setUploadProgress(undefined);
-      let worktreeCwd = selectedCwd;
-      let autoWorktreeBranch: string | undefined;
-      if (draftWorkspaceMode === "worktree") {
-        try {
-          const tree = await remoteRequest<HostWorktree>(machine.id, "git.worktreeCreate", {
-            projectId: project.projectId,
-            cwd: selectedCwd,
-            branch: temporaryWorktreeBranchName(),
-            base: draftWorktreeBase,
-            existing: false,
-          });
-          if (version !== bindingVersion.current || generation !== submissionGeneration.current)
-            return;
-          worktreeCwd = tree.path;
-          autoWorktreeBranch = tree.branch ?? undefined;
-          rememberRemotePendingWorktree(shell.id, tree.path);
-          if (alive.current) {
-            setSelectedCwd(tree.path);
-            setDraftWorkspaceMode("current");
-          }
-        } catch (reason) {
-          if (
-            alive.current &&
-            version === bindingVersion.current &&
-            generation === submissionGeneration.current
-          ) {
-            setError(String(reason));
-            setStarting({ ...turn, failed: true });
-          }
-          return;
-        }
-      }
+      const worktreeCwd = workspace?.path ?? selectedCwd;
       const followup: Exclude<HostCommand, { type: "create" }> = turn.draft
         ? {
             type: "draft",
@@ -1706,10 +1716,11 @@ function ConnectedRemoteSession({
       const receipt = await run(
         {
           type: "create",
-          commandId: crypto.randomUUID(),
+          commandId: reservedSessionId,
+          sessionId: reservedSessionId,
           projectId: project.projectId,
+          ...(workspace ? { workspaceId: workspace.id } : {}),
           ...(worktreeCwd !== project.cwd ? { worktreeCwd } : {}),
-          ...(autoWorktreeBranch ? { autoWorktreeBranch } : {}),
           harness: draft.harness,
           model: draft.model,
           modelSettings: draft.settings,
@@ -2010,21 +2021,36 @@ function ConnectedRemoteSession({
     }
     // A new conversation: the command needs a session to run in.
     if (sessionId || !draft.model) return false;
-    if (draftWorkspaceMode === "worktree") {
-      setError(t("Send a message first to create the worktree, then run commands in it."));
+    if (!descriptor.capabilities.includes("sessions.managedCreation.v1")) {
+      setError(t("Update bycoda to create managed sessions on this remote Host."));
       return false;
     }
     preparingRef.current = true;
-    void run({
-      type: "create",
-      commandId: crypto.randomUUID(),
-      projectId: project.projectId,
-      ...(selectedCwd !== project.cwd ? { worktreeCwd: selectedCwd } : {}),
-      harness: draft.harness,
-      model: draft.model,
-      modelSettings: draft.settings,
-      runtimeMode: draft.mode,
-    })
+    void (async () => {
+      const reservedSessionId = managedCreateId();
+      const workspace = await prepareSessionWorkspace({
+        ...shell,
+        id: reservedSessionId,
+        cwd: project.key,
+        workspaceMode: draftWorkspaceMode,
+        worktreeBase: draftWorktreeBase,
+        worktreeCwd: selectedCwd !== project.cwd ? selectedCwd : undefined,
+      });
+      if (!alive.current || version !== bindingVersion.current) return undefined;
+      const cwd = workspace?.path ?? selectedCwd;
+      return run({
+        type: "create",
+        commandId: reservedSessionId,
+        sessionId: reservedSessionId,
+        projectId: project.projectId,
+        ...(workspace ? { workspaceId: workspace.id } : {}),
+        ...(cwd !== project.cwd ? { worktreeCwd: cwd } : {}),
+        harness: draft.harness,
+        model: draft.model,
+        modelSettings: draft.settings,
+        runtimeMode: draft.mode,
+      });
+    })()
       .then((receipt) => (receipt ? dispatchShell(receipt.sessionId, command) : undefined))
       .catch(failed)
       .finally(() => {
@@ -2819,6 +2845,88 @@ function ConnectedRemoteSession({
     void run(message(hostSession.id, "/compact"));
     return true;
   };
+  const undoManaged = async (
+    requestedSessionId: string,
+    { workspaceId, operationId }: WorkspaceRewindUndoIdentity,
+  ) => {
+    const current = snapshotRef.current;
+    if (
+      requestedSessionId !== shell.id ||
+      !current ||
+      current.session.workspaceId !== workspaceId ||
+      current.session.id !== boundSession.current ||
+      current.status === "running" ||
+      sendingRef.current ||
+      preparingRef.current ||
+      !onlineRef.current ||
+      pageCacheOnly ||
+      remoteDeleted ||
+      (sharedQueueEnabled && (!queue.loaded || queue.current().messages.length))
+    )
+      throw new Error(t("Wait for this session to finish before undoing the rewind."));
+    const targetSessionId = current.session.id;
+    const version = bindingVersion.current;
+    const owner = Symbol();
+    rewindOwner.current = owner;
+    sendingOwner.current = owner;
+    sendingRef.current = true;
+    setSending(true);
+    setRewinding(true);
+    const stillCurrent = () =>
+      alive.current &&
+      boundSession.current === targetSessionId &&
+      bindingVersion.current === version &&
+      rewindOwner.current === owner;
+    try {
+      const undoSession = { ...current.session, id: shell.id, cwd: project.key };
+      const plan = await planWorkspaceRewind(undoSession, workspaceId, { operationId });
+      const key = crypto.randomUUID();
+      await requestWorkspaceRewindPreview(
+        plan,
+        async () => {
+          if (!stillCurrent() || snapshotRef.current?.revision !== current.revision)
+            throw new Error(t("The conversation changed. Close this preview and try again."));
+          await deleteRemotePageCache({
+            environmentId: machine.environmentId,
+            sessionId: targetSessionId,
+          });
+          const undone = await applyWorkspaceRewind(undoSession, plan, key);
+          if (!stillCurrent() || !undone.snapshot)
+            throw new Error(
+              t("The complete conversation could not be loaded. Retry the rewind preview."),
+            );
+          snapshotRef.current = undone.snapshot;
+          setSnapshot(undone.snapshot);
+          rememberSessionSnapshot(
+            snapshotKey(machine.id, targetSessionId),
+            undone.snapshot,
+            machine.environmentId,
+          );
+          onSnapshot?.(shell.id, undone.snapshot);
+          clearWorkspaceRewindUndo(shell.id);
+        },
+        shell.id,
+      );
+    } finally {
+      if (rewindOwner.current === owner) rewindOwner.current = undefined;
+      if (sendingOwner.current === owner) {
+        sendingOwner.current = undefined;
+        sendingRef.current = false;
+        if (alive.current) setSending(false);
+      }
+      if (alive.current) setRewinding(false);
+    }
+  };
+  const undoManagedRef = useRef(undoManaged);
+  undoManagedRef.current = undoManaged;
+  useEffect(
+    () =>
+      registerWorkspaceRewindUndoHandler(shell.id, (id, identity) =>
+        undoManagedRef.current(id, identity),
+      ),
+    [shell.id],
+  );
+
   const rewind = async (blockId: string): Promise<boolean> => {
     if (
       !hostSession ||
@@ -2832,7 +2940,9 @@ function ConnectedRemoteSession({
       sendingRef.current ||
       preparingRef.current ||
       snapshot.history?.before !== undefined ||
-      !descriptor?.capabilities.includes(SESSION_REWIND) ||
+      !descriptor?.capabilities.includes(
+        hostSession?.workspaceId ? "sessions.git-rewind.v1" : SESSION_REWIND,
+      ) ||
       (sharedQueueEnabled && (!queue.loaded || queue.queue.messages.length > 0)) ||
       !canRewindConversation(hostSession, blockId)
     )
@@ -2849,6 +2959,57 @@ function ConnectedRemoteSession({
     setRewinding(true);
     forceTailRead.current = true;
     try {
+      if (hostSession.workspaceId) {
+        const workspaceId = hostSession.workspaceId;
+        const stillCurrent = () =>
+          alive.current &&
+          boundSession.current === targetSessionId &&
+          bindingVersion.current === targetBindingVersion &&
+          rewindOwner.current === owner;
+        const reconcile = (updated: HostSession) => {
+          if (!stillCurrent())
+            throw new Error(t("The conversation changed. Close this preview and try again."));
+          snapshotRef.current = updated;
+          setSnapshot(updated);
+          rememberSessionSnapshot(
+            snapshotKey(machine.id, targetSessionId),
+            updated,
+            machine.environmentId,
+          );
+          onSnapshot?.(shell.id, updated);
+          forceTailRead.current = false;
+        };
+        const managedSession = { ...session, workspaceId };
+        const plan = await planWorkspaceRewind(managedSession, workspaceId, {
+          userBlockId: blockId,
+        });
+        const operationKey = crypto.randomUUID();
+        return await requestWorkspaceRewindPreview(
+          plan,
+          async () => {
+            if (!stillCurrent() || snapshotRef.current?.revision !== known.revision)
+              throw new Error(t("The conversation changed. Close this preview and try again."));
+            await deleteRemotePageCache({
+              environmentId: machine.environmentId,
+              sessionId: targetSessionId,
+            });
+            const result = await applyWorkspaceRewind(managedSession, plan, operationKey);
+            if (!result.snapshot)
+              throw new Error(
+                t("The complete conversation could not be loaded. Retry the rewind preview."),
+              );
+            reconcile(result.snapshot);
+            const operationId = result.receipt.undoOperationId;
+            if (operationId)
+              offerWorkspaceRewindUndo(
+                shell.id,
+                () => undoManagedRef.current(shell.id, { workspaceId, operationId }),
+                { workspaceId, operationId },
+              );
+          },
+          shell.id,
+        );
+      }
       await deleteRemotePageCache({
         environmentId: machine.environmentId,
         sessionId: targetSessionId,
@@ -3093,6 +3254,9 @@ function ConnectedRemoteSession({
     },
     remoteSessionLoading: !!sessionId && !hostSession && !session.blocks.length,
     remoteSessionStarted: !!sessionId,
+    managedWorkspaceCreationReady: !!descriptor?.capabilities.includes(
+      "sessions.managedCreation.v1",
+    ),
     remoteHistoryHasMore: snapshot?.history?.before !== undefined,
     remoteHistoryLoading,
     remoteHistoryError: remoteHistoryError || undefined,
@@ -3125,9 +3289,11 @@ function ConnectedRemoteSession({
           : ["codex", "claude"],
     onSubmit: (_, text, attachments, options) => submit(text, attachments, options),
     onStop: stopTurn,
-    onRewindMessage: descriptor?.capabilities.includes(SESSION_REWIND)
+    onRewindMessage: descriptor?.capabilities.includes(
+      hostSession?.workspaceId ? "sessions.git-rewind.v1" : SESSION_REWIND,
+    )
       ? (requestedSessionId, blockId) =>
-          requestedSessionId === hostSession?.id ? rewind(blockId) : Promise.resolve(false)
+          requestedSessionId === shell.id ? rewind(blockId) : Promise.resolve(false)
       : undefined,
     onApproval: (_, requestId, decision) => approve(requestId, decision),
     onQuestionReply: (_, requestId, reply) => answer(requestId, reply),

@@ -12,6 +12,37 @@ type Preview = {
   settle: (applied: boolean) => void;
 };
 type Undo = { sessionId: string; run: () => Promise<void> };
+export type WorkspaceRewindUndoIdentity = { workspaceId: string; operationId: string };
+type UndoHandler = (sessionId: string, identity: WorkspaceRewindUndoIdentity) => Promise<void>;
+const undoHandlers = new Map<string, UndoHandler>();
+const undoStorageKey = (sessionId: string) => `bycoda.workspaceRewindUndo:${sessionId}`;
+function savedUndo(sessionId: string): WorkspaceRewindUndoIdentity | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(undoStorageKey(sessionId)) ?? "null");
+    return value &&
+      typeof value.workspaceId === "string" &&
+      typeof value.operationId === "string" &&
+      value.workspaceId.length > 0 &&
+      value.workspaceId.length < 256 &&
+      value.operationId.length > 0 &&
+      value.operationId.length < 256
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+/** Persisted receipt IDs locate an Undo; a fresh owner/revision-bound plan still authorizes it. */
+export function registerWorkspaceRewindUndoHandler(sessionId: string, handler: UndoHandler) {
+  undoHandlers.set(sessionId, handler);
+  changed();
+  return () => {
+    if (undoHandlers.get(sessionId) === handler) {
+      undoHandlers.delete(sessionId);
+      changed();
+    }
+  };
+}
 let preview: Preview | null = null;
 const undo = new Map<string, Undo>();
 let version = 0;
@@ -38,11 +69,26 @@ export function requestWorkspaceRewindPreview(
     changed();
   });
 }
-export function offerWorkspaceRewindUndo(sessionId: string, run: () => Promise<void>) {
+export function offerWorkspaceRewindUndo(
+  sessionId: string,
+  run: () => Promise<void>,
+  identity?: WorkspaceRewindUndoIdentity,
+) {
+  if (identity)
+    try {
+      localStorage.setItem(undoStorageKey(sessionId), JSON.stringify(identity));
+    } catch {
+      /* The in-memory Undo remains usable when storage is unavailable. */
+    }
   undo.set(sessionId, { sessionId, run });
   changed();
 }
 export function clearWorkspaceRewindUndo(sessionId: string) {
+  try {
+    localStorage.removeItem(undoStorageKey(sessionId));
+  } catch {
+    /* Fresh plans remain authoritative. */
+  }
   undo.delete(sessionId);
   changed();
 }
@@ -156,7 +202,10 @@ export function WorkspaceRewindPreviewHost({ sessionId }: { sessionId: string })
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const current = preview?.displaySessionId === sessionId ? preview : null;
-  const currentUndo = undo.get(sessionId);
+  const saved = savedUndo(sessionId);
+  const handler = undoHandlers.get(sessionId) ?? undoHandlers.get("*");
+  const currentUndo =
+    saved && handler ? { sessionId, run: () => handler(sessionId, saved) } : undo.get(sessionId);
   useEffect(
     () => () => {
       if (preview?.displaySessionId === sessionId) {

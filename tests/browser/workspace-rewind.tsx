@@ -1,5 +1,13 @@
 import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SessionPane, type SessionPaneProps } from "../../src/features/sessions/ui/SessionPane";
+import { rememberRemoteProject } from "../../src/features/connections/model/remoteProjects";
+import { ModelSourceContext } from "../../src/features/sessions/ui/modelSource";
+import "../../src/features/connections/model/remoteCommands";
+import { registerHarness } from "../../src/integrations/harness/core/registry";
+import { rememberRemoteSession } from "../../src/features/connections/model/connections";
+import { remoteSessionActions } from "../../src/features/connections/model/remoteSessionActions";
 import { Button } from "../../src/shared/ui/Button";
 import { WorkspaceRewindPreviewHost } from "../../src/features/workspaces/ui/WorkspaceRewindPreview";
 import {
@@ -35,6 +43,34 @@ const original = {
 let authoritative = original;
 let revision = 4;
 const calls: Array<{ method: string; params: unknown }> = [];
+if (query.has("pane") || query.has("remoteRewind")) {
+  const saved = sessionStorage.getItem("fixture-native-rewind");
+  if (saved) {
+    const record = JSON.parse(saved);
+    authoritative = record.session;
+    revision = record.revision;
+  }
+}
+const unavailable = async () => {
+  throw new Error("No live provider in managed workspace fixture");
+};
+registerHarness({
+  id: "claude",
+  live: true,
+  canSteer: false,
+  sendTurn: unavailable,
+  steerTurn: unavailable,
+  cancelTurn: unavailable,
+  respondApproval: () => {},
+  bindSession: () => {},
+  stopSession: async () => {
+    calls.push({ method: "provider.stop", params: {} });
+    if (query.has("retireUnknown")) throw new Error("Provider retirement could not be confirmed.");
+  },
+  forgetSession: async () => {
+    calls.push({ method: "provider.forget", params: {} });
+  },
+});
 const machine = {
   id: "fixture-machine",
   name: "Fixture PC",
@@ -42,9 +78,19 @@ const machine = {
   environmentId: "fixture-env",
   localHost: true,
 };
+const remoteProject = rememberRemoteProject(machine.environmentId, {
+  id: "project",
+  cwd: "C:/fixture/rewind",
+  name: "Managed session fixture",
+});
+if (query.has("remoteRewind")) rememberRemoteSession("remote-shell", original.id);
+if (query.has("remoteCreate"))
+  authoritative = { ...original, id: "not-created", blocks: [], workspaceId: undefined };
 let failApply = query.has("failApply");
 Object.assign(window, {
   rewindFixtureCalls: calls,
+  tryRemoteSend: () => remoteSessionActions("remote-shell")?.submit("Must wait for rewind", []),
+  __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   __TAURI_INTERNALS__: {
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
     transformCallback: () => 1,
@@ -53,6 +99,48 @@ Object.assign(window, {
       if (command === "local_host_connect") return machine;
       if (command === "remote_machines") return [machine];
       if (command === "plugin:event|listen") return 1;
+      if (command === "session_get")
+        return { ...authoritative, transcriptRevision: revision, createdAt: 1, updatedAt: 1 };
+      if (command === "session_get_queue") return null;
+      if (command === "session_upsert")
+        return { ...args.session, transcriptRevision: revision, createdAt: 1, updatedAt: 1 };
+      if (
+        command === "session_list_drafts" ||
+        command === "list_project_files" ||
+        command === "list_claude_commands"
+      )
+        return [];
+      if (command === "session_checkpoint_status") return { files: [] };
+      if (command === "git_branches")
+        return {
+          current: "main",
+          detached: false,
+          branches: [{ name: "main", current: true, remote: null }],
+        };
+      if (command === "git_worktrees")
+        return {
+          worktrees: [
+            { path: original.cwd, branch: "main", head: "abc123", isMain: true, missing: false },
+          ],
+        };
+      if (command === "git_diff_index")
+        return { head: "abc123", branch: "main", files: [], conflicts: [] };
+      if (
+        command === "managed_rewind_plan" ||
+        command === "managed_rewind_apply" ||
+        command === "managed_rewind_undo"
+      ) {
+        args = {
+          method:
+            command === "managed_rewind_plan"
+              ? "sessions.rewind.plan"
+              : command === "managed_rewind_apply"
+                ? "sessions.rewind.apply"
+                : "sessions.rewind.undo",
+          params: args.request,
+        };
+        command = "remote_request";
+      }
       if (command !== "remote_request") return null;
       calls.push({ method: args.method, params: args.params });
       switch (args.method) {
@@ -65,7 +153,124 @@ Object.assign(window, {
             platform: "win32",
             capabilities: query.has("olderHost")
               ? []
-              : ["workspaces.managed.v1", "sessions.git-rewind.v1", "sessions.git-rewind-undo.v1"],
+              : [
+                  "workspaces.managed.v1",
+                  "workspaces.policy.v1",
+                  "sessions.managedCreation.v1",
+                  "sessions.native-rewind.v1",
+                  "sessions.git-rewind.v1",
+                  "sessions.git-rewind-undo.v1",
+                  "sessions.draft",
+                ],
+          };
+        case "models.list":
+          return {
+            models: {
+              claude: [
+                {
+                  id: "claude:fixture",
+                  harness: "claude",
+                  name: "Claude fixture",
+                  nativeId: "fixture",
+                  settings: [],
+                },
+              ],
+            },
+            errors: {},
+          };
+        case "workspace.run":
+          if (args.params.command === "git_branches")
+            return { current: "main", branches: [{ name: "main", current: true, remote: null }] };
+          if (args.params.command === "git_diff_index")
+            return { head: "abc123", branch: "main", files: [], conflicts: [] };
+          if (args.params.command === "git_worktrees")
+            return {
+              worktrees: [
+                {
+                  path: original.cwd,
+                  branch: "main",
+                  head: "abc123",
+                  isMain: true,
+                  missing: false,
+                },
+              ],
+              defaultRoot: "C:/fixture/rewind-worktrees",
+            };
+          if (args.params.command === "skill_policy_get")
+            return { disabledNames: [], disabledPaths: [] };
+          if (args.params.command === "session_checkpoint_status") return { files: [] };
+          return [];
+        case "git.worktrees":
+          return {
+            worktrees: [
+              {
+                path: "C:/fixture/rewind",
+                branch: "main",
+                head: "abc123",
+                isMain: true,
+                missing: false,
+              },
+            ],
+          };
+        case "git.branches":
+          return { current: "main", branches: ["main"] };
+        case "projects.workspacePolicy.get":
+          return {
+            resolved: {
+              policy: { defaultMode: "worktree", integrationBranchRef: "refs/heads/main" },
+            },
+          };
+        case "workspaces.prepare":
+          return {
+            workspace: {
+              id: "workspace",
+              revision: 1,
+              owner: args.params.owner,
+              projectId: "project",
+              environmentId: machine.environmentId,
+              path: "C:/fixture/rewind-worktrees/session",
+              directoryState: "present",
+              branchRef: "refs/heads/bycoda/s/fixture",
+            },
+          };
+        case "commands.dispatch": {
+          const input = args.params;
+          if (input.type === "create")
+            authoritative = {
+              ...original,
+              id: input.sessionId,
+              cwd: input.worktreeCwd,
+              blocks: [],
+              workspaceId: input.workspaceId,
+              workspaceRevision: 1,
+            };
+          if (input.type === "send" || input.type === "draft") {
+            authoritative = {
+              ...authoritative,
+              blocks: [
+                ...authoritative.blocks,
+                {
+                  id: input.commandId,
+                  role: "user",
+                  text: input.text,
+                  draft: input.type === "draft",
+                },
+              ],
+            };
+            revision++;
+          }
+          return { commandId: input.commandId, sessionId: authoritative.id, revision };
+        }
+        case "sessions.sync":
+          return {
+            kind: "snapshot",
+            value: {
+              revision,
+              session: authoritative,
+              projectId: "project",
+              status: "idle",
+              updatedAt: 1,
+            },
           };
         case "projects.list":
           return [{ id: "project", cwd: original.cwd, name: "Rewind fixture" }];
@@ -117,6 +322,11 @@ Object.assign(window, {
               ? original
               : { ...original, blocks: original.blocks.slice(0, 2) };
           revision++;
+          if (query.has("pane") || query.has("remoteRewind"))
+            sessionStorage.setItem(
+              "fixture-native-rewind",
+              JSON.stringify({ session: authoritative, revision }),
+            );
           return {
             operationId: "rewind-operation",
             workspaceId: "workspace",
@@ -134,7 +344,19 @@ Object.assign(window, {
   },
 });
 function Fixture() {
-  const [sessions, setSessions] = useState([original]);
+  const [sessions, setSessions] = useState([
+    query.has("remoteCreate") || query.has("remoteRewind")
+      ? {
+          ...original,
+          id: "remote-shell",
+          cwd: remoteProject.key,
+          workspaceId: undefined,
+          blocks: [],
+        }
+      : query.has("pane")
+        ? authoritative
+        : original,
+  ]);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   const active = useRef(false);
@@ -166,6 +388,71 @@ function Fixture() {
     persistSession: () => {},
   } as unknown as CompactAndRewindDeps;
   const { onRewindMessage } = useCompactAndRewind(deps);
+  if (query.has("pane") || query.has("remoteCreate") || query.has("remoteRewind")) {
+    const noop = () => {};
+    const props = {
+      session: sessions[0],
+      visible: true,
+      focused: true,
+      inSplit: false,
+      composerFocused: true,
+      recents: [],
+      hideProjectPicker: true,
+      onFocus: noop,
+      onClose: noop,
+      onCwdChange: noop,
+      onBranchChange: noop,
+      onWorkspaceModeChange: noop,
+      onWorktreeBaseChange: noop,
+      onModelChange: noop,
+      onModelSettingsChange: noop,
+      onRuntimeModeChange: noop,
+      onSubmit: () => false,
+      onSaveDraft: () => false,
+      onRemoveDraft: () => false,
+      onStop: noop,
+      onCompactContext: () => false,
+      onPlaceSessionInFolder: noop,
+      onDeleteQueuedMessage: noop,
+      onEditQueuedMessage: noop,
+      onQueuedMessageEditingChange: noop,
+      onSteerQueuedMessage: () => false,
+      onResumeQueue: () => false,
+      onUsageLimitResumeAtReset: noop,
+      onUsageLimitDismiss: noop,
+      onApproval: noop,
+      onQuestionReply: noop,
+      onOpenFile: noop,
+      onOpenDiff: noop,
+      onOpenPlan: noop,
+      onBuildPlan: noop,
+      onNewTerminal: noop,
+      onRewindMessage,
+    } as SessionPaneProps;
+    const model = {
+      id: "claude:fixture",
+      harness: "claude" as const,
+      name: "Claude fixture",
+      nativeId: "fixture",
+      settings: [],
+    };
+    return (
+      <main className="relative h-dvh min-h-0 min-w-0 bg-(--ui-surface) text-(--ui-text)">
+        <ModelSourceContext.Provider
+          value={{
+            modelsFor: () => [model],
+            resolve: () => model,
+            find: () => model,
+            available: () => true,
+            probed: () => true,
+            refresh: noop,
+          }}
+        >
+          <SessionPane {...props} />
+        </ModelSourceContext.Provider>
+      </main>
+    );
+  }
   return (
     <main className="mx-auto flex min-h-dvh max-w-3xl flex-col gap-4 p-6 text-(--ui-text)">
       <h1 className="text-ui-title font-medium">Review the working copy</h1>
@@ -207,4 +494,12 @@ function Fixture() {
   );
 }
 setLanguagePreference("en");
-void languageReady.then(() => createRoot(document.getElementById("root")!).render(<Fixture />));
+void languageReady.then(() =>
+  createRoot(document.getElementById("root")!).render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <Fixture />
+    </QueryClientProvider>,
+  ),
+);
