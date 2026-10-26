@@ -10,6 +10,7 @@ export type { TaskAcceptanceCriterion, TaskAcceptanceReport } from "./taskAccept
 import { parseProviderAccountId } from "../../providers/model/providerAccountId";
 import { parseTaskWorkspace, type TaskWorkspace } from "./taskWorkspace";
 import { parseCrewScopes } from "../../crews/model/crew";
+import type { BranchDeliveryPlan } from "../../workspaces/model/contracts";
 export {
   TASK_MOVES,
   canMoveTask,
@@ -157,6 +158,17 @@ export type HostTaskWireInput = Omit<HostTaskInput, "reviewerConfig"> & {
   reviewerConfig?: HostTaskInput["reviewerConfig"] | null;
 };
 
+/** Task-specific extension of the frozen workspace review; these ignored outputs need explicit review too. */
+export interface TaskDeliveryArtifactsPreview {
+  paths: string[];
+  hashes: Record<string, string>;
+  sourceFingerprint: string;
+  targetFingerprint: string;
+  targetHashes: Record<string, string | null>;
+  blockers: string[];
+}
+export type TaskDeliveryReview = BranchDeliveryPlan & { artifacts?: TaskDeliveryArtifactsPreview };
+
 export type HostTask = HostTaskInput & {
   /** Registry identity survives directory retirement; paths are only materialization hints. */
   workspaceId?: string;
@@ -165,6 +177,15 @@ export type HostTask = HostTaskInput & {
   workspaceActivityId?: string;
   deliveryState?: "awaitingOwner" | "merged" | "published";
   deliveryOperationId?: string;
+  artifactDeliveryPending?: boolean;
+  /** An incomplete artifact delivery fences directory retirement until its receipt reconciles. */
+  artifactDeliveryActivityId?: string;
+  /** Owner-reviewed ignored outputs, bound to the same opaque delivery plan token. */
+  deliveryArtifacts?: TaskDeliveryArtifactsPreview & {
+    planToken: string;
+    sourceHead: string;
+    targetDirectory: string;
+  };
   /** Persisted autoMerge settings are suspended until a fresh SHA-bound owner approval. */
   deliveryApprovalRequired?: boolean;
   finalization?: {

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -18,6 +19,7 @@ import type { SessionRunEngine } from "./sessionRuns";
 import type { HostTask } from "../src/features/tasks/model/hostTasks";
 import { unfinishedDependencies } from "../src/features/tasks/model/hostTasks";
 import type { WorkspaceDeliveryOperation } from "./workspace-contracts";
+import * as taskArtifacts from "./task-artifacts";
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 const cleanups: (() => Promise<void>)[] = [];
@@ -273,3 +275,180 @@ it("projects durable publication receipts without releasing integration dependen
   expect(unfinishedDependencies({ dependsOn: [published.id] }, [published])).toEqual([published]);
   expect(f.services.delivery.publish).not.toHaveBeenCalled();
 });
+
+it.each([false, true])(
+  "delivers reviewed ignored outputs and retains the Git receipt across copy failure (%s)",
+  async (failCopy) => {
+    const f = await fixture();
+    writeFileSync(join(f.cwd, ".gitignore"), "temp/\n");
+    git(f.cwd, "add", ".gitignore");
+    git(f.cwd, "commit", "-qm", "ignore task outputs");
+    const prepared = await f.internal.workingCopy(await f.tasks.save(f.input()));
+    const source = prepared.worktreeCwd!;
+    writeFileSync(join(source, "feature.txt"), "implemented\n");
+    git(source, "add", "feature.txt");
+    git(source, "commit", "-qm", "scoped work");
+    const path = "temp/local/report/result.txt";
+    mkdirSync(join(source, "temp/local/report"), { recursive: true });
+    writeFileSync(join(source, path), "verified output\n");
+    const reviewing = await f.internal.enterReview(prepared);
+    const workspace = f.adapters.rows.get(reviewing.workspaceId!)!;
+    const sourceHead = git(source, "rev-parse", "HEAD");
+    const plan: WorkspaceDeliveryOperation["plan"] = {
+      token: "artifact-review",
+      expiresAt: 1000,
+      action: "merge",
+      workspaceId: workspace.id,
+      expectedRevision: workspace.revision,
+      sourceBranchRef: workspace.branchRef,
+      sourceHead,
+      targetBranchRef: workspace.targetBranchRef,
+      targetHead: git(f.cwd, "rev-parse", "HEAD"),
+      targetStatusFingerprint: "reviewed",
+      commits: [sourceHead],
+      changedPaths: ["feature.txt"],
+      overlappingPaths: [],
+      checks: [],
+      visualEvidence: [],
+      blockers: [],
+    };
+    let operation: WorkspaceDeliveryOperation | undefined;
+    let integrations = 0;
+    f.services.registry.findOperation = vi.fn(async () => operation ?? null);
+    f.services.registry.listOperations = vi.fn(async () => (operation ? [operation] : []));
+    f.services.delivery.review = vi.fn(async () => ({ ...plan, targetDirectory: f.cwd }));
+    f.services.delivery.merge = vi.fn(async () => {
+      if (operation?.merge) return operation.merge;
+      git(f.cwd, "merge", "--no-ff", "--no-edit", sourceHead);
+      integrations++;
+      const receipt = {
+        operationId: "merge-artifacts",
+        workspaceId: workspace.id,
+        sourceHead,
+        previousTargetHead: plan.targetHead,
+        targetHead: git(f.cwd, "rev-parse", "HEAD"),
+        workspaceRevision: workspace.revision + 1,
+      };
+      operation = {
+        id: receipt.operationId,
+        kind: "delivery",
+        phase: "complete",
+        workspaceId: workspace.id,
+        expectedRevision: plan.expectedRevision,
+        idempotencyKey: "deliver-artifacts",
+        plan,
+        merge: receipt,
+        createdAt: 100,
+        updatedAt: 101,
+      };
+      f.adapters.rows.set(workspace.id, {
+        ...workspace,
+        state: "merged",
+        deliveredCommit: receipt.targetHead,
+        revision: receipt.workspaceRevision,
+      });
+      return receipt;
+    });
+    const reviewed = await f.tasks.reviewDelivery(reviewing.id);
+    expect("artifacts" in reviewed && reviewed.artifacts.paths).toEqual([path]);
+    const request = {
+      workspaceId: workspace.id,
+      expectedRevision: plan.expectedRevision,
+      idempotencyKey: "deliver-artifacts",
+      planToken: plan.token,
+    };
+    const owner = { ownerId: "owner", authorizationId: "trusted-owner" };
+    if (failCopy) {
+      const copy = vi
+        .spyOn(taskArtifacts, "transferTaskArtifacts")
+        .mockRejectedValueOnce(new Error("temporary artifact copy failure"));
+      try {
+        await expect(f.tasks.mergeDelivery(reviewing.id, request, owner)).rejects.toThrow(
+          "temporary artifact copy failure",
+        );
+      } finally {
+        copy.mockRestore();
+      }
+      const held = (await f.tasks.get(reviewing.id))!;
+      expect(held).toMatchObject({
+        status: "review",
+        merged: true,
+        artifactDeliveryPending: true,
+        deliveryOperationId: "merge-artifacts",
+      });
+      expect(held.artifactDeliveryActivityId).toBeTruthy();
+      await expect(f.tasks.delete(held.id)).rejects.toThrow(
+        "Reconcile the recorded artifact delivery",
+      );
+      await expect(f.tasks.move(held.id, "queued")).rejects.toThrow(
+        "Finish the recorded artifact delivery",
+      );
+      await f.internal.cleanupDelivered(held, 200);
+      expect(existsSync(source)).toBe(true);
+    }
+    const delivered = await f.tasks.mergeDelivery(reviewing.id, request, owner);
+    expect(integrations).toBe(1);
+    expect(delivered).toMatchObject({ status: "done", merged: true, artifactPaths: [path] });
+    expect(delivered.artifactDeliveryPending).not.toBe(true);
+    expect(readFileSync(join(f.cwd, path), "utf8")).toBe("verified output\n");
+    await f.internal.cleanupDelivered(delivered, 300);
+    expect(existsSync(source)).toBe(false);
+    expect(git(f.cwd, "rev-parse", prepared.branch!)).toBe(sourceHead);
+  },
+);
+
+it.each(["source", "target"])(
+  "refuses ignored artifact %s drift before invoking integration",
+  async (changed) => {
+    const f = await fixture();
+    writeFileSync(join(f.cwd, ".gitignore"), "temp/\n");
+    git(f.cwd, "add", ".gitignore");
+    git(f.cwd, "commit", "-qm", "ignore outputs");
+    const prepared = await f.internal.workingCopy(await f.tasks.save(f.input()));
+    const path = "temp/local/result.txt";
+    mkdirSync(join(prepared.worktreeCwd!, "temp/local"), { recursive: true });
+    writeFileSync(join(prepared.worktreeCwd!, path), "reviewed bytes\n");
+    await f.internal.enterReview(prepared);
+    const workspace = f.adapters.rows.get(prepared.workspaceId!)!;
+    const head = git(f.cwd, "rev-parse", "HEAD");
+    f.services.delivery.review = vi.fn(async () => ({
+      token: "approved-artifacts",
+      expiresAt: 1000,
+      action: "merge",
+      workspaceId: workspace.id,
+      expectedRevision: workspace.revision,
+      sourceBranchRef: workspace.branchRef,
+      sourceHead: head,
+      targetBranchRef: workspace.targetBranchRef,
+      targetHead: head,
+      targetStatusFingerprint: "clean",
+      commits: [],
+      changedPaths: [],
+      overlappingPaths: [],
+      checks: [],
+      visualEvidence: [],
+      blockers: [],
+      targetDirectory: f.cwd,
+    }));
+    const plan = await f.tasks.reviewDelivery(prepared.id);
+    const modifiedRoot = changed === "source" ? prepared.worktreeCwd! : f.cwd;
+    mkdirSync(join(modifiedRoot, "temp/local"), { recursive: true });
+    writeFileSync(join(modifiedRoot, path), "later owner bytes\n");
+    f.services.registry.findOperation = vi.fn(async () => null);
+    await expect(
+      f.tasks.mergeDelivery(
+        prepared.id,
+        {
+          workspaceId: workspace.id,
+          expectedRevision: workspace.revision,
+          idempotencyKey: "deliver-drift",
+          planToken: plan.token,
+        },
+        { ownerId: "owner", authorizationId: "trusted" },
+      ),
+    ).rejects.toThrow();
+    expect(f.services.delivery.merge).not.toHaveBeenCalled();
+    expect(git(f.cwd, "rev-parse", "HEAD")).toBe(head);
+    expect(readFileSync(join(modifiedRoot, path), "utf8")).toBe("later owner bytes\n");
+  },
+);

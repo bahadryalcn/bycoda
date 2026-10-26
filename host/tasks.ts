@@ -24,6 +24,7 @@ import {
   parseReviewVerdict,
   type HostTask,
   type HostTaskInput,
+  type TaskDeliveryReview,
   type TaskVerification,
 } from "../src/features/tasks/model/hostTasks";
 import { DEFAULT_MAX_RUNNING_TASKS } from "../src/features/tasks/model/hostSettings";
@@ -46,6 +47,10 @@ import {
 import { createHostWorktree } from "./git-worktrees";
 import { taskWorkspace } from "./task-workspace";
 import { transferTaskArtifacts } from "./task-artifacts";
+import {
+  previewTaskDeliveryArtifacts,
+  validateTaskDeliveryArtifacts,
+} from "./task-delivery-artifacts";
 import { acceptanceOutputFingerprint } from "./task-acceptance-snapshot";
 import { parseTaskWorkspace } from "../src/features/tasks/model/taskWorkspace";
 import type { HostGoal } from "../src/features/tasks/model/hostGoals";
@@ -77,6 +82,7 @@ import {
 } from "./task-workspace-runtime";
 import type { WorkspaceOwnerAuthorization } from "./workspace-service-contracts";
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
+import type { BranchMergeReceipt } from "./workspace-contracts";
 const TICK_MS = 30000;
 /** How many tasks a machine works on at once until its owner changes it. */
 export const MAX_RUNNING_TASKS = DEFAULT_MAX_RUNNING_TASKS;
@@ -1090,6 +1096,10 @@ export class HostTasks {
     const task = await this.find(id);
     if (!task) throw new Error("Task not found.");
     if (!isTaskStatus(to)) throw new Error("Invalid task status");
+    if (task.artifactDeliveryPending && ["todo", "queued", "done"].includes(to))
+      throw new Error(
+        "Finish the recorded artifact delivery before restarting or completing this task.",
+      );
     if ((task.crewRunId || task.crewDefinitionId) && to === "done")
       throw new Error(
         "Accept this assignment through its crew coordinator after independent review.",
@@ -1165,6 +1175,9 @@ export class HostTasks {
         workspaceActivityId: _workspaceActivityId,
         deliveryState: _deliveryState,
         deliveryOperationId: _deliveryOperationId,
+        deliveryArtifacts: _deliveryArtifacts,
+        artifactDeliveryPending: _artifactDeliveryPending,
+        artifactDeliveryActivityId: _artifactDeliveryActivityId,
         finalization: _finalization,
         baseBranch,
         baseCommit,
@@ -1381,6 +1394,10 @@ export class HostTasks {
     await this.ready;
 
     const task = await this.find(id);
+    if (task?.artifactDeliveryPending || task?.artifactDeliveryActivityId)
+      throw new Error(
+        "Reconcile the recorded artifact delivery before deleting this task; its source is retained.",
+      );
     if (
       expectedUpdatedAt !== undefined &&
       (!Number.isSafeInteger(expectedUpdatedAt) || expectedUpdatedAt < 0)
@@ -3518,17 +3535,44 @@ export class HostTasks {
     }
   }
   /** Review implementation and delivery independently; this read never authorizes a merge. */
-  async reviewDelivery(id: string) {
+  async reviewDelivery(id: string): Promise<TaskDeliveryReview> {
     const task = await this.get(id);
     if (!task?.workspaceId || !this.managed)
       throw new Error("Update this host to review managed task delivery.");
     const workspace = await this.managed.registry.get({ workspaceId: task.workspaceId });
     if (!workspace) throw new Error("The task workspace is unavailable.");
-    return this.managed.delivery.review({
+    const plan = await this.managed.delivery.review({
       workspaceId: workspace.id,
       expectedRevision: workspace.revision,
       action: "merge",
     });
+    if (workspace.directoryState === "removed") return plan;
+    const targetDirectory =
+      (plan as typeof plan & { targetDirectory?: string }).targetDirectory ??
+      task.deliveryCwd ??
+      (await this.store.project(task.projectId)).cwd;
+    const artifacts = await previewTaskDeliveryArtifacts(workspace.path, targetDirectory);
+    const latest = await this.get(id);
+    if (!latest || latest.workspaceId !== workspace.id || latest.updatedAt !== task.updatedAt)
+      throw new Error("Task changed while reviewing its delivery artifacts.");
+    if (
+      artifacts.paths.length ||
+      artifacts.blockers.length ||
+      task.artifactDeliveryPending ||
+      task.deliveryArtifacts
+    ) {
+      await this.write({
+        ...latest,
+        deliveryArtifacts: {
+          ...artifacts,
+          planToken: plan.token,
+          sourceHead: plan.sourceHead,
+          targetDirectory,
+        },
+      });
+      return { ...plan, artifacts, blockers: [...plan.blockers, ...artifacts.blockers] };
+    }
+    return plan;
   }
   /** Owner transport must supply proof separately. No persistent boolean authorizes this method. */
   async mergeDelivery(
@@ -3546,24 +3590,129 @@ export class HostTasks {
     if (this.delivering.has(id)) throw new Error("This task is already being delivered.");
     this.delivering.add(id);
     try {
+      const artifacts = task.deliveryArtifacts;
+      if (artifacts) {
+        if (artifacts.planToken !== request.planToken || !task.worktreeCwd)
+          throw new Error("Review task artifacts again before delivery.");
+        const previous = await this.managed.registry.findOperation({
+          workspaceId: task.workspaceId,
+          kind: "delivery",
+          idempotencyKey: request.idempotencyKey,
+        });
+        await validateTaskDeliveryArtifacts(
+          artifacts,
+          task.worktreeCwd,
+          artifacts.targetDirectory,
+          { allowCopied: previous?.kind === "delivery" && Boolean(previous.merge) },
+        );
+      }
       const receipt = await this.managed.delivery.merge(request, owner);
       const latest = await this.get(id);
       if (!latest || latest.workspaceId !== task.workspaceId)
         throw new Error("Task changed during delivery; the workspace receipt is retained.");
-      return this.write({
-        ...latest,
-        status: "done",
-        merged: true,
-        deliveredCommit: receipt.targetHead,
-        mergedAt: this.now(),
-        deliveryState: "merged",
-        deliveryOperationId: receipt.operationId,
-        deliveryApprovalRequired: undefined,
-        mergeError: undefined,
-        updatedAt: this.now(),
-      });
+      return await this.finishDeliveryReceipt(latest, receipt, request.planToken);
     } finally {
       this.delivering.delete(id);
+    }
+  }
+  private async finishDeliveryReceipt(
+    task: HostTask,
+    receipt: BranchMergeReceipt,
+    planToken: string,
+  ): Promise<HostTask> {
+    const delivered: HostTask = {
+      ...task,
+      status: "review",
+      merged: true,
+      deliveredCommit: receipt.targetHead,
+      mergedAt: this.now(),
+      deliveryState: "merged",
+      deliveryOperationId: receipt.operationId,
+      deliveryApprovalRequired: undefined,
+      mergeError: undefined,
+      updatedAt: this.now(),
+    };
+    await this.write(delivered);
+    const target =
+      task.deliveryArtifacts?.targetDirectory ??
+      task.deliveryCwd ??
+      (await this.store.project(task.projectId)).cwd;
+    if (!task.worktreeCwd)
+      return this.write(
+        task.artifactDeliveryPending
+          ? {
+              ...delivered,
+              artifactDeliveryPending: true,
+              mergeError: "The artifact source is unavailable; the Git receipt is retained.",
+            }
+          : { ...delivered, status: "done" },
+      );
+    let activityId = task.artifactDeliveryActivityId;
+    try {
+      activityId ??= (
+        await this.managed!.activity.start({
+          workspaceId: task.workspaceId!,
+          kind: "operation",
+          ownerId: `task-artifacts:${receipt.operationId}`,
+        })
+      ).id;
+      await this.write({
+        ...delivered,
+        artifactDeliveryPending: true,
+        artifactDeliveryActivityId: activityId,
+      });
+      const preview = await previewTaskDeliveryArtifacts(task.worktreeCwd, target);
+      if (preview.blockers.length) throw new Error(preview.blockers.join("; "));
+      let artifactPaths: string[] = [];
+      const approved = task.deliveryArtifacts;
+      if (preview.paths.length) {
+        if (
+          !approved ||
+          approved.planToken !== planToken ||
+          approved.sourceHead !== receipt.sourceHead
+        ) {
+          return this.write({
+            ...delivered,
+            artifactDeliveryPending: true,
+            artifactDeliveryActivityId: activityId,
+            mergeError:
+              "The Git receipt is retained. Review local task artifacts before completing delivery.",
+          });
+        }
+        await validateTaskDeliveryArtifacts(approved, task.worktreeCwd, target, {
+          allowCopied: true,
+        });
+        artifactPaths = await transferTaskArtifacts(
+          task.worktreeCwd,
+          target,
+          approved.paths,
+          approved.hashes,
+        );
+      } else if (approved?.paths.length) {
+        throw new Error(
+          "Reviewed artifact sources disappeared. The Git receipt and directory reservation are retained.",
+        );
+      }
+      const completed = await this.write({
+        ...delivered,
+        status: "done",
+        artifactDeliveryPending: undefined,
+        cleanupError: undefined,
+        cleanupRetryAfter: undefined,
+        artifactDeliveryActivityId: activityId,
+        ...(artifactPaths.length ? { artifactPaths, artifactHashes: approved!.hashes } : {}),
+      });
+      await this.managed!.activity.stop(activityId);
+      return await this.write({ ...completed, artifactDeliveryActivityId: undefined });
+    } catch (error) {
+      await this.write({
+        ...delivered,
+        artifactDeliveryPending: true,
+        artifactDeliveryActivityId: activityId,
+        mergeError: `Git delivery is recorded; artifact delivery must resume: ${errorMessage(error)}`,
+      });
+      // A pending operation retains its activity fence: global retention must not race recovery.
+      throw error;
     }
   }
   /** Called by S1 after generic workspace delivery and on recovery. Trust only the durable registry receipt. */
@@ -3606,18 +3755,7 @@ export class HostTasks {
         updatedAt: this.now(),
       });
     }
-    return this.write({
-      ...task,
-      status: "done",
-      merged: true,
-      deliveryState: "merged",
-      deliveryOperationId: delivery.id,
-      deliveredCommit: delivery.merge.targetHead,
-      mergedAt: workspace.mergedAt ?? this.now(),
-      deliveryApprovalRequired: undefined,
-      mergeError: undefined,
-      updatedAt: this.now(),
-    });
+    return this.finishDeliveryReceipt(task, delivery.merge, delivery.plan.token);
   }
   /** Retire delivered task checkouts, retrying Windows locks without discarding changed work. */
   private async cleanupDelivered(task: HostTask, now: number): Promise<HostTask> {
@@ -3625,6 +3763,33 @@ export class HostTasks {
     try {
       const workspace = await this.managed.registry.get({ workspaceId: task.workspaceId });
       if (!workspace || workspace.directoryState === "removed") return task;
+      if (task.artifactDeliveryPending)
+        throw new Error(
+          "Task artifacts have not been delivered; the source directory is retained.",
+        );
+      const target =
+        task.deliveryArtifacts?.targetDirectory ??
+        task.deliveryCwd ??
+        (await this.store.project(task.projectId)).cwd;
+      const artifacts = await previewTaskDeliveryArtifacts(workspace.path, target);
+      if (artifacts.blockers.length) throw new Error(artifacts.blockers.join("; "));
+      if (artifacts.paths.length) {
+        if (!task.deliveryArtifacts)
+          throw new Error(
+            "Ignored task outputs require an owner-reviewed delivery before retirement.",
+          );
+        await validateTaskDeliveryArtifacts(task.deliveryArtifacts, workspace.path, target, {
+          allowCopied: true,
+        });
+        if (
+          artifacts.paths.some(
+            (path) => artifacts.targetHashes[path] !== task.deliveryArtifacts!.hashes[path],
+          )
+        )
+          throw new Error(
+            "Task artifacts are not safely delivered; the source directory is retained.",
+          );
+      }
       const plan = await this.managed.removal.plan({
         workspaceId: workspace.id,
         expectedRevision: workspace.revision,
