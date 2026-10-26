@@ -3,7 +3,7 @@ import settings from "./playwright.settings.config";
 
 export default defineConfig({
   ...settings,
-  testMatch: ["worktrees.e2e.ts"],
+  testMatch: ["worktrees.e2e.ts", "workspace-creation.e2e.ts", "workspace-actions.spec.ts"],
   outputDir: "../../temp/test-results/worktrees",
   use: { ...settings.use, baseURL: "http://127.0.0.1:1497" },
   webServer: {

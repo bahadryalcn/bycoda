@@ -28,6 +28,8 @@ import {
   type RemoveWorktree,
   type Worktree,
 } from "../model/worktrees";
+import { WorkspacePolicySettings } from "../../workspaces/ui/WorkspacePolicySettings";
+import type { ManagedWorkspace } from "../../workspaces/model/contracts";
 
 export function WorktreesPage({
   cwd,
@@ -62,13 +64,16 @@ export function WorktreesPage({
   }, [cwd, recents]);
   const [project, setProject] = useState(cwd === "~" ? (projects[0]?.path ?? "") : cwd);
   const { data, error: loadError, refresh } = useProjectWorktrees(project);
-  const worktrees = data?.worktrees.filter((tree) => !tree.isMain) ?? [];
+  const rawWorktrees = data?.worktrees.filter((tree) => !tree.isMain) ?? [];
   const [error, setError] = useState<string>();
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Worktree>();
   const [refreshingAfterFailure, setRefreshingAfterFailure] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
+  const [managedWorkspaces, setManagedWorkspaces] = useState<ManagedWorkspace[] | null>(null);
+  const managedPaths = new Set(managedWorkspaces?.map((workspace) => pathKey(workspace.path)));
+  const worktrees = rawWorktrees.filter((tree) => !managedPaths.has(pathKey(tree.path)));
   const search = query.trim().toLocaleLowerCase();
   const visibleWorktrees = worktrees.filter((tree) =>
     `${tree.path} ${tree.branch ?? tree.head}`.toLocaleLowerCase().includes(search),
@@ -87,6 +92,7 @@ export function WorktreesPage({
               setError(undefined);
               setDeleting(undefined);
               setQuery("");
+              setManagedWorkspaces(null);
             }}
           />
           <p className={styles.scope} title={prettyCwd(project || "~")}>
@@ -135,6 +141,7 @@ export function WorktreesPage({
           </Button>
         </div>
       </div>
+      <WorkspacePolicySettings key={project} cwd={project} onInventory={setManagedWorkspaces} />
       {!data ? (
         <p className="text-[12px] text-[var(--ui-text-secondary)]">
           {!project
@@ -315,7 +322,12 @@ export function WorktreesPage({
                     variant="ghost"
                     motion="none"
                     type="button"
-                    disabled={!!blocked || refreshingAfterFailure || !!loadError}
+                    disabled={
+                      !!blocked ||
+                      refreshingAfterFailure ||
+                      !!loadError ||
+                      managedWorkspaces === null
+                    }
                     aria-label={t("Delete {p0}", { p0: tree.branch ?? "worktree" })}
                     title={blocked ?? t("Delete worktree")}
                     onClick={() => {

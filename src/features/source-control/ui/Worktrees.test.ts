@@ -4,6 +4,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+vi.mock("../../workspaces/model/workspaceClient", async (original) => ({
+  ...(await original<typeof import("../../workspaces/model/workspaceClient")>()),
+  resolveWorkspaceContext: async (cwd: string) => ({
+    cwd,
+    projectId: "unmanaged-fixture",
+    environmentId: "fixture-env",
+    machineId: "fixture-machine",
+  }),
+  getWorkspaceCapabilities: async () => [],
+}));
+
 vi.mock("../model/worktrees", async (original) => ({
   ...(await original<typeof import("../model/worktrees")>()),
   listWorktrees: vi.fn(),
@@ -662,7 +673,11 @@ it("searches worktrees by branch and folder, and clears an empty result without 
     container.querySelector<HTMLButtonElement>('[aria-label="Reveal fix/beta"]')!.disabled,
   ).toBe(true);
   await act(async () => type(search, "no-matching-worktree"));
-  expect(container.querySelector('[role="status"]')?.textContent).toContain("No results");
+  expect(
+    [...container.querySelectorAll('[role="status"]')].some((status) =>
+      status.textContent?.includes("No results"),
+    ),
+  ).toBe(true);
   await act(async () => button("Clear search").click());
   expect(search.value).toBe("");
   expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2);

@@ -503,16 +503,14 @@ export function SettingsView({
                     {section === "worktrees" ? (
                       <>
                         <SourceControlSettings />
-                        <Group title={t("Worktrees")} layout="full">
-                          <WorktreesPage
-                            cwd={cwd}
-                            recents={recents}
-                            liveSessions={liveSessions}
-                            onRemove={onRemoveWorktree}
-                            onCheckRemove={onCheckWorktreeRemoval}
-                            onDeleteSessions={onDeleteWorktreeSessions}
-                          />
-                        </Group>
+                        <WorktreesPage
+                          cwd={cwd}
+                          recents={recents}
+                          liveSessions={liveSessions}
+                          onRemove={onRemoveWorktree}
+                          onCheckRemove={onCheckWorktreeRemoval}
+                          onDeleteSessions={onDeleteWorktreeSessions}
+                        />
                       </>
                     ) : null}
                     {section === "groupLock" ? (

@@ -27,6 +27,62 @@ import { clearCachedRateLimits, setCachedRateLimits } from "../../providers/mode
 import { HARNESSES, HARNESS_TITLE } from "../../sessions/model/session";
 
 const platform = vi.hoisted(() => ({ isWindows: false }));
+vi.mock("../../workspaces/model/workspaceClient", async (original) => ({
+  ...(await original<typeof import("../../workspaces/model/workspaceClient")>()),
+  resolveWorkspaceContext: async (cwd: string) => ({
+    cwd,
+    projectId: "settings-fixture",
+    environmentId: "fixture-env",
+    machineId: "fixture-machine",
+  }),
+  getWorkspaceCapabilities: async () => [
+    "workspaces.managed.v1",
+    "workspaces.policy.v1",
+    "workspaces.lifecycle.v1",
+  ],
+  workspaceRequest: async (method: string) => {
+    if (method === "workspaces.list") return [];
+    if (method === "projects.workspacePolicy.get")
+      return {
+        revision: 1,
+        resolved: {
+          appliedScopes: ["host"],
+          policy: {
+            defaultMode: "worktree",
+            integrationBranchRef: "refs/heads/main",
+            root: null,
+            pinned: false,
+            retention: {
+              active: "never",
+              idle: "never",
+              finished: "never",
+              merged: "never",
+              abandoned: "never",
+            },
+            disk: {
+              budgetBytes: 50 * 1_073_741_824,
+              warningRatio: 0.8,
+              minimumFreeBytes: 20 * 1_073_741_824,
+            },
+          },
+        },
+      };
+    if (method === "workspaces.storage.status")
+      return {
+        root: "/worktrees",
+        materializedBytes: null,
+        sharedCacheBytes: null,
+        recoveryBytes: null,
+        freeBytes: null,
+        budgetBytes: 50 * 1_073_741_824,
+        warningRatio: 0.8,
+        minimumFreeBytes: 20 * 1_073_741_824,
+        materialization: "unknown",
+        requiredFreeBytes: null,
+      };
+    throw new Error(`Unexpected settings workspace method: ${method}`);
+  },
+}));
 vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../platform/tauri/platform")>()),
   get IS_WIN() {
