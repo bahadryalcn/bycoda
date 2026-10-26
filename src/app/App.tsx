@@ -58,6 +58,7 @@ import { useEditorFileClose } from "./workspace/files/useEditorFileClose";
 import { useClearTabSession } from "./workspace/files/useClearTabSession";
 import { useSourceControlSurfaces } from "./workspace/files/useSourceControlSurfaces";
 import { useEditorFileEvents } from "./workspace/files/useEditorFileEvents";
+import { useManagedWorkspaceBuffers } from "./workspace/files/useManagedWorkspaceBuffers";
 import { useEditorFileOpen } from "./workspace/files/useEditorFileOpen";
 import { useRepositoryReviewOpen } from "./workspace/files/useRepositoryReviewOpen";
 import { useSessionLoading } from "./workspace/sessions/useSessionLoading";
@@ -508,6 +509,10 @@ function Workspace({
     history,
     setHistory,
   } = useWorkspaceUiState({ windowTransfer, bootHistory });
+  useManagedWorkspaceBuffers(
+    [...filesInWorkspaceTabs(tabs), ...projectTerminals.flatMap((dock) => dock.pane.files)],
+    dirtyFiles,
+  );
   const [, refreshRemoteTabTitles] = useState(0);
   useEffect(() => {
     const updated = () => refreshRemoteTabTitles((value) => value + 1);

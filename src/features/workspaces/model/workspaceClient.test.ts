@@ -73,6 +73,68 @@ it("checks the execution machine capability before attempting creation", async (
   expect(remoteRequest).not.toHaveBeenCalled();
 });
 
+it("routes local managed cleanup through native activity checks and the same Host owner plan", async () => {
+  vi.mocked(machineCapabilities).mockResolvedValue(["workspaces.lifecycle.v1"]);
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "local_host_connect") return { ...local, localHost: true };
+    if (command === "managed_worktree_removal_plan") return { token: "native-reviewed-plan" };
+    if (command === "managed_worktree_removal_apply") throw new Error("Removal outcome unknown");
+    throw new Error(`Unexpected command ${command}`);
+  });
+  await expect(
+    workspaceRequest(
+      "workspaces.cleanup.plan",
+      { workspaceId: "owned", expectedRevision: 4 },
+      { cwd: "/repo" },
+    ),
+  ).resolves.toEqual({ token: "native-reviewed-plan" });
+  await expect(
+    workspaceRequest(
+      "workspaces.cleanup.apply",
+      {
+        workspaceId: "owned",
+        expectedRevision: 4,
+        planToken: "native-reviewed-plan",
+        idempotencyKey: "remove-once",
+      },
+      { cwd: "/repo" },
+    ),
+  ).rejects.toThrow("Removal outcome unknown");
+  expect(invoke).toHaveBeenCalledWith("managed_worktree_removal_apply", {
+    request: {
+      workspaceId: "owned",
+      expectedRevision: 4,
+      planToken: "native-reviewed-plan",
+      idempotencyKey: "remove-once",
+    },
+  });
+  expect(
+    vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === "managed_worktree_removal_apply"),
+  ).toHaveLength(1);
+  expect(remoteRequest).not.toHaveBeenCalled();
+});
+
+it("keeps remote cleanup on its owning machine without a local native removal", async () => {
+  vi.mocked(machineCapabilities).mockResolvedValue(["workspaces.lifecycle.v1"]);
+  await workspaceRequest(
+    "workspaces.cleanup.plan",
+    { workspaceId: "owned", expectedRevision: 4 },
+    { cwd: "remote://env-remote/repo" },
+  );
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "remote-machine",
+    "workspaces.cleanup.plan",
+    { workspaceId: "owned", expectedRevision: 4 },
+    false,
+    true,
+  );
+  expect(
+    vi.mocked(invoke).mock.calls.some(([command]) => command === "managed_worktree_removal_plan"),
+  ).toBe(false);
+});
+
 it("requires publication support for publish reviews and never retries an uncertain write", async () => {
   await expect(
     workspaceRequest(
