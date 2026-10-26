@@ -61,6 +61,67 @@
   min-inline-size: min(100%, 9rem);
   max-inline-size: 24rem;
 }
+
+.task-planning-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 0.75rem;
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+}
+.task-scope-summary,
+.task-planning-caption {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.task-scope-summary {
+  flex: 1 1 10rem;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-reports-scroll {
+  flex: 1;
+  min-block-size: 0;
+  overflow: auto;
+}
+.task-goals-disclosure {
+  flex-shrink: 0;
+  min-inline-size: 0;
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+}
+.task-goals-disclosure > summary {
+  cursor: pointer;
+  padding: 0.5rem 0.75rem;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.task-planning-recovery {
+  flex-shrink: 0;
+  max-block-size: 10rem;
+  overflow: auto;
+  padding: 0.5rem 0.75rem;
+  font-size: var(--ui-font-caption);
+}
+.task-planning-recovery > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.task-create-sprint-context {
+  padding: 0.5rem 1rem 0;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+  overflow-wrap: anywhere;
+}
+.task-board-toolbar > .bycoda-searchable-select {
+  max-inline-size: min(100%, 18rem);
+}
 .task-bulk-tools {
   display: grid;
   gap: 0.5rem;

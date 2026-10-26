@@ -63,6 +63,17 @@ test("voice install finishes in place using a simulated job", async ({ page }) =
   await group.screenshot({ path: join(captures, "voice-ready-dark-1280.png") });
 });
 
+test("stalled detection keeps Install available and ends with a retry", async ({ page }) => {
+  const group = await openVoice(page, "stalled", "dark", 390);
+  await expect(group.getByText("Checking voice setup…", { exact: true })).toBeVisible();
+  await expect(group.getByRole("button", { name: "Install", exact: true })).toBeVisible();
+  await expect(group.getByRole("button", { name: "Try again", exact: true })).toBeVisible({
+    timeout: 25_000,
+  });
+  await expect(group.getByText("Checking voice setup…", { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
 test("voice locations are optional, keyboard accessible and return focus", async ({ page }) => {
   const group = await openVoice(page, "missing", "dark", 390);
   const locate = group.getByRole("button", { name: "Locate existing", exact: true });

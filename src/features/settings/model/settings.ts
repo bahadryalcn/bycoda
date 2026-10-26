@@ -2062,15 +2062,15 @@ export const subscribeDiffViewer = diffViewerSetting.subscribe;
 const DIFF_LAYOUT_KEY = "bycoda.diffLayout";
 
 /** How a single file's changes are drawn: one column, or before | after. */
-export type DiffLayout = "inline" | "split";
+export type DiffLayout = "auto" | "inline" | "split";
 
-export const DIFF_LAYOUT_DEFAULT: DiffLayout = "inline";
+export const DIFF_LAYOUT_DEFAULT: DiffLayout = "auto";
 
 /** Fired on `window` when the single-file diff layout flips. */
 export const DIFF_LAYOUT_CHANGE_EVENT = "bycoda:diff-layout-change";
 
 function isDiffLayout(value: unknown): value is DiffLayout {
-  return value === "inline" || value === "split";
+  return value === "auto" || value === "inline" || value === "split";
 }
 
 const diffLayoutSetting = createStoredSetting<DiffLayout>({

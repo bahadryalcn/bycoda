@@ -39,8 +39,15 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
     (sessionId: string, requestId: number, reply: UserQuestionReply) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (!session || session.worktreeRemoved) return;
+      if (
+        session.pendingQuestion?.requestId !== requestId ||
+        ["sending", "queued", "unknown"].includes(session.pendingQuestion.delivery ?? "")
+      )
+        return;
       if (remoteProjectFor(session.cwd)) {
-        remoteSessionActions(sessionId)?.answer(requestId, reply);
+        const actions = remoteSessionActions(sessionId);
+        if (!actions) throw new Error("Question connection is unavailable");
+        actions.answer(requestId, reply);
         return;
       }
       respondHarnessQuestion(session.harness, sessionId, requestId, reply);

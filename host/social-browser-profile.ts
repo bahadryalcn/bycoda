@@ -44,10 +44,10 @@ export function parseXProfilePatch(raw: unknown): XProfilePatch {
 }
 type Verify = () => Promise<void>;
 type Until = <T>(expression: string, timeout: number) => Promise<T | undefined>;
-async function markButton(page: BrowserPage, until: Until, text: string) {
+async function markButton(page: BrowserPage, until: Until, labels: readonly string[]) {
   const marked = await until<boolean>(
     `(() => {
-    const buttons = [...document.querySelectorAll('button,[role="button"]')].filter(el => el.getClientRects().length && el.textContent.trim() === ${JSON.stringify(text)});
+    const buttons = [...document.querySelectorAll('button,[role="button"]')].filter(el => el.getClientRects().length && ${JSON.stringify(labels)}.includes(el.textContent.trim()));
     if (buttons.length !== 1) return false;
     document.querySelectorAll('[data-bycoda-profile-apply]').forEach(el => el.removeAttribute('data-bycoda-profile-apply'));
     buttons[0].setAttribute('data-bycoda-profile-apply', 'true'); return true;
@@ -86,17 +86,19 @@ export class XProfileActions {
     return this.values();
   }
   private async images(previous?: XProfileState, files?: { avatar?: string; banner?: string }) {
+    await this.verify();
     const path = await this.page.evaluate<string>(
       `document.querySelector('[data-testid="AppTabBar_Profile_Link"]')?.getAttribute('href')`,
     );
     if (!/^\/[A-Za-z0-9_]{1,15}$/.test(path ?? "")) throw new SocialPlatformError("denied");
     await this.page.goto(`https://x.com${path}`);
+    await this.verify();
     const result = await this.until<Pick<XProfileState, "avatarUrl" | "bannerUrl">>(
       `(() => {
       if (location.pathname.toLowerCase() !== ${JSON.stringify(path.toLowerCase())} || !document.querySelector('[data-testid="UserName"]')) return null;
       const avatarUrl = document.querySelector('a[href$="/photo"] img')?.getAttribute('src');
       const bannerUrl = document.querySelector('a[href$="/header_photo"] img')?.getAttribute('src');
-      const valid = (value, kind) => { try { const url = new URL(value); return url.hostname === 'pbs.twimg.com' && url.pathname.startsWith('/profile_' + kind + '/'); } catch { return false; } };
+      const valid = (value, kind) => { try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password && url.hostname === 'pbs.twimg.com' && url.pathname.startsWith('/profile_' + kind + '/'); } catch { return false; } };
       if (${!!files?.avatar} && (!valid(avatarUrl, 'images') || avatarUrl === ${JSON.stringify(previous?.avatarUrl ?? "")})) return null;
       if (${!!files?.banner} && (!valid(bannerUrl, 'banners') || bannerUrl === ${JSON.stringify(previous?.bannerUrl ?? "")})) return null;
       return { avatarUrl, bannerUrl };
@@ -117,16 +119,20 @@ export class XProfileActions {
       if (files[kind]) {
         // The two file inputs have the same test ID; bind only the explicitly named image slot.
         const bound = await this.page.evaluate<boolean>(`(() => {
-        const button = document.querySelector('button[aria-label="Add ${kind} photo"]');
-        const input = button?.parentElement?.querySelector('input[type="file"]');
-        if (!input) return false;
+        const labels = ${JSON.stringify(kind === "avatar" ? ["Add avatar photo", "Profil fotoğrafı ekle"] : ["Add banner photo", "Afiş fotoğrafı ekle", "Başlık fotoğrafı ekle"])};
+        const buttons = [...document.querySelectorAll('button[aria-label]')].filter(el => el.getClientRects().length && labels.includes(el.getAttribute('aria-label')));
+        if (buttons.length !== 1) return false;
+        const inputs = buttons[0].parentElement?.querySelectorAll('input[type="file"]');
+        if (inputs?.length !== 1) return false;
+        const input = inputs[0];
+        document.querySelectorAll('[data-bycoda-profile-image]').forEach(el => el.removeAttribute('data-bycoda-profile-image'));
         input.setAttribute('data-bycoda-profile-image', ${JSON.stringify(kind)}); return true;
       })()`);
         if (!bound) throw new SocialPlatformError("unsupported");
         await this.verify();
         await this.page.setFiles(`[data-bycoda-profile-image="${kind}"]`, [files[kind]!]);
         await this.verify();
-        await markButton(this.page, this.until, "Apply");
+        await markButton(this.page, this.until, ["Apply", "Uygula"]);
       }
     await this.verify();
     await this.page.click('[data-testid="Profile_Save_Button"]');

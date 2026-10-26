@@ -59,12 +59,16 @@ type HubDevices = {
   emulators?: DeviceSummary[];
   errors?: { message: string }[];
 };
-type DeviceDiscovery = {
-  key: string;
+type DeviceDiscoverySources = {
   hub?: PromiseSettledResult<HubDevices>;
   native?: PromiseSettledResult<DeviceSummary[] | undefined>;
   macAndroid?: PromiseSettledResult<DeviceSummary[]>;
+};
+type DeviceDiscovery = DeviceDiscoverySources & {
+  key: string;
+  previous?: DeviceDiscoverySources;
   ready: Promise<void>;
+  nativeComplete?: Promise<void>;
   complete: Promise<void>;
   completedAt?: number;
 };
@@ -465,6 +469,16 @@ export class DeviceHost {
       let ready!: () => void;
       const current: DeviceDiscovery = {
         key,
+        // Keep the last settled sources visible while refreshing the same SDKs.
+        // New results, including an empty list, replace these source by source.
+        previous:
+          discovery?.key === key
+            ? {
+                hub: discovery.hub,
+                native: discovery.native,
+                macAndroid: discovery.macAndroid,
+              }
+            : undefined,
         ready: new Promise<void>((resolve) => {
           ready = resolve;
         }),
@@ -494,7 +508,7 @@ export class DeviceHost {
             (!canDiscoverNative && !canDiscoverMacAndroid) ||
             !!(value.simulators?.length || value.emulators?.length),
         ),
-        observe(
+        (current.nativeComplete = observe(
           canDiscoverNative
             ? this.platform === "darwin"
               ? this.listIos()
@@ -506,7 +520,7 @@ export class DeviceHost {
           // Empty native enumeration is authoritative for that platform, but
           // is not a usable device that should hide a healthy pending source.
           (value) => (value?.length ?? 0) > 0,
-        ),
+        )),
         observe(
           canDiscoverMacAndroid ? this.listMacAndroid() : Promise.resolve([] as DeviceSummary[]),
           (value) => {
@@ -539,9 +553,9 @@ export class DeviceHost {
       status: "rejected" as const,
       reason: `${source} device discovery is still running; refresh to include its results.`,
     });
-    const hub = discovery.hub ?? pending("Optional hub");
-    const native = discovery.native ?? pending("Native");
-    const macAndroid = discovery.macAndroid ?? pending("Android");
+    const hub = discovery.hub ?? discovery.previous?.hub ?? pending("Optional hub");
+    const native = discovery.native ?? discovery.previous?.native ?? pending("Native");
+    const macAndroid = discovery.macAndroid ?? discovery.previous?.macAndroid ?? pending("Android");
     if (
       hub.status === "rejected" &&
       (native.status === "rejected" || !native.value) &&
@@ -583,6 +597,11 @@ export class DeviceHost {
         devices.push(item);
       }
     } else errors.push(String(macAndroid.reason).slice(0, 500));
+    // Retained devices are presentation data, not proof the refresh completed.
+    if (!discovery.hub && discovery.previous?.hub) errors.push(pending("Optional hub").reason);
+    if (!discovery.native && discovery.previous?.native) errors.push(pending("Native").reason);
+    if (!discovery.macAndroid && discovery.previous?.macAndroid)
+      errors.push(pending("Android").reason);
     return { devices: devices.slice(0, 200), errors };
   }
   private async listMacAndroid(): Promise<DeviceSummary[]> {
@@ -709,18 +728,57 @@ export class DeviceHost {
     }
     return devices.slice(0, 200);
   }
+  private async inventoryForDevice(id: string) {
+    let inventory = await this.list();
+    const pending = this.discovery;
+    const selected = inventory.devices.find((device) => device.id === id);
+    const nativePlatform =
+      this.platform === "darwin" ? "ios" : this.platform === "win32" ? "android" : undefined;
+    if (pending?.nativeComplete && selected && selected.platform === nativePlatform) {
+      // The hub can expose this target before native enumeration replaces it.
+      // Await only that authority; an unrelated slow hub must not hold it back.
+      await pending.nativeComplete;
+      inventory = await this.list();
+      if (pending.native?.status === "fulfilled" && pending.native.value !== undefined)
+        return inventory;
+    }
+    const previous = pending?.previous;
+    const retainedHub = previous?.hub?.status === "fulfilled" ? previous.hub.value : undefined;
+    const retainedNative =
+      previous?.native?.status === "fulfilled" ? previous.native.value : undefined;
+    const retainedAndroid =
+      previous?.macAndroid?.status === "fulfilled" ? previous.macAndroid.value : undefined;
+    const retainedTarget = [
+      ...(retainedHub?.simulators ?? []),
+      ...(retainedHub?.emulators ?? []),
+      ...(retainedNative ?? []),
+      ...(retainedAndroid ?? []),
+    ].some((device) => device.id === id);
+    // A fast source (for example ADB) can return before another platform has
+    // enumerated. Partial absence cannot reject a selected target, and retained
+    // presentation data cannot authorize an action before authoritative refresh.
+    if (pending && (retainedTarget || !inventory.devices.some((device) => device.id === id))) {
+      // Completion may race the partial list's return; re-read even if this
+      // promise settled before the caller resumed.
+      await pending.complete;
+      inventory = await this.list();
+    }
+    return inventory;
+  }
   private async device(id: string) {
     if (typeof id !== "string" || !id || id.length > 200) throw new Error("Invalid device ID");
-    const device = (await this.list()).devices.find((item) => item.id === id);
+    const device = (await this.inventoryForDevice(id)).devices.find((item) => item.id === id);
     if (!device) throw new Error("Device is no longer available; refresh the list");
     return device;
   }
   async preflight(deviceId?: string) {
     const status = await this.status();
-    const inventory = await this.list().catch((cause) => ({
-      devices: [] as DeviceSummary[],
-      errors: [String(cause)],
-    }));
+    const inventory = await (deviceId ? this.inventoryForDevice(deviceId) : this.list()).catch(
+      (cause) => ({
+        devices: [] as DeviceSummary[],
+        errors: [String(cause)],
+      }),
+    );
     const device = deviceId ? inventory.devices.find((item) => item.id === deviceId) : undefined;
     return {
       status,

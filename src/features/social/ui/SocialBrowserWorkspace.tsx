@@ -1,13 +1,14 @@
 import { useSocialPending } from "./useSocialPending";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
-import { useContext, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Select } from "../../../shared/ui/Select";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TextField } from "../../../shared/ui/TextField";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import type { SocialAccount } from "../model/social";
@@ -19,9 +20,11 @@ import {
   SOCIAL_BROWSER_SITES,
   type SocialBrowserIntent,
   type SocialBrowserWorkflow,
+  type SocialRegistrationProfile,
 } from "../model/socialBrowser";
 import { SocialPanelActiveContext } from "./socialContext";
 import { XProfileManager } from "./XProfileManager";
+import { SocialRegistrationReview } from "./SocialRegistrationReview";
 
 const statuses: Record<SocialBrowserWorkflow["status"], string> = {
   get queued() {
@@ -66,6 +69,19 @@ export function SocialBrowserWorkspace({
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [automateRegistration, setAutomateRegistration] = useState(true);
+  const [registration, setRegistration] = useState<SocialRegistrationProfile>({
+    accountKind: "brand",
+  });
+  useEffect(() => {
+    setRegistration({ accountKind: "brand" });
+    setAcknowledged(false);
+    setError("");
+  }, [account.id, client]);
+  const registrationInput = (): SocialRegistrationProfile =>
+    Object.fromEntries(
+      Object.entries(registration).filter(([, value]) => typeof value === "string" && value.trim()),
+    ) as SocialRegistrationProfile;
   const query = useQuery({
     queryKey: [...socialQueryScope(client), "browser-workflows", account.id],
     queryFn: () => client.browserWorkflowStatus(account.id),
@@ -82,6 +98,14 @@ export function SocialBrowserWorkspace({
   const current = query.data?.workflows.find((item) =>
     ["queued", "awaiting_owner"].includes(item.status),
   );
+  const registrationWorkflow =
+    query.data?.workflows.find((item) => item.registrationSubmission) ??
+    current ??
+    query.data?.workflows[0];
+  useEffect(() => {
+    if (current) setIntent(current.intent);
+    if (current?.registration) setAutomateRegistration(true);
+  }, [current?.id, current?.intent, !!current?.registration]);
   const monitor = useQuery({
     queryKey: [...socialQueryScope(client), "monitoring", account.id],
     queryFn: () => client.monitoringStatus(account.id),
@@ -115,15 +139,20 @@ export function SocialBrowserWorkspace({
       setBusy(false);
     }
   };
-  const openBlocker = current
-    ? t("A browser action is already in progress.")
-    : !acknowledged
-      ? t("Confirm the separate browser profile to continue.")
-      : query.data && !query.data.available
-        ? t("Chrome or Edge was not found on the selected host.")
-        : intent === "comments" && !target.trim()
-          ? t("Enter the post link to continue.")
-          : "";
+  const openBlocker =
+    intent === "signup" && account.connected
+      ? t(
+          "This account is already connected. Use its existing connection instead of registering again.",
+        )
+      : current
+        ? t("A browser action is already in progress.")
+        : !acknowledged
+          ? t("Confirm the separate browser profile to continue.")
+          : query.data && !query.data.available
+            ? t("Chrome or Edge was not found on the selected host.")
+            : intent === "comments" && !target.trim()
+              ? t("Enter the post link to continue.")
+              : "";
   return (
     <details
       className="social-connection"
@@ -131,8 +160,20 @@ export function SocialBrowserWorkspace({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>{t("Browser workspace")}</summary>
-      {account.platform === "x" && account.connection === "browser" && account.connected ? (
-        <XProfileManager accountId={account.id} accountName={account.name} client={client} />
+      {(account.platform === "x" ||
+        (account.platform === "linkedin" && account.accountType === "organization") ||
+        (account.platform === "instagram" &&
+          ["member", "professional"].includes(account.accountType)) ||
+        (account.platform === "facebook" && account.accountType === "page")) &&
+      account.connection === "browser" &&
+      account.connected ? (
+        <XProfileManager
+          key={account.id}
+          platform={account.platform as "x" | "linkedin" | "facebook" | "instagram"}
+          accountId={account.id}
+          accountName={account.name}
+          client={client}
+        />
       ) : null}
       {monitor.data ? (
         <p role="status">
@@ -201,11 +242,115 @@ export function SocialBrowserWorkspace({
         {t("Open a separate browser profile for this account")}
       </label>
       {intent === "signup" ? (
-        <p>
-          {t(
-            "Complete the terms, password, verification code and CAPTCHA steps in the browser that opens.",
+        <>
+          <label className="social-inline-check">
+            <Checkbox
+              checked={automateRegistration}
+              disabled={socialLocked || busy || !!current}
+              onChange={(event) => setAutomateRegistration(event.target.checked)}
+            />
+            {t("Automate supported registration steps")}
+          </label>
+          {automateRegistration ? (
+            <fieldset disabled={socialLocked || busy}>
+              <legend>{t("Registration details")}</legend>
+              <SegmentedControl
+                aria-label={t("Account identity")}
+                value={registration.accountKind ?? "brand"}
+                options={[
+                  { value: "brand", label: t("Brand") },
+                  { value: "person", label: t("Person") },
+                ]}
+                onValueChange={(accountKind) =>
+                  setRegistration((value) => ({
+                    ...value,
+                    accountKind: accountKind as "brand" | "person",
+                  }))
+                }
+              />
+              <TextField
+                label={t("Registration email")}
+                type="email"
+                value={registration.email ?? ""}
+                autoComplete="off"
+                onChange={(event) =>
+                  setRegistration((value) => ({ ...value, email: event.target.value }))
+                }
+              />
+              {["facebook", "linkedin"].includes(account.platform) &&
+              registration.accountKind !== "person" ? (
+                <>
+                  <TextField
+                    label={t("Page name")}
+                    value={registration.displayName ?? ""}
+                    onChange={(event) =>
+                      setRegistration((value) => ({ ...value, displayName: event.target.value }))
+                    }
+                  />
+                  {account.platform === "linkedin" ? (
+                    <TextField
+                      label={t("Username")}
+                      placeholder={t("username")}
+                      value={registration.username ?? ""}
+                      autoComplete="off"
+                      spellCheck={false}
+                      maxLength={64}
+                      onChange={(event) =>
+                        setRegistration((value) => ({ ...value, username: event.target.value }))
+                      }
+                    />
+                  ) : null}
+                  <TextField
+                    label={t("Page category")}
+                    value={registration.category ?? ""}
+                    onChange={(event) =>
+                      setRegistration((value) => ({ ...value, category: event.target.value }))
+                    }
+                  />
+                </>
+              ) : null}
+              {account.platform === "tiktok" ? (
+                <TextField
+                  label={t("Actual birth date")}
+                  type="date"
+                  value={registration.birthdate ?? ""}
+                  onChange={(event) =>
+                    setRegistration((value) => ({ ...value, birthdate: event.target.value }))
+                  }
+                />
+              ) : null}
+              {account.platform === "linkedin" && registration.accountKind === "person" ? (
+                <>
+                  <TextField
+                    label={t("Given name")}
+                    value={registration.givenName ?? ""}
+                    onChange={(event) =>
+                      setRegistration((value) => ({ ...value, givenName: event.target.value }))
+                    }
+                  />
+                  <TextField
+                    label={t("Family name")}
+                    value={registration.familyName ?? ""}
+                    onChange={(event) =>
+                      setRegistration((value) => ({ ...value, familyName: event.target.value }))
+                    }
+                  />
+                </>
+              ) : null}
+              <small>
+                {t(
+                  "The host fills supported nonsecret fields and pauses at password, verification, terms or unknown layouts. Values are not saved in workflow history. Resume continues in the same window.",
+                )}
+              </small>
+            </fieldset>
+          ) : (
+            <p>
+              {t(
+                "Complete the terms, password, verification code and CAPTCHA steps in the browser that opens.",
+              )}
+            </p>
           )}
-        </p>
+        </>
       ) : null}
       {account.platform === "whatsapp" || account.platform === "telegram" ? (
         <p className="social-muted">
@@ -232,6 +377,7 @@ export function SocialBrowserWorkspace({
             socialLocked ||
             busy ||
             !!current ||
+            (intent === "signup" && account.connected) ||
             !acknowledged ||
             !query.data?.available ||
             (intent === "comments" && !target.trim())
@@ -243,6 +389,7 @@ export function SocialBrowserWorkspace({
                   account.id,
                   intent,
                   intent === "comments" ? target : undefined,
+                  intent === "signup" && automateRegistration ? registrationInput() : undefined,
                 ),
               ),
             )
@@ -267,24 +414,61 @@ export function SocialBrowserWorkspace({
           {t("Refresh status")}
         </Button>
         {current ? (
-          <Button
-            loading={pendingUi.is("browser-workspace.cancel-action")}
-            type="button"
-            variant="secondary"
-            tone="danger"
-            className="ml-auto"
-            disabled={socialLocked || busy}
-            onClick={() =>
-              void pendingUi.run("browser-workspace.cancel-action", () =>
-                perform(() => client.browserWorkflowCancel(account.id)),
-              )
-            }
-          >
-            {t("Cancel action")}
-          </Button>
+          <>
+            {current.registration ? (
+              <Button
+                loading={pendingUi.is("browser-workspace.continue-registration")}
+                type="button"
+                variant="secondary"
+                disabled={socialLocked || busy || query.isFetching}
+                onClick={() =>
+                  void pendingUi.run("browser-workspace.continue-registration", () =>
+                    perform(() =>
+                      client.browserRegistrationAdvance(
+                        account.id,
+                        current.id,
+                        current.updatedAt,
+                        registrationInput(),
+                      ),
+                    ),
+                  )
+                }
+              >
+                {t("Continue registration automation")}
+              </Button>
+            ) : null}
+            <Button
+              loading={pendingUi.is("browser-workspace.cancel-action")}
+              type="button"
+              variant="secondary"
+              tone="danger"
+              className="ml-auto"
+              disabled={socialLocked || busy}
+              onClick={() =>
+                void pendingUi.run("browser-workspace.cancel-action", () =>
+                  perform(() => client.browserWorkflowCancel(account.id)),
+                )
+              }
+            >
+              {t("Cancel action")}
+            </Button>
+          </>
         ) : null}
       </div>
+      {registrationWorkflow ? (
+        <SocialRegistrationReview
+          key={`${account.id}:${registrationWorkflow.id}`}
+          accountId={account.id}
+          workflow={registrationWorkflow}
+          client={client}
+          disabled={socialLocked || busy || query.isFetching}
+          onRefresh={() => query.refetch({ throwOnError: true })}
+        />
+      ) : null}
       <div role="status" aria-live="polite">
+        {query.data?.workflows[0]?.registration ? (
+          <p>{t(query.data.workflows[0].registration.message)}</p>
+        ) : null}
         {query.data?.workflows[0] ? (
           <p>
             {SOCIAL_BROWSER_LABELS[query.data.workflows[0].intent]}:{" "}

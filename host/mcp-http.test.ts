@@ -15,6 +15,7 @@ import { HOST_PROTOCOL_VERSION } from "../src/features/connections/model/protoco
 import { SOCIAL_TOOLS, socialToolName } from "../src/features/social/model/social";
 import { SOCIAL_TOOL_SCHEMAS } from "./social-tools";
 import { SharedBrowser } from "./shared-browser";
+import { ConversationWorkspaceTools } from "./conversation-workspace-tools";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -77,7 +78,7 @@ async function setup() {
         params,
       }),
     });
-    return { status: res.status, body: (await res.json()) as any };
+    return { status: res.status, headers: res.headers, body: (await res.json()) as any };
   };
   const send = async (
     token: string,
@@ -96,9 +97,9 @@ async function setup() {
       },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
     });
-    return { status: res.status, body: (await res.json()) as any };
+    return { status: res.status, headers: res.headers, body: (await res.json()) as any };
   };
-  return { store, engine, project, foreign, server, tokens, grant, rpc, send, url };
+  return { store, engine, project, foreign, server, tokens, grant, rpc, send, url, desktopPath };
 }
 
 it("rechecks owner authority after token creation preparation without blocking revocation", async () => {
@@ -144,6 +145,38 @@ it("rechecks owner authority after token creation preparation without blocking r
 });
 
 describe("Streamable HTTP MCP", () => {
+  it("marks only pre-dispatch rejection as safe to renew and preserves ambiguous post-commit 401", async () => {
+    const s = await setup();
+    const rejected = await s.send("x".repeat(43), "tools/list", {}, "/mcp/conversation");
+    expect(rejected.status).toBe(401);
+    expect(rejected.headers.get("X-Bycoda-Auth-Stage")).toBe("before-dispatch");
+    const grant = await s.grant({ conversation: ["read", "write"] });
+    const originalCall = ConversationWorkspaceTools.prototype.call;
+    const originalGet = McpTokens.prototype.get;
+    let committed = false;
+    const call = vi.spyOn(ConversationWorkspaceTools.prototype, "call").mockImplementation(async function (...args) {
+      const result = await originalCall.apply(this, args);
+      if (args[0] === "notes.create") committed = true;
+      return result;
+    });
+    const get = vi.spyOn(McpTokens.prototype, "get").mockImplementation(async function (token) {
+      if (committed && token === grant.token) return undefined;
+      return await originalGet.call(this, token);
+    });
+    try {
+      const result = await s.send(grant.token, "tools/call", {
+        name: "conversation_notes_create",
+        arguments: { id: "committed-before-auth-loss", title: "Committed", body: "Do not replay" },
+      }, "/mcp/conversation");
+      expect(committed).toBe(true);
+      expect(result.status).toBe(401);
+      expect(result.headers.get("X-Bycoda-Auth-Stage")).toBeNull();
+      expect(call).toHaveBeenCalledTimes(1);
+      const db = new DatabaseSync(s.desktopPath);
+      try { expect(db.prepare("SELECT body FROM notes WHERE id = ?").get("committed-before-auth-loss")).toEqual({ body: "Do not replay" }); }
+      finally { db.close(); }
+    } finally { call.mockRestore(); get.mockRestore(); }
+  });
   it("accepts escaped editor saves for a session while keeping external request limits", async () => {
     const s = await setup();
     const created = await s.engine.command({

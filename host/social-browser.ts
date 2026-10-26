@@ -25,6 +25,38 @@ import type { SocialPrincipal, SocialService } from "./social";
 import { SocialBrowserWorkflows } from "./social-browser-workflows";
 import type { SocialBrowserIntent } from "../src/features/social/model/socialBrowser";
 import { XProfileActions, parseXProfilePatch } from "./social-browser-profile";
+import {
+  LinkedInProfileActions,
+  parseLinkedInProfilePatch,
+} from "./social-browser-linkedin-profile";
+import { PlatformBrowserSessions } from "./social-browser-platforms";
+import { SOCIAL_BROWSER_RECIPES } from "./social-browser-recipes";
+import {
+  FacebookProfileActions,
+  parseFacebookProfilePatch,
+} from "./social-browser-facebook-profile";
+import {
+  InstagramProfileActions,
+  parseInstagramProfilePatch,
+} from "./social-browser-instagram-profile";
+import type { BrowserRecipe } from "./social-browser-recipe";
+
+const BROWSER_RESPONSE_ORIGINS = [
+  "https://x.com",
+  "https://api.x.com",
+  "https://www.instagram.com",
+  "https://www.facebook.com",
+  "https://www.linkedin.com",
+  "https://www.youtube.com",
+  "https://studio.youtube.com",
+  "https://www.tiktok.com",
+  "https://web.snapchat.com",
+  "https://www.snapchat.com",
+  "https://profile.snapchat.com",
+  "https://my.snapchat.com",
+  "https://web.whatsapp.com",
+  "https://web.telegram.org",
+];
 
 /** Minimal page surface used by the X browser-session flows; mocked in tests. */
 export interface BrowserPage {
@@ -35,11 +67,14 @@ export interface BrowserPage {
   fill(selector: string, text: string): Promise<void>;
   setFiles(selector: string, files: string[]): Promise<void>;
   /** Starts capturing the first response whose URL path matches before the action that causes it. */
-  watchResponse(path: RegExp): {
+  watchResponse(
+    path: RegExp,
+    acceptBody?: (body: string) => boolean,
+  ): {
     body(timeoutMs: number): Promise<string | undefined>;
     stop(): void;
   };
-  cookies(): Promise<{ name: string; value: string }[]>;
+  cookies(urls?: readonly string[]): Promise<{ name: string; value: string }[]>;
 }
 export interface BrowserSession {
   page: BrowserPage;
@@ -360,7 +395,7 @@ export function systemBrowserLauncher(executable = findBrowser()): BrowserLaunch
   };
 }
 
-function cdpPage(
+export function cdpPage(
   cdp: Cdp,
   sessionId: string,
   send: <T = any>(method: string, params?: Record<string, unknown>) => Promise<T>,
@@ -440,53 +475,85 @@ function cdpPage(
       if (!nodeId) throw new Error("File input is missing.");
       await send("DOM.setFileInputFiles", { nodeId, files });
     },
-    watchResponse(path) {
-      let requestId: string | undefined;
+    watchResponse(path, acceptBody) {
+      const requests = new Set<string>();
+      let settled = false;
       let resolve!: (body: string | undefined) => void;
       const result = new Promise<string | undefined>((done) => {
         resolve = done;
       });
-      const stop = cdp.on((method, params, source) => {
-        if (source !== sessionId) return;
-        if (
-          method === "Network.responseReceived" &&
-          !requestId &&
-          ["https://x.com", "https://api.x.com"].includes(new URL(params.response.url).origin) &&
-          path.test(new URL(params.response.url).pathname)
-        )
-          requestId = params.requestId;
-        if (method === "Network.loadingFinished" && params.requestId === requestId)
+      const finish = (body: string | undefined) => {
+        if (settled) return;
+        settled = true;
+        resolve(body);
+      };
+      const unsubscribe = cdp.on((method, params, source) => {
+        if (source !== sessionId || settled) return;
+        if (method === "Network.responseReceived" && requests.size < 16) {
+          let url: URL;
+          try {
+            url = new URL(params.response.url);
+          } catch {
+            return;
+          }
+          path.lastIndex = 0;
+          if (BROWSER_RESPONSE_ORIGINS.includes(url.origin) && path.test(url.pathname))
+            requests.add(params.requestId);
+        }
+        if (method === "Network.loadingFinished" && requests.delete(params.requestId)) {
+          if (params.encodedDataLength > 8 * 1024 * 1024) return;
           void send<{ body: string; base64Encoded: boolean }>("Network.getResponseBody", {
-            requestId,
+            requestId: params.requestId,
           }).then(
-            (value) =>
-              resolve(
-                value.base64Encoded
-                  ? Buffer.from(value.body, "base64").toString("utf8")
-                  : value.body,
-              ),
-            () => resolve(undefined),
+            (value) => {
+              if (settled || value.body.length > 12 * 1024 * 1024) return;
+              const body = value.base64Encoded
+                ? Buffer.from(value.body, "base64").toString("utf8")
+                : value.body;
+              try {
+                if (!acceptBody || acceptBody(body)) finish(body);
+              } catch {
+                /* Unknown envelope: continue waiting. */
+              }
+            },
+            () => {
+              if (!acceptBody) finish(undefined);
+            },
           );
-        if (method === "Network.loadingFailed" && params.requestId === requestId)
-          resolve(undefined);
+        }
+        if (method === "Network.loadingFailed" && requests.delete(params.requestId) && !acceptBody)
+          finish(undefined);
       });
-      void cdp.closed.then(() => resolve(undefined));
+      const stop = () => {
+        unsubscribe();
+        requests.clear();
+        finish(undefined);
+      };
+      void cdp.closed.then(stop);
       return {
         async body(timeoutMs) {
-          const timer = sleep(timeoutMs).then(() => undefined);
+          let timer: ReturnType<typeof setTimeout> | undefined;
           try {
-            return await Promise.race([result, timer]);
+            return await Promise.race([
+              result,
+              new Promise<undefined>((done) => {
+                timer = setTimeout(() => done(undefined), timeoutMs);
+              }),
+            ]);
           } finally {
+            clearTimeout(timer);
             stop();
           }
         },
         stop,
       };
     },
-    async cookies() {
+    async cookies(urls = ["https://x.com"]) {
+      if (!urls.length || urls.some((url) => !BROWSER_RESPONSE_ORIGINS.includes(url)))
+        throw new SocialPlatformError("denied");
       const { cookies } = await send<{
         cookies: { name: string; value: string }[];
-      }>("Network.getCookies", { urls: ["https://x.com"] });
+      }>("Network.getCookies", { urls: [...urls] });
       return cookies;
     },
   };
@@ -548,7 +615,9 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
  * reaches the renderer, session tools or logs. Every operation on a profile is serialized.
  */
 export class XBrowserSessions {
+  private stopped = false;
   readonly workflows: SocialBrowserWorkflows;
+  private readonly platforms: PlatformBrowserSessions;
   private locks = new Map<string, Promise<unknown>>();
   private logins = new Map<string, LoginFlow>();
   private lastSend = new Map<string, number>();
@@ -559,7 +628,19 @@ export class XBrowserSessions {
     private readonly wait: (ms: number) => Promise<unknown> = sleep,
     private readonly background = process.env.BYCODA_SOCIAL_BROWSER_HEADED !== "1",
     private readonly plain: PlainBrowserLauncher | undefined = systemPlainLauncher(),
+    private readonly recipes: readonly BrowserRecipe[] = SOCIAL_BROWSER_RECIPES,
   ) {
+    this.platforms = new PlatformBrowserSessions(
+      directory,
+      recipes,
+      launcher,
+      plain,
+      (id) => this.profile(id, "browser-profiles"),
+      (id, action) => this.exclusive(id, action),
+      now,
+      wait,
+      background,
+    );
     this.workflows = new SocialBrowserWorkflows(
       plain,
       (account) =>
@@ -569,6 +650,8 @@ export class XBrowserSessions {
       (id, action) => this.exclusive(id, action),
       now,
       wait,
+      launcher,
+      (id) => this.logins.get(id)?.status === "waiting" || this.platforms.waiting(id),
     );
   }
   async workflowBegin(
@@ -578,14 +661,16 @@ export class XBrowserSessions {
     intent: SocialBrowserIntent,
     targetUrl: unknown,
     acknowledgeRisk: unknown,
+    registration?: unknown,
   ) {
-    if (this.logins.get(accountId)?.status === "waiting")
+    if (this.logins.get(accountId)?.status === "waiting" || this.platforms.waiting(accountId))
       throw new Error("Finish or cancel the account's current login first.");
     return await this.workflows.begin(service, p, {
       accountId,
       intent,
       targetUrl,
       acknowledgeRisk,
+      ...(registration === undefined ? {} : { registration }),
     });
   }
   availability() {
@@ -605,10 +690,23 @@ export class XBrowserSessions {
     input: Record<string, unknown>,
   ) {
     const account = await service.accountForBrowserManagement(p, accountId, action !== "read");
+    const linkedIn = account.platform === "linkedin" && account.accountType === "organization";
+    const facebook = account.platform === "facebook" && account.accountType === "page";
+    const instagram =
+      account.platform === "instagram" && ["member", "professional"].includes(account.accountType);
     const check = async () => {
       const current = await service.accountForBrowserManagement(p, accountId, action !== "read");
       if (
-        current.platform !== "x" ||
+        current.platform !== account.platform ||
+        current.accountType !== account.accountType ||
+        (current.platform !== "x" &&
+          !(
+            linkedIn &&
+            current.platform === "linkedin" &&
+            current.accountType === "organization"
+          ) &&
+          !(facebook && current.platform === "facebook" && current.accountType === "page") &&
+          !instagram) ||
         current.connection !== "browser" ||
         !current.connected ||
         current.paused ||
@@ -623,10 +721,30 @@ export class XBrowserSessions {
     if (!this.launcher) throw new SocialPlatformError("unsupported");
     if (
       action !== "read" &&
-      input.confirm !== (action === "follow" ? "FOLLOW_X_ACCOUNT" : "UPDATE_X_PROFILE")
+      input.confirm !==
+        (action === "follow"
+          ? "FOLLOW_X_ACCOUNT"
+          : linkedIn
+            ? "UPDATE_LINKEDIN_PROFILE"
+            : facebook
+              ? "UPDATE_FACEBOOK_PROFILE"
+              : instagram
+                ? "UPDATE_INSTAGRAM_PROFILE"
+                : "UPDATE_X_PROFILE")
     )
       throw new Error("Explicit profile action confirmation required.");
-    const patch = action === "update" ? parseXProfilePatch(input.patch) : undefined;
+    if ((linkedIn || facebook || instagram) && action === "follow")
+      throw new SocialPlatformError("unsupported");
+    const patch =
+      action === "update"
+        ? linkedIn
+          ? parseLinkedInProfilePatch(input.patch)
+          : facebook
+            ? parseFacebookProfilePatch(input.patch)
+            : instagram
+              ? parseInstagramProfilePatch(input.patch)
+              : parseXProfilePatch(input.patch)
+        : undefined;
     if (
       action === "follow" &&
       (typeof input.handle !== "string" || !/^[A-Za-z0-9_]{1,15}$/.test(input.handle))
@@ -648,8 +766,54 @@ export class XBrowserSessions {
           files[kind] = join(staging, `${kind}.${format}`);
           await writeFile(files[kind]!, bytes, { mode: 0o600, flag: "wx" });
         }
-        session = await this.launcher!(this.profile(accountId), this.background);
+        session = await this.launcher!(
+          this.profile(
+            accountId,
+            linkedIn || facebook || instagram ? "browser-profiles" : "x-browser",
+          ),
+          this.background,
+        );
         const page = session.page;
+        if (instagram) {
+          const recipe = this.recipes.find((entry) => entry.platform === "instagram");
+          if (!recipe) throw new SocialPlatformError("unsupported");
+          const actions = new InstagramProfileActions(
+            page,
+            check,
+            async () => {
+              const identity = await recipe.identity(page, account);
+              if (identity?.platformId !== account.platformId)
+                throw new SocialPlatformError("denied");
+            },
+            async (expression, timeout) => await this.until(page, expression, timeout),
+          );
+          return action === "read" ? await actions.read() : await actions.update(patch!, files);
+        }
+        if (facebook) {
+          const recipe = this.recipes.find((entry) => entry.platform === "facebook");
+          if (!recipe) throw new SocialPlatformError("unsupported");
+          const actions = new FacebookProfileActions(
+            page,
+            account.platformId,
+            check,
+            async () => {
+              const identity = await recipe.identity(page, account);
+              if (identity?.platformId !== account.platformId || identity.accountType !== "page")
+                throw new SocialPlatformError("denied");
+            },
+            async (expression, timeout) => await this.until(page, expression, timeout),
+          );
+          return action === "read" ? await actions.read() : await actions.update(patch!, files);
+        }
+        if (linkedIn) {
+          const actions = new LinkedInProfileActions(
+            page,
+            account.platformId,
+            check,
+            async (expression, timeout) => await this.until(page, expression, timeout),
+          );
+          return action === "read" ? await actions.read() : await actions.update(patch!, files);
+        }
         const actions = new XProfileActions(
           page,
           async () => {
@@ -688,18 +852,19 @@ export class XBrowserSessions {
     p: SocialPrincipal,
     accountId: string,
     acknowledgeRisk: unknown,
+    target?: string,
   ): Promise<{ status: LoginFlow["status"]; expiresAt: number }> {
+    if (this.stopped) throw new Error("The browser executor is stopping.");
     if (acknowledgeRisk !== true)
       throw new Error(
-        "Confirm that browser-session mode is unofficial and can restrict the X account.",
+        "Confirm that browser-session mode is unofficial and can restrict the account.",
       );
     const account = await service.accountForOAuth(p, accountId);
     if (this.workflows.hasActive(accountId))
       throw new Error(
         "Close or cancel the account's browser workflow before verifying its connection.",
       );
-    if (account.platform !== "x")
-      throw new Error("Browser-session connection is only available for X.");
+    if (account.platform !== "x") return this.platforms.begin(service, p, account, target);
     // The profile must live on the host that executes this account's sends.
     if (account.executorId !== service.store.environmentId)
       throw new Error(
@@ -725,7 +890,8 @@ export class XBrowserSessions {
     return { status: flow.status, expiresAt: flow.expiresAt };
   }
   async status(service: SocialService, p: SocialPrincipal, accountId: string) {
-    await service.accountForOAuth(p, accountId);
+    const account = await service.accountForOAuth(p, accountId);
+    if (account.platform !== "x") return this.platforms.status(accountId);
     const flow = this.logins.get(accountId);
     return flow ? { status: flow.status, error: flow.error } : { status: "idle" as const };
   }
@@ -791,6 +957,7 @@ export class XBrowserSessions {
   }
   /** Cancels an open login and removes the logged-in profile, which logs this host out of X. */
   async forget(accountId: string): Promise<void> {
+    await this.platforms.forget(accountId);
     const flow = this.logins.get(accountId);
     this.logins.delete(accountId);
     if (flow) {
@@ -808,6 +975,17 @@ export class XBrowserSessions {
         });
     });
   }
+  /** Stop owner login/workflow windows without deleting persistent signed-in profiles. */
+  async stop(service: SocialService): Promise<void> {
+    this.stopped = true;
+    for (const flow of this.logins.values()) {
+      flow.cancelled = true;
+      await flow.session?.close().catch(() => undefined);
+    }
+    this.logins.clear();
+    await this.platforms.stop();
+    await this.workflows.stop(service);
+  }
   private async until<T>(
     page: BrowserPage,
     expression: string,
@@ -822,11 +1000,20 @@ export class XBrowserSessions {
     }
   }
   adapter(): SocialAdapter {
+    const platforms = this.platforms.adapter();
     return {
-      send: (account, job, _token, media) =>
-        this.exclusive(account.id, async () => await this.publish(account, job, media)),
-      poll: (account, _token, posts, cursor) =>
-        this.exclusive(account.id, async () => await this.poll(account, posts, cursor)),
+      creatorInfo: platforms.creatorInfo,
+      send: (account, job, token, media, checkpoint, beforeSubmit) =>
+        account.platform === "x"
+          ? this.exclusive(
+              account.id,
+              async () => await this.publish(account, job, media, beforeSubmit),
+            )
+          : platforms.send(account, job, token, media, checkpoint, beforeSubmit),
+      poll: (account, token, posts, cursor) =>
+        account.platform === "x"
+          ? this.exclusive(account.id, async () => await this.poll(account, posts, cursor))
+          : platforms.poll(account, token, posts, cursor),
     };
   }
   private async identity(page: BrowserPage, account: SocialAccount) {
@@ -964,6 +1151,7 @@ export class XBrowserSessions {
     page: BrowserPage,
     account: SocialAccount,
     job: SocialJob,
+    beforeSubmit?: () => Promise<void>,
   ): Promise<SocialSendResult> {
     const recipient = job.payload.recipientId;
     if (
@@ -1003,6 +1191,7 @@ export class XBrowserSessions {
     );
     if (!enabled) throw new SocialPlatformError("rejected");
     await this.identity(page, account);
+    await beforeSubmit?.();
     const capture = page.watchResponse(/\/dm\/new2?\.json$/);
     this.lastSend.set(account.id, this.now());
     try {
@@ -1022,6 +1211,7 @@ export class XBrowserSessions {
     account: SocialAccount,
     job: SocialJob,
     media: (id: string) => Promise<Uint8Array>,
+    beforeSubmit?: () => Promise<void>,
   ): Promise<SocialSendResult> {
     const postId = job.payload.postId;
     const message = job.kind === "message" || (job.kind === "reply" && !postId);
@@ -1055,8 +1245,8 @@ export class XBrowserSessions {
       }
       const session = await this.launcher(this.profile(account.id), this.background);
       try {
-        if (message) return await this.sendMessage(session.page, account, job);
-        return await this.compose(session.page, account, postId, text, files);
+        if (message) return await this.sendMessage(session.page, account, job, beforeSubmit);
+        return await this.compose(session.page, account, postId, text, files, beforeSubmit);
       } finally {
         await session.close().catch(() => undefined);
       }
@@ -1070,6 +1260,7 @@ export class XBrowserSessions {
     postId: string | undefined,
     text: string,
     files: string[],
+    beforeSubmit?: () => Promise<void>,
   ): Promise<SocialSendResult> {
     const button = postId ? '[data-testid="tweetButtonInline"]' : '[data-testid="tweetButton"]';
     await page.goto(postId ? `https://x.com/i/status/${postId}` : "https://x.com/compose/post");
@@ -1104,6 +1295,7 @@ export class XBrowserSessions {
     );
     if (!enabled) throw new SocialPlatformError("rejected");
     await this.identity(page, account);
+    await beforeSubmit?.();
     const response = page.watchResponse(/\/(CreateTweet|CreateNoteTweet)$/);
     this.lastSend.set(account.id, this.now());
     try {

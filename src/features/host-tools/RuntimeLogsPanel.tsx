@@ -124,6 +124,12 @@ function ScopedRuntimeLogsPanel({
   const [monitorUrl, setMonitorUrl] = useState("");
   const [monitors, setMonitors] = useState<{ id: string; url: string; sourceId?: string }[]>([]);
   const [monitorBusy, setMonitorBusy] = useState(false);
+  const [monitorOperation, setMonitorOperation] = useState<{
+    method: "list" | "start" | "stop";
+    id?: unknown;
+  }>();
+  const [monitorsOpen, setMonitorsOpen] = useState(false);
+  const monitorTrigger = useRef<HTMLButtonElement>(null);
   const monitorPending = useRef(false);
   const monitorRevision = useRef(0);
   const [busy, setBusy] = useState(false);
@@ -133,6 +139,8 @@ function ScopedRuntimeLogsPanel({
   const [notice, setNotice] = useState("");
   const [exporting, setExporting] = useState(false);
   const exportingRef = useRef(false);
+  const [inspecting, setInspecting] = useState(false);
+  const inspectingRef = useRef(false);
   const stateKey = `runtime-logs:${JSON.stringify([cwd, sessionId, hostToolTargetKey(target)])}`;
   const [search, setSearch] = useRetainedState(`${stateKey}:search`, "");
   const [source, setSource] = useRetainedState<RuntimeLogEntry["source"] | "all">(
@@ -291,6 +299,7 @@ function ScopedRuntimeLogsPanel({
     monitorPending.current = true;
     monitorRevision.current += 1;
     setMonitorBusy(true);
+    setMonitorOperation({ method, id: params.id });
     setActionError("");
     try {
       if (method !== "list")
@@ -321,7 +330,10 @@ function ScopedRuntimeLogsPanel({
       if (alive.current) setActionError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       monitorPending.current = false;
-      if (alive.current) setMonitorBusy(false);
+      if (alive.current) {
+        setMonitorBusy(false);
+        setMonitorOperation(undefined);
+      }
     }
   };
   useEffect(() => {
@@ -362,11 +374,14 @@ function ScopedRuntimeLogsPanel({
     });
   }, []);
   const inspect = async () => {
+    if (inspectingRef.current) return;
     const problems = visibleEntries.filter(
       (entry) => runtimeLogDisplayLevel(entry) === "error" || entry.level === "warn",
     );
     const entries = chosen.length ? chosen : problems.length ? problems : visibleEntries;
     if (!entries.length) return;
+    inspectingRef.current = true;
+    setInspecting(true);
     setActionError("");
     setNotice("");
     try {
@@ -376,9 +391,13 @@ function ScopedRuntimeLogsPanel({
         runtimeLogsAgentPrompt(entries, buffer.sources, { cwd, hostLabel }),
         composerWindow,
       );
-      setNotice(t("Logs added to conversation draft. Review and send when ready."));
+      if (alive.current)
+        setNotice(t("Logs added to conversation draft. Review and send when ready."));
     } catch (cause) {
-      setActionError(t(cause instanceof Error ? cause.message : String(cause)));
+      if (alive.current) setActionError(t(cause instanceof Error ? cause.message : String(cause)));
+    } finally {
+      inspectingRef.current = false;
+      if (alive.current) setInspecting(false);
     }
   };
   const exportLogs = async () => {
@@ -431,41 +450,24 @@ function ScopedRuntimeLogsPanel({
       className="host-tool-panel host-tool-panel-wide runtime-logs-panel"
       aria-label={t("Runtime logs")}
     >
-      <header className="runtime-logs-heading">
-        <div className="runtime-logs-title">
-          <Terminal className="icon-md" />
-          <h3>{t("Runtime logs")}</h3>
-          {hostLabel ? (
-            <span className="runtime-logs-host" title={hostLabel}>
-              {hostLabel}
-            </span>
-          ) : null}
-        </div>
-        <div className="runtime-logs-status">
-          <span className="runtime-logs-totals">
-            <span data-level="error">{t("{p0} errors", { p0: errorCount })}</span>
-            <span data-level="warn">{t("{p0} warnings", { p0: warningCount })}</span>
-          </span>
-          <Badge
-            variant="dot"
-            size="sm"
-            tone={error ? "danger" : paused || !started ? "neutral" : loaded ? "success" : "info"}
-            role="status"
-          >
-            {error
-              ? t("Disconnected")
-              : !started
-                ? t("Stopped")
-                : paused
-                  ? t("Paused")
-                  : loaded
-                    ? t("Live")
-                    : t("Connecting…")}
-          </Badge>
-        </div>
-      </header>
-
       <div className="runtime-logs-controls">
+        <div className="runtime-logs-source-picker">
+          <SearchableSelect
+            multiple
+            label={t("Log source")}
+            value={sourceIds}
+            onChange={setSourceIds}
+            placeholder={t("All sources")}
+            options={buffer.sources
+              .filter((entry) => source === "all" || entry.kind === source)
+              .map((entry) => ({
+                value: entry.id,
+                label: `${entry.url ?? entry.label}${entry.available ? "" : " · " + t("Unavailable")}`,
+                keywords: [entry.label, entry.url, entry.reason].filter(Boolean).join(" "),
+              }))}
+            searchPlaceholder={t("Search sources by name or URL")}
+          />
+        </div>
         <Button
           ref={filterTrigger}
           variant="ghost"
@@ -475,7 +477,11 @@ function ScopedRuntimeLogsPanel({
           selected={source !== "all" || sourceIds.length > 0 || level !== "all"}
           aria-haspopup="dialog"
           aria-expanded={filtersOpen}
-          onClick={() => setFiltersOpen((value) => !value)}
+          onClick={() => {
+            setMonitorsOpen(false);
+            setMoreOpen(false);
+            setFiltersOpen((value) => !value);
+          }}
         >
           <SlidersHorizontal className="icon-md" />
         </Button>
@@ -508,24 +514,6 @@ function ScopedRuntimeLogsPanel({
                   accessory: kind === "all" ? buffer.entries.length : typeCounts[kind],
                 }))}
               />
-              <div className="runtime-logs-filter">
-                <SearchableSelect
-                  multiple
-                  label={t("Log source")}
-                  value={sourceIds}
-                  onChange={setSourceIds}
-                  placeholder={t("All sources")}
-                  options={buffer.sources
-                    .filter((entry) => source === "all" || entry.kind === source)
-                    .map((entry) => ({
-                      value: entry.id,
-                      label: `${entry.url ?? entry.label}${entry.available ? "" : " · " + t("Unavailable")}`,
-                      keywords: [entry.label, entry.url, entry.reason].filter(Boolean).join(" "),
-                    }))}
-                  searchPlaceholder={t("Search sources by name or URL")}
-                />
-              </div>
-
               <Select
                 label={t("Log level")}
                 value={level}
@@ -561,7 +549,7 @@ function ScopedRuntimeLogsPanel({
             focusOwner="group"
             type="search"
             aria-label={t("Search logs")}
-            placeholder={t("Search logs, objects and stack traces")}
+            placeholder={t("Search logs")}
             maxLength={500}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -571,18 +559,29 @@ function ScopedRuntimeLogsPanel({
           <Button
             motion="none"
             variant="ghost"
+            iconOnly
+            label={t("Add to conversation")}
+            tooltip={t("Add to conversation")}
             size="sm"
             type="button"
             disabled={!chosen.length && !visibleEntries.length}
+            loading={inspecting}
             onClick={inspect}
             title={t("Selected logs or visible errors are added to your draft for review.")}
           >
             <Bot className="icon-md" />
-            {t("Add to conversation")}
           </Button>
-          <Button motion="none" variant="ghost" size="sm" type="button" onClick={togglePause}>
+          <Button
+            motion="none"
+            variant="ghost"
+            iconOnly
+            label={!started ? t("Read logs") : paused ? t("Resume") : t("Pause")}
+            tooltip={!started ? t("Read logs") : paused ? t("Resume") : t("Pause")}
+            size="sm"
+            type="button"
+            onClick={togglePause}
+          >
             {paused ? <Play className="icon-sm" /> : <Pause className="icon-sm" />}
-            {!started ? t("Read logs") : paused ? t("Resume") : t("Pause")}
           </Button>
           <Button
             motion="none"
@@ -590,6 +589,7 @@ function ScopedRuntimeLogsPanel({
             iconOnly
             type="button"
             disabled={busy}
+            loading={busy}
             onClick={() => void read()}
             tooltip={t("Refresh")}
             label={t("Refresh")}
@@ -609,6 +609,26 @@ function ScopedRuntimeLogsPanel({
           >
             <ArrowDown className="icon-sm" />
           </Button>
+          {target.kind === "project" && (
+            <Button
+              ref={monitorTrigger}
+              motion="none"
+              variant="ghost"
+              iconOnly
+              label={t("Website monitors")}
+              tooltip={t("Website monitors")}
+              selected={monitors.length > 0}
+              aria-haspopup="dialog"
+              aria-expanded={monitorsOpen}
+              onClick={() => {
+                setFiltersOpen(false);
+                setMoreOpen(false);
+                setMonitorsOpen((open) => !open);
+              }}
+            >
+              <Globe className="icon-sm" />
+            </Button>
+          )}
           <Button
             ref={moreTrigger}
             motion="none"
@@ -619,7 +639,11 @@ function ScopedRuntimeLogsPanel({
             aria-expanded={moreOpen}
             tooltip={t("More actions")}
             label={t("More actions")}
-            onClick={() => setMoreOpen((open) => !open)}
+            onClick={() => {
+              setMonitorsOpen(false);
+              setFiltersOpen(false);
+              setMoreOpen((open) => !open);
+            }}
           >
             <MoreHorizontal className="icon-sm" />
           </Button>
@@ -649,99 +673,120 @@ function ScopedRuntimeLogsPanel({
         </div>
       </div>
 
-      {target.kind === "project" ? (
-        <section className="runtime-logs-monitor-setup" aria-label={t("Capture website logs")}>
-          <form
-            className="runtime-logs-capture-form"
-            title={t(
-              "Opens a separate browser. Capture continues until you stop the website monitor.",
-            )}
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (monitorUrl.trim()) void monitorAction("start", { url: monitorUrl.trim() });
-            }}
-          >
-            <Globe className="icon-sm" />
-            <TextField
-              hideLabel
-              label={t("Website port or URL")}
-              aria-label={t("Website port or URL")}
-              value={monitorUrl}
-              onChange={(event) => setMonitorUrl(event.target.value)}
-              disabled={monitorBusy}
-              placeholder="3000 / http://localhost:5173"
-              maxLength={2048}
-              required
-            />
-            <Button
-              motion="none"
-              variant="ghost"
-              size="sm"
-              type="submit"
-              disabled={monitorBusy || !monitorUrl.trim()}
-              title={t("Open website and capture logs")}
-              aria-label={t("Open website and capture logs")}
+      {target.kind === "project" && monitorsOpen ? (
+        <Popover
+          anchor={monitorTrigger}
+          role="dialog"
+          aria-label={t("Website monitors")}
+          side="bottom"
+          align="end"
+          width={380}
+          autoFocus
+          solid
+          onDismiss={() => setMonitorsOpen(false)}
+          className="runtime-logs-monitors-popover"
+        >
+          <section className="runtime-logs-monitor-setup" aria-label={t("Capture website logs")}>
+            <form
+              className="runtime-logs-capture-form"
+              title={t(
+                "Opens a separate browser. Capture continues until you stop the website monitor.",
+              )}
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (monitorUrl.trim()) void monitorAction("start", { url: monitorUrl.trim() });
+              }}
             >
-              <Play className="icon-sm" />
-              <span className="runtime-logs-sr">{t("Capture website logs")}</span>
-            </Button>
-            <Button
-              motion="none"
-              variant="ghost"
-              size="sm"
-              type="button"
-              disabled={monitorBusy}
-              onClick={() => void monitorAction("list")}
-              title={t("Load monitors")}
-              aria-label={t("Load monitors")}
-            >
-              <RefreshCw className="icon-sm" />
-            </Button>
-          </form>
-          {monitors.length ? (
-            <ul className="runtime-logs-monitor-chips">
-              {monitors.map((monitor) => (
-                <li key={monitor.id}>
-                  <Button
-                    motion="none"
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    className="runtime-logs-monitor-name"
-                    aria-pressed={!!monitor.sourceId && sourceIds.includes(monitor.sourceId)}
-                    title={monitor.url}
-                    disabled={!monitor.sourceId}
-                    onClick={() => {
-                      const id = monitor.sourceId;
-                      if (!id) return;
-                      setSource("all");
-                      setSourceIds((previous) =>
-                        previous.includes(id)
-                          ? previous.filter((item) => item !== id)
-                          : [...previous, id],
-                      );
-                    }}
-                  >
-                    {monitor.url}
-                  </Button>
-                  <Button
-                    motion="none"
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    disabled={monitorBusy}
-                    title={t("Stop monitor")}
-                    aria-label={t("Stop monitor")}
-                    onClick={() => void monitorAction("stop", { id: monitor.id })}
-                  >
-                    <Square className="icon-sm" />
-                    <span className="runtime-logs-sr">{t("Stop monitor")}</span>
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
+              <Globe className="icon-sm" />
+              <TextField
+                hideLabel
+                label={t("Website port or URL")}
+                aria-label={t("Website port or URL")}
+                value={monitorUrl}
+                onChange={(event) => setMonitorUrl(event.target.value)}
+                disabled={monitorBusy}
+                placeholder="3000 / http://localhost:5173"
+                maxLength={2048}
+                required
+              />
+              <Button
+                motion="none"
+                variant="ghost"
+                size="sm"
+                type="submit"
+                disabled={monitorBusy || !monitorUrl.trim()}
+                loading={monitorOperation?.method === "start"}
+                title={t("Open website and capture logs")}
+                aria-label={t("Open website and capture logs")}
+              >
+                <Play className="icon-sm" />
+                <span className="runtime-logs-sr">{t("Capture website logs")}</span>
+              </Button>
+              <Button
+                motion="none"
+                variant="ghost"
+                size="sm"
+                type="button"
+                disabled={monitorBusy}
+                loading={monitorOperation?.method === "list"}
+                onClick={() => void monitorAction("list")}
+                title={t("Load monitors")}
+                aria-label={t("Load monitors")}
+              >
+                <RefreshCw className="icon-sm" />
+              </Button>
+            </form>
+            {monitors.length ? (
+              <ul className="runtime-logs-monitor-chips">
+                {monitors.map((monitor) => (
+                  <li key={monitor.id}>
+                    <Button
+                      motion="none"
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      className="runtime-logs-monitor-name"
+                      aria-pressed={!!monitor.sourceId && sourceIds.includes(monitor.sourceId)}
+                      title={monitor.url}
+                      disabled={!monitor.sourceId}
+                      onClick={() => {
+                        const id = monitor.sourceId;
+                        if (!id) return;
+                        setSource("all");
+                        setSourceIds((previous) =>
+                          previous.includes(id)
+                            ? previous.filter((item) => item !== id)
+                            : [...previous, id],
+                        );
+                      }}
+                    >
+                      {monitor.url}
+                    </Button>
+                    <Button
+                      motion="none"
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      disabled={monitorBusy}
+                      loading={
+                        monitorOperation?.method === "stop" && monitorOperation.id === monitor.id
+                      }
+                      title={t("Stop monitor")}
+                      aria-label={t("Stop monitor")}
+                      onClick={() => void monitorAction("stop", { id: monitor.id })}
+                    >
+                      <Square className="icon-sm" />
+                      <span className="runtime-logs-sr">{t("Stop monitor")}</span>
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <p className="host-tool-muted">
+              {t("Opens a separate browser. Capture continues until you stop the website monitor.")}
+            </p>
+          </section>
+        </Popover>
       ) : null}
       {error ? (
         <Alert tone="danger" role="alert">
@@ -829,6 +874,23 @@ function ScopedRuntimeLogsPanel({
       </div>
 
       <footer className="runtime-logs-footer">
+        <Badge
+          variant="dot"
+          size="sm"
+          tone={error ? "danger" : paused || !started ? "neutral" : loaded ? "success" : "info"}
+          role="status"
+          title={hostLabel}
+        >
+          {error
+            ? t("Disconnected")
+            : !started
+              ? t("Stopped")
+              : paused
+                ? t("Paused")
+                : loaded
+                  ? t("Live")
+                  : t("Connecting…")}
+        </Badge>
         <div className="runtime-logs-selection">
           <span>
             {chosen.length
@@ -850,6 +912,12 @@ function ScopedRuntimeLogsPanel({
             <span>{t("Showing the latest {p0} rows.", { p0: MAX_RENDERED_RUNTIME_LOGS })}</span>
           ) : null}
         </div>
+        <span className="runtime-logs-totals">
+          {errorCount > 0 && <span data-level="error">{t("{p0} errors", { p0: errorCount })}</span>}
+          {warningCount > 0 && (
+            <span data-level="warn">{t("{p0} warnings", { p0: warningCount })}</span>
+          )}
+        </span>
       </footer>
       {buffer.dropped || buffer.trimmed ? (
         <p className="runtime-logs-hint">

@@ -175,6 +175,546 @@ const job = (overrides: Partial<SocialJob["payload"]> = {}): SocialJob => ({
 const created = JSON.stringify({
   data: { create_tweet: { tweet_results: { result: { rest_id: "777" } } } },
 });
+async function linkedInProfileFixture(
+  options: { accountType?: "organization" | "member"; connection?: "browser" | "api" } = {},
+) {
+  const fake = fakeBrowser({});
+  const s = await fixture(fake.launcher);
+  const accountType = options.accountType ?? "organization";
+  const account = (await s.social.call(owner, "accounts.create", {
+    platform: "linkedin",
+    name: "Bycoda",
+    accountType,
+    projectIds: [s.project.id],
+  })) as SocialAccount;
+  await s.social.connectAccount(
+    account.id,
+    {
+      platformId:
+        accountType === "organization" ? "web:linkedin:company:145372363" : "web:linkedin:in:owner",
+      name: "Bycoda",
+      scopes: [],
+      accessApproved: true,
+      connection: options.connection ?? "browser",
+    },
+    { accessToken: "browser-session" },
+  );
+  let bio = "Old",
+    uploaded = false,
+    saved = false,
+    correctActor = true;
+  vi.mocked(fake.page.evaluate).mockImplementation(async <T>(expression: string): Promise<T> => {
+    if (!correctActor) return undefined as T;
+    if (expression.includes("const container=logo.closest"))
+      return (
+        saved
+          ? "https://media.licdn.com/dms/image/v2/new/company-logo_100_100/bycoda_logo"
+          : "https://media.licdn.com/dms/image/v2/old/company-logo_100_100/bycoda_logo"
+      ) as T;
+    if (expression.includes("return {name:name.value"))
+      return { name: "Bycoda", bio, location: "", website: "" } as T;
+    return true as T;
+  });
+  vi.mocked(fake.page.fill).mockImplementation(async (_selector, value) => {
+    bio = value;
+  });
+  vi.mocked(fake.page.setFiles).mockImplementation(async () => {
+    uploaded = true;
+  });
+  vi.mocked(fake.page.click).mockImplementation(async () => {
+    saved = uploaded;
+  });
+  return {
+    ...s,
+    fake,
+    account,
+    switchActor: () => {
+      correctActor = false;
+    },
+  };
+}
+async function facebookProfileFixture(
+  options: { accountType?: "page" | "member"; connection?: "browser" | "api" } = {},
+) {
+  let selected = "61595536696896";
+  const fake = fakeBrowser({
+    cookies: () => [
+      { name: "c_user", value: "42" },
+      { name: "xs", value: "synthetic" },
+      { name: "i_user", value: selected },
+    ],
+  });
+  const s = await fixture(fake.launcher);
+  const account = (await s.social.call(owner, "accounts.create", {
+    platform: "facebook",
+    name: "Bycoda",
+    accountType: options.accountType ?? "page",
+    projectIds: [s.project.id],
+  })) as SocialAccount;
+  await s.social.connectAccount(
+    account.id,
+    {
+      platformId: selected,
+      name: "Bycoda",
+      scopes: [],
+      accessApproved: true,
+      connection: options.connection ?? "browser",
+    },
+    { accessToken: "browser-session" },
+  );
+  let saved = false;
+  vi.mocked(fake.page.evaluate).mockImplementation(async <T>(expression: string): Promise<T> => {
+    if (expression.includes("const instagram ="))
+      return { origin: "https://www.facebook.com", path: "/profile.php", authenticated: true } as T;
+    if (expression.includes("const raw=images[0]"))
+      return `https://scontent.example.fbcdn.net/v/t39.30808-1/${saved ? "444_555_666" : "111_222_333"}_n.jpg` as T;
+    if (expression.includes("const paths=images.map"))
+      return "/v/t39.30808-6/444_555_666_n.jpg" as T;
+    return true as T;
+  });
+  vi.mocked(fake.page.click).mockImplementation(async () => {
+    if (vi.mocked(fake.page.click).mock.calls.length === 3) saved = true;
+  });
+  return {
+    ...s,
+    fake,
+    account,
+    switchActor: () => {
+      selected = "99";
+    },
+  };
+}
+async function instagramProfileFixture(
+  options: {
+    accountType?: "member" | "professional";
+    connection?: "browser" | "api";
+    synced?: boolean;
+  } = {},
+) {
+  let selected = "123456";
+  const fake = fakeBrowser({
+    cookies: () => [
+      { name: "ds_user_id", value: selected },
+      { name: "sessionid", value: "synthetic" },
+    ],
+  });
+  const s = await fixture(fake.launcher);
+  const account = (await s.social.call(owner, "accounts.create", {
+    platform: "instagram",
+    name: "Bycoda",
+    accountType: options.accountType ?? "member",
+    projectIds: [s.project.id],
+  })) as SocialAccount;
+  await s.social.connectAccount(
+    account.id,
+    {
+      platformId: selected,
+      name: "Bycoda",
+      scopes: [],
+      accessApproved: true,
+      connection: options.connection ?? "browser",
+    },
+    { accessToken: "browser-session" },
+  );
+  let bio = "Old bio",
+    uploaded = false;
+  vi.mocked(fake.page.evaluate).mockImplementation(async <T>(expression: string): Promise<T> => {
+    if (expression.includes("const instagram ="))
+      return {
+        origin: "https://www.instagram.com",
+        path: "/accounts/edit/",
+        authenticated: true,
+      } as T;
+    if (expression.includes("return bio.value;")) return bio as T;
+    if (expression.includes("const url=new URL(images[0]"))
+      return `https://instagram.example.fbcdn.net/v/t51.2885-19/${uploaded ? "new" : "old"}_n.jpg` as T;
+    if (expression.includes("Synced profile photo"))
+      return (options.synced ? "synced" : "ready") as T;
+    return true as T;
+  });
+  vi.mocked(fake.page.fill).mockImplementation(async (_selector, value) => {
+    bio = value;
+  });
+  vi.mocked(fake.page.setFiles).mockImplementation(async () => {
+    uploaded = true;
+  });
+  return {
+    ...s,
+    fake,
+    account,
+    switchActor: () => {
+      selected = "99";
+    },
+  };
+}
+
+describe("Instagram profile Host routing", () => {
+  it("requires the owner and Instagram-specific approval before launching", async () => {
+    const s = await instagramProfileFixture();
+    await expect(
+      s.browser.profileAction(
+        s.social,
+        {
+          kind: "session",
+          actorId: "agent",
+          provider: "codex",
+          sessionId: "untrusted",
+          projectId: s.project.id,
+        },
+        s.account.id,
+        "read",
+        {},
+      ),
+    ).rejects.toThrow("owner");
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { bio: "New" },
+        confirm: "UPDATE_FACEBOOK_PROFILE",
+      }),
+    ).rejects.toThrow("confirmation");
+    expect(s.fake.launcher).not.toHaveBeenCalled();
+  });
+  it.each(["member", "professional"] as const)(
+    "reads a connected %s through its separate browser profile",
+    async (accountType) => {
+      const s = await instagramProfileFixture({ accountType });
+      await expect(
+        s.browser.profileAction(s.social, owner, s.account.id, "read", {}),
+      ).resolves.toMatchObject({ bio: "Old bio" });
+      expect(s.fake.launcher.mock.calls[0][0]).toMatch(
+        new RegExp(`[\\\\/]browser-profiles[\\\\/]${s.account.id}$`),
+      );
+      expect(s.fake.page.setFiles).not.toHaveBeenCalled();
+      expect(s.fake.page.fill).not.toHaveBeenCalled();
+    },
+  );
+  it("rejects an API connection, X follow and unobserved desktop fields", async () => {
+    const s = await instagramProfileFixture();
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "follow", {
+        handle: "bycoda",
+        confirm: "FOLLOW_X_ACCOUNT",
+      }),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { website: "https://example.com" },
+        confirm: "UPDATE_INSTAGRAM_PROFILE",
+      }),
+    ).rejects.toThrow("Unsupported Instagram profile field");
+    expect(s.fake.launcher).not.toHaveBeenCalled();
+    const api = await instagramProfileFixture({ connection: "api" });
+    await expect(
+      api.browser.profileAction(api.social, owner, api.account.id, "read", {}),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(api.fake.launcher).not.toHaveBeenCalled();
+  });
+  it("stages only owner image bytes and removes them after one verified photo update", async () => {
+    const s = await instagramProfileFixture();
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zll1sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const { uploadId } = await s.social.uploadImage(owner, png.toString("base64"));
+    const upload = vi.mocked(s.fake.page.setFiles).getMockImplementation()!;
+    let staged = "";
+    vi.mocked(s.fake.page.setFiles).mockImplementation(async (selector, files) => {
+      staged = files[0];
+      expect(readFileSync(staged)).toEqual(png);
+      await upload(selector, files);
+    });
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { avatarUploadId: uploadId },
+        confirm: "UPDATE_INSTAGRAM_PROFILE",
+      }),
+    ).resolves.toMatchObject({ avatarUrl: expect.stringContaining("/new_n.jpg") });
+    expect(s.fake.page.setFiles).toHaveBeenCalledTimes(1);
+    expect(staged).toBeTruthy();
+    expect(existsSync(staged)).toBe(false);
+    expect(s.fake.calls.at(-1)).toBe("close");
+  });
+  it("rejects cross-account sync before either text edit or file upload", async () => {
+    const s = await instagramProfileFixture({ synced: true });
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zll1sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const { uploadId } = await s.social.uploadImage(owner, png.toString("base64"));
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { avatarUploadId: uploadId, bio: "Must not apply" },
+        confirm: "UPDATE_INSTAGRAM_PROFILE",
+      }),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    expect(s.fake.page.fill).not.toHaveBeenCalled();
+    expect(s.fake.page.setFiles).not.toHaveBeenCalled();
+  });
+  it("rechecks the browser's numeric actor after editing and before Submit", async () => {
+    const s = await instagramProfileFixture();
+    const fill = vi.mocked(s.fake.page.fill).getMockImplementation()!;
+    vi.mocked(s.fake.page.fill).mockImplementation(async (...args) => {
+      await fill(...args);
+      s.switchActor();
+    });
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { bio: "New" },
+        confirm: "UPDATE_INSTAGRAM_PROFILE",
+      }),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(s.fake.page.click).not.toHaveBeenCalled();
+    expect(s.fake.calls.at(-1)).toBe("close");
+  });
+});
+
+describe("Facebook Page logo Host routing", () => {
+  it("requires owner authority and the Facebook-specific confirmation", async () => {
+    const s = await facebookProfileFixture();
+    await expect(
+      s.browser.profileAction(
+        s.social,
+        {
+          kind: "session",
+          actorId: "agent",
+          provider: "codex",
+          sessionId: "untrusted",
+          projectId: s.project.id,
+        },
+        s.account.id,
+        "read",
+        {},
+      ),
+    ).rejects.toThrow("owner");
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { avatarUploadId: "11111111-1111-4111-8111-111111111111" },
+        confirm: "UPDATE_X_PROFILE",
+      }),
+    ).rejects.toThrow("confirmation");
+    expect(s.fake.launcher).not.toHaveBeenCalled();
+  });
+  it.each([{ accountType: "member" as const }, { connection: "api" as const }])(
+    "rejects unsupported identities/connections: %j",
+    async (options) => {
+      const s = await facebookProfileFixture(options);
+      await expect(
+        s.browser.profileAction(s.social, owner, s.account.id, "read", {}),
+      ).rejects.toMatchObject({ code: "denied" });
+      expect(s.fake.launcher).not.toHaveBeenCalled();
+    },
+  );
+  it("rejects following and unverified profile fields", async () => {
+    const s = await facebookProfileFixture();
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "follow", {
+        handle: "github",
+        confirm: "FOLLOW_X_ACCOUNT",
+      }),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { name: "Different" },
+        confirm: "UPDATE_FACEBOOK_PROFILE",
+      }),
+    ).rejects.toThrow("logo");
+    expect(s.fake.launcher).not.toHaveBeenCalled();
+  });
+  it("stages exact owner logo bytes in the separate Page profile and cleans them after one Save", async () => {
+    const s = await facebookProfileFixture();
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zll1sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const { uploadId } = await s.social.uploadImage(owner, png.toString("base64"));
+    let staged = "";
+    vi.mocked(s.fake.page.setFiles).mockImplementation(async (selector, files) => {
+      expect(selector).toBe('[data-bycoda-fb-profile-file="true"]');
+      staged = files[0];
+      expect(readFileSync(staged)).toEqual(png);
+    });
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { avatarUploadId: uploadId },
+        confirm: "UPDATE_FACEBOOK_PROFILE",
+      }),
+    ).resolves.toMatchObject({ avatarUrl: expect.stringContaining("444_555_666") });
+    expect(s.fake.launcher.mock.calls[0][0]).toMatch(
+      new RegExp(`[\\\\/]browser-profiles[\\\\/]${s.account.id}$`),
+    );
+    expect(s.fake.page.click).toHaveBeenCalledTimes(3);
+    expect(staged).toBeTruthy();
+    expect(existsSync(staged)).toBe(false);
+    expect(s.fake.calls.at(-1)).toBe("close");
+  });
+  it("rechecks the selected Facebook actor after upload, before Save", async () => {
+    const s = await facebookProfileFixture();
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zll1sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const { uploadId } = await s.social.uploadImage(owner, png.toString("base64"));
+    vi.mocked(s.fake.page.setFiles).mockImplementation(async () => s.switchActor());
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { avatarUploadId: uploadId },
+        confirm: "UPDATE_FACEBOOK_PROFILE",
+      }),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(s.fake.page.click).toHaveBeenCalledTimes(2);
+    expect(s.fake.calls.at(-1)).toBe("close");
+  });
+});
+
+describe("LinkedIn Page profile Host routing", () => {
+  it("requires owner authority and the LinkedIn-specific confirmation", async () => {
+    const s = await linkedInProfileFixture();
+    await expect(
+      s.browser.profileAction(
+        s.social,
+        {
+          kind: "session",
+          actorId: "agent",
+          provider: "codex",
+          sessionId: "untrusted",
+          projectId: s.project.id,
+        },
+        s.account.id,
+        "update",
+        { patch: { bio: "New" }, confirm: "UPDATE_LINKEDIN_PROFILE" },
+      ),
+    ).rejects.toThrow("owner");
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { bio: "New" },
+        confirm: "UPDATE_X_PROFILE",
+      }),
+    ).rejects.toThrow("confirmation");
+    expect(s.fake.launcher).not.toHaveBeenCalled();
+  });
+  it.each([{ accountType: "member" as const }, { connection: "api" as const }])(
+    "rejects unsupported account identities/connections: %j",
+    async (options) => {
+      const s = await linkedInProfileFixture(options);
+      await expect(
+        s.browser.profileAction(s.social, owner, s.account.id, "read", {}),
+      ).rejects.toMatchObject({ code: "denied" });
+      expect(s.fake.launcher).not.toHaveBeenCalled();
+    },
+  );
+  it("does not expose X follow on a LinkedIn Page", async () => {
+    const s = await linkedInProfileFixture();
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "follow", {
+        handle: "github",
+        confirm: "FOLLOW_X_ACCOUNT",
+      }),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    expect(s.fake.launcher).not.toHaveBeenCalled();
+  });
+  it("routes owner image bytes into the Page's separate browser profile and removes staging after save", async () => {
+    const s = await linkedInProfileFixture();
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const { uploadId } = await s.social.uploadImage(owner, png.toString("base64"));
+    let staged = "";
+    vi.mocked(s.fake.page.setFiles).mockImplementation(async (selector, files) => {
+      expect(selector).toBe("#organization-logo-field");
+      staged = files[0];
+      expect(readFileSync(staged)).toEqual(png);
+    });
+    // The fake only models route dispatch; DOM persistence and receipt cases have their own driver tests.
+    vi.mocked(s.fake.page.click).mockImplementation(async () => undefined);
+    let logoReads = 0;
+    vi.mocked(s.fake.page.evaluate).mockImplementation(
+      async <T>(expression: string): Promise<T> => {
+        if (expression.includes("const container=logo.closest"))
+          return `https://media.licdn.com/dms/image/v2/${logoReads++ ? "new" : "old"}/company-logo_100_100/bycoda_logo` as T;
+        if (expression.includes("return {name:name.value"))
+          return { name: "Bycoda", bio: "Old", location: "", website: "" } as T;
+        return true as T;
+      },
+    );
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { avatarUploadId: uploadId },
+        confirm: "UPDATE_LINKEDIN_PROFILE",
+      }),
+    ).resolves.toMatchObject({ avatarUrl: expect.stringContaining("/new/") });
+    expect(s.fake.launcher.mock.calls[0][0]).toMatch(
+      new RegExp(`[\\\\/]browser-profiles[\\\\/]${s.account.id}$`),
+    );
+    expect(s.fake.page.click).toHaveBeenCalledExactlyOnceWith(
+      "#org-page-edit-modal-banner__save-button",
+    );
+    expect(staged).toBeTruthy();
+    expect(existsSync(staged)).toBe(false);
+    expect(s.fake.calls.at(-1)).toBe("close");
+  });
+  it("holds a changed Page actor before final Save", async () => {
+    const s = await linkedInProfileFixture();
+    vi.mocked(s.fake.page.fill).mockImplementation(async () => {
+      s.switchActor();
+    });
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { bio: "New" },
+        confirm: "UPDATE_LINKEDIN_PROFILE",
+      }),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(s.fake.page.click).not.toHaveBeenCalled();
+    expect(s.fake.calls.at(-1)).toBe("close");
+  });
+  it("rechecks the connected Host actor after the form is edited", async () => {
+    const s = await linkedInProfileFixture();
+    const current = s.social.accountForBrowserManagement.bind(s.social);
+    let switched = false;
+    vi.spyOn(s.social, "accountForBrowserManagement").mockImplementation(async (...args) => {
+      const account = await current(...args);
+      return switched ? { ...account, platformId: "web:linkedin:company:99" } : account;
+    });
+    vi.mocked(s.fake.page.fill).mockImplementation(async () => {
+      switched = true;
+    });
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", {
+        patch: { bio: "New" },
+        confirm: "UPDATE_LINKEDIN_PROFILE",
+      }),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(s.fake.page.click).not.toHaveBeenCalled();
+  });
+  it("preserves the existing X profile directory and driver", async () => {
+    const fake = fakeBrowser({});
+    const s = await fixture(fake.launcher);
+    await s.social.connectAccount(
+      s.account.id,
+      {
+        platformId: "42",
+        name: "owner",
+        scopes: X_BROWSER_SCOPES,
+        accessApproved: true,
+        connection: "browser",
+      },
+      { accessToken: "browser-session" },
+    );
+    const original = vi.mocked(fake.page.evaluate).getMockImplementation()!;
+    vi.mocked(fake.page.evaluate).mockImplementation(async <T>(expression: string): Promise<T> =>
+      expression.includes("const read = name")
+        ? ({ name: "owner", bio: "", location: "", website: "" } as T)
+        : (original(expression) as Promise<T>),
+    );
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "read", {}),
+    ).resolves.toMatchObject({ name: "owner" });
+    expect(fake.launcher.mock.calls[0][0]).toMatch(
+      new RegExp(`[\\\\/]x-browser[\\\\/]${s.account.id}$`),
+    );
+    expect(fake.page.goto).toHaveBeenCalledWith("https://x.com/settings/profile");
+  });
+});
 describe("X tarayıcı oturumu", () => {
   it("keeps profile mutations owner-only, explicitly confirmed and on the executor", async () => {
     const fake = fakeBrowser({});

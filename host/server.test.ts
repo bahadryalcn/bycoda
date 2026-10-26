@@ -16,6 +16,7 @@ import * as expoGo from "./expo-go";
 import { RuntimeLogsService } from "./runtime-logs";
 import { HostChildBackend } from "./child-backend";
 import { HostTasks } from "./tasks";
+import { HostCrews } from "./crews";
 import { HostGoals } from "./goals";
 import { DesktopSessions } from "./desktopSessions";
 import { AsyncHostNotes } from "./host-notes-async";
@@ -45,6 +46,20 @@ const binaries: { codex?: string } = {};
 configureChildBackend(new HostChildBackend(binaries));
 
 const cleanups: Array<() => Promise<void>> = [];
+
+it("routes owner crew work deletion through authenticated RPC", async () => {
+  const s = await setup([]);
+  const crewCall = vi.spyOn(HostCrews.prototype, "call").mockResolvedValue({ deleted: true });
+  try {
+    const input = { projectId: s.project.id, runId: "paused-run", expectedUpdatedAt: 42 };
+    expect((await s.call("crews.deleteRun", input, "invalid")).status).toBe(401);
+    expect(crewCall).not.toHaveBeenCalled();
+    expect((await s.call("crews.deleteRun", input)).value.result).toEqual({ deleted: true });
+    expect(crewCall).toHaveBeenCalledWith("crews.deleteRun", input, s.project.id);
+  } finally {
+    crewCall.mockRestore();
+  }
+});
 
 it("requires the dedicated review confirmation before queuing an exact PR review", async () => {
   const s = await setup([]);
@@ -1623,6 +1638,13 @@ describe("scoped Conversation Tools RPC", () => {
     const read = vi
       .spyOn(DesktopSessions.prototype, "snapshotAsync")
       .mockImplementation(async (sessionId) => (sessionId === id ? snapshot : undefined));
+    const metadata = vi
+      .spyOn(DesktopSessions.prototype, "metadataAsync")
+      .mockImplementation(async (sessionId) =>
+        sessionId === id
+          ? { cwd: s.project.cwd, harness: source.session.harness, running: false }
+          : undefined,
+      );
     const create = vi.spyOn(HostGoals.prototype, "create").mockImplementation((raw) => ({
       ...(raw as ReturnType<HostGoals["create"]>),
       status: "planning",
@@ -1663,6 +1685,7 @@ describe("scoped Conversation Tools RPC", () => {
       expect(s.send).not.toHaveBeenCalled();
     } finally {
       create.mockRestore();
+      metadata.mockRestore();
       read.mockRestore();
       cwd.mockRestore();
     }
@@ -1743,6 +1766,13 @@ describe("scoped Conversation Tools RPC", () => {
     const read = vi
       .spyOn(DesktopSessions.prototype, "snapshotAsync")
       .mockImplementation(async (target) => (target === id ? snapshot : undefined));
+    const metadata = vi
+      .spyOn(DesktopSessions.prototype, "metadataAsync")
+      .mockImplementation(async (target) =>
+        target === id
+          ? { cwd: s.project.cwd, harness: snapshot.session.harness, running: false }
+          : undefined,
+      );
     const relay = vi
       .spyOn(ConversationDesktopRelay.prototype, "call")
       .mockImplementation(async (action) => {
@@ -1798,6 +1828,7 @@ describe("scoped Conversation Tools RPC", () => {
       );
     } finally {
       relay.mockRestore();
+      metadata.mockRestore();
       read.mockRestore();
       cwd.mockRestore();
     }

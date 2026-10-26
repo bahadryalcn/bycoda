@@ -2,17 +2,36 @@ import { Button } from "../../../shared/ui/Button";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import styles from "./QuestionForm.module.css";
-import { TextField } from "../../../shared/ui/TextField";
+import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useT } from "../../../shared/i18n";
 import { usePresentationVisible } from "./presentationVisibility";
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { MessageSquare } from "../../../shared/ui/icons";
+import {
+  ArrowUp,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  CircleX,
+  Clock,
+  CornerDownRight,
+  MessageSquare,
+  Play,
+  RefreshCw,
+  X,
+} from "../../../shared/ui/icons";
+import {
+  questionDraftKey,
+  readQuestionDraft,
+  writeQuestionDraft,
+  type QuestionDraft,
+} from "../model/questionDrafts";
 import {
   CUSTOM_OPTION_ID,
   buildQuestionReply,
@@ -25,17 +44,55 @@ import {
 
 type Props = {
   prompt: UserQuestionPrompt;
+  /** Session identity; unfinished answers stay separate across sessions. */
+  draftScope?: string;
   onReply: (requestId: number, reply: UserQuestionReply) => void;
   onInteraction?: (requestId: number) => void;
 };
 
-export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
+export function QuestionForm(props: Props) {
+  return <QuestionFormContent key={questionDraftKey(props.draftScope, props.prompt)} {...props} />;
+}
+
+function QuestionFormContent({ prompt, draftScope, onReply, onInteraction }: Props) {
   const t = useT();
-  const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string[]>>({});
-  const [custom, setCustom] = useState<Record<string, string>>({});
+  const statusId = useId();
+  const [draft, setDraft] = useState<QuestionDraft>(
+    () => readQuestionDraft(draftScope, prompt) ?? { step: 0, answers: {}, custom: {} },
+  );
+  const { step, answers, custom } = draft;
+  const submitted = useRef(!!draft.delivery);
+  const [submitting, setSubmitting] = useState(draft.delivery === "sending");
+  const [localUnknown, setLocalUnknown] = useState(draft.delivery === "unknown");
   const [now, setNow] = useState(Date.now);
   const visible = usePresentationVisible();
+  const sending = submitting || prompt.delivery === "sending";
+  const held =
+    sending || localUnknown || prompt.delivery === "unknown" || prompt.delivery === "queued";
+
+  const updateDraft = (update: (current: QuestionDraft) => QuestionDraft) => {
+    setDraft((current) => {
+      const next = update(current);
+      writeQuestionDraft(draftScope, prompt, next);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (prompt.delivery === "failed") {
+      submitted.current = false;
+      setSubmitting(false);
+      setLocalUnknown(false);
+      setDraft((current) => {
+        if (!current.delivery) return current;
+        const next = { ...current, delivery: undefined, pendingAction: undefined };
+        writeQuestionDraft(draftScope, prompt, next);
+        return next;
+      });
+    } else if (prompt.delivery === "unknown" || prompt.delivery === "queued") {
+      setSubmitting(false);
+    }
+  }, [prompt]);
 
   useEffect(() => {
     if (prompt.autoResolveAt == null || !visible) return;
@@ -48,12 +105,6 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
     if (prompt.autoResolveAt != null) onInteraction?.(prompt.requestId);
   };
 
-  useEffect(() => {
-    setStep(0);
-    setAnswers({});
-    setCustom({});
-  }, [prompt.requestId]);
-
   const questions = prompt.questions;
   const total = questions.length;
   const index = Math.min(step, Math.max(total - 1, 0));
@@ -64,13 +115,39 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
     [answers, custom, question],
   );
 
-  const finish = (nextAnswers = answers, nextCustom = custom) => {
-    onReply(prompt.requestId, buildQuestionReply(questions, nextAnswers, nextCustom));
+  const send = (
+    reply: UserQuestionReply,
+    pendingAction: QuestionDraft["pendingAction"] = "answer",
+  ) => {
+    if (submitted.current || held) return;
+    submitted.current = true;
+    setSubmitting(true);
+    setLocalUnknown(false);
+    updateDraft((current) => ({ ...current, delivery: "sending", pendingAction }));
+    try {
+      onReply(prompt.requestId, reply);
+    } catch {
+      setSubmitting(false);
+      // A callback can throw after dispatch. Only an authoritative failed
+      // transport update can establish that sending again is safe.
+      setLocalUnknown(true);
+      updateDraft((current) => ({ ...current, delivery: "unknown" }));
+    }
   };
+  const finish = (
+    nextAnswers = answers,
+    nextCustom = custom,
+    pendingAction: QuestionDraft["pendingAction"] = "answer",
+  ) => send(buildQuestionReply(questions, nextAnswers, nextCustom), pendingAction);
 
   const skipCurrent = () => {
+    if (held || submitted.current) return;
+    if (prompt.dismissAction === "cancel" || prompt.dismissAction === "decline") {
+      send({ kind: "skipped" }, "dismiss");
+      return;
+    }
     if (!question) {
-      finish();
+      finish(answers, custom, "dismiss");
       return;
     }
     const nextAnswers = { ...answers };
@@ -78,28 +155,90 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
     delete nextAnswers[question.id];
     delete nextCustom[question.id];
     if (last) {
-      finish(nextAnswers, nextCustom);
+      updateDraft((current) => ({ ...current, answers: nextAnswers, custom: nextCustom }));
+      finish(nextAnswers, nextCustom, "dismiss");
       return;
     }
-    setAnswers(nextAnswers);
-    setCustom(nextCustom);
-    setStep(index + 1);
+    updateDraft(() => ({ answers: nextAnswers, custom: nextCustom, step: index + 1 }));
   };
 
   const continueCurrent = () => {
-    if (!question || !ready) return;
+    if (!question || !ready || held || submitted.current) return;
     if (last) {
       finish();
       return;
     }
-    setStep(index + 1);
+    updateDraft((current) => ({ ...current, step: index + 1 }));
   };
 
   if (!question) return null;
 
   const heading = question.header?.trim() || prompt.title?.trim();
   // Providers may repeat the entire question as their header.
-  const title = heading && heading !== question.prompt.trim() ? heading : t("Question");
+  const title = heading && heading !== question.prompt.trim() ? heading : undefined;
+  const queued = prompt.delivery === "queued";
+  const uncertain = !queued && (prompt.delivery === "unknown" || localUnknown);
+  const failed = !sending && prompt.delivery === "failed";
+  const dismissing = sending && draft.pendingAction === "dismiss";
+  const pendingLabel = dismissing
+    ? prompt.dismissAction === "cancel"
+      ? t("Cancelling…")
+      : t("Sending…")
+    : t("Sending answer…");
+  const status =
+    prompt.delivery === "queued"
+      ? t("Answer saved · waiting to continue")
+      : uncertain
+        ? prompt.error
+          ? t(prompt.error)
+          : t(
+              "Answer delivery could not be confirmed. Wait for the connection to recover before sending again.",
+            )
+        : sending
+          ? pendingLabel
+          : failed
+            ? prompt.error
+              ? t(prompt.error)
+              : t("Answer was not sent. Your answer is kept; try again.")
+            : prompt.behavior === "blocking"
+              ? t("Waiting for your answer")
+              : prompt.behavior === "nonBlocking"
+                ? t("Work may continue while this question is open")
+                : t("Question open");
+  const StatusIcon =
+    uncertain || failed
+      ? CircleAlert
+      : sending || queued || prompt.behavior === "blocking"
+        ? Clock
+        : prompt.behavior === "nonBlocking"
+          ? Play
+          : MessageSquare;
+  const DismissIcon =
+    prompt.dismissAction === "cancel"
+      ? X
+      : prompt.dismissAction === "decline"
+        ? CircleX
+        : CornerDownRight;
+  const SubmitIcon = uncertain
+    ? CircleAlert
+    : queued
+      ? Clock
+      : !last
+        ? ChevronRight
+        : failed
+          ? RefreshCw
+          : ArrowUp;
+  const submitLabel = queued
+    ? t("Waiting")
+    : uncertain
+      ? t("Connection issue")
+      : sending && !dismissing
+        ? pendingLabel
+        : !last
+          ? t("Next")
+          : failed
+            ? t("Send again")
+            : t("Send answer");
 
   return (
     <div
@@ -112,94 +251,151 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
       onChangeCapture={interact}
     >
       <form
-        className={styles.form}
+        className={`bycoda-arc ${styles.form}`}
+        aria-label={t("Question")}
+        aria-busy={sending}
         onSubmit={(event) => {
           event.preventDefault();
           continueCurrent();
         }}
       >
-        <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
-          <MessageSquare
-            className="size-3.5 shrink-0 text-(--ui-text-secondary)"
-            strokeWidth={1.75}
-          />
-          <span
-            className="min-w-0 flex-1 truncate text-xs text-(--ui-text-secondary)"
-            title={title}
-          >
-            {title}
-          </span>
-          {total > 1 ? (
-            <span
-              className="shrink-0 text-xs text-(--ui-text-secondary) tabular-nums"
-              aria-live="polite"
-            >
-              {index + 1}
-              {" / "}
-              {total}
-            </span>
-          ) : null}
-        </div>
-        <div className="px-3 py-3">
+        {title || total > 1 ? (
+          <div className={styles.context}>
+            <MessageSquare
+              className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+              strokeWidth={1.75}
+            />
+            {title ? (
+              <span className={styles.contextTitle}>{title}</span>
+            ) : (
+              <span className="sr-only">{t("Question")}</span>
+            )}
+            {total > 1 ? (
+              <span className={styles.progress} aria-live="polite">
+                {index + 1}
+                {" / "}
+                {total}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        <fieldset className={styles.body} disabled={sending}>
           <QuestionFields
             key={question.id}
             question={question}
             selected={answers[question.id] ?? []}
             custom={custom[question.id] ?? ""}
+            locked={held}
             onSelect={(optionId) =>
-              setAnswers((current) => ({
+              updateDraft((current) => ({
                 ...current,
-                [question.id]: nextSelection(question, current[question.id] ?? [], optionId),
+                answers: {
+                  ...current.answers,
+                  [question.id]: nextSelection(
+                    question,
+                    current.answers[question.id] ?? [],
+                    optionId,
+                  ),
+                },
               }))
             }
             onCustom={(value) => {
-              setCustom((current) => ({ ...current, [question.id]: value }));
-              setAnswers((current) => {
-                const selected = current[question.id] ?? [];
+              updateDraft((current) => {
+                const selected = current.answers[question.id] ?? [];
                 if (question.multiSelect) {
                   const without = selected.filter((id) => !isCustomId(question, id));
                   return {
                     ...current,
-                    [question.id]: [...without, customOptionId(question)],
+                    custom: { ...current.custom, [question.id]: value },
+                    answers: {
+                      ...current.answers,
+                      [question.id]: [...without, customOptionId(question)],
+                    },
                   };
                 }
                 return {
                   ...current,
-                  [question.id]: [customOptionId(question)],
+                  custom: { ...current.custom, [question.id]: value },
+                  answers: { ...current.answers, [question.id]: [customOptionId(question)] },
                 };
               });
             }}
           />
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-(--ui-tone-neutral-border) px-3 py-2">
-          {prompt.autoResolveAt != null ? (
-            <span
-              className="min-w-0 flex-1 text-xs text-(--ui-text-secondary) tabular-nums"
-              title={t("Interact to keep this question open.")}
+        </fieldset>
+        <div className={styles.footer}>
+          <div className={styles.feedback}>
+            <p
+              role={
+                failed || uncertain
+                  ? "alert"
+                  : "status"
+              }
+              className={styles.status}
+              id={statusId}
+              data-error={failed ? "true" : undefined}
             >
-              {prompt.autoResolveAt - now > 60_000
-                ? t("Optional question")
-                : t("Continues without an answer in {p0}s", {
-                    p0: Math.max(0, Math.ceil((prompt.autoResolveAt - now) / 1000)),
-                  })}
-            </span>
-          ) : null}
-          <Button variant="ghost" type="button" onClick={skipCurrent}>
-            {t("Skip")}
-          </Button>
-          {index > 0 ? (
+              <StatusIcon className="size-3.5 shrink-0" />
+              <span>{status}</span>
+            </p>
+            {prompt.autoResolveAt != null && !held ? (
+              <span
+                className="text-xs text-(--ui-text-secondary) tabular-nums"
+                title={t("Interact to keep this question open.")}
+              >
+                {prompt.autoResolveAt - now > 60_000
+                  ? t("Optional question")
+                  : t("Continues without an answer in {p0}s", {
+                      p0: Math.max(0, Math.ceil((prompt.autoResolveAt - now) / 1000)),
+                    })}
+              </span>
+            ) : null}
+          </div>
+          <div className={styles.actions}>
             <Button
               variant="ghost"
+              size="sm"
               type="button"
-              className="shrink-0"
-              onClick={() => setStep(index - 1)}
+              disabled={held}
+              loading={dismissing}
+              loadingLabel={pendingLabel}
+              startIcon={<DismissIcon />}
+              aria-describedby={held ? statusId : undefined}
+              onClick={skipCurrent}
             >
-              {t("Back")}
+              {dismissing
+                ? pendingLabel
+                : prompt.dismissAction === "cancel"
+                  ? t("Cancel question")
+                  : prompt.dismissAction === "decline"
+                    ? t("Decline")
+                    : t("Skip")}
             </Button>
-          ) : null}
-          <Button variant="primary" type="submit" disabled={!ready}>
-            {t("Continue")}
-          </Button>
+            {index > 0 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                className="shrink-0"
+                disabled={held}
+                startIcon={<ChevronLeft />}
+                onClick={() => updateDraft((current) => ({ ...current, step: index - 1 }))}
+              >
+                {t("Back")}
+              </Button>
+            ) : null}
+            <Button
+              variant="primary"
+              size="sm"
+              type="submit"
+              disabled={!ready || held}
+              loading={sending && !dismissing}
+              loadingLabel={pendingLabel}
+              startIcon={<SubmitIcon />}
+              aria-describedby={statusId}
+            >
+              {submitLabel}
+            </Button>
+          </div>
         </div>
       </form>
     </div>
@@ -212,12 +408,14 @@ function QuestionFields({
   custom,
   onSelect,
   onCustom,
+  locked = false,
 }: {
   question: UserQuestion;
   selected: string[];
   custom: string;
   onSelect: (optionId: string) => void;
   onCustom: (value: string) => void;
+  locked?: boolean;
 }) {
   const t = useT();
   const options = displayOptions(question);
@@ -233,11 +431,11 @@ function QuestionFields({
         'input[type="radio"], input[type="checkbox"]',
       ) ?? [],
     );
-  const customInput = useRef<HTMLInputElement | null>(null);
+  const customInput = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    if (customSelected) customInput.current?.focus({ preventScroll: true });
-  }, [customSelected]);
+    if (customSelected && !locked) customInput.current?.focus({ preventScroll: true });
+  }, [customSelected, locked]);
 
   const highlight = (index: number) => {
     setHighlighted(index);
@@ -245,6 +443,7 @@ function QuestionFields({
   };
 
   const onOptionKeyDown = (event: ReactKeyboardEvent<HTMLFieldSetElement>, index: number) => {
+    if (locked) return;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
 
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -293,22 +492,26 @@ function QuestionFields({
         </p>
       ) : null}
       {options.length === 0 && question.allowCustom ? (
-        <TextField
+        <TextareaField
           hideLabel
           label={t("Type your answer")}
           value={custom}
+          rows={3}
+          readOnly={locked}
           onChange={(event) => onCustom(event.target.value)}
           placeholder={t("Type your answer")}
-          fieldClassName="[margin-block-start:0.75rem] w-full"
+          fieldClassName={styles.answer}
         />
       ) : (
         <div className={styles.options} role="group" aria-label={question.prompt}>
           {!question.multiSelect ? (
             <RadioGroup
+              compact
               className={styles.radio}
               label={question.prompt}
               name={question.id}
               value={selected[0] ?? ""}
+              disabled={locked}
               options={options.map((option) => ({
                 value: option.id,
                 label: option.label,
@@ -320,6 +523,7 @@ function QuestionFields({
             options.map((option, optionIndex) => (
               <label key={option.id} className={styles.option}>
                 <Checkbox
+                  disabled={locked}
                   checked={selected.includes(option.id)}
                   aria-keyshortcuts={optionIndex < 9 ? String(optionIndex + 1) : undefined}
                   tabIndex={highlighted === optionIndex ? 0 : -1}
@@ -336,15 +540,17 @@ function QuestionFields({
         </div>
       )}
       {options.length > 0 && customSelected ? (
-        <TextField
+        <TextareaField
           hideLabel
           label={t("Type your answer")}
           ref={customInput}
           value={custom}
+          rows={3}
+          readOnly={locked}
           onChange={(event) => onCustom(event.target.value)}
           aria-label={t("Type your answer")}
           placeholder={t("Type your answer")}
-          fieldClassName="[margin-block-start:0.75rem] w-full"
+          fieldClassName={styles.answer}
         />
       ) : null}
     </fieldset>

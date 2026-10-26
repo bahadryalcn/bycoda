@@ -198,6 +198,7 @@ let describeDelay: Promise<void> | undefined;
 let steerFailure: string | undefined;
 /** What the host answers to a `send` (a refusal, as the other computer's turn makes it). */
 let sendFailure: string | undefined;
+let answerFailure: string | undefined;
 let receiptRunId: string | undefined;
 /** The host keeps the queue (`sessions.queue`); the test plays the host's side of it. */
 let sharedQueueSupported = false;
@@ -252,6 +253,7 @@ beforeEach(() => {
   describeDelay = undefined;
   steerFailure = undefined;
   sendFailure = undefined;
+  answerFailure = undefined;
   receiptRunId = undefined;
   sharedQueueSupported = false;
   hostQueue = { messages: [], revision: 0 };
@@ -507,6 +509,7 @@ beforeEach(() => {
       if (dispatchDelay && params.type !== "cancel") await dispatchDelay;
       if (params.type === "steer" && steerFailure) throw new Error(steerFailure);
       if (params.type === "send" && sendFailure) throw new Error(sendFailure);
+      if (params.type === "answer" && answerFailure) throw new Error(answerFailure);
       return dispatch(params);
     }
     if (method === "sessions.delete") {
@@ -609,6 +612,18 @@ function dispatch(command: HostCommand) {
             shell: { command: command.line, output: "on host", exitCode: 0 },
           },
         ],
+      },
+    };
+  } else if (host && command.type === "answer") {
+    host = {
+      ...host,
+      revision: host.revision + 1,
+      session: {
+        ...host.session,
+        pendingQuestion: host.session.pendingQuestion && {
+          ...host.session.pendingQuestion,
+          delivery: "sending",
+        },
       },
     };
   } else if (host && command.type === "draft") {
@@ -794,6 +809,99 @@ async function settle() {
 }
 const byLabel = (prefix: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label^="${prefix}"]`);
+
+function seedQuestionHost() {
+  dispatch({
+    type: "create",
+    commandId: "question-session",
+    projectId: "project",
+    harness: "codex",
+    model: gpt.id,
+    runtimeMode: "supervised",
+  });
+  host = {
+    ...host!,
+    runId: "question-run",
+    status: "running",
+    session: {
+      ...host!.session,
+      busy: true,
+      pendingQuestion: {
+        requestId: 3,
+        behavior: "nonBlocking",
+        dismissAction: "skip",
+        providerTurnId: "turn-q",
+        questions: [
+          {
+            id: "scope",
+            prompt: "Which scope?",
+            multiSelect: false,
+            allowCustom: true,
+            options: [],
+          },
+        ],
+      },
+    },
+  };
+  rememberRemoteSession("shell", "host-session");
+}
+
+it("keeps a remote answer pending until provider confirmation and sends concurrent replies once", async () => {
+  seedQuestionHost();
+  await renderRemoteProbe();
+  let release!: () => void;
+  dispatchDelay = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const reply = { kind: "answered" as const, answers: {}, custom: { scope: "Keep drafts" } };
+  await act(async () => {
+    remoteOverrides.onQuestionReply!("shell", 3, reply);
+    remoteOverrides.onQuestionReply!("shell", 3, reply);
+  });
+  expect(remoteOverrides.session?.pendingQuestion?.delivery).toBe("sending");
+  await act(async () => {
+    release();
+  });
+  await settle();
+  expect(commands.filter((command) => command.type === "answer")).toHaveLength(1);
+  expect(remoteOverrides.session?.pendingQuestion).toMatchObject({
+    requestId: 3,
+    delivery: "sending",
+  });
+  expect(remoteOverrides.session?.blocks.some((block) => block.questionAnswers?.length)).toBe(
+    false,
+  );
+  expect(remoteOverrides.questionDraftScope).toContain("host-session");
+});
+
+it("holds an uncertain remote answer across remount without issuing a new command", async () => {
+  seedQuestionHost();
+  await renderRemoteProbe();
+  answerFailure = "Connection lost before the receipt arrived";
+  const reply = { kind: "answered" as const, answers: {}, custom: { scope: "Keep drafts" } };
+  await act(async () => {
+    remoteOverrides.onQuestionReply!("shell", 3, reply);
+  });
+  await settle();
+  expect(remoteOverrides.session?.pendingQuestion?.delivery).toBe("unknown");
+  const attemptCount = vi
+    .mocked(invoke)
+    .mock.calls.filter(
+      ([, args]) =>
+        (args as { method?: string; params?: { type?: string } })?.method === "commands.dispatch" &&
+        (args as { params?: { type?: string } })?.params?.type === "answer",
+    ).length;
+  await act(async () => root.render(null));
+  answerFailure = undefined;
+  await renderRemoteProbe();
+  expect(remoteOverrides.session?.pendingQuestion?.delivery).toBe("unknown");
+  await act(async () => {
+    remoteOverrides.onQuestionReply!("shell", 3, reply);
+  });
+  await settle();
+  expect(commands.filter((command) => command.type === "answer")).toHaveLength(0);
+  expect(attemptCount).toBeGreaterThanOrEqual(1);
+});
 const remoteDataPhase = () =>
   container.querySelector("[data-remote-data-state]")?.getAttribute("data-remote-data-state");
 async function type(text: string) {
@@ -3418,43 +3526,80 @@ slow("does not continue a lost turn it never saw running, only offers Continue",
   expect(container.querySelector("[data-interrupted-turn]")).not.toBeNull();
 });
 
-it.each(["window", "pane"] as const)("keeps %s-hidden running-session control hints without applying in-flight inline transcript data", async (mode) => {
-  inlineSyncSupported = true;
-  openExistingChat();
-  const published = vi.fn();
-  const currentShell = shell();
-  await render(currentShell, { onRemoteSnapshot: published });
-  await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
-  if (mode === "window") {
-    Object.defineProperty(document, "hidden", { configurable: true, value: true });
-    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
-  } else await render(currentShell, { visible: false, onRemoteSnapshot: published });
-  const before = published.mock.calls.length;
-  const cacheBefore = vi.mocked(writeRemotePageCache).mock.calls.length;
-  const base = host!.revision;
-  host = { ...host!, revision: base + 1, status: "running", session: { ...host!.session,
-    blocks: [...host!.session.blocks, { id: "hidden-inline", role: "assistant", text: "Hidden tail" }],
-  } };
-  const { session: { blocks, ...session }, blockRevisions: _revisions, ...value } = host;
-  inlineDelta = { kind: "delta", base, value: { ...value, session }, blocks: [blocks.at(-1)!], blockIds: blocks.map((block) => block.id) };
-  machineSessionRevisionHint = host.revision;
-  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1_200)); });
-  expect(published).toHaveBeenCalledTimes(before);
-  expect(writeRemotePageCache).toHaveBeenCalledTimes(cacheBefore);
-  const demand = vi.mocked(invoke).mock.calls.filter(([, input]) => (input as { method?: string })?.method === "machine.changes").at(-1)?.[1] as { params: { inlineSync?: boolean; sessions: unknown[] } };
-  expect(demand.params.inlineSync).not.toBe(true);
-  expect(demand.params.sessions).toHaveLength(1);
-  const contentReads = () => vi.mocked(invoke).mock.calls.filter(([, input]) =>
-    ["sessions.get", "sessions.sync", "sessions.page"].includes((input as { method?: string })?.method ?? "")).length;
-  const readsBeforeActivation = contentReads();
-  if (mode === "window") {
-    Object.defineProperty(document, "hidden", { configurable: true, value: false });
-    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
-  } else await render(currentShell, { visible: true, onRemoteSnapshot: published });
-  await vi.waitFor(() => expect(container.textContent).toContain("Hidden tail"));
-  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 250)); });
-  expect(contentReads()).toBe(readsBeforeActivation + 1);
-});
+it.each(["window", "pane"] as const)(
+  "keeps %s-hidden running-session control hints without applying in-flight inline transcript data",
+  async (mode) => {
+    inlineSyncSupported = true;
+    openExistingChat();
+    const published = vi.fn();
+    const currentShell = shell();
+    await render(currentShell, { onRemoteSnapshot: published });
+    await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
+    if (mode === "window") {
+      Object.defineProperty(document, "hidden", { configurable: true, value: true });
+      await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    } else await render(currentShell, { visible: false, onRemoteSnapshot: published });
+    const before = published.mock.calls.length;
+    const cacheBefore = vi.mocked(writeRemotePageCache).mock.calls.length;
+    const base = host!.revision;
+    host = {
+      ...host!,
+      revision: base + 1,
+      status: "running",
+      session: {
+        ...host!.session,
+        blocks: [
+          ...host!.session.blocks,
+          { id: "hidden-inline", role: "assistant", text: "Hidden tail" },
+        ],
+      },
+    };
+    const {
+      session: { blocks, ...session },
+      blockRevisions: _revisions,
+      ...value
+    } = host;
+    inlineDelta = {
+      kind: "delta",
+      base,
+      value: { ...value, session },
+      blocks: [blocks.at(-1)!],
+      blockIds: blocks.map((block) => block.id),
+    };
+    machineSessionRevisionHint = host.revision;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+    });
+    expect(published).toHaveBeenCalledTimes(before);
+    expect(writeRemotePageCache).toHaveBeenCalledTimes(cacheBefore);
+    const demand = vi
+      .mocked(invoke)
+      .mock.calls.filter(
+        ([, input]) => (input as { method?: string })?.method === "machine.changes",
+      )
+      .at(-1)?.[1] as { params: { inlineSync?: boolean; sessions: unknown[] } };
+    expect(demand.params.inlineSync).not.toBe(true);
+    expect(demand.params.sessions).toHaveLength(1);
+    const contentReads = () =>
+      vi
+        .mocked(invoke)
+        .mock.calls.filter(([, input]) =>
+          ["sessions.get", "sessions.sync", "sessions.page"].includes(
+            (input as { method?: string })?.method ?? "",
+          ),
+        ).length;
+    const readsBeforeActivation = contentReads();
+    if (mode === "window") {
+      Object.defineProperty(document, "hidden", { configurable: true, value: false });
+      await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    } else await render(currentShell, { visible: true, onRemoteSnapshot: published });
+    await vi.waitFor(() => expect(container.textContent).toContain("Hidden tail"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    expect(contentReads()).toBe(readsBeforeActivation + 1);
+  },
+);
 
 it.each(["inline", "mismatched", "legacy"] as const)(
   "uses %s change delivery with a verified full snapshot",

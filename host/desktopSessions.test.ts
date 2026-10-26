@@ -379,6 +379,23 @@ describe("desktop sessions on the host", () => {
     expect(s.send).not.toHaveBeenCalled();
   });
 
+  it("reads retained provider-switch context from the desktop snapshot", async () => {
+    const s = await setup();
+    s.desktopDb.exec("ALTER TABLE sessions ADD COLUMN pending_context_replay TEXT");
+    s.seed({ id: "a", cwd: s.project.cwd });
+    const replay = "USER: Earlier request\nASSISTANT: Earlier answer";
+    s.desktopDb.prepare("UPDATE sessions SET pending_context_replay=? WHERE id='a'").run(replay);
+    const desktop = new DesktopSessions(() => [s.dbPath]);
+    try {
+      expect(desktop.snapshot("a", s.project.id)?.session.pendingContextReplay).toBe(replay);
+      expect((await desktop.snapshotAsync("a", s.project.id))?.session.pendingContextReplay).toBe(
+        replay,
+      );
+    } finally {
+      desktop.close();
+    }
+  });
+
   describe("digests", () => {
     const attached: Block = {
       id: "b2",

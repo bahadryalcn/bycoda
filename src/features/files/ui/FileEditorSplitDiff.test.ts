@@ -6,6 +6,8 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileEditor } from "./FileEditor";
+import { saveDiffLayout } from "../../settings/model/settings";
+import { undo } from "@codemirror/commands";
 
 const bridge = vi.hoisted(() => ({
   invoke: (_command: string, _args?: Record<string, unknown>): unknown => undefined,
@@ -91,7 +93,15 @@ describe("split diff layout in the file editor", () => {
     EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-merge-a")!)!;
   const counter = () => container.querySelector('[role="toolbar"] span.font-mono')?.textContent;
   const toggle = () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Side-by-side view"]')!;
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Diff view:"]')!;
+
+  async function chooseLayout(label: string) {
+    await act(async () => toggle().click());
+    const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (node) => node.textContent?.includes(label),
+    )!;
+    await act(async () => option.click());
+  }
 
   it("puts before on the left and after on the right, read-only on the left", async () => {
     base = "one\ntwo\nthree\n";
@@ -102,7 +112,7 @@ describe("split diff layout in the file editor", () => {
     expect(after().state.doc.toString()).toBe(disk);
     expect(before().state.readOnly).toBe(true);
     expect(after().state.readOnly).toBe(false);
-    expect(toggle().getAttribute("aria-pressed")).toBe("true");
+    expect(toggle().textContent).toContain("Side-by-side view");
     await act(async () => vi.waitFor(() => expect(counter()).toBe("1/1")));
     expect(container.querySelectorAll(".cm-merge-a .cm-changedLine")).toHaveLength(1);
     expect(container.querySelectorAll(".cm-merge-b .cm-changedLine")).toHaveLength(1);
@@ -202,7 +212,7 @@ describe("split diff layout in the file editor", () => {
     });
     expect(dirty.at(-1)).toBe(true);
 
-    await act(async () => toggle().click());
+    await chooseLayout("Inline");
     await act(async () =>
       vi.waitFor(() => expect(container.querySelector(".cm-merge-b")).toBeNull()),
     );
@@ -213,6 +223,59 @@ describe("split diff layout in the file editor", () => {
     expect(view.state.selection.main.head).toBe(3);
     expect(dirty.at(-1)).toBe(true);
     expect(localStorage.getItem("bycoda.diffLayout")).toBe("inline");
-    expect(toggle().getAttribute("aria-pressed")).toBe("false");
+    expect(toggle().textContent).toContain("Inline");
+  });
+
+  it("adapts to editor width while retaining unsaved text, selection, history and external focus", async () => {
+    const observers = new Map<Element, ResizeObserverCallback>();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(private callback: ResizeObserverCallback) {}
+        observe(target: Element) {
+          observers.set(target, this.callback);
+        }
+        unobserve(target: Element) {
+          observers.delete(target);
+        }
+        disconnect() {}
+      },
+    );
+    base = "one\ntwo\n";
+    disk = base;
+    await render();
+    await act(async () => {
+      after().dispatch({ changes: { from: 0, insert: "draft\n" }, selection: { anchor: 3 } });
+      saveDiffLayout("auto");
+    });
+    const host = container.querySelector<HTMLElement>("[data-diff-layout]")!;
+    const resize = async (width: number) =>
+      act(async () => {
+        observers.get(host)!(
+          [{ target: host, contentRect: { width } } as ResizeObserverEntry],
+          {} as ResizeObserver,
+        );
+      });
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    outside.focus();
+    await resize(1000);
+    expect(container.querySelector(".cm-merge-b")).not.toBeNull();
+    expect(after().state.doc.toString()).toBe("draft\none\ntwo\n");
+    expect(after().state.selection.main.head).toBe(3);
+    expect(document.activeElement).toBe(outside);
+    await resize(899);
+    expect(container.querySelector(".cm-merge-b")).toBeNull();
+    const inline = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+    expect(inline.state.doc.toString()).toBe("draft\none\ntwo\n");
+    expect(inline.state.selection.main.head).toBe(3);
+    expect(document.activeElement).toBe(outside);
+    await act(async () => {
+      expect(undo(inline)).toBe(true);
+    });
+    expect(inline.state.doc.toString()).toBe(base);
+    expect(localStorage.getItem("bycoda.diffLayout")).toBe("auto");
+    expect(writes).toEqual([]);
+    outside.remove();
   });
 });

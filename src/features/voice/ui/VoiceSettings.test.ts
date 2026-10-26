@@ -89,6 +89,60 @@ it("keeps locations behind a dialog, saves a picked folder and discards stale de
   expect(backend.setup).not.toHaveBeenCalled();
 });
 
+it("keeps installation reachable while detection is stalled and ignores the stale check", async () => {
+  let finish!: (value: { ready: boolean; missing: string[] }) => void;
+  backend.inspect.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await setup();
+  await advance();
+  expect(container.textContent).toContain("Checking voice setup…");
+  backend.setup.mockResolvedValue({ state: "installing", stage: "packages" });
+  await click("Install");
+  expect(backend.setup).toHaveBeenCalledExactlyOnceWith({ natural: true });
+  await act(async () => finish({ ready: true, missing: [] }));
+  expect(container.textContent).toContain("Installing voice support…");
+  expect(container.textContent).not.toContain("Voice is ready");
+});
+
+it("ends a stalled check with retry and discards a late answer", async () => {
+  let finish!: (value: { ready: boolean; missing: string[] }) => void;
+  backend.inspect.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await setup();
+  await advance();
+  await advance(20_000);
+  expect(container.textContent).toContain("This computer is unavailable. Try again.");
+  backend.inspect.mockResolvedValue({ ready: true, missing: [] });
+  await click("Try again");
+  expect(container.textContent).toContain("Voice is ready");
+  await act(async () => finish({ ready: false, missing: ["Python"] }));
+  expect(container.textContent).toContain("Voice is ready");
+});
+
+it("ignores a late initial job status after starting a new install", async () => {
+  let finish!: (value: { state: "ready" }) => void;
+  backend.setupStatus.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await setup();
+  backend.setup.mockResolvedValue({ state: "installing", stage: "packages" });
+  await click("Install");
+  await act(async () => finish({ state: "ready" }));
+  expect(container.textContent).toContain("Installing voice support…");
+  expect(container.textContent).not.toContain("Locate existing");
+});
+
 it("keeps folder selection progress on one Browse action and suppresses duplicate dialogs", async () => {
   await setup();
   await advance();

@@ -237,6 +237,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "crews.answer",
   "crews.assign",
   "crews.delete",
+  "crews.deleteRun",
   "crews.finish",
   "crews.get",
   "crews.inspect",

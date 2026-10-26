@@ -1364,10 +1364,22 @@ fn supported_remote_method(method: &str) -> bool {
             | "social.oauth.status"
             | "social.oauth.select"
             | "social.token.connect"
+            | "social.token.inspect"
             | "social.tiktok.creator"
             | "social.browser.availability"
             | "social.browser.begin"
             | "social.browser.status"
+            | "social.browser.profile.read"
+            | "social.browser.profile.update"
+            | "social.browser.profile.follow"
+            | "social.browser.workflow.begin"
+            | "social.browser.workflow.status"
+            | "social.browser.workflow.cancel"
+            | "social.browser.registration.advance"
+            | "social.browser.registration.review"
+            | "social.browser.registration.submit"
+            | "social.browser.registration.reconcile"
+            | "social.monitoring.status"
             | "social.media.upload"
             | "browser.claim"
             | "browser.close"
@@ -1491,6 +1503,7 @@ fn supported_remote_method(method: &str) -> bool {
             | "crews.inspect"
             | "crews.save"
             | "crews.delete"
+            | "crews.deleteRun"
             | "crews.agent.save"
             | "crews.agent.delete"
             | "crews.start"
@@ -1506,6 +1519,8 @@ fn supported_remote_method(method: &str) -> bool {
             | "crews.accept"
             | "crews.finish"
             | "tasks.list"
+            | "tasks.snapshotWithCursor"
+            | "tasks.events"
             | "tasks.preflight"
             | "tasks.evaluation.save"
             | "tasks.save"
@@ -1517,6 +1532,17 @@ fn supported_remote_method(method: &str) -> bool {
             | "tasks.notes.resolve"
             | "tasks.review.recheck"
             | "tasks.delete"
+            | "sprints.list"
+            | "sprints.get"
+            | "sprints.create"
+            | "sprints.update"
+            | "sprints.start"
+            | "sprints.complete"
+            | "sprints.archive"
+            | "sprints.plan"
+            | "sprints.report"
+            | "sprints.ingest"
+            | "sprints.goalContext"
             | "goals.list"
             | "goals.final-review.recheck"
             | "goals.create"
@@ -2134,6 +2160,19 @@ mod tests {
     }
 
     #[test]
+    fn crew_work_operations_are_forwarded() {
+        for method in [
+            "crews.start",
+            "crews.pause",
+            "crews.resume",
+            "crews.stop",
+            "crews.deleteRun",
+        ] {
+            assert!(super::supported_remote_method(method), "{method}");
+        }
+        assert!(!super::supported_remote_method("crews.deleteAll"));
+    }
+    #[test]
     fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
         for method in [
             "mcp.tokens.create",
@@ -2263,6 +2302,31 @@ mod tests {
         assert!(supported_remote_method("tasks.notes.resolve"));
         assert!(supported_remote_method("tasks.review.recheck"));
         assert!(!supported_remote_method("tasks.notes.delete"));
+    }
+
+    #[test]
+    fn sprint_methods_are_bounded_and_preserve_existing_request_routing() {
+        for method in [
+            "tasks.snapshotWithCursor",
+            "tasks.events",
+            "sprints.list",
+            "sprints.get",
+            "sprints.create",
+            "sprints.update",
+            "sprints.start",
+            "sprints.complete",
+            "sprints.archive",
+            "sprints.plan",
+            "sprints.report",
+            "sprints.ingest",
+            "sprints.goalContext",
+        ] {
+            assert!(supported_remote_method(method), "{method}");
+            assert!(!shareable_remote_read(method, &json!({})), "{method}");
+        }
+        for method in ["tasks.events.delete", "sprints.delete", "sprints.execute"] {
+            assert!(!supported_remote_method(method), "{method}");
+        }
     }
 
     #[test]
@@ -2472,6 +2536,48 @@ mod tests {
             panic!("Expected a refused connection")
         };
         assert!(connection_refused(&error));
+    }
+
+    #[test]
+    fn desktop_social_client_methods_cross_the_native_allowlist_without_privileged_wildcards() {
+        // This is the actual renderer client, not a second manually maintained RPC catalog.
+        let client = include_str!("../../src/features/social/model/socialClient.ts");
+        let methods: Vec<_> = client
+            .split('"')
+            .enumerate()
+            .filter(|(index, _)| index % 2 == 1)
+            .map(|(_, value)| value)
+            .filter(|value| {
+                value.starts_with("social.")
+                    && value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'.')
+            })
+            .collect();
+        assert!(
+            methods.len() >= 20,
+            "the renderer RPC extraction must not pass vacuously"
+        );
+        for method in methods {
+            assert!(
+                supported_remote_method(method),
+                "renderer RPC blocked by native bridge: {method}"
+            );
+        }
+        for method in [
+            "social.tools.call",
+            "social.native.register",
+            "social.native.authority",
+            "social.browser.cookies",
+            "social.browser.profile.delete",
+            "social.browser.registration.force",
+            "social.browser.registration.submit.admin",
+        ] {
+            assert!(
+                !supported_remote_method(method),
+                "unreviewed privilege or wildcard: {method}"
+            );
+        }
     }
 
     #[test]

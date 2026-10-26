@@ -1,6 +1,11 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
+import {
+  SessionToolsRelay,
+  type SessionToolGroup,
+  type SessionToolCapability,
+} from "./session-tools-relay";
 import { authorizeSocialAcpFrame } from "./social-tools";
 import { authorizeRuntimeLogsAcpFrame, type RuntimeLogAccess } from "./runtime-log-tools";
 import { authorizeConversationAcpFrame } from "./conversation-tools";
@@ -130,7 +135,19 @@ export async function readProviderBinaryOverrides(
   }
 }
 
+type PreparedTool = { env: NodeJS.ProcessEnv; mcpUrl?: string };
+type ToolPreparation = {
+  live: boolean;
+  owner?: object;
+  groups: Map<SessionToolGroup, Promise<PreparedTool | undefined>>;
+  capabilities: Set<SessionToolCapability>;
+  expiry?: ReturnType<typeof setTimeout>;
+};
+
 export class HostChildBackend implements ChildBackend {
+  private readonly toolRelay = new SessionToolsRelay();
+  private readonly preparedTools = new Map<string, ToolPreparation>();
+  private readonly activeTools = new Map<string, ToolPreparation>();
   private readonly socialEnvironments = new Map<string, NodeJS.ProcessEnv>();
   private readonly runtimeLogEnvironments = new Map<string, NodeJS.ProcessEnv>();
   private readonly conversationEnvironments = new Map<string, NodeJS.ProcessEnv>();
@@ -193,42 +210,26 @@ export class HostChildBackend implements ChildBackend {
         typeof args.accountId === "string" ? args.accountId : undefined,
       )) as T;
     }
-    if (command === "harness_conversation_tools_bridge") {
+    const toolGroup =
+      command === "harness_conversation_tools_bridge"
+        ? "conversation"
+        : command === "harness_runtime_logs_bridge"
+          ? "runtime-logs"
+          : command === "harness_social_bridge"
+            ? "social"
+            : undefined;
+    if (toolGroup) {
+      const tools = this.preparation(id);
+      const tool = await this.prepareTool(id, tools, toolGroup);
       return (
-        (await this.conversationAccess?.service.hasSession(id.replace(/#\d+$/, "")))
+        tool
           ? {
               command: process.execPath,
               args: [process.argv[1]],
-              mcpUrl: `${this.conversationAccess!.endpoint}/mcp/conversation`,
+              ...(tool.mcpUrl ? { mcpUrl: tool.mcpUrl } : {}),
             }
           : null
       ) as T;
-    }
-    if (command === "harness_runtime_logs_bridge") {
-      return (
-        (await this.runtimeLogAccess?.service.hasSession(id.replace(/#\d+$/, "")))
-          ? {
-              command: process.execPath,
-              args: [process.argv[1]],
-              mcpUrl: `${this.runtimeLogAccess!.endpoint}/mcp/runtime-logs`,
-            }
-          : null
-      ) as T;
-    }
-    if (command === "harness_social_bridge") {
-      if (!this.socialAccess) return null as T;
-      try {
-        await this.socialAccess.service.sessionIdentity(id.replace(/#\d+$/, ""));
-        return {
-          command: process.execPath,
-          args: [process.argv[1]],
-          ...(this.socialAccess.service.isDelegated?.()
-            ? {}
-            : { mcpUrl: `${this.socialAccess.endpoint}/mcp/social` }),
-        } as T;
-      } catch {
-        return null as T;
-      }
     }
     if (command.startsWith("generic_acp_")) {
       const service = this.genericAcp;
@@ -509,6 +510,9 @@ export class HostChildBackend implements ChildBackend {
   private async startOwned(id: string, args: Record<string, unknown>): Promise<number> {
     if (this.closing) throw new Error("Host is stopping");
     const attempt = {};
+    let tools: ToolPreparation | undefined;
+    let published = false;
+    let ownedChild: ChildProcessWithoutNullStreams | undefined;
     this.starts.set(id, attempt);
     const check = () => {
       if (this.closing) throw new ProviderStartupCancelled("Host is stopping");
@@ -526,6 +530,7 @@ export class HostChildBackend implements ChildBackend {
       }
       await this.killCurrent(id);
       check();
+      tools = this.preparation(id, attempt);
       const account = await providerAccountEnvironment(
         args.account as { provider?: string; id?: string } | undefined,
       );
@@ -534,9 +539,19 @@ export class HostChildBackend implements ChildBackend {
       check();
       const launch = await providerLaunch(String(args.command), args.args as string[]);
       check();
-      const social = await this.socialEnvironment(id, { ...genericEnv, ...account?.set }, check);
-      check();
-      const env = await this.runtimeLogEnvironment(id, social, check);
+      const env: NodeJS.ProcessEnv = { ...process.env, ...genericEnv, ...account?.set };
+      for (const key of Object.keys(env))
+        if (
+          ["BYCODA_SOCIAL_", "BYCODA_RUNTIME_LOGS_", "BYCODA_CONVERSATION_"].some((prefix) =>
+            key.startsWith(prefix),
+          )
+        )
+          delete env[key];
+      for (const group of ["social", "conversation", "runtime-logs"] as const) {
+        const tool = await this.prepareTool(id, tools, group, check);
+        check();
+        Object.assign(env, tool?.env);
+      }
       for (const key of account?.remove ?? []) delete env[key];
       check();
       // Preparation is local to this attempt. A cancelled older grant must not
@@ -567,7 +582,10 @@ export class HostChildBackend implements ChildBackend {
           env: { ...env, BYCODA_HOST: "1" },
         },
       );
+      ownedChild = child;
       this.children.set(id, child);
+      this.activeTools.set(id, tools);
+      if (this.preparedTools.get(id) === tools) this.preparedTools.delete(id);
       child.stdin.on("error", () => {
         /* write callbacks report failures */
       });
@@ -580,7 +598,10 @@ export class HostChildBackend implements ChildBackend {
       this.lines(child, id, "stdout", overflow);
       this.lines(child, id, "stderr", overflow);
       child.on("close", (code) => {
-        if (this.children.get(id) === child) this.children.delete(id);
+        if (this.children.get(id) === child) {
+          this.children.delete(id);
+          this.releaseActiveTools(id);
+        }
         this.emit("harness-exit", {
           sessionId: id,
           code,
@@ -593,79 +614,158 @@ export class HostChildBackend implements ChildBackend {
         child.once("error", reject);
       });
       check();
+      published = true;
       return child.pid!;
     } finally {
+      if (!published && tools) {
+        if (this.preparedTools.get(id) === tools) this.preparedTools.delete(id);
+        this.retireTools(tools);
+        if (ownedChild && this.children.get(id) === ownedChild) await this.killCurrent(id);
+      }
       if (this.starts.get(id) === attempt) this.starts.delete(id);
     }
   }
 
-  private async socialEnvironment(
-    id: string,
-    overrides: NodeJS.ProcessEnv,
-    check: () => void,
-  ): Promise<NodeJS.ProcessEnv> {
-    const env: NodeJS.ProcessEnv = { ...process.env, ...overrides };
-    for (const key of Object.keys(env)) if (key.startsWith("BYCODA_SOCIAL_")) delete env[key];
-    if (!this.socialAccess) return env;
-    try {
-      const sessionId = id.replace(/#\d+$/, "");
-      const remote = await this.socialAccess.service.remoteAccess?.(sessionId);
-      check();
-      const grant = remote ?? {
-        ...(await this.socialAccess.service.issueSessionGrant(sessionId)),
-        endpoint: this.socialAccess.endpoint,
-        environmentId: this.socialAccess.service.store.environmentId,
-      };
-      check();
-      env.BYCODA_SOCIAL_ENDPOINT = grant.endpoint;
-      env.BYCODA_SOCIAL_TOKEN = grant.token;
-      env.BYCODA_SOCIAL_ENVIRONMENT = grant.environmentId;
-    } catch {
-      /* Isolated helper/catalog children do not receive session access. */
-    }
-    check();
-    return env;
+  private retireTools(tools: ToolPreparation): void {
+    tools.live = false;
+    clearTimeout(tools.expiry);
+    for (const capability of tools.capabilities) capability.dispose();
+    tools.capabilities.clear();
   }
 
-  private async runtimeLogEnvironment(
+  private releaseActiveTools(id: string): void {
+    const tools = this.activeTools.get(id);
+    if (tools) this.retireTools(tools);
+    this.activeTools.delete(id);
+    this.socialEnvironments.delete(id);
+    this.runtimeLogEnvironments.delete(id);
+    this.conversationEnvironments.delete(id);
+  }
+
+  private preparation(id: string, owner?: object): ToolPreparation {
+    if (this.closing) throw new ProviderStartupCancelled("Host is stopping");
+    let tools = this.preparedTools.get(id);
+    if (tools && owner && tools.owner && tools.owner !== owner) {
+      this.retireTools(tools);
+      this.preparedTools.delete(id);
+      tools = undefined;
+    }
+    if (!tools) {
+      if (this.preparedTools.size >= 512)
+        throw new Error("Session tool preparation capacity reached.");
+      tools = { live: true, groups: new Map(), capabilities: new Set() };
+      this.preparedTools.set(id, tools);
+      const current = tools;
+      tools.expiry = setTimeout(() => {
+        if (this.preparedTools.get(id) === current && !current.owner) {
+          this.preparedTools.delete(id);
+          this.retireTools(current);
+        }
+      }, 60_000);
+      tools.expiry.unref();
+    }
+    if (owner) {
+      tools.owner = owner;
+      clearTimeout(tools.expiry);
+    }
+    return tools;
+  }
+
+  private async prepareTool(
     id: string,
-    env: NodeJS.ProcessEnv,
-    check: () => void,
-  ): Promise<NodeJS.ProcessEnv> {
-    for (const key of Object.keys(env)) if (key.startsWith("BYCODA_CONVERSATION_")) delete env[key];
-    if (this.conversationAccess) {
-      try {
-        const grant = await this.conversationAccess.service.issueSessionGrant(
-          id.replace(/#\d+$/, ""),
-        );
-        check();
-        const scoped = {
-          BYCODA_CONVERSATION_TOKEN: grant.token,
-          BYCODA_CONVERSATION_ENDPOINT: this.conversationAccess.endpoint,
-          BYCODA_CONVERSATION_ENVIRONMENT: this.conversationAccess.service.environmentId,
-        };
-        Object.assign(env, scoped);
-      } catch {
-        /* Helpers have no session authority. */
-      }
-    }
-    check();
-    for (const key of Object.keys(env)) if (key.startsWith("BYCODA_RUNTIME_LOGS_")) delete env[key];
-    if (!this.runtimeLogAccess) return env;
-    try {
-      const grant = await this.runtimeLogAccess.service.issueSessionGrant(id.replace(/#\d+$/, ""));
+    tools: ToolPreparation,
+    group: SessionToolGroup,
+    startupCheck = () => {},
+  ): Promise<PreparedTool | undefined> {
+    const check = () => {
+      startupCheck();
+      if (this.closing || !tools.live)
+        throw new ProviderStartupCancelled("Provider startup cancelled");
+    };
+    const existing = tools.groups.get(group);
+    if (existing) {
+      const value = await existing;
       check();
-      const scoped = {
-        BYCODA_RUNTIME_LOGS_TOKEN: grant.token,
-        BYCODA_RUNTIME_LOGS_ENDPOINT: this.runtimeLogAccess.endpoint,
-        BYCODA_RUNTIME_LOGS_ENVIRONMENT: this.runtimeLogAccess.service.environmentId,
-      };
-      Object.assign(env, scoped);
-    } catch {
-      /* Isolated title/catalog helpers have no authoritative session. */
+      return value;
     }
-    check();
-    return env;
+    const work = (async (): Promise<PreparedTool | undefined> => {
+      const access =
+        group === "social"
+          ? this.socialAccess
+          : group === "conversation"
+            ? this.conversationAccess
+            : this.runtimeLogAccess;
+      if (!access) return undefined;
+      const sessionId = id.replace(/#\d+$/, "");
+      const prefix =
+        group === "runtime-logs" ? "BYCODA_RUNTIME_LOGS" : `BYCODA_${group.toUpperCase()}`;
+      try {
+        if (group === "social") {
+          const social = this.socialAccess!.service;
+          const remote = await social.remoteAccess?.(sessionId);
+          check();
+          if (remote)
+            return {
+              env: {
+                BYCODA_SOCIAL_ENDPOINT: remote.endpoint,
+                BYCODA_SOCIAL_TOKEN: remote.token,
+                BYCODA_SOCIAL_ENVIRONMENT: remote.environmentId,
+              },
+            };
+          if (await social.isDelegated?.()) return undefined;
+          check();
+        }
+        const grant = await access.service.issueSessionGrant(sessionId);
+        check();
+        const capability = await this.toolRelay.create({
+          group,
+          upstream: access.endpoint,
+          grant,
+          renew: async (scope) => {
+            if (this.closing || !tools.live) throw new Error("Session tool capability retired.");
+            const localSocial = async () => {
+              if (
+                group === "social" &&
+                ((await this.socialAccess!.service.isDelegated?.()) ||
+                  (await this.socialAccess!.service.remoteAccess?.(sessionId)))
+              )
+                throw new Error("Social execution authority moved; reconnect explicitly.");
+            };
+            await localSocial();
+            const fresh = await access.service.issueSessionGrant(sessionId, undefined, scope);
+            await localSocial();
+            if (this.closing || !tools.live) throw new Error("Session tool capability retired.");
+            return fresh;
+          },
+        });
+        if (!tools.live || this.closing) capability.dispose();
+        tools.capabilities.add(capability);
+        check();
+        return {
+          mcpUrl: `${capability.endpoint}/mcp/${group}`,
+          env: {
+            [`${prefix}_ENDPOINT`]: capability.endpoint,
+            [`${prefix}_TOKEN`]: capability.token,
+            [`${prefix}_ENVIRONMENT`]: grant.scope.environmentId,
+          },
+        };
+      } catch (error) {
+        check();
+        // Helpers without an authoritative session must not inherit any access.
+        if (error instanceof ProviderStartupCancelled) throw error;
+        return undefined;
+      }
+    })();
+    tools.groups.set(group, work);
+    void work.then(
+      (tool) => {
+        if (!tool && tools.groups.get(group) === work) tools.groups.delete(group);
+      },
+      () => {
+        if (tools.groups.get(group) === work) tools.groups.delete(group);
+      },
+    );
+    return work;
   }
 
   private lines(
@@ -710,10 +810,14 @@ export class HostChildBackend implements ChildBackend {
 
   async kill(id: string): Promise<void> {
     this.starts.delete(id);
+    const prepared = this.preparedTools.get(id);
+    if (prepared) this.retireTools(prepared);
+    this.preparedTools.delete(id);
     await this.killCurrent(id);
   }
 
   private async killCurrent(id: string): Promise<void> {
+    this.releaseActiveTools(id);
     const child = this.children.get(id);
     if (!child) return;
     this.children.delete(id);
@@ -762,8 +866,15 @@ export class HostChildBackend implements ChildBackend {
     if (this.closePromise) return this.closePromise;
     this.closing = true;
     this.starts.clear();
+    for (const tools of this.preparedTools.values()) this.retireTools(tools);
+    this.preparedTools.clear();
+    for (const id of this.activeTools.keys()) this.releaseActiveTools(id);
     for (const id of this.streams.keys()) this.stopStream(id);
-    const work = [...[...this.children.keys()].map(async (id) => this.kill(id)), ...this.startWork];
+    const work = [
+      ...[...this.children.keys()].map(async (id) => this.kill(id)),
+      ...this.startWork,
+      this.toolRelay.close(),
+    ];
     this.closePromise = Promise.allSettled(work).then((results) => {
       const errors = results.flatMap((result) =>
         result.status === "rejected" && !(result.reason instanceof ProviderStartupCancelled)

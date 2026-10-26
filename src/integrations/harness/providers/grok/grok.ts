@@ -1,4 +1,9 @@
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
+import {
+  deliverQuestionReply,
+  showNextQueuedQuestion,
+  type QuestionDelivery,
+} from "../questionDelivery";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
@@ -59,7 +64,8 @@ type Live = {
   runtimeMode: RuntimeMode;
   onEvent: (event: HarnessEvent) => void;
   approvals: Map<number, (decision: ApprovalDecision) => void>;
-  questions: Map<number, (reply: UserQuestionReply) => void>;
+  questions: Map<number, ((reply: UserQuestionReply) => void) & QuestionDelivery>;
+  visibleQuestionId?: number;
   turns: Promise<void>;
 };
 
@@ -163,7 +169,17 @@ export function respondGrokQuestion(
   requestId: number,
   reply: UserQuestionReply,
 ) {
-  liveByThread.get(sessionId)?.questions.get(requestId)?.(reply);
+  const live = liveByThread.get(sessionId);
+  const pending = live?.questions.get(requestId);
+  if (!live || !pending) return;
+  deliverQuestionReply(
+    pending,
+    requestId,
+    reply,
+    live.onEvent,
+    () => live.questions.get(requestId) === pending && !live.cancelled && !live.muteUpdates,
+    () => pending(reply),
+  );
 }
 
 export async function cancelGrokTurn(sessionId: string): Promise<void> {
@@ -580,23 +596,32 @@ async function handlePermission(live: Live, id: number, params: unknown) {
 
 async function handleAskQuestion(live: Live, id: number, params: unknown) {
   const questions = askQuestionsFromAcp(params);
-  live.onEvent({
+  const event: Extract<HarnessEvent, { type: "question.asked" }> = {
     type: "question.asked",
     requestId: id,
     title: questionPromptTitle(questions),
     questions,
-  });
+    dismissAction: "skip",
+  };
 
-  const reply = await new Promise<UserQuestionReply>((resolve) => {
-    live.questions.set(id, resolve);
+  const replyPromise = new Promise<UserQuestionReply>((resolve) => {
+    live.questions.set(
+      id,
+      Object.assign(resolve, {
+        event,
+        deliver: (reply: UserQuestionReply) =>
+          live.acp.respond(id, askQuestionResponse(reply, questions)),
+      }),
+    );
   });
+  showNextQueuedQuestion(live);
+  const reply = await replyPromise;
   live.questions.delete(id);
   live.onEvent({
     type: "question.resolved",
     requestId: id,
-    decision: reply.kind,
+    decision: live.cancelled || live.muteUpdates ? "cancelled" : reply.kind,
     ...(reply.kind === "answered" ? { reply } : {}),
   });
-
-  await live.acp.respond(id, askQuestionResponse(reply, questions)).catch(() => undefined);
+  showNextQueuedQuestion(live);
 }

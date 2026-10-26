@@ -11,10 +11,14 @@ import { saveCrewAppearance } from "../model/crewAppearance";
 export function CrewDeleteButton({
   state,
   crew,
+  disabled,
+  onPendingChange,
   onDeleted,
 }: {
   state: ReturnType<typeof useProjectCrews>;
   crew: CrewDefinition;
+  disabled?: boolean;
+  onPendingChange?: (pending: boolean) => void;
   onDeleted?: () => void;
 }) {
   useLocale();
@@ -27,7 +31,9 @@ export function CrewDeleteButton({
         icon={<Trash2 aria-hidden className="icon-sm" />}
         tone="danger"
         confirmMode="press"
+        disabled={disabled}
         onConfirm={async () => {
+          onPendingChange?.(true);
           setError("");
           try {
             await state.call("crews.delete", {
@@ -41,6 +47,8 @@ export function CrewDeleteButton({
           } catch (reason) {
             setError(reason instanceof Error ? reason.message : String(reason));
             throw reason;
+          } finally {
+            onPendingChange?.(false);
           }
         }}
       />

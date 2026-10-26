@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TasksView } from "../../src/features/tasks/ui/TasksView";
+import { SprintFixture } from "./sprintFixture";
 import type { BackgroundSessionTarget } from "../../src/features/tasks/model/backgroundSession";
 import {
   canMoveTask,
@@ -73,6 +74,16 @@ const goals: Record<string, HostGoal[]> = {
   "machine-local": [],
   "machine-remote": [],
 };
+const sprintFixture = query.has("sprints") ? new SprintFixture(machines, () => tasks) : null;
+if (sprintFixture) {
+  const demo = (id: string, projectId: string, title: string, status: TaskStatus = "todo"): HostTask => ({
+    id, projectId, title, prompt: `Synthetic sprint instructions for ${title}`,
+    harness: "claude", model: "claude:fixture", modelSettings: {}, runtimeMode: "auto",
+    maxRunMinutes: 0, isolate: false, review: false, status, createdAt: Date.now(), updatedAt: Date.now(),
+  });
+  tasks["machine-local"] = [demo("local-task", "local-project", "PC onboarding"), demo("docs-task", "local-docs", "Documentation cleanup")];
+  tasks["machine-remote"] = [demo("remote-task", "remote-project", "MacBook checkout"), demo("remote-done", "remote-project", "MacBook shipped task", "done"), demo("api-task", "remote-api", "API stability")];
+}
 const trees = new Map<string, { path: string; branch: string }[]>();
 const limits = new Map<string, { maxRunningTasks: number; dailyAgentMinutes: number }>();
 if (query.has("boardControls")) {
@@ -338,6 +349,7 @@ if (linkedMachine) {
 }
 Object.assign(window, {
   taskFixtureCalls: calls,
+  taskFixtureSprints: sprintFixture,
   taskFixtureOpenedSessions: openedSessions,
   taskFixtureReleaseRemote: releaseRemote,
   taskFixtureRemoteReleased: () => remoteReleased,
@@ -362,6 +374,7 @@ Object.assign(window, {
       const params = (args.params ?? {}) as Record<string, unknown>;
       if (machineId === "machine-remote" && args.method === slowRemoteMethod) await remoteGate;
       if (args.method === query.get("slowOperation")) await remoteGate;
+      if (sprintFixture && (String(args.method).startsWith("sprints.") || args.method === "tasks.snapshotWithCursor" || args.method === "tasks.events")) return sprintFixture.rpc(String(args.method), machineId, params);
       switch (args.method) {
         case "environment.describe":
           return requireHostDescriptor({
@@ -373,6 +386,7 @@ Object.assign(window, {
             capabilities: [
               "tasks",
               "tasks.todo",
+              ...(sprintFixture ? ["tasks.sprints.v1", "tasks.history.v1"] : []),
               "tasks.workspaces",
               "goals.direct-checkout",
               "goals.settings",

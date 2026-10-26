@@ -57,10 +57,11 @@ async function identities() {
   const access = new RuntimeLogAccess(
     {
       store,
-      sessionIdentity: (id) => {
+      prepareSessionIdentity: async () => {},
+      sessionAuthority: async (id) => {
         const session = sessions.get(id);
         if (!session) throw new Error("Session not found.");
-        return session;
+        return { projectId: session.projectId, provider: session.session.harness };
       },
     },
     () => clock,
@@ -288,9 +289,11 @@ readline.createInterface({input:process.stdin}).on('line', line => console.log(l
       await backend.close();
       rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     });
-    expect(
-      await backend.invoke("harness_runtime_logs_bridge", { sessionId: s.sessionId }),
-    ).toMatchObject({ command: process.execPath });
+    const bridge = await backend.invoke<{ command: string; mcpUrl: string }>(
+      "harness_runtime_logs_bridge", { sessionId: s.sessionId },
+    );
+    expect(bridge).toMatchObject({ command: process.execPath });
+    expect(new URL(bridge.mcpUrl).hostname).toBe("127.0.0.1");
     expect(
       await backend.invoke("harness_runtime_logs_bridge", { sessionId: "isolated-title" }),
     ).toBeNull();
@@ -303,7 +306,7 @@ readline.createInterface({input:process.stdin}).on('line', line => console.log(l
     await vi.waitFor(() => expect(events).toHaveLength(1), { timeout: 5000 });
     expect(JSON.parse(events[0].line)).toEqual({
       token: "[session credential redacted]",
-      endpoint: "http://127.0.0.1:1234",
+      endpoint: new URL(bridge.mcpUrl).origin,
     });
     await backend.invoke("harness_write", {
       sessionId: `${s.sessionId}#2`,

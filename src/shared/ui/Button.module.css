@@ -331,6 +331,26 @@
     color: var(--foreground);
   }
 }
+/* A selected tab stays distinct from hover, including neutral light themes. */
+.control.tab {
+  position: relative;
+}
+.control.tab[data-button-hierarchy="tab"][data-button-selected][data-button-tone="neutral"] {
+  background: var(--ui-surface-selected);
+  color: var(--foreground);
+  border-color: var(--ui-text-secondary);
+}
+.control[data-button-hierarchy="tab"][data-button-selected][data-button-tone="neutral"]::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  inset-inline: var(--space-2);
+  inset-block-end: 0;
+  block-size: 2px;
+  border-radius: var(--ui-control-radius);
+  background: var(--foreground);
+}
+
 /* Press is one layer. Scaling controls (Arc renderer) answer with the scale alone;
    native-rendered controls and popup anchors never scale, so they step their tone. */
 .control[data-button-hierarchy]:is(

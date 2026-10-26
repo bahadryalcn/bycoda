@@ -120,17 +120,23 @@ async function mount(value: SocialSnapshot) {
 }
 it("shows local assignment progress, prevents repeated selection and recovers after failure", async () => {
   let rejectAssignment!: (reason: Error) => void;
-  request.mockImplementation((action: string) => action === "thread.assign"
-    ? new Promise((_, reject) => { rejectAssignment = reject; })
-    : Promise.resolve({}));
+  request.mockImplementation((action: string) =>
+    action === "thread.assign"
+      ? new Promise((_, reject) => {
+          rejectAssignment = reject;
+        })
+      : Promise.resolve({}),
+  );
   await mount(snapshot({ threads: [{ ...thread("message", "message"), projectId: undefined }] }));
-  const projectField = Array.from(container.querySelectorAll("label"))
-    .find((label) => label.textContent?.includes("Related project"))!;
-  const trigger = projectField.querySelector<HTMLButtonElement>('button')!;
+  const projectField = Array.from(container.querySelectorAll("label")).find((label) =>
+    label.textContent?.includes("Related project"),
+  )!;
+  const trigger = projectField.querySelector<HTMLButtonElement>("button")!;
   expect(trigger).not.toBeNull();
   await act(async () => trigger.click());
-  const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'))
-    .find((item) => item.textContent?.trim() === "Project")!;
+  const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+    (item) => item.textContent?.trim() === "Project",
+  )!;
   await act(async () => option.click());
   expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(1);
   expect(trigger.disabled).toBe(true);
@@ -264,15 +270,25 @@ it("loads selected history pages and discards a previous thread's delayed detail
   );
   expect(request).toHaveBeenLastCalledWith("thread.page", { id: "comment", limit: 20, offset: 60 });
 });
-it("explains unavailable browser X inbox next to the disabled refresh action", async () => {
+it("explains the unavailable browser capability next to the disabled refresh action", async () => {
   await mount(
     snapshot({
       threads: [],
       accounts: [account("account", { connection: "browser" })],
-      capabilities: { account: [] },
+      capabilities: {
+        account: [
+          {
+            operation: "poll",
+            status: "pending",
+            reason: "Reconnect the saved browser identity",
+            scopes: [],
+            source: "browser",
+          },
+        ],
+      },
     }),
   );
-  expect(container.textContent).toContain("X browser connections can publish");
+  expect(container.textContent).toContain("Reconnect the saved browser identity");
   expect(container.textContent).toContain("Inbox access required");
   const refresh = Array.from(container.querySelectorAll("button")).find(
     (button) => button.getAttribute("aria-label") === "Refresh conversations",

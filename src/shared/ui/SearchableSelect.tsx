@@ -498,7 +498,7 @@ function SearchableSelectMenu({
                       {option.description ? (
                         <span
                           id={`${listId}-description-${index}`}
-                          className="bycoda-select-description block"
+                          className="bycoda-select-description block [overflow-wrap:anywhere]"
                         >
                           {option.description}
                         </span>

@@ -126,7 +126,7 @@ describe("bulk social draft eligibility", () => {
     expect(rows[0].reason).toBe("The text exceeds the 3 character limit.");
     expect(rows[1].reason).toBe("Policy unavailable");
   });
-  it("shows browser X inbox restriction instead of suggesting unsupported replies", () => {
+  it("shows the current browser capability reason instead of a blanket API requirement", () => {
     const value = snapshot({
       accounts: [{ ...account, connection: "browser" }],
       capabilities: {
@@ -147,7 +147,7 @@ describe("bulk social draft eligibility", () => {
       projects,
       { account: {} },
     );
-    expect(rows[0].reason).toContain("An official API connection is required");
+    expect(rows[0].reason).toBe("No inbox");
   });
   it("rejects missing assignment, expired reply windows, and changed thread/contact association", () => {
     const value = snapshot({
@@ -170,6 +170,30 @@ describe("bulk social draft eligibility", () => {
     expect(rows[0].reason).toBe("Select an accessible project.");
     expect(rows[1].reason).toBe("The reply window has expired.");
     expect(rows[2].reason).toBe("The conversation match is invalid.");
+  });
+  it("allows browser replies after an old API window while preserving opt-out and reply restrictions", () => {
+    const value = snapshot({
+      accounts: [{ ...account, platform: "instagram", connection: "browser" }],
+      contacts: [contact("one"), contact("out", { optedOut: true })],
+      threads: [
+        thread("expired", { kind: "message", replyUntil: 1 }),
+        thread("denied", { kind: "message", replyUntil: 1, replyAllowed: false }),
+        thread("opted-out", { kind: "message", replyUntil: 1, contactId: "out" }),
+      ],
+    });
+    const rows = planBulkDrafts(
+      { ...options(value), kind: "reply", targets: value.threads.map(threadTarget) },
+      value,
+      projects,
+      { account: {} },
+      {},
+      100,
+    );
+    expect(rows.map((row) => row.reason)).toEqual([
+      "",
+      "Replying to this conversation is not allowed.",
+      "This contact has opted out of contact.",
+    ]);
   });
   it("requires a separate post identity for each selected comment recipient", () => {
     const value = snapshot();

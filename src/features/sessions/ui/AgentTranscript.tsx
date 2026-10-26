@@ -226,6 +226,7 @@ type Props = {
   modelSettings?: Record<string, string>;
   providerAccountId?: string;
   pendingQuestion?: boolean;
+  questionBehavior?: "blocking" | "nonBlocking";
   /** The companion composer dock owns the live clock; keep work disclosure here. */
   liveStatusInDock?: boolean;
   /** Work the agent left running when it yielded; the turn waits on it. */
@@ -302,6 +303,7 @@ function AgentTranscriptComponent({
   modelSettings,
   providerAccountId,
   pendingQuestion = false,
+  questionBehavior,
   liveStatusInDock = false,
   backgroundTasks,
   backgroundAgents,
@@ -484,7 +486,8 @@ function AgentTranscriptComponent({
     if (lastUserId && !anchorTurn) setAnchorTurn(true);
   }
   const currentModelName = useResolvedModelName(harness, model);
-  const waitingForApproval = hasPendingApproval(blocks) || pendingQuestion;
+  const blockingQuestion = pendingQuestion && questionBehavior === "blocking";
+  const waitingForApproval = hasPendingApproval(blocks) || blockingQuestion;
   const preparingHandoff = blocks.some(
     (block) => block.role === "handoff" && block.handoff?.status === "preparing",
   );
@@ -1153,7 +1156,7 @@ function AgentTranscriptComponent({
                 clockStart={live ? turnClockStart(blocks, turnUserBlock(turn, managed)) : undefined}
                 currentModelName={live ? currentModelName : undefined}
                 waitingForApproval={live && waitingForApproval}
-                pendingQuestion={live && pendingQuestion}
+                pendingQuestion={live && blockingQuestion}
                 liveStatusInDock={live && liveStatusInDock}
                 backgroundTasks={live ? backgroundTasks : undefined}
                 backgroundAgents={live ? backgroundAgents : undefined}
@@ -2373,23 +2376,30 @@ const TranscriptBlock = memo(function TranscriptBlock({
   if (block.role === "user") {
     if (block.questionAnswers?.length) {
       return (
-        <div data-question-answer className="flex min-w-0 flex-col gap-2 font-sans">
+        <div
+          data-question-answer
+          role="group"
+          aria-label={t("Question and answer")}
+          className="mx-4 mb-4 min-w-0 rounded-lg bg-(--ui-surface) px-3 py-2 font-sans text-(--ui-tone-neutral-fg)"
+        >
+          <span className="sr-only">{t("Answered")}</span>
           {block.questionAnswers.map(({ prompt, answers }, index) => (
-            <div key={index} className="flex min-w-0 flex-col gap-2">
+            <div
+              key={index}
+              className={`flex min-w-0 flex-col gap-1 ${index ? "mt-3 border-t border-(--ui-tone-neutral-border) pt-3" : ""}`}
+            >
               <section
                 aria-label={t("AI question")}
-                className="flex min-w-0 flex-col gap-1 px-4 py-2 text-(--ui-tone-neutral-fg)"
+                className="flex min-w-0 items-start gap-2 text-(--ui-text-secondary)"
               >
-                <span className="text-xs font-medium text-(--ui-text-secondary)">
-                  {t("AI question")}
-                </span>
-                <p className="whitespace-pre-wrap break-words text-sm">{prompt}</p>
+                <Check aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+                <p className="min-w-0 whitespace-pre-wrap break-words text-xs leading-relaxed">
+                  {prompt}
+                </p>
               </section>
-              <div className="flex min-w-0 flex-col gap-1">
-                <span className="px-4 text-xs font-medium text-(--ui-text-secondary) [align-self:end]">
-                  {t("Your answer")}
-                </span>
+              <section className="min-w-0 ps-5.5" aria-label={t("Your answer")}>
                 <UserMessageBlock
+                  questionAnswer
                   block={{ ...block, text: answers.join("\n"), questionAnswers: undefined }}
                   layout={layout}
                   visible={visible ?? true}
@@ -2401,7 +2411,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
                     onRewindMessage ? (action) => onRewindMessage(block, action) : undefined
                   }
                 />
-              </div>
+              </section>
             </div>
           ))}
         </div>
@@ -2598,6 +2608,7 @@ function UserMessageBlock({
   onSendDraft,
   onRemoveDraft,
   busy = false,
+  questionAnswer = false,
 }: {
   block: Block;
   layout: TranscriptLayout;
@@ -2612,6 +2623,7 @@ function UserMessageBlock({
   onSendDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   busy?: boolean;
+  questionAnswer?: boolean;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useRetainedDisclosure<boolean>(`prompt:${block.id}`, false);
@@ -2719,19 +2731,25 @@ function UserMessageBlock({
     <div
       data-prompt-anchor={block.id}
       data-editing-last-turn={editing ? "true" : undefined}
-      className="user-message-row group/usermsg flex flex-col items-end overflow-visible pbs-1.5 pe-4 pbe-5 ps-14"
+      className={`user-message-row group/usermsg flex min-w-0 flex-col overflow-visible ${questionAnswer ? "" : "items-end pbs-1.5 pe-4 pbe-5 ps-14"}`}
     >
       {/* Give actions the pane width while the bubble keeps its content width. */}
-      <div className="user-message-hover-zone flex w-full min-w-0 max-w-full flex-col items-end overflow-visible">
+      <div
+        className={`user-message-hover-zone flex w-full min-w-0 max-w-full flex-col overflow-visible ${questionAnswer ? "" : "items-end"}`}
+      >
         <div
           data-draft={block.draft ? "true" : undefined}
           data-follow-up-delivery={delivery}
           data-bycoda={bycoda ? "true" : undefined}
-          className={`user-message-bubble relative min-w-0 border border-(--color-stroke) px-3 py-2 font-sans text-(--ui-tone-neutral-fg) transition-[background-color] duration-200 ${
-            block.draft
-              ? "border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
-              : "bg-(--ui-surface)"
-          } ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-xl`}
+          className={
+            questionAnswer
+              ? "relative min-w-0 text-(--ui-tone-neutral-fg)"
+              : `user-message-bubble relative min-w-0 border border-(--color-stroke) px-3 py-2 font-sans text-(--ui-tone-neutral-fg) transition-[background-color] duration-200 ${
+                  block.draft
+                    ? "border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
+                    : "bg-(--ui-surface)"
+                } ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-xl`
+          }
           style={{ zIndex: stickyIndex }}
         >
           {block.turnOutcome === "stopped" ? (
@@ -2790,7 +2808,7 @@ function UserMessageBlock({
               ref={(element) => {
                 textRef.current = element;
               }}
-              className={`min-w-0 whitespace-pre-wrap break-words font-sans text-sm ${expanded ? "" : "line-clamp-4"}`}
+              className={`min-w-0 whitespace-pre-wrap break-words font-sans text-sm ${expanded || questionAnswer ? "" : "line-clamp-4"}`}
             >
               <AttachmentTokenText text={displayText} attachments={block.attachments} />
             </pre>

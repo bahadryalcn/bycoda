@@ -11,6 +11,18 @@ type HostCall = {
   };
 };
 const fixture = "/tests/browser/tasks.html";
+/** Legacy workflow checks explicitly choose the global board; the product now opens a project backlog. */
+async function openTasks(page: Page, url: string) {
+  await page.goto(url);
+  await page.getByRole("radio", { name: "Sprints", exact: true }).click();
+  const projectScope = page
+    .locator("header.task-board-toolbar")
+    .getByRole("button", { name: /^Project:/ });
+  await projectScope.click();
+  await page.getByRole("option", { name: "All projects", exact: true }).click();
+  const goals = page.locator("details.task-goals-disclosure");
+  if (await goals.count()) await goals.locator("summary").first().click();
+}
 test("worktree creation keeps the active button visible and focused", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 950 });
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -206,7 +218,7 @@ for (const { width, theme } of [
       },
     });
     expect(JSON.parse(String(input.prompt)).objective).toBe(objective);
-    await page.reload();
+    await openTasks(page, page.url());
     await openCreate(page, "task");
     const reopened = page.getByRole("form", { name: "New task", exact: true });
     await reopened
@@ -246,7 +258,7 @@ for (const { width, theme } of [
   }, testInfo) => {
     await page.setViewportSize({ width, height: 950 });
     await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-    await page.goto(`${fixture}?boardControls&harness`);
+    await openTasks(page, `${fixture}?boardControls&harness`);
     await page.evaluate(
       (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
       theme,
@@ -308,7 +320,7 @@ test("editing a saved custom reviewer can restore the worker profile", async ({
 }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 950 });
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto(`${fixture}?boardControls&harness&customReviewer`);
+  await openTasks(page, `${fixture}?boardControls&harness&customReviewer`);
   const card = page.getByRole("article", { name: "First queued task", exact: true });
   await taskMenuAction(page, card, "Edit");
   const form = page.getByRole("form", { name: "Edit task", exact: true });
@@ -361,7 +373,7 @@ for (const state of ["finalPending", "finalFailure"] as const) {
     }) => {
       await page.setViewportSize({ width, height: 950 });
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-      await page.goto(`${fixture}?boardControls&${state}`);
+      await openTasks(page, `${fixture}?boardControls&${state}`);
       await page.evaluate(
         (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
         theme,
@@ -417,7 +429,7 @@ for (const width of [390, 1440]) {
     }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-      await page.goto(`${fixture}?boardControls&acceptanceEvidence`);
+      await openTasks(page, `${fixture}?boardControls&acceptanceEvidence`);
       await page.evaluate(
         (selected) =>
           document.documentElement.classList.toggle("theme-light", selected === "light"),
@@ -488,7 +500,7 @@ test("bulk cleanup uses one confirmation, preserves code and retries only failed
   page,
 }) => {
   await page.setViewportSize({ width: 768, height: 900 });
-  await page.goto(`${fixture}?boardControls&bulk&bulkFailure`);
+  await openTasks(page, `${fixture}?boardControls&bulk&bulkFailure`);
   await page.getByRole("button", { name: "Select tasks", exact: true }).click();
   await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
   await expect(page.getByText("102 selected", { exact: true })).toBeVisible();
@@ -520,7 +532,7 @@ test("bulk cleanup uses one confirmation, preserves code and retries only failed
 });
 
 test("search-scoped selection never includes hidden tasks", async ({ page }) => {
-  await page.goto(`${fixture}?boardControls&bulk`);
+  await openTasks(page, `${fixture}?boardControls&bulk`);
   await page.getByRole("searchbox", { name: "Search tasks", exact: true }).fill("Cleanup task 99");
   await page.getByRole("button", { name: "Select tasks", exact: true }).click();
   await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
@@ -532,7 +544,7 @@ test("search-scoped selection never includes hidden tasks", async ({ page }) => 
 test("compact goal filters retain scope, reset and keyboard menu focus", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto(`${fixture}?boardControls&uiFilters`);
+  await openTasks(page, `${fixture}?boardControls&uiFilters`);
   const filters = page.getByRole("button", { name: "Filters", exact: true });
   await filters.focus();
   await page.keyboard.press("Enter");
@@ -562,7 +574,7 @@ for (const width of [390, 768, 1440]) {
     test(`existing goal settings at ${width}px in ${theme} theme`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(`${fixture}?boardControls`);
+      await openTasks(page, `${fixture}?boardControls`);
       await page.evaluate(
         (theme) => document.documentElement.classList.toggle("theme-light", theme === "light"),
         theme,
@@ -706,12 +718,15 @@ test("goal dialog keeps workspace, manual start and concurrency choices together
 test("board cards support reorder, explicit start and reviewed delivery choices", async ({
   page,
 }) => {
-  await page.goto(`${fixture}?boardControls`);
+  await openTasks(page, `${fixture}?boardControls`);
   const queued = page.locator('[data-task-column="queued"]');
   const first = queued.getByRole("article", { name: "First queued task", exact: true });
   const second = queued.getByRole("article", { name: "Second queued task", exact: true });
   await expect(first).toBeVisible();
-  await second.dragTo(first);
+  await second.dragTo(first, {
+    sourcePosition: { x: 10, y: 10 },
+    targetPosition: { x: 10, y: 10 },
+  });
   await expect
     .poll(() =>
       page.evaluate(
@@ -750,7 +765,7 @@ test("board cards support reorder, explicit start and reviewed delivery choices"
 });
 
 test("a goal lists its created session links", async ({ page }) => {
-  await page.goto(`${fixture}?boardControls`);
+  await openTasks(page, `${fixture}?boardControls`);
   await page
     .getByRole("article", { name: "Settings goal", exact: true })
     .getByRole("button", { name: "Task sessions", exact: true })
@@ -806,7 +821,7 @@ async function openCreate(page: Page, kind: "task" | "goal") {
   } else await page.getByRole("button", { name: "New task", exact: true }).click();
 }
 async function start(page: Page, kind: "task" | "goal", query = "") {
-  await page.goto(fixture + query);
+  await openTasks(page, fixture + query);
   await expect(page.getByRole("region", { name: "Tasks", exact: true })).toBeVisible();
   await openCreate(page, kind);
   return page.getByRole("form", { name: `New ${kind}`, exact: true });
@@ -970,9 +985,13 @@ test("task and goal controls stay inside a narrow viewport", async ({ page }, te
   for (const width of [320, 480]) {
     await page.setViewportSize({ width, height: 900 });
     for (const kind of ["task", "goal"] as const) {
-      await page.goto(fixture);
+      await openTasks(page, fixture);
       await expect(page.getByRole("region", { name: "Tasks", exact: true })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
+      await expect(
+        page
+          .locator("header.task-board-toolbar")
+          .getByRole("button", { name: "Refresh", exact: true }),
+      ).toBeEnabled();
       await expect(page.getByText("No task board", { exact: true })).toHaveCount(0);
       for (const label of ["More actions", "New task"]) {
         const control = page.getByRole("button", { name: label, exact: true });
@@ -1098,9 +1117,9 @@ test("task details use the narrow panel and retain the desktop board", async ({
 for (const method of ["environment.describe", "goals.list"]) {
   test(`local task writes stay usable while remote ${method} is pending`, async ({ page }) => {
     page.on("dialog", (dialog) => dialog.accept());
-    await page.goto(`${fixture}?slowRemote=${method}&changes`);
+    await openTasks(page, `${fixture}?slowRemote=${method}&changes`);
     await expect(page.locator('[data-remote-data-state="refreshing"]')).toBeVisible();
-    await expect(page.locator('[data-task-column="todo"]')).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Board view", exact: true })).toBeChecked();
     await expect(page.getByText("No task board", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "New task", exact: true })).toBeEnabled();
     expect(
@@ -1177,7 +1196,7 @@ test("task worker, running reviewer and retained attempts navigate to their own 
       width: host === "local" ? 320 : 1000,
       height: 900,
     });
-    await page.goto(`${fixture}?sessionLinks=${host}`);
+    await openTasks(page, `${fixture}?sessionLinks=${host}`);
     const taskCard = page.getByRole("article", {
       name: "Session-linked task",
       exact: true,
@@ -1250,7 +1269,7 @@ for (const width of [390, 768, 1440]) {
     }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(`${fixture}?boardControls&uiFilters`);
+      await openTasks(page, `${fixture}?boardControls&uiFilters`);
       await page.evaluate(
         (theme) => document.documentElement.classList.toggle("theme-light", theme === "light"),
         theme,

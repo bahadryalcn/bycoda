@@ -17,7 +17,13 @@ import {
   type UsageWindow,
 } from "../model/usageAnalytics";
 import { usageChartColor } from "../model/usageColors";
-import { formatBucket, formatMetric, formatUsagePercent, PagedUsageTable } from "./UsageCharts";
+import {
+  formatBucket,
+  formatMetric,
+  formatMetricTick,
+  formatUsagePercent,
+  PagedUsageTable,
+} from "./UsageCharts";
 
 type Colors = ReadonlyMap<string, string>;
 export function UsageTrend({
@@ -95,7 +101,7 @@ export function UsageTrend({
         height={250}
         curve="linear"
         formatValue={format}
-        formatTick={format}
+        formatTick={percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)}
         onActiveChange={(_, datum) => {
           if (datum) setActive(datum.key);
         }}

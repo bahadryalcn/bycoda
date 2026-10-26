@@ -12,6 +12,7 @@ import {
   ADOPTED_POLL_HIDDEN_MS,
   ADOPTED_POLL_VISIBLE_MS,
   ADOPTED_SESSION_ADDED,
+  adoptedSessionTimes,
   desktopCopyOf,
   mirrorAdoptedSessions,
   refreshAdoptedSession,
@@ -198,7 +199,7 @@ export function useAdoptedSessions(
               return false;
             const host = await loadRemoteSession(machine.id, entry.id, undefined, { digests });
             const copy = desktopCopyOf(host, project.cwd, sameProjectPath);
-            if (stopped || !(await upsertSession(copy))) return false;
+            if (stopped || !(await upsertSession(copy, adoptedSessionTimes(host)))) return false;
             window.dispatchEvent(
               new CustomEvent<string>(ADOPTED_SESSION_ADDED, {
                 detail: project.cwd,

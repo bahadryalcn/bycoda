@@ -326,7 +326,8 @@ export class DesktopSessions {
       ${optional("branch")}, ${optional("archived", "0")}, ${optional("worktree_cwd")},
       ${optional("has_user_message", "1")}, ${optional("pinned", "0")},
       ${optional("linked_work_item_json")}, ${optional("provider_account_id")},
-      ${optional("is_draft", "0")}, ${optional("inbox_ask")}, ${optional("adopted_base")}
+      ${optional("is_draft", "0")}, ${optional("inbox_ask")}, ${optional("adopted_base")},
+      ${optional("pending_context_replay")}
       FROM ${transcriptView ? "session_transcripts" : "sessions"} WHERE ${where}`;
     const running = new Set<string>();
     try {
@@ -914,6 +915,9 @@ export class DesktopSessions {
       blocks: blocks as Block[],
       ...(row.provider_session_id ? { providerSessionId: String(row.provider_session_id) } : {}),
       ...(row.provider_account_id ? { providerAccountId: String(row.provider_account_id) } : {}),
+      ...(row.pending_context_replay
+        ? { pendingContextReplay: String(row.pending_context_replay) }
+        : {}),
       ...(row.branch ? { branch: String(row.branch) } : {}),
       ...(row.worktree_cwd ? { worktreeCwd: String(row.worktree_cwd) } : {}),
       ...(row.linked_work_item_json ? { linkedWorkItem: parse(row.linked_work_item_json) } : {}),

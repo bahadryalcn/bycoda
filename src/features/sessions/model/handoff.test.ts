@@ -419,6 +419,20 @@ describe("handoff from a usage-limited harness", () => {
     expect(shouldAskOutgoingAgent(edited())).toBe(true);
   });
 
+  it("uses the deterministic packet when the saved outgoing provider/model pair is corrupt", () => {
+    const session = edited({ harness: "antigravity", model: "antigravity:gemini-3.8-flash-high",
+      pendingSwitch: {
+        from: "codex", fromModel: "antigravity:gemini-3.8-flash-high", fromSettings: {},
+        fromProviderSessionId: "codex-thread",
+      },
+    });
+    expect(shouldAskOutgoingAgent(session)).toBe(false);
+    expect(chooseHandoffBrief("", session)).toContain("User: edit it");
+    expect(shouldAskOutgoingAgent({ ...session, pendingSwitch: {
+      ...session.pendingSwitch!, fromModel: "codex:gpt-6.1-sol",
+    } })).toBe(true);
+  });
+
   it("never asks a limited agent, even after the limit was cleared by the switch", () => {
     expect(shouldAskOutgoingAgent(edited({ usageLimit: {} }))).toBe(false);
     const armed = planComposerSwitch(edited({ usageLimit: {} }), "fx");

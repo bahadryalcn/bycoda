@@ -563,9 +563,9 @@ describe("diff layout setting", () => {
     localStorage.removeItem(DIFF_LAYOUT_KEY);
   });
 
-  it("defaults to the inline layout", () => {
-    expect(DIFF_LAYOUT_DEFAULT).toBe("inline");
-    expect(loadDiffLayout()).toBe("inline");
+  it("defaults to the automatic layout", () => {
+    expect(DIFF_LAYOUT_DEFAULT).toBe("auto");
+    expect(loadDiffLayout()).toBe("auto");
   });
 
   it("persists the split layout", () => {
@@ -574,11 +574,13 @@ describe("diff layout setting", () => {
     expect(loadDiffLayout()).toBe("split");
     saveDiffLayout("inline");
     expect(loadDiffLayout()).toBe("inline");
+    saveDiffLayout("auto");
+    expect(loadDiffLayout()).toBe("auto");
   });
 
   it("ignores unknown stored values", () => {
     localStorage.setItem(DIFF_LAYOUT_KEY, "side-by-side");
-    expect(loadDiffLayout()).toBe("inline");
+    expect(loadDiffLayout()).toBe("auto");
   });
 });
 

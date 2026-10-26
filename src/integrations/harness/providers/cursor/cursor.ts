@@ -1,5 +1,10 @@
 import { trimAndCapText } from "../../../../shared/lib/cappedText";
 import {
+  deliverQuestionReply,
+  showNextQueuedQuestion,
+  type QuestionDelivery,
+} from "../questionDelivery";
+import {
   asRecord,
   looksLikeCallId,
   numberField,
@@ -97,7 +102,8 @@ type Live = {
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
   approvals: Map<number, (decision: ApprovalDecision) => void>;
-  questions: Map<number, (reply: UserQuestionReply) => void>;
+  questions: Map<number, ((reply: UserQuestionReply) => void) & QuestionDelivery>;
+  visibleQuestionId?: number;
   enrichedTools: Set<string>;
   pendingToolEnrichments: Map<string, PendingToolEnrichment>;
   toolEnrichmentTimer?: ReturnType<typeof setTimeout>;
@@ -188,7 +194,17 @@ export function respondCursorQuestion(
   requestId: number,
   reply: UserQuestionReply,
 ) {
-  liveByThread.get(sessionId)?.questions.get(requestId)?.(reply);
+  const live = liveByThread.get(sessionId);
+  const pending = live?.questions.get(requestId);
+  if (!live || !pending) return;
+  deliverQuestionReply(
+    pending,
+    requestId,
+    reply,
+    live.onEvent,
+    () => live.questions.get(requestId) === pending && !live.cancelled && !live.muteUpdates,
+    () => pending(reply),
+  );
 }
 
 /** Abort the in-flight prompt without tearing down the ACP session. */
@@ -611,26 +627,35 @@ async function handleAskQuestion(live: Live, id: number, params: unknown) {
       : typeof rec?.tool_call_id === "string"
         ? rec.tool_call_id
         : undefined;
-  live.onEvent({
+  const event: Extract<HarnessEvent, { type: "question.asked" }> = {
     type: "question.asked",
     requestId: id,
     title,
     questions,
+    dismissAction: "skip",
     ...(callId ? { callId } : {}),
-  });
+  };
 
-  const reply = await new Promise<UserQuestionReply>((resolve) => {
-    live.questions.set(id, resolve);
+  const replyPromise = new Promise<UserQuestionReply>((resolve) => {
+    live.questions.set(
+      id,
+      Object.assign(resolve, {
+        event,
+        deliver: (reply: UserQuestionReply) =>
+          live.acp.respond(id, cursorAskQuestionResponse(reply, questions)),
+      }),
+    );
   });
+  showNextQueuedQuestion(live);
+  const reply = await replyPromise;
   live.questions.delete(id);
   live.onEvent({
     type: "question.resolved",
     requestId: id,
-    decision: reply.kind,
+    decision: live.cancelled || live.muteUpdates ? "cancelled" : reply.kind,
     ...(reply.kind === "answered" ? { reply } : {}),
   });
-
-  await live.acp.respond(id, cursorAskQuestionResponse(reply, questions)).catch(() => undefined);
+  showNextQueuedQuestion(live);
 }
 
 function cursorAskQuestionResponse(

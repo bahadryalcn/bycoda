@@ -41,6 +41,17 @@ const jobKinds: Record<SocialJob["kind"], string> = {
 };
 const PAGE_SIZE = 30;
 export function socialJobExplanation(job: SocialJob): string {
+  if (job.status === "succeeded" && job.delivery) {
+    return {
+      accepted: t("The platform accepted the message. Delivery has not been confirmed."),
+      sent: t("The message was sent. Recipient delivery has not been confirmed."),
+      delivered: t("The platform confirmed recipient delivery."),
+      read: t("The platform confirmed that the recipient read the message."),
+      failed: t(
+        "The platform reported a delivery failure. The message will not be resent automatically.",
+      ),
+    }[job.delivery.status];
+  }
   if (job.status === "cancelled")
     return t("This job was cancelled; nothing is waiting to be sent.");
   if (job.status === "review")
@@ -49,6 +60,13 @@ export function socialJobExplanation(job: SocialJob): string {
     );
   if (job.status === "failed")
     return t("Sending failed. Check the detail and retry this target if needed.");
+  if (
+    job.status === "queued" &&
+    (job.preparation?.youtubeVideoId || job.preparation?.tiktokPublishId)
+  )
+    return t(
+      "The platform accepted the video and is processing it. Publication is not yet confirmed.",
+    );
   if (job.status === "queued") return t("Scheduled send: {p0}", { p0: time(job.scheduledAt) });
   if (job.status === "running") return t("Waiting for the result from the platform.");
   return t("The platform confirmed the send.");
@@ -380,7 +398,9 @@ export function JobHistory({
                       </Button>
                     </>
                   ) : null}
-                  {job.status === "queued" ? (
+                  {job.status === "queued" &&
+                  !job.preparation?.youtubeVideoId &&
+                  !job.preparation?.tiktokPublishId ? (
                     <Button
                       loading={pendingUi.is(`job.cancel:${job.id}`)}
                       disabled={socialLocked}

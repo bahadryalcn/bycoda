@@ -6,6 +6,7 @@ import {
   hostProjectFor,
 } from "../../automations/model/hostAutomationClient";
 import { remoteRequest } from "../../connections/model/connections";
+import { crewHasRunningWork } from "./crewPresentation";
 import type {
   HostModelCatalog,
   HostProject,
@@ -40,6 +41,7 @@ export type ProjectCrews = {
   agents: SavedCrewAgent[];
   runs: CrewRunView[];
   catalog: HostModelCatalog;
+  catalogError?: string;
 };
 export function useProjectCrews(cwd: string, enabled = true) {
   const client = useQueryClient();
@@ -52,7 +54,7 @@ export function useProjectCrews(cwd: string, enabled = true) {
       const machine = backgroundMachineFor(machines, cwd);
       if (!machine) throw new Error("Update and connect this project's host to use Crews.");
       const project = await hostProjectFor(machine, cwd);
-      const [state, catalog] = await Promise.all([
+      const [state, modelState] = await Promise.all([
         remoteRequest<Pick<ProjectCrews, "definitions" | "runs" | "agents">>(
           machine.id,
           "crews.list",
@@ -61,14 +63,19 @@ export function useProjectCrews(cwd: string, enabled = true) {
         remoteRequest<HostModelCatalog>(machine.id, "models.list", {
           projectId: project.id,
           progressive: true,
-        }),
+        })
+          .then((catalog) => ({ catalog, catalogError: undefined as string | undefined }))
+          .catch((reason: unknown) => ({
+            catalog: { models: {}, errors: {} } as HostModelCatalog,
+            catalogError: reason instanceof Error ? reason.message : String(reason),
+          })),
       ]);
       const capabilities = await machineCapabilities(machine);
       return {
         machine,
         project,
         ...state,
-        catalog,
+        ...modelState,
         taskExecutionSupported: capabilities.includes(HOST_CREW_TASKS),
         deleteSupported: capabilities.includes(HOST_CREW_DELETE),
         runDeleteSupported: capabilities.includes(HOST_CREW_RUN_DELETE),
@@ -81,7 +88,7 @@ export function useProjectCrews(cwd: string, enabled = true) {
     refetchInterval: (query) =>
       query.state.data?.catalog.pending?.length
         ? 1000
-        : query.state.data?.runs.some((run) => run.status === "active")
+        : query.state.data?.runs.some((run) => run.status === "active" || crewHasRunningWork(run))
           ? 5000
           : 15_000,
     retry: false,
@@ -89,15 +96,19 @@ export function useProjectCrews(cwd: string, enabled = true) {
   const call = async <T = unknown>(action: string, input: Record<string, unknown>): Promise<T> => {
     const data = query.data;
     if (!data) throw new Error("Crew host is not connected");
-    const result = await remoteRequest<T>(
-      data.machine.id,
-      action,
-      { ...input, projectId: data.project.id },
-      false,
-      true,
-    );
-    await client.invalidateQueries({ queryKey: key });
-    return result;
+    try {
+      return await remoteRequest<T>(
+        data.machine.id,
+        action,
+        { ...input, projectId: data.project.id },
+        false,
+        true,
+      );
+    } finally {
+      // Stop can pause the crew before a provider cancellation fails.
+      // Refresh that authoritative partial result without retrying the mutation.
+      await client.invalidateQueries({ queryKey: key });
+    }
   };
   return { ...query, call };
 }

@@ -105,12 +105,20 @@ if (params.has("defaults")) {
   agents = defaults.agents;
 }
 let starts = 0;
+let groupFailure = false;
+let copyFailure = false;
+const agentSaveCounts: Record<string, number> = {};
+if (params.has("groupRetry")) agents = agents.map((agent) => ({ ...agent, groups: ["UI"] }));
+let opens = 0;
+const startReceipts = new Map<string, { id: string; coordinatorSessionId: string }>();
+const startRequestIds: string[] = [];
 let runs = [
   {
     id: "run",
     projectId: "project",
     definition,
     coordinatorSessionId: "lead-session",
+    coordinatorStatus: "idle" as "idle" | "running" | "interrupted",
     status: "active",
     launch: {
       candidate,
@@ -146,7 +154,14 @@ let runs = [
         title: "Build settings",
         harness: "codex",
         model: "codex:fixture",
-        status: params.has("blocked") ? "blocked" : "review",
+        status: params.has("reviewingAgain")
+          ? "verifying"
+          : params.has("blocked")
+            ? "blocked"
+            : "review",
+        reviewer: params.has("reviewingAgain")
+          ? { sessionId: "current-review-session" }
+          : undefined,
         error: params.has("blocked")
           ? "The design asset is unavailable. Keep the existing layout draft and select a replacement before retrying this task."
           : undefined,
@@ -189,6 +204,24 @@ if (params.has("multiple")) {
     updatedAt: 3,
   });
 }
+if (params.has("pausedPlanning")) {
+  runs[0] = {
+    ...runs[0],
+    status: "paused",
+    coordinatorStatus: params.has("running") ? "running" : "idle",
+    launch: {
+      ...runs[0].launch,
+      prompt:
+        "Review mobile session choices against the desktop application and preserve the full request text\nKeep current drafts and provider selections.",
+    },
+    assignments: [],
+    tasks: [],
+    messages: [],
+  };
+}
+if (params.has("unknownActivity")) {
+  delete (runs[0] as { coordinatorStatus?: string }).coordinatorStatus;
+}
 if (params.has("deletedDefinition")) definitions = [];
 const operationCalls: string[] = [];
 let releaseOperation: () => void = () => {};
@@ -228,6 +261,8 @@ mockIPC(async (command, args) => {
       case "projects.list":
         return [{ id: "project", cwd, name: "Fixture" }];
       case "models.list":
+        if (params.has("catalogUnavailable"))
+          throw new Error("Model catalog temporarily unavailable");
         return {
           models: {
             codex: [
@@ -257,11 +292,20 @@ mockIPC(async (command, args) => {
       }
       case "crews.agent.save": {
         const input = p.agent as SavedCrewAgent;
+        agentSaveCounts[input.id] = (agentSaveCounts[input.id] ?? 0) + 1;
+        if (params.has("groupRetry") && input.id === "lib-api" && !groupFailure) {
+          groupFailure = true;
+          throw new Error("Second profile unavailable. Retry group update.");
+        }
         const previous = agents.find((a) => a.id === input.id);
         if (previous && previous.updatedAt !== p.expectedUpdatedAt)
           throw new Error("Agent changed. Reload before saving");
         const saved = { ...input, updatedAt: (previous?.updatedAt ?? 0) + 1 };
         agents = [...agents.filter((a) => a.id !== saved.id), saved];
+        if (params.has("copyUnknown") && !previous && !copyFailure) {
+          copyFailure = true;
+          throw new Error("Profile save response unavailable");
+        }
         return saved;
       }
       case "crews.agent.delete":
@@ -270,17 +314,32 @@ mockIPC(async (command, args) => {
       case "crews.delete":
         definitions = definitions.filter((d) => d.id !== p.definitionId);
         return { deleted: true };
-      case "crews.start":
+      case "crews.start": {
+        const requestId = String(p.requestId);
+        startRequestIds.push(requestId);
+        const existing = startReceipts.get(requestId);
+        if (existing) return existing;
         starts += 1;
         document.querySelector("[aria-label='Started work']")!.textContent = String(starts);
-        return {
+        const receipt = {
           id: `run-${starts}`,
           coordinatorSessionId: `started-${starts}`,
         };
+        startReceipts.set(requestId, receipt);
+        if (params.has("startUnknownOnce") && starts === 1)
+          throw new Error("Start response unavailable. Delivery unknown.");
+        return receipt;
+      }
       case "crews.pause":
-      case "crews.stop":
         runs = runs.map((r) =>
           r.id === p.runId ? { ...r, status: "paused", updatedAt: r.updatedAt + 1 } : r,
+        );
+        return runs.find((run) => run.id === p.runId);
+      case "crews.stop":
+        runs = runs.map((r) =>
+          r.id === p.runId
+            ? { ...r, status: "paused", coordinatorStatus: "idle", updatedAt: r.updatedAt + 1 }
+            : r,
         );
         return runs.find((run) => run.id === p.runId);
       case "crews.resume":
@@ -304,9 +363,20 @@ mockIPC(async (command, args) => {
 if (params.has("defaults")) runs = [];
 // Another session saving the same crew while it is open here.
 Object.assign(window, {
+  crewFixtureStartRequestIds: startRequestIds,
+  simulateRunFinish: (id: string) => {
+    runs = runs.map((run) =>
+      run.id === id ? { ...run, status: "finished", updatedAt: run.updatedAt + 1 } : run,
+    );
+  },
+  simulateCrewDelete: () => {
+    definitions = [];
+  },
   crewFixtureSnapshot: () => ({
     definitions: definitions.map((crew) => crew.id),
     runs: runs.map((run) => ({ id: run.id, status: run.status })),
+    agents: agents.map((agent) => ({ id: agent.id, groups: agent.groups })),
+    agentSaveCounts,
   }),
   simulateRunUpdate: (id: string) => {
     const next = Math.max(...runs.map((run) => run.updatedAt)) + 1;
@@ -342,6 +412,11 @@ function Fixture() {
   const [opened, setOpened] = useState("");
   const [crew, setCrew] = useState<string | undefined>();
   const [valid, setValid] = useState(true);
+  const openSession = (target: { sessionId: string }) => {
+    if (params.has("openFailsOnce") && opens++ === 0)
+      throw new Error("Conversation temporarily unavailable");
+    setOpened(target.sessionId);
+  };
   return (
     <QueryProvider>
       <main className="bycoda-arc flex min-h-screen flex-wrap bg-(--ui-surface) text-(--color-content)">
@@ -349,18 +424,10 @@ function Fixture() {
           className="@container/rail flex shrink-0 flex-col border-e border-(--ui-tone-neutral-border) pt-2"
           style={{ width: 256 }}
         >
-          <CrewRailSection
-            cwd={cwd}
-            drag={drag}
-            onOpenSession={(target) => setOpened(target.sessionId)}
-          />
+          <CrewRailSection cwd={cwd} drag={drag} onOpenSession={openSession} />
         </aside>
         <aside className="w-80 max-w-full shrink-0 border-e border-(--ui-tone-neutral-border)">
-          <CrewSidebar
-            cwd={cwd}
-            onOpen={(target) => setOpened(target.sessionId)}
-            onManagedChange={() => {}}
-          />
+          <CrewSidebar cwd={cwd} onOpen={openSession} onManagedChange={() => {}} />
         </aside>
         <div className="min-w-0 flex-1 p-4" style={{ flexBasis: "24rem" }}>
           <Button variant="ghost" onClick={() => setView("settings")}>
@@ -386,7 +453,7 @@ function Fixture() {
             </div>
           ) : view === "settings" ? (
             <div className="bycoda-settings-content bycoda-settings-form">
-              <CrewsSettings cwd={cwd} onOpen={(target) => setOpened(target.sessionId)} />
+              <CrewsSettings cwd={cwd} onOpen={openSession} />
             </div>
           ) : null}
         </div>

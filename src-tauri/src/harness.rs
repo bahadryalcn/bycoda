@@ -242,6 +242,8 @@ impl HarnessHost {
         *epoch += 1;
         let epoch = *epoch;
         let prev = inner.children.remove(session_id);
+        crate::session_tools_bridge::revoke_session(session_id);
+        crate::session_tools_bridge::begin_session(session_id, (epoch, kill_all));
         (epoch, kill_all, prev)
     }
 
@@ -276,6 +278,7 @@ impl HarnessHost {
     fn kill_session(&self, session_id: &str) -> Option<Arc<LiveChild>> {
         let mut inner = self.lock_inner();
         *inner.epochs.entry(session_id.to_string()).or_insert(0) += 1;
+        crate::session_tools_bridge::revoke_session(session_id);
         inner.children.remove(session_id)
     }
 
@@ -284,6 +287,7 @@ impl HarnessHost {
         if inner.children.get(session_id).map(|live| live.pid) != Some(pid) {
             return None;
         }
+        crate::session_tools_bridge::revoke_session(session_id);
         inner.children.remove(session_id)
     }
 
@@ -303,6 +307,7 @@ impl HarnessHost {
                 .into_iter()
                 .filter_map(|session_id| {
                     *inner.epochs.entry(session_id.clone()).or_insert(0) += 1;
+                    crate::session_tools_bridge::revoke_session(&session_id);
                     inner
                         .children
                         .remove(&session_id)
@@ -322,6 +327,7 @@ impl HarnessHost {
         let kids: Vec<Arc<LiveChild>> = {
             let mut inner = self.lock_inner();
             self.kill_all_gen.fetch_add(1, Ordering::SeqCst);
+            crate::session_tools_bridge::revoke_all();
             inner.children.drain().map(|(_, child)| child).collect()
         };
         self.stop_all_sse();
@@ -1053,6 +1059,8 @@ pub fn harness_spawn(
 
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     let (epoch, kill_all, prev) = host.begin_spawn(&session_id);
+    let mut tool_spawn =
+        crate::session_tools_bridge::SpawnGuard::new(&session_id, (epoch, kill_all));
     if let Some(prev) = prev {
         terminate(prev.pid);
     }
@@ -1081,12 +1089,23 @@ pub fn harness_spawn(
     });
 
     crate::control::configure_child(&app, &session_id, &mut cmd);
-    crate::social_bridge::configure_child(&app, &session_id, &mut cmd);
-    crate::runtime_logs_bridge::configure_child(&app, &session_id, &mut cmd);
-    crate::conversation_tools_bridge::configure_child(&app, &session_id, &mut cmd);
+    crate::social_bridge::configure_child(&app, &session_id, &mut cmd, (epoch, kill_all));
+    crate::runtime_logs_bridge::configure_child(&app, &session_id, &mut cmd, (epoch, kill_all));
+    crate::conversation_tools_bridge::configure_child(
+        &app,
+        &session_id,
+        &mut cmd,
+        (epoch, kill_all),
+    );
 
-    let mut child =
-        spawn_managed(&mut cmd).map_err(|e| format!("Failed to start {command}: {e}"))?;
+    // Hold this child's redaction values through its final output drain, even
+    // after a replacement has revoked and removed its native grant cache.
+    let tool_credentials = crate::session_tools_bridge::redaction_tokens(&cmd);
+
+    let mut child = spawn_managed(&mut cmd).map_err(|e| {
+        crate::session_tools_bridge::revoke_spawn(&session_id, (epoch, kill_all));
+        format!("Failed to start {command}: {e}")
+    })?;
     let pid = child.id();
 
     let stdin = child
@@ -1112,6 +1131,7 @@ pub fn harness_spawn(
         owners: Arc::clone(&owners),
     });
     if let Some(rejected) = host.install_spawn(session_id.clone(), epoch, kill_all, live) {
+        crate::session_tools_bridge::revoke_spawn(&session_id, (epoch, kill_all));
         // A kill, or a newer spawn, won the race while this one was forking.
         // Returning `Ok` here would hand the caller a dead pid to store as the
         // session's live child, and this child's stdout would be parsed as the
@@ -1122,6 +1142,7 @@ pub fn harness_spawn(
         });
         return Err(SPAWN_CANCELLED.to_string());
     }
+    tool_spawn.disarm();
 
     // Each reader drops its `done` sender only after its last batch is emitted,
     // so the wait thread can order the exit event after all output.
@@ -1130,6 +1151,7 @@ pub fn harness_spawn(
     let stdout_id = session_id.clone();
     let stdout_done = done_tx.clone();
     let stdout_owners = Arc::clone(&owners);
+    let stdout_credentials = tool_credentials.clone();
     thread::spawn(move || {
         let _done = stdout_done;
         read_lines_batched(stdout, move |lines| {
@@ -1139,13 +1161,7 @@ pub fn harness_spawn(
                 STDOUT_EVENT,
                 HarnessLines {
                     session_id: stdout_id.clone(),
-                    lines: crate::runtime_logs_bridge::redact_lines(
-                        &stdout_id,
-                        crate::conversation_tools_bridge::redact_lines(
-                            &stdout_id,
-                            crate::social_bridge::redact_lines(&stdout_id, lines),
-                        ),
-                    ),
+                    lines: crate::session_tools_bridge::redact_lines(&stdout_credentials, lines),
                 },
             );
         });
@@ -1163,13 +1179,7 @@ pub fn harness_spawn(
                 STDERR_EVENT,
                 HarnessLines {
                     session_id: stderr_id.clone(),
-                    lines: crate::runtime_logs_bridge::redact_lines(
-                        &stderr_id,
-                        crate::conversation_tools_bridge::redact_lines(
-                            &stderr_id,
-                            crate::social_bridge::redact_lines(&stderr_id, lines),
-                        ),
-                    ),
+                    lines: crate::session_tools_bridge::redact_lines(&tool_credentials, lines),
                 },
             );
         });

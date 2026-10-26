@@ -68,6 +68,34 @@
   font-size: var(--ui-font-caption);
   background: var(--ui-surface-raised);
 }
+/* Keep dock controls in the shared context row, without a second title bar. */
+.tools-workspace-pane:has(.host-tools) {
+  position: relative;
+}
+.tools-workspace-pane:has(.host-tools) > .tools-workspace-toolbar {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  z-index: 1;
+  min-block-size: var(--ui-control-height-compact);
+  padding: 2px 4px;
+  border: 0;
+  background: var(--ui-surface);
+  gap: 0;
+}
+.tools-workspace-pane:has(.host-tools)
+  > .tools-workspace-toolbar
+  :is(.tools-workspace-kind, .tools-workspace-title) {
+  display: none;
+}
+.tools-workspace-pane:has(.host-tools) .host-tools-topbar {
+  padding-inline-end: calc(3 * var(--ui-control-height-compact) + 12px);
+}
+.tools-workspace-panes:has(> .tools-workspace-pane + .tools-workspace-pane)
+  > .tools-workspace-pane:has(.host-tools)
+  .host-tools-topbar {
+  padding-inline-end: calc(4 * var(--ui-control-height-compact) + 12px);
+}
 .tools-workspace-title {
   display: flex;
   align-items: baseline;

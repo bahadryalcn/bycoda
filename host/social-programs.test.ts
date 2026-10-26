@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { HostStore } from "./store";
 import { SocialService, type SocialPrincipal } from "./social";
 import { platformRequirements } from "../src/integrations/social/capabilities";
-import type { SocialAccount, SocialJob } from "../src/features/social/model/social";
+import { browserScopes } from "../src/integrations/social/browserCapabilities";
+import type { SocialAccount } from "../src/features/social/model/social";
 import {
   defaultProgram,
   type ProgramDetail,
@@ -260,6 +261,48 @@ describe("AI campaign programs through SocialService", () => {
     const current = await f.detail(p);
     expect(current.program.generationCount).toBe(2);
     expect(current.occurrences[0].targets[0].variant?.media[0].uploadId).toBeTruthy();
+  });
+  it("prepares an Instagram browser program with a host upload and no public image URL", async () => {
+    const png = Buffer.alloc(32);
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png);
+    png.write("IHDR", 12);
+    png.writeUInt32BE(1024, 16);
+    png.writeUInt32BE(1024, 20);
+    const f = await fixture(undefined, {
+      comfyui: {
+        capability: async () => ({
+          provider: "comfyui",
+          available: true,
+          reason: "",
+          models: ["fixture"],
+        }),
+        generate: async () => ({ bytes: png, model: "fixture" }),
+      },
+    });
+    const account = await f.account("instagram");
+    await f.service.connectAccount(
+      account.id,
+      {
+        platformId: "instagram-test",
+        name: account.name,
+        connection: "browser",
+        scopes: browserScopes("instagram"),
+        accessApproved: true,
+      },
+      { accessToken: "browser-session" },
+    );
+    f.config.accountIds = [account.id];
+    f.config.image.mode = "generate";
+    f.config.image.provider = "comfyui";
+    const program = await f.create();
+    await f.call("programs.generate", { id: program.id });
+    await f.service.programs.idle();
+    const detail = await f.detail(program);
+    const target = detail.occurrences[0].targets[0];
+    expect(target.variant?.media[0].uploadId).toBeTruthy();
+    expect(target.variant?.media[0].url).toBeUndefined();
+    expect(target.variant?.text).toBe("An owner-provided practical workflow");
+    expect(f.send).not.toHaveBeenCalled();
   });
   it("stops generation durably and safely ignores a late model response", async () => {
     let resolve!: (value: string) => void;

@@ -3,15 +3,32 @@ import { createSubmitTurnEvents } from "./submitTurnEvents";
 import { runSubmitDispatch } from "./submitTurnDispatch";
 
 import { discoverOrchestrationSettings } from "../../../../features/orchestration/model/orchestrationCatalog";
-import { completeOrchestrationProposal, withOrchestrationProposal } from "../../../../features/orchestration/model/orchestrationPlan";
+import {
+  completeOrchestrationProposal,
+  withOrchestrationProposal,
+} from "../../../../features/orchestration/model/orchestrationPlan";
 import { invalidateProjectLocation } from "../../../../features/projects/model/projectLocation";
 import { notifyReviewChanged } from "../../../../features/sessions/model/checkpoint";
-import { chooseHandoffBrief, shouldAskOutgoingAgent } from "../../../../features/sessions/model/handoff";
+import {
+  chooseHandoffBrief,
+  shouldAskOutgoingAgent,
+} from "../../../../features/sessions/model/handoff";
 import { requestOutgoingHandoff } from "../../../../features/sessions/model/handoffTurn";
 import { sessionWorkCwd } from "../../../../features/sessions/model/session";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
-import { createWorktree, namedWorktreeBranch, renameWorktreeBranch, temporaryWorktreeBranchName } from "../../../../features/source-control/model/worktrees";
-import { forgetHarnessSession, generateHarnessBranchName, isLiveHarness, pickTextHarness, stopStreaming } from "../../../../integrations/harness";
+import {
+  createWorktree,
+  namedWorktreeBranch,
+  renameWorktreeBranch,
+  temporaryWorktreeBranchName,
+} from "../../../../features/source-control/model/worktrees";
+import {
+  forgetHarnessSession,
+  generateHarnessBranchName,
+  isLiveHarness,
+  pickTextHarness,
+  stopStreaming,
+} from "../../../../integrations/harness";
 import { pathKey } from "../../../../shared/lib/paths";
 import { currentWorkspace } from "../../helpers/appHelpers";
 
@@ -24,7 +41,15 @@ export function startSubmittedTurn(
   const { enqueueHarnessEvent, flushHarnessEvents } = ctx;
   const { editedResends, retiringTurns, turnGen, workspacePins } = ctx.refs;
   const { sessionId, text, attachments, options } = input;
-  const { current, editedResend, handoffCard, initialWorkCwd, createDraftWorktree, harnessText, pendingSwitch } = pre;
+  const {
+    current,
+    editedResend,
+    handoffCard,
+    initialWorkCwd,
+    createDraftWorktree,
+    harnessText,
+    pendingSwitch,
+  } = pre;
   const { gen, proposalId, queuedHandoff, launchTitleGeneration, turn } = setup;
   void (async () => {
     let workCwd = initialWorkCwd;
@@ -37,7 +62,8 @@ export function startSubmittedTurn(
       );
       workCwd = tree.path;
       workspacePins.current.set(sessionId, currentWorkspace(current.cwd));
-      if (turn.proposalDraft) turn.proposalDraft = { ...turn.proposalDraft, checkoutCwd: tree.path };
+      if (turn.proposalDraft)
+        turn.proposalDraft = { ...turn.proposalDraft, checkoutCwd: tree.path };
       setSessions((prev) =>
         prev.map((session) =>
           session.id === sessionId
@@ -62,8 +88,7 @@ export function startSubmittedTurn(
           const renamed = await renameWorktreeBranch(current.cwd, tree.path, branch);
           setSessions((prev) =>
             prev.map((session) =>
-              session.id === sessionId &&
-              pathKey(sessionWorkCwd(session)) === pathKey(tree.path)
+              session.id === sessionId && pathKey(sessionWorkCwd(session)) === pathKey(tree.path)
                 ? { ...session, branch: renamed.branch ?? undefined }
                 : session,
             ),
@@ -142,10 +167,9 @@ export function startSubmittedTurn(
         flushHarnessEvents();
         setSessions((prev) =>
           prev.map((session) => {
-            if (session.id !== sessionId || turnGen.current.get(sessionId) !== gen)
-              return session;
+            if (session.id !== sessionId || turnGen.current.get(sessionId) !== gen) return session;
             const stopped = {
-              ...stopStreaming(session),
+              ...stopStreaming(session, Date.now(), true),
               worktreePreparing: undefined,
             };
             return proposalId && turn.proposalDraft
@@ -170,4 +194,3 @@ export function startSubmittedTurn(
       );
     });
 }
-

@@ -54,7 +54,7 @@ it("enum normalizasyonunu ve başarısız save sonrası olay detail/load ayrım�
       throw new Error("quota");
     });
     saveDiffLayout("invalid" as "inline");
-    expect(details).toEqual(["inline"]);
+    expect(details).toEqual(["auto"]);
     expect(callback).toHaveBeenCalledTimes(1);
     expect(loadDiffLayout()).toBe("split");
   } finally {

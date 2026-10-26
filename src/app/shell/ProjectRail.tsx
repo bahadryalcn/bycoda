@@ -189,6 +189,9 @@ type Props = {
   onRenameProjectFolder?: (path: string, name: string) => Promise<void>;
   recoveryControl?: ReactNode;
   visible?: boolean;
+  resizable?: boolean;
+  /** Navigator embeds the same project/group ledger without application chrome. */
+  presentation?: "panel" | "navigator";
   cwd: string;
   recents: RecentProject[];
   inboxUnseen?: boolean;
@@ -239,6 +242,8 @@ export function ProjectRail({
   onRenameProjectFolder,
   recoveryControl,
   visible = true,
+  resizable = true,
+  presentation = "panel",
   cwd,
   recents,
   inboxUnseen = false,
@@ -281,6 +286,7 @@ export function ProjectRail({
   onDismissUpdate,
 }: Props) {
   const t = useT();
+  const navigator = presentation === "navigator";
   const workspaceFeatures = useWorkspaceFeatures();
   const inboxShortcut = useKeybindingShortcut("App: Open Inbox");
   const notesShortcut = useKeybindingShortcut("App: Open Notes");
@@ -809,35 +815,37 @@ export function ProjectRail({
       aria-label={t("Projects")}
       className={`bycoda-project-rail sidebar-glass relative shrink-0 flex-col border-r border-stroke pe-1.5 ${visible ? "flex" : "hidden"}`}
     >
-      <div
-        className="@container/rail flex h-10 shrink-0 select-none items-center overflow-hidden pr-1.5"
-        data-tauri-drag-region="deep"
-      >
-        {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
-        {IS_MAC ? null : brand}
-        <DevModeSlot fill={IS_MAC} />
-        {/* Icon-only, just the panel toggle fits; in settings nothing does. */}
+      {!navigator ? (
         <div
-          className={`shrink-0 ${
-            settingsOpen
-              ? "@max-[140px]/rail:hidden"
-              : "@max-[140px]/rail:[&_button:not(:last-child)]:hidden"
-          }`}
+          className="@container/rail flex h-10 shrink-0 select-none items-center overflow-hidden pr-1.5"
+          data-tauri-drag-region="deep"
         >
-          <TabVisitNav
-            canGoBack={canGoBack}
-            canGoForward={canGoForward}
-            onGoBack={onGoBack}
-            onGoForward={onGoForward}
-            onTogglePanel={settingsOpen ? undefined : onTogglePanel}
-            panelActive
-          />
+          {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
+          {IS_MAC ? null : brand}
+          <DevModeSlot fill={IS_MAC} />
+          {/* Icon-only, just the panel toggle fits; in settings nothing does. */}
+          <div
+            className={`shrink-0 ${
+              settingsOpen
+                ? "@max-[140px]/rail:hidden"
+                : "@max-[140px]/rail:[&_button:not(:last-child)]:hidden"
+            }`}
+          >
+            <TabVisitNav
+              canGoBack={canGoBack}
+              canGoForward={canGoForward}
+              onGoBack={onGoBack}
+              onGoForward={onGoForward}
+              onTogglePanel={settingsOpen ? undefined : onTogglePanel}
+              panelActive
+            />
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="@container/rail flex min-h-0 flex-1 flex-col">
-        {IS_MAC ? brand : null}
-        {settingsOpen ? (
+        {IS_MAC && !navigator ? brand : null}
+        {settingsOpen && !navigator ? (
           <Button
             variant="ghost"
             motion="none"
@@ -849,208 +857,218 @@ export function ProjectRail({
           </Button>
         ) : (
           <>
-            <nav
-              aria-label={t("Workspace tools")}
-              className="bycoda-rail-tools bycoda-rail-tools--expanding shrink-0"
-            >
-              <ExpandingButtonGroup
-                label={t("Workspace tools")}
-                size="sm"
-                fit
-                fullWidth
-                defaultExpanded={
-                  serversActive
-                    ? "servers"
-                    : inboxActive
-                      ? "inbox"
-                      : notesActive
-                        ? "notes"
-                        : automationsActive
-                          ? "automations"
-                          : socialActive
-                            ? "social"
-                            : tasksActive
-                              ? "tasks"
-                              : null
-                }
-                items={[
-                  {
-                    id: "servers",
-                    label: t("Servers"),
-                    icon: <Server />,
-                    active: serversActive,
-                    onSelect: onOpenServers,
-                    disabled: !onOpenServers,
-                  },
-                  ...(workspaceFeatures.inbox || inboxActive
-                    ? [
-                        {
-                          id: "inbox",
-                          label: t("Inbox"),
-                          active: inboxActive,
-                          shortcut: inboxShortcut,
-                          ariaLabel: inboxUnseen ? `${t("Inbox")}, ${t("New items")}` : t("Inbox"),
-                          icon: (
-                            <span className="relative">
-                              <Inbox />
-                              {inboxUnseen ? (
-                                <span
-                                  aria-hidden
-                                  className="absolute size-1.5 rounded-full bg-accent [inset-inline-end:-3px] [inset-block-start:-2px]"
-                                />
-                              ) : null}
-                            </span>
-                          ),
-                          onSelect: onOpenInbox,
-                          disabled: !onOpenInbox,
-                          onOpenContextMenu: (x: number, y: number) => {
-                            menuTrigger.current =
-                              document.activeElement instanceof HTMLElement
-                                ? document.activeElement
-                                : null;
-                            projectMenu.close();
-                            setInboxMenu({ x, y });
-                          },
-                        },
-                      ]
-                    : []),
-                  ...(notesEnabled
-                    ? [
-                        {
-                          id: "notes",
-                          label: t("Notes"),
-                          icon: <StickyNote />,
-                          active: notesActive,
-                          shortcut: notesShortcut,
-                          onSelect: onOpenNotes,
-                          disabled: !onOpenNotes,
-                        },
-                      ]
-                    : []),
-                  ...(workspaceFeatures.automations || automationsActive
-                    ? [
-                        {
-                          id: "automations",
-                          label: t("Automations"),
-                          icon: <Zap />,
-                          active: automationsActive,
-                          shortcut: automationsShortcut,
-                          onSelect: onOpenAutomations,
-                          disabled: !onOpenAutomations,
-                        },
-                      ]
-                    : []),
-                  ...(workspaceFeatures.social || socialActive
-                    ? [
-                        {
-                          id: "social",
-                          label: t("Social Media"),
-                          icon: <Globe />,
-                          active: socialActive,
-                          onSelect: () => {
-                            window.dispatchEvent(
-                              new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }),
-                            );
-                          },
-                        },
-                      ]
-                    : []),
-                  ...(workspaceFeatures.tasks || tasksActive
-                    ? [
-                        {
-                          id: "tasks",
-                          label: t("Tasks"),
-                          icon: <DashboardSquare />,
-                          active: tasksActive,
-                          shortcut: tasksShortcut,
-                          onSelect: onOpenTasks,
-                          disabled: !onOpenTasks,
-                        },
-                      ]
-                    : []),
-                  {
-                    id: "settings",
-                    label: t("Settings"),
-                    icon: <Settings />,
-                    shortcut: settingsShortcut,
-                    onSelect: onOpenSettings,
-                    disabled: !onOpenSettings,
-                  },
-                ]}
-              />
-            </nav>
-            <nav
-              aria-label={t("Workspace tools")}
-              className="bycoda-rail-tools bycoda-rail-tools--compact shrink-0"
-            >
-              <RailAction
-                label={t("Servers")}
-                icon={Server}
-                onClick={onOpenServers}
-                active={serversActive}
-                ariaLabel={t("Servers")}
-              />
-              <WorkspaceFeatureGate id="inbox" active={inboxActive}>
-                <RailAction
-                  label={t("Inbox")}
-                  icon={Inbox}
-                  onClick={onOpenInbox}
-                  onOpenContextMenu={(x, y) => {
-                    menuTrigger.current =
-                      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-                    projectMenu.close();
-                    setInboxMenu({ x, y });
-                  }}
-                  active={inboxActive}
-                  dot={inboxUnseen}
-                  ariaLabel={inboxUnseen ? "Inbox, new items" : "Inbox"}
-                />
-              </WorkspaceFeatureGate>
-              {notesEnabled ? (
-                <RailAction
-                  label={t("Notes")}
-                  icon={StickyNote}
-                  onClick={onOpenNotes}
-                  active={notesActive}
-                  ariaLabel="Notes"
-                />
-              ) : null}
-              <WorkspaceFeatureGate id="automations" active={automationsActive}>
-                <RailAction
-                  label={t("Automations")}
-                  icon={Zap}
-                  onClick={onOpenAutomations}
-                  active={automationsActive}
-                  ariaLabel="Automations"
-                />
-              </WorkspaceFeatureGate>
-              <WorkspaceFeatureGate id="social" active={socialActive}>
-                <RailAction
-                  label={t("Social Media")}
-                  icon={Globe}
-                  onClick={() =>
-                    window.dispatchEvent(new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }))
-                  }
-                  active={socialActive}
-                  ariaLabel={t("Social Media")}
-                />
-              </WorkspaceFeatureGate>
-              <WorkspaceFeatureGate id="tasks" active={tasksActive}>
-                <RailAction
-                  label={t("Tasks")}
-                  icon={DashboardSquare}
-                  onClick={onOpenTasks}
-                  active={tasksActive}
-                  ariaLabel="Tasks"
-                />
-              </WorkspaceFeatureGate>
-              <RailAction
-                label={t("Settings")}
-                icon={Settings}
-                onClick={onOpenSettings}
-                command="App: Settings"
-              />
-            </nav>
+            {!navigator ? (
+              <>
+                <nav
+                  aria-label={t("Workspace tools")}
+                  className="bycoda-rail-tools bycoda-rail-tools--expanding shrink-0"
+                >
+                  <ExpandingButtonGroup
+                    label={t("Workspace tools")}
+                    size="sm"
+                    fit
+                    fullWidth
+                    defaultExpanded={
+                      serversActive
+                        ? "servers"
+                        : inboxActive
+                          ? "inbox"
+                          : notesActive
+                            ? "notes"
+                            : automationsActive
+                              ? "automations"
+                              : socialActive
+                                ? "social"
+                                : tasksActive
+                                  ? "tasks"
+                                  : null
+                    }
+                    items={[
+                      {
+                        id: "servers",
+                        label: t("Servers"),
+                        icon: <Server />,
+                        active: serversActive,
+                        onSelect: onOpenServers,
+                        disabled: !onOpenServers,
+                      },
+                      ...(workspaceFeatures.inbox || inboxActive
+                        ? [
+                            {
+                              id: "inbox",
+                              label: t("Inbox"),
+                              active: inboxActive,
+                              shortcut: inboxShortcut,
+                              ariaLabel: inboxUnseen
+                                ? `${t("Inbox")}, ${t("New items")}`
+                                : t("Inbox"),
+                              icon: (
+                                <span className="relative">
+                                  <Inbox />
+                                  {inboxUnseen ? (
+                                    <span
+                                      aria-hidden
+                                      className="absolute size-1.5 rounded-full bg-accent [inset-inline-end:-3px] [inset-block-start:-2px]"
+                                    />
+                                  ) : null}
+                                </span>
+                              ),
+                              onSelect: onOpenInbox,
+                              disabled: !onOpenInbox,
+                              onOpenContextMenu: (x: number, y: number) => {
+                                menuTrigger.current =
+                                  document.activeElement instanceof HTMLElement
+                                    ? document.activeElement
+                                    : null;
+                                projectMenu.close();
+                                setInboxMenu({ x, y });
+                              },
+                            },
+                          ]
+                        : []),
+                      ...(notesEnabled
+                        ? [
+                            {
+                              id: "notes",
+                              label: t("Notes"),
+                              icon: <StickyNote />,
+                              active: notesActive,
+                              shortcut: notesShortcut,
+                              onSelect: onOpenNotes,
+                              disabled: !onOpenNotes,
+                            },
+                          ]
+                        : []),
+                      ...(workspaceFeatures.automations || automationsActive
+                        ? [
+                            {
+                              id: "automations",
+                              label: t("Automations"),
+                              icon: <Zap />,
+                              active: automationsActive,
+                              shortcut: automationsShortcut,
+                              onSelect: onOpenAutomations,
+                              disabled: !onOpenAutomations,
+                            },
+                          ]
+                        : []),
+                      ...(workspaceFeatures.social || socialActive
+                        ? [
+                            {
+                              id: "social",
+                              label: t("Social Media"),
+                              icon: <Globe />,
+                              active: socialActive,
+                              onSelect: () => {
+                                window.dispatchEvent(
+                                  new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }),
+                                );
+                              },
+                            },
+                          ]
+                        : []),
+                      ...(workspaceFeatures.tasks || tasksActive
+                        ? [
+                            {
+                              id: "tasks",
+                              label: t("Tasks"),
+                              icon: <DashboardSquare />,
+                              active: tasksActive,
+                              shortcut: tasksShortcut,
+                              onSelect: onOpenTasks,
+                              disabled: !onOpenTasks,
+                            },
+                          ]
+                        : []),
+                      {
+                        id: "settings",
+                        label: t("Settings"),
+                        icon: <Settings />,
+                        shortcut: settingsShortcut,
+                        onSelect: onOpenSettings,
+                        disabled: !onOpenSettings,
+                      },
+                    ]}
+                  />
+                </nav>
+                <nav
+                  aria-label={t("Workspace tools")}
+                  className="bycoda-rail-tools bycoda-rail-tools--compact shrink-0"
+                >
+                  <RailAction
+                    label={t("Servers")}
+                    icon={Server}
+                    onClick={onOpenServers}
+                    active={serversActive}
+                    ariaLabel={t("Servers")}
+                  />
+                  <WorkspaceFeatureGate id="inbox" active={inboxActive}>
+                    <RailAction
+                      label={t("Inbox")}
+                      icon={Inbox}
+                      onClick={onOpenInbox}
+                      onOpenContextMenu={(x, y) => {
+                        menuTrigger.current =
+                          document.activeElement instanceof HTMLElement
+                            ? document.activeElement
+                            : null;
+                        projectMenu.close();
+                        setInboxMenu({ x, y });
+                      }}
+                      active={inboxActive}
+                      dot={inboxUnseen}
+                      ariaLabel={inboxUnseen ? "Inbox, new items" : "Inbox"}
+                    />
+                  </WorkspaceFeatureGate>
+                  {notesEnabled ? (
+                    <RailAction
+                      label={t("Notes")}
+                      icon={StickyNote}
+                      onClick={onOpenNotes}
+                      active={notesActive}
+                      ariaLabel="Notes"
+                    />
+                  ) : null}
+                  <WorkspaceFeatureGate id="automations" active={automationsActive}>
+                    <RailAction
+                      label={t("Automations")}
+                      icon={Zap}
+                      onClick={onOpenAutomations}
+                      active={automationsActive}
+                      ariaLabel="Automations"
+                    />
+                  </WorkspaceFeatureGate>
+                  <WorkspaceFeatureGate id="social" active={socialActive}>
+                    <RailAction
+                      label={t("Social Media")}
+                      icon={Globe}
+                      onClick={() =>
+                        window.dispatchEvent(
+                          new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }),
+                        )
+                      }
+                      active={socialActive}
+                      ariaLabel={t("Social Media")}
+                    />
+                  </WorkspaceFeatureGate>
+                  <WorkspaceFeatureGate id="tasks" active={tasksActive}>
+                    <RailAction
+                      label={t("Tasks")}
+                      icon={DashboardSquare}
+                      onClick={onOpenTasks}
+                      active={tasksActive}
+                      ariaLabel="Tasks"
+                    />
+                  </WorkspaceFeatureGate>
+                  <RailAction
+                    label={t("Settings")}
+                    icon={Settings}
+                    onClick={onOpenSettings}
+                    command="App: Settings"
+                  />
+                </nav>
+              </>
+            ) : null}
             <div className="bycoda-rail-status shrink-0">
               {recoveryControl}
               <div className="shrink-0 @max-[140px]/rail:hidden">
@@ -1113,22 +1131,26 @@ export function ProjectRail({
                 ))}
               </div>
             </ProjectMultiSelect>
-            <div className="shrink-0 px-2 @max-[140px]/rail:hidden">
-              <SidebarUpdateFooter
-                noticesOnly
-                update={updateNotice}
-                onOpenWhatsNew={onOpenWhatsNew}
-                onDismissUpdate={onDismissUpdate}
-              />
-            </div>
-            <div className="flex shrink-0 flex-col gap-px p-2">
-              <div className="@max-[140px]/rail:hidden">
-                <GithubStarPrompt />
-              </div>
-              <div className="flex items-center gap-1 @max-[140px]/rail:flex-col">
-                <SidebarUpdateFooter />
-              </div>
-            </div>
+            {!navigator ? (
+              <>
+                <div className="shrink-0 px-2 @max-[140px]/rail:hidden">
+                  <SidebarUpdateFooter
+                    noticesOnly
+                    update={updateNotice}
+                    onOpenWhatsNew={onOpenWhatsNew}
+                    onDismissUpdate={onDismissUpdate}
+                  />
+                </div>
+                <div className="flex shrink-0 flex-col gap-px p-2">
+                  <div className="@max-[140px]/rail:hidden">
+                    <GithubStarPrompt />
+                  </div>
+                  <div className="flex items-center gap-1 @max-[140px]/rail:flex-col">
+                    <SidebarUpdateFooter />
+                  </div>
+                </div>
+              </>
+            ) : null}
           </>
         )}
       </div>
@@ -1145,15 +1167,17 @@ export function ProjectRail({
           }}
         />
       ) : null}
-      <div
-        {...resize.separatorProps}
-        aria-label={t("Resize project sidebar")}
-        className={`absolute inset-y-0 end-0 z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-content/15" : "hover:bg-(--ui-surface-hover)"
-        }`}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
-      />
+      {resizable && !navigator ? (
+        <div
+          {...resize.separatorProps}
+          aria-label={t("Resize project sidebar")}
+          className={`absolute inset-y-0 end-0 z-10 w-1.5 cursor-col-resize touch-none ${
+            resize.dragging ? "bg-content/15" : "hover:bg-(--ui-surface-hover)"
+          }`}
+          onPointerDown={resize.onPointerDown}
+          onDoubleClick={resize.onDoubleClick}
+        />
+      ) : null}
     </nav>
   );
 }

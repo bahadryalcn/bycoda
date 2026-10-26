@@ -413,6 +413,16 @@ fn grants() -> &'static Mutex<HashMap<String, Value>> {
     GRANTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub(crate) fn clear_grants(session: Option<&str>) {
+    if let Ok(mut map) = grants().lock() {
+        if let Some(session) = session {
+            map.remove(session);
+        } else {
+            map.clear();
+        }
+    }
+}
+
 pub fn authorize_acp_frame(session_id: &str, line: String) -> String {
     let grant = grants()
         .lock()
@@ -475,28 +485,6 @@ fn decorate_frame(line: String, grant: &Value) -> String {
     request.to_string()
 }
 
-pub fn redact_lines(session_id: &str, lines: Vec<String>) -> Vec<String> {
-    let tokens = grants()
-        .lock()
-        .ok()
-        .and_then(|map| map.get(session_id).cloned())
-        .map(|grant| {
-            ["token", "appToken"]
-                .into_iter()
-                .filter_map(|field| grant[field].as_str().map(str::to_owned))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    lines
-        .into_iter()
-        .map(|line| {
-            tokens.iter().fold(line, |line, token| {
-                line.replace(token, "[conversation credential redacted]")
-            })
-        })
-        .collect()
-}
-
 #[tauri::command(async)]
 pub fn harness_conversation_tools_bridge(
     app: AppHandle,
@@ -507,13 +495,20 @@ pub fn harness_conversation_tools_bridge(
     }
     let value =
         crate::remote::local_conversation_rpc(&app, "conversation.bridge.describe", json!({}));
-    Ok(value.ok())
+    Ok(value.ok().map(|value| {
+        crate::session_tools_bridge::metadata(
+            value,
+            crate::session_tools_bridge::Group::Conversation,
+        )
+    }))
 }
 
-pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command) {
-    if let Ok(mut map) = grants().lock() {
-        map.remove(session_id);
-    }
+pub fn configure_child(
+    app: &AppHandle,
+    session_id: &str,
+    command: &mut Command,
+    stamp: (u64, u64),
+) {
     // Control already placed these in the child. Retain the local read fallback
     // even when this desktop session is not yet mirrored to the host.
     let mut fallback = json!({});
@@ -528,9 +523,7 @@ pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command)
         }
     }
     if fallback["appToken"].is_string() {
-        if let Ok(mut map) = grants().lock() {
-            map.insert(session_id.to_owned(), fallback.clone());
-        }
+        crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), fallback.clone());
     }
     let keys: Vec<String> = std::env::vars()
         .map(|(key, _)| key)
@@ -549,10 +542,19 @@ pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command)
         .filter(|(_, suffix)| !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()))
         .map(|(id, _)| id)
         .unwrap_or(session_id);
-    let Ok(mut grant) = crate::remote::local_conversation_rpc(
+    let Ok(grant) = crate::remote::local_conversation_rpc(
         app,
         "conversation.access.issue",
         json!({"sessionId": primary}),
+    ) else {
+        return;
+    };
+    let Ok(mut grant) = crate::session_tools_bridge::register(
+        app,
+        session_id,
+        stamp,
+        crate::session_tools_bridge::Group::Conversation,
+        grant,
     ) else {
         return;
     };
@@ -572,9 +574,7 @@ pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command)
             grant[field] = fallback[field].clone();
         }
     }
-    if let Ok(mut map) = grants().lock() {
-        map.insert(session_id.to_owned(), grant);
-    }
+    crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
 }
 
 #[cfg(test)]

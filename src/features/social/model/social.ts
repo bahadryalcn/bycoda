@@ -48,7 +48,7 @@ export const SOCIAL_PLATFORM_NAMES: Record<SocialPlatform, string> = {
   whatsapp: "WhatsApp",
   telegram: "Telegram",
 };
-export const SOCIAL_ACCOUNT_TYPES = {
+export const SOCIAL_API_ACCOUNT_TYPES = {
   x: ["member"],
   instagram: ["professional"],
   facebook: ["page"],
@@ -57,9 +57,29 @@ export const SOCIAL_ACCOUNT_TYPES = {
   tiktok: ["member"],
   snapchat: ["public_profile"],
   whatsapp: ["business"],
-  telegram: ["bot"],
+  telegram: ["bot", "channel"],
 } as const satisfies Record<SocialPlatform, readonly string[]>;
-export const PROFILE_ONLY_PLATFORMS: readonly SocialPlatform[] = ["snapchat"];
+export const SOCIAL_BROWSER_ACCOUNT_TYPES = {
+  x: ["member"],
+  instagram: ["member", "professional"],
+  facebook: ["member", "page"],
+  linkedin: ["member", "organization"],
+  youtube: ["channel"],
+  tiktok: ["member"],
+  snapchat: ["member", "public_profile"],
+  whatsapp: ["member"],
+  telegram: ["member"],
+} as const satisfies Record<SocialPlatform, readonly string[]>;
+/** Browser sessions can represent personal accounts independently of bot/business API identities. */
+export const SOCIAL_ACCOUNT_TYPES = {
+  ...SOCIAL_API_ACCOUNT_TYPES,
+  instagram: ["professional", "member"],
+  facebook: ["page", "member"],
+  snapchat: ["public_profile", "member"],
+  whatsapp: ["business", "member"],
+  telegram: ["bot", "member", "channel"],
+} as const satisfies Record<SocialPlatform, readonly string[]>;
+export const PROFILE_ONLY_PLATFORMS: readonly SocialPlatform[] = [];
 export const TOKEN_PLATFORMS: readonly SocialPlatform[] = ["whatsapp", "telegram"];
 export type SocialPermission = "read" | "draft" | "publish" | "reply" | "message" | "comment";
 export type SocialOperation =
@@ -85,6 +105,10 @@ export type SocialAccount = {
   id: string;
   platform: SocialPlatform;
   platformId: string;
+  /** Telegram channel asset only: immutable credential actor, separate from its channel ID. */
+  telegramBotId?: string;
+  /** Last verified Instagram Login account type; informational, never a fresh capability grant. */
+  instagramAccountType?: "BUSINESS" | "MEDIA_CREATOR" | "CREATOR";
   name: string;
   accountType:
     | "member"
@@ -99,12 +123,22 @@ export type SocialAccount = {
   accessApproved: boolean;
   expiresAt?: number;
   connected: boolean;
-  /** Undefined means OAuth. Browser is X only; token uses host-configured bot/business credentials. */
+  /** Undefined means OAuth. Browser uses the executor's isolated web profile; token uses host-configured bot/business credentials. */
   connection?: "oauth" | "browser" | "token";
   paused: boolean;
   executorId: string;
   grants: Record<string, SocialPermission[]>;
   createdAt: number;
+};
+/** Owner review of an existing channel and bot; never contains tokens or invite links. */
+export type SocialTelegramChannelReview = {
+  reviewId: string;
+  expiresAt: number;
+  channelId: string;
+  channelName: string;
+  username?: string;
+  botId: string;
+  botName: string;
 };
 export type PublicFact = {
   id: string;
@@ -120,10 +154,11 @@ export type SocialProjectProfile = {
   facts: PublicFact[];
 };
 export type SocialMedia = {
-  kind: "image" | "video";
+  kind: "image" | "video" | "document";
   url?: string;
   uploadId?: string;
   alt?: string;
+  title?: string;
 };
 export type CampaignVariant = {
   accountId: string;
@@ -134,6 +169,23 @@ export type CampaignVariant = {
   factIds: string[];
   youtube?: YouTubeVideoOptions;
   tiktok?: TikTokVideoOptions;
+  snapchat?: SnapchatPublishOptions;
+  facebook?: FacebookReelOptions;
+};
+/** Explicit Reel destination; omission preserves ordinary Page feed publishing. */
+export type FacebookReelOptions = {
+  target: "reel";
+  durationSeconds: number;
+  width: number;
+  height: number;
+  frameRate: number;
+};
+export type SnapchatPublishOptions = {
+  target: "spotlight" | "story";
+  locale?: string;
+  durationSeconds: number;
+  width: number;
+  height: number;
 };
 export type TikTokCreatorInfo = {
   nickname: string;
@@ -144,6 +196,10 @@ export type TikTokCreatorInfo = {
   maxDurationSeconds: number;
 };
 export type TikTokVideoOptions = {
+  mediaType?: "video" | "photo";
+  photoTitle?: string;
+  photoCoverIndex?: number;
+  autoAddMusic?: boolean;
   privacy: string;
   durationSeconds: number;
   allowComment: boolean;
@@ -319,6 +375,8 @@ export type SocialJob = {
     objectPostId?: string;
     youtube?: YouTubeVideoOptions;
     tiktok?: TikTokVideoOptions;
+    snapchat?: SnapchatPublishOptions;
+    facebook?: FacebookReelOptions;
   };
   contactId?: string;
   status: "queued" | "running" | "succeeded" | "failed" | "review" | "cancelled";
@@ -329,12 +387,48 @@ export type SocialJob = {
   platformId?: string;
   url?: string;
   visibility?: "private" | "unlisted" | "public";
+  /** Provider receipt state is separate from dispatch acceptance; failure never schedules another send. */
+  delivery?: {
+    status: "accepted" | "sent" | "delivered" | "read" | "failed";
+    at: number;
+    code?: number;
+  };
   createdAt: number;
   actorId: string;
   preparation?: {
     containerId?: string;
     mediaIds?: string[];
+    /** Meta preparation is bound to the exact actor/content and expires with its containers. */
+    metaMedia?: {
+      platform: "instagram" | "facebook";
+      actorId: string;
+      signature: string;
+      startedAt: number;
+      publishedId?: string;
+    };
+    facebookReel?: {
+      actorId: string;
+      signature: string;
+      videoId: string;
+      stage: "created" | "uploading" | "uploaded" | "submitted";
+      createdAt: number;
+    };
+    linkedinMedia?: {
+      actorId: string;
+      signature: string;
+      images: { uploadId: string; id: string; status: "registered" | "uploaded" | "ready" }[];
+      publishedId?: string;
+    };
+    snapchatMedia?: {
+      actorId: string;
+      signature: string;
+      mediaId: string;
+      createdAt: number;
+      spotlightId?: string;
+    };
     tiktokPublishId?: string;
+    youtubeVideoId?: string;
+    youtubeVisibility?: "private" | "unlisted" | "public";
     xVideo?: { id: string; expiresAt: number };
     /** Descriptions confirmed by X for uploaded media, retained across retries. */
     xAltText?: Record<string, string>;

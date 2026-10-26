@@ -221,7 +221,10 @@ function host(
   return requests;
 }
 
-async function render(onOpenBackgroundSession = vi.fn()) {
+async function render(
+  onOpenBackgroundSession = vi.fn(),
+  section: "backlog" | "sprints" = "sprints",
+) {
   await act(async () =>
     root.render(
       createElement(TasksView, {
@@ -233,6 +236,9 @@ async function render(onOpenBackgroundSession = vi.fn()) {
     ),
   );
   await act(async () => {});
+  if (section === "sprints") await act(async () => button(container, "Sprints")?.click());
+  const goals = container.querySelector<HTMLDetailsElement>(".task-goals-disclosure");
+  if (goals) goals.open = true;
 }
 
 const column = (status: string) =>
@@ -248,6 +254,14 @@ const button = (scope: ParentNode, label: string) =>
   Array.from(scope.querySelectorAll("button")).find(
     (entry) => buttonName(entry) === label || buttonText(entry) === label,
   );
+async function allProjects() {
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('header.task-board-toolbar button[aria-label^="Project:"]')!
+      .click(),
+  );
+  await act(async () => button(document.body, "All projects")!.click());
+}
 async function pickAction(scope: ParentNode, label: string) {
   const direct = button(scope, label);
   if (direct) {
@@ -337,6 +351,50 @@ it("opens task and goal creation in dialogs with workspace and start choices", a
   await act(async () => button(dialog, "Cancel")!.click());
   await act(async () => button(container, "New task")!.click());
   expect(document.querySelector('[role="dialog"] form[aria-label="New task"]')).toBeTruthy();
+});
+
+it("starts in the open project's backlog and creates in the explicitly selected project", async () => {
+  host([
+    task({ id: "a", title: "Project A work", status: "todo" }),
+    task({ id: "b", projectId: "project-2", title: "Project B work", status: "todo" }),
+  ]);
+  const original = invoke.getMockImplementation()!;
+  const saved: any[] = [];
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "remote_request" && args.method === "projects.list")
+      return [
+        { id: "project-1", cwd: "/work/project", name: "project" },
+        { id: "project-2", cwd: "/work/other", name: "other" },
+      ];
+    if (command === "remote_request" && args.method === "tasks.save") {
+      saved.push(args.params.task);
+      return task(args.params.task);
+    }
+    return original(command, args);
+  });
+  await render(undefined, "backlog");
+  const list = () => container.querySelector('[aria-label="Tasks"].task-management-list');
+  expect(list()?.textContent).toContain("Project A work");
+  expect(list()?.textContent).not.toContain("Project B work");
+  await allProjects();
+  expect(list()?.textContent).toContain("Project B work");
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('header.task-board-toolbar button[aria-label^="Project:"]')!
+      .click(),
+  );
+  const choice = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
+    (option) => option.textContent?.includes("other ·"),
+  )!;
+  await act(async () => choice.click());
+  expect(list()?.textContent).not.toContain("Project A work");
+  expect(list()?.textContent).toContain("Project B work");
+  await act(async () => button(container, "New task")!.click());
+  const form = document.querySelector('form[aria-label="New task"]')!;
+  await act(async () => type(form.querySelector('input[aria-label="Task title"]')!, "New B work"));
+  await act(async () => button(form, "Add to To do")!.click());
+  expect(saved).toHaveLength(1);
+  expect(saved[0].projectId).toBe("project-2");
 });
 
 it("starts a queued task explicitly on its own host", async () => {
@@ -550,7 +608,7 @@ it("shows pending and genuinely empty task board states", async () => {
   });
   await act(async () => {});
   expect(container.querySelector('[data-remote-data-state="empty"]')).toBeTruthy();
-  expect(container.querySelectorAll("[data-task-column]")).toHaveLength(6);
+  expect(container.querySelectorAll("[data-task-column]")).toHaveLength(0);
   expect(container.querySelectorAll(".task-column-empty")).toHaveLength(0);
   expect(container.textContent?.match(/Nothing to do yet/g)).toHaveLength(1);
 });
@@ -634,6 +692,8 @@ it.each(["environment.describe", "goals.list"])(
       );
     });
     await act(async () => {});
+    expect(card("Remote task")).toBeNull();
+    await allProjects();
     expect(card("Remote task")).toBeTruthy();
     expect(container.querySelector('[data-remote-data-state="ready"]')).toBeTruthy();
   },
@@ -822,7 +882,7 @@ it("offers the branch, check and review options on a new task", async () => {
 });
 
 it.each(["local", "remote"])(
-  "defaults a task to this computer and routes an explicit %s choice",
+  "defaults a task in global scope to this computer and routes an explicit %s choice",
   async (destination) => {
     host([]);
     const original = invoke.getMockImplementation()!;
@@ -875,6 +935,7 @@ it.each(["local", "remote"])(
       ),
     );
     await act(async () => {});
+    await allProjects();
     await act(async () => button(container, "New task")!.click());
     const form = document.querySelector('form[aria-label="New task"]')!;
     expect(form.querySelector('[aria-label="Machine: This computer"]')).toBeTruthy();
@@ -913,7 +974,7 @@ it.each(["local", "remote"])(
   },
 );
 
-it("does not silently use a remote host when this computer is unavailable", async () => {
+it("does not silently use a remote host in global scope when this computer is unavailable", async () => {
   host([]);
   const original = invoke.getMockImplementation()!;
   invoke.mockImplementation(async (command: string, args?: any) => {
@@ -939,6 +1000,7 @@ it("does not silently use a remote host when this computer is unavailable", asyn
     ),
   );
   await act(async () => {});
+  await allProjects();
   await act(async () => button(container, "New task")!.click());
   const form = document.querySelector('form[aria-label="New task"]')!;
   expect(form.textContent).not.toContain("Runs on MacBook");
@@ -1000,6 +1062,7 @@ it.each(["local", "remote"])(
       ),
     );
     await act(async () => {});
+    await allProjects();
     await pickAction(container, "New goal");
     const form = document.querySelector('form[aria-label="New goal"]')!;
     expect(form.querySelector('[aria-label="Machine: This computer"]')).toBeTruthy();

@@ -29,6 +29,7 @@ import {
 import { TranscriptSelectionMenu } from "./TranscriptSelectionMenu";
 import { TranslationResultDialog } from "./TranslationResultDialog";
 import { registerBrowserComposer } from "../../host-tools/browserComposer";
+import { registerDeviceImageComposer } from "../../devices/deviceImageComposer";
 import { registerLogsComposer } from "../../host-tools/logsComposer";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -380,6 +381,7 @@ type Props = {
   onNoteCardDismiss?: () => void;
   onHandoffCardDismiss?: () => void;
   onQuestionReply?: (requestId: number, reply: UserQuestionReply) => void;
+  questionDraftScope?: string;
   onQuestionInteraction?: (requestId: number) => void;
   onSubmit: (
     text: string,
@@ -949,6 +951,7 @@ export const Composer = memo(function Composer({
   onNoteCardDismiss,
   onHandoffCardDismiss,
   onQuestionReply,
+  questionDraftScope,
   onQuestionInteraction,
   onSubmit,
   canSaveDraft = false,
@@ -1477,6 +1480,29 @@ export const Composer = memo(function Composer({
       return attachmentsRef.current.some((entry) => entry.id === file.id);
     });
   }, [cwd, sessionId, disabled, attachmentsSupported, addAttachments]);
+
+  useEffect(() => {
+    if (!sessionId || !cwd || disabled) return;
+    return registerDeviceImageComposer(cwd, sessionId, (file, context) => {
+      const el = ref.current;
+      const previous = attachmentsRef.current;
+      if (!el || !attachmentsSupported || previous.length >= MAX_ATTACHMENTS) return false;
+      const next = mergeAttachments(previous, [file]);
+      if (!next.some((entry) => entry.id === file.id)) return false;
+      const token = tokensForIncoming(previous, next.slice(previous.length)).trim();
+      const text = `${el.value}${el.value ? "\n\n" : ""}${token}\n${context}`;
+      // Accept the image and context in one synchronous draft edit. A refusal
+      // above leaves both the existing text and the attachment list untouched.
+      applyTextareaEdit(el, text, text.length);
+      attachmentsRef.current = next;
+      setAttachments(next);
+      setPasteError(null);
+      draftRevisionRef.current += 1;
+      syncHasValue(el.value, next);
+      el.focus();
+      return true;
+    });
+  }, [cwd, sessionId, disabled, attachmentsSupported, syncHasValue]);
 
   useEffect(() => {
     if (!sessionId || !cwd || disabled) return;
@@ -2872,6 +2898,7 @@ export const Composer = memo(function Composer({
       {question && onQuestionReply ? (
         <QuestionForm
           prompt={question}
+          draftScope={questionDraftScope ?? sessionId}
           onReply={onQuestionReply}
           onInteraction={onQuestionInteraction}
         />

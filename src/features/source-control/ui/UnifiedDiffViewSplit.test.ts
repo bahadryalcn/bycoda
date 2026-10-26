@@ -57,18 +57,26 @@ describe("UnifiedDiffView layouts", () => {
     await act(async () => root.render(createElement(UnifiedDiffView, { files: [file], ...props })));
   }
   const toggle = () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Side-by-side view"]')!;
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Diff view:"]')!;
+
+  async function chooseLayout(label: string) {
+    await act(async () => toggle().click());
+    const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (node) => node.textContent?.includes(label),
+    )!;
+    await act(async () => option.click());
+  }
 
   it("flips every diff through the shared toggle and preference", async () => {
     await render(model(lines("a", "b", "c"), lines("a", "B", "c")));
-    expect(toggle().getAttribute("aria-pressed")).toBe("false");
+    expect(toggle().textContent).toContain("Automatic");
     expect(localStorage.getItem("bycoda.diffLayout")).toBeNull();
 
-    await act(async () => toggle().click());
+    await chooseLayout("Side-by-side view");
     expect(localStorage.getItem("bycoda.diffLayout")).toBe("split");
-    expect(toggle().getAttribute("aria-pressed")).toBe("true");
+    expect(toggle().textContent).toContain("Side-by-side view");
 
-    await act(async () => toggle().click());
+    await chooseLayout("Inline");
     expect(localStorage.getItem("bycoda.diffLayout")).toBe("inline");
   });
 
@@ -89,6 +97,42 @@ describe("UnifiedDiffView layouts", () => {
       expect(side).toContain("a");
       expect(side).toContain("b");
     }
+  });
+
+  it("observes lazily loaded content and adapts without changing the saved layout", async () => {
+    const observers = new Map<Element, ResizeObserverCallback>();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(private callback: ResizeObserverCallback) {}
+        observe(target: Element) {
+          observers.set(target, this.callback);
+        }
+        unobserve(target: Element) {
+          observers.delete(target);
+        }
+        disconnect() {}
+      },
+    );
+    await act(async () => root.render(createElement(UnifiedDiffView, { files: [] })));
+    await render(model(lines("a", "old", "b"), lines("a", "new", "b")));
+    const surface = container.querySelector<HTMLElement>("[data-diff-layout]")!;
+    const resize = async (width: number) =>
+      act(async () => {
+        observers.get(surface)!(
+          [{ target: surface, contentRect: { width } } as ResizeObserverEntry],
+          {} as ResizeObserver,
+        );
+      });
+    await resize(900);
+    expect(surface.dataset.diffLayout).toBe("split");
+    expect(container.querySelectorAll(".overflow-x-auto.overscroll-x-none")).toHaveLength(2);
+    await resize(899);
+    expect(surface.dataset.diffLayout).toBe("inline");
+    expect(container.querySelectorAll(".overflow-x-auto.overscroll-x-none")).toHaveLength(1);
+    await resize(0);
+    expect(surface.dataset.diffLayout).toBe("inline");
+    expect(localStorage.getItem("bycoda.diffLayout")).toBeNull();
   });
 
   it("keeps one scroller in the inline layout", async () => {

@@ -138,6 +138,18 @@ describe("ActivityDock", () => {
     expect(live?.textContent).toBe("Needs your input");
   });
 
+  it("lets the visible question own its status without another waiting panel", () => {
+    render({ busy: true, pendingQuestion: true, questionPresented: true });
+    expect(dock()).toBeNull();
+    expect(container.querySelector("[aria-live='polite']")?.textContent).toBe("");
+  });
+
+  it("keeps agent activity available while a question form is visible", () => {
+    render({ busy: true, pendingQuestion: true, questionPresented: true, blocks: [user, agent] });
+    expect(dock()).not.toBeNull();
+    expect(container.querySelector("button[aria-expanded]")).not.toBeNull();
+  });
+
   it("lists agents behind a button and opens one on click", () => {
     const onOpenAgent = vi.fn();
     render({ busy: true, blocks: [user, agent], onOpenAgent });

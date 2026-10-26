@@ -4,9 +4,26 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SocialSnapshot } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
-import { JobHistory, SocialHistory } from "./SocialHistory";
+import { JobHistory, SocialHistory, socialJobExplanation } from "./SocialHistory";
+import type { SocialJob } from "../model/social";
 
 let container: HTMLDivElement, root: Root;
+it("distinguishes accepted messages, recipient delivery and accepted video processing", () => {
+  const accepted = { status: "succeeded", delivery: { status: "accepted", at: 1 } } as SocialJob;
+  expect(socialJobExplanation(accepted)).toContain("Delivery has not been confirmed");
+  expect(socialJobExplanation({ ...accepted, delivery: { status: "read", at: 2 } })).toContain(
+    "recipient read",
+  );
+  expect(socialJobExplanation({ ...accepted, delivery: { status: "failed", at: 2 } })).toContain(
+    "not be resent automatically",
+  );
+  expect(
+    socialJobExplanation({
+      status: "queued",
+      preparation: { youtubeVideoId: "accepted-video" },
+    } as SocialJob),
+  ).toContain("Publication is not yet confirmed");
+});
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");

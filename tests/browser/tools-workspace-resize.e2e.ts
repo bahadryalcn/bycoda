@@ -1,8 +1,11 @@
 import { test, expect } from "@playwright/test";
 
 test("resizes tool panels from their shared edge in all four placements", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/tests/browser/host-tools.html");
-  await page.getByRole("tab", { name: "Logs", exact: true }).click();
+  await page.addStyleTag({ content: "#root { height:100dvh; }" });
+  await page.getByRole("button", { name: "Conversation tool selection", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Logs", exact: true }).click();
   await page.getByRole("button", { name: "Panel placement", exact: true }).click();
   await page.getByRole("menuitem", { name: "Separate Logs panel", exact: true }).click();
   const dock = page.getByRole("complementary", { name: "Tool panels" });

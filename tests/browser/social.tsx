@@ -5,7 +5,23 @@ import { ToolPanel } from "../../src/app/shell/ToolNavigation";
 import { SocialView } from "../../src/features/social/ui/SocialView";
 import { XMediaFields } from "../../src/features/social/ui/XMediaFields";
 import type { SocialClient } from "../../src/features/social/model/socialClient";
-import type { SocialMedia } from "../../src/features/social/model/social";
+import type {
+  SocialMedia,
+  SocialTelegramChannelReview,
+} from "../../src/features/social/model/social";
+import type {
+  SocialRegistrationProfile,
+  SocialRegistrationProgress,
+  SocialRegistrationReview,
+} from "../../src/features/social/model/socialBrowser";
+import { accountCapabilities, X_BROWSER_SCOPES } from "../../src/integrations/social/capabilities";
+import { browserScopes } from "../../src/integrations/social/browserCapabilities";
+import { contentSupport } from "../../src/integrations/social/platformAdapters";
+import {
+  SOCIAL_ACCOUNT_TYPES,
+  SOCIAL_API_ACCOUNT_TYPES,
+  SOCIAL_BROWSER_ACCOUNT_TYPES,
+} from "../../src/features/social/model/social";
 import {
   SOCIAL_COLLECTIONS,
   type SocialCollection,
@@ -16,9 +32,30 @@ import {
 import "../../src/styles/index.css";
 import type { SocialProgram } from "../../src/features/social/model/socialProgram";
 const programFixture = new URLSearchParams(location.search).has("programs");
+const telegramChannelFixture = new URLSearchParams(location.search).has("telegram-channel");
 const programRecords: SocialProgram[] = [];
 const browserWorkflows: import("../../src/features/social/model/socialBrowser").SocialBrowserWorkflow[] =
   [];
+
+function fixtureRegistrationProgress(
+  platform: string,
+  profile: SocialRegistrationProfile,
+): SocialRegistrationProgress {
+  const fields: ("email" | "birthdate")[] =
+    platform === "tiktok" ? ["email", "birthdate"] : ["email"];
+  const missing = fields.filter((field) => !profile[field]);
+  return {
+    status: missing.length ? "needs_fields" : "awaiting_owner",
+    step: missing.length ? "profile" : "verification",
+    blockers: missing.length ? [] : ["verification"],
+    requiredFields: missing,
+    filledFields: fields.filter((field) => !!profile[field]),
+    canAdvance: false,
+    message: missing.length
+      ? "Provide the missing nonsecret owner registration fields."
+      : "This step requires a password, verification or agreement action in the platform window. Resume afterwards; registration remains unverified.",
+  };
+}
 
 // Deterministic host bridge: never reads live social accounts or sends content.
 const snapshot: SocialSnapshot = {
@@ -71,15 +108,154 @@ let heldAction: string | undefined;
 let releaseAction: ((reject: boolean) => void) | undefined;
 let configured = false;
 let oauthStatus = "idle";
+let browserWrites = false;
+const browserFlows: Record<string, { status: "waiting" | "connected"; expiresAt?: number }> = {};
+const mediaUploads = new Map<
+  string,
+  { kind: SocialMedia["kind"]; offset: number; base64?: string }
+>();
 let xProfileFixture = {
   name: "bycoda",
   bio: "Fixture bio",
   location: "",
   website: "https://example.test",
 };
+const pageProfileFixtures = new Map<string, typeof xProfileFixture>();
+const finalRegistrationReviews = new Map<string, SocialRegistrationReview>();
+const telegramChannelReviews = new Map<string, SocialTelegramChannelReview>();
+if (telegramChannelFixture) {
+  browserWrites = true;
+  configured = true;
+  snapshot.sendingEnabled = true;
+  snapshot.accounts = [
+    {
+      id: "telegram-channel",
+      platform: "telegram",
+      platformId: "",
+      name: "Fixture Telegram channel",
+      accountType: "channel",
+      connection: "token",
+      scopes: [],
+      connected: false,
+      accessApproved: false,
+      paused: false,
+      executorId: "fixture",
+      grants: { demo: ["read", "draft", "publish"] },
+      createdAt: 1,
+    },
+  ];
+  snapshot.capabilities = { "telegram-channel": accountCapabilities(snapshot.accounts[0]) };
+  snapshot.policies = { global: {}, platforms: {} };
+}
+if (new URLSearchParams(location.search).has("linkedin-final-review")) {
+  browserWrites = true;
+  snapshot.accounts = [
+    {
+      ...snapshot.accounts[0],
+      id: "linkedin-final",
+      platform: "linkedin",
+      name: "Fixture LinkedIn final Page",
+      accountType: "organization",
+      connection: "browser",
+      connected: false,
+      accessApproved: true,
+    },
+  ];
+  browserWorkflows.push({
+    id: "fixture-final-workflow",
+    accountId: "linkedin-final",
+    platform: "linkedin",
+    intent: "signup",
+    status: "awaiting_owner",
+    createdAt: 1,
+    updatedAt: 2,
+    expiresAt: Date.now() + 1200000,
+    outcome: "unverified",
+    registration: {
+      status: "awaiting_owner",
+      step: "terms",
+      blockers: ["terms"],
+      requiredFields: [],
+      filledFields: ["displayName", "username", "category"],
+      canAdvance: false,
+      message: "Review the observed final Page form before creating it.",
+    },
+  });
+}
+if (new URLSearchParams(location.search).has("instagram-profile")) {
+  browserWrites = true;
+  snapshot.accounts = ["one", "two"].map((suffix) => ({
+    ...snapshot.accounts[0],
+    id: `instagram-${suffix}`,
+    platform: "instagram",
+    platformId: `web:instagram:fixture_${suffix}`,
+    name: `Fixture Instagram ${suffix}`,
+    accountType: "member",
+    connection: "browser",
+    scopes: browserScopes("instagram"),
+    connected: true,
+    accessApproved: true,
+  }));
+  snapshot.accounts.forEach((account) => {
+    snapshot.capabilities[account.id] = accountCapabilities(account);
+    pageProfileFixtures.set(account.id, {
+      name: account.name,
+      bio: "Fixture Instagram bio",
+      location: "",
+      website: "",
+    });
+  });
+}
+if (new URLSearchParams(location.search).has("facebook-profile")) {
+  browserWrites = true;
+  snapshot.accounts = ["one", "two"].map((suffix) => ({
+    ...snapshot.accounts[0],
+    id: `facebook-page-${suffix}`,
+    platform: "facebook",
+    platformId: `web:facebook:${suffix === "one" ? "123" : "456"}`,
+    name: `Fixture Facebook Page ${suffix}`,
+    accountType: "page",
+    connection: "browser",
+    scopes: browserScopes("facebook"),
+    connected: true,
+    accessApproved: true,
+  }));
+  snapshot.accounts.forEach((account) => {
+    snapshot.capabilities[account.id] = accountCapabilities(account);
+    pageProfileFixtures.set(account.id, { name: account.name, bio: "", location: "", website: "" });
+  });
+}
+if (new URLSearchParams(location.search).has("linkedin-profile")) {
+  browserWrites = true;
+  snapshot.accounts = ["one", "two"].map((suffix) => ({
+    ...snapshot.accounts[0],
+    id: `linkedin-page-${suffix}`,
+    platform: "linkedin",
+    platformId: `web:linkedin:company:${suffix === "one" ? "123" : "456"}`,
+    name: `Fixture LinkedIn Page ${suffix}`,
+    accountType: "organization",
+    connection: "browser",
+    scopes: browserScopes("linkedin"),
+    connected: true,
+    accessApproved: true,
+  }));
+  snapshot.accounts.forEach((account) => {
+    snapshot.capabilities[account.id] = accountCapabilities(account);
+    pageProfileFixtures.set(account.id, {
+      name: account.name,
+      bio: "Fixture Page tagline",
+      location: "",
+      website: "",
+    });
+  });
+}
 if (new URLSearchParams(location.search).has("browser-monitor")) {
   snapshot.accounts[0].connected = true;
   snapshot.accounts[0].connection = "browser";
+  snapshot.accounts[0].accessApproved = true;
+  snapshot.accounts[0].platformId = "42";
+  snapshot.accounts[0].scopes = [...X_BROWSER_SCOPES];
+  snapshot.capabilities.x = accountCapabilities(snapshot.accounts[0]);
 }
 if (new URLSearchParams(location.search).has("tiktok")) {
   snapshot.accounts.push({
@@ -96,6 +272,9 @@ if (new URLSearchParams(location.search).has("tiktok")) {
     grants: { demo: ["read", "draft", "publish"] },
     createdAt: 1,
   });
+  snapshot.capabilities.tiktok = accountCapabilities(
+    snapshot.accounts[snapshot.accounts.length - 1],
+  );
 }
 let projects = [{ id: "demo", cwd: "/demo", name: "Demo project" }];
 let workflowWrites = false;
@@ -287,6 +466,298 @@ function fixtureWorkspace(input: SocialWorkspaceQuery): SocialWorkspaceResponse 
 }
 Object.assign(window, {
   socialFixtureCalls: calls,
+  socialFixtureState: () => structuredClone(snapshot),
+  socialFixtureWorkflowState: () => structuredClone(browserWorkflows),
+  socialFixtureChangeFinalRegistration: () => {
+    const workflow = browserWorkflows.find((item) => item.id === "fixture-final-workflow");
+    if (workflow) workflow.updatedAt++;
+  },
+  socialFixtureSeedRegistration: () => {
+    browserWrites = true;
+    browserWorkflows.splice(0);
+    snapshot.accounts = [
+      {
+        ...snapshot.accounts[0],
+        id: "registration-tiktok",
+        platform: "tiktok",
+        platformId: "",
+        name: "Fixture registration TikTok",
+        accountType: "member",
+        connection: "browser",
+        scopes: [],
+        connected: false,
+        accessApproved: false,
+      },
+      {
+        ...snapshot.accounts[0],
+        id: "existing-linkedin",
+        platform: "linkedin",
+        platformId: "web:linkedin:in:fixture-existing-member",
+        name: "Fixture already connected LinkedIn",
+        accountType: "member",
+        connection: "browser",
+        scopes: browserScopes("linkedin"),
+        connected: true,
+        accessApproved: true,
+      },
+    ] as SocialSnapshot["accounts"];
+    snapshot.capabilities = Object.fromEntries(
+      snapshot.accounts.map((account) => [account.id, accountCapabilities(account)]),
+    );
+  },
+  socialFixtureBrowserMode: () => {
+    browserWrites = true;
+  },
+  socialFixtureVerifyBrowser: (accountId: string) => {
+    if (browserFlows[accountId]?.status !== "waiting")
+      throw new Error("Fixture login is not awaiting owner verification.");
+    const account = snapshot.accounts.find((item) => item.id === accountId)!;
+    account.connected = true;
+    account.accessApproved = true;
+    account.connection = "browser";
+    account.platformId = `web:${account.platform}:${account.platform === "telegram" ? "+905551234567" : "bycoda"}`;
+    account.scopes =
+      account.platform === "x" ? [...X_BROWSER_SCOPES] : browserScopes(account.platform);
+    snapshot.capabilities[accountId] = accountCapabilities(account);
+    browserFlows[accountId] = { status: "connected" };
+  },
+  socialFixtureSeedBrowser: () => {
+    browserWrites = true;
+    snapshot.sendingEnabled = true;
+    snapshot.accounts = (["instagram", "telegram"] as const).map<
+      SocialSnapshot["accounts"][number]
+    >((platform) => ({
+      id: platform,
+      platform,
+      platformId: `web:${platform}:${platform === "telegram" ? "+905551234567" : "bycoda"}`,
+      name: platform === "telegram" ? "Bycoda Telegram" : "Bycoda Instagram",
+      accountType: platform === "telegram" ? "member" : "professional",
+      scopes: browserScopes(platform),
+      connection: "browser",
+      connected: true,
+      accessApproved: true,
+      paused: false,
+      executorId: "fixture",
+      grants: { demo: ["read", "draft", "publish", "reply", "message", "comment"] },
+      createdAt: 1,
+    }));
+    snapshot.capabilities = Object.fromEntries(
+      snapshot.accounts.map((account) => [account.id, accountCapabilities(account)]),
+    );
+    snapshot.contacts = [
+      {
+        id: "browser-contact",
+        accountId: "telegram",
+        platformId: "123456789",
+        name: "Browser recipient",
+        source: "manual",
+        tags: [],
+        projectIds: ["demo"],
+        consent: { allowed: true, source: "Fixture owner", at: 1 },
+        replyEligible: true,
+        commentEligible: false,
+        optedOut: false,
+        history: [],
+      },
+    ];
+    snapshot.threads = [
+      {
+        id: "browser-thread",
+        accountId: "telegram",
+        platformThreadId: "123456789",
+        kind: "message",
+        projectId: "demo",
+        contactId: "browser-contact",
+        lastInboundAt: 1,
+        events: [
+          {
+            id: "browser-inbound",
+            platformId: "telegram:123456789:1",
+            text: "Browser message question",
+            at: 1,
+            direction: "inbound",
+          },
+        ],
+      },
+    ];
+    snapshot.drafts = [
+      {
+        id: "browser-draft",
+        accountId: "telegram",
+        projectId: "demo",
+        kind: "reply",
+        threadId: "browser-thread",
+        contactId: "browser-contact",
+        text: "Approved browser draft",
+        factIds: [],
+        media: [{ kind: "image", uploadId: "previous-image" }],
+        createdAt: 1,
+        approvedAt: 1,
+      },
+    ];
+    snapshot.campaigns = [];
+    snapshot.approvedCampaignIds = [];
+    snapshot.policies = { global: {}, platforms: {} };
+  },
+  // Explicit synthetic connected identities. This never reads or verifies a live account.
+  socialFixtureSeedMediaCompletion: () => {
+    browserWrites = true;
+    snapshot.sendingEnabled = false;
+    snapshot.accounts = [
+      {
+        ...snapshot.accounts[0],
+        id: "linkedin",
+        platform: "linkedin",
+        platformId: "web:linkedin:in:fixture-owner",
+        name: "Fixture LinkedIn",
+        accountType: "member",
+        connection: "browser",
+        scopes: browserScopes("linkedin"),
+      },
+      {
+        ...snapshot.accounts[0],
+        id: "tiktok",
+        platform: "tiktok",
+        platformId: "fixture-tiktok-creator",
+        name: "Fixture TikTok API",
+        accountType: "member",
+        connection: "oauth",
+        scopes: ["user.info.basic", "video.publish"],
+      },
+      {
+        ...snapshot.accounts[0],
+        id: "snapchat",
+        platform: "snapchat",
+        platformId: "web:snapchat:public_profile:fixture-bycoda",
+        name: "Fixture Snapchat",
+        accountType: "public_profile",
+        connection: "browser",
+        scopes: browserScopes("snapchat"),
+      },
+    ].map((account) => ({
+      ...account,
+      connected: true,
+      accessApproved: true,
+      paused: false,
+      executorId: "fixture",
+      grants: { demo: ["read", "draft", "publish"] },
+    })) as SocialSnapshot["accounts"];
+    snapshot.capabilities = Object.fromEntries(
+      snapshot.accounts.map((account) => [account.id, accountCapabilities(account)]),
+    );
+    snapshot.campaigns = [];
+    snapshot.jobs = [];
+    snapshot.approvedCampaignIds = [];
+    snapshot.policies = { global: {}, platforms: {} };
+  },
+  socialFixtureSeedApiMedia: () => {
+    browserWrites = true;
+    snapshot.sendingEnabled = false;
+    snapshot.accounts = (["instagram", "facebook", "whatsapp", "telegram"] as const).map(
+      (platform): SocialSnapshot["accounts"][number] => ({
+        id: platform,
+        platform,
+        platformId: platform === "telegram" ? "123456789" : "123456789012345",
+        name: `Fixture ${platform === "instagram" ? "Instagram" : platform === "facebook" ? "Facebook" : platform === "whatsapp" ? "WhatsApp" : "Telegram"} API`,
+        accountType:
+          platform === "instagram"
+            ? "professional"
+            : platform === "facebook"
+              ? "page"
+              : platform === "whatsapp"
+                ? "business"
+                : "bot",
+        connection: platform === "whatsapp" || platform === "telegram" ? "token" : "oauth",
+        scopes:
+          platform === "instagram"
+            ? ["instagram_business_basic", "instagram_business_content_publish"]
+            : platform === "facebook"
+              ? ["pages_manage_posts", "pages_read_engagement"]
+              : platform === "whatsapp"
+                ? ["whatsapp_business_messaging", "bycoda.webhook"]
+                : ["bot.send", "bot.poll"],
+        connected: true,
+        accessApproved: true,
+        paused: false,
+        executorId: "fixture",
+        grants: { demo: ["read", "draft", "publish", "reply", "message"] },
+        createdAt: 1,
+      }),
+    );
+    snapshot.accounts.push({
+      ...snapshot.accounts[0],
+      id: "linkedin",
+      platform: "linkedin",
+      platformId: "urn:li:organization:12345",
+      name: "Fixture LinkedIn API",
+      accountType: "organization",
+      connection: "oauth",
+      scopes: ["w_organization_social", "r_organization_social"],
+    });
+    snapshot.accounts.push({
+      ...snapshot.accounts[0],
+      id: "snapchat-api",
+      platform: "snapchat",
+      platformId: "11111111-2222-4333-8444-555555555555",
+      name: "Fixture Snapchat API",
+      accountType: "public_profile",
+      connection: "oauth",
+      scopes: ["snapchat-profile-api"],
+    });
+    snapshot.capabilities = Object.fromEntries(
+      snapshot.accounts.map((account) => [account.id, accountCapabilities(account)]),
+    );
+    snapshot.contacts = (["whatsapp", "telegram"] as const).map((platform) => ({
+      id: `${platform}-api-contact`,
+      accountId: platform,
+      platformId: platform === "whatsapp" ? "+905551234567" : "123456789",
+      name: `Fixture ${platform} recipient`,
+      source: "manual",
+      tags: [],
+      projectIds: ["demo"],
+      consent: { allowed: true, source: "Fixture owner", at: 1 },
+      replyEligible: true,
+      commentEligible: false,
+      optedOut: false,
+      history: [],
+    }));
+    snapshot.threads = (["whatsapp", "telegram"] as const).map((platform) => ({
+      id: `${platform}-api-thread`,
+      accountId: platform,
+      platformThreadId: platform === "whatsapp" ? "+905551234567" : "123456789",
+      kind: "message",
+      projectId: "demo",
+      contactId: `${platform}-api-contact`,
+      lastInboundAt: Date.now(),
+      replyUntil: Date.now() + 24 * 60 * 60_000,
+      events: [
+        {
+          id: `${platform}-api-inbound`,
+          platformId: `${platform}:inbound`,
+          text: `${platform} API media question`,
+          at: Date.now(),
+          direction: "inbound",
+        },
+      ],
+    }));
+    snapshot.drafts = (["whatsapp", "telegram"] as const).map((platform) => ({
+      id: `${platform}-api-draft`,
+      accountId: platform,
+      projectId: "demo",
+      kind: "reply",
+      threadId: `${platform}-api-thread`,
+      contactId: `${platform}-api-contact`,
+      text: `${platform} API approved reply`,
+      factIds: [],
+      media: [],
+      createdAt: 1,
+      approvedAt: 1,
+    }));
+    snapshot.campaigns = [];
+    snapshot.jobs = [];
+    snapshot.approvedCampaignIds = [];
+    snapshot.policies = { global: {}, platforms: {} };
+  },
   socialFixtureHold: (action: string) => {
     heldAction = action;
   },
@@ -313,23 +784,10 @@ Object.assign(window, {
   socialFixtureSeed: () => {
     snapshot.accounts[0].connected = true;
     snapshot.accounts[0].accessApproved = true;
+    snapshot.accounts[0].platformId = "42";
+    snapshot.accounts[0].scopes = [...X_BROWSER_SCOPES];
     snapshot.accounts[0].grants.demo = ["read", "draft", "publish", "reply", "message", "comment"];
-    snapshot.capabilities.x = [
-      "publish",
-      "reply",
-      "inbox.read",
-      "message.reply",
-      "message.start",
-      "comments.read",
-      "comment",
-      "poll",
-    ].map((operation) => ({
-      operation: operation as SocialSnapshot["capabilities"][string][number]["operation"],
-      status: "available",
-      reason: "Fixture access",
-      scopes: [],
-      source: "https://example.com",
-    }));
+    snapshot.capabilities.x = accountCapabilities(snapshot.accounts[0]);
     snapshot.contacts = [
       {
         id: "contact",
@@ -518,9 +976,142 @@ Object.assign(window, {
       if (command === "plugin:event|listen") return 1;
       if (command === "social_authority_status") return null;
       if (command === "remote_request") {
+        if (args.method === "social.token.inspect" && telegramChannelFixture) {
+          const input = args.params as { accountId: string; target: string };
+          if (
+            input.accountId !== "telegram-channel" ||
+            !["@bycodaofficial", "-1001234567890"].includes(input.target)
+          )
+            throw new Error("Fixture channel target did not match");
+          const review: SocialTelegramChannelReview = {
+            reviewId: `fixture-channel-review-${telegramChannelReviews.size + 1}`,
+            expiresAt: Date.now() + 120000,
+            channelId: "-1001234567890",
+            channelName: "Fixture Bycoda announcements",
+            username: "bycodaofficial",
+            botId: "123456789",
+            botName: "Fixture Bycoda publisher",
+          };
+          telegramChannelReviews.set(review.reviewId, review);
+          return structuredClone(review);
+        }
+        if (args.method === "social.token.connect" && telegramChannelFixture) {
+          const input = args.params as { accountId: string; reviewId: string },
+            review = telegramChannelReviews.get(input.reviewId);
+          if (input.accountId !== "telegram-channel" || !review || Date.now() >= review.expiresAt)
+            throw new Error("A current exact channel review is required");
+          telegramChannelReviews.delete(input.reviewId);
+          const account = snapshot.accounts.find((a) => a.id === input.accountId)!;
+          Object.assign(account, {
+            platformId: review.channelId,
+            telegramBotId: review.botId,
+            name: review.channelName,
+            scopes: ["channel.publish"],
+            connected: true,
+            accessApproved: true,
+          });
+          snapshot.capabilities[account.id] = accountCapabilities(account);
+          return structuredClone(account);
+        }
         if (args.method === "projects.list") return structuredClone(projects);
-        if (args.method === "social.browser.profile.read") return structuredClone(xProfileFixture);
+        if (args.method === "social.browser.availability")
+          return { available: true, reason: "Fixture Chrome only" };
+        if (args.method === "social.browser.begin") {
+          const input = args.params as { accountId: string; acknowledgeRisk: boolean };
+          if (
+            !input.acknowledgeRisk ||
+            !snapshot.accounts.some((account) => account.id === input.accountId)
+          )
+            throw new Error("Fixture browser acknowledgement/account required.");
+          browserFlows[input.accountId] = { status: "waiting", expiresAt: Date.now() + 600000 };
+          return structuredClone(browserFlows[input.accountId]);
+        }
+        if (args.method === "social.browser.status") {
+          const id = (args.params as { accountId: string }).accountId;
+          return structuredClone(
+            browserFlows[id] ?? {
+              status: snapshot.accounts.some(
+                (account) =>
+                  account.id === id && account.connection === "browser" && account.connected,
+              )
+                ? "connected"
+                : "idle",
+            },
+          );
+        }
+        if (args.method === "social.media.upload") {
+          const input = args.params as {
+            mode?: string;
+            kind?: "document";
+            uploadId?: string;
+            offset?: number;
+            base64?: string;
+          };
+          if (!browserWrites) throw new Error("Fixture browser media mode is required.");
+          if (!input.mode || input.mode === "begin") {
+            const kind = input.kind === "document" ? "document" : input.mode ? "video" : "image";
+            const bytes = atob(input.base64 ?? "");
+            if (kind === "document" && (!bytes.startsWith("%PDF-") || !/%%EOF\s*$/.test(bytes)))
+              throw new Error("Fixture owner PDF content is invalid.");
+            const uploadId = `fixture-${kind}-${mediaUploads.size + 1}`;
+            mediaUploads.set(uploadId, {
+              kind,
+              offset: 0,
+              ...(kind === "image" ? { base64: input.base64 } : {}),
+            });
+            return { uploadId };
+          }
+          const upload = mediaUploads.get(input.uploadId ?? "");
+          if (!upload) throw new Error("Fixture upload not found.");
+          if (input.mode === "chunk") {
+            if (input.offset !== upload.offset) throw new Error("Fixture upload order changed.");
+            upload.offset += atob(input.base64 ?? "").length;
+          }
+          if (input.mode === "cancel") mediaUploads.delete(input.uploadId!);
+          return { uploadId: input.uploadId, offset: upload.offset };
+        }
+        if (args.method === "social.browser.profile.read")
+          return structuredClone(
+            pageProfileFixtures.get((args.params as { accountId: string }).accountId) ??
+              xProfileFixture,
+          );
         if (args.method === "social.browser.profile.update") {
+          const input = args.params as {
+            accountId: string;
+            confirm: string;
+            patch: Record<string, string>;
+          };
+          const pageProfile = pageProfileFixtures.get(input.accountId);
+          if (pageProfile) {
+            const platform = snapshot.accounts.find(
+              (account) => account.id === input.accountId,
+            )?.platform;
+            const allowed =
+              platform === "facebook"
+                ? ["avatarUploadId"]
+                : platform === "instagram"
+                  ? ["bio", "avatarUploadId"]
+                  : ["name", "bio", "avatarUploadId"];
+            const confirmation =
+              platform === "facebook"
+                ? "UPDATE_FACEBOOK_PROFILE"
+                : platform === "instagram"
+                  ? "UPDATE_INSTAGRAM_PROFILE"
+                  : "UPDATE_LINKEDIN_PROFILE";
+            if (input.confirm !== confirmation)
+              throw new Error("Exact Page confirmation is required.");
+            if (Object.keys(input.patch).some((key) => !allowed.includes(key)))
+              throw new Error("Unsupported Page profile field.");
+            if (input.patch.avatarUploadId && !mediaUploads.has(input.patch.avatarUploadId))
+              throw new Error("Owner image upload is required.");
+            const updated = {
+              ...pageProfile,
+              ...(input.patch.name !== undefined ? { name: input.patch.name } : {}),
+              ...(input.patch.bio !== undefined ? { bio: input.patch.bio } : {}),
+            };
+            pageProfileFixtures.set(input.accountId, updated);
+            return structuredClone(updated);
+          }
           const patch = (args.params as { patch: Partial<typeof xProfileFixture> }).patch;
           xProfileFixture = { ...xProfileFixture, ...patch };
           return structuredClone(xProfileFixture);
@@ -532,6 +1123,32 @@ Object.assign(window, {
             following: true,
             changed: true,
           };
+        if (
+          args.method === "social.monitoring.status" &&
+          (args.params as { accountId: string }).accountId !== "x"
+        ) {
+          const id = (args.params as { accountId: string }).accountId;
+          const available = snapshot.capabilities[id] ?? [];
+          const coverage = [
+            ...(available.some(
+              (item) => item.operation === "comments.read" && item.status === "available",
+            )
+              ? [{ channel: "comments", status: "read" }]
+              : []),
+            ...(available.some(
+              (item) => item.operation === "inbox.read" && item.status === "available",
+            )
+              ? [{ channel: "messages", status: "read" }]
+              : []),
+          ];
+          return {
+            status: coverage.length ? "healthy" : "idle",
+            pollingEnabled: false,
+            accountActive: true,
+            checkedAt: Date.now(),
+            coverage,
+          };
+        }
         if (args.method === "social.monitoring.status")
           return {
             status: "partial",
@@ -553,12 +1170,127 @@ Object.assign(window, {
             ),
           };
         }
+        if (args.method === "social.browser.registration.review") {
+          const input = args.params as {
+            accountId: string;
+            workflowId: string;
+            expectedUpdatedAt: number;
+          };
+          const workflow = browserWorkflows.find(
+            (item) => item.id === input.workflowId && item.accountId === input.accountId,
+          );
+          if (
+            !workflow ||
+            workflow.updatedAt !== input.expectedUpdatedAt ||
+            workflow.registrationSubmission
+          )
+            throw new Error("Final registration changed or was already attempted.");
+          const observed: SocialRegistrationReview = {
+            reviewId: `review-${workflow.updatedAt}`,
+            workflowId: workflow.id,
+            accountId: workflow.accountId,
+            updatedAt: workflow.updatedAt,
+            expiresAt: Date.now() + 120000,
+            platform: "linkedin",
+            administrator: { id: "web:linkedin:in:fixture-admin", name: "Fixture Administrator" },
+            fields: {
+              displayName: "Bycoda",
+              username: "bycoda",
+              industry: "Software Development",
+              organizationSize: "0–1 employees",
+              organizationType: "Self-employed",
+            },
+            details: [
+              { label: "Page name", value: "Bycoda" },
+              { label: "Public username", value: "bycoda" },
+              { label: "Industry", value: "Software Development" },
+              { label: "Organization size", value: "0–1 employees" },
+              { label: "Organization type", value: "Self-employed" },
+            ],
+            terms: {
+              text: "I accept the LinkedIn Page Terms and confirm I am authorized to create this Page.",
+              url: "https://www.linkedin.com/legal/l/page-terms",
+            },
+            submitLabel: "Create observed Page",
+          };
+          finalRegistrationReviews.set(observed.reviewId, observed);
+          return structuredClone(observed);
+        }
+        if (args.method === "social.browser.registration.submit") {
+          const input = args.params as {
+            accountId: string;
+            workflowId: string;
+            expectedUpdatedAt: number;
+            reviewId: string;
+            confirm: string;
+          };
+          const workflow = browserWorkflows.find(
+            (item) => item.id === input.workflowId && item.accountId === input.accountId,
+          );
+          const observed = finalRegistrationReviews.get(input.reviewId);
+          if (
+            !workflow ||
+            !observed ||
+            workflow.updatedAt !== input.expectedUpdatedAt ||
+            observed.updatedAt !== workflow.updatedAt ||
+            observed.accountId !== input.accountId ||
+            input.confirm !== "CREATE_LINKEDIN_PAGE" ||
+            workflow.registrationSubmission
+          )
+            throw new Error("Exact current owner review is required.");
+          workflow.registrationSubmission = {
+            id: "fixture-attempt",
+            state: "unknown",
+            attemptedAt: Date.now(),
+            expectedResourceDigest: "a".repeat(64),
+          };
+          workflow.updatedAt++;
+          finalRegistrationReviews.delete(input.reviewId);
+          return structuredClone(workflow);
+        }
+        if (args.method === "social.browser.registration.reconcile") {
+          const input = args.params as {
+            accountId: string;
+            workflowId: string;
+            expectedUpdatedAt: number;
+            resourceId: string;
+          };
+          const workflow = browserWorkflows.find(
+            (item) => item.id === input.workflowId && item.accountId === input.accountId,
+          );
+          if (
+            !workflow ||
+            workflow.updatedAt !== input.expectedUpdatedAt ||
+            workflow.registrationSubmission?.state !== "unknown" ||
+            !workflow.registrationSubmission.expectedResourceDigest ||
+            input.resourceId !== "145372363"
+          )
+            throw new Error("Existing Page does not match the original reviewed resource.");
+          workflow.registrationSubmission = {
+            ...workflow.registrationSubmission,
+            state: "created",
+            resourceId: input.resourceId,
+            resourceUrl: `https://www.linkedin.com/company/${input.resourceId}/`,
+          };
+          workflow.updatedAt++;
+          return structuredClone(workflow);
+        }
         if (args.method === "social.browser.workflow.begin") {
           const input = args.params as {
             accountId: string;
             intent: import("../../src/features/social/model/socialBrowser").SocialBrowserIntent;
+            registration?: SocialRegistrationProfile;
           };
           const account = snapshot.accounts.find((item) => item.id === input.accountId)!;
+          if (input.intent === "signup" && account.connected)
+            throw new Error("Fixture account is already connected.");
+          if (
+            browserWorkflows.some(
+              (item) =>
+                item.accountId === account.id && ["queued", "awaiting_owner"].includes(item.status),
+            )
+          )
+            throw new Error("Fixture browser action is already active.");
           const workflow: import("../../src/features/social/model/socialBrowser").SocialBrowserWorkflow =
             {
               id: `workflow-${browserWorkflows.length}`,
@@ -570,8 +1302,36 @@ Object.assign(window, {
               createdAt: Date.now(),
               updatedAt: Date.now(),
               expiresAt: Date.now() + 1200000,
+              ...(input.intent === "signup" && input.registration
+                ? {
+                    registration: fixtureRegistrationProgress(account.platform, input.registration),
+                  }
+                : {}),
             };
           browserWorkflows.unshift(workflow);
+          return structuredClone(workflow);
+        }
+        if (args.method === "social.browser.registration.advance") {
+          const input = args.params as {
+            accountId: string;
+            workflowId: string;
+            expectedUpdatedAt: number;
+            registration: SocialRegistrationProfile;
+          };
+          const account = snapshot.accounts.find((item) => item.id === input.accountId)!;
+          const workflow = browserWorkflows.find(
+            (item) => item.accountId === input.accountId && item.id === input.workflowId,
+          );
+          if (
+            account.connected ||
+            !workflow ||
+            workflow.intent !== "signup" ||
+            workflow.status !== "awaiting_owner" ||
+            workflow.updatedAt !== input.expectedUpdatedAt
+          )
+            throw new Error("Fixture registration changed. Refresh its status.");
+          workflow.registration = fixtureRegistrationProgress(account.platform, input.registration);
+          workflow.updatedAt = Math.max(Date.now(), workflow.updatedAt + 1);
           return structuredClone(workflow);
         }
         if (args.method === "social.browser.workflow.cancel") {
@@ -582,7 +1342,17 @@ Object.assign(window, {
           return null;
         }
         if (args.method === "social.oauth.availability")
-          return { x: { configured, reason: "Fixture configuration" } };
+          return Object.fromEntries(
+            Object.keys(SOCIAL_ACCOUNT_TYPES).map((platform) => [
+              platform,
+              {
+                configured:
+                  (platform === "x" && configured) ||
+                  (platform === "telegram" && telegramChannelFixture),
+                reason: "Fixture configuration",
+              },
+            ]),
+          );
         if (args.method === "social.oauth.status") return { status: oauthStatus, candidates: [] };
         if (args.method === "social.tiktok.creator")
           return {
@@ -607,6 +1377,23 @@ Object.assign(window, {
               releaseAction = (fail) =>
                 fail ? reject(new Error("Fixture request rejected.")) : resolve();
             });
+          if (params.action === "programs.media-preview") {
+            const uploadId = String(params.input?.uploadId ?? "");
+            const upload = mediaUploads.get(uploadId);
+            if (!upload || upload.kind !== "image" || !upload.base64)
+              throw new Error("Fixture owner image upload not found.");
+            const bytes = atob(upload.base64);
+            if (bytes.length > 5 * 1024 * 1024)
+              throw new Error("Fixture image preview exceeds its bound.");
+            const mime =
+              bytes.charCodeAt(0) === 137 && bytes.charCodeAt(1) === 80
+                ? "image/png"
+                : bytes.charCodeAt(0) === 255 && bytes.charCodeAt(1) === 216
+                  ? "image/jpeg"
+                  : undefined;
+            if (!mime) throw new Error("Fixture image preview is unavailable.");
+            return { base64: upload.base64, mime };
+          }
           if (programFixture && params.action.startsWith("programs.")) {
             const input = params.input ?? {};
             if (params.action === "programs.list") return structuredClone(programRecords);
@@ -676,6 +1463,175 @@ Object.assign(window, {
           }
           if (params.action === "policy.get") return { effective: snapshot.policies?.global ?? {} };
           const input = params.input ?? {};
+          if (telegramChannelFixture && params.action === "campaigns.schedule") {
+            const campaign = snapshot.campaigns.find((c) => c.id === input.id);
+            if (
+              !campaign ||
+              !snapshot.sendingEnabled ||
+              snapshot.stopped ||
+              !snapshot.approvedCampaignIds?.includes(campaign.id)
+            )
+              throw new Error("Exact current campaign approval is required before queueing");
+            if (snapshot.jobs.some((job) => job.campaignId === campaign.id))
+              return structuredClone(snapshot.jobs.filter((job) => job.campaignId === campaign.id));
+            for (const variant of campaign.variants) {
+              const account = snapshot.accounts.find((a) => a.id === variant.accountId)!;
+              if (
+                !account.connected ||
+                account.accountType !== "channel" ||
+                account.platformId !== "-1001234567890" ||
+                account.telegramBotId !== "123456789"
+              )
+                throw new Error("Reviewed channel connection is required");
+              const issue = contentSupport(account, { kind: "publish", payload: variant });
+              if (issue) throw new Error(issue);
+              snapshot.jobs.push({
+                id: `fixture-channel-job-${snapshot.jobs.length}`,
+                operationId: `fixture-channel-operation-${campaign.id}`,
+                dedupeKey: `fixture-channel-${campaign.id}-${campaign.revision}`,
+                accountId: account.id,
+                campaignId: campaign.id,
+                projectIds: campaign.projectIds,
+                provider: "owner",
+                actorId: "owner",
+                kind: "publish",
+                payload: {
+                  text: variant.text,
+                  link: variant.link,
+                  media: structuredClone(variant.media),
+                },
+                status: "queued",
+                scheduledAt: variant.scheduledAt,
+                createdAt: Date.now(),
+                attempts: 0,
+              });
+            }
+            return structuredClone(snapshot.jobs);
+          }
+          if (browserWrites) {
+            if (params.action === "accounts.create") {
+              const platform = input.platform as SocialSnapshot["accounts"][number]["platform"];
+              const connection =
+                input.connection as SocialSnapshot["accounts"][number]["connection"];
+              const types =
+                connection === "browser" ? SOCIAL_BROWSER_ACCOUNT_TYPES : SOCIAL_API_ACCOUNT_TYPES;
+              if (!(types[platform] as readonly unknown[])?.includes(input.accountType))
+                throw new Error("Fixture account type is unsupported.");
+              const account: SocialSnapshot["accounts"][number] = {
+                id: `fixture-account-${snapshot.accounts.length}`,
+                platform,
+                platformId: "",
+                name: String(input.name),
+                accountType: input.accountType as SocialSnapshot["accounts"][number]["accountType"],
+                connection,
+                scopes: [],
+                connected: false,
+                accessApproved: false,
+                paused: false,
+                executorId: "fixture",
+                grants: Object.fromEntries(
+                  (input.projectIds as string[]).map((id) => [id, ["read", "draft"]]),
+                ),
+                createdAt: Date.now(),
+              };
+              snapshot.accounts.push(account);
+              snapshot.capabilities[account.id] = accountCapabilities(account);
+              return structuredClone(account);
+            }
+            if (params.action === "drafts.update") {
+              const draft = snapshot.drafts.find((item) => item.id === input.id)!;
+              if (!draft) throw new Error("Fixture draft not found.");
+              if (
+                input.expectedDraft &&
+                JSON.stringify(input.expectedDraft) !== JSON.stringify(draft)
+              )
+                throw new Error("Fixture draft changed.");
+              const account = snapshot.accounts.find((item) => item.id === draft.accountId)!;
+              const media = (input.media ?? draft.media ?? []) as SocialMedia[];
+              const issue = contentSupport(account, {
+                kind: draft.kind,
+                payload: { text: String(input.text), media, recipientId: "123456789" },
+              });
+              if (issue) throw new Error(issue);
+              draft.text = String(input.text);
+              draft.factIds = input.factIds as string[];
+              draft.media = structuredClone(media);
+              delete draft.approvedAt;
+              return structuredClone(draft);
+            }
+            if (params.action === "campaigns.create") {
+              const previous = snapshot.campaigns.find((item) => item.id === input.id);
+              if (previous && input.expectedRevision !== previous.revision)
+                throw new Error("Fixture campaign changed.");
+              const campaign: SocialSnapshot["campaigns"][number] = {
+                id: previous?.id ?? `browser-campaign-${snapshot.campaigns.length}`,
+                name: String(input.name),
+                projectIds: input.projectIds as string[],
+                variants: structuredClone(
+                  input.variants as SocialSnapshot["campaigns"][number]["variants"],
+                ),
+                revision: (previous?.revision ?? 0) + 1,
+                paused: false,
+                createdAt: previous?.createdAt ?? Date.now(),
+              };
+              for (const variant of campaign.variants) {
+                const account = snapshot.accounts.find((item) => item.id === variant.accountId)!;
+                const issue = contentSupport(account, { kind: "publish", payload: variant });
+                if (issue) throw new Error(issue);
+                if (
+                  (account.connection === "browser" || variant.facebook?.target === "reel") &&
+                  variant.media.some(
+                    (media) =>
+                      !media.uploadId || mediaUploads.get(media.uploadId)?.kind !== media.kind,
+                  )
+                )
+                  throw new Error("Fixture media was not uploaded by owner.");
+              }
+              snapshot.campaigns = [
+                ...snapshot.campaigns.filter((item) => item.id !== campaign.id),
+                campaign,
+              ];
+              snapshot.approvedCampaignIds = snapshot.approvedCampaignIds!.filter(
+                (id) => id !== campaign.id,
+              );
+              return structuredClone(campaign);
+            }
+            if (params.action === "campaigns.preview") {
+              const campaign = snapshot.campaigns.find((item) => item.id === input.id)!;
+              if (!campaign) throw new Error("Fixture campaign not found.");
+              return {
+                campaign: structuredClone(campaign),
+                targets: campaign.variants.map((variant) => {
+                  const account = snapshot.accounts.find((item) => item.id === variant.accountId)!;
+                  return {
+                    accountId: account.id,
+                    platform: account.platform,
+                    capability: accountCapabilities(account).find(
+                      (item) => item.operation === "publish",
+                    )!,
+                    contentError: contentSupport(account, {
+                      kind: "publish",
+                      payload: variant,
+                    }),
+                    approved: snapshot.approvedCampaignIds!.includes(campaign.id),
+                  };
+                }),
+              };
+            }
+            if (["campaigns.approve", "campaigns.approveReviewed"].includes(params.action)) {
+              const campaign = snapshot.campaigns.find((item) => item.id === input.id)!;
+              if (
+                !campaign ||
+                (params.action === "campaigns.approveReviewed" &&
+                  input.expectedRevision !== campaign.revision)
+              )
+                throw new Error("Fixture reviewed campaign revision changed.");
+              snapshot.approvedCampaignIds = [
+                ...new Set([...snapshot.approvedCampaignIds!, campaign.id]),
+              ];
+              return structuredClone(campaign);
+            }
+          }
           if (workflowWrites) {
             if (params.action === "segments.create") {
               const segment = {

@@ -197,7 +197,7 @@ describe("Codex requests reach the chat and notifications", () => {
         Array.from(form()!.querySelectorAll("button")).find(
           (candidate) => candidate.textContent?.trim() === label,
         )!;
-      expect(button("Continue").disabled).toBe(true);
+      expect(button("Send answer").disabled).toBe(true);
       if (action === "skip") {
         await act(async () => button("Skip").click());
         expect(form()).toBeNull();
@@ -216,8 +216,8 @@ describe("Codex requests reach the chat and notifications", () => {
       );
       if (action === "custom") {
         await act(async () => {
-          const input = form()!.querySelector('input:not([type="radio"]):not([type="checkbox"])')!;
-          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          const input = form()!.querySelector("textarea")!;
+          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
             input,
             answer,
           );
@@ -225,7 +225,7 @@ describe("Codex requests reach the chat and notifications", () => {
         });
       }
       expect(session.pendingQuestion?.autoResolveAt).toBeUndefined();
-      await act(async () => button("Continue").click());
+      await act(async () => button("Send answer").click());
       const steer = sent.find((message) => message.method === "turn/steer")!;
       expect(steer.params).toEqual({
         threadId: "thr_ui",
@@ -282,7 +282,7 @@ describe("Codex requests reach the chat and notifications", () => {
     );
     await act(async () =>
       buttons()
-        .find((b) => b.textContent?.trim() === "Continue")!
+        .find((b) => b.textContent?.trim() === "Send answer")!
         .click(),
     );
     expect(sent.find((m) => m.id === 91)?.result).toEqual({
@@ -427,7 +427,7 @@ describe("Codex requests reach the chat and notifications", () => {
       expect(sent.filter((message) => message.method === "turn/start")).toHaveLength(1);
       await act(async () => {
         Array.from(form()!.querySelectorAll("button"))
-          .find((button) => button.textContent?.trim() === "Continue")!
+          .find((button) => button.textContent?.trim() === "Send answer")!
           .click();
       });
       const continuation = sent.filter((message) => message.method === "turn/start")[1];
@@ -436,7 +436,8 @@ describe("Codex requests reach the chat and notifications", () => {
         input: [{ type: "text", text: "Choose a source\nRemote" }],
       });
       expect(sent.some((message) => message.method === "turn/steer")).toBe(false);
-      expect(form()).toBeNull();
+      expect(form()?.textContent).toContain("Answer saved · waiting to continue");
+      expect(session.blocks.some((block) => block.questionAnswers?.length)).toBe(false);
       await act(async () => {
         onLine(JSON.stringify({ id: continuation.id, result: { turn: { id: "turn_2" } } }));
         onLine(
@@ -447,6 +448,7 @@ describe("Codex requests reach the chat and notifications", () => {
         );
         await turn;
       });
+      expect(form()).toBeNull();
     },
   );
 
@@ -508,7 +510,7 @@ describe("Codex requests reach the chat and notifications", () => {
         if (action === "click") {
           await act(async () => {
             Array.from(container.querySelectorAll("button"))
-              .find((b) => b.textContent?.trim() === "Continue")!
+              .find((b) => b.textContent?.trim() === "Send answer")!
               .click();
           });
           expect(sent.find((m) => m.id === 91)?.result).toEqual({

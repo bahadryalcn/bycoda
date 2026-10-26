@@ -162,4 +162,53 @@ describe("HarnessUpdateNotice", () => {
     expect(document.body.contains(notice)).toBe(false);
     act(() => root.unmount());
   });
+
+  it("dismisses while OpenCode is updating and keeps the shared update running", async () => {
+    vi.resetModules();
+    claimed = false;
+    installed = "2.1.284 (Claude Code)";
+    openCodeInstalled = "opencode v2.0.18";
+    const { HarnessUpdateNotice: Notice } = await import("./HarnessUpdateNotice");
+    const { getHarnessUpdateSnapshot: snapshot } = await import("../model/harnessUpdateActions");
+    const { updateHarnessCli: updateCli } =
+      await import("../../../integrations/harness/core/child");
+    let finishUpdate!: () => void;
+    vi.mocked(updateCli).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishUpdate = () => {
+            openCodeInstalled = "opencode v2.0.26";
+            resolve();
+          };
+        }),
+    );
+    const root = createRoot(document.createElement("div"));
+    try {
+      await act(async () => root.render(createElement(Notice)));
+      const notice = document.body.querySelector('[aria-label="Harness updates"]')!;
+      const row = Array.from(notice.querySelectorAll("article")).find((item) =>
+        item.textContent?.includes("OpenCode"),
+      )!;
+      await act(async () => row.querySelector("button")!.click());
+      expect(snapshot().runs.opencode?.status).toBe("updating");
+      expect(row.querySelector("button")!.disabled).toBe(true);
+
+      const dismiss = notice.querySelector<HTMLButtonElement>('[aria-label="Dismiss notice"]')!;
+      expect(dismiss.disabled).toBe(false);
+      await act(async () => dismiss.click());
+      expect(document.body.contains(notice)).toBe(false);
+      expect(snapshot().runs.opencode?.status).toBe("updating");
+
+      await act(async () => finishUpdate());
+      expect(snapshot().runs.opencode).toEqual({ status: "updated", version: "2.0.26" });
+      expect(document.body.querySelector('[aria-label="Harness updates"]')).toBeNull();
+      await act(async () => {
+        root.render(null);
+      });
+      await act(async () => root.render(createElement(Notice)));
+      expect(document.body.querySelector('[aria-label="Harness updates"]')).toBeNull();
+    } finally {
+      act(() => root.unmount());
+    }
+  });
 });

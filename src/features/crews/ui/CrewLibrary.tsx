@@ -12,7 +12,7 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TextField } from "../../../shared/ui/TextField";
 import { MoreHorizontal, Plus, Trash2 } from "../../../shared/ui/icons";
 import { Group, Row } from "../../settings/ui/settingsControls";
-import type { CrewAgent, SavedCrewAgent } from "../model/crew";
+import { parseCrewAgent, type CrewAgent, type SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
 import {
   candidateLabel,
@@ -24,6 +24,14 @@ import {
 import { CrewMemberForm, roleLabel } from "./CrewMemberForm";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
+
+function savedProfileMatches(saved: SavedCrewAgent, profile: CrewAgent & { projectId?: string }) {
+  if (saved.projectId !== profile.projectId) return false;
+  // The host validates profiles and deliberately clears inferred capabilities.
+  const expected = parseCrewAgent(profile);
+  for (const candidate of expected.candidates) candidate.capabilities = {};
+  return JSON.stringify(parseCrewAgent(saved)) === JSON.stringify(expected);
+}
 
 /** Reusable member profiles: this project's, plus those shared with every project on this host. */
 export function CrewLibrary({
@@ -224,6 +232,8 @@ function LibraryMemberDialog({
   const [error, setError] = useState("");
   const [showIssues, setShowIssues] = useState(false);
   const gate = useRef(false);
+  const copyId = useRef<string | null>(null);
+  const attemptedIds = useRef(new Set<string>());
   const run = async (action: "save" | "copy", operation: () => Promise<unknown>) => {
     if (gate.current) return;
     gate.current = true;
@@ -246,17 +256,26 @@ function LibraryMemberDialog({
       return;
     }
     const projectId = (copy ? "global" : scope) === "project" ? data.project.id : undefined;
-    void run(copy ? "copy" : "save", () =>
-      state.call("crews.agent.save", {
-        agent: {
-          ...agent,
-          name: agent.name.trim(),
-          id: saved && !copy ? saved.id : crypto.randomUUID(),
-          projectId,
-        },
+    if (copy && !copyId.current) copyId.current = crypto.randomUUID();
+    const profile = {
+      ...agent,
+      name: agent.name.trim(),
+      id: copy ? copyId.current! : (saved?.id ?? agent.id),
+      projectId,
+    };
+    void run(copy ? "copy" : "save", async () => {
+      if (attemptedIds.current.has(profile.id)) {
+        const refreshed = await state.refetch();
+        if (refreshed.error) throw refreshed.error;
+        const receipt = refreshed.data?.agents.find((item) => item.id === profile.id);
+        if (receipt && savedProfileMatches(receipt, profile)) return receipt;
+      }
+      attemptedIds.current.add(profile.id);
+      return await state.call("crews.agent.save", {
+        agent: profile,
         expectedUpdatedAt: saved && !copy ? saved.updatedAt : undefined,
-      }),
-    );
+      });
+    });
   };
   return (
     <Modal
@@ -371,15 +390,24 @@ function GroupDialog({
   const [name, setName] = useState(group);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [attempted, setAttempted] = useState(false);
+  const gate = useRef(false);
   const members = data.agents.filter((agent) => agent.groups?.includes(group));
   const apply = async () => {
+    if (gate.current) return;
     const next = name.trim().slice(0, 40);
     if (kind === "rename" && (!next || next === group)) return onClose();
+    gate.current = true;
     setPending(true);
     setError("");
     try {
+      const refreshed = await state.refetch();
+      if (refreshed.error) throw refreshed.error;
+      const currentMembers = (refreshed.data ?? data).agents.filter((agent) =>
+        agent.groups?.includes(group),
+      );
       // Groups are labels on each profile; members are never removed with a group.
-      for (const agent of members) {
+      for (const agent of currentMembers) {
         const groups = [
           ...new Set(
             (agent.groups ?? []).flatMap((item) =>
@@ -388,6 +416,7 @@ function GroupDialog({
           ),
         ];
         const { updatedAt, ...profile } = agent;
+        setAttempted(true);
         await state.call("crews.agent.save", {
           agent: { ...profile, groups: groups.length ? groups : undefined },
           expectedUpdatedAt: updatedAt,
@@ -397,6 +426,7 @@ function GroupDialog({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      gate.current = false;
       setPending(false);
     }
   };
@@ -430,6 +460,7 @@ function GroupDialog({
           <TextField
             label={t("Group name")}
             value={name}
+            disabled={pending || attempted}
             maxLength={40}
             autoFocus
             onChange={(event) => setName(event.target.value)}

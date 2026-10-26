@@ -45,6 +45,7 @@ import {
   SessionMessageSearch,
   type AppSearchHit,
   type SearchScope,
+  type SearchRequest,
 } from "../model/appSearch";
 import {
   loadProjectFiles,
@@ -116,6 +117,7 @@ type Props = {
   history: SessionSummary[];
   sessions: Session[];
   focusToken?: number;
+  request?: SearchRequest;
   besideRail?: boolean;
   compactRail?: boolean;
   onClose: () => void;
@@ -135,6 +137,7 @@ export function SearchView({
   history,
   sessions,
   focusToken = 0,
+  request,
   besideRail = false,
   compactRail = false,
   onClose,
@@ -162,6 +165,18 @@ export function SearchView({
   );
 
   const trimmed = query.trim();
+
+  const appliedRequest = useRef<SearchRequest | undefined>(undefined);
+  useEffect(() => {
+    if (!open || !request || appliedRequest.current === request) return;
+    appliedRequest.current = request;
+    setScope(request.scope);
+    if (request.query !== undefined) setQuery(request.query);
+    const conversationScope = request.conversationScope;
+    if (conversationScope) {
+      setChatFilters((filters) => ({ ...filters, scope: conversationScope }));
+    }
+  }, [open, request, setScope, setQuery, setChatFilters]);
 
   useEffect(() => {
     if (!open) return;
@@ -501,8 +516,8 @@ export function SearchView({
           </div>
         </div>
 
-        <div className="col-span-3 grid min-h-9 grid-cols-subgrid items-center border-b border-stroke">
-          <div className="col-start-2 min-w-0 overflow-x-auto px-3 py-1">
+        <div className="col-span-3 flex min-h-9 flex-wrap items-center border-b border-stroke">
+          <div className="min-w-0 flex-1 overflow-x-auto px-3 py-1">
             <SegmentedControl
               label={t("Search in")}
               value={scope}

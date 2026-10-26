@@ -2160,18 +2160,25 @@ function Workspace({
     setSearchFocusToken,
     dirtyFilesRef,
   });
-  const { onCloseCurrentTab, onOpenSearch, onLeaveSearch, searchDialogOpen, onExpandSearch } =
-    useSearchActions({
-      activeTabId,
-      onCloseTab,
-      setFilePickerOpen,
-      setSettingsOpen,
-      setInboxViewOpen,
-      setNotesViewOpen,
-      setAutomationsViewOpen,
-      setSearchViewOpen,
-      setSearchViewFocusToken,
-    });
+  const {
+    onCloseCurrentTab,
+    onOpenSearch,
+    onSearchConversations,
+    searchRequest,
+    onLeaveSearch,
+    searchDialogOpen,
+    onExpandSearch,
+  } = useSearchActions({
+    activeTabId,
+    onCloseTab,
+    setFilePickerOpen,
+    setSettingsOpen,
+    setInboxViewOpen,
+    setNotesViewOpen,
+    setAutomationsViewOpen,
+    setSearchViewOpen,
+    setSearchViewFocusToken,
+  });
 
   const {
     onOpenInbox,
@@ -2859,7 +2866,12 @@ function Workspace({
           }`}
         >
           {compactTitleBar ? workspaceTitleBar : null}
-          <VoiceCompanionGate activeId={activeSessionId} sessions={sessions} onSubmit={submitSession} onStop={onStop} />
+          <VoiceCompanionGate
+            activeId={activeSessionId}
+            sessions={sessions}
+            onSubmit={submitSession}
+            onStop={onStop}
+          />
           {detachedSessionWindow && (!IS_MAC || liveAgents.length > 0) ? (
             <DetachedWorkingBar agents={liveAgents} onSelectAgent={onSelectLiveAgent} />
           ) : null}
@@ -2942,6 +2954,7 @@ function Workspace({
                   openSessions={openProjectSessions}
                   onNewTerminal={sidebarActions.onNewTerminal}
                   onSearch={sidebarActions.onSearch}
+                  onSearchConversations={onSearchConversations}
                   onOpenInbox={sidebarActions.onOpenInbox}
                   onOpenInboxItem={sidebarActions.onOpenInboxItem}
                   onOpenServers={onOpenServers}
@@ -3101,6 +3114,7 @@ function Workspace({
                 <WorkspaceAuxSurfaces
                   searchViewOpen={searchViewOpen}
                   searchDialogOpen={searchDialogOpen}
+                  searchRequest={searchRequest}
                   onExpandSearch={onExpandSearch}
                   onCompactSearch={onOpenSearch}
                   gitCwd={gitCwd}

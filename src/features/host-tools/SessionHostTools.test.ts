@@ -26,6 +26,18 @@ async function toolAct(run: () => unknown) {
   });
 }
 
+const toolChooser = () =>
+  container.querySelector<HTMLButtonElement>('button[aria-label="Conversation tool selection"]')!;
+const toolOptions = () => [
+  ...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+];
+async function chooseTool(name: string) {
+  await toolAct(() => toolChooser().click());
+  const option = toolOptions().find((option) => option.getAttribute("aria-label") === name)!;
+  expect(option).toBeDefined();
+  await toolAct(() => option.click());
+}
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(listHostToolMachines)
@@ -46,36 +58,40 @@ beforeEach(() => {
     .mockImplementation(async (_cwd, _capability, method) =>
       method === "resources.read"
         ? { samples: [] }
-        : method === "devices.status"
-          ? {
-              running: false,
-              installed: true,
-              agentInstalled: true,
-              platform: "win32",
-              platforms: [],
-            }
-          : { open: false, url: null, controlling: false },
+        : method === "runtimeLogs.read"
+          ? { streamId: "test-stream", entries: [], sources: [], cursor: 0, dropped: 0 }
+          : method === "devices.status"
+            ? {
+                running: false,
+                installed: true,
+                agentInstalled: true,
+                platform: "win32",
+                platforms: [],
+              }
+            : { open: false, url: null, controlling: false },
     );
   vi.mocked(hostFeatureRequest)
     .mockReset()
     .mockImplementation(async (_cwd, _capability, method) =>
       method === "devServers.list"
         ? { status: "ok", servers: [], scannedAt: Date.now() }
-        : method === "devices.status"
-          ? {
-              running: false,
-              installed: false,
-              agentInstalled: false,
-              platform: "win32",
-              platforms: [],
-            }
-          : { open: false, url: null, controlling: false },
+        : method === "runtimeLogs.monitors.list"
+          ? []
+          : method === "devices.status"
+            ? {
+                running: false,
+                installed: false,
+                agentInstalled: false,
+                platform: "win32",
+                platforms: [],
+              }
+            : { open: false, url: null, controlling: false },
     );
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
 });
-it("selects a tool from the compact chooser without starting resource sampling", async () => {
+it("keeps common chrome compact and selects another tool without starting resource sampling", async () => {
   await toolAct(async () =>
     root.render(
       createElement(SessionHostTools, {
@@ -85,26 +101,30 @@ it("selects a tool from the compact chooser without starting resource sampling",
       }),
     ),
   );
+  expect(container.querySelector(".host-tools-heading")).toBeNull();
+  expect(container.querySelectorAll(".host-tools-topbar")).toHaveLength(1);
+  expect(container.querySelector(".host-tools-topbar-device")).toBeNull();
   const chooser = container.querySelector<HTMLButtonElement>(
-    '[aria-label^="Conversation tool selection:"]',
+    '[aria-label="Conversation tool selection"]',
   )!;
   await toolAct(async () => chooser.click());
-  const resourceOption = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-    (option) => option.textContent?.includes("Resource usage"),
-  )!;
+  const resourceOption = [
+    ...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+  ].find((option) => option.textContent?.includes("Resource usage"))!;
   expect(resourceOption).toBeTruthy();
   await toolAct(async () => resourceOption.click());
   expect(container.querySelector("[data-active-tool]")?.getAttribute("data-active-tool")).toBe(
     "resources",
   );
-  expect(chooser.getAttribute("aria-label")).toContain("Resource usage");
+  expect(container.querySelectorAll(".host-tools-topbar")).toHaveLength(1);
+  expect(toolChooser().textContent).toContain("Resource usage");
   expect(container.textContent).toContain("No samples yet");
   expect(
     vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "resources.read"),
   ).toBe(false);
 });
 
-it("discovers servers only while the development servers tab is visible", async () => {
+it("discovers servers only while the development servers panel is visible", async () => {
   await toolAct(async () =>
     root.render(
       createElement(SessionHostTools, {
@@ -117,10 +137,7 @@ it("discovers servers only while the development servers tab is visible", async 
   expect(
     vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "devServers.list"),
   ).toBe(false);
-  const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-    (value) => value.textContent === "Development servers",
-  )!;
-  await toolAct(async () => tab.click());
+  await chooseTool("Development servers");
   expect(hostFeatureRequest).toHaveBeenCalledWith(
     "remote://machine/repo",
     "dev.servers",
@@ -129,12 +146,38 @@ it("discovers servers only while the development servers tab is visible", async 
   );
   expect(container.textContent).toContain("No servers found");
 });
+
+it("shares one named chooser and header row across all five panels", async () => {
+  await toolAct(() =>
+    root.render(
+      createElement(SessionHostTools, {
+        cwd: "/five-tools",
+        sessionId: "five-tools-session",
+        title: "One work surface",
+      }),
+    ),
+  );
+  for (const name of ["Devices", "Host browser", "Development servers", "Logs", "Resource usage"]) {
+    await chooseTool(name);
+    const header = container.querySelector(".host-tools-topbar")!;
+    expect(container.querySelectorAll(".host-tools-topbar")).toHaveLength(1);
+    expect(header.querySelectorAll('[aria-label="Conversation tool selection"]')).toHaveLength(1);
+    expect(
+      container.querySelectorAll(
+        ".host-tools-heading, .host-tools-compact-selector, [role=tablist]",
+      ),
+    ).toHaveLength(0);
+    expect(toolChooser().textContent).toContain(name);
+    expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
+    expect(container.querySelector('[role="tabpanel"]')!.getAttribute("aria-label")).toBe(name);
+  }
+});
 afterEach(async () => {
   await toolAct(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
 });
-it("only mounts the active tool and connects keyboard tabs to their panel", async () => {
+it("only mounts the active tool and returns keyboard menu focus to its chooser", async () => {
   await toolAct(async () =>
     root.render(
       createElement(SessionHostTools, {
@@ -147,19 +190,48 @@ it("only mounts the active tool and connects keyboard tabs to their panel", asyn
   expect(hostFeatureRequest).toHaveBeenCalledWith("/repo", "device.host", "devices.status", {});
   expect(container.textContent).not.toContain("Saved visuals");
   expect(container.textContent).not.toContain("PR tracking");
-  const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-  expect(tabs.filter((tab) => tab.tabIndex === 0)).toHaveLength(1);
-  await toolAct(async () =>
-    tabs[0].dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowRight" })),
+  const chooser = toolChooser();
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(0);
+  await toolAct(() => {
+    chooser.focus();
+    chooser.click();
+  });
+  let options = toolOptions();
+  expect(document.activeElement).toBe(options[0]);
+  expect(options[0].getAttribute("aria-checked")).toBe("true");
+  await toolAct(() =>
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }),
+    ),
   );
-  expect(tabs[1].getAttribute("aria-selected")).toBe("true");
-  expect(document.activeElement).toBe(tabs[1]);
-  expect(container.querySelector('[role="tabpanel"]')!.getAttribute("aria-labelledby")).toBe(
-    tabs[1].id,
+  expect(document.activeElement).toBe(options[1]);
+  // Native Enter activation is covered by the browser suite; happy-dom does not synthesize it.
+  await toolAct(() => (document.activeElement as HTMLButtonElement).click());
+  expect(document.activeElement).toBe(chooser);
+  expect(container.querySelector('[role="tabpanel"]')!.getAttribute("aria-label")).toBe(
+    "Host browser",
   );
+  expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
   expect(hostFeatureRequest).toHaveBeenCalledWith("/repo", "browser.shared", "browser.status", {
     leaseId: undefined,
   });
+  await toolAct(() => chooser.click());
+  options = toolOptions();
+  expect(options[1].getAttribute("aria-checked")).toBe("true");
+  await toolAct(() =>
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, key: "End" }),
+    ),
+  );
+  expect(document.activeElement).toBe(options[4]);
+  await toolAct(() => (document.activeElement as HTMLButtonElement).click());
+  expect(document.activeElement).toBe(chooser);
+  expect(container.querySelector('[role="tabpanel"]')!.getAttribute("aria-label")).toBe(
+    "Resource usage",
+  );
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "resources.read"),
+  ).toBe(false);
 });
 
 it("keeps every tool on the remote project and uses the host conversation identity", async () => {
@@ -187,18 +259,12 @@ it("keeps every tool on the remote project and uses the host conversation identi
       }),
     ),
   );
-  const clickTab = async (name: string) =>
-    toolAct(async () => {
-      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-        .find((tab) => tab.textContent === name)!
-        .click();
-    });
-  await clickTab("Devices");
-  await clickTab("Host browser");
-  await clickTab("Resource usage");
+  await chooseTool("Devices");
+  await chooseTool("Host browser");
+  await chooseTool("Resource usage");
   await toolAct(async () =>
     [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Sample now")!
+      .find((button) => button.getAttribute("aria-label") === "Sample now")!
       .click(),
   );
   expect(hostFeatureRequest).toHaveBeenCalledWith(cwd, "device.host", "devices.status", {});
@@ -237,11 +303,7 @@ it("resets device control when switching conversations in the same project", asy
       ),
     );
   await render("first");
-  await toolAct(async () =>
-    [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-      .find((tab) => tab.textContent === "Devices")!
-      .click(),
-  );
+  await chooseTool("Devices");
   await toolAct(async () =>
     container
       .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
@@ -253,11 +315,7 @@ it("resets device control when switching conversations in the same project", asy
       .getAttribute("aria-checked"),
   ).toBe("true");
   await render("second");
-  await toolAct(async () =>
-    [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-      .find((tab) => tab.textContent === "Devices")!
-      .click(),
-  );
+  await chooseTool("Devices");
   expect(
     container
       .querySelector('[role="switch"][aria-label="Allow device control"]')!
@@ -265,12 +323,7 @@ it("resets device control when switching conversations in the same project", asy
   ).toBe("false");
 });
 
-const clickToolTab = (name: string) =>
-  toolAct(async () =>
-    [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-      .find((tab) => tab.textContent === name)!
-      .click(),
-  );
+const clickToolTab = chooseTool;
 const machineTrigger = () =>
   container.querySelector<HTMLButtonElement>('.host-tools-machine button[aria-haspopup="dialog"]')!;
 const openMachineOptions = async () => {
@@ -290,7 +343,7 @@ const chooseMachine = async (value: string) => {
     [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
       .find((option) =>
         value === "project"
-          ? option.textContent?.startsWith("Project host")
+          ? option.textContent?.includes("Project host")
           : option.textContent === label,
       )!
       .click(),
@@ -307,7 +360,10 @@ it("offers local and saved machines only for host tools while keeping conversati
   await openMachineOptions();
   expect(
     document.querySelector('[role="listbox"][aria-label="Tool machine"]')?.textContent,
-  ).toContain("Project host · MacBook");
+  ).toContain("MacBook");
+  expect(
+    document.querySelector('[role="listbox"][aria-label="Tool machine"]')?.textContent,
+  ).toContain("Project host");
   expect(
     document.querySelector('[role="listbox"][aria-label="Tool machine"]')?.textContent,
   ).toContain("This computer");
@@ -322,11 +378,32 @@ it("offers local and saved machines only for host tools while keeping conversati
     {},
     { kind: "local" },
   );
-  expect(container.textContent).toContain("This computer · Device host stopped");
+  expect(machineTrigger().getAttribute("aria-label")).toContain("This computer");
+  expect(container.textContent).toContain("Connect a device");
+  const connect = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Connect devices",
+  )!;
+  expect(connect).toBeTruthy();
+  expect(connect.disabled).toBe(true); // The selected host reports an installed runtime without a detected SDK.
+  expect(hostToolRequest).not.toHaveBeenCalledWith(
+    cwd,
+    "device.host",
+    "devices.start",
+    {},
+    { kind: "local" },
+  );
+  await toolAct(() =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Setup and access")!
+      .click(),
+  );
+  expect(document.querySelector(".device-panel-setup-summary")?.textContent).toContain(
+    "This computer · Device host stopped",
+  );
   await clickToolTab("Resource usage");
   await toolAct(async () =>
     [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Sample now")!
+      .find((button) => button.getAttribute("aria-label") === "Sample now")!
       .click(),
   );
   expect(hostToolRequest).toHaveBeenCalledWith(
@@ -374,7 +451,7 @@ it("clears machine selection on a conversation switch and retains a removed expl
   expect(container.textContent).toContain("Selected machine unavailable");
   await render("second");
   await clickToolTab("Devices");
-  expect(machineTrigger().getAttribute("aria-label")).toContain("Project host");
+  expect(machineTrigger().getAttribute("aria-label")).toContain("macbook");
   expect(hostFeatureRequest).toHaveBeenLastCalledWith(
     "remote://macbook/repo",
     "device.host",

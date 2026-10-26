@@ -56,6 +56,26 @@ it("routes an explicit message through the same approved-plan dispatch as Build"
   expect(result.pre.intent).toBe("build");
   expect(result.pre.approvedPlan?.text).toBe(plan.text);
 });
+it("repairs an already open Codex/Gemini mixed selection before choosing the dispatch provider", () => {
+  const broken = {
+    ...session,
+    model: "antigravity:gemini-3.8-flash-high",
+    providerSessionId: "codex-thread",
+    blocks: [{ id: "original", role: "user" as const, text: "Keep the earlier contract" }],
+  };
+  resetSessionsStore([broken]);
+  const result = prepareSubmitPreflight(ctx, {
+    sessionId: session.id,
+    text: "Continue",
+    attachments: [],
+  });
+  if (result.settled) throw new Error("submission rejected");
+  expect(result.pre.current.harness).toBe("antigravity");
+  expect(result.pre.current.model).toBe(broken.model);
+  expect(result.pre.current.providerSessionId).toBeUndefined();
+  expect(result.pre.current.blocks).toBe(broken.blocks);
+  expect(result.pre.pendingSwitch?.from).toBe("codex");
+});
 it("preserves a refinement as a normal message", () => {
   const result = prepareSubmitPreflight(ctx, {
     sessionId: session.id,

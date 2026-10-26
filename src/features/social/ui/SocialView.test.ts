@@ -211,9 +211,13 @@ describe("Sosyal Medya ürün ekranı", () => {
     expect(mocks.oauthBegin).not.toHaveBeenCalled();
     expect(mocks.openUrl).not.toHaveBeenCalled();
   });
-  it("offers the four new platforms with their correct account types", async () => {
+  it("keeps official API account types separate from browser personal sessions", async () => {
     await mount();
-    const platform = container.querySelector<HTMLButtonElement>('button[aria-label="Platform"]')!;
+    await click("Add account");
+    await click("API connection");
+    const platform = document.body.querySelector<HTMLButtonElement>(
+      'button[aria-label="Platform"]',
+    )!;
     expect(platform).toBeTruthy();
     for (const [id, type] of [
       ["tiktok", "member"],
@@ -222,10 +226,15 @@ describe("Sosyal Medya ürün ekranı", () => {
       ["telegram", "bot"],
     ]) {
       await chooseSocialValue(platform, id);
-      expect(container.querySelector(`select[name="type"] option[value="${type}"]`)).toBeTruthy();
+      expect(
+        document.body.querySelector(`select[name="type"] option[value="${type}"]`),
+      ).toBeTruthy();
     }
     expect(mocks.request).not.toHaveBeenCalledWith("accounts.create", expect.anything());
     expect(mocks.tokenConnect).not.toHaveBeenCalled();
+    await click("Browser connection");
+    expect(document.body.querySelector('select[name="type"] option[value="member"]')).toBeTruthy();
+    expect(document.body.querySelector('select[name="type"] option[value="bot"]')).toBeNull();
   });
   it("geçmiş sol menüde yer almaz; sosyal medya içinden açılır ve filtreleri korunur", async () => {
     await mount();
@@ -393,6 +402,54 @@ describe("Sosyal Medya ürün ekranı", () => {
     expect(mocks.openUrl).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Sign in to X in the Chrome window that opened");
   });
+  it.each([
+    "instagram",
+    "facebook",
+    "linkedin",
+    "youtube",
+    "tiktok",
+    "snapchat",
+    "whatsapp",
+    "telegram",
+  ] as const)(
+    "offers %s browser connection independently of API configuration",
+    async (platform) => {
+      const value = empty();
+      value.accounts = [
+        {
+          id: "web-account",
+          platform,
+          platformId: "",
+          name: "Web owner",
+          accountType: platform === "youtube" ? "channel" : "member",
+          scopes: [],
+          accessApproved: false,
+          connected: false,
+          paused: false,
+          executorId: "host",
+          grants: { project: ["read", "draft"] },
+          createdAt: 1,
+        },
+      ];
+      mocks.snapshot.mockResolvedValue(value);
+      await mount();
+      const start = () =>
+        [...container.querySelectorAll("button")].find(
+          (button) => button.textContent === "Sign in in the browser",
+        )!;
+      expect(start()).toBeTruthy();
+      expect(start().disabled).toBe(true);
+      const risk = [...container.querySelectorAll("label")]
+        .find((label) => label.textContent?.includes("I understand the risk"))!
+        .querySelector("input")!;
+      await act(async () => risk.click());
+      expect(start().disabled).toBe(false);
+      await click("Sign in in the browser");
+      expect(mocks.browserBegin).toHaveBeenCalledExactlyOnceWith("web-account");
+      expect(mocks.oauthBegin).not.toHaveBeenCalled();
+      expect(mocks.openUrl).not.toHaveBeenCalled();
+    },
+  );
   it("aynı host yenilemesi başarısız olduğunda görünür veriyi korur", async () => {
     const value = empty();
     value.campaigns = [

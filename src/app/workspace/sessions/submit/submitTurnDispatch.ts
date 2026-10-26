@@ -4,24 +4,59 @@ import type { SubmitTurnEvents } from "./submitTurnEvents";
 import { inboxAskPrompt } from "../../../../features/inbox/model/inboxAsk";
 import { announceSessionFinished } from "../../../../features/notifications/model/notifications";
 import { orchestrator, shellPath } from "../../../../features/orchestration/model/orchestration";
-import { completeOrRepairOrchestrationProposal, completeOrchestrationProposal, orchestrationPlanningPrompt, orchestrationRepairPrompt, recoverTaggedOrchestrationProposals, withOrchestrationProposal } from "../../../../features/orchestration/model/orchestrationPlan";
+import {
+  completeOrRepairOrchestrationProposal,
+  completeOrchestrationProposal,
+  orchestrationPlanningPrompt,
+  orchestrationRepairPrompt,
+  recoverTaggedOrchestrationProposals,
+  withOrchestrationProposal,
+} from "../../../../features/orchestration/model/orchestrationPlan";
 import { prepareAttachments } from "../../../../features/sessions/model/attachments";
-import { beginSessionTurn, finishSessionTurn, flushSessionCheckpoint } from "../../../../features/sessions/model/checkpoint";
-import { completeHandoff, consumeHandoff, isPreparingHandoff, userMessagesAfterHandoff, wrapHandoffPrompt } from "../../../../features/sessions/model/handoff";
+import {
+  beginSessionTurn,
+  finishSessionTurn,
+  flushSessionCheckpoint,
+} from "../../../../features/sessions/model/checkpoint";
+import {
+  completeHandoff,
+  consumeHandoff,
+  isPreparingHandoff,
+  userMessagesAfterHandoff,
+  wrapHandoffPrompt,
+} from "../../../../features/sessions/model/handoff";
 import { CONTINUE_PROMPT } from "../../../../features/sessions/model/inFlight";
-import { buildPlanPrompt, isProviderFailureText, planTurnPrompt } from "../../../../features/sessions/model/plan";
+import {
+  buildPlanPrompt,
+  isProviderFailureText,
+  planTurnPrompt,
+} from "../../../../features/sessions/model/plan";
 import { markSharedProviderSend } from "../../../../features/connections/model/useSharedLocalQueues";
 import { preparePrompt } from "../../../../features/sessions/model/promptPreparation";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
-import { canRewindHarnessLastTurn, forgetHarnessSession, promoteLastAssistantToPlan, rewindHarnessLastTurn, sendHarnessTurn, stopHarnessSession, stopStreaming } from "../../../../integrations/harness";
-import { recordPerformanceEvent, startPerformanceSpan } from "../../../../shared/lib/performanceTrace";
+import {
+  canRewindHarnessLastTurn,
+  forgetHarnessSession,
+  promoteLastAssistantToPlan,
+  rewindHarnessLastTurn,
+  sendHarnessTurn,
+  stopHarnessSession,
+  stopStreaming,
+} from "../../../../integrations/harness";
+import {
+  recordPerformanceEvent,
+  startPerformanceSpan,
+} from "../../../../shared/lib/performanceTrace";
 import { finalizeLocalTurn } from "../../../model/localTurnFinalization";
 import { prepareLocalTurn } from "../../../model/localTurnPreparation";
 import { prepareBudgetedHandoff } from "../../../model/prepareHandoff";
 import { lastAssistantTextInTurn, withPlanStatus } from "../../helpers/sessionHelpers";
 import { notifyFinishedWorkspace } from "../../helpers/workspaceNotify";
 import { invoke } from "@tauri-apps/api/core";
-import { detachSessionWorktree, worktreeDeletedExternally } from "../../../../features/source-control/model/worktrees";
+import {
+  detachSessionWorktree,
+  worktreeDeletedExternally,
+} from "../../../../features/source-control/model/worktrees";
 import { isRemoteProjectPath } from "../../../../features/projects/model/recents";
 
 export async function runSubmitDispatch(
@@ -36,15 +71,35 @@ export async function runSubmitDispatch(
   const { sessionId, attachments, options } = input;
   const { enqueueHarnessEvent, flushHarnessEvents, deferWorkspaceWork } = ctx;
   const { retiringTurns, turnGen, activeSessionIdRef } = ctx.refs;
-  const { current, editedResend, editedProviderTurnId, intent, approvedPlan, providerAccountId, operatorCommand, operatorAccess, rawCommand, harnessText } = pre;
+  const {
+    current,
+    editedResend,
+    editedProviderTurnId,
+    intent,
+    approvedPlan,
+    providerAccountId,
+    operatorCommand,
+    operatorAccess,
+    rawCommand,
+    harnessText,
+  } = pre;
   const { traceId, gen, proposalId, queuedHandoff, turn } = setup;
-  const { revealHandoff, routeTurnEvent, acceptContextReplay, acceptEditedResend, recoverEditedResend, contextReplay, planEventKey } = events;
+  const {
+    revealHandoff,
+    routeTurnEvent,
+    acceptContextReplay,
+    acceptEditedResend,
+    recoverEditedResend,
+    contextReplay,
+    planEventKey,
+  } = events;
   try {
     const preparation = await prepareLocalTurn({
       traceId,
       checkpoint: () =>
         !current.inboxAsk && !orchestrator.forSession(sessionId)
-          ? (turn.checkpointStarted = true, beginSessionTurn(sessionId, workCwd, checkpointTurnId)).catch((error) => {
+          ? ((turn.checkpointStarted = true),
+            beginSessionTurn(sessionId, workCwd, checkpointTurnId)).catch((error) => {
               if (String(error).includes("checkpoint-coordination:")) throw error;
               console.warn("App operation failed", error);
             })
@@ -98,16 +153,12 @@ export async function runSubmitDispatch(
       flushHarnessEvents();
       if (turnGen.current.get(sessionId) !== gen) {
         const latest = sessionsRef.current.find((session) => session.id === sessionId);
-        if (
-          !latest ||
-          (!latest.busy && latest.providerSessionId === current.providerSessionId)
-        ) {
+        if (!latest || (!latest.busy && latest.providerSessionId === current.providerSessionId)) {
           await forgetHarnessSession(current.harness, sessionId);
           if (latest) {
             setSessions((prev) =>
               prev.map((session) =>
-                session.id === sessionId &&
-                session.providerSessionId === current.providerSessionId
+                session.id === sessionId && session.providerSessionId === current.providerSessionId
                   ? { ...session, providerSessionId: undefined }
                   : session,
               ),
@@ -137,7 +188,9 @@ export async function runSubmitDispatch(
         // orchestration leads retain their separate control access.
         controlsAgents: operatorAccess || orchestrator.run(sessionId)?.status === "active",
         appAccess: operatorAccess,
-        text: !turn.contextReplayAccepted ? `${contextReplay}\n\nCurrent user request:\n${text}` : text,
+        text: !turn.contextReplayAccepted
+          ? `${contextReplay}\n\nCurrent user request:\n${text}`
+          : text,
         attachments: turnAttachments,
         onAccepted: () => {
           acceptContextReplay();
@@ -188,9 +241,7 @@ export async function runSubmitDispatch(
           turn.nativeProposalText = "";
           await sendTurn(repairPrompt, []);
           if (turn.providerFailureSeen)
-            throw new Error(
-              turn.controlOutcome.error ?? "The lead could not repair the proposal.",
-            );
+            throw new Error(turn.controlOutcome.error ?? "The lead could not repair the proposal.");
           return turn.nativeProposalText || turn.proposalText;
         },
         () =>
@@ -216,9 +267,7 @@ export async function runSubmitDispatch(
     if (turnGen.current.get(sessionId) !== gen) return;
     if (turn.wrap) revealHandoff(turn.wrap.text);
     const message =
-      error instanceof Error
-        ? error.message
-        : String(error) || `${current.harness} adapter failed`;
+      error instanceof Error ? error.message : String(error) || `${current.harness} adapter failed`;
     turn.controlOutcome.error = message;
     retiringTurns.current.set(sessionId, gen);
     if (!turn.providerFailureSeen) {
@@ -245,17 +294,25 @@ export async function runSubmitDispatch(
       isCurrent: () => turnGen.current.get(sessionId) === gen,
       retire: () =>
         turn.providerFailureSeen || turnGen.current.get(sessionId) !== gen
-          ? stopHarnessSession(current.harness, sessionId).catch(() => { turn.checkpointRetirementUncertain = true; })
+          ? stopHarnessSession(current.harness, sessionId).catch(() => {
+              turn.checkpointRetirementUncertain = true;
+            })
           : Promise.resolve(),
-      settle: () => turn.checkpointStarted
-        ? finishSessionTurn(sessionId, workCwd, checkpointTurnId, turn.checkpointRetirementUncertain).catch((error) => console.warn("Workspace checkpoint failed", error))
-        : Promise.resolve(),
+      settle: () =>
+        turn.checkpointStarted
+          ? finishSessionTurn(
+              sessionId,
+              workCwd,
+              checkpointTurnId,
+              turn.checkpointRetirementUncertain,
+            ).catch((error) => console.warn("Workspace checkpoint failed", error))
+          : Promise.resolve(),
       checkpoint: () => flushSessionCheckpoint(sessionId),
       commit: () =>
         setSessions((prev) =>
           prev.map((s) => {
             if (s.id !== sessionId || turnGen.current.get(sessionId) !== gen) return s;
-            const stopped = stopStreaming(s);
+            const stopped = stopStreaming(s, Date.now(), turn.providerFailureSeen);
             const providerFailed =
               turn.providerFailureSeen || isProviderFailureText(lastAssistantTextInTurn(stopped));
             const finalized =
@@ -276,9 +333,10 @@ export async function runSubmitDispatch(
                 : intent === "plan" && !turn.nativePlanSeen && !providerFailed
                   ? promoteLastAssistantToPlan(stopped, planEventKey)
                   : stopped;
-            const recovered = !providerFailed && turn.buildSucceeded
-              ? recoverTaggedOrchestrationProposals(finalized)
-              : finalized;
+            const recovered =
+              !providerFailed && turn.buildSucceeded
+                ? recoverTaggedOrchestrationProposals(finalized)
+                : finalized;
             return approvedPlan && intent === "build"
               ? withPlanStatus(
                   recovered,
@@ -294,12 +352,22 @@ export async function runSubmitDispatch(
       if (turn.providerFailureSeen && worktreePath && !isRemoteProjectPath(current.cwd)) {
         void worktreeDeletedExternally(worktreePath)
           .then((deleted) => {
-            if (!deleted || ctx.refs.switchingWorktrees.current.has(sessionId) || turnGen.current.get(sessionId) !== gen) return;
-            setSessions((prev) => prev.map((session) =>
-              session.id === sessionId && !session.busy && !session.worktreeRemoved && session.worktreeCwd === worktreePath
-                ? detachSessionWorktree(session, session.cwd, worktreePath)
-                : session,
-            ));
+            if (
+              !deleted ||
+              ctx.refs.switchingWorktrees.current.has(sessionId) ||
+              turnGen.current.get(sessionId) !== gen
+            )
+              return;
+            setSessions((prev) =>
+              prev.map((session) =>
+                session.id === sessionId &&
+                !session.busy &&
+                !session.worktreeRemoved &&
+                session.worktreeCwd === worktreePath
+                  ? detachSessionWorktree(session, session.cwd, worktreePath)
+                  : session,
+              ),
+            );
           })
           // An inaccessible checkout must never be mistaken for a deleted one.
           .catch(() => {});
@@ -316,4 +384,3 @@ export async function runSubmitDispatch(
     }
   }
 }
-

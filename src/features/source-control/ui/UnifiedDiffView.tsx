@@ -45,7 +45,7 @@ import {
   DiffOverviewRuler,
   useDiffOverviewSource,
 } from "./DiffOverviewRuler";
-import { DiffLayoutToggle, useDiffLayout } from "./DiffLayoutToggle";
+import { DiffLayoutToggle, useResponsiveDiffLayout } from "./DiffLayoutToggle";
 import type { DiffLayout } from "../../settings/model/settings";
 import { splitRowMarks, unifiedRowMarks } from "../model/diffOverview";
 import { buildSplitRows, type SplitRow } from "../model/splitRows";
@@ -131,7 +131,6 @@ export function UnifiedDiffView({
   useLocale();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const colorScheme = useColorScheme();
-  const diffLayout = useDiffLayout();
   const [open, setOpen] = useState<Set<string>>(() => initiallyOpenFiles(files, initialExpansion));
   const [reveals, setReveals] = useState<Record<string, Record<string, FoldReveal>>>({});
   const fileRefs = useRef(new Map<string, HTMLElement>());
@@ -161,6 +160,7 @@ export function UnifiedDiffView({
     [rowMetrics, zoom],
   );
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const diffLayout = useResponsiveDiffLayout(rootRef, files.length > 0);
   const zoomAnchor = useRef<{ y: number; zoom: number } | null>(null);
   const hasFiles = files.length > 0;
   useEffect(() => {
@@ -321,6 +321,7 @@ export function UnifiedDiffView({
   return (
     <div
       ref={rootRef}
+      data-diff-layout={diffLayout}
       className={
         fill ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "flex flex-col"
       }

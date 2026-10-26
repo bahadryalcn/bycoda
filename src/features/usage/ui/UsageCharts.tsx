@@ -42,6 +42,16 @@ export function formatUsagePercent(value: number): string {
     maximumFractionDigits: 1,
   }).format(value / 100);
 }
+/** Axis space is bounded; tooltips and tables keep the exact formatted value. */
+export function formatMetricTick(value: number, metric: UsageMetric): string {
+  if (metric !== "cost") return formatMetric(value, metric);
+  return new Intl.NumberFormat(getLocale(), {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
 export function formatBucket(at: number, resolution: UsageResolution): string {
   return new Date(at).toLocaleString(
     getLocale(),

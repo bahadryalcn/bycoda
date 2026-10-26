@@ -1,8 +1,14 @@
 import type { SocialAccount, SocialJob } from "../../features/social/model/social";
 import { createYouTubeAdapter } from "./youtube";
+import { browserContentIssue } from "./browserCapabilities";
 import { uploadXMedia, xMediaIssue } from "./xMedia";
 import { createTikTokAdapter, tiktokContentIssue } from "./tiktok";
-import { createTelegramAdapter, createWhatsAppAdapter, profileOnlyAdapter } from "./messaging";
+import { createTelegramAdapter, createWhatsAppAdapter, messagingContentIssue } from "./messaging";
+import { metaPublishingIssue, publishMetaMedia } from "./metaMedia";
+import { linkedInMultiImageIssue, publishLinkedInMultiImage } from "./linkedinMedia";
+import { createSnapchatAdapter, snapchatContentIssue } from "./snapchat";
+import { createTelegramChannelAdapter, telegramChannelContentIssue } from "./telegramChannel";
+import { createFacebookReelsAdapter, facebookReelContentIssue } from "./facebookReels";
 import {
   SocialHttp,
   SocialPlatformError,
@@ -57,7 +63,7 @@ export function createSocialAdapters(
   if (!/^v\d+\.0$/.test(graphVersion) || !/^20\d{4}$/.test(linkedinVersion))
     throw new Error("Invalid social API version.");
   const x: SocialAdapter = {
-    async send(_account, job, token, media, checkpoint) {
+    async send(_account, job, token, media, checkpoint, beforeSubmit) {
       const message =
         job.kind === "message" ||
         (job.kind === "reply" && !!job.payload.recipientId && !job.payload.postId);
@@ -69,12 +75,14 @@ export function createSocialAdapters(
         const path = job.payload.threadId
           ? `dm_conversations/${id(job.payload.threadId)}/messages`
           : `dm_conversations/with/${id(job.payload.recipientId)}/messages`;
+        await beforeSubmit?.();
         const { value } = await http.json(`https://api.x.com/2/${path}`, token, {
           text: text(job),
           ...(mediaIds.length ? { attachments: [{ media_id: mediaIds[0] }] } : {}),
         });
         return { platformId: requireId(value.data?.dm_event_id) };
       }
+      await beforeSubmit?.();
       const { value } = await http.json("https://api.x.com/2/tweets", token, {
         text: text(job),
         ...(mediaIds.length ? { media: { media_ids: mediaIds } } : {}),
@@ -160,15 +168,21 @@ export function createSocialAdapters(
     },
   };
   const meta = (platform: "instagram" | "facebook"): SocialAdapter => {
+    const reels = createFacebookReelsAdapter(http, graphVersion);
     const origin =
       platform === "instagram" ? "https://graph.instagram.com" : "https://graph.facebook.com";
     const endpoint = (path: string) => `${origin}/${graphVersion}/${path}`;
     return {
-      async send(account, job, token, _media, checkpoint) {
+      async send(account, job, token, _media, checkpoint, beforeSubmit) {
+        if (platform !== "facebook" && job.payload.facebook)
+          throw new SocialPlatformError("unsupported");
+        if (platform === "facebook" && job.payload.facebook)
+          return reels.send(account, job, token, _media, checkpoint, beforeSubmit);
         if (
           job.kind === "message" ||
           (job.kind === "reply" && job.payload.recipientId && !job.payload.postId)
         ) {
+          await beforeSubmit?.();
           const { value } = await http.json(endpoint(`${id(account.platformId)}/messages`), token, {
             recipient: { id: job.payload.recipientId },
             message: { text: text(job) },
@@ -178,6 +192,7 @@ export function createSocialAdapters(
         }
         if (job.kind === "reply" || job.kind === "comment") {
           const path = `${id(job.payload.postId)}/${platform === "instagram" ? "replies" : "comments"}`;
+          await beforeSubmit?.();
           const { value } = await http.json(
             endpoint(path),
             token,
@@ -185,15 +200,32 @@ export function createSocialAdapters(
           );
           return { platformId: requireId(value.id) };
         }
+        if (job.payload.media.length > 1 || job.payload.media.some((item) => item.kind === "video"))
+          return publishMetaMedia(
+            http,
+            platform,
+            account,
+            job,
+            token,
+            graphVersion,
+            checkpoint,
+            beforeSubmit,
+          );
         if (platform === "facebook") {
           const item = job.payload.media[0];
           if (job.payload.media.length > 1 || item?.kind === "video" || (item && !item.url))
             throw new SocialPlatformError("unsupported");
+          await beforeSubmit?.();
           const { value } = await http.json(
             endpoint(`${id(account.platformId)}/${item ? "photos" : "feed"}`),
             token,
             item
-              ? { url: item.url, caption: text(job), published: true }
+              ? {
+                  url: item.url,
+                  caption: text(job),
+                  published: true,
+                  ...(item.alt ? { alt_text_custom: item.alt } : {}),
+                }
               : {
                   message: job.payload.text,
                   ...(job.payload.link ? { link: job.payload.link } : {}),
@@ -220,7 +252,7 @@ export function createSocialAdapters(
             },
           );
           containerId = requireId(container.id);
-          checkpoint?.({ containerId });
+          await checkpoint?.({ containerId });
         }
         const { value: status } = await http.request(
           endpoint(`${id(containerId)}?fields=status_code`),
@@ -229,6 +261,7 @@ export function createSocialAdapters(
         if (status.status_code === "IN_PROGRESS")
           throw new SocialPlatformError("rate_limit", Date.now() + 60_000);
         if (status.status_code !== "FINISHED") throw new SocialPlatformError("rejected");
+        await beforeSubmit?.();
         const { value } = await http.json(
           endpoint(`${id(account.platformId)}/media_publish`),
           token,
@@ -240,6 +273,11 @@ export function createSocialAdapters(
           .request(endpoint(`${id(platformId)}?fields=permalink`), token)
           .catch(() => undefined);
         return { platformId, url: details?.value.permalink };
+      },
+      async reconcile(account, job, token) {
+        return platform === "facebook" && job.payload.facebook
+          ? reels.reconcile!(account, job, token)
+          : undefined;
       },
       async poll(account, token, posts, cursor) {
         const events: SocialInbound[] = [];
@@ -341,7 +379,7 @@ export function createSocialAdapters(
     };
   };
   const linkedin: SocialAdapter = {
-    async send(account, job, token, media, checkpoint) {
+    async send(account, job, token, media, checkpoint, beforeSubmit) {
       const headers = {
         "LinkedIn-Version": linkedinVersion,
         "X-Restli-Protocol-Version": "2.0.0",
@@ -357,6 +395,7 @@ export function createSocialAdapters(
           (!job.payload.postId?.startsWith("urn:li:comment:") || !job.payload.objectPostId)
         )
           throw new SocialPlatformError("unsupported");
+        await beforeSubmit?.();
         const { value, headers: responseHeaders } = await http.json(
           `https://api.linkedin.com/rest/socialActions/${id(job.payload.postId)}/comments`,
           token,
@@ -372,6 +411,17 @@ export function createSocialAdapters(
           platformId: requireId(responseHeaders.get("x-restli-id") ?? value.id),
         };
       }
+      if (job.payload.media.length > 1)
+        return publishLinkedInMultiImage(
+          http,
+          account,
+          job,
+          token,
+          linkedinVersion,
+          media,
+          checkpoint,
+          beforeSubmit,
+        );
       let image: string | undefined;
       if (job.payload.media.length) {
         const item = job.payload.media[0];
@@ -396,7 +446,7 @@ export function createSocialAdapters(
             token,
             await media(item.uploadId),
           );
-          checkpoint?.({ mediaIds: [image] });
+          await checkpoint?.({ mediaIds: [image] });
         }
         const { value: readiness } = await http.request(
           `https://api.linkedin.com/rest/images/${id(image)}`,
@@ -407,6 +457,7 @@ export function createSocialAdapters(
           throw new SocialPlatformError("rate_limit", Date.now() + 60_000);
         if (readiness.status !== "AVAILABLE") throw new SocialPlatformError("rejected");
       }
+      await beforeSubmit?.();
       const { headers: responseHeaders, value } = await http.json(
         "https://api.linkedin.com/rest/posts",
         token,
@@ -457,8 +508,16 @@ export function createSocialAdapters(
           token,
           { headers },
         );
-        owned.push(...(value.elements ?? []).map((post: { id: string }) => requireId(post.id)));
+        if (!Array.isArray(value.elements)) throw new SocialPlatformError("unsupported");
+        owned.push(...value.elements.map((post: { id: string }) => requireId(post.id)));
       }
+      if (
+        !owned.length &&
+        !(
+          account.accountType === "organization" && account.scopes.includes("r_organization_social")
+        )
+      )
+        throw new SocialPlatformError("unsupported");
       scan.posts = [...new Set(owned)];
       for (let read = 0; read < Math.min(4, scan.posts.length); read++) {
         scan.index %= scan.posts.length;
@@ -469,7 +528,8 @@ export function createSocialAdapters(
           token,
           { headers },
         );
-        for (const comment of value.elements ?? [])
+        if (!Array.isArray(value.elements)) throw new SocialPlatformError("unsupported");
+        for (const comment of value.elements)
           if (comment.actor !== account.platformId)
             events.push({
               eventId: requireId(comment.commentUrn),
@@ -494,6 +554,8 @@ export function createSocialAdapters(
       return { events, cursor: JSON.stringify(scan) };
     },
   };
+  const telegramBot = createTelegramAdapter(http);
+  const telegramChannel = createTelegramChannelAdapter(http);
   return {
     x,
     instagram: meta("instagram"),
@@ -501,9 +563,14 @@ export function createSocialAdapters(
     linkedin,
     youtube: createYouTubeAdapter(http),
     tiktok: createTikTokAdapter(http),
-    snapchat: profileOnlyAdapter,
+    snapchat: createSnapchatAdapter(http),
     whatsapp: createWhatsAppAdapter(http, graphVersion),
-    telegram: createTelegramAdapter(http),
+    telegram: {
+      send: (...args) =>
+        (args[0].accountType === "channel" ? telegramChannel : telegramBot).send(...args),
+      poll: (...args) =>
+        (args[0].accountType === "channel" ? telegramChannel : telegramBot).poll(...args),
+    },
   };
 }
 
@@ -511,7 +578,20 @@ export function contentSupport(
   account: SocialAccount,
   job: Pick<SocialJob, "payload" | "kind">,
 ): string | undefined {
+  if (job.payload.facebook && (account.platform !== "facebook" || account.connection === "browser"))
+    return "The Facebook Reel destination requires a Facebook Page API connection.";
+  if (account.connection === "browser" && account.platform !== "x")
+    return browserContentIssue(account, job);
+  if (account.platform === "telegram" && account.accountType === "channel")
+    return telegramChannelContentIssue(account, job);
+  if (account.platform === "facebook" && job.payload.facebook)
+    return facebookReelContentIssue(account, job);
+  if (job.payload.media.some((item) => item.kind === "document"))
+    return "PDF document publishing requires a LinkedIn browser connection.";
   if (account.platform === "tiktok") return tiktokContentIssue(job);
+  if (account.platform === "snapchat") return snapchatContentIssue(account, job);
+  if (account.platform === "whatsapp" || account.platform === "telegram")
+    return messagingContentIssue(account, job);
   if (account.platform === "x") {
     const message =
       job.kind === "message" ||
@@ -522,6 +602,10 @@ export function contentSupport(
   }
   if (job.kind !== "publish" && job.payload.media.length)
     return "Reply/message media attachments are not supported yet.";
+  if (account.platform === "linkedin" && job.payload.media.length > 1)
+    return linkedInMultiImageIssue(account, job);
+  if (job.kind === "publish" && ["instagram", "facebook"].includes(account.platform))
+    return metaPublishingIssue(account.platform as "instagram" | "facebook", job);
   if (account.platform === "youtube" && job.kind === "publish") {
     const options = job.payload.youtube;
     if (
@@ -540,10 +624,9 @@ export function contentSupport(
       typeof options.containsSyntheticMedia !== "boolean"
     )
       return "Set a valid YouTube title, visibility and explicit audience/synthetic-media declarations.";
-    if (
-      new TextEncoder().encode([job.payload.text, job.payload.link].filter(Boolean).join("\n"))
-        .length > 5000
-    )
+    const description = [job.payload.text, job.payload.link].filter(Boolean).join("\n");
+    if (/[<>]/.test(description)) return "YouTube descriptions cannot contain < or > characters.";
+    if (new TextEncoder().encode(description).length > 5000)
       return "YouTube description including links must fit 5000 UTF-8 bytes.";
     return undefined;
   }
@@ -557,16 +640,5 @@ export function contentSupport(
       !job.payload.media[0].uploadId)
   )
     return "LinkedIn image publishing requires an organization, one uploaded image and image-readiness permission. Member write-only tokens cannot verify Images API readiness.";
-  if (
-    account.platform === "instagram" &&
-    job.kind === "publish" &&
-    (job.payload.media.length !== 1 || !job.payload.media[0].url)
-  )
-    return "Instagram publishing requires exactly one HTTPS image URL.";
-  if (
-    account.platform === "facebook" &&
-    (job.payload.media.length > 1 || job.payload.media.some((item) => !item.url))
-  )
-    return "Facebook adapter supports text or one HTTPS image.";
   return undefined;
 }

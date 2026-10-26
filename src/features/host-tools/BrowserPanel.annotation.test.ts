@@ -34,7 +34,7 @@ const selection = {
   screenshot: { data: "YWJj", mimeType: "image/jpeg", width: 1280, height: 720 },
 };
 const button = (name: string) =>
-  Array.from(container.querySelectorAll("button")).find(
+  Array.from(document.body.querySelectorAll("button")).find(
     (el) => el.textContent === name || el.getAttribute("aria-label") === name,
   )!;
 async function render(sessionId = "host", composerSessionId = "shell") {
@@ -135,14 +135,22 @@ it("clears on remove, Escape, navigation and lease loss", async () => {
   await start();
   await select();
   await act(async () => button("Remove selection").click());
-  expect(container.textContent).not.toContain("Explain the selected element");
+  expect(document.body.querySelector("textarea")).toBeNull();
   await select();
   await act(async () =>
     container
       .querySelector("img")!
       .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
   );
-  expect(container.textContent).not.toContain("Cancel selection");
+  // The shared overlay owns the first Escape; selection stays until explicitly cancelled.
+  expect(document.body.querySelector("textarea")).toBeNull();
+  expect(button("Cancel selection")).toBeDefined();
+  await act(async () =>
+    container
+      .querySelector("img")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  expect(button("Cancel selection")).toBeUndefined();
   await start();
   await select();
   state.navigationId = "next";
@@ -150,7 +158,7 @@ it("clears on remove, Escape, navigation and lease loss", async () => {
   await act(async () => {
     vi.advanceTimersByTime(1000);
   });
-  expect(container.textContent).not.toContain("Explain the selected element");
+  expect(document.body.querySelector("textarea")).toBeNull();
   expect(container.querySelector("img")).toBeNull();
   state.navigationId = "nav";
   await act(async () => button("Refresh frame").click());
@@ -159,8 +167,33 @@ it("clears on remove, Escape, navigation and lease loss", async () => {
   await act(async () => {
     vi.advanceTimersByTime(30_000);
   });
-  expect(container.textContent).not.toContain("Cancel selection");
+  expect(button("Cancel selection")).toBeUndefined();
   expect(button("Select element and add to composer").disabled).toBe(true);
+});
+it("preserves the element and comment when its compact editor closes", async () => {
+  await render();
+  await start();
+  await select();
+  const textarea = document.body.querySelector("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      textarea,
+      "Make this action easier to find.",
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  expect(document.body.querySelector("textarea")).toBeNull();
+  expect(container.querySelector('[data-selected="true"]')).not.toBeNull();
+  await act(async () => button("Selected browser element").click());
+  expect(document.body.querySelector("textarea")!.value).toBe("Make this action easier to find.");
+  expect(
+    vi
+      .mocked(hostFeatureRequest)
+      .mock.calls.some((call) => call[2] === "browser.annotation.cancel"),
+  ).toBe(false);
 });
 it("ignores a late capture after the target conversation changes", async () => {
   await render();
@@ -187,8 +220,8 @@ it("ignores a late capture after the target conversation changes", async () => {
   await act(async () => {
     finish({ ...state, selection });
   });
-  expect(container.textContent).not.toContain("Explain the selected element");
-  expect(container.textContent).not.toContain("Cancel selection");
+  expect(document.body.querySelector("textarea")).toBeNull();
+  expect(button("Cancel selection")).toBeUndefined();
 });
 
 it("inspects the latest hover point when an earlier host read finishes slowly", async () => {

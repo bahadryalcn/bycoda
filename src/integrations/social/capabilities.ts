@@ -4,6 +4,8 @@ import type {
   SocialOperation,
   SocialPlatform,
 } from "../../features/social/model/social";
+import { SOCIAL_API_ACCOUNT_TYPES } from "../../features/social/model/social";
+import { browserOperations } from "./browserCapabilities";
 
 export const SOCIAL_DOCUMENTS = {
   youtube: "https://developers.google.com/youtube/v3/docs/",
@@ -56,9 +58,9 @@ function requirementsForPlatform(
         [],
         platform === "tiktok" || platform === "snapchat"
           ? platform === "tiktok"
-            ? "Personal-account video posting is implemented separately. Comment and DM management require eligible TikTok for Business/Organic API products; these communication adapters are not implemented."
+            ? "Personal-account video and photo posting are implemented separately. Comment and DM management require eligible TikTok for Business/Organic API products; these communication adapters are not implemented."
             : "Profile connection and local drafts only. Publishing, comments and messaging adapters are not implemented."
-          : "Text messaging only; public publishing, media, comments and discovery are not implemented.",
+          : "Public publishing, comments and discovery are not implemented. Supported messages may include one uploaded image or video.",
         true,
       );
       const requirements: Record<SocialOperation, Requirement> = {
@@ -77,14 +79,39 @@ function requirementsForPlatform(
       if (platform === "tiktok") {
         requirements.publish = r(
           ["user.info.basic", "video.publish"],
-          "Direct Post video publishing from a TikTok-verified HTTPS URL. Current creator settings, explicit visibility, video preview, music consent and app audit/access are required. Processing is tracked until PUBLISH_COMPLETE.",
+          "Direct Post video or photo publishing from TikTok-verified HTTPS URLs. Current creator settings, explicit visibility, media previews, music consent and app audit/access are required. Processing is tracked until PUBLISH_COMPLETE.",
         );
         requirements.media = r(
           ["video.publish"],
-          "One video URL from a domain or URL prefix verified in the TikTok developer app. Local uploads and photos are not implemented.",
+          "One video or up to four photo URLs from a domain or URL prefix verified in the TikTok developer app. Local API uploads are not implemented; browser video uploads are separate.",
+        );
+      }
+      if (platform === "snapchat") {
+        requirements.publish = r(
+          ["snapchat-profile-api"],
+          "Spotlight video publishing through an allowlisted Snap Public Profile API app. One uploaded MP4, explicit locale and verified API profile are required; processing is tracked by the exact Spotlight ID until LIVE. Stories and messaging are not implemented in this API adapter.",
+        );
+        requirements.media = r(
+          ["snapchat-profile-api"],
+          "One host-uploaded 6–60 second MP4 of at least 540 × 960 pixels, encrypted for the Public Profile media upload. No credentials or encryption keys are stored in job progress.",
         );
       }
       if (platform === "telegram") {
+        if (type === "channel") {
+          requirements.publish = r(
+            ["channel.publish"],
+            "Publish to the exact Telegram channel using its verified administrator bot. Current bot identity, channel identity and can_post_messages rights are checked before every approved publication. Channel creation and direct messages are separate operations.",
+          );
+          requirements.media = r(
+            ["channel.publish"],
+            "One host-uploaded PNG/JPEG image up to 5 MiB or MP4 up to 50 MiB; media captions fit 1024 UTF-16 characters. Channel text posts fit 4096 UTF-16 characters.",
+          );
+          return requirements;
+        }
+        requirements.media = r(
+          ["bot.send"],
+          "One host-uploaded PNG/JPEG image or MP4 video in an existing bot chat; captions fit 1024 characters. Bot and chat permissions apply.",
+        );
         requirements["inbox.read"] = r(
           ["bot.poll"],
           "Incoming bot text messages via getUpdates. An existing webhook must be removed by its owner before polling.",
@@ -100,6 +127,10 @@ function requirementsForPlatform(
         );
       }
       if (platform === "whatsapp") {
+        requirements.media = r(
+          ["whatsapp_business_messaging", "bycoda.webhook"],
+          "One host-uploaded PNG/JPEG image or MP4 video in a permitted 24-hour customer reply; captions fit 1024 characters.",
+        );
         requirements["inbox.read"] = r(
           ["whatsapp_business_messaging", "bycoda.webhook"],
           "Signed WhatsApp Business Account webhooks; no historical inbox API.",
@@ -107,7 +138,7 @@ function requirementsForPlatform(
         requirements.webhook = requirements["inbox.read"];
         requirements["message.reply"] = r(
           ["whatsapp_business_messaging", "bycoda.webhook"],
-          "Text replies within 24 hours of an inbound customer message. Templates and cold outreach are not implemented.",
+          "Text or single-image/video replies within 24 hours of an inbound customer message. Templates and cold outreach are not implemented.",
         );
       }
       return requirements;
@@ -118,11 +149,11 @@ function requirementsForPlatform(
       const write = "https://www.googleapis.com/auth/youtube.force-ssl";
       return {
         publish: r(
-          [upload],
+          [upload, read],
           "Video upload to the OAuth-verified channel only; title, privacy and audience declarations are required. No text-only Community posts. API enablement, consent approval, channel restrictions and quota apply.",
         ),
         media: r(
-          [upload],
+          [upload, read],
           "This adapter accepts one host-uploaded MP4/WebM video up to 64 MiB. Platform processing is separate from upload acceptance.",
         ),
         "comments.read": r(
@@ -212,7 +243,7 @@ function requirementsForPlatform(
         ),
         media: r(
           ["instagram_business_content_publish"],
-          "Meta must fetch an HTTPS image/video; Stories have account-type constraints.",
+          "HTTPS images, a single video published as a Reel in the feed, or an ordered image/video carousel. The Host accepts up to four media assets; processing is checked before publication. Stories are not implemented.",
         ),
         "comments.read": r(
           ["instagram_business_manage_comments"],
@@ -250,7 +281,10 @@ function requirementsForPlatform(
           ["pages_manage_posts", "pages_read_engagement"],
           "Facebook Page access token and Page task/role; personal-profile publishing is unavailable.",
         ),
-        media: r(["pages_manage_posts"], "Page photo/video endpoints and format limits apply."),
+        media: r(
+          ["pages_manage_posts"],
+          "Up to four HTTPS images on a managed Page, including ordered multiple-image posts and alternative text. Explicit Reels accept one uploaded vertical MP4 up to 64 MiB with metadata and exact publication verification. Ordinary Page videos and Stories are not implemented.",
+        ),
         "comments.read": r(
           ["pages_read_engagement", "pages_read_user_content"],
           "Comments on managed Page posts.",
@@ -293,7 +327,8 @@ function requirementsForPlatform(
         ),
         media: r(
           [org ? "w_organization_social" : "w_member_social"],
-          "Images/Videos upload registration and completion are required.",
+          "One to four owner-uploaded organization images with per-image alternative text and Images API readiness verification; member media and video are not implemented in the API adapter.",
+          !org,
         ),
         "comments.read": r(
           [org ? "r_organization_social_feed" : "r_member_social_feed"],
@@ -325,8 +360,8 @@ function requirementsForPlatform(
           true,
         ),
         poll: r(
-          [org ? "r_organization_social_feed" : "r_member_social_feed"],
-          "Read owned/accessible comments using versioned APIs and application/member limits.",
+          org ? ["r_organization_social_feed", "r_organization_social"] : ["r_member_social_feed"],
+          "Read comments on known posts. Organization post discovery additionally requires r_organization_social; member polling is limited to known post IDs.",
         ),
       };
     }
@@ -357,6 +392,42 @@ export function platformRequirements(
 }
 export function accountCapabilities(account: SocialAccount, now = Date.now()): Capability[] {
   const requirements = platformRequirements(account.platform, account.accountType);
+  if (account.connection === "browser" && account.platform !== "x") {
+    const supported = browserOperations(account);
+    return (Object.keys(requirements) as SocialOperation[]).map((operation) => {
+      const scopes = [`browser:${operation}`];
+      const implemented = supported.includes(operation);
+      const expired = account.expiresAt !== undefined && account.expiresAt <= now;
+      return {
+        operation,
+        scopes,
+        status: !implemented
+          ? "unsupported"
+          : expired
+            ? "expired"
+            : !account.connected ||
+                !account.accessApproved ||
+                !scopes.every((scope) => account.scopes.includes(scope))
+              ? "pending"
+              : "available",
+        reason: !implemented
+          ? "This operation has no browser recipe. Other supported operations can use the isolated browser session without an API."
+          : expired
+            ? "The browser session expired. Sign in again and verify its saved identity."
+            : !account.connected ||
+                !account.accessApproved ||
+                !scopes.every((scope) => account.scopes.includes(scope))
+              ? "Sign in and verify this account's isolated browser session on its executor host."
+              : operation === "poll" || operation === "inbox.read" || operation === "comments.read"
+                ? "Bounded visible web snapshots only. The sender identity and recognized layout must be verified; missing data is reported as unavailable rather than an empty inbox."
+                : "Uses the connected web account and the existing approval queue. Identity, recipient and persisted platform acknowledgement are required; uncertain outcomes are held for review.",
+        source: SOCIAL_DOCUMENTS[account.platform],
+      };
+    });
+  }
+  const apiType = (SOCIAL_API_ACCOUNT_TYPES[account.platform] as readonly string[]).includes(
+    account.accountType,
+  );
   return Object.entries(requirements).map(([operation, requirement]) => {
     let status: Capability["status"] = "available";
     let reason = requirement.reason;
@@ -371,7 +442,11 @@ export function accountCapabilities(account: SocialAccount, now = Date.now()): C
         reason =
           "Legacy X web DM only, with a verified numeric conversation and explicit message acknowledgement. Encrypted Chat is unavailable. Project permissions, consent and automatic-rule authorization still apply.";
     }
-    if (requirement.unsupported) status = "unsupported";
+    if (!apiType && account.connection !== "browser") {
+      status = "unsupported";
+      reason =
+        "This account type uses a browser session. Choose the appropriate business, bot, professional or Page account for the official API.";
+    } else if (requirement.unsupported) status = "unsupported";
     else if (account.expiresAt !== undefined && account.expiresAt <= now) {
       status = "expired";
       reason = "OAuth token expired. Reconnect this account.";
@@ -398,7 +473,7 @@ export function accountCapabilities(account: SocialAccount, now = Date.now()): C
     ) {
       status = "unsupported";
       reason =
-        "This adapter supports organization image upload only. Member write-only tokens cannot verify Images API readiness; video is not implemented.";
+        "This adapter supports one to four organization images. Member write-only tokens cannot verify Images API readiness; video is not implemented.";
     }
     if (
       account.connection === "browser" &&

@@ -1,6 +1,8 @@
 import { Button } from "../../../shared/ui/Button";
 import { applySessionSync } from "../model/protocol";
 import { mergePreviewBlocks } from "../model/mergePreviewBlocks";
+import { discardQuestionDraft } from "../../sessions/model/questionDrafts";
+import type { UserQuestionDelivery, UserQuestionPrompt } from "../../sessions/model/userQuestion";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RemoteOutboxNotice } from "./RemoteOutboxNotice";
@@ -552,6 +554,32 @@ function ConnectedRemoteSession({
   }, [project.key, machine.environmentId, sessionId]);
 
   const hostSession = snapshot && snapshot.session.id === sessionId ? snapshot.session : undefined;
+  const questionDraftScope = `${shell.id}:${machine.id}:${sessionId ?? ""}`;
+  const previousQuestions = useRef<{ scope: string; questions: UserQuestionPrompt[] } | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    if (!hostSession || pageCacheOnly) return;
+    const questions = [
+      ...(hostSession.submittedQuestions ?? []),
+      ...(hostSession.pendingQuestion ? [hostSession.pendingQuestion] : []),
+    ];
+    const previous = previousQuestions.current;
+    if (previous?.scope === questionDraftScope) {
+      for (const question of previous.questions) {
+        if (
+          !questions.some(
+            (current) =>
+              current.requestId === question.requestId &&
+              current.callId === question.callId &&
+              current.providerTurnId === question.providerTurnId,
+          )
+        )
+          discardQuestionDraft(questionDraftScope, question);
+      }
+    }
+    previousQuestions.current = { scope: questionDraftScope, questions };
+  }, [hostSession, pageCacheOnly, questionDraftScope]);
   useEffect(() => {
     if (hostSession) rememberRemotePendingWorktree(shell.id);
   }, [hostSession?.id, shell.id]);
@@ -2453,6 +2481,23 @@ function ConnectedRemoteSession({
     modelSettings: configuration.settings,
     runtimeMode: configuration.mode,
     busy,
+    ...(hostSession?.pendingQuestion &&
+    pending?.type === "answer" &&
+    pending.sessionId === hostSession.id &&
+    pending.runId === snapshot?.runId &&
+    pending.requestId === hostSession.pendingQuestion.requestId
+      ? {
+          pendingQuestion: {
+            ...hostSession.pendingQuestion,
+            delivery: sending ? "sending" : "unknown",
+            error: sending
+              ? undefined
+              : t(
+                  "Answer delivery could not be confirmed. Check the connection before continuing.",
+                ),
+          },
+        }
+      : {}),
     blocks: unconfirmed ? [...blocks, unconfirmed] : blocks,
     historyPartial: snapshot?.history?.before !== undefined,
     historyLoading: !!snapshot?.historyLoading || remoteHistoryLoading,
@@ -2700,13 +2745,73 @@ function ConnectedRemoteSession({
   };
   const answer = (requestId: number, reply: Parameters<SessionPaneProps["onQuestionReply"]>[2]) => {
     if (!hostSession || !snapshot?.runId) return;
+    const sessionId = hostSession.id;
+    const runId = snapshot.runId;
+    const commandId = crypto.randomUUID();
+    const updateDelivery = (delivery: UserQuestionDelivery, error?: string) => {
+      const current = snapshotRef.current;
+      if (
+        current?.session.id !== sessionId ||
+        current.runId !== runId ||
+        current.session.pendingQuestion?.requestId !== requestId
+      )
+        return;
+      const next = {
+        ...current,
+        session: {
+          ...current.session,
+          pendingQuestion: { ...current.session.pendingQuestion, delivery, error },
+        },
+      };
+      snapshotRef.current = next;
+      setSnapshot(next);
+    };
+    if (
+      ["sending", "queued", "unknown"].includes(
+        snapshotRef.current?.session.pendingQuestion?.delivery ?? "",
+      )
+    )
+      return;
+    const heldCommand = pendingRemoteCommand(
+      project.key,
+      machine.environmentId,
+      sessionId,
+      shell.id,
+    );
+    if (
+      heldCommand?.type === "answer" &&
+      heldCommand.runId === runId &&
+      heldCommand.requestId === requestId
+    ) {
+      updateDelivery(
+        "unknown",
+        t("Answer delivery could not be confirmed. Check the connection before continuing."),
+      );
+      return;
+    }
+    if (sendingRef.current || pageCacheOnly || remoteDeleted || !online) {
+      updateDelivery("failed", t("The host did not confirm the request."));
+      return;
+    }
+    updateDelivery("sending");
     void run({
       type: "answer",
-      commandId: crypto.randomUUID(),
-      sessionId: hostSession.id,
-      runId: snapshot.runId,
+      commandId,
+      sessionId,
+      runId,
       requestId,
       reply,
+    }).then((receipt) => {
+      if (receipt) return; // Host acceptance is followed by the provider's authoritative snapshot.
+      // Only an explicit host refusal proves the answer was not accepted.
+      // A receipt or snapshot failure must never turn into an automatic resend.
+      const uncertain = !lastRunFailure.current?.includes("Host rejected request:");
+      updateDelivery(
+        uncertain ? "unknown" : "failed",
+        uncertain
+          ? t("Answer delivery could not be confirmed. Check the connection before continuing.")
+          : t("The host did not confirm the request."),
+      );
     });
   };
   const compact = () => {
@@ -2962,6 +3067,7 @@ function ConnectedRemoteSession({
     }
   };
   const overrides: RemoteSessionOverrides = {
+    questionDraftScope,
     headerStatus: (
       <RemoteDataStatus
         presentation="indicator"

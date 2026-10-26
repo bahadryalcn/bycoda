@@ -20,6 +20,17 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TaskWorkspacePicker } from "./TaskWorkspacePicker";
 import { TaskBulkToolbar } from "./TaskBulkToolbar";
 import { TaskList } from "./TaskList";
+import { useSprintBoard } from "../model/sprintClient";
+import { sprintTaskKey, sprintProjectKey } from "../model/hostSprints";
+import {
+  initialTaskProjectScope,
+  taskMatchesProject,
+  taskProjectIdentity,
+  type TaskProjectScope,
+} from "../model/taskBoardScope";
+import { SprintManagement } from "./SprintManagement";
+import { SprintPlanningControls } from "./SprintPlanningControls";
+import { SprintReports } from "./SprintReports";
 import { TaskAccountPicker } from "./TaskAccountPicker";
 import {
   defaultProviderAccountId,
@@ -386,7 +397,14 @@ function TasksContent({
   const [searchQuery, setSearchQuery] = useRetainedState(`${viewStateKey}:search`, "");
   const [statusFilter, setStatusFilter] = useRetainedState(`${viewStateKey}:status`, "all");
   const [machineFilter, setMachineFilter] = useRetainedState(`${viewStateKey}:machine`, "all");
-  const [projectFilter, setProjectFilter] = useRetainedState(`${viewStateKey}:project`, "all");
+  const [projectFilter, setProjectFilter] = useState(() => initialTaskProjectScope(cwd));
+  useEffect(() => setProjectFilter(initialTaskProjectScope(cwd)), [cwd]);
+  const [section, setSection] = useRetainedState<"backlog" | "sprints" | "reports">(
+    `${viewStateKey}:section`,
+    "backlog",
+  );
+  const [sprintFilter, setSprintFilter] = useRetainedState(`${viewStateKey}:sprint`, "");
+  const [discoveredProjects, setDiscoveredProjects] = useState<TaskProjectScope[]>([]);
   const [now, setNow] = useState(Date.now);
   const [loading, setLoading] = useState(true);
   const [boardDataState, setBoardDataState] = useState<RemoteDataState>({
@@ -405,6 +423,16 @@ function TasksContent({
     "all",
   );
   const [saving, setSaving] = useState(false);
+  const [planningRecovery, setPlanningRecovery] = useState<
+    Array<{
+      id: string;
+      title: string;
+      sprintId: string;
+      task?: BoardTask;
+      goal?: { environmentId: string; goalId: string };
+    }>
+  >([]);
+  const [retryingPlanning, setRetryingPlanning] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const openingSessionRequests = useRef(new Set<string>());
   const [openingSessions, setOpeningSessions] = useState(new Set<string>());
@@ -457,14 +485,139 @@ function TasksContent({
   const goals = useMemo(
     () =>
       storedGoals.filter(
-        (goal) => !goal.projects.some((project) => isProjectLockedIn(lock, project.cwd)),
+        (goal) =>
+          !goal.projects.some((project) => isProjectLockedIn(lock, project.cwd)) &&
+          goal.projects.some((project) =>
+            taskMatchesProject(
+              { machineId: goal.machineId, projectId: project.id, cwd: project.cwd },
+              projectFilter,
+              machines,
+            ),
+          ),
       ),
-    [lock, storedGoals],
+    [lock, storedGoals, projectFilter, machines],
   );
   const stewards = useMemo(
-    () => storedStewards.filter((steward) => !isProjectLockedIn(lock, steward.cwd)),
-    [lock, storedStewards],
+    () =>
+      storedStewards.filter(
+        (steward) =>
+          !isProjectLockedIn(lock, steward.cwd) &&
+          taskMatchesProject(steward, projectFilter, machines),
+      ),
+    [lock, storedStewards, projectFilter, machines],
   );
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.allSettled(
+      machines.map(async (machine) => {
+        const projects = await machineProjects(machine);
+        return projects.map((project): TaskProjectScope => ({
+          key: taskProjectIdentity(machine.environmentId, project.id),
+          environmentId: machine.environmentId,
+          projectId: project.id,
+          machineId: machine.id,
+          machineName: machine.name,
+          cwd: hostProjectCwd(machine, project),
+          name: project.name || projectDisplayName(project.cwd),
+        }));
+      }),
+    ).then((results) => {
+      if (!cancelled)
+        setDiscoveredProjects(
+          results.flatMap((result) => (result.status === "fulfilled" ? result.value : [])),
+        );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [machines]);
+  const projectScopes = useMemo(() => {
+    const entries = new Map(
+      discoveredProjects
+        .filter((project) => !isProjectLockedIn(lock, project.cwd))
+        .map((project) => [project.key, project]),
+    );
+    for (const task of visibleTasks) {
+      const machine = machines.find((entry) => entry.id === task.machineId);
+      if (!machine?.environmentId) continue;
+      const key = taskProjectIdentity(machine.environmentId, task.projectId);
+      if (!entries.has(key))
+        entries.set(key, {
+          key,
+          environmentId: machine.environmentId,
+          projectId: task.projectId,
+          machineId: machine.id,
+          machineName: task.machineName,
+          cwd: task.cwd,
+          name: projectDisplayName(task.cwd),
+        });
+    }
+    return [...entries.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [discoveredProjects, visibleTasks, machines, lock]);
+  const sprintProjects = useMemo(
+    () =>
+      projectScopes.map(({ environmentId, projectId, cwd, name }) => ({
+        environmentId,
+        projectId,
+        cwd,
+        name,
+      })),
+    [projectScopes],
+  );
+  const sprintBoard = useSprintBoard(machines, visibleTasks, sprintProjects);
+  const accessibleSprints = useMemo(
+    () =>
+      sprintBoard.sprints.filter((sprint) =>
+        sprint.projects.every((project) =>
+          sprintProjects.some((allowed) => sprintProjectKey(allowed) === sprintProjectKey(project)),
+        ),
+      ),
+    [sprintBoard.sprints, sprintProjects],
+  );
+  const accessibleSprintBoard = { ...sprintBoard, sprints: accessibleSprints };
+  const currentSprint = accessibleSprints.find((sprint) => sprint.id === sprintFilter);
+  const selectedProject = projectScopes.find(
+    (project) =>
+      project.key === projectFilter ||
+      (projectFilter.startsWith("path:") && projectKey(project.cwd) === projectFilter.slice(5)),
+  );
+  const scopedCwd =
+    selectedProject?.cwd ??
+    (cwd && projectFilter === initialTaskProjectScope(cwd) ? cwd : undefined);
+  useEffect(() => {
+    // Reopening a project starts in that project, even if its previous sprint scope was broader.
+    if (
+      currentSprint &&
+      selectedProject &&
+      !currentSprint.projects.some((project) => sprintProjectKey(project) === selectedProject.key)
+    )
+      setSprintFilter("");
+  }, [currentSprint, selectedProject?.key, setSprintFilter]);
+  const planningFor = (task: BoardTask) => {
+    const ref = sprintBoard.taskRef(task);
+    return ref ? sprintBoard.planning.get(sprintTaskKey(ref)) : undefined;
+  };
+  const planningLabel = (task: BoardTask) => {
+    const plan = planningFor(task);
+    const sprint = accessibleSprints.find((entry) => entry.id === plan?.sprintId);
+    return [
+      sprint?.name,
+      plan?.storyPoints != null ? t("{p0} points", { p0: plan.storyPoints }) : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  };
+  const selectSprint = (id: string) => {
+    const sprint = accessibleSprints.find((entry) => entry.id === id);
+    setSprintFilter(id);
+    if (
+      sprint &&
+      (!selectedProject ||
+        !sprint.projects.some((project) => sprintProjectKey(project) === selectedProject.key))
+    )
+      setProjectFilter("all");
+    if (section !== "reports") setSection("sprints");
+  };
   const dailyNotice = useMemo(() => dailyLimitNotice(limits), [limits]);
   const goalTitles = useMemo(
     () => new Map(goals.map((goal) => [goalKey(goal.machineId, goal.id), goal.title])),
@@ -478,19 +631,45 @@ function TasksContent({
             (task.goalId && goalKey(task.machineId, task.goalId) === goalFilter)) &&
           (statusFilter === "all" || taskColumn(task.status) === statusFilter) &&
           (machineFilter === "all" || task.machineId === machineFilter) &&
-          (projectFilter === "all" || task.cwd === projectFilter) &&
+          taskMatchesProject(task, projectFilter, machines) &&
+          (() => {
+            const ref = sprintBoard.taskRef(task);
+            const plan = ref ? sprintBoard.planning.get(sprintTaskKey(ref)) : undefined;
+            if (section === "backlog")
+              return (
+                !plan?.sprintId ||
+                !accessibleSprints.some(
+                  (sprint) =>
+                    sprint.id === plan.sprintId &&
+                    (sprint.state === "active" || sprint.state === "planned"),
+                )
+              );
+            return !sprintFilter || plan?.sprintId === sprintFilter;
+          })() &&
           (!searchQuery.trim() ||
             `${task.title}\n${task.prompt}\n${task.id}`
               .toLocaleLowerCase()
               .includes(searchQuery.trim().toLocaleLowerCase())),
       ),
-    [goalFilter, visibleTasks, statusFilter, machineFilter, projectFilter, searchQuery],
+    [
+      goalFilter,
+      visibleTasks,
+      statusFilter,
+      machineFilter,
+      projectFilter,
+      searchQuery,
+      machines,
+      sprintBoard.planning,
+      sprintBoard.taskRef,
+      accessibleSprints,
+      section,
+      sprintFilter,
+    ],
   );
   const activeFilterCount =
     Number(goalFilter !== ALL_GOALS) +
     Number(statusFilter !== "all") +
-    Number(machineFilter !== "all") +
-    Number(projectFilter !== "all");
+    Number(machineFilter !== "all");
   // Changing scope drops hidden selections; select-all never means hidden tasks.
   useEffect(() => {
     const visible = new Set(tasks.map(bulkTaskKey));
@@ -574,15 +753,22 @@ function TasksContent({
   }, [board]);
 
   const beginCreate = () => {
+    if (projectFilter !== "all" && (!scopedCwd || isProjectLockedIn(lock, scopedCwd))) {
+      setError(TASK_MACHINE_ERROR);
+      return;
+    }
     const project =
-      cwd && looksLikeProject(cwd) && !parseRemotePath(cwd) && !isProjectLockedIn(lock, cwd)
-        ? cwd
-        : (recents.find(
-            (entry) =>
-              looksLikeProject(entry.path) &&
-              !parseRemotePath(entry.path) &&
-              !isProjectLockedIn(lock, entry.path),
-          )?.path ?? "~");
+      scopedCwd ??
+      (currentSprint
+        ? ""
+        : cwd && looksLikeProject(cwd) && !parseRemotePath(cwd) && !isProjectLockedIn(lock, cwd)
+          ? cwd
+          : (recents.find(
+              (entry) =>
+                looksLikeProject(entry.path) &&
+                !parseRemotePath(entry.path) &&
+                !isProjectLockedIn(lock, entry.path),
+            )?.path ?? "~"));
     const preferred = defaultSessionChoice(project);
     const harness = firstEnabledHarness(project, preferred.harness);
     const model =
@@ -590,19 +776,29 @@ function TasksContent({
       modelsFor(harness)[0]?.id ??
       preferredModelId(harness);
     setError(null);
-    setDraft(newTaskDraft(project, harness, model));
+    setDraft({
+      ...newTaskDraft(project, harness, model),
+      machineId: selectedProject?.machineId ?? backgroundMachineFor(machines, project)?.id,
+    });
   };
 
   const beginGoal = () => {
+    if (projectFilter !== "all" && (!scopedCwd || isProjectLockedIn(lock, scopedCwd))) {
+      setError(TASK_MACHINE_ERROR);
+      return;
+    }
     const project =
-      cwd && looksLikeProject(cwd) && !parseRemotePath(cwd) && !isProjectLockedIn(lock, cwd)
-        ? cwd
-        : (recents.find(
-            (entry) =>
-              looksLikeProject(entry.path) &&
-              !parseRemotePath(entry.path) &&
-              !isProjectLockedIn(lock, entry.path),
-          )?.path ?? "");
+      scopedCwd ??
+      (currentSprint
+        ? ""
+        : cwd && looksLikeProject(cwd) && !parseRemotePath(cwd) && !isProjectLockedIn(lock, cwd)
+          ? cwd
+          : (recents.find(
+              (entry) =>
+                looksLikeProject(entry.path) &&
+                !parseRemotePath(entry.path) &&
+                !isProjectLockedIn(lock, entry.path),
+            )?.path ?? ""));
     const preferred = defaultSessionChoice(project || "~");
     const harness = firstEnabledHarness(project || "~", preferred.harness);
     const model =
@@ -611,7 +807,14 @@ function TasksContent({
       preferredModelId(harness);
     setError(null);
     const draft = newGoalDraft(project, harness, model);
-    setGoalDraft(looksLikeProject(project) ? draft : { ...draft, cwds: [], leadCwd: "" });
+    setGoalDraft(
+      looksLikeProject(project)
+        ? {
+            ...draft,
+            machineId: selectedProject?.machineId ?? backgroundMachineFor(goalCapable, project)?.id,
+          }
+        : { ...draft, cwds: [], leadCwd: "" },
+    );
   };
 
   const onCreateGoal = async (event: FormEvent) => {
@@ -622,6 +825,30 @@ function TasksContent({
       const saved = await createGoal(goalCapable, goalDraft);
       setGoals((current) => upsertBoardItem(current, saved));
       setGoalDraft(null);
+      if (currentSprint && sprintBoard.supported) {
+        const machine = machines.find((entry) => entry.id === saved.machineId);
+        try {
+          if (!machine) throw new Error(TASK_MACHINE_ERROR);
+          await sprintBoard.setGoalContext(machine.environmentId, saved.id, currentSprint.id);
+        } catch (reason) {
+          setPlanningRecovery((items) => [
+            ...items,
+            {
+              id: `goal:${saved.machineId}:${saved.id}`,
+              title: saved.title,
+              sprintId: currentSprint.id,
+              goal: { environmentId: machine?.environmentId ?? "", goalId: saved.id },
+            },
+          ]);
+          setError(
+            t("Goal created. Sprint assignment failed: {p0}", {
+              p0: reason instanceof Error ? reason.message : String(reason),
+            }),
+          );
+          void refresh();
+          return;
+        }
+      }
       setError(null);
       void refresh();
     } catch (reason: unknown) {
@@ -632,7 +859,8 @@ function TasksContent({
   };
 
   const beginSteward = () => {
-    const project = cwd && looksLikeProject(cwd) ? cwd : (recents[0]?.path ?? "~");
+    const project =
+      selectedProject?.cwd ?? (cwd && looksLikeProject(cwd) ? cwd : (recents[0]?.path ?? "~"));
     const preferred = defaultSessionChoice(project);
     const harness = firstEnabledHarness(project, preferred.harness);
     const model =
@@ -847,6 +1075,28 @@ function TasksContent({
       putTask(saved);
       setTasks((current) => upsertBoardItem(current, saved));
       setDraft(null);
+      if (!draft.id && currentSprint && sprintBoard.supported) {
+        try {
+          await sprintBoard.plan(saved, currentSprint.id);
+        } catch (reason) {
+          setPlanningRecovery((items) => [
+            ...items,
+            {
+              id: `task:${saved.machineId}:${saved.id}`,
+              title: saved.title,
+              sprintId: currentSprint.id,
+              task: saved,
+            },
+          ]);
+          setError(
+            t("Task created. Sprint assignment failed: {p0}", {
+              p0: reason instanceof Error ? reason.message : String(reason),
+            }),
+          );
+          void refresh();
+          return;
+        }
+      }
       if (mode === "queued" && saved.workspaceControlsSupported) {
         saved = await startTask(saved);
         putTask(saved);
@@ -1028,7 +1278,7 @@ function TasksContent({
   const cardActions = useStableCallback(actionsFor);
   const openCard = useCallback((key: string) => setSelectedKey(key), []);
   const selected = selectedKey
-    ? visibleTasks.find((task) => `${task.machineId}:${task.id}` === selectedKey)
+    ? tasks.find((task) => `${task.machineId}:${task.id}` === selectedKey)
     : undefined;
   // A task that is gone from the board takes its panel with it.
   useEffect(() => {
@@ -1039,6 +1289,45 @@ function TasksContent({
     <div className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)">
       <header className="task-board-toolbar">
         <h1 className="sr-only">{t("Tasks")}</h1>
+        <SearchableSelect
+          label={t("Project")}
+          value={projectFilter}
+          options={[
+            { value: "all", label: t("All projects") },
+            ...(projectFilter.startsWith("path:") && !selectedProject
+              ? [{ value: projectFilter, label: projectDisplayName(cwd || "") }]
+              : []),
+            ...projectScopes
+              .filter(
+                (project) =>
+                  !currentSprint ||
+                  currentSprint.projects.some((member) => sprintProjectKey(member) === project.key),
+              )
+              .map((project) => ({
+                value: project.key,
+                label: `${project.name} · ${project.machineName}`,
+                description: project.cwd,
+              })),
+            ...(selectedProject && projectFilter.startsWith("path:")
+              ? [
+                  {
+                    value: projectFilter,
+                    label: `${selectedProject.name} · ${selectedProject.machineName}`,
+                  },
+                ]
+              : []),
+          ]}
+          onChange={setProjectFilter}
+        />
+        <SearchableSelect
+          label={t("Sprint")}
+          value={sprintFilter}
+          options={[
+            { value: "", label: t("All sprints") },
+            ...accessibleSprints.map((sprint) => ({ value: sprint.id, label: sprint.name })),
+          ]}
+          onChange={selectSprint}
+        />
         <TextField
           fieldClassName="task-search-field"
           label={t("Search tasks")}
@@ -1048,14 +1337,17 @@ function TasksContent({
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.currentTarget.value)}
         />
-        <Button
-          variant="ghost"
-          aria-pressed={listView}
-          disabled={bulkBusy || selectMode}
-          onClick={() => setListView((value) => !value)}
-        >
-          {t(listView ? "Board view" : "List view")}
-        </Button>
+        {section === "sprints" ? (
+          <SegmentedControl
+            label={t("Task view")}
+            value={listView ? "list" : "board"}
+            options={[
+              { value: "board", label: t("Board view") },
+              { value: "list", label: t("List view") },
+            ]}
+            onValueChange={(value) => setListView(value === "list")}
+          />
+        ) : null}
         <Button
           variant="ghost"
           aria-pressed={selectMode}
@@ -1144,21 +1436,6 @@ function TasksContent({
                     />
                   </label>
                   <label className="task-filter-field">
-                    <span>{t("Project")}</span>
-                    <SearchableSelect
-                      label={t("Project")}
-                      value={projectFilter}
-                      options={[
-                        { value: "all", label: t("All") },
-                        ...[...new Set(visibleTasks.map((task) => task.cwd))].map((cwd) => ({
-                          value: cwd,
-                          label: cwd,
-                        })),
-                      ]}
-                      onChange={setProjectFilter}
-                    />
-                  </label>
-                  <label className="task-filter-field">
                     <span>{t("Show goal")}</span>
                     <SearchableSelect
                       variant="pill"
@@ -1188,7 +1465,6 @@ function TasksContent({
                       setGoalFilter(ALL_GOALS);
                       setStatusFilter("all");
                       setMachineFilter("all");
-                      setProjectFilter("all");
                     }}
                   >
                     {t("Reset")}
@@ -1309,22 +1585,115 @@ function TasksContent({
           </Button>
         </div>
       </header>
-      {selectMode ? (
-        <TaskBulkToolbar
-          tasks={tasks}
-          selected={bulkSelection}
-          onSelect={setBulkSelection}
-          disabled={acting !== null}
-          onBusy={setBulkBusy}
-          onUpdated={(task) => {
-            putTask(task);
-            setTasks((current) => upsertBoardItem(current, task));
-          }}
-          onDeleted={(task) => {
-            removeTask(task);
-            setTasks((current) => current.filter((row) => bulkTaskKey(row) !== bulkTaskKey(task)));
+      <nav className="task-planning-navigation" aria-label={t("Task sections")}>
+        <SegmentedControl
+          label={t("Task sections")}
+          value={section}
+          options={[
+            { value: "backlog", label: t("Backlog") },
+            { value: "sprints", label: t("Sprints") },
+            { value: "reports", label: t("Reports") },
+          ]}
+          onValueChange={(value) => {
+            setSection(value as typeof section);
+            if (value === "backlog") setSprintFilter("");
           }}
         />
+        <span
+          className="task-scope-summary"
+          title={[
+            selectedProject?.name ??
+              (projectFilter === "all" ? t("All projects") : projectDisplayName(cwd || "")),
+            currentSprint?.name,
+            t("{p0} tasks", { p0: tasks.length }),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        >
+          {selectedProject?.name ??
+            (projectFilter === "all" ? t("All projects") : projectDisplayName(cwd || ""))}
+          {currentSprint ? ` · ${currentSprint.name}` : ""} ·{" "}
+          {t("{p0} tasks", { p0: tasks.length })}
+        </span>
+      </nav>
+      {planningRecovery.length ? (
+        <ul className="task-planning-recovery" aria-label={t("Pending sprint assignments")}>
+          {planningRecovery.map((item) => (
+            <li key={item.id}>
+              <span>{item.title}</span>
+              <Button
+                variant="secondary"
+                loading={retryingPlanning === item.id}
+                disabled={retryingPlanning !== null && retryingPlanning !== item.id}
+                onClick={async () => {
+                  if (retryingPlanning) return;
+                  setRetryingPlanning(item.id);
+                  try {
+                    if (item.task) await sprintBoard.plan(item.task, item.sprintId);
+                    else if (item.goal)
+                      await sprintBoard.setGoalContext(
+                        item.goal.environmentId,
+                        item.goal.goalId,
+                        item.sprintId,
+                      );
+                    setPlanningRecovery((items) => items.filter((entry) => entry.id !== item.id));
+                    setError(null);
+                  } catch (reason) {
+                    setError(reason instanceof Error ? reason.message : String(reason));
+                  } finally {
+                    setRetryingPlanning(null);
+                  }
+                }}
+              >
+                {t("Retry sprint assignment")}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {section === "sprints" ? (
+        <SprintManagement
+          board={accessibleSprintBoard}
+          projects={sprintProjects}
+          selectedId={sprintFilter}
+          onSelect={selectSprint}
+          projectKey={selectedProject?.key}
+        />
+      ) : null}
+      {section === "reports" ? (
+        <div className="task-reports-scroll">
+          <SprintReports
+            board={accessibleSprintBoard}
+            sprintId={sprintFilter}
+            projectKey={selectedProject?.key}
+          />
+        </div>
+      ) : null}
+      {selectMode ? (
+        <>
+          <SprintPlanningControls
+            board={accessibleSprintBoard}
+            tasks={tasks.filter((task) => bulkSelection.has(bulkTaskKey(task)))}
+            disabled={bulkBusy || acting !== null}
+          />
+          <TaskBulkToolbar
+            tasks={tasks}
+            selected={bulkSelection}
+            onSelect={setBulkSelection}
+            disabled={acting !== null}
+            onBusy={setBulkBusy}
+            onUpdated={(task) => {
+              putTask(task);
+              setTasks((current) => upsertBoardItem(current, task));
+            }}
+            onDeleted={(task) => {
+              removeTask(task);
+              setTasks((current) =>
+                current.filter((row) => bulkTaskKey(row) !== bulkTaskKey(task)),
+              );
+            }}
+          />
+        </>
       ) : null}
       {confirmDialog}
       {metricsOpen ? (
@@ -1334,7 +1703,7 @@ function TasksContent({
           onClose={() => setMetricsOpen(false)}
         >
           <div className="min-w-0 p-4">
-            <TaskMetricsComparison tasks={visibleTasks.filter((task) => !task.stale)} />
+            <TaskMetricsComparison tasks={tasks.filter((task) => !task.stale)} />
           </div>
         </Modal>
       ) : null}
@@ -1400,6 +1769,11 @@ function TasksContent({
             <Alert tone="danger" role="alert">
               {error}
             </Alert>
+          ) : null}
+          {!draft.id && currentSprint ? (
+            <p className="task-create-sprint-context">
+              {t("Sprint")}: {currentSprint.name}
+            </p>
           ) : null}
           <HostModelSource
             machine={machines.find(
@@ -1474,6 +1848,11 @@ function TasksContent({
             <Alert tone="danger" role="alert">
               {error}
             </Alert>
+          ) : null}
+          {currentSprint ? (
+            <p className="task-create-sprint-context">
+              {t("Sprint")}: {currentSprint.name}
+            </p>
           ) : null}
           <HostModelSource
             machine={goalCapable.find(
@@ -1597,67 +1976,77 @@ function TasksContent({
           />
         </HostModelSource>
       ) : null}
-      {goals.length > 0 ? (
-        <ul
-          aria-label={t("Goals")}
-          className="flex max-h-[30%] shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-(--ui-tone-neutral-border) p-3"
-        >
-          {goals
-            .filter(
-              (goal) => goalFilter === ALL_GOALS || goalKey(goal.machineId, goal.id) === goalFilter,
-            )
-            .map((goal) => {
-              const key = goalKey(goal.machineId, goal.id);
-              return (
-                <li key={key}>
-                  <GoalCard
-                    goal={goal}
-                    tasks={storedTasks.filter((task) => task.machineId === goal.machineId)}
-                    busy={acting != null}
-                    pending={acting === `goal:${key}`}
-                    onApprove={() => void actOnGoal(goal, () => approveGoal(goal))}
-                    onEdit={() => {
-                      setGoalSettingsError(null);
-                      setEditingGoal(goal);
-                    }}
-                    onReplan={(feedback) => actOnGoal(goal, () => replanGoal(goal, feedback))}
-                    onCancel={() => {
-                      void confirm({
-                        title: t("Cancel goal"),
-                        message: t(
-                          "Cancel the goal “{p0}”? Its running tasks are stopped; their branches stay.",
-                          { p0: goal.title },
-                        ),
-                        confirmLabel: t("Cancel goal"),
-                      }).then((ok) => {
-                        if (ok) void actOnGoal(goal, () => cancelGoal(goal));
-                      });
-                    }}
-                    onDelete={() => onDeleteGoal(goal)}
-                    onSessions={() => setGoalSessions(goal)}
-                    onOpenPlanner={
-                      goal.plannerSessionId ? () => void onOpenPlanner(goal) : undefined
-                    }
-                    onRecheckFinal={() => void actOnGoal(goal, () => recheckGoalFinalReview(goal))}
-                    onOpenFinal={() => {
-                      const lead = goal.projects.find(
-                        (project) => project.id === goal.leadProjectId,
-                      );
-                      if (lead && goal.finalAcceptance?.sessionId)
-                        setSessionPreview({
-                          machineId: goal.machineId,
-                          cwd: lead.cwd,
-                          projectId: lead.id,
-                          sessionId: goal.finalAcceptance.sessionId,
+      {section !== "reports" && goals.length > 0 ? (
+        <details className="task-goals-disclosure">
+          <summary>
+            {t("Goals")} · {goals.length}
+          </summary>
+          <ul
+            aria-label={t("Goals")}
+            className="flex max-h-64 shrink-0 flex-col gap-1.5 overflow-y-auto p-3"
+          >
+            {goals
+              .filter(
+                (goal) =>
+                  goalFilter === ALL_GOALS || goalKey(goal.machineId, goal.id) === goalFilter,
+              )
+              .map((goal) => {
+                const key = goalKey(goal.machineId, goal.id);
+                return (
+                  <li key={key}>
+                    <GoalCard
+                      goal={goal}
+                      tasks={storedTasks.filter((task) => task.machineId === goal.machineId)}
+                      busy={acting != null}
+                      pending={acting === `goal:${key}`}
+                      onApprove={() => void actOnGoal(goal, () => approveGoal(goal))}
+                      onEdit={() => {
+                        setGoalSettingsError(null);
+                        setEditingGoal(goal);
+                      }}
+                      onReplan={(feedback) => actOnGoal(goal, () => replanGoal(goal, feedback))}
+                      onCancel={() => {
+                        void confirm({
+                          title: t("Cancel goal"),
+                          message: t(
+                            "Cancel the goal “{p0}”? Its running tasks are stopped; their branches stay.",
+                            { p0: goal.title },
+                          ),
+                          confirmLabel: t("Cancel goal"),
+                        }).then((ok) => {
+                          if (ok) void actOnGoal(goal, () => cancelGoal(goal));
                         });
-                    }}
-                  />
-                </li>
-              );
-            })}
-        </ul>
+                      }}
+                      onDelete={() => onDeleteGoal(goal)}
+                      onSessions={() => setGoalSessions(goal)}
+                      onOpenPlanner={
+                        goal.plannerSessionId ? () => void onOpenPlanner(goal) : undefined
+                      }
+                      onRecheckFinal={() =>
+                        void actOnGoal(goal, () => recheckGoalFinalReview(goal))
+                      }
+                      onOpenFinal={() => {
+                        const lead = goal.projects.find(
+                          (project) => project.id === goal.leadProjectId,
+                        );
+                        if (lead && goal.finalAcceptance?.sessionId)
+                          setSessionPreview({
+                            machineId: goal.machineId,
+                            cwd: lead.cwd,
+                            projectId: lead.id,
+                            sessionId: goal.finalAcceptance.sessionId,
+                          });
+                      }}
+                    />
+                  </li>
+                );
+              })}
+          </ul>
+        </details>
       ) : null}
-      <div className="@container/task-area flex min-h-0 min-w-0 flex-1">
+      <div
+        className={`@container/task-area min-h-0 min-w-0 flex-1 ${section === "reports" ? "hidden" : "flex"}`}
+      >
         {goalSessions ? (
           <Modal title={t("Task sessions")} size="lg" onClose={() => setGoalSessions(null)}>
             <div className="grid gap-3 p-4 text-ui-secondary">
@@ -1724,13 +2113,15 @@ function TasksContent({
             <div className="grid h-full place-items-center text-(--ui-text-secondary)">
               <LoaderCircle className="icon-md animate-spin" />
             </div>
-          ) : listView || selectMode ? (
+          ) : listView || selectMode || section === "backlog" ? (
             tasks.length ? (
               <TaskList
+                key={`${projectFilter}:${sprintFilter}:${section}:${statusFilter}:${searchQuery}`}
                 tasks={tasks}
                 selection={selectMode}
                 selected={bulkSelection}
                 disabled={bulkBusy}
+                planningLabel={planningLabel}
                 onToggle={(task, checked) =>
                   setBulkSelection((current) => {
                     const next = new Set(current);
@@ -1746,163 +2137,169 @@ function TasksContent({
             )
           ) : (
             <>
-              <div className="task-board-column-picker">
-                <SearchableSelect
-                  label={t("Status")}
-                  searchable={false}
-                  value={compactColumn}
-                  options={[
-                    { value: "all", label: t("All") },
-                    ...TASK_COLUMNS.map((status) => ({
-                      value: status,
-                      label: `${t(COLUMN_LABELS[status])} · ${boardIndexes.columns.get(status)!.length}`,
-                    })),
-                  ]}
-                  onChange={(value) => setCompactColumn(value as TaskColumn | "all")}
-                />
-              </div>
-              {visibleTasks.length === 0 ? (
+              {tasks.length > 0 ? (
+                <div className="task-board-column-picker">
+                  <SearchableSelect
+                    label={t("Status")}
+                    searchable={false}
+                    value={compactColumn}
+                    options={[
+                      { value: "all", label: t("All") },
+                      ...TASK_COLUMNS.map((status) => ({
+                        value: status,
+                        label: `${t(COLUMN_LABELS[status])} · ${boardIndexes.columns.get(status)!.length}`,
+                      })),
+                    ]}
+                    onChange={(value) => setCompactColumn(value as TaskColumn | "all")}
+                  />
+                </div>
+              ) : null}
+              {tasks.length === 0 ? (
                 <EmptyState
                   icon={null}
                   description={t(
-                    tasks.length ? "No tasks match your search or filters." : "Nothing to do yet",
+                    visibleTasks.length
+                      ? "No tasks match your search or filters."
+                      : "Nothing to do yet",
                   )}
                 />
               ) : null}
-              <div
-                className="task-board-columns"
-                data-all-empty={visibleTasks.length === 0 || undefined}
-              >
-                {TASK_COLUMNS.map((status) => {
-                  const column = boardIndexes.columns.get(status)!;
-                  return (
-                    <section
-                      key={status}
-                      aria-label={t(COLUMN_LABELS[status])}
-                      data-task-column={status}
-                      data-empty={column.length === 0 || undefined}
-                      data-compact-selected={
-                        compactColumn === "all" || compactColumn === status || undefined
-                      }
-                      data-drop-active={dropColumn === status || undefined}
-                      onDragOver={(event) => {
-                        const dragged = visibleTasks.find(
-                          (task) => `${task.machineId}:${task.id}` === draggedKey,
-                        );
-                        if (
-                          dragged &&
-                          ((taskColumn(dragged.status) === status &&
-                            dragged.workspaceControlsSupported &&
-                            (status === "todo" || status === "queued")) ||
-                            canMoveTask(
-                              dragged.status,
-                              status,
-                              dragged.crewRunId ?? dragged.crewDefinitionId,
-                            ))
-                        ) {
-                          event.preventDefault();
-                          setDropColumn(status);
-                          event.dataTransfer.dropEffect = "move";
+              {tasks.length > 0 ? (
+                <div className="task-board-columns">
+                  {TASK_COLUMNS.map((status) => {
+                    const column = boardIndexes.columns.get(status)!;
+                    return (
+                      <section
+                        key={status}
+                        aria-label={t(COLUMN_LABELS[status])}
+                        data-task-column={status}
+                        data-empty={column.length === 0 || undefined}
+                        data-compact-selected={
+                          compactColumn === "all" || compactColumn === status || undefined
                         }
-                      }}
-                      onDragLeave={(event) => {
-                        if (!event.currentTarget.contains(event.relatedTarget as Node))
-                          setDropColumn(null);
-                      }}
-                      onDrop={(event) => {
-                        event.preventDefault();
-                        const dragged = visibleTasks.find(
-                          (task) => `${task.machineId}:${task.id}` === draggedKey,
-                        );
-                        if (dragged) void onTaskDrop(dragged, status);
-                      }}
-                      className="bycoda-task-column flex min-h-0 min-w-0 flex-col rounded-md bg-(--ui-surface-raised)"
-                    >
-                      <h2 className="flex h-9 shrink-0 items-center gap-2 px-3 text-ui-caption font-medium text-(--ui-text-secondary)">
-                        <span className="min-w-0 flex-1 truncate">{t(COLUMN_LABELS[status])}</span>
-                        <Badge className="shrink-0 tabular-nums">{column.length}</Badge>
-                      </h2>
-                      <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 pb-1.5">
-                        {column.map((task) => (
-                          <li
-                            key={`${task.machineId}:${task.id}`}
-                            draggable={
-                              !acting &&
-                              !task.stale &&
-                              (task.status === "todo" ||
-                                task.status === "queued" ||
-                                TASK_COLUMNS.some((column) =>
-                                  canMoveTask(
-                                    task.status,
-                                    column,
-                                    task.crewRunId ?? task.crewDefinitionId,
+                        data-drop-active={dropColumn === status || undefined}
+                        onDragOver={(event) => {
+                          const dragged = visibleTasks.find(
+                            (task) => `${task.machineId}:${task.id}` === draggedKey,
+                          );
+                          if (
+                            dragged &&
+                            ((taskColumn(dragged.status) === status &&
+                              dragged.workspaceControlsSupported &&
+                              (status === "todo" || status === "queued")) ||
+                              canMoveTask(
+                                dragged.status,
+                                status,
+                                dragged.crewRunId ?? dragged.crewDefinitionId,
+                              ))
+                          ) {
+                            event.preventDefault();
+                            setDropColumn(status);
+                            event.dataTransfer.dropEffect = "move";
+                          }
+                        }}
+                        onDragLeave={(event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget as Node))
+                            setDropColumn(null);
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          const dragged = visibleTasks.find(
+                            (task) => `${task.machineId}:${task.id}` === draggedKey,
+                          );
+                          if (dragged) void onTaskDrop(dragged, status);
+                        }}
+                        className="bycoda-task-column flex min-h-0 min-w-0 flex-col rounded-md bg-(--ui-surface-raised)"
+                      >
+                        <h2 className="flex h-9 shrink-0 items-center gap-2 px-3 text-ui-caption font-medium text-(--ui-text-secondary)">
+                          <span className="min-w-0 flex-1 truncate">
+                            {t(COLUMN_LABELS[status])}
+                          </span>
+                          <Badge className="shrink-0 tabular-nums">{column.length}</Badge>
+                        </h2>
+                        <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 pb-1.5">
+                          {column.map((task) => (
+                            <li
+                              key={`${task.machineId}:${task.id}`}
+                              draggable={
+                                !acting &&
+                                !task.stale &&
+                                (task.status === "todo" ||
+                                  task.status === "queued" ||
+                                  TASK_COLUMNS.some((column) =>
+                                    canMoveTask(
+                                      task.status,
+                                      column,
+                                      task.crewRunId ?? task.crewDefinitionId,
+                                    ),
+                                  ))
+                              }
+                              onDragStart={(event) => {
+                                if (
+                                  (event.target as Element).closest("button,input,textarea,select")
+                                ) {
+                                  event.preventDefault();
+                                  return;
+                                }
+                                const key = `${task.machineId}:${task.id}`;
+                                event.dataTransfer.setData("application/x-bycoda-task", key);
+                                event.dataTransfer.effectAllowed = "move";
+                                setDraggedKey(key);
+                              }}
+                              onDragEnd={() => {
+                                setDraggedKey(null);
+                                setDropColumn(null);
+                              }}
+                              onDrop={(event) => {
+                                const dragged = visibleTasks.find(
+                                  (item) => `${item.machineId}:${item.id}` === draggedKey,
+                                );
+                                if (dragged && taskColumn(dragged.status) === status) {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  void onTaskDrop(dragged, status, task);
+                                }
+                              }}
+                            >
+                              <TaskCard
+                                task={task}
+                                now={now}
+                                project={taskContext(task).project}
+                                goal={taskContext(task).goal}
+                                planning={planningLabel(task)}
+                                waitingForText={JSON.stringify(taskContext(task).waitingFor)}
+                                actionsFor={cardActions}
+                                busy={acting != null || bulkBusy}
+                                openingState={JSON.stringify(
+                                  [taskSessionIds(task).worker, taskSessionIds(task).review].map(
+                                    (id) =>
+                                      !!id &&
+                                      openingSessions.has(JSON.stringify([task.machineId, id])),
                                   ),
-                                ))
-                            }
-                            onDragStart={(event) => {
-                              if (
-                                (event.target as Element).closest("button,input,textarea,select")
-                              ) {
-                                event.preventDefault();
-                                return;
-                              }
-                              const key = `${task.machineId}:${task.id}`;
-                              event.dataTransfer.setData("application/x-bycoda-task", key);
-                              event.dataTransfer.effectAllowed = "move";
-                              setDraggedKey(key);
-                            }}
-                            onDragEnd={() => {
-                              setDraggedKey(null);
-                              setDropColumn(null);
-                            }}
-                            onDrop={(event) => {
-                              const dragged = visibleTasks.find(
-                                (item) => `${item.machineId}:${item.id}` === draggedKey,
-                              );
-                              if (dragged && taskColumn(dragged.status) === status) {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                void onTaskDrop(dragged, status, task);
-                              }
-                            }}
-                          >
-                            <TaskCard
-                              task={task}
-                              now={now}
-                              project={taskContext(task).project}
-                              goal={taskContext(task).goal}
-                              waitingForText={JSON.stringify(taskContext(task).waitingFor)}
-                              actionsFor={cardActions}
-                              busy={acting != null || bulkBusy}
-                              openingState={JSON.stringify(
-                                [taskSessionIds(task).worker, taskSessionIds(task).review].map(
-                                  (id) =>
-                                    !!id &&
-                                    openingSessions.has(JSON.stringify([task.machineId, id])),
-                                ),
-                              )}
-                              orderKey={
-                                boardIndexes.orders.get(task.machineId + ":" + task.id) ?? ""
-                              }
-                              selected={task.machineId + ":" + task.id === selectedKey}
-                              onOpen={openCard}
-                            />
-                          </li>
-                        ))}
-                        {column.length === 0 && visibleTasks.length > 0 ? (
-                          <li>
-                            <EmptyState
-                              className="task-column-empty"
-                              icon={null}
-                              description={t(COLUMN_EMPTY[status])}
-                            />
-                          </li>
-                        ) : null}
-                      </ul>
-                    </section>
-                  );
-                })}
-              </div>
+                                )}
+                                orderKey={
+                                  boardIndexes.orders.get(task.machineId + ":" + task.id) ?? ""
+                                }
+                                selected={task.machineId + ":" + task.id === selectedKey}
+                                onOpen={openCard}
+                              />
+                            </li>
+                          ))}
+                          {column.length === 0 && visibleTasks.length > 0 ? (
+                            <li>
+                              <EmptyState
+                                className="task-column-empty"
+                                icon={null}
+                                description={t(COLUMN_EMPTY[status])}
+                              />
+                            </li>
+                          ) : null}
+                        </ul>
+                      </section>
+                    );
+                  })}
+                </div>
+              ) : null}
             </>
           )}
         </div>
@@ -1915,6 +2312,7 @@ function TasksContent({
             {...actionsFor(selected)}
             onClose={() => setSelectedKey(null)}
             onSaveDetails={(title, prompt) => onSaveDetails(selected, title, prompt)}
+            planning={<SprintPlanningControls board={accessibleSprintBoard} tasks={[selected]} />}
           />
         ) : null}
       </div>
@@ -1938,6 +2336,7 @@ const TaskCard = memo(function TaskCard({
   now,
   project,
   goal,
+  planning,
   waitingForText,
   selected,
   onOpen,
@@ -1950,6 +2349,7 @@ const TaskCard = memo(function TaskCard({
   now: number;
   project: string;
   goal?: string;
+  planning?: string;
   waitingForText: string;
   selected: boolean;
   onOpen: (key: string) => void;
@@ -1968,6 +2368,7 @@ const TaskCard = memo(function TaskCard({
       now={now}
       project={project}
       goal={goal}
+      planning={planning}
       waitingFor={waitingFor}
       selected={selected}
       onOpen={() => onOpen(task.machineId + ":" + task.id)}
@@ -1981,6 +2382,7 @@ function TaskCardBody({
   now,
   project,
   goal,
+  planning,
   waitingFor,
   selected,
   onOpen,
@@ -1991,6 +2393,7 @@ function TaskCardBody({
   project: string;
   /** The title of the goal the task was planned for. */
   goal?: string;
+  planning?: string;
   /** Titles of the tasks it waits for. */
   waitingFor: readonly string[];
   /** Its detail panel is open. */
@@ -2064,6 +2467,7 @@ function TaskCardBody({
         <GripVertical aria-hidden="true" className="task-drag-grip icon-xs" strokeWidth={1.75} />
         {task.title}
       </h3>
+      {planning ? <p className="task-planning-caption">{planning}</p> : null}
       {statusBadges ? (
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">{statusBadges}</div>
       ) : null}
@@ -2532,6 +2936,7 @@ function TaskDetail({
   waitingFor,
   onClose,
   onSaveDetails,
+  planning,
   ...actions
 }: {
   task: BoardTask;
@@ -2542,6 +2947,7 @@ function TaskDetail({
   onClose: () => void;
   /** Resolves true once the new title and description are saved. */
   onSaveDetails: (title: string, prompt: string) => Promise<boolean>;
+  planning?: ReactNode;
 } & TaskActionHandlers) {
   useLocale();
   const [editing, setEditing] = useState(false);
@@ -2712,6 +3118,7 @@ function TaskDetail({
               {task.deliveryNote}
             </p>
           ) : null}
+          {planning}
           <TaskActions task={task} {...actions} />
           <TaskAcceptanceEvidence
             task={task}

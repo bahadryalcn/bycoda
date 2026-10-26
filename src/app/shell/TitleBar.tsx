@@ -300,11 +300,11 @@ function TabHarnesses({
             key={harness}
             data-harness-status={status}
             className={`grid size-3.5 shrink-0 place-items-center ${
-              status === "done" ? "opacity-100" : opacity
+              status !== "idle" ? "opacity-100" : opacity
             } ${i > 0 ? "-ml-0.5" : ""}`}
           >
             {status === "busy" ? (
-              <TerminalSpinner className="inline-block w-3.5 select-none text-center text-ui-micro leading-none text-accent" />
+              <TerminalSpinner className="inline-block w-3.5 select-none text-center text-ui-micro leading-none text-active" />
             ) : status === "done" ? (
               <CheckCircle className="icon-sm shrink-0 text-success" strokeWidth={2} />
             ) : (
@@ -394,11 +394,13 @@ function TitleTabItem({
     >
       <Button
         selected={active}
-        variant="item"
+        variant="tab"
+        align="start"
         motion="none"
         type="button"
         title={accessibleTooltip}
         aria-label={accessibleTooltip}
+        aria-current={active ? "page" : undefined}
         data-tauri-drag-region="false"
         onClick={() => {
           if (sortable.consumeClick()) return;

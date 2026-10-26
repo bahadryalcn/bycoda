@@ -17,6 +17,13 @@ import { streamingTextUpdate } from "../../sessions/model/stableBlocks";
 
 export type SearchScope = "all" | "conversations" | "files" | "projects";
 
+/** A contextual entry into the shared search surface. Omitted fields retain drafts. */
+export type SearchRequest = {
+  scope: SearchScope;
+  query?: string;
+  conversationScope?: "everywhere" | "group" | "project";
+};
+
 export type ConversationHit = {
   id: string;
   kind: "conversation";

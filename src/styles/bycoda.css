@@ -420,7 +420,7 @@ html.theme-light .project-sigil {
   block-size: 1.25em;
 }
 /* Switch before labels and diff totals become unreadably truncated. */
-@container workspace-tab (inline-size < 100px) {
+@container workspace-tab (inline-size < 64px) {
   .workspace-tab-content {
     display: none;
   }
@@ -429,6 +429,22 @@ html.theme-light .project-sigil {
   }
   [data-workspace-working-count] {
     margin-inline-start: 0.25em;
+  }
+}
+.workspace-tab-stats {
+  display: none;
+}
+@container workspace-tab (inline-size < 88px) {
+  [data-workspace-tab-counted] .workspace-tab-content {
+    display: none;
+  }
+  [data-workspace-tab-counted] .workspace-tab-icon {
+    display: block;
+  }
+}
+@container workspace-tab (inline-size >= 140px) {
+  .workspace-tab-stats {
+    display: inline-flex;
   }
 }
 .bycoda-titlebar {

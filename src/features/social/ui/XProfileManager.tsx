@@ -15,12 +15,18 @@ export function XProfileManager({
   accountId,
   accountName,
   client,
+  platform = "x",
 }: {
   accountId: string;
-  /** Shown beside the actions that write to this X account. */
+  /** Shown beside the actions that write to this account. */
   accountName?: string;
   client: SocialClient;
+  platform?: "x" | "linkedin" | "facebook" | "instagram";
 }) {
+  const linkedIn = platform === "linkedin";
+  const facebook = platform === "facebook";
+  const instagram = platform === "instagram";
+  const isX = platform === "x";
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [saved, setSaved] = useState<XProfileState>();
@@ -66,7 +72,15 @@ export function XProfileManager({
   ) : null;
   return (
     <details>
-      <summary>{t("X profile and following")}</summary>
+      <summary>
+        {linkedIn
+          ? t("LinkedIn Page profile")
+          : facebook
+            ? t("Facebook Page profile image")
+            : instagram
+              ? t("Instagram profile")
+              : t("X profile and following")}
+      </summary>
       <Button
         type="button"
         variant="secondary"
@@ -74,7 +88,9 @@ export function XProfileManager({
         loading={pending === "read"}
         onClick={() =>
           void run("read", async () => {
-            const profile = await client.xProfileRead(accountId);
+            const profile = await (!isX
+              ? client.browserProfileRead(accountId)
+              : client.xProfileRead(accountId));
             setSaved(profile);
             setValues(profile);
             setStatus(t("Profile read."));
@@ -89,7 +105,9 @@ export function XProfileManager({
             event.preventDefault();
             if (busy || !Object.keys(patch).length) return;
             void run("save", async () => {
-              const profile = await client.xProfileUpdate(accountId, patch);
+              const profile = await (!isX
+                ? client.browserProfileUpdate(accountId, platform, patch)
+                : client.xProfileUpdate(accountId, patch));
               setSaved(profile);
               setValues(profile);
               setImages({});
@@ -98,37 +116,62 @@ export function XProfileManager({
           }}
         >
           <fieldset>
-            <TextField
-              label={t("Profile name")}
-              disabled={socialLocked || busy}
-              maxLength={50}
-              required
-              value={values.name}
-              onChange={(e) => setValues({ ...values, name: e.target.value })}
-            />
-            <TextareaField
-              label={t("About")}
-              disabled={socialLocked || busy}
-              maxLength={160}
-              value={values.bio}
-              onChange={(e) => setValues({ ...values, bio: e.target.value })}
-            />
-            <TextField
-              label={t("Location")}
-              disabled={socialLocked || busy}
-              maxLength={30}
-              value={values.location}
-              onChange={(e) => setValues({ ...values, location: e.target.value })}
-            />
-            <TextField
-              label={t("Website")}
-              disabled={socialLocked || busy}
-              type="url"
-              maxLength={100}
-              value={values.website}
-              onChange={(e) => setValues({ ...values, website: e.target.value })}
-            />
-            {(["avatarUploadId", "bannerUploadId"] as const).map((key) => (
+            {facebook ? (
+              <p className="social-muted">
+                {t("Facebook profile images are public; saving may also create a Page post.")}
+              </p>
+            ) : null}
+            {instagram ? (
+              <p className="social-muted">
+                {t(
+                  "Instagram website links require its mobile app. Synced profile photos require a separate review before changing linked accounts.",
+                )}
+              </p>
+            ) : null}
+            {!facebook ? (
+              <>
+                {!instagram ? (
+                  <TextField
+                    label={t("Profile name")}
+                    disabled={socialLocked || busy}
+                    maxLength={linkedIn ? 100 : 50}
+                    required
+                    value={values.name}
+                    onChange={(e) => setValues({ ...values, name: e.target.value })}
+                  />
+                ) : null}
+                <TextareaField
+                  label={linkedIn ? t("Tagline") : t("About")}
+                  disabled={socialLocked || busy}
+                  maxLength={linkedIn ? 120 : instagram ? 150 : 160}
+                  value={values.bio}
+                  onChange={(e) => setValues({ ...values, bio: e.target.value })}
+                />
+              </>
+            ) : null}
+            {isX ? (
+              <>
+                <TextField
+                  label={t("Location")}
+                  disabled={socialLocked || busy}
+                  maxLength={30}
+                  value={values.location}
+                  onChange={(e) => setValues({ ...values, location: e.target.value })}
+                />
+                <TextField
+                  label={t("Website")}
+                  disabled={socialLocked || busy}
+                  type="url"
+                  maxLength={100}
+                  value={values.website}
+                  onChange={(e) => setValues({ ...values, website: e.target.value })}
+                />
+              </>
+            ) : null}
+            {(!isX
+              ? (["avatarUploadId"] as const)
+              : (["avatarUploadId", "bannerUploadId"] as const)
+            ).map((key) => (
               <div key={key}>
                 <TextField
                   disabled={socialLocked || busy}
@@ -179,50 +222,58 @@ export function XProfileManager({
                 loading={pending === "save"}
                 disabled={socialLocked || busy || !Object.keys(patch).length}
               >
-                {t("Apply changes to X profile")}
+                {linkedIn
+                  ? t("Apply changes to LinkedIn Page")
+                  : facebook
+                    ? t("Apply image to Facebook Page")
+                    : instagram
+                      ? t("Apply changes to Instagram profile")
+                      : t("Apply changes to X profile")}
               </Button>
               {account}
             </div>
           </fieldset>
         </form>
       ) : null}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (busy || !handleValid) return;
-          void run("follow", async () => {
-            const result = await client.xProfileFollow(accountId, handle);
-            setStatus(
-              result.changed
-                ? t("Followed @{p0}.", { p0: result.handle })
-                : t("Already following @{p0}.", { p0: result.handle }),
-            );
-          });
-        }}
-      >
-        <TextField
-          label={t("X username to follow")}
-          value={handle}
-          disabled={socialLocked || busy}
-          placeholder={t("username")}
-          maxLength={15}
-          pattern="[A-Za-z0-9_]{1,15}"
-          onChange={(e) => setHandle(e.target.value.replace(/^@/, ""))}
-        />
-        {handle && !handleValid ? (
-          <p className="social-muted">{t("Use up to 15 letters, digits or underscores.")}</p>
-        ) : null}
-        <div className="social-actions">
-          <Button
-            type="submit"
-            loading={pending === "follow"}
-            disabled={socialLocked || busy || !handleValid}
-          >
-            {t("Follow this account")}
-          </Button>
-          {account}
-        </div>
-      </form>
+      {isX ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (busy || !handleValid) return;
+            void run("follow", async () => {
+              const result = await client.xProfileFollow(accountId, handle);
+              setStatus(
+                result.changed
+                  ? t("Followed @{p0}.", { p0: result.handle })
+                  : t("Already following @{p0}.", { p0: result.handle }),
+              );
+            });
+          }}
+        >
+          <TextField
+            label={t("X username to follow")}
+            value={handle}
+            disabled={socialLocked || busy}
+            placeholder={t("username")}
+            maxLength={15}
+            pattern="[A-Za-z0-9_]{1,15}"
+            onChange={(e) => setHandle(e.target.value.replace(/^@/, ""))}
+          />
+          {handle && !handleValid ? (
+            <p className="social-muted">{t("Use up to 15 letters, digits or underscores.")}</p>
+          ) : null}
+          <div className="social-actions">
+            <Button
+              type="submit"
+              loading={pending === "follow"}
+              disabled={socialLocked || busy || !handleValid}
+            >
+              {t("Follow this account")}
+            </Button>
+            {account}
+          </div>
+        </form>
+      ) : null}
       {error ? <p role="alert">{error}</p> : null}
       {status ? <p role="status">{status}</p> : null}
     </details>

@@ -11,6 +11,9 @@ import type {
 import type { TurnUsage } from "../../../features/sessions/model/sessionUsage";
 import type {
   UserQuestion,
+  UserQuestionBehavior,
+  UserQuestionDelivery,
+  UserQuestionDismissAction,
   UserQuestionReply,
 } from "../../../features/sessions/model/userQuestion";
 
@@ -136,12 +139,17 @@ export type HarnessEvent =
       title?: string;
       questions: UserQuestion[];
       callId?: string;
+      behavior?: UserQuestionBehavior;
+      dismissAction?: UserQuestionDismissAction;
+      providerTurnId?: string;
       autoResolveAt?: number;
     }
   | {
       type: "question.updated";
       requestId: number;
       autoResolveAt?: number;
+      delivery?: UserQuestionDelivery;
+      error?: string;
     }
   | {
       type: "question.resolved";

@@ -1,7 +1,8 @@
-import { Badge } from "../../shared/ui/Badge";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
 import { Button } from "../../shared/ui/Button";
+import { InfoPopover } from "../../shared/ui/InfoPopover";
+import { RefreshCw } from "../../shared/ui/icons";
 import { t, useLocale, getLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState } from "react";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
@@ -188,29 +189,46 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
       aria-busy={busy}
     >
       <header className="resource-header">
-        <div className="host-tool-intro">
-          <h3>{t("Resource usage")}</h3>
-          <span className="host-tool-muted">{hostLabel ?? t("Host process")}</span>
-        </div>
-        <div className="resource-sampling">
-          <Button
-            motion="none"
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={busy}
-            onClick={() => void read()}
-          >
-            {busy ? t("Measuring…") : error ? t("Retry") : t("Sample now")}
-          </Button>
-          <Badge role="status">
-            {busy
-              ? t("Measuring…")
-              : sample
-                ? `${t("Sampled at")} ${time(sample.at)}`
-                : t("No samples yet")}
-          </Badge>
-        </div>
+        <Button
+          motion="none"
+          variant="ghost"
+          iconOnly
+          label={error ? t("Retry") : t("Sample now")}
+          tooltip={error ? t("Retry") : t("Sample now")}
+          loading={busy}
+          loadingLabel={t("Measuring…")}
+          disabled={busy}
+          onClick={() => void read()}
+        >
+          <RefreshCw className="icon-md" aria-hidden />
+        </Button>
+        <span role="status" className="resource-sample-status">
+          {busy ? t("Measuring…") : sample ? time(sample.at) : t("No samples yet")}
+        </span>
+        <InfoPopover label={t("Measurement details")}>
+          <p>{hostLabel ?? t("Host process")}</p>
+          {sample ? (
+            <dl className="host-tool-metrics">
+              <div>
+                <dt>{t("Sampled at")}</dt>
+                <dd>{time(sample.at)}</dd>
+              </div>
+              <div>
+                <dt>{t("Node heap")}</dt>
+                <dd>{mib(sample.process.heapUsedBytes)}</dd>
+              </div>
+              <div>
+                <dt>{t("Logical CPUs")}</dt>
+                <dd>{sample.host.logicalCpus}</dd>
+              </div>
+            </dl>
+          ) : null}
+          <p>
+            {t(
+              "Samples only when requested. CPU and memory describe the host's Node process; provider child processes are excluded. Up to 60 samples are retained.",
+            )}
+          </p>
+        </InfoPopover>
       </header>
       {error ? (
         <Alert tone="danger" role="alert">
@@ -224,7 +242,7 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
         <>
           <div className="resource-cards">
             <article className="resource-card">
-              <h4>{t("bycoda host CPU")}</h4>
+              <h3>{t("bycoda host CPU")}</h3>
               <strong className="resource-value">
                 {sample?.process.cpuPercent != null
                   ? `${sample.process.cpuPercent.toFixed(1)}%`
@@ -233,7 +251,7 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
               <ResourceChart samples={samples} metric="cpu" label={t("bycoda host CPU")} />
             </article>
             <article className="resource-card">
-              <h4>{t("bycoda host memory")}</h4>
+              <h3>{t("bycoda host memory")}</h3>
               <strong className="resource-value">
                 {sample ? mib(sample.process.rssBytes) : "—"}
               </strong>
@@ -242,7 +260,7 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
           </div>
           <article className="resource-card resource-system-memory">
             <div className="resource-memory-heading">
-              <h4>{t("Computer memory")}</h4>
+              <h3>{t("Computer memory")}</h3>
               <strong>
                 {memoryUsed !== null ? `${memoryUsed.toFixed(1)}% ${t("Used")}` : "—"}
               </strong>
@@ -274,26 +292,6 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
           <span>{samples.length} / 60</span>
         </div>
       ) : null}
-      <ExpandableCard title={t("Measurement details")}>
-        {sample ? (
-          <dl className="host-tool-metrics">
-            <div>
-              <dt>{t("Node heap")}</dt>
-              <dd>{mib(sample.process.heapUsedBytes)}</dd>
-            </div>
-            <div>
-              <dt>{t("Logical CPUs")}</dt>
-              <dd>{sample.host.logicalCpus}</dd>
-            </div>
-          </dl>
-        ) : null}
-        <p className="host-tool-muted">
-          {t(
-            "Samples only when requested. CPU and memory describe the host's Node process; provider child processes are excluded. Up to 60 samples are retained.",
-          )}
-        </p>
-      </ExpandableCard>
     </section>
   );
 }
-import { ExpandableCard } from "../../shared/ui/ExpandableCard";

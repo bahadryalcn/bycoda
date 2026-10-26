@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 it.each(["chat", "focus"] as const)(
-  "separates AI questions from accepted user answers in %s layout",
+  "keeps questions and answers together without duplicate message bubbles in %s layout",
   (layout) => {
     act(() =>
       root.render(
@@ -50,11 +50,18 @@ it.each(["chat", "focus"] as const)(
     expect(questions).toHaveLength(2);
     expect(questions[0].textContent).toContain("How should we release?");
     expect(questions[1].textContent).toContain("Any details?");
-    const bubbles = container.querySelectorAll(".user-message-bubble");
-    expect(bubbles).toHaveLength(2);
-    expect(bubbles[0].textContent).toBe("Fix tests first");
-    expect(bubbles[1].textContent).toBe("Keep the API");
-    expect(container.textContent).toContain("Your answer");
+    const card = container.querySelector("[data-question-answer]")!;
+    expect(card.getAttribute("aria-label")).toBe("Question and answer");
+    expect(card.querySelectorAll(".user-message-bubble")).toHaveLength(0);
+    expect(card.querySelectorAll('[data-selectable-agent-response="reply"]')[0].textContent).toBe(
+      "Fix tests first",
+    );
+    expect(card.querySelectorAll('[data-selectable-agent-response="reply"]')[1].textContent).toBe(
+      "Keep the API",
+    );
+    expect(card.querySelectorAll('[aria-label="Copy message"]')).toHaveLength(2);
+    expect(card.textContent).toContain("Answered");
+    expect(card.querySelectorAll('section[aria-label="Your answer"]')).toHaveLength(2);
   },
 );
 

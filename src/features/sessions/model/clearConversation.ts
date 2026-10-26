@@ -32,6 +32,7 @@ export function clearConversation(session: Session): Session {
     usageLimit: undefined,
     retryMessage: undefined,
     pendingQuestion: undefined,
+    submittedQuestions: undefined,
     queuedMessages: [],
     queueStatus: undefined,
     editingQueuedMessageId: undefined,

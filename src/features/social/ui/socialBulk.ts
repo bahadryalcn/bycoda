@@ -91,7 +91,8 @@ export function planBulkDrafts(
       else if (!contact || contact.accountId !== target.accountId)
         reason = t("This contact is not linked to this account.");
       else if (contact.optedOut) reason = t("This contact has opted out of contact.");
-      else if (!account?.connected || account.paused) reason = t("The account is not connected or is paused.");
+      else if (!account?.connected || account.paused)
+        reason = t("The account is not connected or is paused.");
       else if (account.expiresAt !== undefined && account.expiresAt <= now)
         reason = t("The account connection has expired.");
       else if (!projectId || !projects.some((project) => project.id === projectId))
@@ -112,18 +113,25 @@ export function planBulkDrafts(
         (!contact.replyEligible || thread?.replyAllowed === false)
       )
         reason = t("Replying to this conversation is not allowed.");
-      else if (options.kind === "reply" && thread?.replyUntil && thread.replyUntil <= now)
+      else if (
+        options.kind === "reply" &&
+        account.connection !== "browser" &&
+        thread?.replyUntil &&
+        thread.replyUntil <= now
+      )
         reason = t("The reply window has expired.");
       else if (
         options.kind === "reply" &&
         thread?.kind === "message" &&
+        account.connection !== "browser" &&
         (account.platform === "instagram" || account.platform === "facebook") &&
         !thread.replyUntil
       )
         reason = t("There is no valid reply window.");
       else if (
         options.kind === "reply" &&
-        !thread?.hasInbound && !thread?.events.some((event) => event.direction === "inbound")
+        !thread?.hasInbound &&
+        !thread?.events.some((event) => event.direction === "inbound")
       )
         reason = t("There is no inbound message to reply to.");
       else if (
@@ -134,10 +142,7 @@ export function planBulkDrafts(
       else if (options.kind === "comment" && !contact.commentEligible)
         reason = t("Comment eligibility has not been verified.");
       else if (capability?.status !== "available")
-        reason =
-          account.connection === "browser" && options.kind !== "comment"
-            ? t("The X browser connection cannot read messages or incoming comments. An official API connection is required.")
-            : capability?.reason || t("The account does not support this operation.");
+        reason = capability?.reason || t("The account does not support this operation.");
       else if (options.kind === "comment" && !options.postIds[target.key]?.trim())
         reason = t("Enter the ID of the post to comment on.");
       else if (policyErrors[target.accountId]) reason = policyErrors[target.accountId];

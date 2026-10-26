@@ -20,6 +20,9 @@ vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
   useProjectsDiffStats: () => [],
 }));
 vi.mock("./SidebarUpdate", () => ({ SidebarUpdateFooter: () => null }));
+vi.mock("./GithubStarPrompt", () => ({
+  GithubStarPrompt: () => createElement("div", { "data-github-prompt": true }),
+}));
 vi.mock("../../features/projects/model/projectData", () => ({
   projectSessionCount: vi.fn(async () => 0),
 }));
@@ -63,6 +66,40 @@ const render = async (cwd = "G:/wallet/api", paths = ["G:/wallet/api", "G:/walle
   );
 const workspaceButton = () =>
   host.querySelector<HTMLButtonElement>('button[aria-label="Open Wallet"]')!;
+
+it("keeps application chrome on the panel and removes it from the project navigator", async () => {
+  await render();
+  expect(host.querySelector('[aria-label="Workspace tools"]')).not.toBeNull();
+  expect(host.querySelector("[data-github-prompt]")).not.toBeNull();
+  expect(host.querySelector('[aria-label="Resize project sidebar"]')).not.toBeNull();
+
+  await act(async () =>
+    root.render(
+      createElement(ProjectRail, {
+        presentation: "navigator",
+        cwd: "G:/wallet/api",
+        recents: ["G:/wallet/api", "G:/wallet/mobile"].map((path) => ({ path, openedAt: 1 })),
+        onSelectProject: select,
+        onOpenProject: vi.fn(),
+      }),
+    ),
+  );
+  expect(host.querySelector('[aria-label="Workspace tools"]')).toBeNull();
+  expect(host.querySelector("[data-github-prompt]")).toBeNull();
+  expect(host.querySelector('[aria-label="Resize project sidebar"]')).toBeNull();
+  expect(host.querySelector('[data-side-pane="rail"] > [data-tauri-drag-region]')).toBeNull();
+  expect(host.querySelector('button[aria-label="New project group"]')).not.toBeNull();
+  expect(host.querySelector('button[aria-label="Open project"]')).not.toBeNull();
+
+  const group = host.querySelector<HTMLButtonElement>('button[aria-label="Wallet, 2 projects"]')!;
+  await act(async () => group.click());
+  expect(loadProjectGroups()[0].collapsed).toBe(true);
+  await act(async () => group.click());
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-project-path="G:/wallet/mobile"] button')!.click(),
+  );
+  expect(select).toHaveBeenLastCalledWith("G:/wallet/mobile");
+});
 
 it("opens Servers from expanded and compact tools without a project", async () => {
   const onOpenServers = vi.fn();

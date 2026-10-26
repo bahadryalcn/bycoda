@@ -1187,6 +1187,54 @@ describe("OpenCode access modes", () => {
 });
 
 describe("OpenCode child permission routing", () => {
+  it.each([400, 500])(
+    "retains a question after HTTP %s and retries only an explicit rejection",
+    async (status) => {
+      const events: HarnessEvent[] = [];
+      const { done } = await startTurn(events);
+      onSseEvent?.({
+        type: "question.asked",
+        properties: {
+          id: "delivery_question",
+          sessionID: "session_1",
+          questions: [{ question: "Which scope?", options: [{ label: "Local" }] }],
+        },
+      });
+      await waitFor(
+        () => events.some((event) => event.type === "question.asked"),
+        "delivery question",
+      );
+      const request = events.find((event) => event.type === "question.asked")!;
+      const answer = { kind: "answered" as const, answers: { "Which scope?": ["Local"] } };
+      harnessHttp.mockResolvedValueOnce({ status, body: "rejected" });
+      respondOpenCodeQuestion("opencode-live", request.requestId, answer);
+      await waitFor(
+        () =>
+          events.some(
+            (event) =>
+              event.type === "question.updated" &&
+              event.delivery === (status === 400 ? "failed" : "unknown"),
+          ),
+        "delivery failure",
+      );
+      expect(events.some((event) => event.type === "question.resolved")).toBe(false);
+      const calls = harnessHttp.mock.calls.length;
+      respondOpenCodeQuestion("opencode-live", request.requestId, answer);
+      if (status === 400) {
+        await waitFor(
+          () => events.some((event) => event.type === "question.resolved"),
+          "corrected delivery",
+        );
+        expect(harnessHttp.mock.calls.length).toBe(calls + 1);
+      } else {
+        await Promise.resolve();
+        expect(harnessHttp.mock.calls.length).toBe(calls);
+      }
+      idle();
+      await done;
+    },
+  );
+
   it("queues simultaneous child questions so each stays reachable", async () => {
     const events: HarnessEvent[] = [];
     const { done } = await startTurn(events);
@@ -1511,6 +1559,10 @@ describe("OpenCode child permission routing", () => {
       kind === "answered"
         ? { kind, answers: { [question.id]: [question.options[0].id] } }
         : { kind },
+    );
+    await waitFor(
+      () => events.some((event) => event.type === "question.resolved"),
+      "question delivery acknowledgement",
     );
     idle();
     await done;

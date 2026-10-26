@@ -38,6 +38,34 @@ function sourceFiles(directory: string): string[] {
 }
 
 describe("remote method allowlist", () => {
+  it("connects every Crew control to both host dispatch and the native bridge", () => {
+    const allowed = allowlist();
+    const served = hostMethods();
+    for (const action of [
+      "list",
+      "save",
+      "delete",
+      "deleteRun",
+      "agent.save",
+      "agent.delete",
+      "start",
+      "get",
+      "inspect",
+      "pause",
+      "resume",
+      "stop",
+      "assign",
+      "request",
+      "resolve",
+      "accept",
+      "finish",
+    ]) {
+      const method = `crews.${action}`;
+      expect(served.has(method), `${method} must exist on the host`).toBe(true);
+      expect(allowed.has(method), `${method} must pass the native bridge`).toBe(true);
+    }
+    expect(allowed.has("crews.deleteAll")).toBe(false);
+  });
   it("lets through every host method the desktop app calls", () => {
     const allowed = allowlist();
     const served = hostMethods();
@@ -51,6 +79,34 @@ describe("remote method allowlist", () => {
       }
     }
     expect([...missing].sort()).toEqual([]);
+  });
+
+  it("forwards sprint lifecycle and source synchronization without opening arbitrary methods", () => {
+    const allowed = allowlist();
+    const served = hostMethods();
+    for (const method of [
+      "tasks.snapshotWithCursor",
+      "tasks.events",
+      ...[
+        "list",
+        "get",
+        "create",
+        "update",
+        "start",
+        "complete",
+        "archive",
+        "plan",
+        "report",
+        "ingest",
+        "goalContext",
+      ].map((action) => `sprints.${action}`),
+    ]) {
+      expect(served.has(method), `${method} must exist on the host`).toBe(true);
+      expect(allowed.has(method), `${method} must pass the native bridge`).toBe(true);
+    }
+    expect(allowed.has("sprints.delete")).toBe(false);
+    expect(allowed.has("sprints.execute")).toBe(false);
+    expect(allowed.has("tasks.events.delete")).toBe(false);
   });
 
   it("forwards multi-segment and underscore methods called by conversation tools", () => {

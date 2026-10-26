@@ -5,6 +5,11 @@ import { modelContextWindow, nativeModelId } from "../../../../features/sessions
 import type { RuntimeMode, TurnMetrics } from "../../../../features/sessions/model/session";
 import { taskListFromToolInput } from "../../../../features/sessions/model/taskList";
 import {
+  deliverQuestionReply,
+  QuestionReplyValidationError,
+  type QuestionDelivery,
+} from "../questionDelivery";
+import {
   closeHarnessSse,
   execChild,
   freeHarnessPort,
@@ -102,7 +107,7 @@ type PendingApproval = {
   resolve: (decision: ApprovalDecision) => void;
 };
 
-type PendingQuestion = {
+type PendingQuestion = QuestionDelivery & {
   id: string;
   sessionId: string;
   sessionDeleted?: boolean;
@@ -343,8 +348,15 @@ export function respondOpenCodeQuestion(
 ): void {
   const live = liveByThread.get(sessionId);
   const pending = live?.questions.get(requestId);
-  if (!pending) return;
-  pending.resolve(reply);
+  if (!live || !pending) return;
+  deliverQuestionReply(
+    pending,
+    requestId,
+    reply,
+    live.onEvent,
+    () => live.questions.get(requestId) === pending && !live.cancelled && !live.muteUpdates,
+    () => pending.resolve(reply),
+  );
 }
 
 export async function cancelOpenCodeTurn(sessionId: string): Promise<void> {
@@ -1510,24 +1522,39 @@ async function waitQuestion(
   sessionId: string,
 ): Promise<void> {
   const reply = await new Promise<UserQuestionReply>((resolve) => {
-    live.questions.set(uiId, { id, sessionId, questions, resolve });
+    live.questions.set(uiId, {
+      id,
+      sessionId,
+      questions,
+      resolve,
+      deliver: async (reply) => {
+        try {
+          if (reply.kind === "answered")
+            await live.client.replyQuestion(
+              id,
+              questions.map((question) => selectedAnswerLabels(question, reply)),
+            );
+          else await live.client.rejectQuestion(id);
+        } catch (error) {
+          if (error instanceof OpenCodeHttpError && [400, 422].includes(error.status)) {
+            throw new QuestionReplyValidationError(
+              "The provider rejected this answer. You can edit it and try again.",
+            );
+          }
+          throw error;
+        }
+      },
+    });
   });
   const sessionDeleted = live.questions.get(uiId)?.sessionDeleted;
   live.questions.delete(uiId);
   live.onEvent({
     type: "question.resolved",
     requestId: uiId,
-    decision: reply.kind,
+    decision: sessionDeleted || live.cancelled || live.muteUpdates ? "cancelled" : reply.kind,
     ...(reply.kind === "answered" ? { reply } : {}),
   });
   showNextQuestion(live);
-  if (sessionDeleted) return;
-  if (reply.kind !== "answered") {
-    await live.client.rejectQuestion(id);
-    return;
-  }
-  const answers = questions.map((question) => selectedAnswerLabels(question, reply));
-  await live.client.replyQuestion(id, answers);
 }
 
 function showNextQuestion(live: Live): void {
@@ -1542,6 +1569,8 @@ function showNextQuestion(live: Live): void {
     requestId,
     title: questionPromptTitle(questions) || "OpenCode question",
     questions,
+    behavior: "blocking",
+    dismissAction: "decline",
   });
 }
 

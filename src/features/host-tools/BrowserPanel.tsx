@@ -13,6 +13,7 @@ import { Button } from "../../shared/ui/Button";
 import { TextField } from "../../shared/ui/TextField";
 import { TextareaField } from "../../shared/ui/TextareaField";
 import { Popover } from "../../shared/ui/Popover";
+import { InfoPopover } from "../../shared/ui/InfoPopover";
 import {
   ChevronDown,
   ChevronUp,
@@ -22,8 +23,14 @@ import {
   SlidersHorizontal,
   Globe,
   Maximize2,
+  Pause,
+  Play,
+  Lock,
+  LockOpen,
+  MessageSquarePlus,
+  X,
 } from "../../shared/ui/icons";
-import { Switch } from "../../shared/ui/Switch";
+import "./BrowserPanel.css";
 
 type BrowserState = {
   open: boolean;
@@ -95,6 +102,8 @@ function ProjectBrowserPanel({
   const [error, setError] = useState("");
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState<BrowserAnnotationCapture>();
+  const [selectionOpen, setSelectionOpen] = useState(false);
+  const selectionTrigger = useRef<HTMLButtonElement>(null);
   const [hover, setHover] = useState<BrowserElementTarget>();
   const [comment, setComment] = useState("");
   const [limitation, setLimitation] = useState("");
@@ -117,6 +126,7 @@ function ProjectBrowserPanel({
     mode.current = undefined;
     setSelecting(false);
     setSelection(undefined);
+    setSelectionOpen(false);
     setHover(undefined);
     setComment("");
     setLimitation("");
@@ -199,6 +209,7 @@ function ProjectBrowserPanel({
           )
             throw new Error(t("Browser selection belongs to another conversation"));
           setSelection(result.selection);
+          setSelectionOpen(true);
           setHover(undefined);
           setLimitation("");
           setFrame({
@@ -452,6 +463,11 @@ function ProjectBrowserPanel({
     : state?.open
       ? t("View only · take control to interact")
       : null;
+  const errorSummary = error.startsWith(t("Action completed. Refresh the frame to see the result."))
+    ? t("Action completed. Refresh the frame to see the result.")
+    : error.length <= 180 && !/[\r\n]/.test(error)
+      ? error
+      : t("Browser unavailable");
 
   return (
     <section
@@ -459,7 +475,11 @@ function ProjectBrowserPanel({
       aria-label={t("Shared host browser")}
       aria-busy={busy}
       onKeyDownCapture={(event) => {
-        if (event.key === "Escape" && selecting) {
+        if (
+          event.key === "Escape" &&
+          selecting &&
+          !(event.target instanceof Element && event.target.closest("[data-dialog-popover]"))
+        ) {
           event.preventDefault();
           event.stopPropagation();
           cancelSelection();
@@ -492,34 +512,54 @@ function ProjectBrowserPanel({
         <Button
           motion="none"
           type="submit"
-          variant="primary"
+          variant="ghost"
+          iconOnly
+          label={t("Open website")}
+          tooltip={t("Open website")}
           disabled={busy || selecting || setupRequired || !validUrl}
         >
-          {t("Open website")}
+          <Globe className="icon-md" aria-hidden />
         </Button>
-      </form>
-      <div className="host-tool-actions host-browser-view-actions">
         <Button
           motion="none"
           type="button"
           variant="ghost"
           iconOnly
           label={t("Refresh frame")}
+          tooltip={t("Refresh frame")}
           disabled={busy || !state?.open}
           onClick={() => void action(() => request("browser.frame"))}
         >
           <RefreshCw className="icon-md" aria-hidden />
         </Button>
-        <Switch
+      </form>
+      <div
+        className="host-browser-view-actions"
+        role="toolbar"
+        aria-label={t("Browser controls and setup")}
+      >
+        <Button
+          variant="ghost"
+          iconOnly
           label={t("Live view")}
+          tooltip={t("Live view")}
+          role="switch"
+          aria-checked={live}
+          selected={live}
           disabled={busy || !state?.open || selecting}
-          checked={live}
-          onCheckedChange={setLive}
-        />
+          onClick={() => setLive((value) => !value)}
+        >
+          {live ? (
+            <Pause className="icon-md" aria-hidden />
+          ) : (
+            <Play className="icon-md" aria-hidden />
+          )}
+        </Button>
         <Button
           variant="ghost"
           iconOnly
           label={actualSize ? t("Fit preview") : t("Actual size")}
+          tooltip={actualSize ? t("Fit preview") : t("Actual size")}
           aria-pressed={actualSize}
           selected={actualSize}
           disabled={!frame}
@@ -532,23 +572,31 @@ function ProjectBrowserPanel({
           variant="ghost"
           iconOnly
           label={t("Browser controls and setup")}
+          tooltip={t("Browser controls and setup")}
           aria-haspopup="dialog"
           aria-expanded={controlsOpen}
           selected={controlsOpen}
-          onClick={() => setControlsOpen((open) => !open)}
+          onClick={() => {
+            setSelectionOpen(false);
+            setControlsOpen((open) => !open);
+          }}
         >
           <SlidersHorizontal className="icon-md" aria-hidden />
         </Button>
-        <span className="host-browser-toolbar-status" role="status">
+        <span className="sr-only" role="status">
           {browserStatus}
         </span>
-        <span className="host-browser-action-spacer" />
         <Button
           motion="none"
           type="button"
-          variant="secondary"
-          aria-label={t("Select element and add to composer")}
-          tooltip={t("Select element and add to composer")}
+          variant="ghost"
+          iconOnly
+          label={t("Select element and add to composer")}
+          tooltip={
+            !annotationsAllowed
+              ? t("Browser selections can be attached only on this conversation's project host.")
+              : t("Select element and add to composer")
+          }
           aria-pressed={selecting}
           selected={selecting}
           disabled={
@@ -565,38 +613,89 @@ function ProjectBrowserPanel({
               setNotice("");
               setSelection(undefined);
               setComment("");
+              setControlsOpen(false);
             })
           }
         >
           <CursorMagicSelection className="icon-md" aria-hidden />
-          {t("Select element")}
         </Button>
         {selecting ? (
-          <Button type="button" variant="ghost" onClick={cancelSelection}>
-            {t("Cancel selection")}
+          <Button
+            type="button"
+            variant="ghost"
+            iconOnly
+            label={t("Cancel selection")}
+            tooltip={t("Cancel selection")}
+            onClick={cancelSelection}
+          >
+            <X className="icon-md" aria-hidden />
           </Button>
+        ) : null}
+        {selection ? (
+          <Button
+            ref={selectionTrigger}
+            type="button"
+            variant="ghost"
+            iconOnly
+            label={t("Selected browser element")}
+            tooltip={t("Selected browser element")}
+            aria-haspopup="dialog"
+            aria-expanded={selectionOpen}
+            selected={selectionOpen}
+            onClick={() => {
+              setControlsOpen(false);
+              setSelectionOpen((value) => !value);
+            }}
+          >
+            <MessageSquarePlus className="icon-md" aria-hidden />
+          </Button>
+        ) : null}
+        <span className="host-browser-action-spacer" />
+        {state?.open ? (
+          <span className="host-browser-control-status" title={controlStatus ?? undefined}>
+            {state.controlling ? t("Control active") : t("View only")}
+          </span>
         ) : null}
         {state?.open && !state.controlling ? (
           <Button
             motion="none"
             type="button"
+            variant="ghost"
+            iconOnly
+            label={t("Claim control")}
+            tooltip={t("Claim control")}
             disabled={busy}
             onClick={() => void action(() => request("browser.claim", { takeover: true }))}
           >
-            {t("Claim control")}
+            <Lock className="icon-md" aria-hidden />
+          </Button>
+        ) : null}
+        {state?.open && state.controlling ? (
+          <Button
+            motion="none"
+            type="button"
+            variant="ghost"
+            iconOnly
+            label={t("Release")}
+            tooltip={t("Release")}
+            disabled={busy}
+            onClick={() => void action(() => request("browser.release"))}
+          >
+            <LockOpen className="icon-md" aria-hidden />
           </Button>
         ) : null}
       </div>
       {state?.url && state.url !== url.trim() ? (
-        <p className="host-tool-location" title={state.url}>
+        <p className="sr-only" title={state.url}>
           {state.url}
         </p>
       ) : null}
       {error ? (
-        <div className="host-tool-actions">
-          <Alert tone="danger" role="alert">
-            {error}
-          </Alert>
+        <div className="host-browser-error">
+          <details role="alert">
+            <summary>{errorSummary}</summary>
+            <pre>{error}</pre>
+          </details>
           {!state ? (
             <Button disabled={busy} onClick={() => void action(() => request("browser.status"))}>
               {t("Retry")}
@@ -605,16 +704,13 @@ function ProjectBrowserPanel({
         </div>
       ) : null}
       {notice ? (
-        <Alert tone="info" role="status">
+        <p className="host-browser-notice" role="status">
           {notice}
-        </Alert>
+        </p>
       ) : null}
       {setupRequired ? (
-        <section className="host-tool-card" aria-label={t("Browser setup required")}>
+        <section className="host-browser-setup" aria-label={t("Browser setup required")}>
           <strong>{t("Browser setup required")}</strong>
-          <p className="host-tool-muted">
-            {t("Download the browser runtime once on this computer. Then websites can open here.")}
-          </p>
           <Button
             motion="none"
             type="button"
@@ -629,14 +725,19 @@ function ProjectBrowserPanel({
       <div className="host-browser-workspace" data-has-selection={Boolean(selection)}>
         <div className="host-browser-stage">
           {selecting ? (
-            <p className="host-tool-muted">
-              {t(
-                "Point at an element and click to select. Page actions are blocked. Use arrow keys and Enter on the preview; Escape cancels.",
-              )}
-            </p>
+            <div className="host-browser-selection-mode">
+              <span>{t("Select element")}</span>
+              <InfoPopover>
+                <p>
+                  {t(
+                    "Point at an element and click to select. Page actions are blocked. Use arrow keys and Enter on the preview; Escape cancels.",
+                  )}
+                </p>
+              </InfoPopover>
+            </div>
           ) : null}
           {!annotationsAllowed ? (
-            <p className="host-tool-muted">
+            <p className="sr-only">
               {t("Browser selections can be attached only on this conversation's project host.")}
             </p>
           ) : null}
@@ -764,7 +865,6 @@ function ProjectBrowserPanel({
           ) : (
             <div className="host-browser-empty">
               <Globe className="icon-lg" aria-hidden />
-              <h4>{t("Open a website")}</h4>
               <p>
                 {state?.open
                   ? t("Refresh the frame to view this page.")
@@ -772,77 +872,88 @@ function ProjectBrowserPanel({
                     ? t("Set up the browser above to start previewing websites.")
                     : t("Open a website above to see its preview here.")}
               </p>
-              <p>{t("Select an element, describe the change, and add it to your chat.")}</p>
             </div>
           )}
         </div>
-        {selection ? (
-          <aside className="host-browser-side" aria-label={t("Selected browser element")}>
-            <section
-              className="host-browser-side-section host-browser-selection"
-              aria-label={t("Selected browser element")}
-            >
-              <h4>{t("Selected browser element")}</h4>
-              <p className="host-browser-target" title={selection.element.selector}>
-                {selection.element.selector}
-              </p>
-              <TextareaField
-                label={t("Explain the selected element")}
-                value={comment}
-                maxLength={4000}
-                onChange={(event) => setComment(event.target.value)}
-                disabled={busy}
-              />
-              <div className="host-tool-actions">
-                <Button
-                  motion="none"
-                  type="button"
-                  variant="primary"
-                  disabled={!canInput}
-                  onClick={() =>
-                    void action(async () => {
-                      const result = await request("browser.annotation.read");
-                      if (!result?.selection || !composerSessionId || !sessionId) return;
-                      await attachBrowserSelectionAcrossWindows(
-                        cwd,
-                        composerSessionId,
-                        sessionId,
-                        result.selection,
-                        comment,
-                        composerWindow,
-                      );
-                      cancelSelection();
-                      setNotice(t("Added to composer. Review the attachment and send when ready."));
-                    })
-                  }
-                >
-                  {t("Add selection to composer")}
-                </Button>
-                <Button
-                  motion="none"
-                  type="button"
-                  variant="ghost"
-                  disabled={!canInput}
-                  onClick={() =>
-                    void action(async () => {
-                      await request("browser.annotation.clear");
-                      setSelection(undefined);
-                      setHover(undefined);
-                      setComment("");
-                    })
-                  }
-                >
-                  {t("Remove selection")}
-                </Button>
-              </div>
-              <details className="host-browser-disclosure">
-                <summary>{t("Details")}</summary>
-                <BrowserAnnotationDetails annotation={selection} />
-              </details>
-            </section>
-          </aside>
-        ) : null}
       </div>
+      {selection && selectionOpen ? (
+        <Popover
+          anchor={selectionTrigger}
+          side="top"
+          align="end"
+          width={360}
+          role="dialog"
+          aria-label={t("Selected browser element")}
+          data-dialog-popover
+          autoFocus
+          solid
+          className="host-browser-selection-popover bycoda-arc"
+          onDismiss={() => setSelectionOpen(false)}
+        >
+          <section
+            className="host-browser-side-section host-browser-selection"
+            aria-label={t("Selected browser element")}
+          >
+            <p className="host-browser-target" title={selection.element.selector}>
+              {selection.element.selector}
+            </p>
+            <TextareaField
+              label={t("Explain the selected element")}
+              value={comment}
+              maxLength={4000}
+              onChange={(event) => setComment(event.target.value)}
+              disabled={busy}
+            />
+            <div className="host-tool-actions">
+              <Button
+                motion="none"
+                type="button"
+                variant="primary"
+                disabled={!canInput}
+                onClick={() =>
+                  void action(async () => {
+                    const result = await request("browser.annotation.read");
+                    if (!result?.selection || !composerSessionId || !sessionId) return;
+                    await attachBrowserSelectionAcrossWindows(
+                      cwd,
+                      composerSessionId,
+                      sessionId,
+                      result.selection,
+                      comment,
+                      composerWindow,
+                    );
+                    cancelSelection();
+                    setNotice(t("Added to composer. Review the attachment and send when ready."));
+                  })
+                }
+              >
+                {t("Add selection to composer")}
+              </Button>
+              <Button
+                motion="none"
+                type="button"
+                variant="ghost"
+                disabled={!canInput}
+                onClick={() =>
+                  void action(async () => {
+                    await request("browser.annotation.clear");
+                    setSelection(undefined);
+                    setSelectionOpen(false);
+                    setHover(undefined);
+                    setComment("");
+                  })
+                }
+              >
+                {t("Remove selection")}
+              </Button>
+            </div>
+            <details className="host-browser-disclosure">
+              <summary>{t("Details")}</summary>
+              <BrowserAnnotationDetails annotation={selection} />
+            </details>
+          </section>
+        </Popover>
+      ) : null}
       {controlsOpen ? (
         <Popover
           anchor={controlsTrigger}
@@ -853,6 +964,7 @@ function ProjectBrowserPanel({
           aria-label={t("Browser controls and setup")}
           data-dialog-popover
           className="host-browser-controls font-sans"
+          solid
           onDismiss={(reason) => {
             setControlsOpen(false);
             if (reason === "escape") controlsTrigger.current?.focus();
@@ -934,6 +1046,11 @@ function ProjectBrowserPanel({
           >
             <h4>{t("Browser controls and setup")}</h4>
             <div className="host-browser-state">
+              {state?.url ? (
+                <p className="host-browser-location" title={state.url}>
+                  {state.url}
+                </p>
+              ) : null}
               <span className="host-tool-status" role="status">
                 {browserStatus}
               </span>
@@ -964,7 +1081,7 @@ function ProjectBrowserPanel({
                   {state?.controlling ? t("Renew control") : t("Claim control")}
                 </Button>
               ) : null}
-              {state?.controlling ? (
+              {state?.controlling && !state.open ? (
                 <Button
                   motion="none"
                   type="button"
@@ -1014,6 +1131,13 @@ function ProjectBrowserPanel({
                   "Enter a website address and open it on this computer. Click the preview to interact, or select an element to discuss with your agent.",
                 )}
               </p>
+              {!annotationsAllowed ? (
+                <p>
+                  {t(
+                    "Browser selections can be attached only on this conversation's project host.",
+                  )}
+                </p>
+              ) : null}
               {canPageInput ? (
                 <p>
                   {t(

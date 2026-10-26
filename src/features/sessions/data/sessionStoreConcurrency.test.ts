@@ -41,6 +41,22 @@ afterEach(() => {
 });
 
 describe("session persistence concurrency", () => {
+  it("passes original dates for a newly adopted row without changing ordinary saves", async () => {
+    const { upsertSession } = await loadStore();
+    mocks.invoke.mockResolvedValue(null);
+    await upsertSession(session("adopted"), { createdAt: 100, updatedAt: 200 });
+    expect(mocks.invoke).toHaveBeenLastCalledWith(
+      "session_upsert",
+      expect.objectContaining({
+        session: expect.objectContaining({ id: "adopted", createdAt: 100, updatedAt: 200 }),
+      }),
+    );
+    await upsertSession(session("ordinary"));
+    const payload = mocks.invoke.mock.calls.at(-1)![1].session;
+    expect(payload).not.toHaveProperty("createdAt");
+    expect(payload).not.toHaveProperty("updatedAt");
+  });
+
   it("writes an explicitly cleared empty transcript instead of leaving old history on disk", async () => {
     const { upsertClearedSession, upsertSession } = await loadStore();
     const cleared = { ...session("cleared"), busy: false, blocks: [] };
@@ -48,9 +64,12 @@ describe("session persistence concurrency", () => {
     expect(await upsertSession(cleared)).toBeNull();
     expect(mocks.invoke).not.toHaveBeenCalled();
     await upsertClearedSession(cleared);
-    expect(mocks.invoke).toHaveBeenCalledWith("session_upsert", expect.objectContaining({
-      session: expect.objectContaining({ id: "cleared", blocks: [] }),
-    }));
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "session_upsert",
+      expect.objectContaining({
+        session: expect.objectContaining({ id: "cleared", blocks: [] }),
+      }),
+    );
     expect(mocks.invoke.mock.calls[0][1].session.providerSessionId).toBeUndefined();
   });
 

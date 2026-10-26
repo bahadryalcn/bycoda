@@ -14,6 +14,7 @@ export function TaskList({
   onToggle,
   onOpen,
   disabled,
+  planningLabel,
 }: {
   tasks: readonly BoardTask[];
   selection: boolean;
@@ -21,6 +22,7 @@ export function TaskList({
   onToggle: (task: BoardTask, checked: boolean) => void;
   onOpen: (task: BoardTask) => void;
   disabled?: boolean;
+  planningLabel?: (task: BoardTask) => string;
 }) {
   const t = useT();
   const listId = useId();
@@ -64,6 +66,9 @@ export function TaskList({
                 {task.machineName} · {task.cwd}
                 {task.stale ? ` · ${t("Offline")}` : ""}
               </span>
+              {planningLabel?.(task) ? (
+                <span className="task-planning-caption">{planningLabel(task)}</span>
+              ) : null}
               {task.error ? <p className="task-list-error">{task.error}</p> : null}
             </div>
             <span className="task-list-status">

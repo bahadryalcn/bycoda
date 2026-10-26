@@ -66,8 +66,9 @@ for size in ['small', 'base', 'tiny']:
     w = model_path(c.get('whisperPath'), 'Systran/faster-whisper-' + size, ['model.bin', 'config.json', 'tokenizer.json'])
     if w: break
 if not w: missing.append('Whisper model')
-t = model_path(c.get('ttsPath'), 'openbmb/VoxCPM2', ['config.json', 'model.safetensors', 'audiovae.pth'])
+t = None
 if c.get('natural', True):
+    t = model_path(c.get('ttsPath'), 'openbmb/VoxCPM2', ['config.json', 'model.safetensors', 'audiovae.pth'])
     if not available('voxcpm'): missing.append('voxcpm')
     if not t: missing.append('VoxCPM2 model')
 print(json.dumps({**({'python': sys.executable} if (3, 10) <= sys.version_info[:2] < (3, 13) else {}), 'whisperPath': w, 'ttsPath': t, 'missing': missing, 'ready': not missing}))
@@ -76,27 +77,45 @@ print(json.dumps({**({'python': sys.executable} if (3, 10) <= sys.version_info[:
 function inspect(
   python: string,
   config: VoiceRuntimeConfig,
+  signal: AbortSignal,
+  args: string[] = [],
 ): Promise<VoiceRuntimeStatus | undefined> {
   return new Promise((resolve) => {
-    const child = spawn(python, ["-c", probe, JSON.stringify(config)], {
+    const child = spawn(python, [...args, "-c", probe, JSON.stringify(config)], {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, PYTHONIOENCODING: "utf-8" },
     });
     let output = "";
-    const timer = setTimeout(() => {
-      child.kill();
-      resolve(undefined);
-    }, 6000);
+    let settled = false;
+    const stop = () => {
+      if (settled) return;
+      // `py` can own a Python child; terminating only the launcher leaves a
+      // timed-out probe running after discovery has finished.
+      if (process.platform === "win32" && child.pid) {
+        const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+          windowsHide: true,
+          stdio: "ignore",
+        });
+        killer.on("error", () => child.kill());
+      } else child.kill();
+      finish(false);
+    };
+    const timer = setTimeout(stop, 6000);
     child.stdout.on("data", (chunk) => {
-      output += chunk.toString();
-      if (output.length > 32000) child.kill();
+      if (settled) return;
+      const text = chunk.toString();
+      if (output.length + text.length > 32000) stop();
+      else output += text;
     });
     child.stderr.on("data", () => {});
-    const finish = () => {
+    const finish = (success: boolean) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
+      signal.removeEventListener("abort", stop);
       try {
-        const value = JSON.parse(output);
+        const value = success ? JSON.parse(output) : undefined;
         resolve(
           value &&
             typeof value.ready === "boolean" &&
@@ -109,8 +128,10 @@ function inspect(
         resolve(undefined);
       }
     };
-    child.on("error", finish);
-    child.on("close", finish);
+    child.on("error", () => finish(false));
+    child.on("close", (code) => finish(code === 0));
+    signal.addEventListener("abort", stop, { once: true });
+    if (signal.aborted) stop();
   });
 }
 
@@ -151,20 +172,43 @@ export async function inspectVoiceRuntime(value?: unknown): Promise<VoiceRuntime
       if (item.isDirectory() && /^Python\d+$/.test(item.name))
         candidates.push(join(base, item.name, "python.exe"));
   }
+  const probes = [...new Set(candidates.filter((p): p is string => Boolean(p)))].map((python) => ({
+    python,
+    args: [] as string[],
+  }));
+  // The Windows launcher also finds supported installs outside PATH and the
+  // per-user Programs directory, including when `python` points to 3.13+.
+  if (!config.python && process.platform === "win32")
+    for (const version of ["3.12", "3.11", "3.10"])
+      probes.push({ python: "py", args: [`-${version}`] });
   let best: VoiceRuntimeStatus | undefined;
-  for (const candidate of new Set(candidates.filter((p): p is string => Boolean(p)))) {
-    const status = await inspect(candidate, config);
-    if (!status) continue;
-    // A working interpreter with missing packages is more useful than an
-    // incompatible system Python that happens to have more packages installed.
-    if (
-      !best ||
-      (status.python && !best.python) ||
-      (Boolean(status.python) === Boolean(best.python) &&
-        status.missing.length < best.missing.length)
-    )
-      best = status;
-    if (status.ready) return status;
+  const controller = new AbortController();
+  // A per-interpreter timeout must not multiply into minutes of settings UI
+  // waiting. Bound the entire scan and stop outstanding probes once ready.
+  const timer = setTimeout(() => controller.abort(), 12_000);
+  let next = 0;
+  const scan = async () => {
+    while (!controller.signal.aborted && next < probes.length) {
+      const candidate = probes[next++];
+      const status = await inspect(candidate.python, config, controller.signal, candidate.args);
+      if (!status) continue;
+      // A working interpreter with missing packages is more useful than an
+      // incompatible system Python that happens to have more packages installed.
+      if (
+        !best ||
+        (status.python && !best.python) ||
+        (Boolean(status.python) === Boolean(best.python) &&
+          status.missing.length < best.missing.length)
+      )
+        best = status;
+      if (status.ready) controller.abort();
+    }
+  };
+  try {
+    await Promise.all(Array.from({ length: Math.min(4, probes.length) }, scan));
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
   }
   return (
     best ?? {

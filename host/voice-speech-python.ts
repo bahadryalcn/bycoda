@@ -42,8 +42,9 @@ while True:
     if current != id: continue
     try:
         with contextlib.redirect_stdout(sys.stderr):
+            torch.manual_seed(42)
             stream = model.generate_streaming(text=req['text'], cfg_value=2.0,
-                inference_timesteps=6, seed=42, normalize=False, retry_badcase=False, max_len=400)
+                inference_timesteps=10, normalize=False, retry_badcase=False, max_len=400)
             try:
                 for wav in stream:
                     if current != id: break

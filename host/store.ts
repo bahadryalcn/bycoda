@@ -578,6 +578,17 @@ export class HostStore {
       return value;
     });
   }
+  /** Authorization must not parse/load a transcript, even on a cold cache. */
+  async sessionAuthority(id: string): Promise<{ projectId: string; provider: string } | undefined> {
+    return this.db.storeScope(async () => {
+      const pending = this.pending.get(id)?.value;
+      if (pending) return { projectId: pending.projectId, provider: pending.session.harness };
+      const row = await this.db
+        .prepare("SELECT project_id,harness FROM session_state WHERE id=?")
+        .get(id);
+      return row && { projectId: String(row.project_id), provider: String(row.harness) };
+    });
+  }
   /** Lightweight existence/running check for queue RPCs; never loads blocks. */
   async sessionStatus(id: string): Promise<string> {
     return this.db.storeScope(async () => {

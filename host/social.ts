@@ -4,6 +4,14 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { HostStore } from "./store";
+import type { StoreAuthorization } from "./store-db";
+import {
+  assertSessionGrantScope,
+  SessionAuthorityUnavailable,
+  type SessionAuthorityIdentity,
+  type SessionAuthorityResolver,
+  type SessionGrantScope,
+} from "./session-authority";
 import type { HostSession } from "../src/features/connections/model/protocol";
 import type {
   CampaignVariant,
@@ -31,6 +39,9 @@ import {
   SOCIAL_COLLECTIONS,
   SOCIAL_PLATFORMS,
   SOCIAL_ACCOUNT_TYPES,
+  SOCIAL_API_ACCOUNT_TYPES,
+  SOCIAL_BROWSER_ACCOUNT_TYPES,
+  TOKEN_PLATFORMS,
   SOCIAL_TOOLS,
 } from "../src/features/social/model/social";
 import { accountCapabilities } from "../src/integrations/social/capabilities";
@@ -45,6 +56,7 @@ import { validatePublishingText } from "../src/integrations/social/publishingFor
 import { parseTikTokOptions } from "../src/integrations/social/tiktok";
 import type { SocialCredentialStore, SocialCredential } from "./social-credentials";
 import { SocialVideoUploads } from "./social-media";
+import { mergeDelivery, whatsappReceipt, type WhatsAppReceipt } from "./social-delivery";
 import {
   DEFAULT_SOCIAL_POLICIES,
   effectiveSocialPolicy,
@@ -157,10 +169,10 @@ export class SocialService {
     | undefined
   >;
   isDelegated?: () => boolean | Promise<boolean>;
-  private peerSession?: (id: string) => HostSession | undefined | Promise<HostSession | undefined>;
+  private peerSession?: (id: string) => HostSession | undefined;
   private verifyPeer?: (id: string) => Promise<void>;
   setPeerResolver(
-    session: (id: string) => HostSession | undefined | Promise<HostSession | undefined>,
+    session: (id: string) => HostSession | undefined,
     verify: (id: string) => Promise<void>,
   ) {
     this.peerSession = session;
@@ -170,6 +182,25 @@ export class SocialService {
     await this.ready;
 
     return (await this.peerSession?.(id)) ?? (await this.session(id));
+  }
+  private authorityResolver?: SessionAuthorityResolver;
+  setSessionAuthorityResolver(resolver: SessionAuthorityResolver) {
+    this.authorityResolver = resolver;
+  }
+  async prepareSessionIdentity(id: string): Promise<void> {
+    await this.ready;
+    if (!this.peerSession?.(id)) await this.authorityResolver?.prepare(id);
+  }
+  async sessionAuthority(id: string): Promise<SessionAuthorityIdentity> {
+    await this.ready;
+    const peer = this.peerSession?.(id);
+    const identity = peer
+      ? { projectId: peer.projectId, provider: peer.session.harness }
+      : this.authorityResolver
+        ? await this.authorityResolver.current(id)
+        : await this.store.sessionAuthority(id);
+    if (!identity) throw new Error("Session not found on this machine");
+    return identity;
   }
   async suspendLocalExecution() {
     await this.ready;
@@ -283,6 +314,8 @@ export class SocialService {
                 "factIds",
                 "youtube",
                 "tiktok",
+                "snapchat",
+                "facebook",
               ]);
               const account = await this.get<SocialAccount>("account", variant.accountId);
               await this.assertLength(
@@ -290,7 +323,16 @@ export class SocialService {
                 "content",
                 [variant.text, variant.link].filter(Boolean).join("\n"),
               );
-              if (!variant.text?.trim()) throw new Error("Enter campaign text.");
+              if (
+                !variant.text?.trim() &&
+                !(account.platform === "snapchat" && variant.snapchat?.target === "story") &&
+                !(
+                  account.platform === "facebook" &&
+                  variant.facebook?.target === "reel" &&
+                  variant.media.length === 1
+                )
+              )
+                throw new Error("Enter campaign text.");
               this.parseMedia(variant.media);
               if (variant.link) url(variant.link, "link");
               validatePublishingText(account, variant);
@@ -299,7 +341,9 @@ export class SocialService {
             },
             prepareMedia: async (variant) => {
               const account = await this.get<SocialAccount>("account", variant.accountId);
-              const needsUrl = account.platform === "instagram" || account.platform === "facebook";
+              const needsUrl =
+                account.connection !== "browser" &&
+                (account.platform === "instagram" || account.platform === "facebook");
               return {
                 ...variant,
                 media: await mapAsync(variant.media, async (media) => {
@@ -525,11 +569,8 @@ export class SocialService {
     if (principal.kind === "session") {
       if (!principal.sessionId || !principal.projectId)
         throw new Error("Verified session identity required.");
-      const current = await this.sessionIdentity(principal.sessionId);
-      if (
-        current.projectId !== principal.projectId ||
-        current.session.harness !== principal.provider
-      )
+      const current = await this.sessionAuthority(principal.sessionId);
+      if (current.projectId !== principal.projectId || current.provider !== principal.provider)
         throw new Error("Session identity changed. Reconnect social tools.");
     }
   }
@@ -580,8 +621,7 @@ export class SocialService {
   cancelBrowserWorkflow?: (accountId: string) => Promise<void>;
   private adapterFor(account: SocialAccount): SocialAdapter {
     if (account.connection !== "browser") return this.adapters[account.platform];
-    if (account.platform !== "x" || !this.browserAdapter)
-      throw new SocialPlatformError("unsupported");
+    if (!this.browserAdapter) throw new SocialPlatformError("unsupported");
     return this.browserAdapter;
   }
   private capability(account: SocialAccount, operation: SocialOperation) {
@@ -601,12 +641,74 @@ export class SocialService {
     return JSON.parse(String(row.value)) as SocialJob;
   }
   private async writeJob(job: SocialJob): Promise<SocialJob> {
+    if (job.delivery) {
+      const current = await this.store.db
+        .prepare("SELECT json_extract(value,'$.delivery') AS delivery FROM social_jobs WHERE id=?")
+        .get(job.id);
+      if (current?.delivery)
+        job.delivery = mergeDelivery(JSON.parse(String(current.delivery)), job.delivery);
+    }
     await this.store.db
       .prepare(
         "INSERT INTO social_jobs VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET dedupe_key=excluded.dedupe_key,status=excluded.status,scheduled_at=excluded.scheduled_at,value=excluded.value",
       )
       .run(job.id, job.dedupeKey, job.accountId, job.status, job.scheduledAt, JSON.stringify(job));
     return job;
+  }
+  private async applyDelivery(job: SocialJob): Promise<void> {
+    if (!job.platformId || !job.payload.recipientId) return;
+    const id = hash(`${job.accountId}:${job.platformId}`);
+    const row = await this.store.db
+      .prepare("SELECT value FROM social_records WHERE kind='delivery-receipt' AND id=?")
+      .get(id);
+    if (!row) return;
+    const receipt = JSON.parse(String(row.value)) as WhatsAppReceipt & { accountId: string };
+    if (
+      receipt.accountId === job.accountId &&
+      receipt.platformId === job.platformId &&
+      receipt.recipient === job.payload.recipientId
+    )
+      job.delivery = mergeDelivery(job.delivery, receipt.delivery);
+  }
+  private async recordWhatsAppDelivery(accountId: string, receipt: WhatsAppReceipt): Promise<void> {
+    await this.transaction(async () => {
+      const id = hash(`${accountId}:${receipt.platformId}`);
+      const rows = await this.store.db
+        .prepare(
+          "SELECT value FROM social_jobs WHERE account_id=? AND json_extract(value,'$.platformId')=? LIMIT 2",
+        )
+        .all(accountId, receipt.platformId);
+      if (rows.length > 1) return;
+      const job = rows.length ? (JSON.parse(String(rows[0].value)) as SocialJob) : undefined;
+      if (job && job.payload.recipientId !== receipt.recipient) return;
+      const previous = await this.store.db
+        .prepare("SELECT value FROM social_records WHERE kind='delivery-receipt' AND id=?")
+        .get(id);
+      if (previous) {
+        const stored = JSON.parse(String(previous.value)) as WhatsAppReceipt;
+        if (stored.recipient === receipt.recipient)
+          receipt = { ...receipt, delivery: mergeDelivery(stored.delivery, receipt.delivery) };
+        else if (!job) {
+          await this.store.db
+            .prepare("DELETE FROM social_records WHERE kind='delivery-receipt' AND id=?")
+            .run(id);
+          return;
+        }
+      }
+      await this.store.db
+        .prepare(
+          "INSERT INTO social_records VALUES ('delivery-receipt',?,?) ON CONFLICT(kind,id) DO UPDATE SET value=excluded.value",
+        )
+        .run(id, JSON.stringify({ ...receipt, accountId }));
+      await this.store.db
+        .prepare(
+          "DELETE FROM social_records WHERE kind='delivery-receipt' AND json_extract(value,'$.accountId')=? AND id NOT IN (SELECT id FROM social_records WHERE kind='delivery-receipt' AND json_extract(value,'$.accountId')=? ORDER BY json_extract(value,'$.delivery.at') DESC LIMIT 200)",
+        )
+        .run(accountId, accountId);
+      if (!job) return;
+      await this.applyDelivery(job);
+      if (job.delivery) await this.writeJob(job);
+    });
   }
   private async queuedJob(key: string): Promise<SocialJob | undefined> {
     const row = await this.store.db
@@ -696,50 +798,100 @@ export class SocialService {
   async issueSessionGrant(
     sessionId: string,
     deviceHash?: string,
+    expectedScope?: unknown,
   ): Promise<{
     token: string;
     expiresAt: number;
+    scope: SessionGrantScope;
   }> {
     await this.ready;
-
-    const snapshot = await this.sessionIdentity(sessionId);
-    await this.store.project(snapshot.projectId);
-    const token = randomBytes(32).toString("base64url");
-    const expiresAt = this.now() + 12 * 60 * 60000;
-    for (const [key, grant] of this.grants)
-      if (grant.expiresAt <= this.now()) this.grants.delete(key);
-    // Catalog/title helpers and the main provider can share one conversation.
-    // Issuing a sibling grant must not disconnect a running MCP server.
-    if (this.grants.size >= 4096) throw new Error("Social session grant capacity reached.");
-    this.grants.set(hash(token), {
-      principal: {
-        kind: "session",
-        actorId: `session:${sessionId}`,
+    if (!sessionId || sessionId.length > 300)
+      throw new Error("Verified session identity required.");
+    if (!this.store.db.ownsScope) await this.prepareSessionIdentity(sessionId);
+    return this.store.db.scope(async () => {
+      const initial = await this.sessionAuthority(sessionId);
+      await this.store.project(initial.projectId);
+      if (
+        deviceHash &&
+        !(await this.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(deviceHash))
+      )
+        throw new Error("Device revoked.");
+      const identity = await this.sessionAuthority(sessionId);
+      if (identity.projectId !== initial.projectId || identity.provider !== initial.provider)
+        throw new SessionAuthorityUnavailable();
+      const scope: SessionGrantScope = {
+        ...identity,
         sessionId,
-        projectId: snapshot.projectId,
-        provider: snapshot.session.harness,
-      },
-      expiresAt,
-      deviceHash,
+        environmentId: this.store.environmentId,
+      };
+      assertSessionGrantScope(expectedScope, scope);
+      const token = randomBytes(32).toString("base64url");
+      const expiresAt = this.now() + 12 * 60 * 60000;
+      for (const [key, grant] of this.grants)
+        if (grant.expiresAt <= this.now()) this.grants.delete(key);
+      // Catalog/title helpers and the main provider can share one conversation.
+      // Issuing a sibling grant must not disconnect a running MCP server.
+      if (this.grants.size >= 4096) throw new Error("Social session grant capacity reached.");
+      const grant: Grant = {
+        principal: {
+          kind: "session",
+          actorId: `session:${sessionId}`,
+          sessionId,
+          projectId: identity.projectId,
+          provider: identity.provider,
+        },
+        expiresAt,
+        deviceHash,
+      };
+      this.store.afterCommit(() => {
+        this.grants.set(hash(token), grant);
+      });
+      return { token, expiresAt, scope };
     });
-    return { token, expiresAt };
+  }
+  authorization(token: string): StoreAuthorization {
+    const check = async () => !!(await this.principalForToken(token));
+    return {
+      check,
+      prepare: async () => {
+        const grant = this.grants.get(hash(token));
+        if (grant && grant.expiresAt > this.now()) {
+          try {
+            await this.prepareSessionIdentity(grant.principal.sessionId!);
+          } catch {
+            return () => false;
+          }
+        }
+        return check;
+      },
+    };
   }
   async principalForToken(token: string): Promise<SocialPrincipal | undefined> {
-    await this.ready;
-
     const grant = this.grants.get(hash(token));
     if (!grant || grant.expiresAt <= this.now()) return undefined;
-    if (
-      grant.deviceHash &&
-      !(await this.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(grant.deviceHash))
-    )
-      return undefined;
-    try {
-      await this.validate(grant.principal);
-      return grant.principal;
-    } catch {
-      return undefined;
+    await this.ready;
+    if (!this.store.db.ownsScope) {
+      try {
+        await this.prepareSessionIdentity(grant.principal.sessionId!);
+      } catch {
+        return undefined;
+      }
     }
+    return this.store.db.scope(async () => {
+      if (this.grants.get(hash(token)) !== grant || grant.expiresAt <= this.now()) return undefined;
+      if (
+        grant.deviceHash &&
+        !(await this.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(grant.deviceHash))
+      )
+        return undefined;
+      try {
+        await this.validate(grant.principal);
+        if (grant.expiresAt <= this.now()) return undefined;
+        return grant.principal;
+      } catch {
+        return undefined;
+      }
+    });
   }
   isTool(method: string): boolean {
     return (SOCIAL_TOOLS as readonly string[]).includes(method.replace(/^social\./, ""));
@@ -1003,13 +1155,30 @@ export class SocialService {
         );
       case "accounts.create": {
         this.owner(p);
-        exact(input, ["platform", "name", "accountType", "projectIds"]);
+        exact(input, ["platform", "name", "accountType", "projectIds", "connection"]);
         if (!(SOCIAL_PLATFORMS as readonly unknown[]).includes(input.platform))
           throw new Error("Unsupported social platform.");
         const platform = input.platform as SocialAccount["platform"];
         const accountType = input.accountType as SocialAccount["accountType"];
+        if (
+          input.connection !== undefined &&
+          !["browser", "oauth", "token"].includes(String(input.connection))
+        )
+          throw new Error("Unsupported social connection type.");
         if (!(SOCIAL_ACCOUNT_TYPES[platform] as readonly string[]).includes(accountType))
           throw new Error("Unsupported social account type.");
+        if (input.connection !== undefined) {
+          const types =
+            input.connection === "browser"
+              ? SOCIAL_BROWSER_ACCOUNT_TYPES[platform]
+              : SOCIAL_API_ACCOUNT_TYPES[platform];
+          if (
+            !(types as readonly string[]).includes(accountType) ||
+            (input.connection === "token" && !TOKEN_PLATFORMS.includes(platform)) ||
+            (input.connection === "oauth" && TOKEN_PLATFORMS.includes(platform))
+          )
+            throw new Error("Choose an account type supported by this connection method.");
+        }
         const projects = array(input.projectIds ?? [], "projects");
         await forEachAsync(projects, async (id) => await this.store.project(id));
         const account: SocialAccount = {
@@ -1021,6 +1190,9 @@ export class SocialService {
           scopes: [],
           accessApproved: false,
           connected: false,
+          ...(input.connection
+            ? { connection: input.connection as SocialAccount["connection"] }
+            : {}),
           paused: false,
           executorId: this.store.environmentId,
           grants: Object.fromEntries(projects.map((id) => [id, ["read", "draft"]])),
@@ -1393,7 +1565,13 @@ export class SocialService {
       case "jobs.cancel": {
         const job = await this.job(str(input.id, "job"));
         await this.jobAccess(p, job);
-        if (job.status === "running" || job.preparation?.tiktokPublishId)
+        if (
+          job.status === "running" ||
+          job.preparation?.tiktokPublishId ||
+          job.preparation?.youtubeVideoId ||
+          job.preparation?.snapchatMedia?.spotlightId ||
+          job.preparation?.facebookReel?.stage === "submitted"
+        )
           throw new Error(
             "A dispatched send cannot be recalled. Stop the account to prevent later sends.",
           );
@@ -2417,6 +2595,8 @@ export class SocialService {
             link: variant.link,
             youtube: variant.youtube,
             tiktok: variant.tiktok,
+            snapchat: variant.snapchat,
+            facebook: variant.facebook,
           },
           status: "queued",
           scheduledAt: this.now(),
@@ -2461,6 +2641,8 @@ export class SocialService {
         "factIds",
         "youtube",
         "tiktok",
+        "snapchat",
+        "facebook",
       ]);
       const accountId = str(value.accountId, "account");
       const account = await this.access(p, accountId, "draft");
@@ -2476,6 +2658,90 @@ export class SocialService {
       );
       let youtube: CampaignVariant["youtube"];
       let tiktok: CampaignVariant["tiktok"];
+      let snapchat: CampaignVariant["snapchat"];
+      let facebook: CampaignVariant["facebook"];
+      if (value.facebook !== undefined) {
+        if (
+          account.platform !== "facebook" ||
+          account.accountType !== "page" ||
+          account.connection === "browser" ||
+          !value.facebook ||
+          typeof value.facebook !== "object" ||
+          Array.isArray(value.facebook)
+        )
+          throw new Error("Facebook Reel metadata requires an API Page connection.");
+        const metadata = value.facebook as Record<string, unknown>;
+        exact(metadata, ["target", "durationSeconds", "width", "height", "frameRate"]);
+        if (
+          metadata.target !== "reel" ||
+          ![metadata.durationSeconds, metadata.width, metadata.height, metadata.frameRate].every(
+            (item) => typeof item === "number" && Number.isFinite(item),
+          ) ||
+          Number(metadata.durationSeconds) < 4 ||
+          Number(metadata.durationSeconds) > 60 ||
+          !Number.isInteger(metadata.width) ||
+          !Number.isInteger(metadata.height) ||
+          Number(metadata.width) < 540 ||
+          Number(metadata.height) < 960 ||
+          Number(metadata.width) * 16 !== Number(metadata.height) * 9 ||
+          Number(metadata.frameRate) < 23
+        )
+          throw new Error(
+            "Choose Reel and a 4–60 second vertical MP4 of at least 540 × 960 pixels and 23 fps.",
+          );
+        facebook = {
+          target: "reel",
+          durationSeconds: Number(metadata.durationSeconds),
+          width: Number(metadata.width),
+          height: Number(metadata.height),
+          frameRate: Number(metadata.frameRate),
+        };
+      }
+      if (value.snapchat !== undefined) {
+        if (
+          account.platform !== "snapchat" ||
+          account.accountType !== "public_profile" ||
+          !value.snapchat ||
+          typeof value.snapchat !== "object" ||
+          Array.isArray(value.snapchat)
+        )
+          throw new Error("Snapchat publishing metadata requires a Public Profile.");
+        const metadata = value.snapchat as Record<string, unknown>;
+        exact(metadata, ["target", "durationSeconds", "width", "height", "locale"]);
+        if (
+          !["spotlight", "story"].includes(String(metadata.target)) ||
+          ![metadata.durationSeconds, metadata.width, metadata.height].every(
+            (item) => typeof item === "number" && Number.isFinite(item),
+          ) ||
+          Number(metadata.durationSeconds) < (account.connection === "browser" ? 5 : 6) ||
+          Number(metadata.durationSeconds) > 60 ||
+          Number(metadata.width) < 540 ||
+          Number(metadata.height) < 960
+        )
+          throw new Error(
+            account.connection === "browser"
+              ? "Choose Story or Spotlight and a 5–60 second video of at least 540 × 960 pixels."
+              : "Choose Spotlight and a 6–60 second video of at least 540 × 960 pixels.",
+          );
+        if (
+          account.connection !== "browser" &&
+          (metadata.target !== "spotlight" ||
+            typeof metadata.locale !== "string" ||
+            !/^[a-z]{2}_[A-Z]{2}$/.test(metadata.locale))
+        )
+          throw new Error(
+            "Snapchat API publishing requires Spotlight and an explicit locale such as tr_TR.",
+          );
+        snapchat = {
+          target: metadata.target as "spotlight" | "story",
+          durationSeconds: Number(metadata.durationSeconds),
+          width: Number(metadata.width),
+          height: Number(metadata.height),
+          ...(metadata.locale !== undefined
+            ? { locale: str(metadata.locale, "Spotlight locale", 5) }
+            : {}),
+        };
+      }
       if (value.tiktok !== undefined) {
         if (account.platform !== "tiktok")
           throw new Error("TikTok metadata requires a TikTok account.");
@@ -2506,15 +2772,31 @@ export class SocialService {
           containsSyntheticMedia: metadata.containsSyntheticMedia,
         };
       }
+      const media = this.parseMedia(value.media ?? []);
+      const telegramChannelMedia =
+        account.platform === "telegram" &&
+        account.accountType === "channel" &&
+        account.connection === "token" &&
+        media.length > 0;
       return {
         accountId,
-        text: str(value.text, "campaign text"),
-        media: this.parseMedia(value.media ?? []),
+        text:
+          (snapchat?.target === "story" && value.text === "") ||
+          (facebook?.target === "reel" &&
+            media.length === 1 &&
+            typeof value.text === "string" &&
+            !value.text.trim()) ||
+          (telegramChannelMedia && typeof value.text === "string" && !value.text.trim())
+            ? ""
+            : str(value.text, "campaign text"),
+        media,
         ...(value.link ? { link: url(value.link, "link") } : {}),
         scheduledAt: finite(value.scheduledAt ?? this.now(), "publish time"),
         factIds,
         ...(youtube ? { youtube } : {}),
         ...(tiktok ? { tiktok } : {}),
+        ...(snapchat ? { snapchat } : {}),
+        ...(facebook ? { facebook } : {}),
       };
     });
     if (new Set(variants.map((variant) => variant.accountId)).size !== variants.length)
@@ -2551,17 +2833,19 @@ export class SocialService {
     return raw.map((item) => {
       if (!item || typeof item !== "object") throw new Error("Invalid media.");
       const media = item as Record<string, unknown>;
-      exact(media, ["kind", "url", "uploadId", "alt"]);
-      if (media.kind !== "image" && media.kind !== "video") throw new Error("Invalid media kind.");
+      exact(media, ["kind", "url", "uploadId", "alt", "title"]);
+      if (!["image", "video", "document"].includes(String(media.kind)))
+        throw new Error("Invalid media kind.");
       if (!media.url && !media.uploadId)
         throw new Error("Media needs an HTTPS URL or a host upload.");
       if (media.uploadId && !/^[a-f0-9-]{36}$/.test(String(media.uploadId)))
         throw new Error("Invalid media upload ID.");
       return {
-        kind: media.kind,
+        kind: media.kind as CampaignVariant["media"][number]["kind"],
         ...(media.url ? { url: url(media.url, "media URL") } : {}),
         ...(media.uploadId ? { uploadId: String(media.uploadId) } : {}),
         ...(media.alt ? { alt: str(media.alt, "alt text", 1000) } : {}),
+        ...(media.title ? { title: str(media.title, "document title", 58) } : {}),
       };
     });
   }
@@ -2646,6 +2930,8 @@ export class SocialService {
               link: variant.link,
               youtube: variant.youtube,
               tiktok: variant.tiktok,
+              snapchat: variant.snapchat,
+              facebook: variant.facebook,
             },
             status: "queued",
             scheduledAt: variant.scheduledAt,
@@ -2749,7 +3035,17 @@ export class SocialService {
       throw new Error(
         "Conversation assignment changed. Create a new draft for the current recipient/project.",
       );
-    const text = str(input.text, "draft text");
+    const effectiveMedia =
+      input.media !== undefined ? this.parseMedia(input.media) : (draft.media ?? []);
+    const attachmentOnly =
+      account.connection !== "browser" &&
+      ["whatsapp", "telegram"].includes(account.platform) &&
+      (draft.kind === "message" || thread?.kind === "message") &&
+      effectiveMedia.length > 0;
+    const text =
+      attachmentOnly && typeof input.text === "string" && !input.text.trim()
+        ? ""
+        : str(input.text, "draft text");
     const factIds = array(input.factIds ?? draft.factIds, "verified facts");
     await this.facts([draft.projectId], factIds);
     await this.assertLength(
@@ -2758,10 +3054,8 @@ export class SocialService {
       text,
     );
     draft.text = text;
-    if (input.media !== undefined) {
-      const media = this.parseMedia(input.media);
-      if (media.length && account.platform !== "x")
-        throw new Error("Draft media is supported for X only.");
+    {
+      const media = effectiveMedia;
       if (media.length) this.capability(account, "media");
       const issue = contentSupport(account, {
         kind: draft.kind,
@@ -2774,7 +3068,7 @@ export class SocialService {
         },
       });
       if (issue) throw new Error(issue);
-      draft.media = media;
+      if (input.media !== undefined) draft.media = media;
     }
     draft.factIds = factIds;
     delete draft.generation;
@@ -2847,8 +3141,18 @@ export class SocialService {
             thread?.kind === "comment" || (kind === "comment" && account.platform !== "youtube")
               ? undefined
               : contact.platformId,
-          threadId: thread?.kind === "message" ? thread.platformThreadId : undefined,
-          postId: thread?.kind === "comment" ? thread.platformThreadId : draft.postId,
+          threadId:
+            thread &&
+            (thread.kind === "message" ||
+              (account.connection === "browser" && account.platform !== "x"))
+              ? thread.platformThreadId
+              : undefined,
+          postId:
+            thread?.kind === "comment"
+              ? account.connection === "browser" && account.platform !== "x"
+                ? (thread.platformPostId ?? thread.platformThreadId)
+                : thread.platformThreadId
+              : draft.postId,
           objectPostId: thread?.platformPostId,
         },
         status: "queued",
@@ -2878,6 +3182,7 @@ export class SocialService {
       this.capability(account, thread.kind === "message" ? "message.reply" : "reply");
       if (
         thread.kind === "message" &&
+        account.connection !== "browser" &&
         (account.platform === "instagram" ||
           account.platform === "facebook" ||
           account.platform === "whatsapp") &&
@@ -3449,12 +3754,15 @@ export class SocialService {
       scopes: string[];
       accessApproved: boolean;
       connection?: SocialAccount["connection"];
+      telegramBotId?: string;
+      instagramAccountType?: SocialAccount["instagramAccountType"];
     },
     credential: {
       accessToken: string;
       refreshToken?: string;
       expiresAt?: number;
     },
+    beforeCommit?: () => Promise<void>,
   ): Promise<SocialAccount> {
     return this.operation(async () => {
       await this.ready;
@@ -3462,6 +3770,39 @@ export class SocialService {
       const epoch = await this.setting(`connectionEpoch:${accountId}`);
       return await this.changeCredentials(accountId, async () => {
         let account = await this.get<SocialAccount>("account", accountId);
+        const validateInstagramType = () => {
+          if (
+            identity.instagramAccountType !== undefined &&
+            (account.platform !== "instagram" ||
+              account.accountType !== "professional" ||
+              (identity.connection !== undefined && identity.connection !== "oauth") ||
+              !["BUSINESS", "MEDIA_CREATOR", "CREATOR"].includes(identity.instagramAccountType))
+          )
+            throw new Error("Invalid verified Instagram account type.");
+        };
+        validateInstagramType();
+        const validateTelegramChannel = () => {
+          if (account.platform === "telegram" && account.accountType === "channel") {
+            if (
+              identity.connection !== "token" ||
+              !/^-[1-9]\d{0,15}$/.test(identity.platformId) ||
+              !Number.isSafeInteger(Number(identity.platformId)) ||
+              String(Number(identity.platformId)) !== identity.platformId ||
+              typeof identity.telegramBotId !== "string" ||
+              !/^[1-9]\d{0,15}$/.test(identity.telegramBotId) ||
+              !Number.isSafeInteger(Number(identity.telegramBotId)) ||
+              String(Number(identity.telegramBotId)) !== identity.telegramBotId ||
+              identity.scopes.length !== 1 ||
+              identity.scopes[0] !== "channel.publish"
+            )
+              throw new Error("Invalid Telegram channel identity or scope.");
+            if (account.telegramBotId && account.telegramBotId !== identity.telegramBotId)
+              throw new Error("Reconnect must preserve the Telegram bot identity.");
+          } else if (identity.telegramBotId !== undefined || account.telegramBotId !== undefined) {
+            throw new Error("Telegram bot binding belongs to a channel token connection only.");
+          }
+        };
+        validateTelegramChannel();
         if (epoch !== (await this.setting(`connectionEpoch:${accountId}`)))
           throw new Error("Account connection was cancelled by a disconnect.");
         const duplicate = (await this.list<SocialAccount>("account")).find(
@@ -3474,12 +3815,20 @@ export class SocialService {
         if (duplicate) throw new Error("This platform identity is already connected on this host.");
         if (account.platformId && account.platformId !== identity.platformId)
           throw new Error("Reconnect must preserve the platform identity.");
+        const previousTelegramCredential =
+          account.platform === "telegram" && account.accountType === "channel" && account.connected
+            ? await this.credentials.get(accountId)
+            : undefined;
+        await beforeCommit?.();
         await this.store.db.checkAuthorization();
         await this.credentials.set(accountId, credential);
         // Credential I/O must not restore grants or pauses changed while it awaited.
         try {
           return await this.transaction(async () => {
             account = await this.get<SocialAccount>("account", accountId);
+            validateInstagramType();
+            validateTelegramChannel();
+            await beforeCommit?.();
             if (epoch !== (await this.setting(`connectionEpoch:${accountId}`)))
               throw new Error("Account connection was cancelled by a disconnect.");
             if (
@@ -3498,11 +3847,27 @@ export class SocialService {
             account.accessApproved = identity.accessApproved;
             account.expiresAt = credential.expiresAt;
             account.connection = identity.connection;
+            // Missing provider metadata on reconnect invalidates the old observation.
+            if (identity.instagramAccountType === undefined) delete account.instagramAccountType;
+            else account.instagramAccountType = identity.instagramAccountType;
+            if (identity.telegramBotId !== undefined)
+              account.telegramBotId = identity.telegramBotId;
             account.connected = true;
             return await this.put("account", account.id, account);
           });
         } catch (error) {
-          await this.credentials.delete(accountId);
+          const current = previousTelegramCredential
+            ? await this.get<SocialAccount>("account", accountId).catch(() => undefined)
+            : undefined;
+          if (
+            previousTelegramCredential &&
+            current?.connected &&
+            current.platformId === identity.platformId &&
+            current.telegramBotId === identity.telegramBotId &&
+            epoch === (await this.setting(`connectionEpoch:${accountId}`))
+          )
+            await this.credentials.set(accountId, previousTelegramCredential);
+          else await this.credentials.delete(accountId);
           throw error;
         }
       });
@@ -3522,6 +3887,11 @@ export class SocialService {
       throw new Error("Social automation is stopped.");
     return account;
   }
+  /** Internal owner connection reviews must be invalidated by an explicit disconnect. */
+  async connectionReviewEpoch(p: SocialPrincipal, accountId: string) {
+    await this.accountForOAuth(p, accountId);
+    return this.setting(`connectionEpoch:${accountId}`);
+  }
   async tiktokCreator(p: SocialPrincipal, accountId: string) {
     await this.ready;
 
@@ -3540,6 +3910,7 @@ export class SocialService {
   async uploadImage(
     p: SocialPrincipal,
     base64: string,
+    format: "image" | "document" = "image",
   ): Promise<{
     uploadId: string;
   }> {
@@ -3549,12 +3920,21 @@ export class SocialService {
       this.owner(p);
       const bytes = Buffer.from(base64, "base64");
       if (
-        !bytes.length ||
-        bytes.length > 5 * 1024 * 1024 ||
-        !(
-          (bytes[0] === 0xff && bytes[1] === 0xd8) ||
-          bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-        )
+        format === "document" &&
+        (!bytes.length ||
+          bytes.length > 5 * 1024 * 1024 ||
+          !/^%PDF-(?:1\.[0-7]|2\.0)(?:\r|\n)/.test(bytes.subarray(0, 10).toString("ascii")) ||
+          !/%%EOF\s*$/.test(bytes.subarray(-1024).toString("ascii")))
+      )
+        throw new Error("Upload a complete PDF document up to 5 MiB.");
+      if (
+        format === "image" &&
+        (!bytes.length ||
+          bytes.length > 5 * 1024 * 1024 ||
+          !(
+            (bytes[0] === 0xff && bytes[1] === 0xd8) ||
+            bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+          ))
       )
         throw new Error("Upload a JPEG/PNG image up to 5 MiB.");
       const uploadId = randomUUID();
@@ -3595,7 +3975,7 @@ export class SocialService {
   private async credentialFor(accountId: string): Promise<SocialCredential | undefined> {
     const initial = await this.credentials.get(accountId);
     if (
-      !initial?.refreshToken ||
+      !initial ||
       initial.expiresAt === undefined ||
       initial.expiresAt > this.now() + 60000 ||
       !this.refreshCredential
@@ -3604,7 +3984,7 @@ export class SocialService {
     return await this.changeCredentials(accountId, async () => {
       const credential = await this.credentials.get(accountId);
       if (
-        !credential?.refreshToken ||
+        !credential ||
         credential.expiresAt === undefined ||
         credential.expiresAt > this.now() + 60000
       )
@@ -3614,8 +3994,10 @@ export class SocialService {
       if (
         !account.connected ||
         account.paused ||
+        account.connection === "browser" ||
+        (!credential.refreshToken && account.platform !== "instagram") ||
         account.executorId !== this.store.environmentId ||
-        !["x", "youtube"].includes(account.platform)
+        !["x", "youtube", "tiktok", "snapchat", "instagram"].includes(account.platform)
       )
         return credential;
       const refreshed = await this.refreshCredential!(account, credential).catch(() => {
@@ -3799,7 +4181,7 @@ export class SocialService {
             account.executorId === this.store.environmentId &&
             account.expiresAt !== undefined &&
             account.expiresAt <= this.now() + 60000 &&
-            ["x", "youtube"].includes(account.platform),
+            ["x", "youtube", "tiktok", "snapchat", "instagram"].includes(account.platform),
         );
         for (let offset = 0; offset < due.length; offset += 4)
           await Promise.allSettled(
@@ -3827,10 +4209,9 @@ export class SocialService {
           if (
             account.connected &&
             !account.paused &&
-            (account.connection !== "browser" ||
-              accountCapabilities(account, this.now()).some(
-                (item) => item.operation === "poll" && item.status === "available",
-              )) &&
+            accountCapabilities(account, this.now()).some(
+              (item) => item.operation === "poll" && item.status === "available",
+            ) &&
             account.executorId === this.store.environmentId &&
             Number((await this.setting(`pollRate:${account.id}`)) ?? 0) <= this.now() &&
             !this.pollingPending.has(account.id)
@@ -3951,6 +4332,12 @@ export class SocialService {
     try {
       const check = async () => {
         const currentAccount = await this.get<SocialAccount>("account", account.id);
+        if (
+          !currentAccount.connected ||
+          currentAccount.platformId !== account.platformId ||
+          currentAccount.connection !== account.connection
+        )
+          throw new Error("Account connection changed before dispatch.");
         if (job.payload.media.length) this.capability(currentAccount, "media");
         const mediaIssue = contentSupport(currentAccount, job);
         if (mediaIssue) throw new Error(mediaIssue);
@@ -4088,10 +4475,15 @@ export class SocialService {
           job.preparation = state;
           await this.writeJob(job);
         },
+        check,
       );
       if (!result.platformId) throw new SocialPlatformError("unknown");
       job.status = "succeeded";
       job.platformId = result.platformId;
+      if (account.platform === "whatsapp" && account.connection !== "browser") {
+        job.delivery = { status: "accepted", at: this.now() };
+        await this.applyDelivery(job);
+      }
       if (result.visibility) job.visibility = result.visibility;
       if (result.url) {
         try {
@@ -4144,7 +4536,13 @@ export class SocialService {
         if (error.code === "rate_limit" || error.code === "processing") {
           job.status = "queued";
           job.scheduledAt = error.retryAt ?? this.now() + 60000;
-          if (!job.preparation?.tiktokPublishId) delete job.dispatchedAt;
+          if (
+            !job.preparation?.tiktokPublishId &&
+            !job.preparation?.youtubeVideoId &&
+            !job.preparation?.snapchatMedia?.spotlightId &&
+            job.preparation?.facebookReel?.stage !== "submitted"
+          )
+            delete job.dispatchedAt;
           await this.setSetting(`rate:${account.id}`, String(job.scheduledAt));
         } else if (error.code === "unknown" && job.dispatchedAt) {
           const result = await this.adapterFor(account)
@@ -4201,6 +4599,19 @@ export class SocialService {
     ingested: number;
   }> {
     const account = await this.get<SocialAccount>("account", accountId);
+    const signature = hash(JSON.stringify(account));
+    const epoch = await this.setting(`connectionEpoch:${account.id}`);
+    const currentConnection = async () => {
+      const current = await this.get<SocialAccount>("account", accountId);
+      if (
+        hash(JSON.stringify(current)) !== signature ||
+        epoch !== (await this.setting(`connectionEpoch:${account.id}`))
+      )
+        throw new Error("Account connection changed while polling. Refresh this account again.");
+      this.capability(current, "poll");
+      if (current.paused || current.executorId !== this.store.environmentId)
+        throw new Error("This host is not the active executor for the account.");
+    };
     this.capability(account, "poll");
     if (account.paused || account.executorId !== this.store.environmentId)
       throw new Error("This host is not the active executor for the account.");
@@ -4211,6 +4622,7 @@ export class SocialService {
     if (!credential || (credential.expiresAt && credential.expiresAt <= this.now()))
       throw new SocialPlatformError("expired");
     try {
+      await currentConnection();
       const result = await this.adapterFor(account).poll(
         account,
         credential.accessToken,
@@ -4225,20 +4637,24 @@ export class SocialService {
           .filter(Boolean),
         await this.setting(`cursor:${account.id}`),
       );
-      const ingested = await this.ingest(accountId, result.events);
-      await this.setSetting(
-        `monitor:${account.id}`,
-        JSON.stringify({
-          checkedAt: this.now(),
-          status: result.coverage?.some((channel) => channel.status === "unavailable")
-            ? "partial"
-            : "healthy",
-          coverage: result.coverage ?? [],
-        }),
-      );
-      if (result.cursor) await this.setSetting(`cursor:${account.id}`, result.cursor);
-      await this.setSetting(`pollRate:${account.id}`, String(this.now() + 60000));
-      return { ingested };
+      return await this.transaction(async () => {
+        await currentConnection();
+        const ingested = await this.ingest(accountId, result.events);
+        await currentConnection();
+        await this.setSetting(
+          `monitor:${account.id}`,
+          JSON.stringify({
+            checkedAt: this.now(),
+            status: result.coverage?.some((channel) => channel.status === "unavailable")
+              ? "partial"
+              : "healthy",
+            coverage: result.coverage ?? [],
+          }),
+        );
+        if (result.cursor) await this.setSetting(`cursor:${account.id}`, result.cursor);
+        await this.setSetting(`pollRate:${account.id}`, String(this.now() + 60000));
+        return { ingested };
+      });
     } catch (error) {
       await this.setSetting(
         `monitor:${account.id}`,
@@ -4313,6 +4729,15 @@ export class SocialService {
                 item.executorId === this.store.environmentId,
             );
             if (!account) continue;
+            if (account.connection !== "browser") {
+              for (const status of (Array.isArray(value.statuses) ? value.statuses : []).slice(
+                0,
+                100,
+              )) {
+                const receipt = whatsappReceipt(status, this.now());
+                if (receipt) await this.recordWhatsAppDelivery(account.id, receipt);
+              }
+            }
             const events: SocialInbound[] = [];
             for (const message of value.messages ?? []) {
               const at = Number(message.timestamp) * 1000;

@@ -42,6 +42,7 @@ import {
   Check,
   CheckList,
   DashboardSquare,
+  Bot,
   ChevronDown,
   ChevronRight,
   CircleAlert,
@@ -69,6 +70,8 @@ import {
 } from "../../shared/ui/icons";
 import {
   memo,
+  createContext,
+  useContext,
   useCallback,
   useEffect,
   useId,
@@ -405,6 +408,7 @@ type Props = {
   onNew?: () => string | void;
   onNewTerminal?: () => void;
   onSearch?: () => void;
+  onSearchConversations?: (query?: string) => void;
   onOpenInbox?: () => void;
   onOpenInboxItem?: (item: LinkedWorkItem, sessionId: string) => void;
   onOpenNotes?: () => void;
@@ -513,6 +517,7 @@ function SidebarComponent({
   onRenameProjectFolder,
   onNew,
   onSearch,
+  onSearchConversations,
   onOpenInbox,
   onOpenInboxItem,
   onOpenNotes,
@@ -723,7 +728,7 @@ function SidebarComponent({
         title={t(workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions", {
           p0: workingSessionCount,
         })}
-        className="ml-2 shrink-0"
+        className="shrink-0"
       >
         {workingSessionCount}
       </Badge>
@@ -1048,6 +1053,17 @@ function SidebarComponent({
   const railMounted = useRef(railVisible);
   if (railVisible) railMounted.current = true;
   const compactRailVisible = compactProjectRail && showProjectRail && !railVisible && !settingsOpen;
+  const [projectNavigationAnchor, setProjectNavigationAnchor] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!compactRailVisible) setProjectNavigationAnchor(null);
+  }, [compactRailVisible]);
+  const closeProjectNavigationThen = (action?: () => void) =>
+    action
+      ? () => {
+          setProjectNavigationAnchor(null);
+          action();
+        }
+      : undefined;
   const inProject = looksLikeProject(cwd);
   const showSidebarFooter = !projectRailOpen;
   // A blank session has no project to browse, so the shell stands alone until
@@ -1547,17 +1563,24 @@ function SidebarComponent({
             return t("New folder");
           },
         },
-        ...(sessionFolders.length > 0 ? [{ kind: "sep" as const }] : []),
-        ...sessionFolders.map((folder) => ({
-          kind: "item" as const,
-          id: `folder-add:${folder.id}`,
-          get label() {
-            return t("Add to {p0}", { p0: folder.name });
-          },
-          checked:
-            menuSessionIds.length > 0 &&
-            menuSessionIds.every((sessionId) => folder.sessionIds.includes(sessionId)),
-        })),
+        ...(sessionFolders.length > 0
+          ? [
+              {
+                kind: "item" as const,
+                id: "folder-add",
+                label: t("Add to"),
+                submenuSearch: { placeholder: t("Search folders"), emptyLabel: t("No results") },
+                submenu: sessionFolders.map((folder) => ({
+                  kind: "item" as const,
+                  id: `folder-add:${folder.id}`,
+                  label: folder.name,
+                  checked:
+                    menuSessionIds.length > 0 &&
+                    menuSessionIds.every((sessionId) => folder.sessionIds.includes(sessionId)),
+                })),
+              },
+            ]
+          : []),
         ...(canRemoveMenuSessionsFromFolders
           ? [
               {
@@ -2494,7 +2517,22 @@ function SidebarComponent({
     });
   };
 
-  const sessionSearchInput = (
+  const sessionSearchInput = onSearchConversations ? (
+    <Button
+      variant="ghost"
+      motion="none"
+      align="start"
+      fullWidth
+      aria-label={t("Search conversations")}
+      aria-haspopup="dialog"
+      onClick={() => onSearchConversations(searchQuery || undefined)}
+      className="min-w-0"
+    >
+      <span className="min-w-0 flex-1 truncate text-ui-body text-(--ui-text-secondary)">
+        {t("Search conversations...")}
+      </span>
+    </Button>
+  ) : (
     <SearchInput
       focusOwner="group"
       ref={searchInputRef}
@@ -2523,16 +2561,8 @@ function SidebarComponent({
     onTabChange(itemId);
   };
 
-  const onCompactTabPick = (itemId: SidebarTab) => {
-    if (drawerMode) {
-      setDrawerOpen(!(drawerVisible && tab === itemId));
-    }
-    onTabChange(itemId);
-  };
-
   const changeAdditions = changeStats?.additions ?? 0;
   const changeDeletions = changeStats?.deletions ?? 0;
-  const hasChanges = (changeStats?.files ?? 0) > 0;
   const hasChangeStats = changeAdditions > 0 || changeDeletions > 0;
   const changesLabel = hasChangeStats
     ? [
@@ -2553,7 +2583,7 @@ function SidebarComponent({
       <div
         key={itemId}
         ref={(el) => sortable.setItemRef(itemId, el)}
-        className="reorder-item workspace-tab relative flex min-w-0 flex-1 touch-none items-stretch"
+        className={`reorder-item workspace-tab relative flex min-w-0 touch-none items-stretch ${itemId === "sessions" && workingSessionsBadge ? "flex-[1.4]" : "flex-1"}`}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           sortable.onItemPointerDown(itemId, event);
@@ -2565,6 +2595,9 @@ function SidebarComponent({
           type="button"
           role="tab"
           aria-selected={active}
+          data-workspace-tab-counted={
+            itemId === "sessions" && workingSessionsBadge ? "" : undefined
+          }
           aria-label={label}
           title={label}
           data-usage-guide={isChangesTab ? "changes" : undefined}
@@ -2574,15 +2607,16 @@ function SidebarComponent({
             onTabPick(itemId);
           }}
           size="sm"
-          className="flex min-w-0 flex-1 items-center justify-center self-center overflow-hidden leading-none"
+          className="flex min-w-0 flex-1 items-center justify-center gap-1 self-center overflow-hidden px-1 leading-none"
         >
           <Icon className="workspace-tab-icon" aria-hidden="true" />
           <span className="workspace-tab-content flex min-w-0 items-center justify-center">
+            <span className="block truncate leading-label">{TAB_LABELS[itemId]}</span>
             {isChangesTab && hasChangeStats ? (
-              <DiffStat additions={changeAdditions} deletions={changeDeletions} />
-            ) : (
-              <span className="block truncate leading-label">{TAB_LABELS[itemId]}</span>
-            )}
+              <span className="workspace-tab-stats ms-1.5">
+                <DiffStat additions={changeAdditions} deletions={changeDeletions} />
+              </span>
+            ) : null}
           </span>
           {itemId === "sessions" ? workingSessionsBadge : null}
         </Button>
@@ -2610,7 +2644,7 @@ function SidebarComponent({
           </span>
         )}
       </div>
-      <WorkspaceTitleActions onSearch={onGoToFile} onNew={onNew} />
+      <WorkspaceTitleActions onSearch={onSearch ?? onGoToFile} onNew={onNew} />
     </div>
   );
 
@@ -3316,17 +3350,17 @@ function SidebarComponent({
           cwd={cwd}
           workingSessionsBadge={workingSessionsBadge}
           recents={visibleRecents}
-          busy={projectPathBusy(busyProjectPaths, cwd)}
-          tabs={visibleTabs}
-          activeTab={tab}
-          tabShown={panelOpen}
-          changesLabel={changesLabel}
-          hasChanges={hasChanges}
+          tabShown={open}
           inboxUnseen={inboxUnseen}
           onSelectProject={onSelectProject}
-          onOpenProject={onOpenProject}
-          onRemoveProject={onRemoveProject}
-          onTabChange={onCompactTabPick}
+          onOpenProjectNavigation={
+            onOpenProject ? (anchor) => setProjectNavigationAnchor(anchor) : undefined
+          }
+          projectNavigationOpen={Boolean(projectNavigationAnchor)}
+          onOpenWorkspace={() => {
+            if (!sidebarAvailable) onGoBack?.();
+            if (!open) setDrawerOpen(!drawerVisible);
+          }}
           onSearch={onSearch}
           searchActive={searchActive}
           onOpenInbox={onOpenInbox}
@@ -3342,6 +3376,14 @@ function SidebarComponent({
           tasksActive={tasksActive}
           socialActive={socialActive}
           onOpenSettings={onOpenSettings}
+          onOpenCrews={
+            onSelectSettingsSection && onOpenSettings
+              ? () => {
+                  onOpenSettings();
+                  onSelectSettingsSection("crews");
+                }
+              : undefined
+          }
           onTogglePanel={onToggleProjectRail}
           onLeaveActive={onGoBack}
           titleBarAbove={titleBarAbove}
@@ -3398,6 +3440,111 @@ function SidebarComponent({
           onOpenWhatsNew={onOpenWhatsNew}
           onDismissUpdate={onDismissUpdate}
         />
+      ) : null}
+      {compactRailVisible && projectNavigationAnchor && onSelectProject && onOpenProject ? (
+        <Popover
+          anchor={projectNavigationAnchor}
+          side="right"
+          autoFocus
+          align="start"
+          width={320}
+          maxHeight={760}
+          onDismiss={() => setProjectNavigationAnchor(null)}
+          role="dialog"
+          aria-label={t("Projects and groups")}
+          data-project-navigation-flyout
+          className="flex h-[min(720px,calc(100dvh-32px))] min-h-0 flex-col [&>nav]:h-full [&>nav]:w-full! [&>nav]:max-w-full"
+        >
+          <div className="flex h-10 shrink-0 items-center justify-between border-b border-stroke px-3">
+            <span className="min-w-0 truncate text-ui-body font-medium">
+              {t("Projects and groups")}
+            </span>
+            <Button
+              variant="ghost"
+              motion="none"
+              iconOnly
+              label={t("Expand projects")}
+              title={t("Expand projects")}
+              onClick={() => {
+                setProjectNavigationAnchor(null);
+                onToggleProjectRail?.();
+              }}
+            >
+              <PanelLeft className="size-4" aria-hidden />
+            </Button>
+          </div>
+          <div className="h-10 shrink-0 border-b border-stroke px-2">
+            <SearchableProjectPickerWithMenu
+              cwd={cwd}
+              recents={visibleRecents}
+              busy={projectPathBusy(busyProjectPaths, cwd)}
+              onSelectProject={(path) => {
+                setProjectNavigationAnchor(null);
+                onSelectProject(path);
+              }}
+              onOpenProject={onOpenProject}
+              onRemoveProject={onRemoveProject}
+              onOpenNotificationSettings={onOpenNotificationSettings}
+            />
+          </div>
+          <ProjectRail
+            visible
+            presentation="navigator"
+            resizable={false}
+            cwd={cwd}
+            recents={recents}
+            onSelectProject={(path) => {
+              setProjectNavigationAnchor(null);
+              onSelectProject(path);
+            }}
+            onOpenProject={() => {
+              setProjectNavigationAnchor(null);
+              onOpenProject();
+            }}
+            onOpenSyncedProject={onOpenSyncedProject}
+            onRemoveProject={onRemoveProject}
+            onRenameProjectFolder={onRenameProjectFolder}
+            onOpenCrewSession={
+              onOpenCrewSession
+                ? (target) => {
+                    setProjectNavigationAnchor(null);
+                    return onOpenCrewSession(target);
+                  }
+                : undefined
+            }
+            onPreviewSession={
+              onPreviewSession
+                ? (id, options) => {
+                    setProjectNavigationAnchor(null);
+                    onPreviewSession(id, options);
+                  }
+                : undefined
+            }
+            onSelectAgent={
+              onSelectAgent
+                ? (id) => {
+                    setProjectNavigationAnchor(null);
+                    onSelectAgent(id);
+                  }
+                : undefined
+            }
+            activeSessionId={activeSessionId}
+            liveAgents={liveAgents}
+            recentSessions={recentSessions}
+            busyPaths={busyProjectPaths}
+            onTogglePanel={() => setProjectNavigationAnchor(null)}
+            onOpenSettings={closeProjectNavigationThen(onOpenSettings)}
+            onSelectSettingsSection={onSelectSettingsSection}
+            onOpenNotificationSettings={onOpenNotificationSettings}
+            notesEnabled={notesEnabled}
+            onSearch={closeProjectNavigationThen(onSearch)}
+            onOpenInbox={closeProjectNavigationThen(onOpenInbox)}
+            onOpenNotes={closeProjectNavigationThen(onOpenNotes)}
+            onOpenServers={closeProjectNavigationThen(onOpenServers)}
+            onOpenAutomations={closeProjectNavigationThen(onOpenAutomations)}
+            onOpenTasks={closeProjectNavigationThen(onOpenTasks)}
+          />
+        </Popover>
       ) : null}
       {sidebarVisible ? sidebarContent : null}
       {drawerRendered ? (
@@ -3622,17 +3769,12 @@ function CompactProjectRail({
   cwd,
   workingSessionsBadge,
   recents,
-  busy,
-  tabs,
-  activeTab,
   tabShown,
-  changesLabel,
-  hasChanges,
   inboxUnseen,
   onSelectProject,
-  onOpenProject,
-  onRemoveProject,
-  onTabChange,
+  onOpenProjectNavigation,
+  projectNavigationOpen,
+  onOpenWorkspace,
   onSearch,
   searchActive,
   onOpenInbox,
@@ -3648,6 +3790,7 @@ function CompactProjectRail({
   tasksActive,
   socialActive,
   onOpenSettings,
+  onOpenCrews,
   onTogglePanel,
   onLeaveActive,
   titleBarAbove,
@@ -3659,17 +3802,12 @@ function CompactProjectRail({
   workingSessionsBadge?: ReactNode;
   recoveryControl?: ReactNode;
   recents: RecentProject[];
-  busy: boolean;
-  tabs: SidebarTab[];
-  activeTab: SidebarTab;
   tabShown: boolean;
-  changesLabel: string;
-  hasChanges: boolean;
   inboxUnseen: boolean;
   onSelectProject?: (path: string) => void;
-  onOpenProject?: () => void;
-  onRemoveProject?: Props["onRemoveProject"];
-  onTabChange: (tab: SidebarTab) => void;
+  onOpenProjectNavigation?: (anchor: HTMLElement) => void;
+  projectNavigationOpen?: boolean;
+  onOpenWorkspace: () => void;
   onSearch?: () => void;
   searchActive: boolean;
   onOpenInbox?: () => void;
@@ -3685,6 +3823,7 @@ function CompactProjectRail({
   tasksActive: boolean;
   socialActive: boolean;
   onOpenSettings?: () => void;
+  onOpenCrews?: () => void;
   onTogglePanel?: () => void;
   onLeaveActive?: () => void;
   titleBarAbove: boolean;
@@ -3694,6 +3833,7 @@ function CompactProjectRail({
   onPreviewSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
 }) {
   const t = useT();
+  const toggleShortcut = useKeybindingShortcut("App: Toggle Sidebar");
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(null);
   const inboxTrigger = useRef<HTMLElement | null>(null);
   const action = (active: boolean, open?: () => void) =>
@@ -3706,16 +3846,12 @@ function CompactProjectRail({
     !automationsActive &&
     !tasksActive &&
     !socialActive;
-  const openWorkspaceTab = (nextTab: SidebarTab) => {
-    if (!workspaceActive) onLeaveActive?.();
-    onTabChange(nextTab);
-  };
 
   return (
     <nav
       aria-label={t("Project shortcuts")}
       data-compact-project-rail
-      className="sidebar-glass relative flex h-full w-12 shrink-0 flex-col items-center"
+      className="sidebar-glass relative flex h-full w-16 shrink-0 flex-col items-center"
     >
       {titleBarAbove ? null : (
         <div
@@ -3732,27 +3868,37 @@ function CompactProjectRail({
       />
       <div
         data-compact-rail-actions
-        className="flex w-full shrink-0 flex-col items-center gap-1.5 py-1.5"
+        className="flex min-h-0 w-full flex-col items-center gap-1.5 overflow-y-auto px-1 py-1.5"
       >
         {recoveryControl}
-        <CompactRailAction
+        <Button
+          variant="ghost"
+          motion="none"
+          iconOnly
           label={t("Expand projects")}
-          command="App: Toggle Sidebar"
-          icon={PanelLeft}
+          title={t("Expand projects")}
+          shortcut={toggleShortcut}
           onClick={onTogglePanel}
-        />
-        {onSelectProject ? (
-          <SearchableProjectPickerWithMenu
-            cwd={cwd}
-            recents={recents}
-            busy={busy}
-            compact
-            className="w-full justify-center"
-            onSelectProject={onSelectProject}
-            onOpenProject={onOpenProject}
-            onRemoveProject={onRemoveProject}
-            onOpenNotificationSettings={onOpenNotificationSettings}
-          />
+        >
+          <PanelLeft className="size-4" aria-hidden />
+        </Button>
+        {onOpenProjectNavigation ? (
+          <Button
+            variant="ghost"
+            motion="none"
+            fullWidth
+            className="flex-col gap-1 py-2"
+            aria-label={t("Projects and groups")}
+            aria-haspopup="dialog"
+            aria-expanded={projectNavigationOpen}
+            selected={projectNavigationOpen}
+            onClick={(event) => onOpenProjectNavigation(event.currentTarget)}
+          >
+            <span className="flex w-full min-w-0 flex-col items-center gap-1">
+              <FolderTree className="size-4" aria-hidden />
+              <span className="max-w-full truncate text-ui-caption">{t("Projects")}</span>
+            </span>
+          </Button>
         ) : null}
         {recentSessions && onSelectProject ? (
           <CompactLastSessionsAction
@@ -3765,26 +3911,14 @@ function CompactProjectRail({
             onOpenProject={onSelectProject}
           />
         ) : null}
-        <div
-          role="tablist"
-          aria-label={t("Workspace")}
-          aria-orientation="vertical"
-          className="flex flex-col items-center gap-1.5"
-        >
-          {tabs.map((itemId) => (
-            <CompactRailAction
-              key={itemId}
-              tab
-              usageGuideTarget={itemId === "changes" ? "changes" : undefined}
-              label={itemId === "changes" ? changesLabel : TAB_LABELS[itemId]}
-              icon={COMPACT_TAB_ICONS[itemId]}
-              active={workspaceActive && tabShown && activeTab === itemId}
-              dot={itemId === "changes" && hasChanges}
-              badge={itemId === "sessions" ? workingSessionsBadge : undefined}
-              onClick={() => openWorkspaceTab(itemId)}
-            />
-          ))}
-        </div>
+        {!tabShown || !workspaceActive ? (
+          <CompactRailAction
+            label={t("Workspace")}
+            icon={FolderTree}
+            badge={workingSessionsBadge}
+            onClick={onOpenWorkspace}
+          />
+        ) : null}
         <CompactRailAction
           label={t("Search")}
           command="App: Search"
@@ -3795,6 +3929,7 @@ function CompactProjectRail({
         <WorkspaceFeatureGate id="inbox" active={inboxActive}>
           <CompactRailAction
             label={inboxUnseen ? t("Inbox, new items") : t("Inbox")}
+            caption={t("Inbox")}
             command="App: Open Inbox"
             icon={Inbox}
             active={inboxActive}
@@ -3807,42 +3942,49 @@ function CompactProjectRail({
             }}
           />
         </WorkspaceFeatureGate>
-        {onOpenServers ? (
-          <CompactRailAction
-            label={t("Servers")}
-            icon={Server}
-            active={serversActive}
-            onClick={action(serversActive, onOpenServers)}
-          />
-        ) : null}
-        {onOpenNotes ? (
-          <CompactRailAction
-            label={t("Notes")}
-            command="App: Open Notes"
-            icon={StickyNote}
-            active={notesActive}
-            onClick={action(notesActive, onOpenNotes)}
-          />
-        ) : null}
-        <WorkspaceFeatureGate id="automations" active={automationsActive}>
-          <CompactRailAction
-            label={t("Automations")}
-            command="App: Open Automations"
-            icon={Zap}
-            active={automationsActive}
-            onClick={action(automationsActive, onOpenAutomations)}
-          />
-        </WorkspaceFeatureGate>
-        <SocialShortcut active={socialActive} cwd={cwd} rail />
-        <WorkspaceFeatureGate id="tasks" active={tasksActive}>
-          <CompactRailAction
-            label={t("Tasks")}
-            command="App: Open Tasks"
-            icon={DashboardSquare}
-            active={tasksActive}
-            onClick={action(tasksActive, onOpenTasks)}
-          />
-        </WorkspaceFeatureGate>
+        <CompactRailTools
+          active={notesActive || serversActive || automationsActive || tasksActive || socialActive}
+        >
+          {onOpenCrews ? (
+            <CompactRailAction label={t("Crews")} icon={Bot} onClick={onOpenCrews} />
+          ) : null}
+          {onOpenServers ? (
+            <CompactRailAction
+              label={t("Servers")}
+              icon={Server}
+              active={serversActive}
+              onClick={action(serversActive, onOpenServers)}
+            />
+          ) : null}
+          {onOpenNotes ? (
+            <CompactRailAction
+              label={t("Notes")}
+              command="App: Open Notes"
+              icon={StickyNote}
+              active={notesActive}
+              onClick={action(notesActive, onOpenNotes)}
+            />
+          ) : null}
+          <WorkspaceFeatureGate id="automations" active={automationsActive}>
+            <CompactRailAction
+              label={t("Automations")}
+              command="App: Open Automations"
+              icon={Zap}
+              active={automationsActive}
+              onClick={action(automationsActive, onOpenAutomations)}
+            />
+          </WorkspaceFeatureGate>
+          <SocialShortcut active={socialActive} cwd={cwd} responsiveRail />
+          <WorkspaceFeatureGate id="tasks" active={tasksActive}>
+            <CompactRailAction
+              label={t("Tasks")}
+              command="App: Open Tasks"
+              icon={DashboardSquare}
+              active={tasksActive}
+              onClick={action(tasksActive, onOpenTasks)}
+            />
+          </WorkspaceFeatureGate>
+        </CompactRailTools>
       </div>
       <div className="min-h-2 flex-1" />
       <div className="flex w-full flex-col items-center gap-1 py-1.5">
@@ -3868,12 +4010,63 @@ function CompactProjectRail({
   );
 }
 
+const CompactRailLayout = createContext<"caption" | "row">("caption");
+
+function CompactRailTools({ active, children }: { active: boolean; children: ReactNode }) {
+  const t = useT();
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
+  return (
+    <>
+      <Button
+        variant="ghost"
+        motion="none"
+        fullWidth
+        className="flex-col gap-1 py-2"
+        aria-label={t("Tools")}
+        aria-haspopup="dialog"
+        aria-expanded={Boolean(anchor)}
+        selected={Boolean(anchor) || active}
+        title={t("Tools")}
+        onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
+      >
+        <span className="flex w-full min-w-0 flex-col items-center gap-1">
+          <DashboardSquare className="size-4" aria-hidden />
+          <span className="max-w-full truncate text-ui-caption">{t("Tools")}</span>
+        </span>
+      </Button>
+      {anchor ? (
+        <Popover
+          anchor={anchor}
+          side="right"
+          align="start"
+          width={240}
+          autoFocus
+          onDismiss={() => setAnchor(null)}
+          role="dialog"
+          aria-label={t("Tools")}
+          data-compact-tools-flyout
+        >
+          <CompactRailLayout.Provider value="row">
+            <div
+              className="flex flex-col gap-1 p-1"
+              onClick={(event) => {
+                if ((event.target as HTMLElement).closest("button")) setAnchor(null);
+              }}
+            >
+              {children}
+            </div>
+          </CompactRailLayout.Provider>
+        </Popover>
+      ) : null}
+    </>
+  );
+}
+
 function CompactRailAction({
   label,
+  caption,
   command,
-  usageGuideTarget,
   icon: Icon,
-  tab = false,
   active = false,
   dot = false,
   badge,
@@ -3882,10 +4075,9 @@ function CompactRailAction({
   ref,
 }: {
   label: string;
+  caption?: string;
   command?: string;
-  usageGuideTarget?: string;
   icon: typeof PanelLeft;
-  tab?: boolean;
   active?: boolean;
   dot?: boolean;
   badge?: ReactNode;
@@ -3894,20 +4086,20 @@ function CompactRailAction({
   ref?: Ref<HTMLButtonElement>;
 }) {
   useLocale();
+  const layout = useContext(CompactRailLayout);
   const shortcut = useKeybindingShortcut(command ?? "");
   return (
     <Button
       variant="ghost"
+      align={layout === "row" ? "start" : "center"}
+      fullWidth
       motion="none"
       ref={ref}
-      data-usage-guide={usageGuideTarget}
       type="button"
-      role={tab ? "tab" : undefined}
       title={label}
       shortcut={shortcut}
       aria-label={label}
-      aria-selected={tab ? active : undefined}
-      aria-pressed={tab ? undefined : active}
+      aria-pressed={active}
       disabled={!onClick}
       onClick={onClick}
       onContextMenu={
@@ -3932,9 +4124,18 @@ function CompactRailAction({
             }
           : undefined
       }
-      className={`relative grid shrink-0 place-items-center `}
+      className={`relative shrink-0 ${layout === "row" ? "" : "flex-col gap-1 py-2"}`}
     >
-      <Icon className={`size-4 ${dot ? "compact-rail-icon-with-dot" : ""}`} strokeWidth={1.75} />
+      <span
+        className={`flex w-full min-w-0 items-center ${layout === "row" ? "gap-2" : "flex-col gap-1"}`}
+      >
+        <Icon className={`size-4 ${dot ? "compact-rail-icon-with-dot" : ""}`} strokeWidth={1.75} />
+        <span
+          className={`max-w-full truncate ${layout === "row" ? "text-ui-body" : "text-ui-caption"}`}
+        >
+          {caption ?? label}
+        </span>
+      </span>
       {dot ? (
         <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent" />
       ) : null}
@@ -4036,7 +4237,7 @@ function WorkspaceTitleActions({ onSearch, onNew }: { onSearch?: () => void; onN
   return (
     <div className="flex shrink-0 items-center gap-0.5" data-tauri-drag-region="false">
       {onSearch ? (
-        <IconButton label={t("Go to File")} command="App: Go to File" onClick={onSearch}>
+        <IconButton label={t("Search")} command="App: Search" onClick={onSearch}>
           <Search className="icon-sm" strokeWidth={1.75} />
         </IconButton>
       ) : null}
@@ -5055,6 +5256,28 @@ const SessionCard = memo(function SessionCard({
           className="pointer-events-none grid size-5 place-items-center opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
         >
           <Archive className="icon-xs shrink-0" strokeWidth={1.75} />
+        </Button>
+      ) : null}
+      {onDelete ? (
+        <Button
+          iconOnly
+          label={`Delete ${title}`}
+          variant="ghost"
+          tone="danger"
+          motion="none"
+          type="button"
+          data-no-drag
+          data-tauri-drag-region="false"
+          title={t("Delete")}
+          aria-label={`Delete ${title}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete(session.id);
+          }}
+          className="pointer-events-none grid size-5 place-items-center opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+        >
+          <Trash2 className="icon-xs shrink-0" strokeWidth={1.75} />
         </Button>
       ) : null}
       {workItemBadge}

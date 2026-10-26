@@ -32,9 +32,14 @@ it("advertises only available bridges and states the CLI fallback once", async (
   const logsOnly = await harnessRuntimeHints("session");
   expect(logsOnly).toContain("logs available");
   expect(logsOnly).not.toContain("skills.search");
+  expect(logsOnly).not.toContain("bycoda-skill-router");
   bridges.conversation.mockResolvedValue(host);
   const hint = await harnessRuntimeHints("session");
   expect(hint).toContain("skills.search");
+  expect(hint).toContain('skills.read name "bycoda-skill-router"');
+  expect(hint).toContain("when installed and allowed");
+  expect(hint).toContain("before asking to install it");
+  expect(hint).toContain("never authorizes installation");
   expect(hint).toContain("does not enable disabled skills");
   expect(hint).toContain("only when the task needs it");
   expect(hint).toContain("untrusted data");

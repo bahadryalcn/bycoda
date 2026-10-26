@@ -60,6 +60,8 @@ mockIPC(
             environmentId: machine.environmentId,
             capabilities: ["voice.local.v1", "voice.local.setup.v1"],
           };
+        if (args.method === "voice.local.inspect" && voiceFixture === "stalled")
+          return new Promise(() => {});
         if (args.method === "voice.local.inspect")
           return installed
             ? { ready: true, missing: [], ...installedConfig }

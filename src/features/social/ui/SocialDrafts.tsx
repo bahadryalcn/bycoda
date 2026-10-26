@@ -7,6 +7,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Button } from "../../../shared/ui/Button";
 import { useEffect, useState } from "react";
 import { XMediaFields } from "./XMediaFields";
+import { SocialUploadImagePreview } from "./SocialUploadImagePreview";
 import { socialRows } from "../model/socialWorkspace";
 import type {
   SocialDraft,
@@ -64,6 +65,7 @@ function Draft({
   const [factIds, setFactIds] = useState(draft.factIds);
   const [media, setMedia] = useState(draft.media ?? []);
   const [mediaBusy, setMediaBusy] = useState(false);
+  const [showAttachments, setShowAttachments] = useState(false);
   const [editPolicy, setEditPolicy] = useState<SocialPolicy>();
   const [policyError, setPolicyError] = useState("");
   const [policyAttempt, setPolicyAttempt] = useState(0);
@@ -100,6 +102,23 @@ function Draft({
     socialRows(snapshot.threads, snapshot.related?.threads).find(
       (item) => item.id === draft.threadId,
     );
+  const messageDraft = draft.kind === "message" || thread?.kind === "message";
+  const messagingMedia =
+    !!account &&
+    account.connected &&
+    ["whatsapp", "telegram"].includes(account.platform) &&
+    messageDraft &&
+    snapshot?.capabilities[account.id]?.some(
+      (item) => item.operation === "media" && item.status === "available",
+    ) &&
+    snapshot.capabilities[account.id]?.some(
+      (item) =>
+        ["message.reply", "message.start"].includes(item.operation) && item.status === "available",
+    );
+  const canEditMedia =
+    !!account &&
+    ((account.platform === "x" && !(account.connection === "browser" && messageDraft)) ||
+      messagingMedia);
   const job =
     snapshot &&
     socialRows(snapshot.jobs, snapshot.related?.jobs).find(
@@ -107,7 +126,7 @@ function Draft({
     );
   const generating =
     draft.generation?.status === "running" || draft.generation?.status === "queued";
-  const limit = account
+  const policyLimit = account
     ? socialLimit(
         editPolicy ??
           effectiveSocialPolicy(snapshot?.policies ?? DEFAULT_SOCIAL_POLICIES, account.platform),
@@ -118,10 +137,16 @@ function Draft({
             : "message",
       )
     : undefined;
-  const count = socialCharacterCount(text);
+  const apiMessagingMedia = messagingMedia && account?.connection !== "browser";
+  const attachmentOnly = apiMessagingMedia && media.length > 0;
+  const limit = attachmentOnly ? Math.min(policyLimit ?? 1024, 1024) : policyLimit;
+  const count = attachmentOnly ? text.length : socialCharacterCount(text);
   const disabledReason = job
     ? t("Send status: {p0}.", { p0: statuses[job.status] })
-    : limit && socialCharacterCount(draft.text) > limit
+    : limit &&
+        (apiMessagingMedia && draft.media?.length
+          ? draft.text.length
+          : socialCharacterCount(draft.text)) > limit
       ? t("The draft exceeds the current character limit. Edit the text.")
       : generating
         ? t("AI is preparing the draft.")
@@ -131,7 +156,9 @@ function Draft({
             ? t("This contact does not want to be contacted.")
             : thread?.replyAllowed === false
               ? t("The platform does not allow replies to this conversation.")
-              : thread?.replyUntil && thread.replyUntil <= Date.now()
+              : account?.connection !== "browser" &&
+                  thread?.replyUntil &&
+                  thread.replyUntil <= Date.now()
                 ? t("The reply window for this conversation has expired.")
                 : snapshot && (!snapshot.hostOnline || snapshot.stopped || !snapshot.sendingEnabled)
                   ? t("Sending is off. Use the sending controls in the Automations section.")
@@ -179,14 +206,28 @@ function Draft({
           })}
         </p>
       ) : null}
-      {draft.media?.length ? (
-        <p role="status">
-          {t("Attachments: {p0}", {
-            p0: draft.media.some((item) => item.kind === "video")
-              ? t("1 video")
-              : t("{p0} images", { p0: draft.media.length }),
-          })}
-        </p>
+      {(editing ? media : draft.media)?.length ? (
+        <details onToggle={(event) => setShowAttachments(event.currentTarget.open)}>
+          <summary>
+            {t("Attachments: {p0}", {
+              p0: (editing ? media : draft.media!).some((item) => item.kind === "video")
+                ? t("1 video")
+                : t("{p0} images", { p0: (editing ? media : draft.media!).length }),
+            })}
+          </summary>
+          {showAttachments
+            ? (editing ? media : (draft.media ?? [])).map((item, index) =>
+                item.kind === "image" && item.uploadId ? (
+                  <SocialUploadImagePreview
+                    key={`${item.uploadId}:${index}`}
+                    client={client}
+                    uploadId={item.uploadId}
+                    alt={item.alt}
+                  />
+                ) : null,
+              )
+            : null}
+        </details>
       ) : null}
       {editing ? (
         <form
@@ -215,7 +256,7 @@ function Draft({
                       id: draft.id,
                       text,
                       factIds,
-                      ...(account?.platform === "x" ? { media } : {}),
+                      ...(canEditMedia ? { media } : {}),
                     });
                   }, t("Draft updated. The new content must be approved again before sending.")),
                 )
@@ -226,7 +267,7 @@ function Draft({
         >
           <TextareaField
             label={t("Draft text")}
-            required
+            required={!attachmentOnly}
             rows={4}
             value={text}
             disabled={socialLocked || (!!account && !editPolicy)}
@@ -295,17 +336,33 @@ function Draft({
               {t("You are over the character limit by {p0} characters.", { p0: count - limit })}
             </Alert>
           ) : null}
-          {account?.platform === "x" &&
-          !(
-            account.connection === "browser" &&
-            (draft.kind === "message" || thread?.kind === "message")
-          ) ? (
+          {canEditMedia ? (
             <XMediaFields
               value={media}
               client={client}
               onChange={setMedia}
               onBusyChange={setMediaBusy}
-              message={draft.kind === "message" || thread?.kind === "message"}
+              message={messageDraft}
+              label={
+                account?.platform === "x"
+                  ? undefined
+                  : t("{p0} attachments", {
+                      p0: account!.platform === "whatsapp" ? "WhatsApp" : "Telegram",
+                    })
+              }
+              help={
+                account?.platform === "x"
+                  ? undefined
+                  : account?.connection !== "browser"
+                    ? t(
+                        "One PNG/JPEG up to 5 MiB or MP4 up to {p0} MiB. Captions fit 1024 UTF-16 characters.",
+                        { p0: account?.platform === "whatsapp" ? 16 : 50 },
+                      )
+                    : t("Files are uploaded to the selected host and attached through the browser.")
+              }
+              maxVideoMiB={apiMessagingMedia ? (account?.platform === "whatsapp" ? 16 : 50) : 64}
+              maxCount={account?.platform === "x" ? undefined : 1}
+              allowAltText={account?.platform === "x"}
             />
           ) : null}
           <div className="social-actions">
@@ -317,7 +374,7 @@ function Draft({
               disabled={
                 socialLocked ||
                 mediaBusy ||
-                !text.trim() ||
+                (!text.trim() && !attachmentOnly) ||
                 (!!limit && count > limit) ||
                 !!missingFacts.length ||
                 (!!account && !editPolicy)
@@ -335,9 +392,9 @@ function Draft({
             </Button>
           </div>
         </form>
-      ) : (
+      ) : draft.text || !draft.media?.length ? (
         <p className="social-message">{draft.text || t("Preparing draft…")}</p>
-      )}
+      ) : null}
       {disabledReason && !job ? (
         <Notice kind={draft.reviewReason || contact?.optedOut ? "warning" : "info"}>
           {disabledReason}
@@ -382,7 +439,11 @@ function Draft({
               loading={pendingUi.is("draft.approve")}
               type="button"
               variant="primary"
-              disabled={socialLocked || !!disabledReason || !draft.text.trim()}
+              disabled={
+                socialLocked ||
+                !!disabledReason ||
+                (!draft.text.trim() && !(apiMessagingMedia && draft.media?.length))
+              }
               onClick={() =>
                 void pendingUi.run("draft.approve", () =>
                   run(async () => {

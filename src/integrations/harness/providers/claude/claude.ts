@@ -1,4 +1,5 @@
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
+import { deliverQuestionReply, type QuestionDelivery } from "../questionDelivery";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { sameProviderAccountId } from "../../../../features/providers/model/providerAccounts";
@@ -113,7 +114,7 @@ type PendingApproval = {
   resolve: (decision: ApprovalOutcome) => void;
 };
 
-type PendingQuestion = {
+type PendingQuestion = QuestionDelivery & {
   requestId: string;
   event: Extract<HarnessEvent, { type: "question.asked" }>;
   resolve: (reply: UserQuestionReply | "cancelled") => void;
@@ -326,8 +327,15 @@ export function respondClaudeQuestion(
 ): void {
   const live = liveByThread.get(sessionId);
   const pending = live?.questions.get(requestId);
-  if (!pending) return;
-  pending.resolve(reply);
+  if (!live || !pending) return;
+  deliverQuestionReply(
+    pending,
+    requestId,
+    reply,
+    live.onEvent,
+    () => live.questions.get(requestId) === pending && !live.cancelled && !live.muteUpdates,
+    () => pending.resolve(reply),
+  );
 }
 
 export async function cancelClaudeTurn(sessionId: string): Promise<void> {
@@ -1301,13 +1309,30 @@ async function handleControlRequest(
   if (toolName === "AskUserQuestion") {
     const questions = questionsFromUnknown(input);
     const uiId = live.nextApprovalUiId++;
-    const pending = waitQuestion(live, uiId, control.requestId, {
-      type: "question.asked",
-      requestId: uiId,
-      title: questionPromptTitle(questions) || extractAskUserQuestionTitle(input),
-      questions,
-      callId: control.toolUseId,
-    });
+    const pending = waitQuestion(
+      live,
+      uiId,
+      control.requestId,
+      {
+        type: "question.asked",
+        requestId: uiId,
+        title: questionPromptTitle(questions) || extractAskUserQuestionTitle(input),
+        questions,
+        callId: control.toolUseId,
+        behavior: "blocking",
+        dismissAction: "cancel",
+      },
+      (reply) =>
+        writeJson(
+          sessionId,
+          buildControlResponse(
+            control.requestId,
+            reply.kind === "answered"
+              ? { behavior: "allow", updatedInput: askUserQuestionAllowInput(input, reply) }
+              : { behavior: "deny", message: "User cancelled tool execution." },
+          ),
+        ),
+    );
     showNextQuestion(live);
     const outcome = await pending;
     const decision =
@@ -1319,18 +1344,6 @@ async function handleControlRequest(
       ...(outcome !== "cancelled" && outcome.kind === "answered" ? { reply: outcome } : {}),
     });
     showNextQuestion(live);
-    if (outcome === "cancelled") return;
-    const response =
-      outcome.kind === "answered"
-        ? {
-            behavior: "allow",
-            updatedInput: askUserQuestionAllowInput(input, outcome),
-          }
-        : {
-            behavior: "deny",
-            message: "User cancelled tool execution.",
-          };
-    await writeJson(sessionId, buildControlResponse(control.requestId, response));
     return;
   }
 
@@ -1428,9 +1441,10 @@ function waitQuestion(
   uiId: number,
   requestId: string,
   event: Extract<HarnessEvent, { type: "question.asked" }>,
+  deliver: QuestionDelivery["deliver"],
 ): Promise<UserQuestionReply | "cancelled"> {
   return new Promise<UserQuestionReply | "cancelled">((resolve) => {
-    live.questions.set(uiId, { requestId, event, resolve });
+    live.questions.set(uiId, { requestId, event, deliver, resolve });
   }).finally(() => {
     live.questions.delete(uiId);
   });

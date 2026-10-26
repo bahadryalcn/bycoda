@@ -92,6 +92,34 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("preserves the host's dates when automatically adopting old conversation history", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  const old = { ...initial, id: "old", blocks: [{ id: "u", role: "user" as const, text: "old" }] };
+  entries = [{ id: "old", projectId: "p", revision: 5, updatedAt: 200, status: "idle" }];
+  localStorage.setItem("bycoda.recentProjects", JSON.stringify([{ path: "/repo", openedAt: 1 }]));
+  vi.mocked(remoteRequest).mockImplementation(
+    async (_machine, method) =>
+      (method === "projects.list" ? [{ id: "p", cwd: "/repo", name: "Repo" }] : entries) as never,
+  );
+  vi.mocked(loadRemoteSession).mockResolvedValue({
+    session: old,
+    projectId: "p",
+    revision: 5,
+    status: "idle",
+    createdAt: 100,
+    updatedAt: 200,
+  });
+  try {
+    await act(async () => root.render(createElement(Probe, { initial })));
+    expect(upsertSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "old", cwd: "/repo" }),
+      { createdAt: 100, updatedAt: 200 },
+    );
+  } finally {
+    localStorage.removeItem("bycoda.recentProjects");
+  }
+});
+
 it("binds a host provider switch through the incoming adapter even when thread IDs match", async () => {
   vi.mocked(isLiveHarness).mockReturnValue(true);
   const initial = { ...newSession("claude", "/repo"), id: "s1", providerSessionId: "same-thread" };

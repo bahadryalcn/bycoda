@@ -457,6 +457,53 @@ describe("host dev server management", () => {
     expect(spawnProcess).toHaveBeenCalledTimes(2);
   });
 
+  it("uses an explicit managed restart command while retaining the original project directory", async () => {
+    const { service, discovery, spawnProcess } = fixture();
+    const started = (await service.handle(
+      "devServers.start",
+      { command: "pnpm dev --old-option", projectId: "project" },
+      projects,
+    )) as DevServerStartResult;
+    spawnProcess.mockImplementation(() => {
+      discovery.live.set(105, { ...root, pid: 105, startedAt: "replacement" });
+      return Object.assign(new EventEmitter(), {
+        pid: 105,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+      }) as unknown as ChildProcess;
+    });
+    const restarted = (await service.handle(
+      "devServers.restart",
+      { id: started.server!.id, command: "  pnpm dev --new-option  ", cwd: "/other-project" },
+      projects,
+    )) as DevServerStartResult;
+    expect(restarted.server).toMatchObject({
+      command: "pnpm dev --new-option",
+      cwd: process.cwd(),
+      projectId: "project",
+    });
+    const invocation = (spawnProcess.mock.calls as unknown as unknown[][])[1];
+    expect(invocation[1]).toContain("pnpm dev --new-option");
+    expect(invocation[2]).toMatchObject({ cwd: process.cwd(), windowsHide: true });
+  });
+
+  it.each(["", "   ", null, 42])(
+    "rejects an invalid explicit restart command %j before stopping the running server",
+    async (command) => {
+      const { service, discovery, spawnProcess } = fixture();
+      const started = (await service.handle(
+        "devServers.start",
+        { command: "pnpm dev", projectId: "project" },
+        projects,
+      )) as DevServerStartResult;
+      await expect(
+        service.handle("devServers.restart", { id: started.server!.id, command }, projects),
+      ).rejects.toThrow("A dev server command is required.");
+      expect(discovery.signal).not.toHaveBeenCalled();
+      expect(spawnProcess).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("restarts an exited managed server after PID reuse without touching the new owner", async () => {
     const { service, discovery, children, spawnProcess } = fixture();
     const started = (await service.handle(

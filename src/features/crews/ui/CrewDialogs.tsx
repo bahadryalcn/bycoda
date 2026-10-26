@@ -14,7 +14,11 @@ import { roleLabel } from "./CrewMemberForm";
 export { CrewEditDialog } from "./CrewEditor";
 
 // The delivery being written survives editing the crew and reopening this dialog.
-const startDrafts = new Map<string, { definitionId: string; prompt: string }>();
+type StartAttempt = { signature: string; id: string; run?: CrewRun };
+const startDrafts = new Map<
+  string,
+  { definitionId: string; prompt: string; attempt?: StartAttempt }
+>();
 
 export function StartCrewDialog({
   cwd,
@@ -34,29 +38,41 @@ export function StartCrewDialog({
 }) {
   useLocale();
   const data = state.data;
-  const draftKey = data ? `${data.machine.id}/${data.project.id}` : cwd;
+  const draftKey = data ? JSON.stringify([data.machine.id, data.project.id]) : cwd;
   const stored = startDrafts.get(draftKey);
   const [definitionId, setDefinitionIdState] = useState(
     initialDefinition ?? stored?.definitionId ?? data?.definitions[0]?.id ?? "",
   );
   const [prompt, setPromptState] = useState(stored?.prompt ?? "");
+  const [startedRun, setStartedRun] = useState<CrewRun | undefined>(() =>
+    stored?.attempt?.signature === JSON.stringify([definitionId, stored?.prompt ?? ""])
+      ? stored.attempt.run
+      : undefined,
+  );
   const remember = (next: { definitionId?: string; prompt?: string }) =>
-    startDrafts.set(draftKey, { definitionId, prompt, ...next });
+    startDrafts.set(draftKey, {
+      definitionId,
+      prompt,
+      attempt: startRequest.current ?? undefined,
+      ...next,
+    });
   const setDefinitionId = (value: string) => {
     setDefinitionIdState(value);
+    setStartedRun(undefined);
     remember({ definitionId: value });
   };
   const setPrompt = (value: string) => {
     setPromptState(value);
+    setStartedRun(undefined);
     remember({ prompt: value });
   };
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const pendingGate = useRef(false);
-  const startRequest = useRef<{ signature: string; id: string } | null>(null);
+  const startRequest = useRef<StartAttempt | null>(stored?.attempt ?? null);
   const crew = data?.definitions.find((d) => d.id === definitionId);
   const start = async () => {
-    if (pendingGate.current) return;
+    if (pendingGate.current || (!startedRun && (!crew || !prompt.trim()))) return;
     pendingGate.current = true;
     setPending(true);
     setError("");
@@ -64,14 +80,21 @@ export function StartCrewDialog({
       const signature = JSON.stringify([definitionId, prompt]);
       if (startRequest.current?.signature !== signature)
         startRequest.current = { signature, id: crypto.randomUUID() };
-      const run = await state.call<CrewRun>("crews.start", {
-        definitionId,
-        prompt,
-        requestId: startRequest.current.id,
-      });
-      if (run.error) throw new Error(run.error);
-      startDrafts.delete(draftKey);
-      onClose();
+      // Retain the receipt identity before dispatch, including when the owner
+      // closes and reopens after an uncertain transport result.
+      remember({});
+      const existingRun = startRequest.current.run;
+      const run =
+        existingRun ??
+        (await state.call<CrewRun>("crews.start", {
+          definitionId,
+          prompt,
+          requestId: startRequest.current.id,
+        }));
+      startRequest.current.run = run;
+      setStartedRun(run);
+      remember({});
+      if (run.error && !existingRun) throw new Error(run.error);
       if (run.coordinatorSessionId && onOpen && data)
         await onOpen({
           cwd,
@@ -79,6 +102,9 @@ export function StartCrewDialog({
           projectId: data.project.id,
           sessionId: run.coordinatorSessionId,
         });
+      else if (run.error) throw new Error(run.error);
+      startDrafts.delete(draftKey);
+      onClose();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -96,24 +122,27 @@ export function StartCrewDialog({
       footer={
         <>
           <span className="min-w-0 flex-1" />
-          {onEdit && definitionId ? (
+          {onEdit && crew && !startedRun ? (
             <Button variant="ghost" onClick={() => onEdit(definitionId)} disabled={pending}>
               {t("Edit crew")}
             </Button>
           ) : null}
           <Button
             variant="primary"
-            disabled={!definitionId || !prompt.trim() || pending}
+            disabled={pending || (!startedRun && (!crew || !prompt.trim()))}
             loading={pending}
             onClick={() => void start()}
           >
-            {t("Start work")}
+            {startedRun?.coordinatorSessionId && onOpen ? t("Open conversation") : t("Start work")}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-3 p-4 pt-2">
         {error && <Alert tone="danger">{error}</Alert>}
+        {definitionId && !crew && !startedRun ? (
+          <Alert tone="warning">{t("This crew is no longer available.")}</Alert>
+        ) : null}
         <SearchableSelect
           label={t("Crew")}
           value={definitionId}
@@ -172,7 +201,9 @@ function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
             {group.names.length ? ":" : ""}
           </dt>
           {group.names.length ? (
-            <dd className="font-medium text-content">{group.names.join(", ")}</dd>
+            <dd className="min-w-0 break-words font-medium text-content [overflow-wrap:anywhere]">
+              {group.names.join(", ")}
+            </dd>
           ) : null}
         </div>
       ))}

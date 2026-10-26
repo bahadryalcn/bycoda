@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.90]
+
+### Sessions and host reliability
+
+- Improve provider and model identity validation, queued questions, handoffs and session recovery.
+- Reduce host database contention and strengthen authenticated session tool relays.
+- Add device image annotation and improve device controls, voice settings and remote workflows.
+
+### Planning and interface
+
+- Add project-scoped sprint planning, management and reports across connected hosts.
+- Refine compact navigation, shared controls, split diffs and live backgrounds.
+- Expand social publishing, media validation, registration review and channel management.
+- Improve mobile model selection, text selection and translated interface labels.
+
 ## [0.6.78]
 
 ### Performance and reliability

@@ -212,7 +212,10 @@ function ConnectedCrewEditor({
   const [page, setPage] = useState<Page>(
     initialPage === "add" ? { kind: "add" } : { kind: initialPage },
   );
-  const [pending, setPending] = useState(false);
+  const [pendingAction, setPendingAction] = useState<
+    "save" | "start" | "add" | "inspect" | "library" | "delete" | null
+  >(null);
+  const pending = pendingAction !== null;
   const gate = useRef(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -266,7 +269,8 @@ function ConnectedCrewEditor({
   }, [memberFocus, rowFocus]);
 
   const latest = data.definitions.find((d) => d.id === draft?.id);
-  const conflict = !!draft?.updatedAt && !!latest && latest.updatedAt !== draft.updatedAt;
+  const missing = !!draft?.updatedAt && !latest;
+  const conflict = !!draft?.updatedAt && (missing || latest?.updatedAt !== draft.updatedAt);
   const isNew = !!draft && !draft.updatedAt;
   const dirty =
     !!draft &&
@@ -279,10 +283,13 @@ function ConnectedCrewEditor({
       ? saveCrewAppearance(draft.id, patch)
       : setDraftLook((current) => ({ ...current, ...patch }));
 
-  const act = async (operation: () => Promise<void>) => {
+  const act = async (
+    action: Exclude<typeof pendingAction, null>,
+    operation: () => Promise<void>,
+  ) => {
     if (gate.current) return;
     gate.current = true;
-    setPending(true);
+    setPendingAction(action);
     setError("");
     try {
       await operation();
@@ -290,7 +297,7 @@ function ConnectedCrewEditor({
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       gate.current = false;
-      setPending(false);
+      setPendingAction(null);
     }
   };
 
@@ -343,7 +350,7 @@ function ConnectedCrewEditor({
       if (!policyValid) setPage({ kind: "settings" });
       return;
     }
-    void act(async () => {
+    void act(thenStart ? "start" : "save", async () => {
       const definition = await state.call<CrewDefinition>("crews.save", {
         definition: { ...draft, name: draft.name.trim() },
         expectedUpdatedAt: draft.updatedAt || undefined,
@@ -379,7 +386,7 @@ function ConnectedCrewEditor({
       setAddIssues(true);
       return;
     }
-    void act(async () => {
+    void act("add", async () => {
       let added: CrewAgent = memberDraft;
       if (saveNewToLibrary) {
         const saved = await saveLibraryProfile(
@@ -657,10 +664,11 @@ function ConnectedCrewEditor({
       scope={memberScope}
       onScopeChange={setMemberScope}
       pending={pending}
+      pendingAction={pendingAction}
       showIssues={showIssues}
       inspection={inspection[selectedMember.id]}
       onInspect={() =>
-        act(async () => {
+        act("inspect", async () => {
           const result = await state.call<{
             candidates?: {
               model: string;
@@ -678,7 +686,7 @@ function ConnectedCrewEditor({
         })
       }
       onSaveToLibrary={() =>
-        act(async () => {
+        act("library", async () => {
           const saved = await saveLibraryProfile(
             state.call,
             data.agents,
@@ -946,6 +954,11 @@ function ConnectedCrewEditor({
             <CrewDeleteButton
               state={state}
               crew={latest}
+              disabled={pending}
+              onPendingChange={(busy) => {
+                gate.current = busy;
+                setPendingAction(busy ? "delete" : null);
+              }}
               onDeleted={() => {
                 forgetDraft(latest.id);
                 onClose();
@@ -970,7 +983,7 @@ function ConnectedCrewEditor({
         <div className="flex min-w-0 flex-wrap justify-end gap-2">
           <Button
             variant="primary"
-            loading={pending}
+            loading={pendingAction === "add"}
             disabled={pending || (addMode === "library" && !picked.length)}
             onClick={() => addPicked(page.role)}
           >
@@ -999,7 +1012,7 @@ function ConnectedCrewEditor({
           ) : null}
           <Button
             variant={onStart ? "secondary" : "primary"}
-            loading={pending}
+            loading={pendingAction === "save"}
             disabled={pending || conflict || (!dirty && !isNew)}
             onClick={() => save(false)}
           >
@@ -1008,6 +1021,7 @@ function ConnectedCrewEditor({
           {onStart ? (
             <Button
               variant="primary"
+              loading={pendingAction === "start"}
               disabled={pending || conflict}
               onClick={() => (dirty || isNew ? save(true) : onStart(draft.id))}
             >
@@ -1039,12 +1053,22 @@ function ConnectedCrewEditor({
         className="@container/crew-editor flex min-w-0 flex-col gap-4 border-0 p-4 pt-2"
       >
         {error ? <Alert tone="danger">{error}</Alert> : null}
+        {data.catalogError ? (
+          <Alert tone="warning">
+            {data.catalogError}
+            <Button variant="ghost" disabled={pending} onClick={() => void state.refetch()}>
+              {t("Retry")}
+            </Button>
+          </Alert>
+        ) : null}
         {conflict ? (
           <Alert tone="warning">
             <p>
-              {t(
-                "This crew changed in another session. Keep your edits as a new crew or discard them to load the latest version.",
-              )}
+              {missing
+                ? t("This crew is no longer available.")
+                : t(
+                    "This crew changed in another session. Keep your edits as a new crew or discard them to load the latest version.",
+                  )}
             </p>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -1057,6 +1081,7 @@ function ConnectedCrewEditor({
                 {t("Keep edits as new crew")}
               </Button>
               <Button
+                disabled={missing}
                 onClick={() => {
                   if (!latest) return;
                   forgetDraft(latest.id);
@@ -1183,6 +1208,7 @@ function MemberPage({
   scope,
   onScopeChange,
   pending,
+  pendingAction,
   showIssues,
   inspection,
   onInspect,
@@ -1198,6 +1224,7 @@ function MemberPage({
   scope: "project" | "global";
   onScopeChange: (scope: "project" | "global") => void;
   pending: boolean;
+  pendingAction: "save" | "start" | "add" | "inspect" | "library" | "delete" | null;
   showIssues: boolean;
   inspection?: {
     model: string;
@@ -1244,7 +1271,13 @@ function MemberPage({
         advancedExtra={
           crewSaved ? (
             <div className="flex flex-col gap-1">
-              <Button variant="ghost" className="self-start" disabled={pending} onClick={onInspect}>
+              <Button
+                variant="ghost"
+                className="self-start"
+                disabled={pending}
+                loading={pendingAction === "inspect"}
+                onClick={onInspect}
+              >
                 {t("Inspect saved capabilities")}
               </Button>
               {inspection?.map((c) => (
@@ -1291,6 +1324,7 @@ function MemberPage({
         />
         <Button
           variant="secondary"
+          loading={pendingAction === "library"}
           disabled={pending || !agent.candidates.length || !agent.name.trim()}
           onClick={onSaveToLibrary}
         >

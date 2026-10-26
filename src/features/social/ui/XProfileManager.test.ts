@@ -5,6 +5,76 @@ import { expect, it, vi } from "vitest";
 import { XProfileManager } from "./XProfileManager";
 import type { SocialClient } from "../model/socialClient";
 
+it.each(["linkedin", "facebook", "instagram"] as const)(
+  "edits %s Page branding through the owner profile route without exposing unsupported actions",
+  async (platform) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const element = document.createElement("div");
+    document.body.append(element);
+    const root = createRoot(element);
+    const profile = { name: "Bycoda", bio: "Open source", location: "", website: "" };
+    const read = vi.fn(async () => profile);
+    const update = vi.fn(async (_id, _platform, patch) => ({ ...profile, ...patch }));
+    const upload = vi.fn(async () => ({ uploadId: "11111111-1111-4111-8111-111111111111" }));
+    try {
+      await act(async () =>
+        root.render(
+          createElement(XProfileManager, {
+            accountId: "page",
+            platform,
+            accountName: "Bycoda",
+            client: {
+              browserProfileRead: read,
+              browserProfileUpdate: update,
+              upload,
+            } as unknown as SocialClient,
+          }),
+        ),
+      );
+      expect(read).not.toHaveBeenCalled();
+      await act(async () =>
+        [...element.querySelectorAll("button")]
+          .find((e) => e.textContent === "Read profile")!
+          .click(),
+      );
+      expect(read).toHaveBeenCalledWith("page");
+      expect(element.querySelectorAll('input[type="file"]')).toHaveLength(1);
+      expect(element.querySelector("input[pattern]")).toBeNull();
+      expect(element.textContent).not.toContain("Follow this account");
+      expect(element.textContent).not.toContain("Cover image");
+      if (platform === "linkedin") expect(element.querySelector("textarea")?.maxLength).toBe(120);
+      else if (platform === "facebook") {
+        expect(element.textContent).toContain("saving may also create a Page post");
+        expect(element.querySelector("textarea")).toBeNull();
+        expect(element.querySelector('input:not([type="file"])')).toBeNull();
+      } else {
+        expect(element.querySelector("textarea")?.maxLength).toBe(150);
+        expect(element.querySelector('input:not([type="file"])')).toBeNull();
+        expect(element.textContent).toContain("Synced profile photos require a separate review");
+      }
+      const fileInput = element.querySelector<HTMLInputElement>('input[type="file"]')!;
+      Object.defineProperty(fileInput, "files", {
+        value: [new File(["image"], "logo.png", { type: "image/png" })],
+      });
+      await act(async () => fileInput.dispatchEvent(new Event("change", { bubbles: true })));
+      expect(update).not.toHaveBeenCalled();
+      await act(async () =>
+        element
+          .querySelector("form")!
+          .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+      );
+      expect(update).toHaveBeenCalledWith("page", platform, {
+        avatarUploadId: "11111111-1111-4111-8111-111111111111",
+      });
+      expect(element.textContent).toContain("verified by reading it back");
+    } finally {
+      await act(async () => root.unmount());
+      element.remove();
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
 it("shows only the requested profile action pending, prevents repeated clicks, and permits recovery", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const element = document.createElement("div");
