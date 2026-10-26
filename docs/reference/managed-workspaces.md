@@ -153,3 +153,50 @@ S2 and S3 acquire S4 execution-activity reservations before destructive Git or
 delivery work. One execution-host Git service remains authoritative across
 native and remote callers. Independent stream checks do not establish integrated,
 native, installed or released acceptance.
+
+## Feature awareness and instruction delivery
+
+Tracked project feature cards live under `.agents/skills/feature-<name>/SKILL.md`.
+Their `name` and `description` frontmatter makes them discoverable by the existing
+project skill loader in `host/skills.ts`. Use the
+[card template](../../.agents/skills/feature-card-template/SKILL.md) for purpose,
+code-backed surfaces, preservation, owner quotes, checks, blockers and committed
+handoffs. A card is not a live lock: query/acquire feature claims against canonical
+project identity and coordinate a dependency or explicit sub-scope on conflict.
+
+Runtime guidance routes feature work to its card, requires every affected surface
+including the Host operation, opened screenshot evidence for UI changes, and
+build-status/source comparison before treating a screenshot as a new defect.
+Missing skills/capabilities are reported; installation still requires owner
+authorization. No profile-level instruction or skill edits are implied.
+
+## Integration acceptance inventory
+
+This is a review checklist, not a claim that other streams passed. The S7 baseline
+is contract commit `f26ac112404e326478adb687c23ca9cc032acfef`. New services and UI
+must be checked after the owner integrates their committed results. See the
+[user guide](../guides/managed-workspaces.md) for the workflow and legacy limits.
+
+| Area / owner                 | Required exercised behavior                                                                                                                                                                                                                              | Evidence boundary                                                                                                           |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Registry/policy/claims / S1  | Idempotent creation, immutable committed base, explicit/project/Host precedence, full-ID collision checks, no fallback to main; duplicate writer/feature conflicts and explicit old-Host update state                                                    | Fake Git repositories and Host RPC tests; actual routed capability checks after integration                                 |
+| Rewind / S2                  | Multiple agent commits plus staged/unstaged/untracked state restore exactly; Undo restores rescue state; displaced commits retained; siblings unchanged; external drift rejects; each journal phase recovers                                             | Temporary repos plus crash/restart cases; native/Host parity checked separately from transcript fixtures                    |
+| Execution/delivery / S3      | Sessions, tasks, goals, automations, stewards and parallel children use assigned independent workspaces; old auto-approval suspended; SHA/fingerprint-bound owner approval; dirty non-overlap preserved and overlap rejected; push/PR receipts reconcile | Orchestrator/tool tests and authenticated UI integration; no live publication needed for fake-provider tests                |
+| Lifecycle/removal / S4       | Startup/transition/hourly eligibility, timers/pins/Never, active/dirty/unknown/in-use blocking, Windows no-follow dependency detachment, blocked-handle recovery, evidence preservation, resume after removal, branch/ref retention                      | Temporary repos/link targets, with target content checked unchanged; actual Windows handle scenario distinct from mocks     |
+| UI / S5                      | Creation/defaults, workspace identity, review/delivery/retirement, rewind/Undo preview, settings policy/storage/retention and update explanations; local pending/error/retry/cancel feedback and keyboard use                                            | Every affected surface at 1280/800, light/dark, opened screenshots; fixtures separate from isolated native/Host integration |
+| Development/build / S6       | Own dependency links, deduplicated cancellable bootstrap, cache lease feedback, isolated Host/desktop data and executable run dirs, Vite/HMR/Host/CDP bind-race handling, consistent URLs/CSP, immutable frozen manifest and comparison                  | Concurrent isolated runs plus provenance checks; unstamped or unresponsive runtime remains unknown                          |
+| Instructions/cards/docs / S7 | AGENTS at most 11,000 UTF-8 bytes; worktree-first and current-session transition; complete searchable surface cards; current crew guide; runtime missing-capability/feature guidance; valid cited paths                                                  | Focused runtime tests, byte count, reference and repository-hygiene checks; no product/native acceptance inferred           |
+
+For final integration, exercise one complete native scenario: create independent
+writers, commit and review a result, approve delivery, rewind/Undo another branch,
+retire/rematerialize an eligible directory, and compare its source/build identity.
+Do not run destructive acceptance on production data. Record each step's actual
+branch/SHA, capability, receipt and artifact. Leave unavailable checks named with
+their blocker; seven individually passing stream branches do not establish this
+scenario. Mobile source is absent from the frozen baseline, and cross-platform
+native visual acceptance remains separate from Windows/browser evidence.
+
+Reports include outcome; done by surface with path:line; checks and opened
+screenshots with exact unverified checks; branch/commit and readiness for review;
+remaining blockers with actor; and build stamp with inclusion
+included/excluded/unknown. A completion timestamp alone cannot prove inclusion.

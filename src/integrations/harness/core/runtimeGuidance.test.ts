@@ -38,7 +38,9 @@ it("advertises only available bridges and states the CLI fallback once", async (
   expect(hint).toContain("skills.search");
   expect(hint).toContain('skills.read name "bycoda-skill-router"');
   expect(hint).toContain("when installed and allowed");
-  expect(hint).toContain("before asking to install it");
+  expect(hint).toContain("report missing capabilities");
+  expect(hint).toContain("never install without owner authorization");
+  expect(hint).not.toContain("ask whether the owner wants");
   expect(hint).toContain("never authorizes installation");
   expect(hint).toContain("does not enable disabled skills");
   expect(hint).toContain("only when the task needs it");
@@ -81,4 +83,19 @@ it("quotes POSIX CLI paths for the shell", async () => {
   expect(mcpCliCommand({ command: "/usr/bin/node", args: ["/path/owner's host.mjs"] })).toBe(
     "'/usr/bin/node' '/path/owner'\\''s host.mjs'",
   );
+});
+
+it("keeps feature completeness and build provenance in the real conversation hint", async () => {
+  const { conversationToolsCliHint } = await vi.importActual<
+    typeof import("./conversationToolsBridge")
+  >("./conversationToolsBridge");
+  expect(conversationToolsCliHint(null)).toBe("");
+  const hint = conversationToolsCliHint({ command: "node", args: ["host.mjs"] });
+  expect(hint).toContain("search and read its project feature card");
+  expect(hint).toContain("every affected surface including the Host operation");
+  expect(hint).toContain("opened screenshots");
+  expect(hint).toContain(
+    "check build status/source identity before treating a screenshot as a new defect",
+  );
+  expect(hint).toContain("Reads do not authorize sends, merges or publishing");
 });
