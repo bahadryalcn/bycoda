@@ -2,7 +2,7 @@ import { mapAsync } from "./async-collections";
 import { writerWorkspaces } from "./writer-workspaces.test-support";
 import type { TaskWorkspaceServices } from "./task-workspace-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
-// Real Git worktrees and source commits; unrelated checkpoint capture is stubbed.
+// Real Git worktrees, commits and managed turn history; legacy per-file checkpoints are stubbed.
 if (process.platform === "win32") vi.setConfig({ testTimeout: 120000 });
 import { execFileSync } from "node:child_process";
 import {
@@ -135,12 +135,13 @@ async function setup() {
     answer: vi.fn(),
   };
   const engine = new HostEngine(store, { claude: provider });
-  // S3 verifies orchestration against real Git worktrees. Checkpoint capture
-  // has its own S2 integration suite and is independent of this fixture.
+  // Legacy per-file checkpoints are independent of this fixture. Managed runs
+  // below attach real retained turn-history capture through writerWorkspaces.
   vi.spyOn(engine.checkpoints, "begin").mockResolvedValue();
   vi.spyOn(engine.checkpoints, "finish").mockResolvedValue();
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
   const workspaces = writerWorkspaces(directory, async (id) => (await store.project(id)).cwd);
+  await workspaces.attachEngine(engine);
   const delivery = { review: vi.fn(), merge: vi.fn() };
   const tasks = new HostTasks(store, engine, () => clock.now, undefined, {
     ...workspaces,

@@ -93,8 +93,8 @@ async function setup(start = at("2026-10-05T08:00:00")) {
     answer: vi.fn(),
   };
   const engine = new HostEngine(store, { claude: provider });
-  // S3 verifies orchestration against real Git worktrees. Checkpoint capture
-  // has its own S2 integration suite and is independent of this fixture.
+  // Legacy per-file checkpoints are independent of this fixture. Managed runs
+  // below attach real retained turn-history capture through writerWorkspaces.
   vi.spyOn(engine.checkpoints, "begin").mockResolvedValue();
   vi.spyOn(engine.checkpoints, "finish").mockResolvedValue();
   const clock = { now: start };
@@ -107,6 +107,7 @@ async function setup(start = at("2026-10-05T08:00:00")) {
   git("add", "file.txt");
   git("commit", "-q", "-m", "initial");
   const workspaces = writerWorkspaces(directory, async (id) => (await store.project(id)).cwd);
+  await workspaces.attachEngine(engine);
   const automations = new HostAutomations(store, engine, () => clock.now, workspaces);
   cleanups.push(async () => {
     for (const turn of turns) turn.finish();

@@ -6,6 +6,8 @@ import type { ManagedWorkspace } from "./workspace-contracts";
 import type { StewardWorkspaceServices } from "./stewards";
 import { invalidateHostWorktrees } from "./git-worktrees";
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
+import type { HostEngine } from "./engine";
+import { GitTurnHistory } from "./turn-git-history";
 
 /** Test execution adapter: real isolated Git worktrees; in-memory S1/S4 records. */
 export function writerWorkspaces(root: string, projectCwd: (id: string) => Promise<string>) {
@@ -28,7 +30,9 @@ export function writerWorkspaces(root: string, projectCwd: (id: string) => Promi
     invalidateHostWorktrees(cwd);
     const workspace: ManagedWorkspace = {
       id,
-      repositoryId: git(cwd, "rev-parse", "--git-common-dir"),
+      repositoryId: realpathSync.native(
+        git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"),
+      ),
       projectId: request.projectId,
       environmentId: request.environmentId,
       owner: request.owner,
@@ -120,5 +124,95 @@ export function writerWorkspaces(root: string, projectCwd: (id: string) => Promi
     activity: { start, stop },
     removal: { plan, apply },
   } as unknown as StewardWorkspaceServices;
-  return { ...services, prepare, get, finish, close, resume, start, stop, plan, apply, rows };
+  const required = async (id: string) => {
+    const row = rows.get(id);
+    if (!row || row.directoryState !== "present")
+      throw new Error("Fixture managed workspace is unavailable");
+    if (
+      realpathSync.native(
+        git(row.path, "rev-parse", "--path-format=absolute", "--git-common-dir"),
+      ) !== row.repositoryId ||
+      git(row.path, "symbolic-ref", "HEAD") !== row.branchRef
+    )
+      throw new Error("Fixture managed workspace identity changed");
+    return row;
+  };
+  // Real retained Git snapshots make the orchestration fixture honor the same
+  // accepted-turn protocol as production. Registry/lifecycle records above remain
+  // explicitly in memory; this helper is not durable recovery or delivery proof.
+  const history = new GitTurnHistory({
+    root: join(root, "fixture-turn-history"),
+    workspace: required,
+  });
+  const attachEngine = async (engine: HostEngine) => {
+    await engine.ready;
+    engine.setManagedTurnHistoryAdapter({
+      history,
+      assertWritable: async (id) => {
+        await required(id);
+      },
+      workspaceForCreate: async (request) => {
+        const row = await required(request.workspaceId);
+        if (
+          row.projectId !== request.projectId ||
+          (request.worktreeCwd &&
+            realpathSync.native(request.worktreeCwd) !== realpathSync.native(row.path))
+        )
+          throw new Error("Fixture managed workspace belongs to another project or path");
+        return {
+          workspaceId: row.id,
+          path: row.path,
+          branchRef: row.branchRef,
+          revision: row.revision,
+          sessionId: row.owner.kind === "session" ? row.owner.id : undefined,
+        };
+      },
+      workspaceForSession: async (value) => {
+        const id = value.session.workspaceId;
+        if (!id) {
+          const path = value.session.worktreeCwd ?? value.session.cwd;
+          if ([...rows.values()].some((row) => row.path === path))
+            throw new Error("Fixture managed session requires authoritative workspace identity");
+          return null;
+        }
+        const row = await required(id);
+        if (
+          row.projectId !== value.projectId ||
+          (row.owner.kind === "session" && row.owner.id !== value.session.id) ||
+          realpathSync.native(value.session.worktreeCwd ?? value.session.cwd) !==
+            realpathSync.native(row.path)
+        )
+          throw new Error("Fixture managed session ownership changed");
+        return { workspaceId: row.id, path: row.path };
+      },
+      startActivity: async (value, kind) => {
+        if (!value.session.workspaceId) return async () => {};
+        await required(value.session.workspaceId);
+        const activity = await start({
+          workspaceId: value.session.workspaceId,
+          ownerId: value.session.id,
+          kind,
+        });
+        return async () => {
+          await stop(activity.id);
+        };
+      },
+    });
+    await engine.recoverManagedStartup();
+  };
+  return {
+    ...services,
+    prepare,
+    get,
+    finish,
+    close,
+    resume,
+    start,
+    stop,
+    plan,
+    apply,
+    rows,
+    history,
+    attachEngine,
+  };
 }

@@ -187,13 +187,14 @@ async function setup(verifyTimeoutMs?: number) {
     answer: vi.fn(),
   };
   const engine = new HostEngine(store, { claude: provider });
-  // This fixture exercises orchestration and real worktree/commit behavior.
-  // Checkpoint capture has its own integration suite; held-checkpoint tests
-  // below replace this stub with their explicit coordination barrier.
+  // Stub legacy per-file checkpoints for direct-mode scenarios. Managed runs
+  // below attach real turn-history capture through writerWorkspaces.
+  // Direct held-checkpoint tests replace these stubs with their barriers.
   vi.spyOn(engine.checkpoints, "begin").mockResolvedValue(undefined);
   vi.spyOn(engine.checkpoints, "finish").mockResolvedValue(undefined);
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
   const workspaces = writerWorkspaces(directory, async (id) => (await store.project(id)).cwd);
+  await workspaces.attachEngine(engine);
   const delivery = { review: vi.fn(), merge: vi.fn(), publish: vi.fn(), recover: vi.fn() };
   const managed = {
     ...workspaces,
@@ -2939,42 +2940,46 @@ describe("task verification", () => {
       error: "Review failed: The report skips Friday.",
     });
   });
-  it.each([false, true])(
-    "passes failed review details to the retry worker (isolated: %s)",
-    async (isolated) => {
-      const { tasks, reviewing, task, turns, finish, addRepo, store } = await setup();
-      const repo = isolated ? await addRepo("repo") : undefined;
-      const verifying = await reviewing(repo ? { projectId: repo.id } : {});
-      const reviewer = verifying.reviewer!.sessionId!;
-      await finish(
-        reviewer,
-        "package.ts:42 keeps the old selection after rollback.\nVERDICT: FAIL - Package versions disagree.",
-      );
-      const originalPrompt = (await task()).prompt;
-      // Going through To do must preserve the finding after verification is cleared.
-      const todo = await tasks.move("main", "todo");
-      expect(todo.verification).toBeUndefined();
-      expect(todo.retryFeedback).toContain("package.ts:42");
-      expect(todo.retryFeedback!.length).toBeLessThanOrEqual(12000);
-      await tasks.move("main", "queued");
-      await tasks.tick();
-      expect((await task()).prompt).toBe(originalPrompt);
-      expect((await task()).sessionId).not.toBe(verifying.sessionId);
-      expect((await task()).branch).toBe(verifying.branch);
-      expect((await store.session((await task()).sessionId!)).session.cwd).toBe(
-        verifying.worktreeCwd ?? (await store.project(verifying.projectId)).cwd,
-      );
-      const retry = turns.at(-1)!.input.text;
-      expect(retry).toContain(originalPrompt);
-      expect(retry).toContain("Package versions disagree.");
-      expect(retry).toContain("package.ts:42 keeps the old selection after rollback.");
-      expect(retry).toContain("fix the findings");
-      await finish((await task()).sessionId!);
-      await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
-      expect((await task()).status).toBe(isolated ? "review" : "done");
-      expect((await task()).retryFeedback).toBeUndefined();
-    },
-  );
+  for (const isolated of [false, true])
+    it(
+      `passes failed review details to the retry worker (isolated: ${isolated})`,
+      async () => {
+        const { tasks, reviewing, task, turns, finish, addRepo, store } = await setup();
+        const repo = isolated ? await addRepo("repo") : undefined;
+        const verifying = await reviewing(repo ? { projectId: repo.id } : {});
+        const reviewer = verifying.reviewer!.sessionId!;
+        await finish(
+          reviewer,
+          "package.ts:42 keeps the old selection after rollback.\nVERDICT: FAIL - Package versions disagree.",
+        );
+        const originalPrompt = (await task()).prompt;
+        // Going through To do must preserve the finding after verification is cleared.
+        const todo = await tasks.move("main", "todo");
+        expect(todo.verification).toBeUndefined();
+        expect(todo.retryFeedback).toContain("package.ts:42");
+        expect(todo.retryFeedback!.length).toBeLessThanOrEqual(12000);
+        await tasks.move("main", "queued");
+        await tasks.tick();
+        expect((await task()).prompt).toBe(originalPrompt);
+        expect((await task()).sessionId).not.toBe(verifying.sessionId);
+        expect((await task()).branch).toBe(verifying.branch);
+        expect((await store.session((await task()).sessionId!)).session.cwd).toBe(
+          verifying.worktreeCwd ?? (await store.project(verifying.projectId)).cwd,
+        );
+        const retry = turns.at(-1)!.input.text;
+        expect(retry).toContain(originalPrompt);
+        expect(retry).toContain("Package versions disagree.");
+        expect(retry).toContain("package.ts:42 keeps the old selection after rollback.");
+        expect(retry).toContain("fix the findings");
+        await finish((await task()).sessionId!);
+        await finish((await task()).reviewer!.sessionId!, "VERDICT: PASS");
+        expect((await task()).status).toBe(isolated ? "review" : "done");
+        expect((await task()).retryFeedback).toBeUndefined();
+      },
+      // Four real managed turns retain before/after Git snapshots on Windows.
+      // Parallel integration verification can outlast the ordinary shell budget.
+      isolated && process.platform === "win32" ? 120000 : undefined,
+    );
   it("retries a failed review even when its session is unavailable", async () => {
     const { tasks, reviewing, task, turns, finish, store } = await setup();
     const verifying = await reviewing();
