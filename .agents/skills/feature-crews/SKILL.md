@@ -165,6 +165,30 @@ Do not confuse context growth/theme settings with saved crew execution policies.
   `src/features/tasks/model/hostTasks.test.ts`,
   `src/features/tasks/model/taskClient.test.ts`, `host/app-skills.test.ts`.
 
+## Local lead-run worker branch delivery (F1)
+
+The local orchestration adapter is a separate entry point from saved Host Crews.
+`src/features/orchestration/model/orchestration.ts` supplies worker/lead envelopes;
+`orchestrationState.ts` retains `managedWorkspaceId` with each worker checkout.
+`src/app/workspace/bridges/orchestratorWorkerBindings.ts` creates new isolated
+workers through `workspaces.prepare`, persists the session-owned registry identity,
+and accepts their committed results only after owner-approved managed merge. A
+fresh delivery review must show no pending commits or blockers; a stale `merged`
+state is insufficient. The adapter never copies checkpoints as delivery.
+
+Workers commit only their assigned files on their own branches. The owner reviews
+and merges from the worker session's Workspace actions; the coordinator then retries
+review. Cleanup uses the shared managed lifecycle and retains branches. Retained
+legacy workers remain outside automatic adoption and require explicit owner
+migration before managed acceptance. Existing shared legacy runs retain their
+current-mode behavior.
+
+Focused evidence: `orchestratorWorkerBindings.test.ts` covers managed creation,
+pending delivery, fresh merge acceptance, drift and guarded cleanup;
+`src/features/orchestration/model/orchestration.test.ts` covers assignment and
+coordinator behavior. This is source/fixture evidence; installed app and real
+provider execution remain separate checks.
+
 ## Owner decisions
 
 ## Behavior to preserve

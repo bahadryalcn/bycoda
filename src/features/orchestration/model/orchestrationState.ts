@@ -23,6 +23,8 @@ export type OrchestrationWorkspace = {
   checkoutCwd: string;
   kind: "main" | "worktree";
   branch?: string;
+  /** Authoritative Host registry identity; legacy checkouts are never silently adopted. */
+  managedWorkspaceId?: string;
 };
 
 export type DispatchState =

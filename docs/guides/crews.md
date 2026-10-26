@@ -259,8 +259,9 @@ not a filesystem sandbox. Preserve unrelated changes.
 Runtime approvals and questions remain owner-controlled unless the owner enabled
 delegation in the definition. A coordinator cannot authorize itself. Delegated
 responses bind to the exact member turn and pending request. Inbox, social and
-publication gates retain their own contracts; crew acceptance never authorizes
-committing, merging, pushing or publishing.
+publication gates retain their own contracts. Workers commit within their
+authorized branch and file scope; crew acceptance never authorizes merging,
+pushing or publishing.
 
 ## Tasks, tools and recovery
 
@@ -303,3 +304,16 @@ its Classic, Star Wars and Lord of the Rings characters do not start assignments
 Source and browser fixtures do not prove installed-host, physical-device or paid
 provider acceptance. Compare build identity before treating an owner screenshot
 as a new defect; then exercise the affected flow on the identified app and host.
+
+### Local lead-run workers
+
+New isolated workers launched by the local lead-run controller use managed,
+session-owned branches. Each worker commits its assigned changes and reports its
+branch and final SHA. Review retains the result until the owner opens that worker
+session's **Workspace actions**, reviews the branch and approves its merge. Retry
+the coordinator review after delivery. New commits after a merge require another
+owner review. Checkpoint copying does not count as branch delivery.
+
+Retained workers from older local runs keep their existing checkout and commits;
+they require explicit owner migration before managed acceptance. Removing a
+managed worker directory uses the shared cleanup guards and keeps its branch.
