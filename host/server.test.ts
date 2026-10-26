@@ -19,6 +19,7 @@ import { HostTasks } from "./tasks";
 import { HostCrews } from "./crews";
 import { HostGoals } from "./goals";
 import { DesktopSessions } from "./desktopSessions";
+import { HostTerminals } from "./terminals";
 import { AsyncHostNotes } from "./host-notes-async";
 import { GenericAcpService } from "./generic-acp";
 import * as accessCenter from "./access-center";
@@ -30,6 +31,7 @@ import { LocalVoiceService } from "./voice-local";
 import { configureChildBackend } from "../src/integrations/harness/core/child";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
+import { requireWorkspaceCapability } from "../src/features/connections/model/protocol";
 import { QUEUE_LEASE_TTL_MS } from "../src/features/connections/model/sharedQueue";
 import { RUN_LEASE_TTL_MS } from "../src/features/sync/model/runLease";
 import { CLAIM_GRACE_MS, SessionQueues } from "./session-queue";
@@ -46,6 +48,240 @@ const binaries: { codex?: string } = {};
 configureChildBackend(new HostChildBackend(binaries));
 
 const cleanups: Array<() => Promise<void>> = [];
+
+describe("managed workspace owner RPCs", () => {
+  it("requires an updated host instead of silently selecting the project checkout", () => {
+    expect(() => requireWorkspaceCapability(undefined)).toThrow(/Update the execution Host/);
+    expect(() => requireWorkspaceCapability({ capabilities: ["git.worktreeCreate"] })).toThrow(
+      /No work was started/,
+    );
+    expect(() =>
+      requireWorkspaceCapability({ capabilities: ["workspaces.managed.v1"] }),
+    ).not.toThrow();
+  });
+
+  it("routes policy, creation, claims and lifecycle against real Git through authenticated owner transport", async () => {
+    const s = await setup([]);
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: s.directory, windowsHide: true, encoding: "utf8" }).trim();
+    git("init", "-b", "main");
+    writeFileSync(join(s.directory, "source.txt"), "committed source\n");
+    git("add", "source.txt");
+    git(
+      "-c",
+      "user.name=Workspace Test",
+      "-c",
+      "user.email=test@example.invalid",
+      "commit",
+      "-m",
+      "Initial source",
+    );
+    const base = git("rev-parse", "HEAD");
+    writeFileSync(join(s.directory, "source.txt"), "unrelated dirty source\n");
+    const capabilities = (await s.call("environment.describe")).value.result.capabilities;
+    expect(capabilities).toEqual(
+      expect.arrayContaining(["workspaces.managed.v1", "workspaces.policy.v1"]),
+    );
+    expect(capabilities).not.toContain("sessions.git-rewind.v1");
+    expect(capabilities).not.toContain("workspaces.lifecycle.v1");
+    expect(capabilities).not.toContain("workspaces.delivery.v1");
+    const project = { projectId: s.project.id, environmentId: s.store.environmentId };
+    const policy = await s.call("projects.workspacePolicy.get", project);
+    expect(policy.value.error).toBeUndefined();
+    expect(policy.value.result.resolved.policy.defaultMode).toBe("worktree");
+    const update = {
+      ...project,
+      expectedRevision: policy.value.result.revision,
+      idempotencyKey: "rpc-policy",
+      policy: { root: join(s.directory, "managed") },
+    };
+    expect((await s.call("projects.workspacePolicy.update", update, "invalid")).status).toBe(401);
+    expect((await s.call("projects.workspacePolicy.update", update)).value.error).toBeUndefined();
+    const request = {
+      ...project,
+      idempotencyKey: "rpc-create",
+      owner: { kind: "session", id: "session-one" },
+      slug: "RPC work",
+    };
+    expect((await s.call("workspaces.prepare", request, "invalid")).status).toBe(401);
+    const prepared = await s.call("workspaces.prepare", request);
+    expect(prepared.value.error).toBeUndefined();
+    const workspace = prepared.value.result.workspace;
+    expect(workspace).toMatchObject({ projectId: s.project.id, baseCommit: base });
+    expect(workspace.path).not.toBe(s.directory);
+    expect(git("show", `${workspace.branchRef}:source.txt`)).toBe("committed source");
+    expect((await s.call("workspaces.prepare", request)).value.result).toEqual(
+      prepared.value.result,
+    );
+    expect((await s.call("workspaces.get", { workspaceId: workspace.id })).value.result.id).toBe(
+      workspace.id,
+    );
+    expect((await s.call("workspaces.list", project)).value.result).toHaveLength(1);
+    expect(
+      (await s.call("workspaces.list", { ...project, environmentId: "another-host" })).value.error,
+    ).toMatch(/another execution host/);
+    expect(
+      (
+        await s.call("sessions.desktopLive", {
+          clientId: "workspace-owner",
+          sessions: [{ id: "session-one", busy: true }],
+        })
+      ).value.error,
+    ).toBeUndefined();
+    const busy = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
+    expect(busy.state).toBe("active");
+    expect(busy.lastActivityAt).toBeGreaterThanOrEqual(workspace.lastActivityAt);
+    expect(
+      (
+        await s.call("workspaces.finish", {
+          workspaceId: workspace.id,
+          expectedRevision: busy.revision,
+          idempotencyKey: "rpc-finish-busy",
+        })
+      ).value.error,
+    ).toMatch(/active|running|use|busy|idle/i);
+    expect(
+      (
+        await s.call("sessions.desktopLive", {
+          clientId: "workspace-owner",
+          sessions: [{ id: "session-one", busy: false }],
+        })
+      ).value.error,
+    ).toBeUndefined();
+    const idle = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
+    expect(idle.state).toBe("idle");
+    const alias = await s.engine.openProject(workspace.path);
+    const terminal = {
+      id: "workspace-terminal",
+      projectId: alias.id,
+      name: "Test shell",
+      cwd: join(workspace.path, "nested"),
+      shell: "test",
+      transport: "pipe" as const,
+      state: "running" as "running" | "exited",
+      createdAt: Date.now(),
+      exitCode: null,
+    };
+    const terminalList = vi.spyOn(HostTerminals.prototype, "list").mockImplementation((id) => ({
+      terminals: id === alias.id ? [terminal] : [],
+      writable: true,
+      profiles: [],
+    }));
+    const terminalWrite = vi
+      .spyOn(HostTerminals.prototype, "write")
+      .mockResolvedValue({ written: true });
+    const terminalRead = vi.spyOn(HostTerminals.prototype, "read").mockImplementation(() => ({
+      terminal,
+      cursor: 1,
+      output: "done",
+      truncated: false,
+      hasMore: false,
+    }));
+    try {
+      const writeFailure = vi
+        .spyOn(s.store, "updateManagedWorkspace")
+        .mockRejectedValueOnce(new Error("temporary metadata failure"));
+      const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        expect(
+          (
+            await s.call("terminals.write", {
+              projectId: alias.id,
+              id: terminal.id,
+              text: "echo test",
+            })
+          ).value.result,
+        ).toEqual({ written: true });
+        expect(warning).toHaveBeenCalledWith(
+          "Managed workspace activity metadata could not be recorded",
+        );
+      } finally {
+        writeFailure.mockRestore();
+        warning.mockRestore();
+      }
+      expect(
+        (
+          await s.call("workspaces.finish", {
+            workspaceId: workspace.id,
+            expectedRevision: idle.revision,
+            idempotencyKey: "rpc-terminal-busy",
+          })
+        ).value.error,
+      ).toMatch(/active|running|use|busy|idle/i);
+      expect(
+        (
+          await s.call("terminals.write", {
+            projectId: alias.id,
+            id: terminal.id,
+            text: "echo test",
+          })
+        ).value.error,
+      ).toBeUndefined();
+      expect(
+        (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result.state,
+      ).toBe("active");
+      terminal.state = "exited";
+      expect(
+        (await s.call("terminals.read", { projectId: alias.id, id: terminal.id })).value.error,
+      ).toBeUndefined();
+      expect(
+        (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result.state,
+      ).toBe("idle");
+    } finally {
+      terminalList.mockRestore();
+      terminalWrite.mockRestore();
+      terminalRead.mockRestore();
+    }
+    const afterTerminal = (await s.call("workspaces.get", { workspaceId: workspace.id })).value
+      .result;
+    const claim = await s.call("workspaces.featureClaims.acquire", {
+      workspaceId: workspace.id,
+      expectedRevision: afterTerminal.revision,
+      idempotencyKey: "rpc-acquire",
+      featureKey: "editor",
+    });
+    expect(claim.value.error).toBeUndefined();
+    expect(claim.value.result.acquired).toBe(true);
+    expect(
+      (await s.call("workspaces.featureClaims.list", { projectId: s.project.id })).value.result,
+    ).toHaveLength(1);
+    let latest = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
+    expect(
+      (
+        await s.call("workspaces.featureClaims.release", {
+          workspaceId: workspace.id,
+          expectedRevision: latest.revision,
+          idempotencyKey: "rpc-release",
+          claimId: claim.value.result.claim.id,
+        })
+      ).value.result,
+    ).toEqual({ released: true });
+    latest = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
+    const finished = await s.call("workspaces.finish", {
+      workspaceId: workspace.id,
+      expectedRevision: latest.revision,
+      idempotencyKey: "rpc-finish",
+    });
+    expect(finished.value.error).toBeUndefined();
+    expect(finished.value.result.state).toBe("finished");
+    const resumed = await s.call("workspaces.resume", {
+      workspaceId: workspace.id,
+      expectedRevision: finished.value.result.revision,
+      idempotencyKey: "rpc-resume",
+    });
+    expect(resumed.value.error).toBeUndefined();
+    expect(["active", "idle"]).toContain(resumed.value.result.state);
+    const closed = await s.call("workspaces.close", {
+      workspaceId: workspace.id,
+      expectedRevision: resumed.value.result.revision,
+      idempotencyKey: "rpc-close",
+    });
+    expect(closed.value.error).toBeUndefined();
+    expect(closed.value.result.state).toBe("abandoned");
+    expect(git("diff", "--", "source.txt")).toContain("unrelated dirty source");
+    expect(s.send).not.toHaveBeenCalled();
+  });
+});
 
 it("routes owner crew work deletion through authenticated RPC", async () => {
   const s = await setup([]);

@@ -1,0 +1,381 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { afterEach, expect, it, vi } from "vitest";
+import { HostStore } from "./store";
+import { createManagedWorkspaceRegistry } from "./managed-workspaces";
+import { createWorkspacePolicyResolver } from "./workspace-policy";
+import { createWorkspaceFeatureClaims } from "./feature-claims";
+import {
+  invalidateHostWorktrees,
+  managedWorkspaceNames,
+  materializeManagedWorkspace,
+} from "./git-worktrees";
+import type { ManagedWorkspace, WorkspaceCreateOperation } from "./workspace-contracts";
+
+const cleanup: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  vi.restoreAllMocks();
+  for (const fn of cleanup.splice(0).reverse()) await fn();
+  invalidateHostWorktrees();
+});
+async function fixture() {
+  const parent = mkdtempSync(join(tmpdir(), "bycoda-managed-test-"));
+  const cwd = join(parent, "repo");
+  mkdirSync(cwd);
+  const gitAt = (path: string, ...args: string[]) =>
+    execFileSync("git", args, {
+      cwd: path,
+      windowsHide: true,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  const git = (...args: string[]) => gitAt(cwd, ...args);
+  git("init", "-q", "-b", "main");
+  git("config", "user.name", "Test");
+  git("config", "user.email", "test@example.com");
+  writeFileSync(join(cwd, "source.txt"), "committed\n");
+  git("add", ".");
+  git("commit", "-qm", "baseline");
+  const db = join(parent, "host.db");
+  let store = new HostStore(db);
+  await store.ready;
+  const project = await store.addProject(cwd, "Repo");
+  const root = join(parent, "managed");
+  const policy = createWorkspacePolicyResolver(store, { hostPolicy: { root } });
+  const registry = createManagedWorkspaceRegistry(store, policy);
+  const request = {
+    projectId: project.id,
+    environmentId: "local",
+    owner: { kind: "session" as const, id: "session-a" },
+    slug: "Fix file picker",
+    idempotencyKey: "create-a",
+  };
+  cleanup.push(async () => {
+    await store.close();
+    if (!parent.startsWith(join(tmpdir(), "bycoda-managed-test-")))
+      throw new Error("Unsafe test cleanup");
+    rmSync(parent, { recursive: true, force: true });
+  });
+  return {
+    parent,
+    cwd,
+    root,
+    git,
+    gitAt,
+    store,
+    project,
+    policy,
+    registry,
+    request,
+    async reopen() {
+      await store.close();
+      store = new HostStore(db);
+      await store.ready;
+      return {
+        store,
+        registry: createManagedWorkspaceRegistry(
+          store,
+          createWorkspacePolicyResolver(store, { hostPolicy: { root } }),
+        ),
+      };
+    },
+  };
+}
+
+it("pins the integration tip, excludes dirty files and returns the original duplicate receipt", async () => {
+  const f = await fixture();
+  const sha = f.git("rev-parse", "main");
+  writeFileSync(join(f.cwd, "source.txt"), "unrelated dirty main\n");
+  writeFileSync(join(f.cwd, "untracked.txt"), "private draft");
+  const [a, duplicate] = await Promise.all([
+    f.registry.prepare(f.request),
+    f.registry.prepare(f.request),
+  ]);
+  expect(duplicate).toEqual(a);
+  expect(a.workspace.baseCommit).toBe(sha);
+  expect(a.workspace.branchRef).toMatch(/^refs\/heads\/bycoda\/s\/fix-file-picker-[a-f0-9]{12}$/);
+  expect(basename(a.workspace.path)).toMatch(/^wt-[a-f0-9]{12}$/);
+  expect(readFileSync(join(a.workspace.path, "source.txt"), "utf8")).toBe("committed\n");
+  expect(existsSync(join(a.workspace.path, "untracked.txt"))).toBe(false);
+  expect(readFileSync(join(f.cwd, "source.txt"), "utf8")).toBe("unrelated dirty main\n");
+  const foreignPath = join(f.root, "not-owned");
+  await expect(
+    materializeManagedWorkspace(
+      f.cwd,
+      { ...a.workspace, path: foreignPath, repositoryId: "different-repository" },
+      false,
+    ),
+  ).rejects.toThrow("repository identity changed");
+  expect(existsSync(foreignPath)).toBe(false);
+  await f.registry.finish({
+    workspaceId: a.workspace.id,
+    expectedRevision: a.workspace.revision,
+    idempotencyKey: "finish",
+  });
+  expect(await f.registry.prepare(f.request)).toEqual(a);
+  await expect(f.registry.prepare({ ...f.request, slug: "Changed" })).rejects.toThrow(
+    "different request",
+  );
+  const reopened = await f.reopen();
+  expect(await reopened.registry.prepare(f.request)).toEqual(a);
+});
+
+it("allows one workspace per writer and independent workspaces for other writer kinds", async () => {
+  const f = await fixture();
+  const created = await f.registry.prepare(f.request);
+  await expect(f.registry.prepare({ ...f.request, idempotencyKey: "other-key" })).rejects.toThrow();
+  const task = await f.registry.prepare({
+    ...f.request,
+    idempotencyKey: "task",
+    owner: { kind: "task", id: "task-a" },
+  });
+  expect(task.workspace.branchRef).toMatch(/^refs\/heads\/bycoda\/t\//);
+  expect(task.workspace.path).not.toBe(created.workspace.path);
+  expect(await f.registry.list({ projectId: f.project.id })).toHaveLength(2);
+}, 60_000);
+
+it("journals before any directory mutation and recovers creation at the pinned SHA after restart", async () => {
+  const f = await fixture();
+  const base = f.git("rev-parse", "main");
+  const save = f.store.saveWorkspaceOperation.bind(f.store);
+  let fail = true;
+  vi.spyOn(f.store, "saveWorkspaceOperation").mockImplementation(async (op, phase) => {
+    if (phase === null) expect(existsSync(f.root)).toBe(false);
+    if (op.phase === "materialized" && fail) {
+      fail = false;
+      throw new Error("simulated host interruption");
+    }
+    return save(op, phase);
+  });
+  await expect(f.registry.prepare(f.request)).rejects.toThrow("interruption");
+  const [workspace] = await f.store.managedWorkspaces();
+  expect(existsSync(workspace.path)).toBe(true);
+  expect((await f.registry.listOperations(workspace.id))[0]).toMatchObject({
+    phase: "blocked",
+    resumePhase: "registered",
+  });
+  await expect(
+    f.registry.finish({
+      workspaceId: workspace.id,
+      expectedRevision: 0,
+      idempotencyKey: "unsafe-finish",
+    }),
+  ).rejects.toThrow("recovery");
+  writeFileSync(join(f.cwd, "source.txt"), "later committed tip\n");
+  f.git("add", ".");
+  f.git("commit", "-qm", "advance integration");
+  const reopened = await f.reopen();
+  const recovered = await reopened.registry.prepare(f.request);
+  expect(recovered.workspace.id).toBe(workspace.id);
+  expect(recovered.workspace.baseCommit).toBe(base);
+  expect(f.gitAt(workspace.path, "rev-parse", "HEAD")).toBe(base);
+  expect(await reopened.registry.listOperations(workspace.id)).toMatchObject([
+    { phase: "complete" },
+  ]);
+});
+
+it("never adopts an existing unregistered directory or falls back to main", async () => {
+  const f = await fixture();
+  const insert = f.store.insertManagedWorkspace.bind(f.store);
+  vi.spyOn(f.store, "insertManagedWorkspace").mockImplementation(async (workspace) => {
+    await insert(workspace);
+    mkdirSync(workspace.path, { recursive: true });
+    writeFileSync(join(workspace.path, "sentinel.txt"), "do not overwrite");
+  });
+  await expect(f.registry.prepare(f.request)).rejects.toThrow("already exists");
+  const [workspace] = await f.store.managedWorkspaces();
+  expect(workspace.directoryState).toBe("blocked");
+  expect(workspace.path).not.toBe(f.cwd);
+  expect(readFileSync(join(workspace.path, "sentinel.txt"), "utf8")).toBe("do not overwrite");
+  expect(f.git("symbolic-ref", "HEAD")).toBe("refs/heads/main");
+});
+
+it("rejects an unavailable base and explicit current-mode preparation without allocating directories", async () => {
+  const f = await fixture();
+  await expect(f.registry.prepare({ ...f.request, baseRef: "missing-branch" })).rejects.toThrow();
+  await expect(
+    f.registry.prepare({ ...f.request, choice: { defaultMode: "current" } }),
+  ).rejects.toThrow("explicit exception");
+  expect(await f.store.managedWorkspaces()).toEqual([]);
+  expect(existsSync(f.root)).toBe(false);
+});
+
+it("rematerializes a retained branch with its later commits and preserves lifecycle receipts", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  writeFileSync(join(workspace.path, "source.txt"), "task implementation\n");
+  f.gitAt(workspace.path, "add", ".");
+  f.gitAt(workspace.path, "commit", "-qm", "implementation");
+  const tip = f.gitAt(workspace.path, "rev-parse", "HEAD");
+  const finished = await f.registry.finish({
+    workspaceId: workspace.id,
+    expectedRevision: 1,
+    idempotencyKey: "finish",
+  });
+  f.git("worktree", "remove", "--", workspace.path);
+  invalidateHostWorktrees();
+  await f.store.updateManagedWorkspace(
+    { ...finished, directoryState: "removed", revision: finished.revision + 1 },
+    finished.revision,
+  );
+  const request = { workspaceId: workspace.id, expectedRevision: 3, idempotencyKey: "resume" };
+  const resumed = await f.registry.resume(request);
+  expect(resumed).toMatchObject({
+    id: workspace.id,
+    path: workspace.path,
+    branchRef: workspace.branchRef,
+    state: "idle",
+    directoryState: "present",
+    revision: 4,
+  });
+  expect(f.gitAt(workspace.path, "rev-parse", "HEAD")).toBe(tip);
+  expect(await f.registry.resume(request)).toEqual(resumed);
+  const closed = await f.registry.close({
+    workspaceId: workspace.id,
+    expectedRevision: 4,
+    idempotencyKey: "close",
+  });
+  expect(closed.state).toBe("abandoned");
+  expect(existsSync(workspace.path)).toBe(true);
+  expect(f.git("rev-parse", workspace.branchRef)).toBe(tip);
+});
+
+it("tracks meaningful activity, rejects active lifecycle transitions and requires reservation proof", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  let active = true;
+  const registry = createManagedWorkspaceRegistry(f.store, f.policy, {
+    isActive: async () => active,
+  });
+  await expect(
+    registry.finish({ workspaceId: workspace.id, expectedRevision: 1, idempotencyKey: "finish" }),
+  ).rejects.toThrow("idle");
+  await registry.touchOwnerActivity(workspace.owner);
+  const running = (await registry.get({ workspaceId: workspace.id }))!;
+  expect(running.state).toBe("active");
+  expect(running.lastActivityAt).toBeGreaterThan(workspace.lastActivityAt);
+  active = false;
+  await registry.touchActivity(workspace.id);
+  expect((await registry.get({ workspaceId: workspace.id }))?.state).toBe("idle");
+  await expect(
+    registry.update({
+      workspaceId: workspace.id,
+      expectedRevision: 3,
+      idempotencyKey: "update",
+      reservationId: "fake",
+      changes: { state: "merged" },
+    }),
+  ).rejects.toThrow("reservation");
+});
+
+it("releases live feature claims on close and fences overlapping operation journals", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  const claims = createWorkspaceFeatureClaims(f.store);
+  expect(
+    (
+      await claims.acquire({
+        workspaceId: workspace.id,
+        expectedRevision: 1,
+        idempotencyKey: "claim",
+        featureKey: "picker",
+      })
+    ).acquired,
+  ).toBe(true);
+  await f.registry.close({
+    workspaceId: workspace.id,
+    expectedRevision: 2,
+    idempotencyKey: "close",
+  });
+  expect(await claims.list({ projectId: f.project.id })).toEqual([]);
+  const current = (await f.registry.get({ workspaceId: workspace.id }))!;
+  const operation: WorkspaceCreateOperation = {
+    id: "recovery",
+    kind: "create",
+    phase: "prepared",
+    workspaceId: current.id,
+    expectedRevision: current.revision,
+    idempotencyKey: "op-a",
+    createdAt: 1,
+    updatedAt: 1,
+    plannedWorkspace: current,
+  };
+  await f.registry.saveOperation(operation, null);
+  await expect(
+    f.registry.saveOperation({ ...operation, id: "other", idempotencyKey: "op-b" }, null),
+  ).rejects.toThrow("recovery");
+  await expect(f.registry.touchActivity(current.id)).rejects.toThrow("recovery");
+});
+
+it("records a committed dependency and rejects a dependency from another repository", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  writeFileSync(join(workspace.path, "dependency.txt"), "committed dependency");
+  f.gitAt(workspace.path, "add", ".");
+  f.gitAt(workspace.path, "commit", "-qm", "dependency");
+  const sha = f.gitAt(workspace.path, "rev-parse", "HEAD");
+  const dependent = await f.registry.prepare({
+    ...f.request,
+    idempotencyKey: "dependent",
+    owner: { kind: "task", id: "dependent" },
+    dependency: { workspaceId: workspace.id, commit: sha },
+  });
+  expect(dependent.workspace.baseCommit).toBe(sha);
+  expect(readFileSync(join(dependent.workspace.path, "dependency.txt"), "utf8")).toBe(
+    "committed dependency",
+  );
+  const other = await fixture();
+  const foreign = await other.registry.prepare(other.request);
+  // Share only the persisted identity for this test; never touch the foreign checkout.
+  await f.store.insertManagedWorkspace({
+    ...foreign.workspace,
+    projectId: f.project.id,
+    environmentId: "local",
+  } as ManagedWorkspace);
+  await expect(
+    f.registry.prepare({
+      ...f.request,
+      idempotencyKey: "foreign",
+      owner: { kind: "task", id: "foreign" },
+      dependency: { workspaceId: foreign.workspace.id, commit: foreign.workspace.baseCommit },
+    }),
+  ).rejects.toThrow("different repository");
+}, 60_000);
+
+it("uses stable collision-resistant naming and rejects malformed identities", () => {
+  expect(
+    managedWorkspaceNames(
+      { kind: "automationRun", id: "a" },
+      "../Türkçe ❄",
+      "12345678-1234-1234-1234-123456789012",
+    ),
+  ).toEqual({ branch: "bycoda/s/t-rk-e-123456781234", directory: "wt-123456781234" });
+  expect(() => managedWorkspaceNames({ kind: "session", id: "a" }, "x", "bad/id")).toThrow(
+    "identity",
+  );
+});
+
+it("holds a durable creation reservation when the storage guard pauses materialization", async () => {
+  const f = await fixture();
+  let paused = true;
+  const registry = createManagedWorkspaceRegistry(f.store, f.policy, {
+    beforeMaterialize: async () => {
+      if (paused) throw new Error("Storage pressure pauses materialization");
+    },
+  });
+  await expect(registry.prepare(f.request)).rejects.toThrow("Storage pressure");
+  expect(existsSync(f.root)).toBe(false);
+  const [reserved] = await registry.list({ projectId: f.project.id });
+  expect(reserved.revision).toBe(0);
+  expect(f.git("branch", "--list", reserved.branchRef.replace("refs/heads/", ""))).toBe("");
+  paused = false;
+  const resumed = await registry.prepare(f.request);
+  expect(resumed.workspace).toMatchObject({
+    id: reserved.id,
+    baseCommit: reserved.baseCommit,
+    directoryState: "present",
+    revision: 1,
+  });
+}, 60_000);
