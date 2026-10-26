@@ -113,6 +113,14 @@ const trees = [
   }),
 ];
 mockIPC((command, args = {}) => {
+  if (command === "managed_worktree_removal_plan" || command === "managed_worktree_removal_apply") {
+    const method =
+      command === "managed_worktree_removal_plan"
+        ? "workspaces.cleanup.plan"
+        : "workspaces.cleanup.apply";
+    command = "remote_request";
+    args = { method, params: args.request };
+  }
   if (command.startsWith("plugin:event|")) return null;
   if (command === "git_worktrees") return { worktrees: trees, defaultRoot: "/fixture/worktrees" };
   if (command === "local_host_connect") return machine;

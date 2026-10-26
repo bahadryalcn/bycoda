@@ -61,13 +61,13 @@ test("overlapping target paths block merge", async ({ page }) => {
 for (const theme of ["light", "dark"] as const)
   for (const width of [1280, 800]) {
     test(`workspace actions ${theme} ${width}`, async ({ page }) => {
-      await mkdir("temp/verification/s5", { recursive: true });
+      await mkdir("temp/verification/i2a", { recursive: true });
       await page.setViewportSize({ width, height: 1000 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/workspace-actions.html?theme=${theme}`);
       await expect(page.getByRole("button", { name: "Review changes", exact: true })).toBeVisible();
       await page.screenshot({
-        path: `temp/verification/s5/session-actions-${theme}-${width}.png`,
+        path: `temp/verification/i2a/session-actions-${theme}-${width}.png`,
         fullPage: true,
       });
       await page.getByRole("button", { name: "Workspace actions", exact: true }).click();
@@ -75,7 +75,7 @@ for (const theme of ["light", "dark"] as const)
         page.getByRole("menuitem", { name: "Mark finished", exact: true }),
       ).toBeVisible();
       await page.screenshot({
-        path: `temp/verification/s5/session-overflow-${theme}-${width}.png`,
+        path: `temp/verification/i2a/session-overflow-${theme}-${width}.png`,
         fullPage: true,
       });
       await page.keyboard.press("Escape");
@@ -84,7 +84,7 @@ for (const theme of ["light", "dark"] as const)
       await expect(page.getByRole("dialog", { name: "Review changes", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Create PR", exact: true }).focus();
       await page.screenshot({
-        path: `temp/verification/s5/session-review-${theme}-${width}.png`,
+        path: `temp/verification/i2a/session-review-${theme}-${width}.png`,
         fullPage: true,
       });
       await page.getByRole("button", { name: "Create PR", exact: true }).click();
@@ -92,7 +92,7 @@ for (const theme of ["light", "dark"] as const)
       await page.getByRole("textbox", { name: "Title", exact: true }).fill("Workspace delivery");
       await page.getByRole("button", { name: "Review publication", exact: true }).click();
       await page.screenshot({
-        path: `temp/verification/s5/session-publication-${theme}-${width}.png`,
+        path: `temp/verification/i2a/session-publication-${theme}-${width}.png`,
         fullPage: true,
       });
       await page.keyboard.press("Escape");
@@ -102,7 +102,7 @@ for (const theme of ["light", "dark"] as const)
         "Dependency links",
       );
       await page.screenshot({
-        path: `temp/verification/s5/session-removal-${theme}-${width}.png`,
+        path: `temp/verification/i2a/session-removal-${theme}-${width}.png`,
         fullPage: true,
       });
       await page
@@ -111,7 +111,7 @@ for (const theme of ["light", "dark"] as const)
         .click();
       await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
       await page.screenshot({
-        path: `temp/verification/s5/session-resume-${theme}-${width}.png`,
+        path: `temp/verification/i2a/session-resume-${theme}-${width}.png`,
         fullPage: true,
       });
     });

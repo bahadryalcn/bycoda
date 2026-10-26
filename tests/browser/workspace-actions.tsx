@@ -61,6 +61,14 @@ const review = (action: "merge" | "publish", publication?: unknown) =>
     ...(action === "publish" ? { publication } : {}),
   }) as BranchDeliveryPlan;
 mockIPC((command, payload) => {
+  if (command === "managed_worktree_removal_plan" || command === "managed_worktree_removal_apply") {
+    const method =
+      command === "managed_worktree_removal_plan"
+        ? "workspaces.cleanup.plan"
+        : "workspaces.cleanup.apply";
+    command = "remote_request";
+    payload = { method, params: payload.request };
+  }
   if (command.startsWith("plugin:event|")) return null;
   if (command === "local_host_connect") return machine;
   if (command === "remote_machines") return [machine];
