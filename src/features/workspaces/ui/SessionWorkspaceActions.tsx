@@ -64,7 +64,12 @@ export function SessionWorkspaceActions({
             )
           ).find((entry) => entry.owner.kind === "session" && entry.owner.id === sessionId) ??
           null);
-      if (live) setWorkspace(result);
+      if (live) {
+        setWorkspace(result);
+        // Reconcile retained sessions after reload as well as after a button action.
+        // Otherwise a removed directory could still look writable to the composer.
+        if (result) changed(result);
+      }
     })()
       .catch((reason) => {
         if (live) setError(reason instanceof Error ? reason.message : String(reason));
