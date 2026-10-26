@@ -4,6 +4,7 @@ The worktree-first model gives each new coding session or task its own Git branc
 and execution directory. The project remains the same project; edits, terminals,
 checks and development servers run in the assigned directory. Existing `current`
 sessions remain in their checkout until explicitly migrated.
+Clearing a conversation preserves that execution identity, including after restart.
 
 This guide describes the integrated managed-workspace workflow. A connected Host
 must advertise the
@@ -23,8 +24,15 @@ Workspace → Source control includes managed workspace policy, retention, stora
 pinning and directory management. Review the selected execution Host and committed
 base before creating work; missing Host support shows an update requirement.
 The source includes these controls, but the installed app must still be compared
-with its build stamp. Mobile sources are absent from this tree, so its
-mobile creation and recovery flow cannot be documented as implemented here.
+with its build stamp. The separate mobile repository is inventoried read-only in
+`.agents/skills/feature-mobile/SKILL.md`; its source is not included in this branch.
+
+The authenticated Host also enforces creation for older and direct clients: an
+omitted workspace choice prepares an owned worktree. Current-checkout execution
+requires an explicit choice. A contextual conversation gets an independent branch
+even when its source is a legacy current-mode conversation. Interrupted legacy
+tasks retain their recorded branch and directory outside automatic lifecycle
+ownership until explicitly migrated.
 
 The assigned branch is where the worker can commit its own coherent changes.
 Review the branch and execution path before starting an independent writer.
@@ -70,7 +78,14 @@ reports settle only that app profile, process instance and window; reconnecting
 one app cannot silently clear another app's buffers. Uncertain prior process
 leases require explicit reconciliation, even after their process appears old.
 Stale closed windows and earlier app instances can remain blocked until their
-state is explicitly reconciled; restarting another instance does not erase them.
+state is explicitly reconciled. Clean app exit retires an authenticated empty
+buffer report. After restart, only empty predecessor reports from the same device
+and client can be reconciled when the Host proves their process has exited.
+Dirty or unknown reports continue to require explicit owner recovery.
+
+Finished sessions expose Delete directory directly. The same guarded removal
+preview and activity checks apply; the conversation, unmerged branch and recovery
+refs remain available.
 
 The default directory budget is 50 GiB, warning at 80%, with 20 GiB minimum free
 space. Shared caches and Git recovery objects are counted separately. Pressure
@@ -99,6 +114,11 @@ the trusted native protocol, while complete live native execution and crash
 recovery remain separate acceptance checks. Reload discovers authoritative
 operation state before recovering Undo. A timeout retains the existing operation
 and write fence; it does not authorize retrying Git restoration blindly.
+Native intent is saved before Host preparation. Restart reconciliation looks up
+that same idempotency key, including when the app exited before saving its local
+rescue record. An interrupted restore can reclaim only its own journaled Git
+index lock after proving the former process dead and validating the restore
+state. Unrelated Git locks remain protected.
 An expired preview explains why applying is disabled. Close it and request a
 fresh preview before continuing.
 Existing `current` sessions retain their legacy rewind confirmation. Per-file
@@ -111,7 +131,9 @@ Before reporting a screenshot as a new defect, compare requested source with the
 displayed app and responsive Host identities. A semver match or completion before
 capture time does not prove inclusion across worktrees. Unstamped builds report
 source identity unknown. General settings shows a compact source stamp and
-copyable build details. `pnpm build:status` provides bounded, read-only comparison
+copyable build details. Different source fingerprints at the same commit are
+different builds; a dirty HEAD alone cannot prove that committed source was
+included. `pnpm build:status` provides bounded, read-only comparison
 of source, manifest, native and responsive Host identities without starting or
 updating services. Isolated development uses `pnpm dev:native` with leased ports,
 separate Host/desktop data and a copied run executable; `pnpm dev:shot` captures

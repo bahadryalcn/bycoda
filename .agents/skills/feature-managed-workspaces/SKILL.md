@@ -154,10 +154,12 @@ runtime capabilities and exercised acceptance remain separate.
 
 ### Mobile, localization and browser surfaces
 
-- `mobile/` is absent from this committed base. No mobile screen can be enumerated
-  or accepted here. Existing access bridges include
-  `src/features/connections/model/sshMobileWorkspaceControl.ts`; screen inventory
-  requires the integrated mobile tree, not guesses about route names.
+- `mobile/` is a separate nested repository excluded from this branch. The
+  authorized read-only inventory of `G:/Projects/my_projects/monocode/mobile`
+  is recorded in `.agents/skills/feature-mobile/SKILL.md`, including routes,
+  screens, RPCs, locales, tests and observed source identity. Existing desktop
+  access bridges include `src/features/connections/model/sshMobileWorkspaceControl.ts`.
+  This inventory does not establish mobile runtime acceptance or branch inclusion.
 - Locale catalogs use English message keys in `src/shared/i18n/locales/en.json`
   and sibling language JSON files, not invented workspace.* prefixes. Search
   textual families `worktree`, `branch`, `Rewind`, `Undo`, `Create worktree`,
@@ -242,7 +244,8 @@ with fake providers. An isolated Windows native profile at `915dd790` additional
 passed two-session cross-store rewind/Undo, approved merge and safe retirement
 using manual synthetic Git writers. Live providers, real GitHub publication,
 simultaneous native apps in separate worktrees, physical devices and
-installed/released behavior remain separate acceptance. Mobile sources are unavailable. Do not infer build
+installed/released behavior remain separate acceptance. Mobile source inventory is
+available in its feature card; mobile runtime acceptance remains separate. Do not infer build
 inclusion from semver or capture time; unstamped identity remains unknown.
 
 ## Committed handoff references
@@ -267,3 +270,37 @@ owner-controlled integration and preserve the distinctions above.
 Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
 card and the worktree-first documentation. This reference establishes inventory
 delivery only; product/runtime acceptance remains as described above.
+
+## F1 review repairs (2026-10-26)
+
+- Host creation prepares an owned workspace for missing choices, including older
+  authenticated clients. Explicit `workspaceMode: "current"` is the compatibility
+  exception. Contextual legacy sessions receive independent branches. Interrupted
+  legacy task branch/path identities remain outside automatic ownership until
+  explicit migration. Implemented in `e0b2c9b7` and `b5820fe1`.
+- Established current execution identity survives clear, persistence and restart
+  through native `workspace_mode`; migration assigns no managed ownership.
+  Implemented in `3221e80b`.
+- Crew workers commit their owned branches. Acceptance waits for owner-approved
+  managed branch delivery and rechecks unapproved commits; directory cleanup
+  retains branches. Implemented in `8c386465` and `1c0a2d9a`.
+- Native clean-close retirement and same-device/client predecessor reconciliation
+  require authenticated reports and Host-verified process death. Dirty/unknown
+  reports and uncertain process identity remain fenced. `10e2ef8d` adds
+  `native.buffers.retire` and `native.buffers.reconcile`.
+- Native rewind persists intent before Host preparation and discovers the same
+  operation through authenticated `native.rewind.lookup` after restart
+  (`49826b7d`). Restore-owned index locks are journaled before admission and can
+  be reclaimed only with matching lock evidence and positive process-death proof
+  (`b4376caf`). Tests kill real native and Host subprocesses.
+- Cleanup validates tracked dependency-link detachment before forced Git removal
+  and retains its initially validated source fingerprint across the whole operation
+  (`c4b92dd8`, `fc356a1b`); finished sessions expose guarded quick deletion (`5511dfab`).
+  Build manifests omit dirty HEAD inclusion records, and both comparators reject
+  same-HEAD/different-fingerprint claims (`fc03661c`).
+- Focused regression evidence and the full-suite logs are under
+  `temp/verification/f1/`; the handoff records final results and any follow-up
+  validation fixes. Ordinary symlink tests run with real Git under Linux/WSL;
+  Windows junction coverage is separate. Quick-delete captures cover both themes
+  at 1280 and 800 and were opened for inspection. These are local and fixture
+  acceptance, separate from installed/live-provider/released behavior.
