@@ -359,6 +359,42 @@ describe("Composer question focus", () => {
     );
   }
 
+  it("keeps workspace actions and the message queue distinct while preserving the draft", async () => {
+    const consoleError = vi.spyOn(console, "error");
+    try {
+      await renderComposer(
+        undefined,
+        vi.fn(),
+        false,
+        0,
+        "Keep this draft",
+        undefined,
+        vi.fn(),
+        "managed-composer-identity",
+      );
+      const textarea = container.querySelector("textarea")!;
+      await renderComposer(
+        undefined,
+        vi.fn(),
+        false,
+        1,
+        "Keep this draft",
+        undefined,
+        vi.fn(),
+        "managed-composer-identity",
+      );
+      expect(container.querySelector("textarea")).toBe(textarea);
+      expect(textarea.value).toBe("Keep this draft");
+      expect(
+        consoleError.mock.calls.filter((args) =>
+          args.some((value) => String(value).includes("same key")),
+        ),
+      ).toEqual([]);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it("shows the working folder picker without additional projects", async () => {
     localStorage.clear();
     await renderComposer(

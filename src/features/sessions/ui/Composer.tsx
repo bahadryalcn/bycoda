@@ -2938,7 +2938,7 @@ export const Composer = memo(function Composer({
       {sessionId ? <WorkspaceRewindPreviewHost sessionId={sessionId} /> : null}
       {sessionId && !draftWorkspace ? (
         <SessionWorkspaceActions
-          key={sessionId}
+          key={`workspace-actions:${sessionId}`}
           sessionId={sessionId}
           cwd={cwd}
           enabled={enabled}
