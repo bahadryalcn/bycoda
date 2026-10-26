@@ -1,4 +1,5 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import * as processExecution from "../src/shared/lib/processExecution.node";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -27,6 +28,7 @@ import type { WorkspaceCleanupDependencies } from "./workspace-cleanup";
 
 const roots: string[] = [];
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 5 });
 }, 120_000);
 const git = (cwd: string, ...args: string[]) =>
@@ -239,6 +241,44 @@ it.skipIf(process.platform === "win32")(
       }),
     ).rejects.toThrow(/changed|uncommitted/);
     expect(readFileSync(join(s.path, "source.txt"), "utf8")).toBe("concurrent edit");
+    expect(git(s.project, "worktree", "list", "--porcelain")).toContain(
+      s.path.replaceAll("\\", "/"),
+    );
+  },
+  120_000,
+);
+
+it.skipIf(process.platform === "win32")(
+  "rejects concurrent source drift before the link-detachment baseline is captured",
+  async () => {
+    const s = await setup();
+    const target = join(s.root, "outside-dependencies");
+    mkdirSync(target);
+    symlinkSync(target, join(s.path, "node_modules"), "dir");
+    git(s.path, "add", "-f", "node_modules");
+    git(s.path, "commit", "-q", "-m", "committed dependency link");
+    const original = processExecution.runGitText;
+    let statuses = 0;
+    vi.spyOn(processExecution, "runGitText").mockImplementation(async (args, options) => {
+      if (args.includes("status") && ++statuses === 2)
+        writeFileSync(join(s.path, "source.txt"), "concurrent edit before detachment baseline");
+      return original(args, options);
+    });
+    await expect(
+      guardedRemoveWorkspace({
+        projectCwd: s.project,
+        managedRoot: s.managedRoot,
+        path: s.path,
+        branchRef: s.workspace.branchRef,
+        archiveRoot: s.archiveRoot,
+        operationId: "pre-detachment-baseline-drift",
+        inUse: () => false,
+      }),
+    ).rejects.toThrow(/changed|uncommitted/);
+    expect(statuses).toBeGreaterThanOrEqual(2);
+    expect(readFileSync(join(s.path, "source.txt"), "utf8")).toBe(
+      "concurrent edit before detachment baseline",
+    );
     expect(git(s.project, "worktree", "list", "--porcelain")).toContain(
       s.path.replaceAll("\\", "/"),
     );

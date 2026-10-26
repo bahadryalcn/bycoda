@@ -506,6 +506,7 @@ export async function guardedRemoveWorkspace(
     const links = await inventoryWorkspaceLinks(input.path);
     if (links.some((l) => l.kind === "unsafe"))
       throw new Error("Unsafe or unknown reparse point blocks cleanup.");
+    let beforeDetachment: Awaited<ReturnType<typeof sourceState>> | null = null;
     if (registered && exists(input.path) && !input.recovering) {
       const state = await sourceState(input.path);
       if (state.branch !== input.branchRef || (input.head && state.head !== input.head))
@@ -514,14 +515,13 @@ export async function guardedRemoveWorkspace(
         throw new Error("Cleanup fingerprint changed; preview again.");
       if (state.status && !input.allowDirty)
         throw new Error("Cleanup blocked: uncommitted changes (changes made after delivery).");
+      beforeDetachment = state;
     }
     await validateWorkspaceCleanupPaths(dirname(input.archiveRoot), input.archiveRoot);
     if (sameWorkspacePath(input.archiveRoot, input.path) || inside(input.path, input.archiveRoot))
       throw new Error("Recovery must be outside the workspace.");
     const archives: string[] = [];
     const recoveryIds: string[] = [];
-    const beforeDetachment =
-      registered && exists(input.path) && !input.recovering ? await sourceState(input.path) : null;
     const trackedLinks = new Map<string, string>();
     if (beforeDetachment) {
       const entries = (await git(input.path, ["ls-files", "--stage", "-z"]))
