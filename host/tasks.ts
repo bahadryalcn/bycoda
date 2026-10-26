@@ -2291,6 +2291,21 @@ export class HostTasks {
   private async workingCopy(task: HostTask): Promise<HostTask> {
     const expected = await this.taskValue(task.id);
     const project = await this.store.project(task.projectId);
+    // Legacy interrupted tasks already own their execution identity. They are
+    // deliberately outside registry lifecycle ownership until an explicit migration.
+    if (!task.workspaceId && hasUnmergedBranch(task)) {
+      if (task.worktreeCwd && available(task.worktreeCwd)) {
+        if ((await git(task.worktreeCwd, ["symbolic-ref", "--short", "HEAD"])) !== task.branch)
+          throw new Error("The retained task checkout is no longer on its recorded branch.");
+        return task;
+      }
+      const tree = await createHostWorktree(project.cwd, task.branch!, "", true);
+      return {
+        ...task,
+        worktreeCwd: tree.path,
+        ...(task.mergeRepair ? { mergeRepair: { ...task.mergeRepair, prepared: false } } : {}),
+      };
+    }
     if (this.managed && (task.isolate !== false || task.workspaceId)) {
       const selected = task.workspace
         ? await taskWorkspace(project.cwd, task.workspace)

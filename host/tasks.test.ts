@@ -1937,6 +1937,34 @@ describe("a task on its own branch", () => {
     expect((await task()).error).toMatch(/Git|git|repository/i);
     expect(turns).toHaveLength(0);
   });
+  it.each([true, undefined])(
+    "preserves a legacy isolated task's commits and dirty checkout on resume (isolate=%s)",
+    async (isolate) => {
+      const f = await setup();
+      const repo = await f.addRepo("legacy-resume");
+      const cwd = join(f.directory, "legacy-worktree");
+      const branch = "legacy/interrupted-task";
+      git(repo.cwd, "worktree", "add", "-b", branch, cwd);
+      writeFileSync(join(cwd, "result.txt"), "completed work\n");
+      git(cwd, "add", "result.txt");
+      git(cwd, "commit", "-qm", "Preserve interrupted task work");
+      const head = git(cwd, "rev-parse", "HEAD");
+      writeFileSync(join(cwd, "file.txt"), "unfinished work\n");
+      const saved = await f.tasks.save(f.input({ projectId: repo.id }));
+      const legacy = { ...saved, isolate, workspaceId: undefined, branch, worktreeCwd: cwd };
+      await f.store.db
+        .prepare("UPDATE tasks SET value=? WHERE id=?")
+        .run(JSON.stringify(legacy), saved.id);
+      const resumed = await (
+        f.tasks as unknown as { workingCopy(task: HostTask): Promise<HostTask> }
+      ).workingCopy(legacy);
+      expect(resumed).toMatchObject({ branch, worktreeCwd: cwd });
+      expect(resumed.workspaceId).toBeUndefined();
+      expect(f.workspaces.registry.prepare).not.toHaveBeenCalled();
+      expect(git(cwd, "rev-parse", "HEAD")).toBe(head);
+      expect(readFileSync(join(cwd, "file.txt"), "utf8")).toBe("unfinished work\n");
+    },
+  );
   it("creates a managed task from the committed policy base without switching a detached project", async () => {
     const { tasks, input, task, addRepo, turns } = await setup();
     const repo = await addRepo("detached");
