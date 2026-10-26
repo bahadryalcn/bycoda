@@ -38,6 +38,7 @@ describe("stdio HTTP MCP proxy", () => {
     });
     const session = await engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "proxy-proof",
       projectId: project.id,
       harness: "codex",

@@ -154,33 +154,53 @@ describe("Streamable HTTP MCP", () => {
     const originalCall = ConversationWorkspaceTools.prototype.call;
     const originalGet = McpTokens.prototype.get;
     let committed = false;
-    const call = vi.spyOn(ConversationWorkspaceTools.prototype, "call").mockImplementation(async function (...args) {
-      const result = await originalCall.apply(this, args);
-      if (args[0] === "notes.create") committed = true;
-      return result;
-    });
+    const call = vi
+      .spyOn(ConversationWorkspaceTools.prototype, "call")
+      .mockImplementation(async function (...args) {
+        const result = await originalCall.apply(this, args);
+        if (args[0] === "notes.create") committed = true;
+        return result;
+      });
     const get = vi.spyOn(McpTokens.prototype, "get").mockImplementation(async function (token) {
       if (committed && token === grant.token) return undefined;
       return await originalGet.call(this, token);
     });
     try {
-      const result = await s.send(grant.token, "tools/call", {
-        name: "conversation_notes_create",
-        arguments: { id: "committed-before-auth-loss", title: "Committed", body: "Do not replay" },
-      }, "/mcp/conversation");
+      const result = await s.send(
+        grant.token,
+        "tools/call",
+        {
+          name: "conversation_notes_create",
+          arguments: {
+            id: "committed-before-auth-loss",
+            title: "Committed",
+            body: "Do not replay",
+          },
+        },
+        "/mcp/conversation",
+      );
       expect(committed).toBe(true);
       expect(result.status).toBe(401);
       expect(result.headers.get("X-Bycoda-Auth-Stage")).toBeNull();
       expect(call).toHaveBeenCalledTimes(1);
       const db = new DatabaseSync(s.desktopPath);
-      try { expect(db.prepare("SELECT body FROM notes WHERE id = ?").get("committed-before-auth-loss")).toEqual({ body: "Do not replay" }); }
-      finally { db.close(); }
-    } finally { call.mockRestore(); get.mockRestore(); }
+      try {
+        expect(
+          db.prepare("SELECT body FROM notes WHERE id = ?").get("committed-before-auth-loss"),
+        ).toEqual({ body: "Do not replay" });
+      } finally {
+        db.close();
+      }
+    } finally {
+      call.mockRestore();
+      get.mockRestore();
+    }
   });
   it("accepts escaped editor saves for a session while keeping external request limits", async () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "large-editor-save",
       projectId: s.project.id,
       harness: "codex",
@@ -214,6 +234,7 @@ describe("Streamable HTTP MCP", () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "annotation-mcp",
       projectId: s.project.id,
       harness: "codex",
@@ -472,6 +493,7 @@ describe("Streamable HTTP MCP", () => {
     // The exact existing session grant and stdio RPC path also work via HTTP.
     const created = await s.engine.command({
       type: "create",
+      workspaceMode: "current",
       commandId: "mcp-test",
       projectId: s.project.id,
       harness: "codex",
