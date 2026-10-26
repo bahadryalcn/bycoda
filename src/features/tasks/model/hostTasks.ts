@@ -136,9 +136,8 @@ export type HostTaskInput = {
   verifyCommand?: string;
   /** Have a second agent review the result. Counts as true when absent. */
   review?: boolean;
-  /** Merge the task's branch as soon as it reaches review with every
-   * configured check passed, without waiting for approval. Only an isolated
-   * task can; absent counts as false. */
+  /** Legacy preference, accepted for migration only. The Host suspends it and
+   * requires a fresh SHA-bound owner approval for integration delivery. */
   autoMerge?: boolean;
   /** Keep correcting actionable failures while work progresses. Owner stops,
    * unchanged attempts and genuinely unavailable resources still require input. */
@@ -159,6 +158,23 @@ export type HostTaskWireInput = Omit<HostTaskInput, "reviewerConfig"> & {
 };
 
 export type HostTask = HostTaskInput & {
+  /** Registry identity survives directory retirement; paths are only materialization hints. */
+  workspaceId?: string;
+  /** Durable attempt identity keeps prepare retries idempotent without reusing an already delivered workspace. */
+  workspaceGenerationId?: string;
+  workspaceActivityId?: string;
+  deliveryState?: "awaitingOwner" | "merged" | "published";
+  deliveryOperationId?: string;
+  /** Persisted autoMerge settings are suspended until a fresh SHA-bound owner approval. */
+  deliveryApprovalRequired?: boolean;
+  finalization?: {
+    branch: string;
+    head: string;
+    status: string;
+    diff: string;
+    fingerprint: string;
+    clean: boolean;
+  };
   evaluation?: {
     accepted: boolean;
     reviewMinutes: number;
@@ -225,7 +241,7 @@ export type HostTask = HostTaskInput & {
   baseCommit?: string;
   /** Checkout selected for delivery, independent of the task's working copy. */
   deliveryCwd?: string;
-  /** The task branch was merged into `baseBranch` and removed. */
+  /** Delivery is recorded separately from implementation completion. The branch is retained. */
   merged?: boolean;
   /** The merge happened on its own, and when. */
   autoMerged?: boolean;
@@ -235,7 +251,7 @@ export type HostTask = HostTaskInput & {
   /** Ignored local output paths delivered alongside this task, for dependency transfer. */
   artifactPaths?: string[];
   artifactHashes?: Record<string, string>;
-  /** Owner delivery request retained through integration repair and verification. */
+  /** Legacy intent only; never an authorization to deliver without a fresh owner plan. */
   deliveryRequested?: boolean;
   /** Dependency outputs have been copied into this task's retained checkout. */
   dependencyArtifactsPrepared?: boolean;
@@ -313,7 +329,13 @@ export function unfinishedDependencies<T extends Pick<HostTask, "id" | "status">
 ): T[] {
   return (task.dependsOn ?? []).flatMap((id) => {
     const dependency = tasks.find((entry) => entry.id === id);
-    return dependency && dependency.status !== "done" ? [dependency] : [];
+    return dependency &&
+      (dependency.status !== "done" ||
+        ("branch" in dependency &&
+          Boolean(dependency.branch) &&
+          !("merged" in dependency && dependency.merged)))
+      ? [dependency]
+      : [];
   });
 }
 
