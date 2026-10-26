@@ -197,16 +197,14 @@ export function useWorkspaceDirectoryActions({
             return session;
           }
           return mode === "worktree"
-            ? base || session.worktreeBase
-              ? {
-                  ...session,
-                  workspaceMode: "worktree",
-                  worktreeBase: base || session.worktreeBase,
-                }
-              : session
+            ? {
+                ...session,
+                workspaceMode: "worktree",
+                worktreeBase: base || session.worktreeBase,
+              }
             : {
                 ...session,
-                workspaceMode: undefined,
+                workspaceMode: "current",
                 worktreeBase: undefined,
               };
         }),
@@ -221,7 +219,7 @@ export function useWorkspaceDirectoryActions({
         session.id === sessionId &&
         (isBlankSession(session) ||
           (!!session.workspaceMode && !session.worktreeCwd && !session.busy)) &&
-        session.workspaceMode === "worktree"
+        session.workspaceMode !== "current"
           ? { ...session, worktreeBase: base }
           : session,
       ),

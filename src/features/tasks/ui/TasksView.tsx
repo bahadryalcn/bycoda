@@ -15,6 +15,10 @@ import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
+import { WorkspaceReview } from "../../workspaces/ui/WorkspaceReview";
+import { workspaceRequest, workspaceOperationKey } from "../../workspaces/model/workspaceClient";
+import { taskWorkspaceState } from "../../workspaces/model/taskWorkspaceState";
+import type { ManagedWorkspace } from "../../workspaces/model/contracts";
 import { TextField } from "../../../shared/ui/TextField";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TaskWorkspacePicker } from "./TaskWorkspacePicker";
@@ -76,7 +80,6 @@ import {
   Gauge,
   GripVertical,
   GitBranch,
-  GitMerge,
   LoaderCircle,
   MessageSquare,
   Pencil,
@@ -413,6 +416,10 @@ function TasksContent({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [deliveryTask, setDeliveryTask] = useState<BoardTask | null>(null);
+  const [workspaceReview, setWorkspaceReview] = useState<{
+    workspace: ManagedWorkspace;
+    cwd: string;
+  } | null>(null);
   const [deliveryWorkspace, setDeliveryWorkspace] = useState<TaskWorkspace>();
   const [deliveryBusy, setDeliveryBusy] = useState(false);
   const [deliveryValid, setDeliveryValid] = useState(true);
@@ -1011,6 +1018,35 @@ function TasksContent({
   };
 
   const onMove = (task: BoardTask, to: TaskStatus) => {
+    if (to === "done" && hasUnmergedBranch(task)) {
+      const workspaceId = taskWorkspaceState(task).workspaceId;
+      if (!workspaceId) {
+        setError(
+          t(
+            "Update bycoda Host to mark this work finished without merging. Review changes separately to approve delivery.",
+          ),
+        );
+        return;
+      }
+      void act(task, async () => {
+        const workspace = await workspaceRequest(
+          "workspaces.get",
+          { workspaceId },
+          { cwd: task.cwd },
+        );
+        if (!workspace) throw new Error(t("Workspace not found"));
+        return workspaceRequest(
+          "workspaces.finish",
+          {
+            workspaceId,
+            expectedRevision: workspace.revision,
+            idempotencyKey: workspaceOperationKey(),
+          },
+          { cwd: task.cwd },
+        );
+      });
+      return;
+    }
     if (to === "queued" && !task.prompt.trim()) {
       setError(EMPTY_PROMPT_ERROR);
       return;
@@ -1237,6 +1273,18 @@ function TasksContent({
             },
       onRecheckReview: () => void actOnTask(task, () => recheckTaskReview(task)),
       onMove: (to: TaskStatus) => onMove(task, to),
+      onReviewWorkspace: async () => {
+        const workspaceId = taskWorkspaceState(task).workspaceId;
+        if (!workspaceId)
+          throw new Error(t("Update bycoda Host to review and approve this task's delivery."));
+        const workspace = await workspaceRequest(
+          "workspaces.get",
+          { workspaceId },
+          { cwd: task.cwd },
+        );
+        if (!workspace) throw new Error(t("Workspace not found"));
+        setWorkspaceReview({ workspace, cwd: task.cwd });
+      },
       onStart: () => void actOnTask(task, () => startTask(task)),
       onEarlier:
         index > 0
@@ -1888,6 +1936,17 @@ function TasksContent({
           </HostModelSource>
         </Modal>
       ) : null}
+      {workspaceReview ? (
+        <WorkspaceReview
+          workspace={workspaceReview.workspace}
+          context={{ cwd: workspaceReview.cwd }}
+          onClose={() => setWorkspaceReview(null)}
+          onWorkspaceChange={(workspace) => {
+            setWorkspaceReview((current) => (current ? { ...current, workspace } : null));
+            void refresh();
+          }}
+        />
+      ) : null}
       {deliveryTask ? (
         <Modal
           title={t("Choose delivery target")}
@@ -2121,7 +2180,20 @@ function TasksContent({
                 selection={selectMode}
                 selected={bulkSelection}
                 disabled={bulkBusy}
-                planningLabel={planningLabel}
+                planningLabel={(task) => {
+                  const state = taskWorkspaceState(task);
+                  return [
+                    planningLabel(task),
+                    task.branch || state.workspaceId
+                      ? `${t(state.completion)} · ${t(state.delivery)}`
+                      : "",
+                    state.needsRenewedApproval
+                      ? t("Automatic merge is suspended. Review changes to renew approval.")
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+                }}
                 onToggle={(task, checked) =>
                   setBulkSelection((current) => {
                     const next = new Set(current);
@@ -2490,14 +2562,27 @@ function TaskCardBody({
               : t("Task failed")}
         </Button>
       ) : null}
-      {task.status === "review" && !task.mergeError ? (
+      {task.branch || taskWorkspaceState(task).workspaceId ? (
+        <div className="mbs-1 flex flex-wrap gap-x-2 text-ui-micro">
+          <span data-task-completion>{t(taskWorkspaceState(task).completion)}</span>
+          <span data-task-delivery className="text-(--ui-text-secondary)">
+            {t(taskWorkspaceState(task).delivery)}
+          </span>
+        </div>
+      ) : null}
+      {taskWorkspaceState(task).needsRenewedApproval ? (
+        <p data-task-renewed-approval className="mbs-1 text-ui-micro text-(--ui-tone-warning-fg)">
+          {t("Automatic merge is suspended. Review changes to renew approval.")}
+        </p>
+      ) : null}
+      {task.status === "review" &&
+      !task.mergeError &&
+      !taskWorkspaceState(task).needsRenewedApproval ? (
         <p className="mbs-1 text-ui-micro text-(--ui-tone-warning-fg)">
           {hasUnmergedBranch(task)
             ? task.mergeError
               ? t("Delivery is blocked")
-              : task.autoMerge || task.deliveryRequested
-                ? t("Waiting for automatic delivery")
-                : t("Waiting for your merge approval")
+              : t("Waiting for your merge approval")
             : t("Waiting for your approval")}
         </p>
       ) : null}
@@ -2585,6 +2670,7 @@ type TaskActionHandlers = {
   onEarlier?: () => void;
   onLater?: () => void;
   onMove: (to: TaskStatus) => void;
+  onReviewWorkspace: () => Promise<void>;
   onEdit: () => void;
   onDelete: () => void;
   /** Deletes a steward's to-do suggestion and keeps it from coming back. */
@@ -2612,6 +2698,7 @@ function TaskActions({
   onEarlier,
   onLater,
   onMove,
+  onReviewWorkspace,
   onEdit,
   onDelete,
   onDecline,
@@ -2624,6 +2711,8 @@ function TaskActions({
 }: { task: BoardTask; compact?: boolean } & TaskActionHandlers) {
   useLocale();
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [reviewPending, setReviewPending] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const can = (to: TaskStatus) =>
     canMoveTask(task.status, to, task.crewRunId ?? task.crewDefinitionId);
   type Action = {
@@ -2637,6 +2726,22 @@ function TaskActions({
   };
   const primary: Action[] = [],
     secondary: Action[] = [];
+  if (task.branch || taskWorkspaceState(task).workspaceId)
+    primary.push({
+      id: "review-workspace",
+      label: t("Review changes"),
+      icon: <GitBranch className="icon-xs" />,
+      loading: reviewPending,
+      disabled: busy || reviewPending,
+      run: () => {
+        if (reviewPending) return;
+        setReviewPending(true);
+        setReviewError(null);
+        void onReviewWorkspace()
+          .catch((cause) => setReviewError(cause instanceof Error ? cause.message : String(cause)))
+          .finally(() => setReviewPending(false));
+      },
+    });
   if (onEarlier)
     primary.push({
       id: "earlier",
@@ -2682,15 +2787,11 @@ function TaskActions({
     primary.push({
       id: "done",
       label: hasUnmergedBranch(task)
-        ? t("Merge into {p0}", { p0: task.baseBranch })
+        ? t("Mark finished")
         : task.status === "todo"
           ? t("Mark done")
           : t("Approve"),
-      icon: hasUnmergedBranch(task) ? (
-        <GitMerge className="icon-xs" />
-      ) : (
-        <Check className="icon-xs" />
-      ),
+      icon: <Check className="icon-xs" />,
       run: () => onMove("done"),
       disabled: busy,
     });
@@ -2809,7 +2910,9 @@ function TaskActions({
   const regular = all.filter((action) => !action.danger);
   // The card offers one lead action; the detail panel keeps the full set.
   const leadOrder =
-    task.status === "review" ? ["done", "queued"] : ["queued", "start-now", "blocked", "done"];
+    task.status === "review"
+      ? ["review-workspace", "done", "queued"]
+      : ["queued", "start-now", "blocked", "done", "review-workspace"];
   const lead = compact
     ? ((taskRequiresInstructions(task)
         ? primary.find((action) => action.id === "edit")
@@ -2818,8 +2921,13 @@ function TaskActions({
         .map((id) => primary.find((action) => action.id === id))
         .find((action) => action !== undefined))
     : undefined;
-  const visible = compact ? (lead ? [lead] : []) : regular;
-  const overflow = compact ? all.filter((action) => action !== lead) : [];
+  const reviewAction = primary.find((action) => action.id === "review-workspace");
+  const visible = (compact ? (lead ? [lead] : []) : regular).filter(
+    (action) => action !== reviewAction,
+  );
+  const overflow = compact
+    ? all.filter((action) => action !== lead && action !== reviewAction)
+    : [];
   const overflowRegular = overflow.filter((action) => !action.danger);
   const overflowDanger = overflow.filter((action) => action.danger);
   const pickOverflow = (id: string) => overflow.find((action) => action.id === id)?.run();
@@ -2829,6 +2937,16 @@ function TaskActions({
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
     >
+      {reviewAction ? (
+        <Button
+          variant="secondary"
+          loading={reviewPending}
+          disabled={busy || reviewPending}
+          onClick={reviewAction.run}
+        >
+          {t("Review changes")}
+        </Button>
+      ) : null}
       {visible.length > 0 ? (
         <ExpandingButtonGroup
           label={t("Task actions")}
@@ -2837,6 +2955,14 @@ function TaskActions({
           defaultExpanded={visible.find((action) => !["earlier", "later"].includes(action.id))?.id}
           items={visible.map(groupItem)}
         />
+      ) : null}
+      {reviewError ? (
+        <span
+          role="alert"
+          className="basis-full break-words text-ui-caption text-(--ui-tone-danger-fg)"
+        >
+          {reviewError}
+        </span>
       ) : null}
       {compact && overflow.length > 0 ? (
         <>
@@ -3119,6 +3245,11 @@ function TaskDetail({
             </p>
           ) : null}
           {planning}
+          {taskWorkspaceState(task).needsRenewedApproval ? (
+            <Alert tone="warning">
+              {t("Automatic merge is suspended. Review changes to renew approval.")}
+            </Alert>
+          ) : null}
           <TaskActions task={task} {...actions} />
           <TaskAcceptanceEvidence
             task={task}
@@ -3155,6 +3286,8 @@ function TaskDetail({
             </p>
           ) : null}
           <dl className="space-y-1.5">
+            <DetailRow label={t("Completion")}>{t(taskWorkspaceState(task).completion)}</DetailRow>
+            <DetailRow label={t("Delivery")}>{t(taskWorkspaceState(task).delivery)}</DetailRow>
             <DetailRow label={t("Project")}>{project}</DetailRow>
             <DetailRow label={t("Machine")}>{task.machineName}</DetailRow>
             <DetailRow label={t("Execution")}>
@@ -3888,17 +4021,19 @@ function AutoMergeField({
   useLocale();
   return (
     <label
-      className={`flex items-start gap-2 text-ui-secondary ${disabled ? "text-(--ui-text-disabled)" : "cursor-pointer"}`}
+      className={`flex items-start gap-2 text-ui-secondary ${disabled || !checked ? "text-(--ui-text-disabled)" : "cursor-pointer"}`}
     >
       <Checkbox
         checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
+        disabled={disabled || !checked}
+        onChange={(event) => {
+          if (!event.target.checked) onChange(false);
+        }}
       />
       <span className="min-w-0">
         <span className="block">{t("Merge automatically")}</span>
         <span className="block text-ui-micro text-(--ui-text-secondary)">
-          {t("Merges into the base branch when every check passes")}
+          {t("Automatic merge is suspended. Review changes to renew approval.")}
         </span>
       </span>
     </label>
@@ -4603,7 +4738,7 @@ function GoalSettingsForm({
       <p className="break-words font-medium">{goal.title}</p>
       <p className="text-ui-caption text-(--ui-text-secondary)">
         {t(
-          "Applies to existing unfinished tasks. Enabling automatic merge can deliver tasks that already passed review.",
+          "Applies to existing unfinished tasks. Delivery requires approval of the reviewed source and target.",
         )}
       </p>
       <fieldset disabled={saving} className="grid min-w-0 gap-3">
@@ -4970,9 +5105,7 @@ function GoalForm({
               ? t(
                   "Tasks work directly in the selected checkout. You review and commit the changes.",
                 )
-              : draft.autoMerge
-                ? t("Each task runs on its own branch.")
-                : t("Each task runs on its own branch and waits for you to merge it.")}
+              : t("Each task runs on its own branch and waits for you to merge it.")}
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-ui-caption">
@@ -5472,7 +5605,7 @@ function StewardForm({
           {draft.autoStart ? (
             <span role="status" className="text-ui-micro text-(--ui-tone-warning-fg)">
               {t("Suggestions will run without you reviewing the idea first.")}
-              {draft.autoMerge ? "" : t(" Each still waits for your review before it is merged.")}
+              {t(" Each still waits for your review before it is merged.")}
             </span>
           ) : null}
         </div>
