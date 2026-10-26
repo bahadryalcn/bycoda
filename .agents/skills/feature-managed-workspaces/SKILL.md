@@ -185,6 +185,13 @@ runtime capabilities and exercised acceptance remain separate.
 
 ## Owner decisions
 
+- 2026-10-26, owner I3 stream brief in this integration session: "Merge
+  `bycoda/wt-model/i2-host` then `bycoda/wt-model/i2-app` (`--no-ff`), resolving
+  conflicts by preserving both intents."
+- 2026-10-26, owner common worker rules in this integration session: "Commit your
+  work on your own branch"; delivery remains limited by "Never push, never create
+  PRs, never merge into `main`".
+
 ## Behavior to preserve
 
 One independent writer per owned workspace; immutable base; no fallback to main;
@@ -231,9 +238,11 @@ directory and branch both manually renamed before native persistence need
 authoritative Host registry discovery, beyond native naming/path guards.
 
 `host/managed-workspaces.e2e.test.ts` exercises real Git/SQLite production services
-with fake providers. This and browser fixtures do not prove the full live native
-two-session scenario, real provider/GitHub publication, physical devices or
-installed/released behavior. Mobile sources are unavailable. Do not infer build
+with fake providers. An isolated Windows native profile at `915dd790` additionally
+passed two-session cross-store rewind/Undo, approved merge and safe retirement
+using manual synthetic Git writers. Live providers, real GitHub publication,
+simultaneous native apps in separate worktrees, physical devices and
+installed/released behavior remain separate acceptance. Mobile sources are unavailable. Do not infer build
 inclusion from semver or capture time; unstamped identity remains unknown.
 
 ## Committed handoff references
@@ -244,6 +253,8 @@ I3 merges: `af6a9399` (Host) and `e2a71d1c` (app); resolve final integration fix
 and documentation commits with `git log --oneline -- host/managed-workspace-runtime.ts .agents/skills/feature-managed-workspaces docs/reference/managed-workspaces.md`.
 I3 trusted transport and atomic native rewind receipts: `6d2fac1c`;
 managed provider retirement: `2f4aff43`; composer/disclosure fixes: `c410c4e0`.
+Native CDP readiness: `915dd790`; exact-run Host fixtures: `703a6e2c`;
+managed RPC metrics: `b5cfc9c7`.
 I3 local check logs/captures live under `temp/verification/i3/` and the final
 handoff under `temp/local/i3/`; these are ignored local evidence, not runtime
 product dependencies. No installed or released proof is recorded by this card.

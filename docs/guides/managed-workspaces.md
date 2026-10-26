@@ -99,6 +99,8 @@ the trusted native protocol, while complete live native execution and crash
 recovery remain separate acceptance checks. Reload discovers authoritative
 operation state before recovering Undo. A timeout retains the existing operation
 and write fence; it does not authorize retrying Git restoration blindly.
+An expired preview explains why applying is disabled. Close it and request a
+fresh preview before continuing.
 Existing `current` sessions retain their legacy rewind confirmation. Per-file
 checkpoint review/Undo remains a separate operation with shared-work and
 HEAD-change guards.

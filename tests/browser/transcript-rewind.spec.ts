@@ -95,6 +95,61 @@ for (const width of [1280, 800])
     });
   }
 
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`expired rewind preview explains recovery at ${width}px ${theme}`, async ({
+      page,
+    }, testInfo) => {
+      await page.clock.install({ time: new Date("2026-10-26T12:00:00Z") });
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/workspace-rewind.html");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const trigger = page.getByRole("button", {
+        name: "Return before the later change",
+        exact: true,
+      });
+      const dialog = page.getByRole("dialog", {
+        name: "Rewind conversation and files",
+        exact: true,
+      });
+      const apply = dialog.getByRole("button", {
+        name: "Rewind conversation and files",
+        exact: true,
+      });
+      await trigger.click();
+      await expect(apply).toBeEnabled();
+      await page.clock.fastForward(61_000);
+      await expect(apply).toBeDisabled();
+      await expect(dialog.getByRole("alert")).toHaveText(
+        "This rewind preview is blocked or expired. Refresh the preview.",
+      );
+      if (testInfo.project.name === "chromium") {
+        await mkdir("temp/verification/i3", { recursive: true });
+        await page.screenshot({
+          path: `temp/verification/i3/rewind-expired-${width}-${theme}.png`,
+          animations: "disabled",
+        });
+      }
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(dialog).not.toBeVisible();
+      await expect(page.locator('[data-block="second"]')).toBeVisible();
+      await trigger.click();
+      await expect(apply).toBeEnabled();
+      await expect(dialog.getByRole("alert")).toHaveCount(0);
+      const methods = await page.evaluate(() =>
+        (
+          window as unknown as { rewindFixtureCalls: Array<{ method: string }> }
+        ).rewindFixtureCalls.map((call) => call.method),
+      );
+      expect(methods.filter((method) => method === "sessions.rewind.plan")).toHaveLength(2);
+      expect(methods).not.toContain("sessions.rewind.apply");
+    });
+  }
+
 test("managed rewind on an older host explains the update without changing history", async ({
   page,
 }) => {

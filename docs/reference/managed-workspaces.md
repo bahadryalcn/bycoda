@@ -24,16 +24,21 @@ activity and rewind adapters use native-kept paired Host credentials and durable
 SQLite fences; missing capabilities keep these operations unavailable.
 The integrated Host implements and advertises managed creation, native turn
 capture, native process/buffer admission and native rewind coordination through
-the trusted transports below. This is source integration, not live native
-acceptance.
+the trusted transports below. Isolated native acceptance is described below;
+live provider and installed/released acceptance remain separate.
 
 `host/managed-workspaces.e2e.test.ts` exercises the production graph with real
 temporary Git repositories and SQLite, independently committed sessions,
 rewind/Undo, owner delivery with unrelated dirty target preservation, and
 junction-safe retirement retaining branches and recovery refs. Its providers are
 fake. Browser fixtures exercise interface states, not installed application or
-live provider behavior. Full native two-session execution and cross-store
-recovery must be exercised separately before native release acceptance.
+live provider behavior. On 2026-10-26, an isolated Windows native profile at
+`915dd790` also exercised native SQLite, authenticated IPC/Host and real Git
+across two session workspaces: rewind across two commits, Undo of commits and
+staged/unstaged/untracked state, owner-approved merge, and directory retirement
+preserving its branch, sibling and main dependency sentinel. Those turns were
+manual synthetic writers. Live providers, simultaneous native applications in
+separate worktrees, and installed/released behavior still require acceptance.
 
 Native process leases are released by the same authenticated device only after
 confirmed settlement. Complete buffer reports are scoped to device, app profile,
