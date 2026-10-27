@@ -2271,6 +2271,50 @@ it("locks remote sends through rewind and waits for an authoritative snapshot be
   expect(host?.session.providerSessionId).toBeUndefined();
 });
 
+it("rewinds a worktree chat through the conversation command without Git rewind support", async () => {
+  conversationRewindSupported = true;
+  openExistingChat();
+  host = {
+    ...host!,
+    session: {
+      ...host!.session,
+      workspaceId: "worktree-workspace",
+      workspaceMode: "worktree",
+      blocks: [
+        { id: "old-user", role: "user", text: "Earlier message" },
+        { id: "old-reply", role: "assistant", text: "Earlier reply" },
+        { id: "selected-user", role: "user", text: "Edit this prompt" },
+        { id: "latest-reply", role: "assistant", text: "Remove this reply" },
+      ],
+    },
+  };
+  await renderRemoteProbe();
+  expect(remoteOverrides.onRewindMessage).toBeTypeOf("function");
+  await act(async () => {
+    expect(await remoteOverrides.onRewindMessage!("shell", "selected-user")).toBe(true);
+  });
+  expect(commands.filter((command) => command.type === "rewind")).toEqual([
+    expect.objectContaining({
+      type: "rewind",
+      sessionId: "host-session",
+      blockId: "selected-user",
+      expectedRevision: 1,
+    }),
+  ]);
+  expect(remoteOverrides.session?.blocks.map((block) => block.id)).toEqual([
+    "old-user",
+    "old-reply",
+  ]);
+  expect(remoteOverrides.session?.workspaceId).toBe("worktree-workspace");
+  expect(
+    vi
+      .mocked(invoke)
+      .mock.calls.some((call) =>
+        String((call[1] as { method?: string } | undefined)?.method).startsWith("sessions.rewind."),
+      ),
+  ).toBe(false);
+});
+
 it("exposes rewind only when supported and permits it after lazy history is fully loaded", async () => {
   openExistingChat();
   await renderRemoteProbe();

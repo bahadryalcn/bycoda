@@ -7145,5 +7145,20 @@
   "Source included": "Source included",
   "Different source": "Different source",
   "Use current checkout": "使用当前工作目录",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "此计算机上的 Host 更新正在等待活跃会话结束，随后将自动安装。"
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "此计算机上的 Host 更新正在等待活跃会话结束，随后将自动安装。",
+  "Edit from here": "从此处编辑",
+  "Edit from here?": "从此处编辑？",
+  "Rewind chat to before this message. Your prompt and attachments return to the composer. \"Revert files too\" also undoes your own edits.": "将聊天回退到此消息之前。你的提示和附件将恢复到输入框。“同时还原文件”也会撤销本会话所做的修改。",
+  "Revert files too": "同时还原文件",
+  "Revert and keep changes": "回退并保留更改",
+  "Checking session file history…": "正在检查会话文件历史…",
+  "Session file history is unavailable.": "会话文件历史不可用。",
+  "Session files: {p0}": "会话文件数：{p0}",
+  "These files will be skipped because they changed:": "以下文件已被更改，将跳过：",
+  "Reverting files…": "正在还原文件…",
+  "Update bycoda Host on this machine to revert session files. You can still rewind and keep changes.": "请更新此机器上的 bycoda Host 以还原会话文件。你仍然可以回退聊天并保留更改。",
+  "Reverted files: {p0}": "已还原文件数：{p0}",
+  "Skipped files: {p0}": "已跳过文件数：{p0}",
+  "No session files were reverted.": "未还原任何会话文件。",
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "文件已还原，但无法回退聊天。请重试以完成此消息的编辑。"
 }

@@ -3,7 +3,12 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
-import { clearComposerDraft, getComposerDraft, setComposerDraft } from "../model/draftCache";
+import {
+  clearComposerDraft,
+  getComposerDraft,
+  getComposerAttachments,
+  setComposerDraft,
+} from "../model/draftCache";
 import type { Attachment } from "../model/session";
 
 const picker = vi.hoisted(() => ({ read: vi.fn() }));
@@ -173,4 +178,42 @@ it("does not convert a restored Save draft intent into Send when saving is unava
   expect(save).not.toHaveBeenCalled();
   expect(submit).not.toHaveBeenCalled();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("unavailable");
+});
+
+it("recalls an edited message with its attachments as an unsent persisted draft and puts the cursor at the end", async () => {
+  const applied = vi.fn();
+  const recall = {
+    id: "edit-user-message",
+    value: { text: "Revise this prompt ✨", attachments: [file] },
+  };
+  await draw();
+  const textarea = container.querySelector("textarea")!;
+  textarea.setSelectionRange(0, 3);
+  await draw({ recalledMessage: recall, onRecalledMessageApplied: applied });
+  expect(textarea.value).toBe(recall.value.text);
+  expect(textarea.selectionStart).toBe(recall.value.text.length);
+  expect(textarea.selectionEnd).toBe(recall.value.text.length);
+  expect(document.activeElement).toBe(textarea);
+  expect(container.querySelector('[aria-label="Remove selected.txt"]')).not.toBeNull();
+  expect(getComposerDraft(id)).toBe(recall.value.text);
+  expect(getComposerAttachments(id)).toEqual([file]);
+  expect(applied).toHaveBeenCalledExactlyOnceWith(recall.id);
+  expect(submit).not.toHaveBeenCalled();
+  // Rerendering the same recall cannot overwrite the owner's subsequent typing.
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      textarea,
+      "My revision",
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await draw({ recalledMessage: recall, onRecalledMessageApplied: applied });
+  expect(textarea.value).toBe("My revision");
+  expect(applied).toHaveBeenCalledTimes(1);
+  act(() => root.unmount());
+  root = createRoot(container);
+  await draw({ initialDraft: getComposerDraft(id) });
+  expect(container.querySelector("textarea")!.value).toBe("My revision");
+  expect(container.querySelector('[aria-label="Remove selected.txt"]')).not.toBeNull();
+  expect(submit).not.toHaveBeenCalled();
 });

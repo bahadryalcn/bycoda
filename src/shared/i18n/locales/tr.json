@@ -8037,5 +8037,20 @@
   "Source included": "Kaynak dahil",
   "Different source": "Farklı kaynak",
   "Use current checkout": "Geçerli çalışma dizinini kullan",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "Bu bilgisayardaki Host güncellemesi, etkin oturumların bitmesini bekliyor ve otomatik olarak kurulacak."
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "Bu bilgisayardaki Host güncellemesi, etkin oturumların bitmesini bekliyor ve otomatik olarak kurulacak.",
+  "Edit from here": "Buradan düzenle",
+  "Edit from here?": "Buradan düzenlensin mi?",
+  "Rewind chat to before this message. Your prompt and attachments return to the composer. \"Revert files too\" also undoes your own edits.": "Sohbeti bu mesajın öncesine geri alır. İsteminiz ve ekleriniz düzenleyiciye döner. \"Dosyaları da geri al\" kendi değişikliklerinizi de geri alır.",
+  "Revert files too": "Dosyaları da geri al",
+  "Revert and keep changes": "Geri al ve değişiklikleri koru",
+  "Checking session file history…": "Oturumun dosya geçmişi kontrol ediliyor…",
+  "Session file history is unavailable.": "Oturumun dosya geçmişi kullanılamıyor.",
+  "Session files: {p0}": "Oturum dosyaları: {p0}",
+  "These files will be skipped because they changed:": "Değiştirildikleri için bu dosyalar atlanacak:",
+  "Reverting files…": "Dosyalar geri alınıyor…",
+  "Update bycoda Host on this machine to revert session files. You can still rewind and keep changes.": "Oturum dosyalarını geri almak için bu makinedeki bycoda Host uygulamasını güncelleyin. Sohbeti yine de geri alıp değişiklikleri koruyabilirsiniz.",
+  "Reverted files: {p0}": "Geri alınan dosyalar: {p0}",
+  "Skipped files: {p0}": "Atlanan dosyalar: {p0}",
+  "No session files were reverted.": "Hiçbir oturum dosyası geri alınmadı.",
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Dosyalar geri alındı ancak sohbet geri alınamadı. Bu mesajı düzenlemeyi tamamlamak için yeniden deneyin."
 }

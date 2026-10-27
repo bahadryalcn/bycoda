@@ -82,7 +82,7 @@ import { useSubagentRelay } from "./useSubagentRelay";
 import { isBackgroundOnly, type DockAgent } from "../model/activityDock";
 import { requestOpenSubagent, requestViewSubagent } from "./subagentFocus";
 import { AgentTranscript } from "./AgentTranscript";
-import { Modal } from "../../../shared/ui/Modal";
+import { EditFromHereDialog, type EditFromHereMode } from "./EditFromHereDialog";
 import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
 import { Button } from "../../../shared/ui/Button";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
@@ -117,7 +117,12 @@ import { userPromptHistory } from "../model/composerHistory";
 import { lastTurnRecall, lastUserTurnBlock } from "../model/editLastTurn";
 import { isOperatorUserTurn, operatorUserPrompt } from "../model/operatorCommand";
 import { canRewindConversation } from "../model/conversationRewind";
-import { conversationRewindStrategy } from "../model/conversationRewindStrategy";
+import {
+  planSessionFilesRevert,
+  revertSessionFiles,
+  type SessionFilesRevertPlan,
+  type SessionFilesRevertResult,
+} from "../model/editFromHere";
 import type { LastTurnRecall } from "../model/editLastTurn";
 import {
   loadProjectChatBackgroundSettings,
@@ -476,6 +481,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const remote = remoteSession;
   const activeSessionIdRef = useRef(session.id);
   activeSessionIdRef.current = session.id;
+  const currentSessionRef = useRef(session);
+  currentSessionRef.current = session;
   const stableSession = useStableValue(session, sameSessionIgnoringStreamingText);
   const stableBlocks = useStableValue(session.blocks, sameBlocksIgnoringStreamingText);
   const lastUserMessage = useMemo(() => lastUserTurnBlock(stableBlocks), [stableBlocks]);
@@ -575,20 +582,21 @@ const LocalSessionPane = memo(function LocalSessionPane({
     block: Block;
     action: "edit" | "return";
     recall: LastTurnRecall;
+    source: Session;
   } | null>(null);
   const [rewindingMessage, setRewindingMessage] = useState(false);
   const [rewindError, setRewindError] = useState<string | null>(null);
+  const [filePlan, setFilePlan] = useState<SessionFilesRevertPlan | null>(null);
+  const [filePlanLoading, setFilePlanLoading] = useState(false);
+  const [rewindMode, setRewindMode] = useState<EditFromHereMode | null>(null);
+  const [fileRevertNotice, setFileRevertNotice] = useState<SessionFilesRevertResult | null>(null);
+  const fileRevertResult = useRef<SessionFilesRevertResult | null>(null);
+  const rewindInFlight = useRef(false);
   const [rewindDraftSignal, setRewindDraftSignal] = useState<{
     sessionId: string;
     id: string;
     value: LastTurnRecall;
   } | null>(null);
-  const rewindIncludesGroupedTurn = Boolean(
-    pendingRewind &&
-    session.harness === "codex" &&
-    conversationRewindStrategy(session, pendingRewind.block.id, true).blockId !==
-      pendingRewind.block.id,
-  );
   useEffect(() => {
     setEditingLastTurn(false);
   }, [session.id, editLastTurnSupported]);
@@ -596,7 +604,32 @@ const LocalSessionPane = memo(function LocalSessionPane({
     setPendingRewind(null);
     setRewindError(null);
     setRewindDraftSignal(null);
+    setFileRevertNotice(null);
+    fileRevertResult.current = null;
   }, [session.id]);
+  useEffect(() => {
+    if (!pendingRewind) return;
+    let current = true;
+    setFilePlan(null);
+    setFilePlanLoading(true);
+    void planSessionFilesRevert(pendingRewind.source, pendingRewind.block.id)
+      .then((plan) => {
+        if (current) setFilePlan(plan);
+      })
+      .catch((error: unknown) => {
+        if (!current) return;
+        const reason =
+          error instanceof Error ? error.message : t("Session file history is unavailable.");
+        setFilePlan({ files: [], unavailable: reason });
+        setRewindError(reason);
+      })
+      .finally(() => {
+        if (current) setFilePlanLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [pendingRewind]);
   const modelWelcomeSequence = useRef(0);
   const decorativeMotionEnabled = useDecorativeMotionEnabled();
   const [modelWelcome, setModelWelcome] = useState<{
@@ -867,8 +900,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (block: Block, action: "edit" | "return", recall?: LastTurnRecall) => {
       if (!canRewindConversation(session, block.id)) return;
       setRewindError(null);
+      fileRevertResult.current = null;
+      setFilePlan(null);
+      setFilePlanLoading(true);
       setPendingRewind({
         sessionId: session.id,
+        source: session,
         block,
         action,
         recall: recall ?? {
@@ -885,53 +922,89 @@ const LocalSessionPane = memo(function LocalSessionPane({
     },
     [lastUserMessage, requestMessageRewind],
   );
-  const confirmMessageRewind = useCallback(async () => {
-    if (!pendingRewind || rewindingMessage || !onRewindMessage) return;
-    const requestedSessionId = pendingRewind.sessionId;
-    if (requestedSessionId !== session.id) return;
-    if (
-      !canRewindConversation(session, pendingRewind.block.id) ||
-      managed ||
-      session.inboxAsk ||
-      session.worktreeRemoved ||
-      sendBlockedReason
-    ) {
-      setRewindError(t("This conversation can no longer be rewound."));
-      return;
-    }
-    setRewindingMessage(true);
-    setRewindError(null);
-    try {
-      const accepted = await onRewindMessage(requestedSessionId, pendingRewind.block.id);
-      if (activeSessionIdRef.current !== requestedSessionId) return;
-      if (!accepted) {
-        if (session.workspaceId) {
-          setPendingRewind(null);
-          return;
-        }
-        setRewindError(t("The conversation could not be rewound. Try again."));
+  const confirmMessageRewind = useCallback(
+    async (mode: EditFromHereMode) => {
+      if (!pendingRewind || rewindInFlight.current || !onRewindMessage) return;
+      const requestedSessionId = pendingRewind.sessionId;
+      if (requestedSessionId !== session.id) return;
+      if (
+        !canRewindConversation(session, pendingRewind.block.id) ||
+        session.blocks !== pendingRewind.source.blocks ||
+        managed ||
+        session.inboxAsk ||
+        session.worktreeRemoved ||
+        sendBlockedReason
+      ) {
+        setRewindError(t("This conversation can no longer be rewound."));
         return;
       }
-      if (pendingRewind.action === "edit") {
+      if (mode === "files" && (filePlanLoading || !filePlan || filePlan.unavailable)) return;
+      rewindInFlight.current = true;
+      setRewindingMessage(true);
+      setRewindMode(mode);
+      setRewindError(null);
+      try {
+        if (mode === "files" && !fileRevertResult.current) {
+          const result = await revertSessionFiles(
+            pendingRewind.source,
+            pendingRewind.block.id,
+            filePlan?.planToken,
+          );
+          if (activeSessionIdRef.current !== requestedSessionId) return;
+          fileRevertResult.current = result;
+          setFileRevertNotice(result);
+        }
+        if (
+          currentSessionRef.current.blocks !== pendingRewind.source.blocks ||
+          !canRewindConversation(currentSessionRef.current, pendingRewind.block.id)
+        ) {
+          throw new Error(t("This conversation can no longer be rewound."));
+        }
+        const accepted = await onRewindMessage(requestedSessionId, pendingRewind.block.id);
+        if (activeSessionIdRef.current !== requestedSessionId) return;
+        if (!accepted) {
+          setRewindError(
+            t(
+              fileRevertResult.current
+                ? "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message."
+                : "The conversation could not be rewound. Try again.",
+            ),
+          );
+          return;
+        }
         setRewindDraftSignal({
           sessionId: requestedSessionId,
           id: crypto.randomUUID(),
           value: pendingRewind.recall,
         });
+        setPendingRewind(null);
+      } catch (error: unknown) {
+        if (activeSessionIdRef.current !== requestedSessionId) return;
+        setRewindError(
+          fileRevertResult.current
+            ? t(
+                "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.",
+              )
+            : error instanceof Error
+              ? error.message
+              : t("The conversation could not be rewound. Try again."),
+        );
+      } finally {
+        rewindInFlight.current = false;
+        setRewindingMessage(false);
+        setRewindMode(null);
       }
-      setPendingRewind(null);
-    } catch {
-      setRewindError(t("The conversation could not be rewound. Try again."));
-    } finally {
-      setRewindingMessage(false);
-    }
-  }, [managed, onRewindMessage, pendingRewind, rewindingMessage, sendBlockedReason, session]);
-  // Managed rewind owns its file/conversation preview. Never show the legacy
-  // conversation-only confirmation (which promises to leave files unchanged).
-  useEffect(() => {
-    if (session.workspaceId && pendingRewind && !rewindingMessage && !rewindError)
-      void confirmMessageRewind();
-  }, [session.workspaceId, pendingRewind, rewindingMessage, rewindError, confirmMessageRewind]);
+    },
+    [
+      filePlan,
+      filePlanLoading,
+      managed,
+      onRewindMessage,
+      pendingRewind,
+      sendBlockedReason,
+      session,
+    ],
+  );
   const stopDockAgent = useStableCallback((agent: DockAgent) =>
     agent.callId ? stopBackground(agent.callId) : Promise.reject(new Error("No call to stop")),
   );
@@ -1401,6 +1474,39 @@ const LocalSessionPane = memo(function LocalSessionPane({
               }
             />
           ) : null}
+          {fileRevertNotice ? (
+            <Alert tone={fileRevertNotice.skipped.length ? "warning" : "info"} role="status">
+              <div
+                className="flex max-h-48 min-w-0 flex-col gap-2 overflow-auto text-sm"
+                data-session-files-revert-result
+              >
+                <p>{t("Reverted files: {p0}", { p0: fileRevertNotice.reverted.length })}</p>
+                {fileRevertNotice.reverted.length ? (
+                  <ul>
+                    {fileRevertNotice.reverted.map((path) => (
+                      <li key={path} className="[overflow-wrap:anywhere]">
+                        {path}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>{t("No session files were reverted.")}</p>
+                )}
+                {fileRevertNotice.skipped.length ? (
+                  <>
+                    <p>{t("Skipped files: {p0}", { p0: fileRevertNotice.skipped.length })}</p>
+                    <ul>
+                      {fileRevertNotice.skipped.map(({ path, reason }) => (
+                        <li key={path} className="[overflow-wrap:anywhere]">
+                          {path}: {reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </div>
+            </Alert>
+          ) : null}
           {session.rewindHistory?.length ? (
             <RewoundHistoryDisclosure
               history={session.rewindHistory}
@@ -1599,69 +1705,17 @@ const LocalSessionPane = memo(function LocalSessionPane({
         {pane}
         {showNotesPanel ? <SessionNotesPanel sessionId={session.id} cwd={session.cwd} /> : null}
       </div>
-      {session.workspaceId && rewindError ? (
-        <Alert tone="danger" role="alert">
-          {rewindError}
-        </Alert>
-      ) : null}
-      {pendingRewind && !session.workspaceId ? (
-        <Modal
-          onClose={() => {
-            if (!rewindingMessage) setPendingRewind(null);
+      {pendingRewind ? (
+        <EditFromHereDialog
+          plan={filePlan}
+          planLoading={filePlanLoading}
+          pending={rewindMode}
+          error={rewindError}
+          onCancel={() => {
+            if (!rewindInFlight.current) setPendingRewind(null);
           }}
-          title={
-            pendingRewind.action === "edit"
-              ? t("Rewind and edit message?")
-              : t("Return before this message?")
-          }
-          description={t(
-            "This removes the selected message and following outputs from active context. File changes stay unchanged. Continuing may start a fresh provider session. Removed messages remain available in rewound history.",
-          )}
-          size="sm"
-        >
-          <div className="flex flex-col gap-4 p-4">
-            {rewindIncludesGroupedTurn ? (
-              <p className="text-sm text-(--ui-tone-warning-fg)">
-                {t(
-                  "This message belongs to a grouped Codex turn. Rewinding it also removes earlier steers in that provider turn.",
-                )}
-              </p>
-            ) : null}
-            {pendingRewind.action === "edit" ? (
-              <p className="text-sm text-[var(--ui-text-secondary)]">
-                {t(
-                  "The message will return to the composer as an unsent draft and replace its current draft.",
-                )}
-              </p>
-            ) : (
-              <p className="text-sm text-[var(--ui-text-secondary)]">
-                {t("The current composer draft will be kept.")}
-              </p>
-            )}
-            {rewindError ? (
-              <Alert tone="danger" role="alert">
-                {rewindError}
-              </Alert>
-            ) : null}
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                disabled={rewindingMessage}
-                onClick={() => setPendingRewind(null)}
-              >
-                {t("Cancel")}
-              </Button>
-              <Button
-                variant="primary"
-                loading={rewindingMessage}
-                loadingLabel={t("Rewinding…")}
-                onClick={() => void confirmMessageRewind()}
-              >
-                {pendingRewind.action === "edit" ? t("Rewind and edit") : t("Return before")}
-              </Button>
-            </div>
-          </div>
-        </Modal>
+          onConfirm={(mode) => void confirmMessageRewind(mode)}
+        />
       ) : null}
     </>
   );

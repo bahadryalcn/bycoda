@@ -9,11 +9,9 @@ import { type setSessions } from "../../../features/sessions/model/sessionsStore
 import {
   applyHarnessEvent,
   canCompactHarnessContext,
-  canRewindHarnessLastTurn,
   compactHarnessContext,
   forgetHarnessSession,
   stopHarnessSession,
-  rewindHarnessLastTurn,
   type HarnessEvent,
 } from "../../../integrations/harness";
 import { type EditedResendCoordinator } from "../../../features/sessions/model/editLastTurn";
@@ -30,7 +28,6 @@ import {
   canRewindConversation,
   rewindConversationBeforeMessage,
 } from "../../../features/sessions/model/conversationRewind";
-import { conversationRewindStrategy } from "../../../features/sessions/model/conversationRewindStrategy";
 import { shouldPersistSession, upsertSession } from "../../../features/sessions/data/sessionStore";
 import { flushSync } from "react-dom";
 import { notifyReviewChanged } from "../../../features/sessions/model/checkpoint";
@@ -39,7 +36,6 @@ import {
   planWorkspaceRewind,
 } from "../../../features/workspaces/model/rewindClient";
 import {
-  offerWorkspaceRewindUndo,
   clearWorkspaceRewindUndo,
   requestWorkspaceRewindPreview,
   registerWorkspaceRewindUndoHandler,
@@ -246,62 +242,12 @@ export function useCompactAndRewind({
       if (remoteProjectFor(snapshot.cwd)) {
         return (await remoteSessionActions(sessionId)?.rewind(blockId)) ?? false;
       }
-      const workspaceId = snapshot.workspaceId;
-      if (workspaceId) {
-        if (!editedResends.start(sessionId)) return false;
-        try {
-          await stopHarnessSession(snapshot.harness, sessionId);
-          const plan = await planWorkspaceRewind(snapshot, workspaceId, { userBlockId: blockId });
-          const operationKey = crypto.randomUUID();
-          return await requestWorkspaceRewindPreview(
-            plan,
-            async () => {
-              const latest = sessionsRef.current.find((session) => session.id === sessionId);
-              if (!latest || latest.blocks !== snapshot.blocks || latest.busy)
-                throw new Error(t("The conversation changed. Close this preview and try again."));
-              const result = await applyWorkspaceRewind(latest, plan, operationKey);
-              await forgetHarnessSession(snapshot.harness, sessionId);
-              reconcileManaged(sessionId, result.session);
-              const operationId = result.receipt.undoOperationId;
-              if (operationId)
-                offerWorkspaceRewindUndo(
-                  sessionId,
-                  () => undoManaged(sessionId, { workspaceId, operationId }),
-                  { workspaceId, operationId },
-                );
-            },
-            sessionId,
-          );
-        } finally {
-          editedResends.finish(sessionId);
-        }
-      }
       if (!editedResends.start(sessionId)) return false;
-      const strategy = conversationRewindStrategy(
-        snapshot,
-        blockId,
-        canRewindHarnessLastTurn(snapshot.harness),
-      );
-      let providerSessionId = snapshot.providerSessionId;
       try {
-        if (strategy.preserveProviderBinding) {
-          await rewindHarnessLastTurn({
-            harness: snapshot.harness,
-            sessionId,
-            cwd: sessionWorkCwd(snapshot),
-            model: snapshot.model,
-            modelSettings: snapshot.modelSettings,
-            providerAccountId: snapshot.providerAccountId,
-            runtimeMode: snapshot.runtimeMode,
-            providerTurnId: strategy.providerTurnId,
-            onEvent: (event) => {
-              if (event.type === "session.providerBound")
-                providerSessionId = event.providerSessionId;
-            },
-          });
-        } else {
-          await forgetHarnessSession(snapshot.harness, sessionId);
-        }
+        // Edit from here has an exact message boundary. A provider turn may
+        // contain several user steers, and provider rewind can also touch files.
+        // Reopen retained context instead of invoking provider/Git restoration.
+        await forgetHarnessSession(snapshot.harness, sessionId);
         const latest = sessionsRef.current.find((session) => session.id === sessionId);
         if (
           !latest ||
@@ -313,14 +259,12 @@ export function useCompactAndRewind({
         ) {
           throw new Error("The conversation changed while returning to the message. Try again.");
         }
-        const rewound = rewindConversationBeforeMessage(
-          strategy.preserveProviderBinding ? { ...latest, providerSessionId } : latest,
-          strategy.blockId,
-          Date.now(),
-          strategy,
-        );
+        const rewound = rewindConversationBeforeMessage(latest, blockId);
         if (rewound === latest) return false;
         if (shouldPersistSession(rewound)) await upsertSession(rewound);
+        if (sessionsRef.current.find((session) => session.id === sessionId) !== latest) {
+          throw new Error("The conversation changed while returning to the message. Try again.");
+        }
         turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
         lastBoundProvider.current.delete(sessionId);
         lastPersistedUserBlock.current.delete(sessionId);
@@ -360,7 +304,7 @@ export function useCompactAndRewind({
         editedResends.finish(sessionId);
       }
     },
-    [editedResends, flushHarnessEvents, persistSession, reconcileManaged, undoManaged],
+    [editedResends, flushHarnessEvents, persistSession],
   );
   return { onCompactContext, onRewindMessage };
 }

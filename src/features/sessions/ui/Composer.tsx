@@ -2245,6 +2245,9 @@ export const Composer = memo(function Composer({
         value.attachments,
         new Set(value.attachments.map((file) => file.id)),
       );
+      // Recall is an unsent draft. Place the caret explicitly after the prompt
+      // rather than retaining the previous draft's selection.
+      ref.current?.setSelectionRange(value.text.length, value.text.length);
       setResendEdited(false);
       onEditingLastTurnChange?.(false);
     },

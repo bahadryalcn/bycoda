@@ -35,7 +35,6 @@ import {
   MoreHorizontal,
   Pencil,
   PenLine,
-  Undo2,
   Bot,
   ChartBreakoutSquare,
   Search,
@@ -2239,12 +2238,10 @@ function SaveNoteButton({
 function MessageEditMenu({
   onEdit,
   editing = false,
-  onRewind,
   dismiss,
 }: {
   onEdit?: () => void;
   editing?: boolean;
-  onRewind?: (mode: "edit" | "return") => void;
   dismiss?: () => void;
 }) {
   const t = useT();
@@ -2259,22 +2256,6 @@ function MessageEditMenu({
             id: "resend",
             label: editing ? t("Cancel edit") : t("Edit and resend"),
             icon: <Pencil />,
-          } satisfies DropdownMenuItem,
-        ]
-      : []),
-    ...(onRewind
-      ? [
-          {
-            kind: "item",
-            id: "edit",
-            label: t("Edit this message"),
-            icon: <Pencil />,
-          } satisfies DropdownMenuItem,
-          {
-            kind: "item",
-            id: "return",
-            label: t("Return before this message"),
-            icon: <Undo2 />,
           } satisfies DropdownMenuItem,
         ]
       : []),
@@ -2310,8 +2291,7 @@ function MessageEditMenu({
             if (id === "resend") {
               dismiss?.();
               onEdit?.();
-            } else if (id === "edit") onRewind?.("edit");
-            else if (id === "return") onRewind?.("return");
+            }
           }}
         />
       ) : null}
@@ -2710,14 +2690,28 @@ function UserMessageBlock({
       {text && onSaveNote ? (
         <SaveNoteButton text={text} onSave={onSaveNote} showLabel={showLabels} />
       ) : null}
-      {onEdit || (onRewind && canRewind && !block.draft && !block.internal) ? (
-        <MessageEditMenu
-          onEdit={onEdit}
-          editing={editing}
-          dismiss={dismiss}
-          onRewind={onRewind && canRewind && !block.draft && !block.internal ? onRewind : undefined}
-        />
+      {onRewind && !block.draft && !block.internal ? (
+        <Button
+          motion="none"
+          iconOnly={!showLabels}
+          label={t("Edit from here")}
+          tooltip={
+            canRewind ? t("Edit from here") : t("This conversation can no longer be rewound.")
+          }
+          variant="ghost"
+          type="button"
+          disabled={!canRewind}
+          startIcon={<Pencil />}
+          onClick={(event) => {
+            event.stopPropagation();
+            dismiss?.();
+            onRewind("edit");
+          }}
+        >
+          {showLabels ? <span>{t("Edit from here")}</span> : null}
+        </Button>
       ) : null}
+      {onEdit ? <MessageEditMenu onEdit={onEdit} editing={editing} dismiss={dismiss} /> : null}
       {block.startedAt != null ? (
         <Timestamp
           value={block.startedAt}
@@ -2890,11 +2884,7 @@ function UserMessageBlock({
             <OrchestratorConstellation blockId={block.id} startedAt={block.startedAt} />
           ) : null}
         </div>
-        {text ||
-        block.attachments?.length ||
-        block.startedAt != null ||
-        onEdit ||
-        (onRewind && canRewind) ? (
+        {text || block.attachments?.length || block.startedAt != null || onEdit || onRewind ? (
           <div className="user-message-actions flex max-w-full flex-wrap items-center justify-end gap-1 px-3 pt-1">
             {renderMessageActions()}
           </div>

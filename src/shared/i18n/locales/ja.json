@@ -7145,5 +7145,20 @@
   "Source included": "Source included",
   "Different source": "Different source",
   "Use current checkout": "現在の作業ディレクトリを使用",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "このコンピューターの Host 更新は、アクティブなセッションの終了を待ってから自動的にインストールされます。"
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "このコンピューターの Host 更新は、アクティブなセッションの終了を待ってから自動的にインストールされます。",
+  "Edit from here": "ここから編集",
+  "Edit from here?": "ここから編集しますか？",
+  "Rewind chat to before this message. Your prompt and attachments return to the composer. \"Revert files too\" also undoes your own edits.": "このメッセージの直前までチャットを巻き戻します。プロンプトと添付ファイルが入力欄に戻ります。「ファイルも元に戻す」を選ぶと、このセッションによる変更も取り消されます。",
+  "Revert files too": "ファイルも元に戻す",
+  "Revert and keep changes": "変更を残して巻き戻す",
+  "Checking session file history…": "セッションのファイル履歴を確認中…",
+  "Session file history is unavailable.": "セッションのファイル履歴は利用できません。",
+  "Session files: {p0}": "セッションのファイル数: {p0}",
+  "These files will be skipped because they changed:": "変更されているため、次のファイルはスキップされます:",
+  "Reverting files…": "ファイルを元に戻しています…",
+  "Update bycoda Host on this machine to revert session files. You can still rewind and keep changes.": "セッションのファイルを元に戻すには、このマシンの bycoda Host を更新してください。変更を残してチャットを巻き戻すことはできます。",
+  "Reverted files: {p0}": "元に戻したファイル数: {p0}",
+  "Skipped files: {p0}": "スキップしたファイル数: {p0}",
+  "No session files were reverted.": "元に戻したセッションファイルはありません。",
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "ファイルは元に戻しましたが、チャットを巻き戻せませんでした。このメッセージの編集を完了するには再試行してください。"
 }

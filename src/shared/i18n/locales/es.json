@@ -7145,5 +7145,20 @@
   "Source included": "Source included",
   "Different source": "Different source",
   "Use current checkout": "Usar el directorio de trabajo actual",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "La actualización del Host en este equipo está esperando a que terminen las sesiones activas y se instalará automáticamente."
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "La actualización del Host en este equipo está esperando a que terminen las sesiones activas y se instalará automáticamente.",
+  "Edit from here": "Editar desde aquí",
+  "Edit from here?": "¿Editar desde aquí?",
+  "Rewind chat to before this message. Your prompt and attachments return to the composer. \"Revert files too\" also undoes your own edits.": "Retrocede el chat hasta antes de este mensaje. Tu mensaje y tus archivos adjuntos vuelven al editor. «Revertir también los archivos» también deshace tus propios cambios.",
+  "Revert files too": "Revertir también los archivos",
+  "Revert and keep changes": "Retroceder y conservar cambios",
+  "Checking session file history…": "Comprobando el historial de archivos de la sesión…",
+  "Session file history is unavailable.": "El historial de archivos de la sesión no está disponible.",
+  "Session files: {p0}": "Archivos de la sesión: {p0}",
+  "These files will be skipped because they changed:": "Se omitirán estos archivos porque han cambiado:",
+  "Reverting files…": "Revirtiendo archivos…",
+  "Update bycoda Host on this machine to revert session files. You can still rewind and keep changes.": "Actualiza bycoda Host en esta máquina para revertir los archivos de la sesión. Aún puedes retroceder y conservar los cambios.",
+  "Reverted files: {p0}": "Archivos revertidos: {p0}",
+  "Skipped files: {p0}": "Archivos omitidos: {p0}",
+  "No session files were reverted.": "No se revirtió ningún archivo de la sesión.",
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Los archivos se revirtieron, pero el chat no pudo retroceder. Vuelve a intentarlo para terminar de editar este mensaje."
 }

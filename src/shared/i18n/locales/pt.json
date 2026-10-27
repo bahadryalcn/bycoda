@@ -7145,5 +7145,20 @@
   "Source included": "Source included",
   "Different source": "Different source",
   "Use current checkout": "Usar o diretório de trabalho atual",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "A atualização do Host neste computador está aguardando o término das sessões ativas e será instalada automaticamente."
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "A atualização do Host neste computador está aguardando o término das sessões ativas e será instalada automaticamente.",
+  "Edit from here": "Editar a partir daqui",
+  "Edit from here?": "Editar a partir daqui?",
+  "Rewind chat to before this message. Your prompt and attachments return to the composer. \"Revert files too\" also undoes your own edits.": "Recua o chat para antes desta mensagem. O seu pedido e os anexos voltam ao editor. «Reverter também os ficheiros» também desfaz as suas próprias alterações.",
+  "Revert files too": "Reverter também os ficheiros",
+  "Revert and keep changes": "Recuar e manter alterações",
+  "Checking session file history…": "A verificar o histórico de ficheiros da sessão…",
+  "Session file history is unavailable.": "O histórico de ficheiros da sessão não está disponível.",
+  "Session files: {p0}": "Ficheiros da sessão: {p0}",
+  "These files will be skipped because they changed:": "Estes ficheiros serão ignorados porque foram alterados:",
+  "Reverting files…": "A reverter ficheiros…",
+  "Update bycoda Host on this machine to revert session files. You can still rewind and keep changes.": "Atualize o bycoda Host nesta máquina para reverter os ficheiros da sessão. Ainda pode recuar e manter as alterações.",
+  "Reverted files: {p0}": "Ficheiros revertidos: {p0}",
+  "Skipped files: {p0}": "Ficheiros ignorados: {p0}",
+  "No session files were reverted.": "Nenhum ficheiro da sessão foi revertido.",
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Os ficheiros foram revertidos, mas não foi possível recuar o chat. Tente novamente para terminar de editar esta mensagem."
 }
