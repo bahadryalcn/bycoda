@@ -601,3 +601,13 @@ retains the baseline revision-snapshot/connect/admission sequence; the pending
 preparation marker is not part of its user-boundary predicate. No native fences
 were cleared to force acceptance. Exact failing records and screenshots are kept
 under `temp/verification/hot1/`.
+
+Final HOT1 source checks: `check:web:fast` passed 1,278 files / 12,433 tests
+(15 skipped), followed by fast app/Host type checks; Host contextual/runtime
+passed 149/149. The policy/tasks/automations/goals command passed 257/259 but
+two task tests timed out at 60 seconds; both passed unchanged in a 22.90-second
+focused repeat. Rust automation passed 20/20 with target `n1`, clippy `-D warnings`,
+Rust fmt, 20 final runner/control tests and repository hygiene passed. The original
+Host command remains recorded as failed, not silently replaced by its repeat.
+Final explicit-worktree automation captures also show `CancelledError` despite
+verified correct definition persistence; this is a separate automation UI follow-up.
