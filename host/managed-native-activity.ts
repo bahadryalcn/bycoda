@@ -68,6 +68,10 @@ export function createManagedNativeActivity(deps: {
   activity: ExecutionActivityReservations;
   assertWritable(id: string): Promise<void>;
   authorize(owner: WorkspaceOwnerAuthorization): Promise<boolean>;
+  bindTurnProcess?(
+    request: { workspaceId: string; sessionId: string; clientId?: string; activityOwnerId: string },
+    owner: WorkspaceOwnerAuthorization,
+  ): Promise<boolean>;
   now?(): number;
 }) {
   const now = deps.now ?? Date.now;
@@ -214,6 +218,18 @@ export function createManagedNativeActivity(deps: {
           current.processId = request.processId;
           current.desktopProcessId = request.desktopProcessId;
           await durableWrite(path, JSON.stringify(current));
+          // Native capture can precede provider initialization. Acknowledge
+          // only after binding this exact process to that accepted turn too.
+          if (current.sessionId && deps.bindTurnProcess)
+            await deps.bindTurnProcess(
+              {
+                workspaceId: current.workspaceId,
+                sessionId: current.sessionId,
+                clientId: current.clientId,
+                activityOwnerId: current.activityOwnerId,
+              },
+              owner,
+            );
           return { acknowledged: true as const };
         });
       });

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { withHostGitMutation } from "./git-mutations";
-import { nativeProcessPrefix, nativeTurnOwner } from "./native-activity-identity";
+import { nativeProcessPrefix, nativeTurnOwner, nativeTurnPrefix } from "./native-activity-identity";
 import { durableWrite, GitTurnHistory, refComponent } from "./turn-git-history";
 import type { ManagedWorkspace, TurnGitRecord, WorkspaceActivity } from "./workspace-contracts";
 import type {
@@ -184,6 +184,90 @@ export function createManagedNativeTurns(deps: {
     return record;
   };
   return {
+    /** Internal spawned acknowledgement; caller already holds the Git gate.
+     * Match the accepted marker and complete before-capture, never a historical
+     * ended process or whichever binding happened to be read most recently. */
+    async bindSpawnedProcess(
+      request: {
+        workspaceId: string;
+        sessionId: string;
+        clientId?: string;
+        activityOwnerId: string;
+      },
+      owner: WorkspaceOwnerAuthorization,
+    ): Promise<boolean> {
+      if (!owner?.ownerId || !owner.authorizationId || !(await deps.authorize(owner)))
+        throw new Error("Managed native turns require authenticated owner authorization");
+      const workspace = await deps.workspace(request.workspaceId);
+      if (
+        workspace.owner.kind !== "session" ||
+        workspace.owner.id !== request.sessionId ||
+        workspace.directoryState !== "present"
+      )
+        throw new Error("Session does not own this managed workspace");
+      const active = await deps.activity.list(request.workspaceId);
+      if (
+        !request.activityOwnerId.startsWith(
+          nativeProcessPrefix(owner.ownerId, request.sessionId, request.clientId),
+        ) ||
+        active.filter(
+          (entry) => entry.kind === "provider" && entry.ownerId === request.activityOwnerId,
+        ).length !== 1
+      )
+        throw new Error("Native provider lease does not match this desktop session");
+      const markers = active.filter(
+        (entry) =>
+          entry.kind === "provider" &&
+          entry.ownerId.startsWith(
+            nativeTurnPrefix(
+              owner.ownerId,
+              request.workspaceId,
+              request.sessionId,
+              request.clientId,
+            ),
+          ),
+      );
+      if (!markers.length) return false; // Provider preflight before begin.
+      if (markers.length !== 1)
+        throw new Error("Multiple accepted native turns require reconciliation");
+      const directory = join(
+        deps.history.options.root,
+        "native-turns",
+        refComponent(request.workspaceId),
+      );
+      const candidates: NativeTurnBinding[] = [];
+      for (const name of await readdir(directory)) {
+        if (!/^[A-Za-z0-9_-]{1,128}\.json$/.test(name)) continue;
+        const binding = JSON.parse(
+          await readFile(join(directory, name), "utf8"),
+        ) as NativeTurnBinding;
+        if (
+          binding.workspaceId !== request.workspaceId ||
+          binding.sessionId !== request.sessionId ||
+          binding.clientId !== request.clientId ||
+          binding.ownerFingerprint !== ownerFingerprint(owner) ||
+          binding.activityOwnerId !== markers[0].ownerId ||
+          binding.released
+        )
+          continue;
+        await validate(binding, owner);
+        const record = await deps.history.get(request.workspaceId, binding.userBlockId);
+        checkRecord(record, binding);
+        if (record?.before.status === "complete" && record.after?.status !== "complete")
+          candidates.push(binding);
+      }
+      if (candidates.length !== 1)
+        throw new Error("The accepted native turn capture could not be matched to this process");
+      const binding = candidates[0];
+      if (
+        binding.processActivityOwnerId &&
+        binding.processActivityOwnerId !== request.activityOwnerId
+      )
+        throw new Error("Accepted native turn already belongs to another provider process");
+      binding.processActivityOwnerId = request.activityOwnerId;
+      await durableWrite(bindingPath(binding), JSON.stringify(binding));
+      return true;
+    },
     async begin(
       request: ManagedNativeTurnBeginRequest,
       owner: WorkspaceOwnerAuthorization,

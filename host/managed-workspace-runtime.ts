@@ -197,14 +197,16 @@ export function createManagedWorkspaceRuntime(
     return value;
   };
   const history = new GitTurnHistory({ root, workspace });
-  const nativeActivity = createManagedNativeActivity({
-    root,
-    workspace,
-    listWorkspaces: list,
-    activity,
-    assertWritable,
-    authorize: async (owner) => authorized(owner),
-  });
+  const nativeActivity: ReturnType<typeof createManagedNativeActivity> =
+    createManagedNativeActivity({
+      root,
+      workspace,
+      listWorkspaces: list,
+      activity,
+      assertWritable,
+      authorize: async (owner) => authorized(owner),
+      bindTurnProcess: (request, owner) => nativeTurns.bindSpawnedProcess(request, owner),
+    });
   const nativeTurns = createManagedNativeTurns({
     workspace,
     history,

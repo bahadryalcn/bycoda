@@ -12,7 +12,7 @@ import { hostGitRepositoryKey } from "./git-mutations";
 import { GitTurnHistory, gitText, turnGit } from "./turn-git-history";
 import { createManagedNativeTurns } from "./managed-native-turns";
 import { createManagedNativeActivity } from "./managed-native-activity";
-import { nativeProcessPrefix } from "./native-activity-identity";
+import { nativeProcessPrefix, nativeTurnOwner } from "./native-activity-identity";
 import { GitSessionRewindService } from "./session-rewind";
 import type { ConversationRewindAdapter } from "./session-rewind";
 
@@ -24,9 +24,69 @@ afterEach(async () => {
 const owner = { ownerId: "device-one", authorizationId: "trusted" };
 const secondOwner = { ownerId: "device-two", authorizationId: "trusted" };
 
-it.skipIf(process.platform !== "win32")(
-  "finalizes a crashed accepted turn only after exact provider and desktop death and preserves captures",
-  async () => {
+it("binds a provider spawned after accepted capture while fencing ambiguous or foreign turn identities", async () => {
+  const f = await fixture();
+  const request = { ...f.request, clientId: "desktop" };
+  await f.native.begin(request, owner);
+  const path = join(
+    f.root,
+    "private-history",
+    "native-turns",
+    request.workspaceId,
+    `${request.userBlockId}.json`,
+  );
+  expect(JSON.parse(await readFile(path, "utf8")).processActivityOwnerId).toBeUndefined();
+  const duplicate = await f.activity.start({
+    workspaceId: request.workspaceId,
+    kind: "provider",
+    ownerId: nativeTurnOwner(owner.ownerId, { ...request, runId: "another-turn" }),
+  });
+  await f.process.start(
+    {
+      activityId: "late-provider",
+      cwd: f.workspace.path,
+      kind: "provider",
+      sessionId: request.sessionId,
+      clientId: request.clientId,
+    },
+    owner,
+  );
+  const spawned = {
+    activityId: "late-provider",
+    processId: process.pid,
+    desktopProcessId: 1,
+    clientId: request.clientId,
+  };
+  await expect(f.process.spawned(spawned, owner)).rejects.toThrow("Multiple accepted native turns");
+  expect(JSON.parse(await readFile(path, "utf8")).processActivityOwnerId).toBeUndefined();
+  await f.activity.stop(duplicate.id);
+  await expect(f.process.spawned({ ...spawned, clientId: "foreign" }, owner)).rejects.toThrow(
+    "another device or desktop",
+  );
+  await expect(f.process.spawned(spawned, secondOwner)).rejects.toThrow(
+    "another device or desktop",
+  );
+  await f.process.spawned(spawned, owner);
+  const binding = JSON.parse(await readFile(path, "utf8"));
+  expect(binding.processActivityOwnerId).toMatch(/^native-process:/);
+  await expect(
+    f.native.bindSpawnedProcess(
+      {
+        workspaceId: request.workspaceId,
+        sessionId: request.sessionId,
+        clientId: request.clientId,
+        activityOwnerId: "an-ended-historical-provider",
+      },
+      owner,
+    ),
+  ).rejects.toThrow("does not match");
+  await f.process.spawned(spawned, owner);
+  expect(JSON.parse(await readFile(path, "utf8"))).toEqual(binding);
+});
+
+it.skipIf(process.platform !== "win32").each(["process-before-turn", "turn-before-process"])(
+  "finalizes a crashed accepted turn only after exact process and desktop death (%s)",
+  async (ordering) => {
     const f = await fixture();
     const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
       windowsHide: true,
@@ -50,6 +110,8 @@ it.skipIf(process.platform !== "win32")(
       clientId: "desktop",
     };
     const request = { ...f.request, clientId: "desktop" };
+    const accepted =
+      ordering === "turn-before-process" ? await f.native.begin(request, owner) : undefined;
     await f.process.start(provider, owner);
     await f.process.spawned(
       {
@@ -60,7 +122,25 @@ it.skipIf(process.platform !== "win32")(
       },
       owner,
     );
-    const before = await f.native.begin(request, owner);
+    const before = accepted ?? (await f.native.begin(request, owner));
+    const processOwner = (await f.activity.list(f.workspace.id)).find((entry) =>
+      entry.ownerId.startsWith(
+        nativeProcessPrefix(owner.ownerId, request.sessionId, request.clientId),
+      ),
+    )!.ownerId;
+    const binding = JSON.parse(
+      await readFile(
+        join(
+          f.root,
+          "private-history",
+          "native-turns",
+          request.workspaceId,
+          `${request.userBlockId}.json`,
+        ),
+        "utf8",
+      ),
+    );
+    expect(binding.processActivityOwnerId).toBe(processOwner);
     await writeFile(join(f.workspace.path, "source.txt"), "changes before application crash\n");
     await expect(f.native.recover(request, owner)).rejects.toThrow("not proven dead");
     expect(
@@ -153,6 +233,7 @@ async function fixture() {
       return value;
     };
     let process: ReturnType<typeof createManagedNativeActivity>;
+    let native: ReturnType<typeof createManagedNativeTurns>;
     const activity = createExecutionActivityReservations({
       get: workspace,
       probe: (id) => process.probe(id),
@@ -170,10 +251,11 @@ async function fixture() {
       activity,
       assertWritable: async () => {},
       authorize: async (value) => value.authorizationId === "trusted",
+      bindTurnProcess: (request, owner) => native.bindSpawnedProcess(request, owner),
     });
     const history = new GitTurnHistory({ root: join(root, "private-history"), workspace });
     let writable = true;
-    const native = createManagedNativeTurns({
+    native = createManagedNativeTurns({
       workspace,
       history,
       activity,
