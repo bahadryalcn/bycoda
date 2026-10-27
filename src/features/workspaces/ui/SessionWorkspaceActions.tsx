@@ -148,6 +148,7 @@ export function SessionWorkspaceActions({
       workspace.state === "merged" ||
       workspace.state === "abandoned") &&
     !removed;
+  const branchLabel = workspace?.branchRef.replace(/^refs\/heads\//, "") ?? "";
   const lifecycleLabel = workspace
     ? {
         active: t("Active"),
@@ -162,8 +163,11 @@ export function SessionWorkspaceActions({
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {workspace ? (
           <>
-            <span className="min-w-0 flex-1 break-all text-ui-caption text-(--ui-text-secondary)">
-              {workspace.branchRef.replace(/^refs\/heads\//, "")} · {lifecycleLabel}
+            <span className="flex min-w-0 flex-1 items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
+              <span className="min-w-0 truncate" title={branchLabel}>
+                {branchLabel}
+              </span>
+              <span className="shrink-0 whitespace-nowrap">· {lifecycleLabel}</span>
             </span>
             {removed ? (
               <Button
