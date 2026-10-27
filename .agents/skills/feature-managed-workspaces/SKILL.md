@@ -423,3 +423,57 @@ crossed source revisions: its newly discovered namespace regression failed,
 while all other 104 tests passed. The final-source rerun above resolves that
 intermediate failure. Full commands, JSON reports and acceptance limits are in
 `temp/verification/x2/CHECKS.md`.
+
+## C1 explicit current during Host update (2026-10-27)
+
+Owner decision, C1 stream brief in this session: "an explicit owner choice is not
+a silent fallback" and "Never silently fall back when the mode is unset/worktree."
+
+Delivered from app baseline `745f4644` (0.6.91), on
+`fix/composer-current-checkout`:
+
+- `386450ff`, `src/features/workspaces/model/workspaceCreation.ts`: explicit
+  current skips managed admission reads; unset/worktree keep capability/policy
+  admission. Recovery or capability changes reload the observation and cancel
+  stale responses. Capability notifications invalidate machine snapshots first.
+- `0179bfc6`, `src/features/connections/ui/RemoteSession.tsx`: known old Hosts
+  without `sessions.managedCreation.v1` use legacy creation only for explicit
+  current, including shell-command/draft creation. They retain durable command
+  identity and let the legacy Host allocate session identity. Unknown descriptors
+  remain blocked; capable Hosts retain managed creation identity.
+- `59ee0007`, `src/features/sessions/ui/Composer.tsx`,
+  `src/features/workspaces/ui/WorkspaceCreationStatus.tsx` and
+  `src/features/connections/model/bundledHostStatus.ts`: a local busy deferral
+  explains automatic installation after active sessions finish. The shared Button
+  action selects current for the draft. Failed/unknown/other deferrals do not
+  claim proven active sessions, and local update state never describes a remote
+  machine. Eight locales plus the Turkish override contain the new copy; English identity
+  messages use the source-key fallback (`17927873`).
+- `67857091`, `tests/browser/composer-host-compatibility.*`: real Composer/hook
+  with fake native responses, isolated port 1447. With follow-up `72c9927c`,
+  Chromium passed 10 cases; 12 light/dark captures were opened at 1280, plus 800
+  for the error/action row.
+  Evidence: `temp/verification/c1/BROWSER.md`. The full RemoteSession file passed
+  120 cases; preserved-interaction/workspace checks passed 66 cases. Final
+  client/hook/Composer checks passed 29 cases.
+  `docs/guides/managed-workspaces.md` documents the owner choice.
+- `496688b4`: hidden-footer/compact composers show the same local deferral
+  explanation and explicit current action as the normal composer.
+- `7509f4ca` (test constructor correction `54952faa`): stable app-side
+  `WorkspaceCapabilityError` in `workspaceClient.ts` and the hook's
+  `updateRequired` flag preserve recovery when the owner switches languages.
+  No wire capability or Host contract changes. The 10-case browser suite passed
+  again on this product source.
+
+Final full web check passed 1,277 files/12,398 tests (four skipped files, 15
+skipped tests) and fast tsc-rs. Fast app/Host TypeScript compilation, formatting
+and repository hygiene also passed. The repository locale checker retains
+exactly 5,359 baseline catalog issues with no new diagnostics; C1's two messages
+are present in all eight catalogs. Command ledger:
+`temp/verification/c1/CHECKS.md`.
+
+The live claim API was unavailable; the explicit C1 brief established this
+worker's scope. Local recovery/capability subscriptions use existing global
+notifications; remote recovery filters environment identity. This is local
+source/fixture evidence, with no installed-app, real Host upgrade, live provider
+or release acceptance. No capability contract or publishing authority changed.

@@ -196,3 +196,56 @@ Contracts baseline: `f26ac112404e326478adb687c23ca9cc032acfef`; contracts: `docs
 Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
 card and the worktree-first documentation. This reference establishes inventory
 delivery only; product/runtime acceptance remains as described above.
+
+## C1 older-Host creation compatibility (2026-10-27)
+
+Owner decision, C1 stream brief in this session: "When the owner explicitly chose
+`current` ("Current checkout"), an older Host must not block" and "Never silently
+fall back when the mode is unset/worktree."
+
+- `386450ff`: `src/features/workspaces/model/workspaceCreation.ts` skips managed
+  capability/policy loads for explicit current, drops stale results and reloads
+  on Host recovery/capability notifications. Remote recovery is environment
+  filtered; local recovery and capability notifications use the existing global
+  subscription because it provides no synchronous local-machine identity.
+- `0179bfc6`: `src/features/connections/ui/RemoteSession.tsx` admits explicit
+  current on a known older Host in send, draft-save and shell-command creation.
+  Legacy creation omits the reserved session ID and retains the command ID.
+  Missing descriptors and unset/worktree choices remain gated.
+- `59ee0007`: `Composer.tsx`, shared `WorkspaceCreationStatus.tsx` and
+  `src/features/connections/model/bundledHostStatus.ts` show the active-session
+  update explanation only for the native busy deferral reason. The shared Button
+  action sets this draft's explicit current choice and preserves its contents.
+  Unknown activity, failed installation and remote Hosts retain update-required
+  feedback. All eight catalogs and the Turkish editorial override contain both new
+  messages; `17927873` keeps English identity messages in the source-key fallback.
+  `LocalHostUpdateNotice.tsx` reuses the same read-only status hook.
+- `67857091`: `tests/browser/composer-host-compatibility.*` exercises old-Host
+  explicit current, deferred update/action, ordinary update-required feedback and
+  reconnect recovery using the real Composer/hook and a fake native boundary.
+  With compact follow-up `72c9927c`, Chromium passed 10 cases; 12 captures were
+  opened in light/dark at 1280, with the changed error/action row additionally
+  checked at 800. Evidence:
+  `temp/verification/c1/BROWSER.md`. RemoteSession passed 120 cases; focused
+  preserved-interaction/workspace checks passed 66 cases. Final focused
+  client/hook/Composer checks passed 29 cases.
+- `496688b4`: the compact composer error row uses the same action and pending
+  local update explanation when the workspace footer is hidden. The owner choice
+  still preserves the draft and releases Send only after explicit selection.
+- `7509f4ca` (test constructor correction `54952faa`):
+  `src/features/workspaces/model/workspaceClient.ts` returns a stable
+  `WorkspaceCapabilityError`; the hook keeps an `updateRequired` flag so changing
+  language cannot hide the recovery action. An English-to-Turkish transition is
+  exercised with a preserved draft. The unchanged 10-case browser suite also
+  passed on this final product source.
+
+Final full `pnpm check:web:fast` passed: 1,277 files, 12,398 tests, four skipped
+files/15 skipped tests, plus fast tsc-rs. `pnpm check:types:rust:fast`, formatting
+and repository hygiene passed. The locale checker retains exactly the baseline's
+5,359 catalog issues; C1 introduces no additional catalog diagnostics. Final logs
+and command ledger: `temp/verification/c1/CHECKS.md`.
+
+Source baseline: `745f4644` (0.6.91), branch `fix/composer-current-checkout`.
+No installer, installed-app, actual old/upgraded Host or provider acceptance is
+established by these source/fixture checks. Live feature-claim tooling was not
+available in the worker session; ownership came from the explicit C1 brief.

@@ -25,6 +25,14 @@ The composer offers workspace/base selection for a blank session. Settings →
 Workspace → Source control includes managed workspace policy, retention, storage,
 pinning and directory management. Review the selected execution Host and committed
 base before creating work; missing Host support shows an update requirement.
+If the bundled local Host update is waiting for active sessions, the composer
+explains that it will install automatically after those sessions finish. You can
+wait for the update, or choose **Use current checkout** for this draft. An explicit
+**Current checkout** choice works with older local and remote Hosts through the
+existing creation path. An unset choice or **Worktree** keeps the update
+requirement; neither silently switches to the project checkout. After the Host
+reconnects or advertises updated capabilities, the workspace check refreshes
+automatically without clearing the draft or requiring Retry.
 The source includes these controls, but the installed app must still be compared
 with its build stamp. The separate mobile repository is inventoried read-only in
 `.agents/skills/feature-mobile/SKILL.md`; its source is not included in this branch.
