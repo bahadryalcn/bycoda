@@ -261,8 +261,12 @@ rewind/Undo, rejected admission and restart/legacy-row recovery, a model switch
 with a Turkish message over 20 KiB, old-Host capability recovery, approved local
 merge and safe directory removal, persisted task/automation defaults and
 workspace policy inheritance. Merge already puts a workspace in terminal
-`merged` state, so its separate Mark finished action is disabled. Todo tasks and
-disabled automations are persisted without launching unattended work.
+`merged` state, so the gate exercises Mark finished before Review/Merge and
+checks both state transitions. Todo tasks and disabled automations are created
+through the real UI and persisted without launching unattended work. The capacity
+subscenario explicitly seeds a handoff card and a tiny frontend discovery
+estimate, then requires the actual Codex response, saved archive and reduction
+notice; it does not represent a second provider execution.
 
 Use `--scenario 2` or `--scenario 3,5` to rerun selected scenarios after a fix,
 with the same `--id` to retain the fake project and evidence state. The runner
