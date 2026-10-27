@@ -15,6 +15,8 @@ export interface ManagedNativeTurnRequest {
   sessionId: string;
   userBlockId: string;
   runId: string;
+  /** Authenticated window context; native persistence keeps its original identity. */
+  clientId?: string;
 }
 export interface ManagedNativeTurnBeginRequest extends ManagedNativeTurnRequest {
   conversationRevision: number;
@@ -69,6 +71,14 @@ export function createManagedNativeTurns(deps: {
     ])
       if (typeof value !== "string" || !value.trim() || value.length > 256)
         throw new Error("Invalid managed native turn identity");
+    if (
+      request.clientId !== undefined &&
+      (typeof request.clientId !== "string" ||
+        !request.clientId.trim() ||
+        request.clientId.length > 256 ||
+        request.clientId.includes("\0"))
+    )
+      throw new Error("Invalid native desktop client identity");
     const workspace = await deps.workspace(request.workspaceId);
     if (
       workspace.id !== request.workspaceId ||
@@ -117,7 +127,9 @@ export function createManagedNativeTurns(deps: {
     const processes = all.filter(
       (entry) =>
         entry.kind === "provider" &&
-        entry.ownerId.startsWith(nativeProcessPrefix(owner.ownerId, request.sessionId)),
+        entry.ownerId.startsWith(
+          nativeProcessPrefix(owner.ownerId, request.sessionId, request.clientId),
+        ),
     );
     // Provider preflight precedes turn capture. Two processes are ambiguous even
     // when both were registered by this device for the same session.
@@ -152,6 +164,8 @@ export function createManagedNativeTurns(deps: {
         checkRecord(record, request);
         if (binding) {
           checkBinding(binding, request, owner, request.conversationRevision);
+          if (binding.clientId !== request.clientId)
+            throw new Error("Native turn belongs to another desktop client");
           if (binding.released) throw new Error("Native turn was released before execution");
         } else {
           if (record) throw new Error("Existing Git turn has no native owner binding");
@@ -219,6 +233,8 @@ export function createManagedNativeTurns(deps: {
         const binding = await readBinding(request);
         if (!binding) throw new Error("Unknown accepted native turn");
         checkBinding(binding, request, owner);
+        if (binding.clientId !== request.clientId)
+          throw new Error("Native turn belongs to another desktop client");
         const previous = await deps.history.get(request.workspaceId, request.userBlockId);
         checkRecord(previous, request);
         if (previous?.before.status !== "complete")

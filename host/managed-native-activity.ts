@@ -21,6 +21,7 @@ export interface NativeActivityStart {
   cwd: string;
   kind: "provider" | "shell" | "terminal";
   sessionId?: string;
+  clientId?: string;
 }
 export interface NativeBufferSnapshot {
   clientId: string;
@@ -176,6 +177,7 @@ export function createManagedNativeActivity(deps: {
         if (!["provider", "shell", "terminal"].includes(request.kind))
           throw new Error("Invalid native process kind");
         if (request.sessionId !== undefined) identity(request.sessionId, "session identity");
+        if (request.clientId !== undefined) identity(request.clientId, "desktop client identity");
         const { workspace, canonical } = await canonicalWorkspace(request.cwd);
         if (
           request.sessionId &&
@@ -193,7 +195,8 @@ export function createManagedNativeActivity(deps: {
               lease.workspaceId !== workspace.id ||
               pathKey(lease.cwd) !== pathKey(canonical) ||
               lease.kind !== request.kind ||
-              lease.sessionId !== request.sessionId
+              lease.sessionId !== request.sessionId ||
+              lease.clientId !== request.clientId
             )
               throw new Error("Native activity identity belongs to another request or device");
             if (lease.phase === "ended" || lease.phase === "ending")
@@ -205,7 +208,7 @@ export function createManagedNativeActivity(deps: {
               device,
               workspaceId: workspace.id,
               activityOwnerId: request.sessionId
-                ? `${nativeProcessPrefix(owner.ownerId, request.sessionId)}${digest(request.activityId)}`
+                ? `${nativeProcessPrefix(owner.ownerId, request.sessionId, request.clientId)}${digest(request.activityId)}`
                 : `native-process:${digest([device, null])}:${digest(request.activityId)}`,
               phase: "starting",
             };
@@ -226,7 +229,12 @@ export function createManagedNativeActivity(deps: {
                   request.kind === "provider" &&
                   entry.kind === "provider" &&
                   entry.ownerId.startsWith(
-                    nativeTurnPrefix(owner.ownerId, workspace.id, request.sessionId),
+                    nativeTurnPrefix(
+                      owner.ownerId,
+                      workspace.id,
+                      request.sessionId,
+                      request.clientId,
+                    ),
                   )
                 )
                   return false;
@@ -249,7 +257,7 @@ export function createManagedNativeActivity(deps: {
         });
       });
     },
-    end(request: { activityId: string }, owner: WorkspaceOwnerAuthorization) {
+    end(request: { activityId: string; clientId?: string }, owner: WorkspaceOwnerAuthorization) {
       return serial(async () => {
         const device = await authenticate(owner);
         identity(request.activityId, "activity identity");
@@ -257,6 +265,8 @@ export function createManagedNativeActivity(deps: {
         const lease = await read<ProcessLease>(path);
         if (!lease || lease.device !== device)
           throw new Error("Native activity is unavailable or belongs to another owner device");
+        if (lease.clientId && lease.clientId !== request.clientId)
+          throw new Error("Native activity belongs to another desktop client");
         if (lease.phase === "ended") return { acknowledged: true as const };
         lease.phase = "ending";
         await durableWrite(path, JSON.stringify(lease));
