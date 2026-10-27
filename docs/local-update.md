@@ -256,6 +256,10 @@ checkout's `temp/local/q1/` and its generated fake worktrees. Use Full access on
 inside this isolated test profile. The runner selects Codex and accepts
 `--model` and `--switch-model` display names; no product provider defaults change.
 
+On Windows, `acceptance-native-focus.ps1` validates the run record, development
+profile and process executable, then activates that exact development PID so
+the application's focus-gated queries can run normally.
+
 The gate covers default current-checkout turns, opt-in worktree commits and
 rewind/Undo, rejected admission and restart/legacy-row recovery, a model switch
 with a Turkish message over 20 KiB, old-Host capability recovery, approved local
