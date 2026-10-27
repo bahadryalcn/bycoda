@@ -94,6 +94,49 @@ it("reads legacy registry paths beneath an aliased ancestor and rejects a linked
     .prepare("UPDATE managed_workspaces SET path=?, payload=? WHERE id=?")
     .run(legacy.path, JSON.stringify(legacy), workspace.id);
   expect((await f.runtime.workspace(workspace.id)).path).toBe(workspace.path);
+  const created = await f.engine.command({
+    type: "create",
+    commandId: "legacy-aliased-create",
+    projectId: f.project.id,
+    workspaceId: workspace.id,
+    worktreeCwd: legacy.path,
+    harness: "codex",
+    model: "fixture",
+    runtimeMode: "supervised",
+  });
+  const current = await f.store.session(created.sessionId);
+  await f.store.save(
+    {
+      ...current,
+      revision: current.revision + 1,
+      session: { ...current.session, cwd: legacy.path, worktreeCwd: legacy.path },
+    },
+    { type: "test.legacy-aliased-session" },
+  );
+  await f.engine.command({
+    type: "send",
+    commandId: "legacy-aliased-send",
+    sessionId: created.sessionId,
+    text: "Keep using this owned workspace",
+  });
+  await f.engine.waitForRun(created.sessionId, (await f.store.session(created.sessionId)).runId);
+  expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ cwd: workspace.path }));
+  const saved = await f.store.session(created.sessionId);
+  const unidentified = { ...saved.session, cwd: legacy.path, worktreeCwd: legacy.path };
+  delete unidentified.workspaceId;
+  delete unidentified.workspaceRevision;
+  await f.store.save(
+    { ...saved, revision: saved.revision + 1, session: unidentified },
+    { type: "test.legacy-session-without-workspace-identity" },
+  );
+  await expect(
+    f.engine.command({
+      type: "send",
+      commandId: "legacy-aliased-unidentified-send",
+      sessionId: created.sessionId,
+      text: "Requires owned workspace identity",
+    }),
+  ).rejects.toThrow("authoritative workspace identity");
   const endpoint = join(f.root, "linked-workspace");
   symlinkSync(workspace.path, endpoint, process.platform === "win32" ? "junction" : "dir");
   await f.store.db

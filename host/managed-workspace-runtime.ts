@@ -2,7 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
-import { canonicalWorkspaceEntry, workspacePathKey } from "./workspace-paths";
+import {
+  canonicalWorkspaceDirectory,
+  canonicalWorkspaceEntry,
+  workspacePathKey,
+} from "./workspace-paths";
 import type { HostEngine } from "./engine";
 import type { HostStore } from "./store";
 import type { ManagedWorkspace, WorkspaceActivity } from "./workspace-contracts";
@@ -271,18 +275,27 @@ export function createManagedWorkspaceRuntime(
     workspaceForSession: async (value) => {
       const id = value.session.workspaceId;
       if (!id) {
-        const cwd = value.session.worktreeCwd ?? value.session.cwd;
-        if ((await list()).some((registered) => inManagedWorkspace(cwd, registered.path)))
-          throw new Error(
-            "This managed directory requires its authoritative workspace identity; create a separate managed workspace",
+        const cwd = await canonicalWorkspaceDirectory(
+          value.session.worktreeCwd ?? value.session.cwd,
+        );
+        for (const registered of await list()) {
+          const registeredPath = await canonicalWorkspaceDirectory(registered.path).catch(
+            () => registered.path,
           );
+          if (inManagedWorkspace(cwd, registeredPath))
+            throw new Error(
+              "This managed directory requires its authoritative workspace identity; create a separate managed workspace",
+            );
+        }
         return null;
       }
       const registered = await workspace(id);
       if (
         registered.projectId !== value.projectId ||
         (registered.owner.kind === "session" && registered.owner.id !== value.session.id) ||
-        workspacePathKey(value.session.worktreeCwd ?? "") !== workspacePathKey(registered.path)
+        !value.session.worktreeCwd ||
+        workspacePathKey(await canonicalWorkspaceEntry(value.session.worktreeCwd)) !==
+          workspacePathKey(registered.path)
       )
         throw new Error("Session managed workspace identity changed");
       return { workspaceId: id, path: registered.path };
@@ -308,7 +321,8 @@ export function createManagedWorkspaceRuntime(
       if (
         value.projectId !== request.projectId ||
         (request.worktreeCwd &&
-          workspacePathKey(request.worktreeCwd) !== workspacePathKey(value.path))
+          workspacePathKey(await canonicalWorkspaceEntry(request.worktreeCwd)) !==
+            workspacePathKey(value.path))
       )
         throw new Error("Session workspace belongs to another project or path");
       return {
