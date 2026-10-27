@@ -1,10 +1,17 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, realpathSync, statSync } from "node:fs";
-import { lstat, mkdir, realpath } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
+import { lstat, mkdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { ManagedWorkspace, WorkspaceNames, WorkspaceOwner } from "./workspace-contracts";
+import {
+  canonicalWorkspaceDirectory,
+  canonicalWorkspaceEntry,
+  canonicalWorkspacePath,
+  canonicalWorkspacePathSync,
+  workspacePathKey,
+} from "./workspace-paths";
 
 const options = (cwd: string, mutation = false) => ({
   cwd,
@@ -61,16 +68,7 @@ export async function managedWorkspaceRoot(
   configured: string | null,
 ): Promise<string> {
   const root = resolve(configured ?? (await listCached(cwd, true)).defaultRoot);
-  return canonicalDirectory(root);
-}
-
-async function canonicalDirectory(path: string): Promise<string> {
-  try {
-    return await realpath(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT" || dirname(path) === path) throw error;
-    return join(await canonicalDirectory(dirname(path)), basename(path));
-  }
+  return canonicalWorkspaceDirectory(root);
 }
 
 /** Caller holds the common-repository mutation gate and a durable operation reservation. */
@@ -79,13 +77,14 @@ export async function materializeManagedWorkspace(
   workspace: ManagedWorkspace,
   creating: boolean,
 ): Promise<void> {
-  const path = resolve(workspace.path);
+  const root = await canonicalWorkspaceEntry(dirname(workspace.path));
+  const path = join(root, basename(workspace.path));
   if ((await hostGitRepositoryKey(cwd)) !== workspace.repositoryId)
     throw new Error("Managed project repository identity changed");
-  if ((await canonicalDirectory(dirname(path))) !== dirname(path))
+  if (workspacePathKey(await canonicalWorkspaceDirectory(root)) !== workspacePathKey(root))
     throw new Error("Managed workspace root changed");
   await mkdir(dirname(path), { recursive: true });
-  if ((await realpath(dirname(path))) !== dirname(path))
+  if (workspacePathKey(await canonicalWorkspacePath(root)) !== workspacePathKey(root))
     throw new Error("Managed workspace root changed");
   const info = await lstat(path).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== "ENOENT") throw error;
@@ -136,7 +135,9 @@ export async function materializeManagedWorkspace(
     if (creating && (await managedWorkspaceBase(path, "HEAD")) !== workspace.baseCommit)
       throw new Error("Managed workspace HEAD changed during creation");
   };
-  const registered = listed.worktrees.find((tree) => resolve(tree.path) === path);
+  const registered = listed.worktrees.find(
+    (tree) => workspacePathKey(tree.path) === workspacePathKey(path),
+  );
   if (registered) {
     if (registered.isMain || registered.branch !== branch || registered.missing || !info)
       throw new Error("Managed worktree registration changed");
@@ -223,7 +224,7 @@ export function invalidateHostWorktrees(cwd?: string): void {
 function build(text: string): HostWorktrees {
   const worktrees = parse(text).map((tree) => ({
     ...tree,
-    path: available(tree.path) ? realpathSync.native(tree.path) : tree.path,
+    path: available(tree.path) ? canonicalWorkspacePathSync(tree.path) : tree.path,
     missing: !available(tree.path),
   }));
   const main = worktrees[0];
@@ -287,7 +288,7 @@ function requestedPath(projectCwd: string, requested: unknown): string | null {
   if (requested == null || requested === "" || requested === projectCwd) return null;
   if (typeof requested !== "string" || requested.includes("\0") || requested.length > 4096)
     throw new Error("Invalid working copy");
-  const actual = available(requested) ? realpathSync.native(requested) : requested;
+  const actual = available(requested) ? canonicalWorkspacePathSync(requested) : requested;
   return actual === projectCwd ? null : actual;
 }
 
@@ -300,7 +301,7 @@ export function resolveHostWorktree(projectCwd: string, requested: unknown): str
   const target = find(listSync(projectCwd)) ?? find(listSync(projectCwd, true));
   if (!target || !available(target.path))
     throw new Error("Choose an available worktree of this project");
-  return realpathSync.native(target.path);
+  return canonicalWorkspacePathSync(target.path);
 }
 
 export async function resolveHostWorktreeAsync(

@@ -1,7 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
@@ -69,6 +77,28 @@ async function fixture(options: Parameters<typeof createManagedWorkspaceRuntime>
   };
   return { root, git, store, engine, runtime, project, request, send };
 }
+
+it("reads legacy registry paths beneath an aliased ancestor and rejects a linked workspace entry", async () => {
+  const f = await fixture();
+  await f.runtime.recover();
+  const { workspace } = await f.runtime.registry.prepare(f.request);
+  const alias = join(f.root, "alias");
+  symlinkSync(f.root, alias, process.platform === "win32" ? "junction" : "dir");
+  const legacy = {
+    ...workspace,
+    path: join(alias, "worktrees", basename(workspace.path)),
+    revision: workspace.revision + 1,
+  };
+  await f.store.updateManagedWorkspace(legacy, workspace.revision);
+  expect((await f.runtime.workspace(workspace.id)).path).toBe(workspace.path);
+  const endpoint = join(f.root, "linked-workspace");
+  symlinkSync(workspace.path, endpoint, process.platform === "win32" ? "junction" : "dir");
+  await f.store.updateManagedWorkspace(
+    { ...legacy, path: endpoint, revision: legacy.revision + 1 },
+    legacy.revision,
+  );
+  await expect(f.runtime.workspace(workspace.id)).rejects.toThrow("symbolic link or reparse point");
+});
 
 it("prepares an owned workspace at the Host creation boundary for a client without workspace fields", async () => {
   const f = await fixture();

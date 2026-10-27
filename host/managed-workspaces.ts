@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { isAbsolute, join, resolve } from "node:path";
-import { realpath } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
+import {
+  canonicalWorkspaceDirectory,
+  canonicalWorkspaceEntry,
+  canonicalWorkspacePath,
+  workspacePathKey,
+} from "./workspace-paths";
 import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
 import { runGitText } from "../src/shared/lib/processExecution.node";
 import {
@@ -173,13 +178,17 @@ export function createManagedWorkspaceRegistry(
           "repositoryId",
           "projectId",
           "environmentId",
-          "path",
           "branchRef",
           "baseRef",
           "baseCommit",
         ] as const)
           if (workspace[key] !== planned[key])
             throw new Error(`Workspace creation identity changed: ${key}`);
+        if (
+          workspacePathKey(await canonicalWorkspaceEntry(workspace.path)) !==
+          workspacePathKey(await canonicalWorkspaceEntry(planned.path))
+        )
+          throw new Error("Workspace creation identity changed: path");
         if (
           workspace.owner.kind !== planned.owner.kind ||
           workspace.owner.id !== planned.owner.id ||
@@ -194,7 +203,12 @@ export function createManagedWorkspaceRegistry(
         revision(workspace, operation.expectedRevision);
         if (
           workspace.targetBranchRef !== planned.targetBranchRef ||
-          workspace.targetDirectory !== planned.targetDirectory
+          (workspace.targetDirectory || planned.targetDirectory
+            ? !workspace.targetDirectory ||
+              !planned.targetDirectory ||
+              workspacePathKey(await canonicalWorkspaceDirectory(workspace.targetDirectory)) !==
+                workspacePathKey(await canonicalWorkspaceDirectory(planned.targetDirectory))
+            : false)
         )
           throw new Error("Workspace creation target identity changed");
         if (
@@ -265,7 +279,7 @@ export function createManagedWorkspaceRegistry(
             throw new Error(
               "Selected source requires an absolute checkout, full branch ref and committed SHA",
             );
-          const directory = await realpath(source.directory);
+          const directory = await canonicalWorkspacePath(source.directory);
           if ((await hostGitRepositoryKey(directory)) !== repositoryId)
             throw new Error("Selected source belongs to a different repository");
           const git = (args: string[]) =>
@@ -285,10 +299,7 @@ export function createManagedWorkspaceRegistry(
               return (
                 fields.some((line) => {
                   if (!line.startsWith("worktree ")) return false;
-                  const path = resolve(line.slice(9));
-                  return process.platform === "win32"
-                    ? path.toLowerCase() === directory.toLowerCase()
-                    : path === directory;
+                  return workspacePathKey(line.slice(9)) === workspacePathKey(directory);
                 }) && fields.includes(`branch ${source.branchRef}`)
               );
             });
@@ -463,7 +474,7 @@ export function createManagedWorkspaceRegistry(
           (await options.isActive?.(workspace))
         )
           throw new Error("Workspace must be idle and undelivered before retargeting");
-        const directory = await realpath(request.targetDirectory);
+        const directory = await canonicalWorkspacePath(request.targetDirectory);
         if ((await hostGitRepositoryKey(directory)) !== workspace.repositoryId)
           throw new Error("Retarget directory belongs to a different repository");
         const git = (args: string[]) =>
@@ -482,13 +493,14 @@ export function createManagedWorkspaceRegistry(
             (record) =>
               record.split("\0").some((line) => {
                 if (!line.startsWith("worktree ")) return false;
-                const path = resolve(line.slice(9));
-                return process.platform === "win32"
-                  ? path.toLowerCase() === directory.toLowerCase()
-                  : path === directory;
+                return workspacePathKey(line.slice(9)) === workspacePathKey(directory);
               }) && record.split("\0").includes(`branch ${request.targetBranchRef}`),
           );
-        if (!registered || resolve(directory) === resolve(workspace.path))
+        if (
+          !registered ||
+          workspacePathKey(directory) ===
+            workspacePathKey(await canonicalWorkspaceEntry(workspace.path))
+        )
           throw new Error("Retarget requires a separate registered target checkout");
         await git(["rev-parse", "--verify", `${request.targetBranchRef}^{commit}`]);
         return {

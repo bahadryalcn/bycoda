@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir, realpath } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { readFile, readdir } from "node:fs/promises";
+import { isAbsolute, join, sep } from "node:path";
+import {
+  canonicalWorkspaceDirectory,
+  canonicalWorkspaceEntry,
+  canonicalWorkspacePath,
+  workspacePathKey as pathKey,
+} from "./workspace-paths";
 import { withHostGitMutation } from "./git-mutations";
 import { durableWrite } from "./turn-git-history";
 import type { ManagedWorkspace, WorkspaceActivity } from "./workspace-contracts";
@@ -39,8 +45,6 @@ interface BufferLease extends NativeBufferSnapshot {
   retiredAt?: number;
 }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const pathKey = (path: string) =>
-  process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
 const contains = (root: string, target: string) =>
   pathKey(root) === pathKey(target) || pathKey(target).startsWith(`${pathKey(root)}${sep}`);
 const identity = (value: unknown, label: string) => {
@@ -76,16 +80,7 @@ export function createManagedNativeActivity(deps: {
   const leasePath = (activityId: string) =>
     join(deps.root, "native-activity", "processes", `${digest(activityId)}.json`);
   const bufferDirectory = join(deps.root, "native-activity", "buffers");
-  const canonicalBuffer = async (path: string): Promise<string> => {
-    try {
-      return await realpath(path);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      const parent = dirname(path);
-      if (parent === path) throw error;
-      return join(await canonicalBuffer(parent), basename(path));
-    }
-  };
+  const canonicalBuffer = canonicalWorkspaceDirectory;
   const read = async <T>(path: string): Promise<T | null> => {
     try {
       return JSON.parse(await readFile(path, "utf8")) as T;
@@ -96,19 +91,26 @@ export function createManagedNativeActivity(deps: {
   };
   const canonicalWorkspace = async (cwd: string) => {
     if (!isAbsolute(cwd) || cwd.includes("\0")) throw new Error("Native cwd must be absolute");
-    const canonical = await realpath(cwd);
-    const candidates = (await deps.listWorkspaces()).filter((entry) =>
-      contains(entry.path, canonical),
-    );
+    const canonical = await canonicalWorkspacePath(cwd);
+    const candidates = (
+      await Promise.all(
+        (await deps.listWorkspaces()).map(async (entry) => {
+          try {
+            return { ...entry, path: await canonicalWorkspaceEntry(entry.path) };
+          } catch {
+            // A broken sibling must not block admission to a healthy workspace.
+            // It cannot become a candidate for this canonical cwd.
+            return null;
+          }
+        }),
+      )
+    ).filter((entry): entry is ManagedWorkspace => !!entry && contains(entry.path, canonical));
     candidates.sort((a, b) => b.path.length - a.path.length);
     const candidate = candidates[0];
     if (!candidate) throw new Error("Native cwd has no registered managed workspace");
-    const workspace = await deps.workspace(candidate.id);
-    if (
-      workspace.directoryState !== "present" ||
-      pathKey(await realpath(workspace.path)) !== pathKey(workspace.path) ||
-      !contains(workspace.path, canonical)
-    )
+    const stored = await deps.workspace(candidate.id);
+    const workspace = { ...stored, path: await canonicalWorkspaceEntry(stored.path) };
+    if (workspace.directoryState !== "present" || !contains(workspace.path, canonical))
       throw new Error("Native workspace canonical identity changed");
     return { workspace, canonical };
   };
@@ -131,8 +133,9 @@ export function createManagedNativeActivity(deps: {
     // Removal verifies its reservation after the directory has been tombstoned.
     // Buffer ownership still uses the registry path; it must not require a live
     // Git worktree during that final journal transition.
-    const workspace = (await deps.listWorkspaces()).find((entry) => entry.id === workspaceId);
-    if (!workspace) throw new Error("Native workspace registry identity is unavailable");
+    const stored = (await deps.listWorkspaces()).find((entry) => entry.id === workspaceId);
+    if (!stored) throw new Error("Native workspace registry identity is unavailable");
+    const workspace = { ...stored, path: await canonicalWorkspaceEntry(stored.path) };
     const result: WorkspaceActivity[] = [];
     for (const report of await snapshots()) {
       if (report.retiredAt !== undefined) continue;

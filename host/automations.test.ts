@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { writerWorkspaces } from "./writer-workspaces.test-support";
 import { tmpdir } from "node:os";
@@ -66,8 +66,15 @@ it.each(["UTC", "Europe/Istanbul", "America/New_York", "Europe/Berlin"])(
     }
   },
 );
-async function setup(start = at("2026-10-05T08:00:00")) {
-  const directory = mkdtempSync(join(tmpdir(), "bycoda-automations-test-"));
+async function setup(start = at("2026-10-05T08:00:00"), linkedAncestor = false) {
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "bycoda-automations-test-"));
+  let directory = temporaryRoot;
+  if (linkedAncestor) {
+    const actual = join(temporaryRoot, "actual");
+    directory = join(temporaryRoot, "alias");
+    mkdirSync(actual);
+    symlinkSync(actual, directory, process.platform === "win32" ? "junction" : "dir");
+  }
   const store = new HostStore(join(directory, "host.db"));
   const project = await store.addProject(directory, "Test");
   const turns: Array<{
@@ -113,7 +120,7 @@ async function setup(start = at("2026-10-05T08:00:00")) {
     for (const turn of turns) turn.finish();
     await engine.close();
     await store.close();
-    rmSync(directory, { recursive: true, force: true });
+    rmSync(temporaryRoot, { recursive: true, force: true });
   });
   const input = (overrides: Record<string, unknown> = {}) => ({
     id: "nightly",
@@ -151,6 +158,18 @@ async function setup(start = at("2026-10-05T08:00:00")) {
   };
 }
 describe("host automations", () => {
+  it("dispatches and finalizes a managed run beneath an aliased ancestor", async () => {
+    const f = await setup(undefined, true);
+    await f.automations.save(f.input());
+    const run = await f.automations.runNow("nightly");
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 20000 });
+    expect(f.turns[0].input.cwd).toBe([...f.workspaces.rows.values()][0].path);
+    f.turns[0].finish();
+    await f.settled(run.sessionId!);
+    await f.automations.tick();
+    expect((await f.automations.runs("nightly"))[0].status).toBe("succeeded");
+  });
+
   it("fails closed when managed workspace support is unavailable or creation fails", async () => {
     const f = await setup();
     await f.automations.save(f.input());

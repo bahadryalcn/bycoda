@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -35,9 +35,16 @@ type Transcript = {
   pendingReplay?: string;
 };
 
-async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "bycoda-rewind-"));
-  temporary.push(root);
+async function fixture(linkedAncestor = false) {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "bycoda-rewind-"));
+  temporary.push(temporaryRoot);
+  let root = temporaryRoot;
+  if (linkedAncestor) {
+    const actual = join(temporaryRoot, "actual");
+    root = join(temporaryRoot, "alias");
+    await mkdir(actual);
+    await symlink(actual, root, process.platform === "win32" ? "junction" : "dir");
+  }
   const main = join(root, "main");
   const cwd = join(root, "session");
   const sibling = join(root, "sibling");
@@ -386,6 +393,43 @@ async function fixture() {
 }
 
 describe("managed session Git rewind", () => {
+  it("rewinds and undoes beneath an aliased ancestor while refusing a link inside the workspace", async () => {
+    const f = await fixture(true);
+    const { before, after } = await f.prepareTurns();
+    const service = f.service();
+    const receipt = await service.apply(f.request(await f.preview(service)));
+    expect(await f.state()).toEqual(before);
+    const undo = await service.plan({
+      workspaceId: "workspace",
+      sessionId: "session",
+      expectedRevision: receipt.workspaceRevision,
+      expectedConversationRevision: receipt.conversationRevision,
+      direction: "undo",
+      operationId: receipt.operationId,
+    });
+    await service.undo(f.request(undo));
+    expect(await f.state()).toEqual(after);
+    const link = join(f.cwd, "unsafe");
+    await symlink(f.main, link, process.platform === "win32" ? "junction" : "dir");
+    try {
+      const boundary = await f.history.begin({
+        workspaceId: "workspace",
+        sessionId: "session",
+        userBlockId: "unsafe",
+        runId: "unsafe",
+        conversationRevision: 14,
+      });
+      expect(boundary.before).toMatchObject({
+        status: "blocked",
+        reason: expect.stringContaining("Unsafe symlink"),
+      });
+      expect(await readFile(join(f.main, "owner.txt"), "utf8")).toBe("owner untracked\n");
+      expect(await gitText(f.main, ["rev-parse", "HEAD"])).toBe(f.base);
+    } finally {
+      await rm(link);
+    }
+  });
+
   it("rewinds several agent commits and exact staged/unstaged/untracked bytes; Undo restores rescue and sibling checkouts stay unchanged", async () => {
     const f = await fixture();
     const { before, after } = await f.prepareTurns(true);

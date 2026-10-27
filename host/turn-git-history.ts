@@ -27,6 +27,11 @@ import type {
 } from "./workspace-contracts";
 import type { TurnGitHistory } from "./workspace-service-contracts";
 import { withHostGitMutation } from "./git-mutations";
+import {
+  canonicalWorkspaceEntry,
+  canonicalWorkspacePath,
+  workspacePathKey,
+} from "./workspace-paths";
 
 const digest = (data: string | Buffer) => createHash("sha256").update(data).digest("hex");
 export function refComponent(value: string): string {
@@ -229,13 +234,14 @@ export class GitTurnHistory implements TurnGitHistory {
       throw new Error("Managed workspace is not present");
     if (workspace.branchRef === workspace.targetBranchRef)
       throw new Error("Rewind cannot modify the integration branch");
-    return workspace;
+    return { ...workspace, path: await canonicalWorkspaceEntry(workspace.path) };
   }
   async assertBranch(workspace: ManagedWorkspace) {
-    const branch = await gitText(workspace.path, ["symbolic-ref", "HEAD"]);
+    const path = await canonicalWorkspaceEntry(workspace.path);
+    const branch = await gitText(path, ["symbolic-ref", "HEAD"]);
     if (branch !== workspace.branchRef) throw new Error("Workspace branch changed");
     const lines = (
-      await gitText(workspace.path, [
+      await gitText(path, [
         "rev-parse",
         "--path-format=absolute",
         "--show-toplevel",
@@ -250,9 +256,7 @@ export class GitTurnHistory implements TurnGitHistory {
       .map((line) => line.trim());
     if (lines.length !== 4) throw new Error("Unsupported Git root path");
     const [top, gitDirectory, indexPath, head] = lines;
-    const normalized = (path: string) =>
-      process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
-    if (normalized(top) !== normalized(workspace.path))
+    if (workspacePathKey(await canonicalWorkspacePath(top)) !== workspacePathKey(path))
       throw new Error("Workspace is not the Git root");
     return { head, indexPath, gitDirectory } satisfies GitContext;
   }

@@ -15,9 +15,16 @@ afterEach(async () => {
 });
 const owner = { ownerId: "device-one", authorizationId: "trusted" };
 const other = { ownerId: "device-two", authorizationId: "trusted" };
-async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "native-activity-"));
-  cleanups.push(() => rm(root, { recursive: true, force: true }));
+async function fixture(linkedAncestor = false) {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "native-activity-"));
+  cleanups.push(() => rm(temporaryRoot, { recursive: true, force: true }));
+  let root = temporaryRoot;
+  if (linkedAncestor) {
+    const actual = join(temporaryRoot, "actual");
+    root = join(temporaryRoot, "alias");
+    await mkdir(actual);
+    await symlink(actual, root, process.platform === "win32" ? "junction" : "dir");
+  }
   const main = join(root, "main");
   await mkdir(main);
   await turnGit(main, ["init", "-b", "main"]);
@@ -34,7 +41,7 @@ async function fixture() {
     projectId: "project",
     environmentId: "environment",
     owner: { kind: "session", id: "session" },
-    path: await realpath(path),
+    path: linkedAncestor ? path : await realpath(path),
     branchRef: "refs/heads/bycoda/s/native",
     baseRef: "refs/heads/main",
     baseCommit: "base",
@@ -45,6 +52,7 @@ async function fixture() {
     lastActivityAt: 1,
     pinned: false,
   };
+  const workspaces = [workspace];
   let clock = 1_000_000;
   const get = async (id: string) => {
     if (id !== workspace.id) throw new Error("Unknown workspace");
@@ -65,7 +73,7 @@ async function fixture() {
           throw new Error("Workspace directory is unavailable; resume it first");
         return value;
       },
-      listWorkspaces: async () => [workspace],
+      listWorkspaces: async () => workspaces,
       activity,
       assertWritable: async () => {},
       authorize: async (value) => value.authorizationId === "trusted",
@@ -94,6 +102,7 @@ async function fixture() {
     main,
     path,
     workspace,
+    workspaces,
     activity,
     get service() {
       return service;
@@ -107,6 +116,21 @@ async function fixture() {
     },
   };
 }
+it("admits canonical native processes and buffers beneath an aliased workspace ancestor", async () => {
+  const f = await fixture(true);
+  await f.service.updateBuffers(f.report(true), owner);
+  expect(await f.service.probe("workspace")).toHaveLength(1);
+  await f.service.updateBuffers(f.report(false), owner);
+  const broken = join(f.root, "linked-workspace");
+  await symlink(f.main, broken, process.platform === "win32" ? "junction" : "dir");
+  f.workspaces.push({ ...f.workspace, id: "broken-sibling", path: broken });
+  const request = { activityId: "aliased", cwd: f.path, kind: "shell" as const };
+  await f.service.start(request, owner);
+  expect(await f.activity.list("workspace")).toHaveLength(1);
+  await f.service.end({ activityId: request.activityId }, owner);
+  expect(await f.activity.list("workspace")).toHaveLength(0);
+});
+
 it("binds canonical process admission to the device and accepted session and retains it across restart", async () => {
   const f = await fixture();
   const request = {

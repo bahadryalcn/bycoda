@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -23,7 +31,7 @@ afterEach(async () => {
   invalidateHostWorktrees();
 });
 async function fixture() {
-  const parent = mkdtempSync(join(tmpdir(), "bycoda-managed-test-"));
+  const parent = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-managed-test-")));
   const cwd = join(parent, "repo");
   mkdirSync(cwd);
   const gitAt = (path: string, ...args: string[]) =>
@@ -56,7 +64,7 @@ async function fixture() {
   };
   cleanup.push(async () => {
     await store.close();
-    if (!parent.startsWith(join(tmpdir(), "bycoda-managed-test-")))
+    if (!parent.startsWith(join(realpathSync.native(tmpdir()), "bycoda-managed-test-")))
       throw new Error("Unsafe test cleanup");
     rmSync(parent, { recursive: true, force: true });
   });

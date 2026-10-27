@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { mkdir, realpath } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { dirname, join, sep } from "node:path";
+import { canonicalWorkspaceEntry, workspacePathKey } from "./workspace-paths";
 import type { HostEngine } from "./engine";
 import type { HostStore } from "./store";
 import type { ManagedWorkspace, WorkspaceActivity } from "./workspace-contracts";
@@ -27,8 +28,7 @@ import { createManagedNativeTurns } from "./managed-native-turns";
 import { createManagedNativeRewind } from "./managed-native-rewind";
 import { createManagedNativeActivity } from "./managed-native-activity";
 
-export const workspacePathKey = (path: string) =>
-  process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
+export { workspacePathKey } from "./workspace-paths";
 export const inManagedWorkspace = (path: string, root: string) =>
   workspacePathKey(path) === workspacePathKey(root) ||
   workspacePathKey(path).startsWith(`${workspacePathKey(root)}${sep}`);
@@ -55,16 +55,28 @@ export function createManagedWorkspaceRuntime(
     if (!workspace || workspace.environmentId !== store.environmentId)
       throw new Error("Managed workspace is unavailable on this execution host");
     await store.project(workspace.projectId);
-    return workspace;
+    return { ...workspace, path: await canonicalWorkspaceEntry(workspace.path) };
   };
   const list = async () =>
-    (
-      await Promise.all(
-        (await store.projects()).map((project) =>
-          store.managedWorkspaces({ projectId: project.id, environmentId: store.environmentId }),
-        ),
+    Promise.all(
+      (
+        await Promise.all(
+          (await store.projects()).map((project) =>
+            store.managedWorkspaces({ projectId: project.id, environmentId: store.environmentId }),
+          ),
+        )
       )
-    ).flat();
+        .flat()
+        .map(async (workspace) => {
+          try {
+            return { ...workspace, path: await canonicalWorkspaceEntry(workspace.path) };
+          } catch {
+            // Keep unavailable rows visible for recovery. A targeted operation
+            // must validate its own entry without blocking unrelated workspaces.
+            return workspace;
+          }
+        }),
+    );
   const probe = async (workspaceId: string) => [
     ...((await options.probe?.(await get(workspaceId))) ?? []),
     ...(await nativeActivity.probe(workspaceId)),
@@ -161,8 +173,7 @@ export function createManagedWorkspaceRuntime(
     const project = await store.project(value.projectId);
     if (
       (await hostGitRepositoryKey(project.cwd)) !== value.repositoryId ||
-      (await hostGitRepositoryKey(value.path)) !== value.repositoryId ||
-      workspacePathKey(await realpath(value.path)) !== workspacePathKey(value.path)
+      (await hostGitRepositoryKey(value.path)) !== value.repositoryId
     )
       throw new Error("Managed repository identity changed");
     const registrations = await gitText(project.cwd, ["worktree", "list", "--porcelain", "-z"]);
