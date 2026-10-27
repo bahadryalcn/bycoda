@@ -81,6 +81,23 @@ export function supervisedChild(command, args, { cwd, env, children }) {
   return child;
 }
 
+function childFailureDetail(child) {
+  return String(child.failure ?? "")
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[redacted]")
+    .replace(
+      /((?:token|api[-_]?key|password|secret)["']?\s*[:=]\s*["']?)[^\s"',;]+/gi,
+      "$1[redacted]",
+    )
+    .trim()
+    .slice(-4000);
+}
+
+function childFailureMessage(child, summary) {
+  const detail = childFailureDetail(child);
+  return detail ? `${summary}\n${detail}` : summary;
+}
+
 function assertRunning(child) {
   if (child.spawnError) throw child.spawnError;
   if (child.exitCode !== null || child.signalCode !== null) {
@@ -89,9 +106,12 @@ function assertRunning(child) {
     );
     throw Object.assign(
       new Error(
-        race
-          ? "Development port bind race"
-          : `Development child exited (${child.exitCode ?? child.signalCode})`,
+        childFailureMessage(
+          child,
+          race
+            ? "Development port bind race"
+            : `Development child exited (${child.exitCode ?? child.signalCode})`,
+        ),
       ),
       { code: race ? "EADDRINUSE" : "CHILD_EXITED" },
     );
@@ -102,7 +122,8 @@ export async function completed(child) {
   // The close promise is installed at spawn time, including for very fast tools.
   await child.closed;
   if (child.spawnError) throw child.spawnError;
-  if (child.exitCode !== 0) throw new Error(`Build command failed (${child.exitCode})`);
+  if (child.exitCode !== 0)
+    throw new Error(childFailureMessage(child, `Build command failed (${child.exitCode})`));
   return child.failure.trim();
 }
 

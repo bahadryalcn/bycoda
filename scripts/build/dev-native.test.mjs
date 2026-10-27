@@ -46,6 +46,32 @@ test("fast child completion and owned child cancellation settle without losing c
   assert.ok(running.exitCode !== null || running.signalCode !== null);
 });
 
+test("failed build reports its bounded diagnostic tail and redacts common credential fields", async () => {
+  const children = new Set();
+  const child = supervisedChild(
+    process.execPath,
+    [
+      "-e",
+      "console.error('x'.repeat(9000)); console.error('\\u001b[31merror: native build failed\\u001b[0m\\nAuthorization: Bearer private-token\\napi_key=private-key'); process.exitCode=3;",
+    ],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      children,
+    },
+  );
+  await assert.rejects(completed(child), (error) => {
+    assert.match(error.message, /Build command failed \(3\)/);
+    assert.match(error.message, /error: native build failed/);
+    assert.match(error.message, /Bearer \[redacted\]/);
+    assert.match(error.message, /api_key=\[redacted\]/);
+    assert.doesNotMatch(error.message, /private-token|private-key|\x1b/);
+    assert(error.message.length < 4100);
+    return true;
+  });
+  assert.equal(children.size, 0);
+});
+
 test("native capture rejects stale records against the embedded running identity", async () => {
   const identity = {
     schemaVersion: 1,
