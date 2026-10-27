@@ -867,7 +867,7 @@ it("offers the branch, check and review options on a new task", async () => {
   const form = document.querySelector('form[aria-label="New task"]')!;
   // The agent controls are tucked away until asked for.
   expect(form.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
-  expect(button(form, "Shared checkout")!.getAttribute("aria-checked")).toBe("true");
+  expect(form.querySelector('button[aria-label="Execution mode: Automatic"]')).not.toBeNull();
   await act(async () => button(form, "Agent settings")!.click());
   const boxes = Array.from(form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
   expect(boxes.map((box) => box.parentElement!.textContent?.trim())).toEqual([
@@ -2099,19 +2099,18 @@ it("does not enable automatic delivery from a new task preference", async () => 
   );
   await act(async () => button(form, "Agent settings")!.click());
   const boxes = Array.from(form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
-  const branch = button(form, "Separate worktree")!;
-  const shared = button(form, "Shared checkout")!;
+
   const [, merge] = boxes;
   expect(merge.disabled).toBe(true);
-  await act(async () => branch.click());
+  await chooseExecutionMode(form, "Separate worktree");
   expect(merge.disabled).toBe(true);
   await act(async () => merge.click());
   expect(merge.checked).toBe(false);
   // Without its own branch there is nothing to merge on its own.
-  await act(async () => shared.click());
+  await chooseExecutionMode(form, "Shared checkout");
   expect(merge.disabled).toBe(true);
   expect(merge.checked).toBe(false);
-  await act(async () => branch.click());
+  await chooseExecutionMode(form, "Separate worktree");
   expect(merge.checked).toBe(false);
   await act(async () => button(form, "Add and start")!.click());
   const saved = requests.find((request) => request.method === "tasks.save")!;
@@ -2126,7 +2125,8 @@ it("sends direct goal execution and disables merge for the selected checkout", a
   await render();
   await pickAction(container, "New goal");
   const form = document.querySelector('form[aria-label="New goal"]')!;
-  expect(button(form, "Shared checkout")!.getAttribute("aria-checked")).toBe("true");
+  expect(form.querySelector('button[aria-label="Execution mode: Automatic"]')).not.toBeNull();
+  await chooseExecutionMode(form, "Shared checkout");
   expect(form.textContent).toContain("Tasks work directly in the selected checkout");
   const merge = Array.from(form.querySelectorAll("label"))
     .find((label) => label.textContent?.trim().startsWith("Merge automatically"))
@@ -2152,7 +2152,7 @@ it("does not enable automatic delivery from goal or steward preferences", async 
   const goalBoxes = Array.from(
     goalForm.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
   );
-  await act(async () => button(goalForm, "Separate worktree")!.click());
+  await chooseExecutionMode(goalForm, "Separate worktree");
   const merge = goalBoxes.find((box) =>
     box.parentElement!.textContent?.trim().startsWith("Merge automatically"),
   )!;
@@ -2623,3 +2623,13 @@ it("reconnects discovery on Retry and shows a probe failure only once", async ()
   expect(container.textContent).toContain("Recovered task");
   expect(container.textContent).not.toContain("Host connection refused");
 });
+
+async function chooseExecutionMode(scope: ParentNode, label: string) {
+  await act(async () =>
+    scope.querySelector<HTMLButtonElement>('button[aria-label^="Execution mode:"]')!.click(),
+  );
+  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (node) => node.textContent?.trim() === label,
+  )!;
+  await act(async () => option.click());
+}

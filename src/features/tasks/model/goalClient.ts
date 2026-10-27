@@ -63,7 +63,7 @@ export type BoardGoal = HostGoal & {
 export type GoalDraft = {
   finalReview?: boolean;
   budget?: TaskRunBudget;
-  isolate: boolean;
+  isolate?: boolean;
   workspaces?: Record<string, TaskWorkspace>;
   maxRunningTasks?: number;
   manualStart?: boolean;
@@ -110,7 +110,7 @@ export function newGoalDraft(cwd: string, harness: HarnessId, model: string): Go
     runtimeMode: "auto",
     maxRunMinutes: 0,
     approvePlan: false,
-    isolate: false,
+
     review: false,
     autoMerge: false,
     continueUntilDone: true,
@@ -169,7 +169,7 @@ export function hostGoalFromDraft(
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
     maxRunMinutes: draft.maxRunMinutes,
-    ...(draft.isolate === false ? { isolate: false } : {}),
+    ...(typeof draft.isolate === "boolean" ? { isolate: draft.isolate } : {}),
     ...(draft.workspaces
       ? {
           workspaces: Object.fromEntries(

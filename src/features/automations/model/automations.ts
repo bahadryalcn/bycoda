@@ -73,7 +73,7 @@ export type Automation = {
   model: string;
   modelSettings?: Record<string, string>;
   cwd: string;
-  workspaceMode: AutomationWorkspaceMode;
+  workspaceMode?: AutomationWorkspaceMode;
   worktreeCwd?: string;
   sessionFolderId?: string;
   reuseSession: boolean;
@@ -187,7 +187,7 @@ export type AutomationDraft = {
   model: string;
   modelSettings: Record<string, string>;
   cwd: string;
-  workspaceMode: AutomationWorkspaceMode;
+  workspaceMode?: AutomationWorkspaceMode;
   worktreeCwd: string;
   sessionFolderId: string;
   reuseSession: boolean;
@@ -361,7 +361,6 @@ export function newAutomationDraft(
     model,
     modelSettings: {},
     cwd,
-    workspaceMode: "worktree",
     worktreeCwd: "",
     sessionFolderId: "",
     reuseSession: false,

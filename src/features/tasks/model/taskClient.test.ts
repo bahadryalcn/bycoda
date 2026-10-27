@@ -158,7 +158,6 @@ describe("task board", () => {
     expect(draft).toMatchObject({
       runtimeMode: "auto",
       maxRunMinutes: 0,
-      isolate: false,
       verifyCommand: "",
       review: false,
       continueUntilDone: true,
@@ -291,8 +290,7 @@ describe("host task rules", () => {
     expect(parseHostTask({ ...input, title: "  Ship  " })).toEqual({
       ...input,
       title: "Ship",
-      // A task runs on its own branch and is reviewed unless it says otherwise.
-      isolate: true,
+      // An omitted checkout choice inherits project policy; review remains enabled.
       review: true,
     });
     expect(
@@ -398,3 +396,17 @@ describe("merging automatically in the task draft", () => {
     expect(draftFromTask({ ...task, autoMerge: undefined }).autoMerge).toBe(false);
   });
 });
+
+it.each([undefined, true, false])(
+  "preserves task policy inheritance and explicit choices (%s)",
+  (isolate) => {
+    const draft = {
+      ...newTaskDraft("G:/app", "claude", "claude:test"),
+      title: "Task",
+      prompt: "Do the work",
+      isolate,
+    };
+    const parsed = parseHostTask(hostTaskFromDraft(draft, "id", "project-1"));
+    expect(parsed.isolate).toBe(isolate);
+  },
+);

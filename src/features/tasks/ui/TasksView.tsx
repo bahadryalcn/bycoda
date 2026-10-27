@@ -20,6 +20,7 @@ import { workspaceRequest, workspaceOperationKey } from "../../workspaces/model/
 import { taskWorkspaceState } from "../../workspaces/model/taskWorkspaceState";
 import type { ManagedWorkspace } from "../../workspaces/model/contracts";
 import { TextField } from "../../../shared/ui/TextField";
+import { Select } from "../../../shared/ui/Select";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TaskWorkspacePicker } from "./TaskWorkspacePicker";
 import { TaskBulkToolbar } from "./TaskBulkToolbar";
@@ -3738,7 +3739,7 @@ function TaskForm({
               value={draft.workspace}
               onChange={(workspace) => update("workspace", workspace)}
               disabled={saving || draft.workspaceLocked}
-              branchName={draft.isolate}
+              branchName={draft.isolate === true}
               isolate={draft.isolate}
               onBusyChange={setWorkspaceBusy}
               onValidityChange={setWorkspaceValid}
@@ -3835,7 +3836,7 @@ function TaskForm({
                 {t("Review with a second agent")}
               </label>
               <AutoMergeField
-                checked={draft.autoMerge && draft.isolate}
+                checked={draft.autoMerge && draft.isolate === true}
                 disabled={!draft.isolate}
                 onChange={(checked) => update("autoMerge", checked)}
               />
@@ -3987,23 +3988,25 @@ function TaskExecutionMode({
   disabled,
   onChange,
 }: {
-  isolate: boolean;
+  isolate?: boolean;
   disabled?: boolean;
-  onChange: (isolate: boolean) => void;
+  onChange: (isolate: boolean | undefined) => void;
 }) {
   return (
     <fieldset disabled={disabled} className="min-w-0">
       <legend>{t("Execution mode")}</legend>
-      <SegmentedControl
-        className="bycoda-arc"
+      <Select
+        disabled={disabled}
         label={t("Execution mode")}
-        selectionRole="radio"
-        value={isolate ? "isolated" : "shared"}
+        value={isolate === undefined ? "automatic" : isolate ? "isolated" : "shared"}
         options={[
+          { value: "automatic", label: t("Automatic") },
           { value: "shared", label: t("Shared checkout") },
           { value: "isolated", label: t("Separate worktree") },
         ]}
-        onValueChange={(value) => onChange(value === "isolated")}
+        onValueChange={(value) =>
+          onChange(value === "automatic" ? undefined : value === "isolated")
+        }
       />
     </fieldset>
   );
@@ -5087,26 +5090,28 @@ function GoalForm({
             {t("Review each task with a second agent")}
           </label>
           <TaskExecutionMode
-            isolate={draft.isolate !== false}
+            isolate={draft.isolate}
             disabled={saving}
             onChange={(isolate) => update("isolate", isolate)}
           />
           <AutoMergeField
-            checked={draft.autoMerge && draft.isolate !== false}
-            disabled={draft.isolate === false}
+            checked={draft.autoMerge && draft.isolate === true}
+            disabled={draft.isolate !== true}
             onChange={(checked) => update("autoMerge", checked)}
           />
           <ContinueUntilDoneField
             checked={draft.continueUntilDone}
             onChange={(checked) => update("continueUntilDone", checked)}
           />
-          <span className="text-ui-micro text-(--ui-text-secondary)">
-            {draft.isolate === false
-              ? t(
-                  "Tasks work directly in the selected checkout. You review and commit the changes.",
-                )
-              : t("Each task runs on its own branch and waits for you to merge it.")}
-          </span>
+          {draft.isolate === undefined ? null : (
+            <span className="text-ui-micro text-(--ui-text-secondary)">
+              {draft.isolate !== true
+                ? t(
+                    "Tasks work directly in the selected checkout. You review and commit the changes.",
+                  )
+                : t("Each task runs on its own branch and waits for you to merge it.")}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3 text-ui-caption">
           <label>
@@ -5148,7 +5153,7 @@ function GoalForm({
               <TaskWorkspacePicker
                 machine={target}
                 cwd={cwd}
-                isolate={draft.isolate !== false}
+                isolate={draft.isolate}
                 value={draft.workspaces?.[cwd]}
                 disabled={saving || workspaceBusy}
                 onBusyChange={setWorkspaceBusy}
