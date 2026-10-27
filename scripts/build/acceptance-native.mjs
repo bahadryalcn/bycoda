@@ -415,24 +415,31 @@ export async function sendPrompt(context, prompt, { allowFailure = false, wait =
   const accepted = await waitUntil(
     async () =>
       (await getSessions(page)).find((entry) =>
-        entry.blocks.some(
-          (block) => block.role === "user" && block.text === prompt && !prior.has(block.id),
-        ),
+        entry.blocks.some((block) => block.role === "user" && !block.draft && !prior.has(block.id)),
       ),
     "Send was not accepted",
   );
   context.state.sessionId = accepted.id;
+  const acceptedUser = accepted.blocks.findLast(
+    (block) => block.role === "user" && !block.draft && !prior.has(block.id),
+  );
+  context.state.lastUserBlockId = acceptedUser.id;
   if (!wait) return accepted;
   const settled = await waitUntil(
     async () => {
       const current = (await getSessions(page)).find((entry) => entry.id === accepted.id);
+      const boundary = current?.blocks.findIndex((block) => block.id === acceptedUser.id) ?? -1;
       return current &&
         !current.busy &&
-        current.blocks.some(
-          (block) =>
-            !accepted.blocks.some((previous) => previous.id === block.id) ||
-            accepted.blocks.find((previous) => previous.id === block.id)?.text !== block.text,
-        )
+        boundary >= 0 &&
+        current.blocks
+          .slice(boundary + 1)
+          .some(
+            (block) =>
+              (block.role === "assistant" && block.text.trim()) ||
+              block.notice === "error" ||
+              block.error,
+          )
         ? current
         : false;
     },
@@ -441,7 +448,7 @@ export async function sendPrompt(context, prompt, { allowFailure = false, wait =
   );
   assert.equal(settled.harness, "codex", "Acceptance must run real Codex");
   const last = settled.blocks.slice(
-    settled.blocks.findLastIndex((block) => block.role === "user" && block.text === prompt) + 1,
+    settled.blocks.findIndex((block) => block.id === acceptedUser.id) + 1,
   );
   const text = last.map((block) => block.text).join("\n");
   if (!allowFailure) {
@@ -843,8 +850,17 @@ async function scenario4(context) {
     "Türkiye İstanbul çalışma alanı, geçmiş konuşma ve güvenli model değişimi. ".repeat(400);
   assert(Buffer.byteLength(prompt, "utf8") > 20480);
   const switched = await sendPrompt(context, prompt);
-  const replyBoundary = switched.blocks.findLastIndex(
-    (block) => block.role === "user" && block.text === prompt,
+  const switchedUserId = context.state.lastUserBlockId;
+  const replyBoundary = switched.blocks.findLastIndex((block) => block.id === switchedUserId);
+  const storedRequest = switched.blocks[replyBoundary];
+  assert.equal(
+    storedRequest.text,
+    prompt.trim(),
+    "The complete Turkish request was not preserved by the composer",
+  );
+  await writeFile(
+    join(context.output, "04-turkish-request.json"),
+    `${JSON.stringify({ userBlockId: switchedUserId, original: prompt, stored: storedRequest.text, normalization: "Composer trims submitted text; Long text is presentation-only" }, null, 2)}\n`,
   );
   assert.notEqual(switched.model, initialModel, "Codex model selection did not change");
   assert(
@@ -890,9 +906,8 @@ async function scenario4(context) {
   try {
     const capacityPrompt = `${prompt}\nBu tur kaydedilmiş geçmiş bütçesini sınar. Yalnızca TAMAM yaz.`;
     const completed = await sendPrompt(context, capacityPrompt);
-    const boundary = completed.blocks.findLastIndex(
-      (block) => block.role === "user" && block.text === capacityPrompt,
-    );
+    const capacityUserId = context.state.lastUserBlockId;
+    const boundary = completed.blocks.findLastIndex((block) => block.id === capacityUserId);
     const tail = completed.blocks.slice(boundary + 1);
     assert(
       tail.some((block) => block.role === "assistant" && block.text.trim() === "TAMAM"),
@@ -908,11 +923,13 @@ async function scenario4(context) {
     const archive = JSON.parse(await readFile(archivePath, "utf8"));
     assert.equal(archive.sessionId, switched.id);
     assert(
-      archive.messages.some((entry) => entry.text === prompt),
+      archive.messages.some(
+        (entry) => entry.id === switchedUserId && entry.text === storedRequest.text,
+      ),
       "Earlier Turkish request was not preserved in saved history",
     );
     assert(
-      !archive.messages.some((entry) => entry.text === capacityPrompt),
+      !archive.messages.some((entry) => entry.id === capacityUserId),
       "Current request was duplicated into historical handoff",
     );
     capacity = {
@@ -1070,7 +1087,8 @@ async function scenario7(context) {
   const screenshots = [];
   await click(context, "Tasks");
   await waitUntil(
-    async () => (await context.page.locator('[data-remote-data-state="ready"]').count()) > 0,
+    async () =>
+      context.page.locator('.task-board-status[data-remote-data-state="ready"]').isVisible(),
     "Task board did not discover the connected development Host",
     45000,
   );
