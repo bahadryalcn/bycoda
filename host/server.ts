@@ -2139,6 +2139,7 @@ export async function createHostServer(
                 }
                 case "native.turn.begin":
                 case "native.turn.end":
+                case "native.turn.recover":
                 case "sessions.managedTurn.begin":
                 case "sessions.managedTurn.end":
                 case "sessions.managedTurn.status": {
@@ -2150,6 +2151,11 @@ export async function createHostServer(
                   )
                     throw new Error("Session does not own this workspace");
                   result = await withWorkspaceOwner<unknown>(token, async (owner) => {
+                    if (input.method === "native.turn.recover")
+                      return managed.nativeTurns.recover(
+                        params as unknown as Parameters<typeof managed.nativeTurns.recover>[0],
+                        owner,
+                      );
                     if (input.method === "native.turn.begin")
                       await managed.nativeRewind.bindTurn(
                         params as unknown as Parameters<typeof managed.nativeRewind.bindTurn>[0],

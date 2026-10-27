@@ -194,7 +194,10 @@ it("rejects untrusted ownership, another writer and changed accepted turn identi
     ownerId: "another-writer",
   });
   await expect(f.native.begin(f.request, owner)).rejects.toThrow("Another workspace writer");
+  expect((await f.native.recover(f.request, owner)).released).toBe(true);
   await f.activity.stop(shell.id);
+  f.request.userBlockId = "user-race";
+  f.request.runId = "run-race";
   const start = f.activity.start.bind(f.activity);
   let racedActivity: string | undefined;
   const startSpy = vi.spyOn(f.activity, "start").mockImplementation(async (input) => {
@@ -208,6 +211,9 @@ it("rejects untrusted ownership, another writer and changed accepted turn identi
   startSpy.mockRestore();
   expect((await f.activity.list(f.workspace.id)).map((value) => value.id)).toEqual([racedActivity]);
   await f.activity.stop(racedActivity!);
+  expect((await f.native.recover(f.request, owner)).released).toBe(true);
+  f.request.userBlockId = "user-accepted";
+  f.request.runId = "run-accepted";
   await f.native.begin(f.request, owner);
   await expect(f.native.begin(f.request, secondOwner)).rejects.toThrow("another owner device");
   await expect(f.native.begin({ ...f.request, conversationRevision: 2 }, owner)).rejects.toThrow(
@@ -239,7 +245,7 @@ it("retains failed after-capture activity and resumes the same durable marker af
   expect(await reopened.activity.list(f.workspace.id)).toEqual([]);
 }, 120_000);
 
-it("does not authorize execution after failed before capture and permits an explicit capture retry", async () => {
+it("releases a rejected before capture and starts the next turn while fencing delayed retries", async () => {
   const f = await fixture();
   vi.spyOn(f.history, "capture").mockRejectedValueOnce(
     new Error("temporary before capture failure"),
@@ -248,6 +254,10 @@ it("does not authorize execution after failed before capture and permits an expl
     "temporary before capture failure",
   );
   expect(await f.activity.list(f.workspace.id)).toEqual([]);
+  expect((await f.native.recover(f.request, owner)).released).toBe(true);
+  await expect(f.native.begin(f.request, owner)).rejects.toThrow("released before execution");
+  f.request.userBlockId = "next-user";
+  f.request.runId = "next-run";
   expect((await f.native.begin(f.request, owner)).before.status).toBe("complete");
   const marker = (await f.native.status(f.request, owner)).activity!;
   await f.activity.stop(marker.id);
@@ -371,11 +381,16 @@ it("keeps foreign devices, runs, terminals, dirty buffers and duplicate provider
   };
   await f.process.start(provider, secondOwner);
   await expect(f.native.begin(f.request, owner)).rejects.toThrow("Another workspace writer");
+  expect((await f.native.recover(f.request, owner)).released).toBe(true);
   await f.process.end({ activityId: provider.activityId }, secondOwner);
+  f.request.userBlockId = "user-terminal";
+  f.request.runId = "run-terminal";
 
   await f.process.start({ ...provider, activityId: "terminal", kind: "terminal" }, owner);
   await expect(f.native.begin(f.request, owner)).rejects.toThrow("Another workspace writer");
   await f.process.end({ activityId: "terminal" }, owner);
+  f.request.userBlockId = "user-duplicates";
+  f.request.runId = "run-duplicates";
 
   const duplicate = await f.activity.start({
     workspaceId: f.workspace.id,
@@ -390,6 +405,8 @@ it("keeps foreign devices, runs, terminals, dirty buffers and duplicate provider
   await expect(f.native.begin(f.request, owner)).rejects.toThrow("Multiple native provider");
   await f.activity.stop(duplicate.id);
   await f.activity.stop(duplicateTwo.id);
+  f.request.userBlockId = "user-buffers";
+  f.request.runId = "run-buffers";
 
   const buffers = (dirty: boolean) => ({
     clientId: "editor",
@@ -407,8 +424,88 @@ it("keeps foreign devices, runs, terminals, dirty buffers and duplicate provider
   await f.process.updateBuffers(buffers(true), owner);
   await expect(f.native.begin(f.request, owner)).rejects.toThrow("Another workspace writer");
   await f.process.updateBuffers(buffers(false), owner);
+  f.request.userBlockId = "user-clear";
+  f.request.runId = "run-clear";
   await f.native.begin(f.request, owner);
   await expect(
     f.native.begin({ ...f.request, userBlockId: "foreign-run", runId: "foreign-run" }, owner),
   ).rejects.toThrow("Another workspace writer");
 }, 180_000);
+
+it("self-heals legacy starting bindings only after Host proves no capture and no activity", async () => {
+  const f = await fixture();
+  const shell = await f.activity.start({
+    workspaceId: f.workspace.id,
+    kind: "shell",
+    ownerId: "foreign",
+  });
+  await expect(f.native.begin(f.request, owner)).rejects.toThrow("Another workspace writer");
+  const path = join(
+    f.root,
+    "private-history",
+    "native-turns",
+    f.workspace.id,
+    `${f.request.userBlockId}.json`,
+  );
+  const binding = JSON.parse(await readFile(path, "utf8"));
+  delete binding.released; // Simulate a 0.6.92 binding abandoned before history.begin.
+  await writeFile(path, JSON.stringify(binding));
+  expect(await f.native.recover(f.request, owner)).toMatchObject({
+    released: false,
+    reason: expect.stringContaining("activity"),
+  });
+  await expect(f.native.recover(f.request, secondOwner)).rejects.toThrow("another owner device");
+  await expect(f.native.recover({ ...f.request, runId: "wrong-run" }, owner)).rejects.toThrow(
+    "identity changed",
+  );
+  await expect(f.native.recover({ ...f.request, conversationRevision: 2 }, owner)).rejects.toThrow(
+    "revision changed",
+  );
+  await f.activity.stop(shell.id);
+  expect(await f.native.recover(f.request, owner)).toEqual({ ...f.request, released: true });
+  await f.store.close();
+  const reopened = await f.compose();
+  expect(await reopened.native.recover(f.request, owner)).toEqual({ ...f.request, released: true });
+  await expect(reopened.native.begin(f.request, owner)).rejects.toThrow(
+    "released before execution",
+  );
+  expect(
+    (
+      await reopened.native.begin(
+        { ...f.request, userBlockId: "next-user", runId: "next-run" },
+        owner,
+      )
+    ).before.status,
+  ).toBe("complete");
+}, 120_000);
+
+it("never releases an authorized before capture even when its process and marker have disappeared", async () => {
+  const f = await fixture();
+  await f.native.begin(f.request, owner);
+  const marker = (await f.native.status(f.request, owner)).activity!;
+  expect(await f.native.recover(f.request, owner)).toMatchObject({
+    released: false,
+    reason: expect.stringContaining("complete before capture"),
+  });
+  await f.activity.stop(marker.id);
+  expect(await f.native.recover(f.request, owner)).toMatchObject({ released: false });
+  await f.store.close();
+  const reopened = await f.compose();
+  expect(await reopened.native.recover(f.request, owner)).toMatchObject({ released: false });
+}, 120_000);
+
+it("tombstones a missing unknown turn before releasing and rejects a delayed begin", async () => {
+  const f = await fixture();
+  const provider = {
+    activityId: "live-provider",
+    cwd: f.workspace.path,
+    kind: "provider" as const,
+    sessionId: f.request.sessionId,
+  };
+  await f.process.start(provider, owner);
+  expect(await f.native.recover(f.request, owner)).toMatchObject({ released: false });
+  await f.process.end({ activityId: provider.activityId }, owner);
+  expect(await f.native.recover(f.request, owner)).toEqual({ ...f.request, released: true });
+  await expect(f.native.begin(f.request, owner)).rejects.toThrow("released before execution");
+  expect(await f.history.get(f.workspace.id, f.request.userBlockId)).toBeNull();
+}, 120_000);
