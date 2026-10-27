@@ -594,7 +594,8 @@ export class HostGoals {
       this.engine,
       {
         projectId: goal.leadProjectId,
-        ...(goal.isolate !== undefined
+        ...(goal.isolate !== undefined &&
+        (goal.isolate === false || !goal.workspaces?.[goal.leadProjectId]?.checkoutCwd)
           ? { workspaceMode: goal.isolate ? ("worktree" as const) : ("current" as const) }
           : {}),
         ...(projects.find((project) => project.lead)?.workingCwd
@@ -1200,7 +1201,8 @@ export class HostGoals {
         {
           requestId: `goal-final:${requestId}`,
           projectId: goal.leadProjectId,
-          ...(goal.isolate !== undefined
+          ...(goal.isolate !== undefined &&
+          (goal.isolate === false || !goal.workspaces?.[goal.leadProjectId]?.checkoutCwd)
             ? { workspaceMode: goal.isolate ? ("worktree" as const) : ("current" as const) }
             : {}),
           worktreeCwd: projects.find((project) => project.id === goal.leadProjectId)!.cwd,
