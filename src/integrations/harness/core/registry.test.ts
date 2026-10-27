@@ -73,31 +73,115 @@ function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapte
 }
 
 describe("harness registry", () => {
+  it.each(["codex", "claude"] as const)(
+    "prepares %s text after adding runtime and skill guidance exactly once",
+    async (harness) => {
+      runtimeLogsBridgeMock.mockResolvedValueOnce({
+        command: "/fake/node",
+        args: ["/fake/host.mjs"],
+      });
+      const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+      registerHarness(stub(harness, { sendTurn }));
+      const prepareText = vi.fn(async (text: string, instructions?: string) => {
+        const charged = [text, instructions].filter(Boolean).join("\n\n");
+        expect(charged.match(/current owner settings/g)).toHaveLength(1);
+        expect(charged).toContain("runtime_logs_read");
+        expect(charged.match(/Owner request/g)).toHaveLength(1);
+        return `${text}\nSaved context`;
+      });
+      await sendHarnessTurn({
+        harness,
+        sessionId: `late-prompt-${harness}`,
+        cwd: "/tmp",
+        model: `${harness}:test`,
+        runtimeMode: "supervised",
+        text: "Owner request",
+        onEvent: vi.fn(),
+        prepareText,
+      });
+      expect(prepareText).toHaveBeenCalledOnce();
+      const sent = sendTurn.mock.calls[0][0];
+      expect(sent.text).toContain("Saved context");
+      expect(sent).not.toHaveProperty("prepareText");
+      if (harness === "codex") expect(sent.runtimeInstructions).toContain("runtime_logs_read");
+    },
+  );
+
+  it("honors cancellation while asynchronous prompt preparation is pending", async () => {
+    const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+    registerHarness(stub("claude", { sendTurn }));
+    let finish!: (text: string) => void;
+    const prepareText = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const sending = sendHarnessTurn({
+      harness: "claude",
+      sessionId: "cancel-handoff-preparation",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised",
+      text: "Continue",
+      onEvent: vi.fn(),
+      prepareText,
+    });
+    const rejected = expect(sending).rejects.toThrow("Turn cancelled before it started");
+    await vi.waitFor(() => expect(prepareText).toHaveBeenCalledOnce());
+    await cancelHarnessTurn("claude", "cancel-handoff-preparation");
+    finish("Continue with context");
+    await rejected;
+    expect(sendTurn).not.toHaveBeenCalled();
+  });
+
   it("rejects a Gemini model on Codex before any provider operation", async () => {
     const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
     const steerTurn = vi.fn(async (_input: SteerTurnInput) => {});
     const compactContext = vi.fn(async () => {});
     const rewindLastTurn = vi.fn(async () => ({ submitted: false }));
     const runTextPrompt = vi.fn(async () => "unexpected");
-    registerHarness(stub("codex", { sendTurn, steerTurn, compactContext, rewindLastTurn, runTextPrompt }));
-    const input = { harness: "codex" as const, sessionId: "foreign-model-guard", cwd: "/tmp",
-      model: "antigravity:gemini-3.8-flash-high", runtimeMode: "supervised" as const,
-      text: "Continue the same chat", onEvent: vi.fn() };
+    registerHarness(
+      stub("codex", { sendTurn, steerTurn, compactContext, rewindLastTurn, runTextPrompt }),
+    );
+    const input = {
+      harness: "codex" as const,
+      sessionId: "foreign-model-guard",
+      cwd: "/tmp",
+      model: "antigravity:gemini-3.8-flash-high",
+      runtimeMode: "supervised" as const,
+      text: "Continue the same chat",
+      onEvent: vi.fn(),
+    };
     await expect(sendHarnessTurn(input)).rejects.toThrow('does not belong to provider "codex"');
     await expect(steerHarnessTurn(input)).rejects.toThrow('does not belong to provider "codex"');
-    await expect(compactHarnessContext(input)).rejects.toThrow('does not belong to provider "codex"');
-    await expect(rewindHarnessLastTurn(input)).rejects.toThrow('does not belong to provider "codex"');
-    await expect(runHarnessTextPrompt({ ...input, prompt: "Recap" })).rejects.toThrow('does not belong to provider "codex"');
+    await expect(compactHarnessContext(input)).rejects.toThrow(
+      'does not belong to provider "codex"',
+    );
+    await expect(rewindHarnessLastTurn(input)).rejects.toThrow(
+      'does not belong to provider "codex"',
+    );
+    await expect(runHarnessTextPrompt({ ...input, prompt: "Recap" })).rejects.toThrow(
+      'does not belong to provider "codex"',
+    );
     for (const operation of [sendTurn, steerTurn, compactContext, rewindLastTurn, runTextPrompt])
       expect(operation).not.toHaveBeenCalled();
   });
 
   it.each(["my-private-model", "openrouter:vendor/custom-model", "codex:custom-model"])(
-    "keeps valid/custom Codex models unchanged: %s", async (model) => {
+    "keeps valid/custom Codex models unchanged: %s",
+    async (model) => {
       const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
       registerHarness(stub("codex", { sendTurn }));
-      await sendHarnessTurn({ harness: "codex", sessionId: `custom-model-${model}`, cwd: "/tmp",
-        model, runtimeMode: "supervised", text: "Continue", onEvent: vi.fn() });
+      await sendHarnessTurn({
+        harness: "codex",
+        sessionId: `custom-model-${model}`,
+        cwd: "/tmp",
+        model,
+        runtimeMode: "supervised",
+        text: "Continue",
+        onEvent: vi.fn(),
+      });
       expect(sendTurn).toHaveBeenCalledOnce();
       expect(sendTurn.mock.calls[0][0].model).toBe(model);
     },

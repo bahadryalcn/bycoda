@@ -20,6 +20,10 @@ import {
   type HarnessAdapter,
 } from "../../../../integrations/harness/core/registry";
 import type { HarnessEvent, SendTurnInput } from "../../../../integrations/harness/core/types";
+import {
+  resetHarnessModelOverlays,
+  setHarnessModels,
+} from "../../../../features/sessions/model/models";
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke, isTauri: () => false }));
@@ -194,17 +198,19 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   resetHarnessIdlePark();
+  resetHarnessModelOverlays();
   document.body.innerHTML = "";
 });
 
 async function submit(
   status = "completed",
   overrides: Partial<SubmitInput["options"]> = {},
+  text = "Continue our earlier work without repeating the context",
 ): Promise<void> {
   const settled = vi.fn();
   const input: SubmitInput = {
     sessionId: getSessions()[0].id,
-    text: "Continue our earlier work without repeating the context",
+    text,
     attachments: [],
     options: { ...overrides, onSettled: settled },
   };
@@ -252,6 +258,52 @@ it("admits a managed native provider only after its accepted boundary is durable
   ).toBe(true);
   expect(native.invoke).toHaveBeenCalledWith("managed_turn_end", began?.[1]);
   expect(sends[0].input.cwd).toBe("/owned/worktree");
+});
+
+it("sends a long Turkish request after a switch without echoing it into handoff history", async () => {
+  const original = getSessions()[0];
+  await act(async () =>
+    actions.onModelChange(original.id, "antigravity", "antigravity:gemini-3.8-flash-high"),
+  );
+  const request = "İş akışını ve önceki değişiklikleri koruyarak devam et. ".repeat(600).trim();
+  expect(new TextEncoder().encode(request).length).toBeGreaterThan(20_000);
+  await submit("completed", {}, request);
+  const sent = sends.at(-1)!.input.text;
+  expect(sent).toContain(request);
+  expect(sent.split(request)).toHaveLength(2);
+  const archive = native.invoke.mock.calls.find(([command]) => command === "handoff_history_save");
+  expect(
+    archive?.[1].history.messages.some((message: { text: string }) => message.text === request),
+  ).toBe(false);
+});
+
+it("continues a tiny-window send with an informational saved-history notice", async () => {
+  const original = getSessions()[0];
+  setHarnessModels("antigravity", [
+    {
+      id: "antigravity:gemini-3.8-flash-high",
+      harness: "antigravity",
+      name: "Tiny discovered target",
+      contextWindow: 32,
+    },
+  ]);
+  await act(async () =>
+    actions.onModelChange(original.id, "antigravity", "antigravity:gemini-3.8-flash-high"),
+  );
+  const request = "Continue my work despite the handoff capacity estimate";
+  await submit("completed", {}, request);
+  const sent = sends.at(-1)!.input.text;
+  expect(sent).toContain(request);
+  expect(sent).not.toContain("<handoff>");
+  expect(sent).not.toContain("You are continuing an existing conversation");
+  expect(sent).not.toContain("/isolated/handoff-history.json");
+  expect(getSessions()[0].blocks).toContainEqual(
+    expect.objectContaining({
+      role: "system",
+      notice: "info",
+      text: expect.stringContaining("/isolated/handoff-history.json"),
+    }),
+  );
 });
 
 it("does not invoke a managed provider when native admission has an unknown outcome", async () => {
