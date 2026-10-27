@@ -21,6 +21,7 @@ import type {
 } from "../src/features/sessions/model/checkpoint-types";
 import { safeGitPath } from "./workspace";
 import { CheckpointLeases } from "./checkpoint-leases";
+import { SessionFileRevert } from "./session-file-revert";
 
 type Blob = { oid: string; mode: string } | null;
 type Pair = {
@@ -161,11 +162,51 @@ export class HostCheckpoints {
   private knownSessions = new Map<string, string>();
   private legacyActive = new Map<string, string>();
   private leases: CheckpointLeases;
+  private fileHistory: SessionFileRevert;
   constructor(
     private root: string,
     leaseRoot = join(root, ".active-leases"),
   ) {
     this.leases = new CheckpointLeases(leaseRoot);
+    this.fileHistory = new SessionFileRevert(root);
+  }
+  /** Lightweight default turn hooks: no private Git index, tree or refs. Call
+   * with the actual user block ID, which differs from the provider run ID. */
+  beginFilesTurn(session: string, cwd: string, turn: string, userBlockId = turn) {
+    return this.queue(session, [cwd], async () => {
+      await this.leases.publish(session, turn, cwd);
+      try {
+        await this.fileHistory.begin(session, cwd, turn, userBlockId);
+      } catch (error) {
+        await this.leases.release(session, turn);
+        throw error;
+      }
+    });
+  }
+  finishFilesTurn(session: string, cwd: string, turn: string, _interrupted = false) {
+    return this.queue(session, [cwd], async () => {
+      try {
+        await this.fileHistory.finish(session, cwd, turn, await this.leases.shared(session, turn));
+      } finally {
+        await this.leases.release(session, turn);
+      }
+    });
+  }
+  prepareFilesTurn(session: string, cwd: string, turn: string, paths: string[]) {
+    return this.queue(session, [cwd], () => this.fileHistory.prepare(session, cwd, turn, paths));
+  }
+  filesRevertPlan(session: string, cwd: string, userBlockId: string) {
+    return this.queue(session, [cwd], () => this.fileHistory.plan(session, cwd, userBlockId));
+  }
+  filesRevert(session: string, cwd: string, userBlockId: string, planToken?: string) {
+    return this.queue(session, [cwd], () =>
+      this.fileHistory.revert(session, cwd, userBlockId, planToken),
+    );
+  }
+  forgetFilesFromMessage(session: string, cwd: string, userBlockId: string) {
+    return this.queue(session, [cwd], () =>
+      this.fileHistory.forgetFromMessage(session, cwd, userBlockId),
+    );
   }
   private queue<T>(
     session: string,
@@ -373,7 +414,7 @@ export class HostCheckpoints {
       throw e;
     }
   }
-  begin(session: string, cwd: string, turn: string) {
+  begin(session: string, cwd: string, turn: string, userBlockId = turn) {
     id(session);
     id(turn);
     return this.queue(
@@ -391,6 +432,7 @@ export class HostCheckpoints {
         const shared = await this.leases.publish(session, turn, cwd).catch((e) => {
           throw new Error(`checkpoint-coordination: ${errorText(e)}`);
         });
+        await this.fileHistory.begin(session, cwd, turn, userBlockId);
         const previous = await this.load(session);
         if (previous?.cwd === cwd) await this.retireResolved(session, previous);
         const isGit = await hasGit(cwd);
@@ -458,6 +500,7 @@ export class HostCheckpoints {
   }
   claim(session: string, cwd: string, turn: string, paths: string[]) {
     return this.queue(session, [cwd], async () => {
+      await this.fileHistory.claim(session, cwd, turn, paths);
       const record = await this.load(session);
       if (!record?.active || record.active.id !== turn || record.cwd !== (await realpath(cwd)))
         return;
@@ -477,6 +520,7 @@ export class HostCheckpoints {
       return;
     }
     const ambiguous = await this.leases.shared(session, turn);
+    await this.fileHistory.finish(session, cwd, turn, ambiguous);
     record.shared ||= ambiguous;
     record.shared ||= interrupted;
     try {
