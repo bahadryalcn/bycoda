@@ -159,6 +159,14 @@ export const hot1Titles = {
   7: "Explicit Worktree creates a session and completes one turn",
 };
 
+export const v94Titles = {
+  1: "Current checkout default: two real Codex turns",
+  2: "Lightweight Worktree: three real Codex turns with Exact Git rewind OFF",
+  3: "Edit from here keeps files and restores prompt plus attachment",
+  4: "Edit from here restores own files and lists a protected external edit",
+  5: "Model switch sends a long Turkish draft",
+};
+
 export function acceptanceOptions(args) {
   const option = (key, fallback) => {
     const index = args.indexOf(key);
@@ -170,8 +178,9 @@ export function acceptanceOptions(args) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$/.test(id) || id.includes(".."))
     throw new Error("--id must be a simple task name");
   const suite = option("--suite", "native");
-  if (!["native", "hot1"].includes(suite)) throw new Error("Expected --suite native or hot1");
-  const selectedTitles = suite === "hot1" ? hot1Titles : titles;
+  if (!["native", "hot1", "v94"].includes(suite))
+    throw new Error("Expected --suite native, hot1 or v94");
+  const selectedTitles = suite === "v94" ? v94Titles : suite === "hot1" ? hot1Titles : titles;
   const scenario = option("--scenario", "all");
   const scenarios =
     scenario === "all" ? Object.keys(selectedTitles).map(Number) : scenario.split(",").map(Number);
@@ -350,7 +359,7 @@ export async function captureMatrix(context, name) {
   const captures = [];
   const previous = page.viewportSize();
   try {
-    for (const width of [1280, 800])
+    for (const width of context.options.suite === "v94" ? [1280] : [1280, 800])
       for (const theme of ["light", "dark"]) {
         await page.setViewportSize({ width, height: 900 });
         await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
@@ -895,7 +904,7 @@ export async function sendPrompt(
       last.some((block) => block.role === "assistant" && block.text.trim()),
       "Codex did not produce a completed assistant reply",
     );
-    if (settled.workspaceId && context.options.suite !== "hot1") {
+    if (settled.workspaceId && !["hot1", "v94"].includes(context.options.suite)) {
       const { DatabaseSync } = await import("node:sqlite");
       await waitUntil(() => {
         const database = new DatabaseSync(join(context.run.desktopDataPath, "bycoda.db"));
@@ -2472,6 +2481,263 @@ async function hot1Worktree(context) {
   };
 }
 
+async function assertLightweightDefault(context) {
+  const enabled = await context.page.evaluate(async () =>
+    (await import("/src/features/settings/model/exactGitRewind.ts")).loadExactGitRewind(),
+  );
+  assert.equal(
+    enabled,
+    false,
+    "V94 acceptance requires Exact Git rewind OFF; do not change owner policy",
+  );
+}
+
+async function v94Turn(context, prompt) {
+  const current = await sendPrompt(context, prompt);
+  const tail = current.blocks.slice(
+    current.blocks.findIndex((block) => block.id === context.state.lastUserBlockId) + 1,
+  );
+  assert(
+    !tail.some((block) =>
+      /A different managed turn|Another workspace writer|Conversation changed before managed turn capture/.test(
+        block.text,
+      ),
+    ),
+    "A lightweight turn encountered a managed-turn fence",
+  );
+  return {
+    sessionId: current.id,
+    userBlockId: context.state.lastUserBlockId,
+    prompt,
+    cwd: current.worktreeCwd || current.cwd,
+    attachmentIds:
+      current.blocks
+        .find((block) => block.id === context.state.lastUserBlockId)
+        ?.attachments?.map((file) => file.id) ?? [],
+  };
+}
+
+async function v94Current(context) {
+  await newSession(context, null);
+  await assertLightweightDefault(context);
+  assert(
+    await context.page
+      .getByRole("button", { name: "Workspace Current checkout", exact: true })
+      .isVisible(),
+    "New sessions must default to Current checkout",
+  );
+  const first = await v94Turn(
+    context,
+    "Use apply_patch to set counter.txt to 1 plus newline. Do not commit. Reply DONE.",
+  );
+  const attachment = join(context.scratch, "acceptance-note.txt");
+  await writeFile(attachment, "Attachment restoration acceptance. No edits required.\n");
+  await context.page
+    .locator("textarea:visible")
+    .first()
+    .evaluate(
+      (element, content) => {
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(new File([content], "acceptance-note.txt", { type: "text/plain" }));
+        element.dispatchEvent(
+          new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }),
+        );
+      },
+      await readFile(attachment, "utf8"),
+    );
+  await context.page
+    .locator("[data-attachment-chip]")
+    .filter({ hasText: "acceptance-note.txt" })
+    .waitFor();
+  const second = await v94Turn(
+    context,
+    "Use apply_patch to set counter.txt to 2 plus newline. Keep the attachment unchanged. Do not commit. Reply DONE.",
+  );
+  assert.equal(second.attachmentIds.length, 1, "The real request did not carry its attachment");
+  assert.equal((await readFile(join(second.cwd, "counter.txt"), "utf8")).trim(), "2");
+  assert(!(await session(context)).workspaceId, "Current checkout acquired managed admission");
+  context.state.v94Current = [first, second];
+  return { turns: [first, second], screenshots: await context.capture("v94-01-current") };
+}
+
+async function v94Worktree(context) {
+  await newSession(context, "worktree");
+  await assertLightweightDefault(context);
+  const turns = [];
+  turns.push(
+    await v94Turn(
+      context,
+      "Use apply_patch to set counter.txt to 1 plus newline. Do not commit. Reply DONE.",
+    ),
+  );
+  const cwd = turns[0].cwd;
+  assertWithin(context.scratch, cwd, "provider worktree");
+  assert((await session(context)).worktreeCwd, "Explicit Worktree did not create its own checkout");
+  assert.notEqual(resolve(cwd).toLowerCase(), resolve(context.state.project).toLowerCase());
+  const before = await readFile(join(cwd, "counter.txt"), "utf8");
+  turns.push(
+    await v94Turn(
+      context,
+      "Use apply_patch to set counter.txt to 2 and preserve.txt to session-owned, each plus newline. Do not commit. Reply DONE.",
+    ),
+  );
+  assert.equal((await readFile(join(cwd, "preserve.txt"), "utf8")).trim(), "session-owned");
+  // Real external write between provider turns, deliberately outside session attribution.
+  await writeFile(join(cwd, "preserve.txt"), "someone-else\n");
+  turns.push(
+    await v94Turn(
+      context,
+      "Use apply_patch to set counter.txt to 3 plus newline. Do not touch preserve.txt or commit. Reply DONE.",
+    ),
+  );
+  assert.equal((await readFile(join(cwd, "counter.txt"), "utf8")).trim(), "3");
+  context.state.v94Worktree = {
+    turns,
+    counterBefore: before,
+    head: await command("git", ["rev-parse", "HEAD"], cwd),
+  };
+  return {
+    turns,
+    exactGitRewind: false,
+    externalWrite: "preserve.txt",
+    screenshots: await context.capture("v94-02-worktree"),
+  };
+}
+
+async function v94Edit(context, turn, mode) {
+  await selectAcceptanceSession(context, turn.sessionId);
+  const anchor = context.page.locator(`[data-prompt-anchor=${JSON.stringify(turn.userBlockId)}]`);
+  const edit = anchor.getByRole("button", { name: "Edit from here", exact: true });
+  await edit.focus();
+  await context.page.keyboard.press("Enter");
+  const dialog = context.page.getByRole("dialog", { name: "Edit from here?", exact: true });
+  await dialog.waitFor();
+  const choice = dialog.getByRole("button", {
+    name: mode === "files" ? "Revert files too" : "Revert and keep changes",
+    exact: true,
+  });
+  await waitUntil(() => choice.isEnabled(), "Edit from here file history did not become available");
+  const screenshots = await context.capture(`v94-0${mode === "files" ? 4 : 3}-dialog`);
+  await choice.click();
+  await dialog.waitFor({ state: "hidden", timeout: 30000 });
+  await waitUntil(async () => {
+    const current = await session(context, turn.sessionId);
+    return !current.blocks.some((block) => block.id === turn.userBlockId);
+  }, "Edit from here did not rewind chat before the selected message");
+  await waitUntil(
+    async () =>
+      (await context.page.locator("textarea:visible").first().inputValue()) === turn.prompt,
+    "The rewound prompt did not return to the composer",
+  );
+  return screenshots;
+}
+
+async function v94Keep(context) {
+  assert(context.state.v94Current, "Run scenario 1 before scenario 3");
+  const turn = context.state.v94Current[1];
+  const paths = ["counter.txt", "preserve.txt", ".gitignore"];
+  const before = await Promise.all(paths.map((path) => readFile(join(turn.cwd, path), "utf8")));
+  const screenshots = await v94Edit(context, turn, "keep");
+  assert.deepEqual(
+    await Promise.all(paths.map((path) => readFile(join(turn.cwd, path), "utf8"))),
+    before,
+  );
+  const restored = await waitUntil(async () => {
+    const ids = await context.page.evaluate(
+      async (id) =>
+        (await import("/src/features/sessions/model/draftCache.ts"))
+          .getComposerAttachments(id)
+          .map((file) => file.id),
+      turn.sessionId,
+    );
+    return ids.length === turn.attachmentIds.length ? ids : false;
+  }, "The rewound attachment did not return to the composer");
+  assert.deepEqual(
+    restored,
+    turn.attachmentIds,
+    "The original attachment did not return to the composer",
+  );
+  await context.page
+    .locator("[data-attachment-chip]")
+    .filter({ hasText: "acceptance-note.txt" })
+    .waitFor();
+  screenshots.push(...(await context.capture("v94-03-keep-result")));
+  return {
+    chatRewound: true,
+    promptRestored: true,
+    attachmentsRestored: restored.length,
+    filesUnchanged: paths,
+    screenshots,
+  };
+}
+
+async function v94Files(context) {
+  const state = context.state.v94Worktree;
+  assert(state, "Run scenario 2 before scenario 4");
+  const turn = state.turns[1];
+  const screenshots = await v94Edit(context, turn, "files");
+  assert.equal(await readFile(join(turn.cwd, "counter.txt"), "utf8"), state.counterBefore);
+  assert.equal(await readFile(join(turn.cwd, "preserve.txt"), "utf8"), "someone-else\n");
+  assert.equal(
+    await command("git", ["rev-parse", "HEAD"], turn.cwd),
+    state.head,
+    "File revert rewrote Git history",
+  );
+  const notice = context.page.locator("[data-session-files-revert-result]");
+  await notice.waitFor();
+  const text = await notice.innerText();
+  assert(
+    text.includes("preserve.txt") && /Skipped files: [1-9]/.test(text),
+    "Skipped external edit was not listed",
+  );
+  assert(
+    !(await session(context, turn.sessionId)).blocks.some(
+      (block) => block.id === state.turns[2].userBlockId,
+    ),
+  );
+  screenshots.push(...(await context.capture("v94-04-files-result")));
+  return {
+    restored: "counter.txt",
+    skipped: "preserve.txt",
+    headUnchanged: state.head,
+    notice: text,
+    screenshots,
+  };
+}
+
+async function v94Turkish(context) {
+  await newSession(context, null);
+  await sendPrompt(context, "Reply READY. Do not edit files.");
+  const initialModel = (await session(context)).model;
+  const prompt =
+    "Dosyaları değiştirme. Yalnızca TAMAM yaz.\n" +
+    "Türkiye İstanbul çalışma alanı ve güvenli model değişimi. ".repeat(400);
+  assert(Buffer.byteLength(prompt, "utf8") > 20480);
+  const textarea = context.page.locator("textarea:visible").first();
+  await textarea.fill(prompt);
+  await selectCodex(context, context.options.switchModel);
+  assert.equal(await textarea.inputValue(), prompt, "Model switch discarded the Turkish draft");
+  const current = await sendPrompt(context, prompt);
+  assert.notEqual(current.model, initialModel, "The model did not switch");
+  assert.equal(
+    current.blocks.find((block) => block.id === context.state.lastUserBlockId)?.text,
+    prompt.trim(),
+  );
+  return {
+    model: current.model,
+    bytes: Buffer.byteLength(prompt, "utf8"),
+    screenshots: await context.capture("v94-05-turkish"),
+  };
+}
+
+export const v94Scenarios = {
+  1: v94Current,
+  2: v94Worktree,
+  3: v94Keep,
+  4: v94Files,
+  5: v94Turkish,
+};
+
 export const hot1Scenarios = {
   1: scenario1,
   2: scenario4,
@@ -2503,8 +2769,14 @@ export async function runAcceptance(args = process.argv.slice(2)) {
     throw new Error(
       "Pass explicit --model and --switch-model values available in your Codex account",
     );
-  const selectedTitles = options.suite === "hot1" ? hot1Titles : titles;
-  const scenarios = options.suite === "hot1" ? hot1Scenarios : acceptanceScenarios;
+  const selectedTitles =
+    options.suite === "v94" ? v94Titles : options.suite === "hot1" ? hot1Titles : titles;
+  const scenarios =
+    options.suite === "v94"
+      ? v94Scenarios
+      : options.suite === "hot1"
+        ? hot1Scenarios
+        : acceptanceScenarios;
   const context = await connectAcceptance(ROOT, options);
   const report = {
     schemaVersion: 1,
@@ -2590,7 +2862,7 @@ export async function runAcceptance(args = process.argv.slice(2)) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv.includes("--help"))
     console.log(
-      "pnpm acceptance:native --run <isolated dev-run.json> [--id q1] [--suite native|hot1] [--scenario all|1,2,...] --model MODEL --switch-model MODEL [--turn-timeout 240000]\nRequires pnpm dev:native --acceptance-controls. Real Codex, fake repositories, isolated native identity only. Screenshots and JSON evidence: temp/verification/<id>/. Stops on first failure; rerun a scenario with the same id after fixing it.",
+      "pnpm acceptance:native --run <isolated dev-run.json> [--id q1] [--suite native|hot1|v94] [--scenario all|1,2,...] --model MODEL --switch-model MODEL [--turn-timeout 240000]\nRequires pnpm dev:native --acceptance-controls. Real Codex, fake repositories, isolated native identity only. V94 scenarios 3/4 require retained state from 1/2. Screenshots and JSON evidence: temp/verification/<id>/. Stops on first failure; rerun a scenario with the same id after fixing it.",
     );
   else
     runAcceptance()

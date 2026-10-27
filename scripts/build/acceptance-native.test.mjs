@@ -10,6 +10,8 @@ import {
   completedHostAcceptanceReply,
   hot1Scenarios,
   hot1Titles,
+  v94Scenarios,
+  v94Titles,
   assertWithin,
   assertRejectedNativeAdmission,
   validateAcceptanceRun,
@@ -63,6 +65,23 @@ test("HOT1 selects only the seven hotfix checks without native recovery or deliv
   assert.throws(() => acceptanceOptions(["--suite", "unknown"]));
   assert.equal(options.model, undefined, "Acceptance must use explicitly supplied account choices");
   assert.equal(options.switchModel, undefined);
+});
+
+test("V94 selects exactly the five integrated lightweight acceptance scenarios", () => {
+  const options = acceptanceOptions([
+    "--suite",
+    "v94",
+    "--model",
+    "explicit-first",
+    "--switch-model",
+    "explicit-second",
+  ]);
+  assert.deepEqual(options.scenarios, [1, 2, 3, 4, 5]);
+  assert.deepEqual(Object.keys(v94Scenarios), Object.keys(v94Titles));
+  assert.equal(options.model, "explicit-first");
+  assert.equal(options.switchModel, "explicit-second");
+  assert.throws(() => acceptanceOptions(["--suite", "v94", "--scenario", "6"]));
+  assert.deepEqual(acceptanceOptions(["--suite", "v94", "--scenario", "3,4"]).scenarios, [3, 4]);
 });
 
 test("contextual acceptance requires an idle successful Host reply rather than a saved request or partial reply", () => {
