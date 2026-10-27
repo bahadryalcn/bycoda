@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.94]
+
+### Edit from here
+
+- Add Edit from here to every message you sent: rewind the chat to before that message and get its prompt and attachments back in the composer.
+- Choose Revert and keep changes to keep your files, or Revert files too to also restore the files this session changed since that message; files someone else changed meanwhile are skipped and listed.
+
+### Sessions and workspaces
+
+- Start new sessions, tasks, goals and automations in the current checkout by default; a worktree is now an explicit choice per session or a project setting.
+- Make worktree sessions lightweight: no whole-project snapshot or provider restart on every turn, and no turn locks. Exact Git rewind remains available as an experimental setting, off by default.
+- Sessions that were stuck with "A different managed turn is still active" continue normally after updating.
+- Start handoffs and second opinions in the current checkout, and keep a failed first send from switching the session to a worktree.
+
+### Model switches
+
+- Never block a message when switching provider or model: use the model's real context window, shorten the transferred history or recap when needed, and show a notice when earlier conversation could not be transferred.
+
 ## [0.6.92]
 
 ### Sessions
