@@ -642,9 +642,13 @@ export async function selectAcceptanceSession(context, sessionId) {
   });
 }
 
-export async function sendPrompt(context, prompt, { allowFailure = false, wait = true } = {}) {
+export async function sendPrompt(
+  context,
+  prompt,
+  { allowFailure = false, wait = true, expectedSessionId } = {},
+) {
   const { page } = context;
-  const { textarea } = await assertCodexComposer(context);
+  const { textarea } = await assertCodexComposer(context, expectedSessionId);
   const selected = await page
     .locator('[data-project-path][data-selected="true"]')
     .first()
@@ -936,6 +940,7 @@ async function waitForActiveNativeProcess(context, sessionId, userBlockId) {
 
 async function scenario3(context) {
   await newSession(context, "worktree");
+  const screenshots = [];
   const recoveryCounter = Number(
     (await readFile(join(context.state.project, "counter.txt"), "utf8")).trim(),
   );
@@ -1012,7 +1017,7 @@ async function scenario3(context) {
     } finally {
       database.close();
     }
-    await context.capture("03-rejected-begin");
+    screenshots.push(...(await context.capture("03-rejected-begin")));
   } finally {
     await publishBuffers(originalBuffers);
   }
@@ -1203,7 +1208,42 @@ async function scenario3(context) {
   );
   const reset = await button(context, "Reset stuck turn");
   const resetUsed = await reset.isVisible();
+  const beforeNextDatabase = new DatabaseSync(databasePath);
+  let beforeNextSend;
+  try {
+    beforeNextSend = beforeNextDatabase
+      .prepare("SELECT request_json,phase FROM native_managed_turns WHERE session_id=?")
+      .get(current.id);
+  } finally {
+    beforeNextDatabase.close();
+  }
+  assert(
+    beforeNextSend && ["active", "finishing", "complete"].includes(beforeNextSend.phase),
+    "The exact accepted crash row is unavailable before recovery",
+  );
+  assert.equal(
+    JSON.parse(beforeNextSend.request_json).userBlockId,
+    crashUserBlockId,
+    "The accepted crash row changed before the next send",
+  );
+  screenshots.push(...(await context.capture("03-after-reopen-before-next-send")));
   if (resetUsed) await reset.click();
+  const resumed = await sendPrompt(context, "Reply APPRECOVERED without editing files.", {
+    expectedSessionId: current.id,
+  });
+  const resumedUserBlockId = context.state.lastUserBlockId;
+  assert.notEqual(
+    resumedUserBlockId,
+    crashUserBlockId,
+    "The next send did not create a new accepted boundary",
+  );
+  const resumedTail = resumed.blocks.slice(
+    resumed.blocks.findIndex((block) => block.id === resumedUserBlockId) + 1,
+  );
+  assert(
+    resumedTail.some((block) => block.role === "assistant" && block.text.trim() === "APPRECOVERED"),
+    "The exact restored Codex session did not answer the next send",
+  );
   await waitUntil(
     () => {
       const check = new DatabaseSync(databasePath);
@@ -1212,13 +1252,14 @@ async function scenario3(context) {
           .prepare("SELECT request_json,phase FROM native_managed_turns WHERE session_id=?")
           .get(current.id);
         return (
-          row?.phase === "complete" && JSON.parse(row.request_json).userBlockId === crashUserBlockId
+          row?.phase === "complete" &&
+          JSON.parse(row.request_json).userBlockId === resumedUserBlockId
         );
       } finally {
         check.close();
       }
     },
-    "Restarted native app did not recover the exact accepted turn",
+    "The next native turn did not complete after recovery of accepted execution",
     60000,
   );
   const crashRecordPath = join(
@@ -1229,6 +1270,16 @@ async function scenario3(context) {
     `${crashUserBlockId}.json`,
   );
   const crashRecord = JSON.parse(await readFile(crashRecordPath, "utf8"));
+  assert.equal(
+    crashRecord.userBlockId,
+    crashUserBlockId,
+    "The old Host record belongs to a different user boundary",
+  );
+  assert.equal(
+    crashRecord.runId,
+    crashAdmission.request.runId,
+    "The old Host record belongs to a different execution",
+  );
   assert.equal(
     crashRecord.before.status,
     "complete",
@@ -1243,13 +1294,20 @@ async function scenario3(context) {
     step: "Reconcile accepted execution after native restart",
     actual: {
       userBlockId: crashUserBlockId,
+      nativePhaseBeforeNextSend: beforeNextSend.phase,
+      nextUserBlockId: resumedUserBlockId,
       nativePhase: "complete",
       afterCapture: "complete",
       resetUsed,
+      recoveryPath: resetUsed
+        ? "reset"
+        : beforeNextSend.phase === "complete"
+          ? "startup"
+          : "pre-send",
     },
   });
-  await sendPrompt(context, "Reply APPRECOVERED without editing files.");
-  return { sessionId: current.id, screenshots: await context.capture("03-after-recovery") };
+  screenshots.push(...(await context.capture("03-after-recovery")));
+  return { sessionId: current.id, screenshots };
 }
 
 async function scenario4(context) {
