@@ -718,31 +718,36 @@ async function scenario3(context) {
   await newSession(context, "worktree");
   await commitTurn(context, 1, "recovery");
   let current = await session(context);
-  const machine = await context.page.evaluate(async () =>
-    window.__TAURI_INTERNALS__.invoke("local_host_connect"),
-  );
-  const rpc = (method, params) =>
-    context.page.evaluate(
-      async ({ machineId, method, params }) =>
-        (await import("/src/features/connections/model/connections.ts")).remoteRequest(
-          machineId,
-          method,
-          params,
-          false,
-          true,
-        ),
-      { machineId: machine.id, method, params },
-    );
-  const activity = await rpc("workspaces.activities.start", {
-    workspaceId: current.workspaceId,
-    kind: "editor",
-    dirtyBuffer: true,
-  });
   const { DatabaseSync } = await import("node:sqlite");
   const databasePath = join(context.run.desktopDataPath, "bycoda.db");
   assert(existsSync(databasePath), "Isolated desktop database was not found");
+  const bufferDatabase = new DatabaseSync(databasePath);
+  let originalBuffers;
+  try {
+    const row = bufferDatabase
+      .prepare("SELECT snapshot_json FROM native_workspace_buffers WHERE owner_id='main'")
+      .get();
+    originalBuffers = row ? JSON.parse(row.snapshot_json) : [];
+  } finally {
+    bufferDatabase.close();
+  }
+  const dirtyPath = join(current.worktreeCwd, "counter.txt");
+  assertWithin(context.scratch, dirtyPath, "simulated dirty buffer");
+  const buffers = new Map(originalBuffers.map((entry) => [entry.path, entry]));
+  buffers.set(dirtyPath, { path: dirtyPath, dirty: true });
+  const publishBuffers = (snapshot) =>
+    context.page.evaluate(
+      async (buffers) =>
+        window.__TAURI_INTERNALS__.invoke("managed_workspace_buffers", { buffers }),
+      snapshot,
+    );
   let rejectedRequest;
   try {
+    await publishBuffers([...buffers.values()]);
+    context.steps.push({
+      step: "Publish a simulated dirty editor buffer through the real native buffer bridge",
+      actual: { path: dirtyPath, dirty: true },
+    });
     const rejected = await context.page.evaluate(async (id) => {
       const store = await import("/src/features/sessions/model/sessionsStore.ts");
       const { upsertSession } = await import("/src/features/sessions/data/sessionStore.ts");
@@ -770,9 +775,9 @@ async function scenario3(context) {
         return { error: String(error), userBlockId: user.id };
       }
     }, current.id);
-    assert(rejected.error, "Foreign editor activity did not reject native begin");
+    assert(rejected.error, "Dirty native editor state did not reject native begin");
     context.steps.push({
-      step: "Attempt native begin with a foreign dirty editor",
+      step: "Attempt native begin with an unsettled editor buffer",
       actual: rejected.error,
     });
     const database = new DatabaseSync(databasePath);
@@ -785,10 +790,7 @@ async function scenario3(context) {
     }
     await context.capture("03-rejected-begin");
   } finally {
-    await rpc("workspaces.activities.stop", {
-      workspaceId: current.workspaceId,
-      activityId: activity.id,
-    });
+    await publishBuffers(originalBuffers);
   }
   await sendPrompt(context, "Reply RECOVERED without editing files.");
   // Stop the isolated Host before admission, then restart it. This retains the desktop's exact pending row.
