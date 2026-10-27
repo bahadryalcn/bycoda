@@ -1119,21 +1119,87 @@ async function scenario5(context) {
     await closeRecoveredSessions(context);
   };
   try {
-    await writeFile(path, JSON.stringify({ disabled: ["workspaces.managed.v1"] }));
-    await reconnect();
-    await newSession(context, "current");
-    await sendPrompt(context, "Reply OLDHOSTCURRENT without editing files.");
-    await newSession(context, "worktree");
-    await context.page
-      .locator("textarea:visible")
-      .first()
-      .fill("Reply NEVEREXECUTE without editing files.");
-    await click(context, "Send");
-    const useCurrent = await button(context, "Use current checkout");
-    await useCurrent.waitFor({ timeout: 30000 });
-    const screenshots = await context.capture("05-host-update-pending");
-    await useCurrent.click();
-    await sendPrompt(context, "Reply EXPLICITCURRENT without editing files.");
+    const screenshots = [];
+    const cases = [];
+    const processFiles = () =>
+      readdir(
+        join(context.run.hostDataPath, "managed-workspaces", "native-activity", "processes"),
+      ).catch((error) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      });
+    for (const [name, disabled] of [
+      ["missing-managed", ["workspaces.managed.v1"]],
+      ["missing-native-process-recovery", ["sessions.native-process-recovery.v1"]],
+    ]) {
+      await writeFile(path, JSON.stringify({ disabled }));
+      await reconnect();
+      const capabilities = await context.page.evaluate(
+        async (cwd) =>
+          (
+            await import("/src/features/workspaces/model/workspaceClient.ts")
+          ).getWorkspaceCapabilities({ cwd }),
+        context.state.project,
+      );
+      assert(
+        !capabilities.includes(disabled[0]),
+        "The development Host did not apply its capability override",
+      );
+      if (name === "missing-native-process-recovery")
+        assert(
+          capabilities.includes("workspaces.managed.v1"),
+          "The additive-capability case must retain managed workspace support",
+        );
+      await newSession(context, "current");
+      await sendPrompt(context, `Reply OLDHOSTCURRENT-${name} without editing files.`);
+      await newSession(context, "worktree");
+      const prompt = `Reply EXPLICITCURRENT-${name} without editing files.`;
+      const composer = context.page.locator("textarea:visible").first();
+      await composer.fill(prompt);
+      const beforeProcesses = await processFiles();
+      const send = await button(context, "Send");
+      if (await send.isEnabled()) await send.click();
+      const useCurrent = await button(context, "Use current checkout");
+      await useCurrent.waitFor({ timeout: 30000 });
+      const warning = await context.page
+        .locator('[data-workspace-creation-status][role="alert"]:visible')
+        .first()
+        .innerText();
+      assert.match(
+        warning,
+        /Update bycoda Host/,
+        "The old Host did not show an accurate update requirement",
+      );
+      assert.deepEqual(
+        await processFiles(),
+        beforeProcesses,
+        "A blocked Worktree send spawned a native provider activity",
+      );
+      screenshots.push(...(await context.capture(`05-${name}-host-update-pending`)));
+      await useCurrent.click();
+      assert.equal(
+        await composer.inputValue(),
+        prompt,
+        "Use current checkout discarded the unsent draft",
+      );
+      const explicit = await sendPrompt(context, prompt);
+      assert(!explicit.workspaceId, "Use current checkout retained managed-workspace admission");
+      assert.equal(
+        resolve(explicit.cwd).toLowerCase(),
+        resolve(context.state.project).toLowerCase(),
+      );
+      cases.push({
+        name,
+        disabled,
+        warning,
+        currentSessionId: explicit.id,
+        blockedProviderActivities: 0,
+      });
+      context.steps.push({
+        step: `Exercise the old Host without ${disabled[0]}`,
+        actual: cases.at(-1),
+      });
+    }
     await writeFile(path, JSON.stringify({ disabled: [] }));
     await reconnect();
     await newSession(context, "worktree");
@@ -1143,7 +1209,7 @@ async function scenario5(context) {
       "Pending Host update did not clear",
     );
     screenshots.push(...(await context.capture("05-capability-returned")));
-    return { screenshots };
+    return { cases, screenshots };
   } finally {
     await writeFile(path, JSON.stringify({ disabled: [] }));
     await reconnect();
