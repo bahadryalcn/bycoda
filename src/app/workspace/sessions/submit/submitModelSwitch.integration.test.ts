@@ -232,6 +232,7 @@ it("admits a managed native provider only after its accepted boundary is durable
   };
   resetSessionsStore([original]);
   native.invoke.mockImplementation(async (command: string, args: Record<string, any>) => {
+    if (command === "managed_turn_recover") return { released: true };
     if (command === "session_upsert")
       return { ...args.session, createdAt: 1, updatedAt: 2, transcriptRevision: 1 };
     if (command === "managed_turn_begin") {
@@ -246,6 +247,8 @@ it("admits a managed native provider only after its accepted boundary is durable
   });
   await submit();
   const saved = native.invoke.mock.calls.find(([command]) => command === "session_upsert");
+  const commands = native.invoke.mock.calls.map(([command]) => command);
+  expect(commands.indexOf("managed_turn_recover")).toBeLessThan(commands.indexOf("session_upsert"));
   expect(saved?.[1].session).toMatchObject({ workspaceId: "managed", workspaceRevision: 7 });
   const began = native.invoke.mock.calls.find(([command]) => command === "managed_turn_begin");
   expect(began?.[1]).toMatchObject({
@@ -311,6 +314,7 @@ it("does not invoke a managed provider when native admission has an unknown outc
     { ...getSessions()[0], workspaceId: "managed", worktreeCwd: "/owned/worktree" },
   ]);
   native.invoke.mockImplementation(async (command: string, args: Record<string, any>) => {
+    if (command === "managed_turn_recover") return { released: true };
     if (command === "session_upsert")
       return { ...args.session, createdAt: 1, updatedAt: 2, transcriptRevision: 1 };
     if (command === "managed_turn_begin")

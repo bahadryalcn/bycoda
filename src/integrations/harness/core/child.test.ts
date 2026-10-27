@@ -9,6 +9,37 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+vi.mock("../../../features/connections/model/desktopInstance", () => ({
+  desktopInstanceId: () => "desktop-window-test",
+}));
+
+it("binds a native provider spawn to the same desktop window as live activity", async () => {
+  mocks.invoke.mockResolvedValue(42);
+  const child = await loadChild();
+  await child.spawnChild("owned-session", "agent", [], "/owned/worktree");
+  expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("harness_spawn", {
+    sessionId: "owned-session",
+    clientId: "desktop-window-test",
+    command: "agent",
+    args: [],
+    cwd: "/owned/worktree",
+    account: undefined,
+    binaryProvider: undefined,
+    binaryPath: undefined,
+    genericAcpId: undefined,
+  });
+});
+
+it("does not assign desktop ownership to a headless provider", async () => {
+  const child = await loadChild();
+  const invoke = vi.fn().mockResolvedValue(42);
+  child.configureChildBackend({ invoke, listen: vi.fn() });
+  await child.spawnChild("host-session", "agent", [], "/owned/worktree");
+  expect(invoke).toHaveBeenCalledOnce();
+  expect(invoke.mock.calls[0][0]).toBe("harness_spawn");
+  expect(invoke.mock.calls[0][1]).not.toHaveProperty("clientId");
+  expect(mocks.invoke).not.toHaveBeenCalled();
+});
 
 type Deferred<T> = {
   promise: Promise<T>;

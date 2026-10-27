@@ -1093,6 +1093,7 @@ pub fn harness_spawn(
     binary_provider: Option<String>,
     binary_path: Option<String>,
     generic_acp_id: Option<String>,
+    client_id: Option<String>,
 ) -> Result<u32, String> {
     let generic = generic_acp_id
         .as_deref()
@@ -1116,8 +1117,13 @@ pub fn harness_spawn(
         return Err("harness_spawn: not a resolved harness CLI".to_string());
     }
 
-    let mut workspace_activity =
-        crate::native_workspace::Activity::start(&app, &workdir, "provider", Some(&session_id))?;
+    let mut workspace_activity = crate::native_workspace::Activity::start_for_client(
+        &app,
+        &workdir,
+        "provider",
+        Some(&session_id),
+        client_id.as_deref(),
+    )?;
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     let (epoch, kill_all, prev) = host.begin_spawn(&session_id);
     let mut tool_spawn =

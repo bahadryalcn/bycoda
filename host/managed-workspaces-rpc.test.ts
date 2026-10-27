@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -28,7 +28,7 @@ const git = (cwd: string, ...args: string[]) =>
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
   }).trim();
 
-async function fixture(buildIdentity: BuildIdentity | null = null) {
+async function fixture(buildIdentity: BuildIdentity | null = null, send?: HostProvider["send"]) {
   vi.spyOn(identity, "readHostBuildIdentity").mockReturnValue(buildIdentity);
   const root = mkdtempSync(join(tmpdir(), "bycoda-managed-rpc-"));
   const target = join(root, "repo");
@@ -45,6 +45,7 @@ async function fixture(buildIdentity: BuildIdentity | null = null) {
   const store = new HostStore(join(root, "host.db"));
   const provider: HostProvider = {
     async send(input) {
+      if (send) return send(input);
       writeFileSync(join(input.cwd, "source.txt"), `${input.text}\n`);
       git(input.cwd, "add", "source.txt");
       git(input.cwd, "commit", "-qm", input.text);
@@ -829,4 +830,210 @@ it("authenticates preparation cancellation and fences late same-key requests wit
     operation,
   });
   expect((await f.call("native.rewind.status", operation)).phase).toBe("prepared");
+});
+
+async function nativeWindowFixture(send?: HostProvider["send"]) {
+  const f = await fixture(null, send);
+  const sessionId = randomUUID();
+  const { workspace } = await f.call("workspaces.prepare", {
+    ...f.projectScope,
+    owner: { kind: "session", id: sessionId },
+    slug: "native desktop",
+    idempotencyKey: "native-window",
+    mode: "worktree",
+  });
+  const clientId = "native-own-window";
+  const boundary = {
+    workspaceId: workspace.id,
+    sessionId,
+    userBlockId: "busy-user",
+    runId: "busy-run",
+    conversationRevision: 1,
+    clientId,
+  };
+  const busy = (active = true) =>
+    f.call("sessions.desktopLive", { clientId, sessions: [{ id: sessionId, busy: active }] });
+  return { ...f, workspace, sessionId, clientId, boundary, busy };
+}
+
+it("admits authenticated native desktop busy preflight and captures end only after process retirement", async () => {
+  const f = await nativeWindowFixture();
+  await f.busy(); // Actual UI reports busy and implicitly acquires a desktop run lease first.
+  await f.call("sessions.desktopLive", { clientId: "another-window", sessions: [] });
+  expect(
+    (
+      await f.request("native.turn.begin", {
+        ...f.boundary,
+        clientId: "another-window",
+        userBlockId: "other-window",
+        runId: "other-window",
+      })
+    ).value.error,
+  ).toMatch(/writer|activity/);
+  const other = await f.store.issueDevice("Foreign native device");
+  expect(
+    (
+      await f.request(
+        "native.turn.begin",
+        { ...f.boundary, userBlockId: "other-device", runId: "other-device" },
+        other.token,
+      )
+    ).value.error,
+  ).toMatch(/device|writer|activity/);
+  expect(
+    (
+      await f.request(
+        "sessions.desktopLive",
+        { clientId: f.clientId, sessions: [{ id: f.sessionId, busy: true }] },
+        other.token,
+      )
+    ).value.error,
+  ).toMatch(/another owner device/);
+  for (let turn = 1; turn <= 3; turn++) {
+    const request = {
+      ...f.boundary,
+      userBlockId: `busy-user-${turn}`,
+      runId: `busy-run-${turn}`,
+      conversationRevision: turn,
+    };
+    const process = {
+      activityId: `native-busy-provider-${turn}`,
+      cwd: f.workspace.path,
+      kind: "provider",
+      sessionId: f.sessionId,
+      clientId: f.clientId,
+    };
+    if (turn !== 2) await f.call("native.activity.start", process);
+    expect((await f.call("native.turn.begin", request)).before.status).toBe("complete");
+    if (turn === 2) await f.call("native.activity.start", process);
+    expect(
+      (
+        await f.request("native.activity.end", {
+          activityId: process.activityId,
+          clientId: "another-window",
+        })
+      ).value.error,
+    ).toMatch(/another desktop client/);
+    expect((await f.request("native.turn.end", request)).value.error).toMatch(/writer|activity/);
+    writeFileSync(join(f.workspace.path, "source.txt"), `busy native turn ${turn}\n`);
+    git(f.workspace.path, "add", "source.txt");
+    git(f.workspace.path, "commit", "-qm", `Busy native turn ${turn}`);
+    await f.call("native.activity.end", { activityId: process.activityId, clientId: f.clientId });
+    expect((await f.call("native.turn.end", request)).after.status).toBe("complete");
+    await f.busy(); // Keep the same own UI publication through all turn boundaries.
+  }
+  await f.busy(false);
+});
+
+it("recovers a legacy native starting binding with current authenticated UI context while retaining real process fences", async () => {
+  const f = await nativeWindowFixture();
+  const { clientId: _clientId, ...legacy } = f.boundary;
+  const directory = join(f.root, "managed-workspaces", "native-turns", f.workspace.id);
+  mkdirSync(directory, { recursive: true });
+  const path = join(directory, `${legacy.userBlockId}.json`);
+  writeFileSync(
+    path,
+    JSON.stringify({
+      ...legacy,
+      ownerFingerprint: createHash("sha256")
+        .update(createHash("sha256").update(f.device.id).digest("hex"))
+        .digest("hex"),
+      activityOwnerId: "native-turn:legacy",
+    }),
+  );
+  await f.busy();
+  await f.call("native.activity.start", {
+    activityId: "legacy-live-process",
+    cwd: f.workspace.path,
+    kind: "provider",
+    sessionId: f.sessionId,
+    clientId: f.clientId,
+  });
+  expect((await f.call("native.turn.recover", f.boundary)).released).toBe(false);
+  await f.call("native.activity.end", { activityId: "legacy-live-process", clientId: f.clientId });
+  expect((await f.call("native.turn.recover", f.boundary)).released).toBe(true);
+  expect(JSON.parse(readFileSync(path, "utf8")).clientId).toBeUndefined();
+  expect((await f.request("native.turn.begin", f.boundary)).value.error).toMatch(
+    /released|another desktop client/,
+  );
+  await f.busy(false);
+});
+
+it("keeps unknown stored Host execution fenced despite a remembered or matching native desktop client", async () => {
+  const f = await nativeWindowFixture();
+  await f.engine.command({
+    type: "create",
+    commandId: "native-mirror-create",
+    projectId: f.projectScope.projectId,
+    workspaceId: f.workspace.id,
+    sessionId: f.sessionId,
+    harness: "codex",
+    model: "fixture",
+    modelSettings: {},
+    runtimeMode: "supervised",
+  });
+  const snapshot = await f.store.session(f.sessionId);
+  await f.store.save(
+    { ...snapshot, revision: snapshot.revision + 1, status: "running", runId: "unknown-host-run" },
+    null,
+  );
+  await f.busy(false); // A remembered client alone is not live execution proof.
+  expect((await f.request("sessions.managedTurn.begin", f.boundary)).value.error).toMatch(
+    /writer|activity/,
+  );
+  await f.busy();
+  expect(
+    (
+      await f.request("sessions.managedTurn.begin", {
+        ...f.boundary,
+        userBlockId: "busy-unknown-host",
+        runId: "busy-unknown-host",
+      })
+    ).value.error,
+  ).toMatch(/writer|activity/);
+  await f.store.save({ ...snapshot, revision: snapshot.revision + 2, status: "idle" }, null);
+  await f.busy(false);
+});
+
+it("keeps a real Host provider fenced while the same native client publishes its own busy mirror", async () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const running = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const finish = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const f = await nativeWindowFixture(async () => {
+    entered();
+    await finish;
+  });
+  await f.engine.command({
+    type: "create",
+    commandId: "real-host-create",
+    projectId: f.projectScope.projectId,
+    workspaceId: f.workspace.id,
+    sessionId: f.sessionId,
+    harness: "codex",
+    model: "fixture",
+    modelSettings: {},
+    runtimeMode: "supervised",
+  });
+  try {
+    await f.engine.command({
+      type: "send",
+      commandId: "real-host-send",
+      sessionId: f.sessionId,
+      text: "Host stays authoritative",
+    });
+    await running;
+    await f.busy();
+    expect((await f.request("sessions.managedTurn.begin", f.boundary)).value.error).toMatch(
+      /writer|activity/,
+    );
+  } finally {
+    release();
+    await f.engine.waitForRun(f.sessionId, (await f.store.session(f.sessionId)).runId);
+    await f.busy(false);
+  }
 });

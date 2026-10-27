@@ -7145,5 +7145,10 @@
   "Source included": "Source included",
   "Different source": "Different source",
   "Use current checkout": "Aktuelles Arbeitsverzeichnis verwenden",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "Das Host-Update auf diesem Computer wartet auf das Ende aktiver Sitzungen und wird automatisch installiert."
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "Das Host-Update auf diesem Computer wartet auf das Ende aktiver Sitzungen und wird automatisch installiert.",
+  "The Host did not confirm the managed turn recovery state.": "Der Host hat den Wiederherstellungsstatus des verwalteten Durchlaufs nicht bestätigt.",
+  "Checking stuck turn": "Festgefahrenen Durchlauf prüfen",
+  "Stuck turn reset. You can send again.": "Der festgefahrene Durchlauf wurde zurückgesetzt. Sie können erneut senden.",
+  "This turn is still fenced. The Host could not confirm that no execution occurred.": "Dieser Durchlauf bleibt gesperrt. Der Host konnte nicht bestätigen, dass keine Ausführung stattgefunden hat.",
+  "Reset stuck turn": "Festgefahrenen Durchlauf zurücksetzen"
 }

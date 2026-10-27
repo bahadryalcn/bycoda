@@ -214,12 +214,37 @@ Additional integration transports retain the frozen owner contract:
   workspace creation never silently installs them.
 - `sessions.rewind.status` exposes durable operation/Undo discovery for
   Host-executed sessions; persisted browser IDs are discovery hints only.
-- Trusted `native.turn.begin/end`, `native.activity.start/end`,
+- Trusted `native.turn.begin/end/recover`, `native.activity.start/end`,
   `native.buffers.update` and `native.rewind.plan/prepare/apply/status/ack` use
   native execution/activity/rewind capabilities. Native transcript rescue is
   persisted before Git restore; Host completion waits for native receipt
   acknowledgement. Capability absence must never trigger opaque provider revert
   or a second independent native Git restoration algorithm.
+
+Native turn admission recognizes at most one provider process registered by the
+same authenticated device and session before its before-capture. The accepted
+turn retains its own run-bound activity marker; another run, device, terminal,
+independent shell, dev server or dirty/unknown editor buffer still blocks it.
+The provider must retire before after-capture; accepting preflight activity does
+not authorize capturing a still-running writer's end.
+
+Desktop busy publications and desktop run leases precede native capture. Native
+turn/activity calls carry the current desktop client separately from persisted
+turn identity. A scoped Host probe recognizes that mirror only with a fresh,
+authenticated matching device/client/session and a positive matching busy or
+lease claim. Another window/device, a real Host run and unknown stored running
+state remain writers. Legacy bindings retain their original identity during
+recovery; the current caller context does not rewrite them.
+
+Rejected begins cancel their exact binding durably before releasing the native
+SQLite admission. `native.turn.recover` validates the complete persisted request
+and owner device under the workspace Git mutation lock. Unknown legacy requests
+are cancelled only with no complete before-capture and no non-read activity;
+complete before-captures are never reset. A previous durable cancellation can be
+acknowledged without stopping a foreign writer. Cancellation tombstones reject
+delayed begin requests. Native recovery validates all echoed identity/revision
+fields before releasing only the matching `starting` row. Session load and the
+pre-save send path retry this proof; failed reads preserve the fence and drafts.
 
 The trusted native transport capabilities are `sessions.native-execution.v1`,
 `workspaces.native-activity.v1` and `sessions.native-rewind.v1`; all are implemented

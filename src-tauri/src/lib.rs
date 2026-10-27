@@ -423,6 +423,7 @@ pub fn run() {
             build_info::build_identity,
             session_store::rewind::managed_turn_begin,
             session_store::rewind::managed_turn_end,
+            session_store::rewind::managed_turn_recover,
             session_store::rewind::managed_rewind_plan,
             session_store::rewind::managed_rewind_apply,
             session_store::rewind::managed_rewind_undo,

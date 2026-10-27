@@ -8037,5 +8037,10 @@
   "Source included": "Source included",
   "Different source": "Different source",
   "Use current checkout": "Use current checkout",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "The Host update on this computer is waiting for active sessions to finish and will install automatically."
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
+  "The Host did not confirm the managed turn recovery state.": "The Host did not confirm the managed turn recovery state.",
+  "Checking stuck turn": "Checking stuck turn",
+  "Stuck turn reset. You can send again.": "Stuck turn reset. You can send again.",
+  "This turn is still fenced. The Host could not confirm that no execution occurred.": "This turn is still fenced. The Host could not confirm that no execution occurred.",
+  "Reset stuck turn": "Reset stuck turn"
 }

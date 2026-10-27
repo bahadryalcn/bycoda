@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { ModelCatalogCache } from "./model-catalog-cache";
 import { createVoiceClientSecret } from "./voice";
 import { LocalVoiceService } from "./voice-local";
@@ -112,7 +113,11 @@ import { QueueDrainer, queueRowCommands } from "./queue-drainer";
 import { SessionQueues } from "./session-queue";
 import { RequestAuthorizationError } from "./store-db";
 import { RunLeases } from "./run-lease";
-import { LeaseHeldError, type RunLease } from "../src/features/sync/model/runLease";
+import {
+  LeaseHeldError,
+  RUN_LEASE_TTL_MS,
+  type RunLease,
+} from "../src/features/sync/model/runLease";
 import { AdoptedChanges } from "./adoptedChanges";
 import { sameQueuedModelTarget } from "../src/features/sessions/model/messageQueue";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
@@ -278,6 +283,40 @@ export async function createHostServer(
   await engine.ready;
   const terminals = terminalsOverride ?? new HostTerminals();
   const runLeases = new RunLeases();
+  const nativeDesktopCaller = new AsyncLocalStorage<{
+    deviceId: string;
+    clientId?: string;
+    sessionId: string;
+  }>();
+  const desktopClients = new Map<string, { deviceId: string; seenAt: number }>();
+  const rememberDesktopClient = (clientId: string, deviceId: string) => {
+    const now = Date.now();
+    for (const [id, proof] of desktopClients)
+      if (now - proof.seenAt > 2 * RUN_LEASE_TTL_MS) desktopClients.delete(id);
+    const fingerprint = createHash("sha256").update(deviceId).digest("hex");
+    const existing = desktopClients.get(clientId);
+    if (existing && existing.deviceId !== fingerprint)
+      throw new Error("Desktop client belongs to another owner device");
+    desktopClients.set(clientId, { deviceId: fingerprint, seenAt: now });
+  };
+  const ownNativeDesktopMirror = (sessionId: string) => {
+    const caller = nativeDesktopCaller.getStore();
+    const proof = caller?.clientId ? desktopClients.get(caller.clientId) : undefined;
+    if (
+      !caller?.clientId ||
+      caller.sessionId !== sessionId ||
+      proof?.deviceId !== caller.deviceId ||
+      Date.now() - proof.seenAt > 2 * RUN_LEASE_TTL_MS
+    )
+      return false;
+    const busy = desktop.live.busyClient(sessionId);
+    const lease = runLeases.holder(sessionId);
+    if (!busy && !lease) return false;
+    return (
+      (!busy || busy === caller.clientId) &&
+      (!lease || lease.holder === `desktop:${caller.clientId}`)
+    );
+  };
   const inWorkspace = inManagedWorkspace;
   const managed = createManagedWorkspaceRuntime(engine.store, engine, {
     probe: async (workspace) => {
@@ -295,7 +334,8 @@ export async function createHostServer(
         });
       if (
         workspace.owner.kind === "session" &&
-        (desktop.live.busyClient(workspace.owner.id) || runLeases.holder(workspace.owner.id))
+        (desktop.live.busyClient(workspace.owner.id) || runLeases.holder(workspace.owner.id)) &&
+        !ownNativeDesktopMirror(workspace.owner.id)
       )
         add("provider", workspace.owner.id);
       for (const project of await engine.store.projects()) {
@@ -308,13 +348,16 @@ export async function createHostServer(
             !(summary.worktreeCwd && inWorkspace(summary.worktreeCwd, workspace.path))
           )
             continue;
+          const snapshot = await engine.store.session(summary.id);
+          // A native UI publishes busy before admission and clears it after end.
+          // Its authenticated mirror is not another writer. Actual Host execution
+          // (including adopted desktop sessions) and uncertain stored state stay fenced.
+          const ownMirror = ownNativeDesktopMirror(summary.id);
           if (
             summary.status === "running" ||
-            desktop.live.busyClient(summary.id) ||
-            runLeases.holder(summary.id)
+            ((desktop.live.busyClient(summary.id) || runLeases.holder(summary.id)) && !ownMirror)
           )
             add("provider", summary.id);
-          const snapshot = await engine.store.session(summary.id);
           if (snapshot.session.blocks.some((block) => block.shell?.running))
             add("shell", summary.id);
         }
@@ -393,6 +436,32 @@ export async function createHostServer(
       owner: import("./workspace-service-contracts").WorkspaceOwnerAuthorization,
     ) => Promise<T>,
   ) => managed.withOwner(await workspaceOwnerDeviceId(token), action);
+  const withNativeDesktopOwner = async <T>(
+    token: string,
+    params: Record<string, unknown>,
+    action: (
+      owner: import("./workspace-service-contracts").WorkspaceOwnerAuthorization,
+    ) => Promise<T>,
+  ) =>
+    withWorkspaceOwner(token, (owner) => {
+      const clientId = params.clientId;
+      if (
+        clientId !== undefined &&
+        (typeof clientId !== "string" ||
+          !clientId.trim() ||
+          clientId.length > 256 ||
+          clientId.includes("\0"))
+      )
+        throw new Error("Invalid native desktop client identity");
+      return nativeDesktopCaller.run(
+        {
+          deviceId: owner.ownerId,
+          clientId: clientId as string | undefined,
+          sessionId: typeof params.sessionId === "string" ? params.sessionId : "",
+        },
+        () => action(owner),
+      );
+    });
   const recordWorkspaceActivity = async (action: () => Promise<void>) => {
     try {
       await action();
@@ -2124,7 +2193,7 @@ export async function createHostServer(
                           : input.method === "native.activity.start"
                             ? "start"
                             : "end";
-                  result = await withWorkspaceOwner<unknown>(token, (owner) =>
+                  result = await withNativeDesktopOwner<unknown>(token, params, (owner) =>
                     managed.nativeActivity[action](params as never, owner),
                   );
                   break;
@@ -2151,6 +2220,7 @@ export async function createHostServer(
                 }
                 case "native.turn.begin":
                 case "native.turn.end":
+                case "native.turn.recover":
                 case "sessions.managedTurn.begin":
                 case "sessions.managedTurn.end":
                 case "sessions.managedTurn.status": {
@@ -2161,7 +2231,12 @@ export async function createHostServer(
                     value.owner.id !== params.sessionId
                   )
                     throw new Error("Session does not own this workspace");
-                  result = await withWorkspaceOwner<unknown>(token, async (owner) => {
+                  result = await withNativeDesktopOwner<unknown>(token, params, async (owner) => {
+                    if (input.method === "native.turn.recover")
+                      return managed.nativeTurns.recover(
+                        params as unknown as Parameters<typeof managed.nativeTurns.recover>[0],
+                        owner,
+                      );
                     if (input.method === "native.turn.begin")
                       await managed.nativeRewind.bindTurn(
                         params as unknown as Parameters<typeof managed.nativeRewind.bindTurn>[0],
@@ -3597,6 +3672,8 @@ export async function createHostServer(
                   break;
                 }
                 case "sessions.desktopLive": {
+                  if (typeof params.clientId === "string" && params.clientId)
+                    rememberDesktopClient(params.clientId, await workspaceOwnerDeviceId(token));
                   const beat = desktop.live.beat(params);
                   await heartbeatEffects;
                   result = {
@@ -3641,6 +3718,10 @@ export async function createHostServer(
                     holder.length > 200
                   )
                     throw new Error("Invalid run lease request");
+                  rememberDesktopClient(
+                    holder.slice("desktop:".length),
+                    await workspaceOwnerDeviceId(token),
+                  );
                   if (params.action === "release") {
                     const released = runLeases.release(
                       id,
