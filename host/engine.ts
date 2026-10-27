@@ -1841,6 +1841,7 @@ export class HostEngine {
                   value.session.harness === "codex" &&
                   /^\s*\/goal(?=\s|$)/.test(command.text);
                 let handoffPromptPrepared = false;
+                let prepareSendPolicy: ((input: SendTurnInput) => SendTurnInput) | undefined;
                 // Read before the turn's own block lands after them.
                 let handoffText: string | undefined;
                 let handoffFrom: RemoteProvider | undefined;
@@ -1885,21 +1886,41 @@ export class HostEngine {
                     // A handoff starts a new provider thread, so its hint is sent again.
                     const hint = await harnessRuntimeHints(value.session.id);
                     const body = [rewindReplay, turnText].filter(Boolean).join("\n\n");
-                    const budgetRequest =
-                      value.session.harness === "codex"
-                        ? [
-                            hint,
-                            body,
-                            codexGoal
-                              ? withShellContext(
-                                  shellRuns,
-                                  command.noteCard ? composeNoteContext(command.noteCard, "") : "",
-                                )
-                              : "",
-                          ]
-                            .filter(Boolean)
-                            .join("\n\n")
-                        : [hint, body].filter(Boolean).join("\n\n");
+                    const codex = value.session.harness === "codex";
+                    const handoffEnvelope =
+                      "<previous_agent_context>\n</previous_agent_context>\n\n";
+                    const runtimeInstructions = [
+                      hint,
+                      codexGoal ? handoffEnvelope : "",
+                      codexGoal
+                        ? withShellContext(
+                            shellRuns,
+                            command.noteCard ? composeNoteContext(command.noteCard, "") : "",
+                          )
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join("\n\n");
+                    // Machine restrictions are appended by the provider wrapper. Capture
+                    // its trusted preparation so accounting and dispatch use them once.
+                    prepareSendPolicy = provider.prepareSendPolicy?.();
+                    const budgetInput: SendTurnInput = {
+                      sessionId: value.session.id,
+                      cwd: value.session.worktreeCwd ?? value.session.cwd,
+                      model: value.session.model,
+                      modelSettings: value.session.modelSettings,
+                      runtimeMode: value.session.runtimeMode,
+                      onEvent: () => {},
+                      text: codexGoal
+                        ? body
+                        : handoffEnvelope +
+                          (codex ? body : [hint, body].filter(Boolean).join("\n\n")),
+                      ...(codex && runtimeInstructions ? { runtimeInstructions } : {}),
+                    };
+                    const preparedBudget = prepareSendPolicy?.(budgetInput) ?? budgetInput;
+                    const budgetRequest = [preparedBudget.text, preparedBudget.runtimeInstructions]
+                      .filter(Boolean)
+                      .join("\n\n");
                     const packet = buildBudgetedHandoff(value.session, {
                       contextWindow: modelContextWindow(value.session.model, value.session.harness),
                       request: budgetRequest,
@@ -2030,6 +2051,7 @@ export class HostEngine {
                       : "",
                     command.commandId,
                     handoffPromptPrepared,
+                    prepareSendPolicy,
                   );
                   if (firstTurn && command.type === "send") {
                     this.generateFirstTurnNames(saved, command.text, placeholderTitle);
@@ -2690,6 +2712,7 @@ export class HostEngine {
     goalContext = "",
     userBlockId?: string,
     promptPrepared = false,
+    prepareSendPolicy?: (input: SendTurnInput) => SendTurnInput,
   ): void {
     let session = value.session;
     const { runId } = value;
@@ -2843,7 +2866,7 @@ export class HostEngine {
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               if (active.managedTurns[0])
                 await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
-              await provider.send(providerInput);
+              await provider.send(prepareSendPolicy?.(providerInput) ?? providerInput);
               markHint();
               active.ending = true;
               await this.store.db.scope(() => this.operations.run(session.id, acceptReplay));

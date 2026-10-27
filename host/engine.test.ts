@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
-import type { HostProvider } from "./providers";
+import { withMachineSkillPolicy, type HostProvider } from "./providers";
 import { HostEngine, parseCommand, type ManagedTurnHistoryAdapter } from "./engine";
 import type { TurnGitRecord, TurnGitSnapshot } from "./workspace-contracts";
 import { HostStore } from "./store";
@@ -1938,6 +1938,39 @@ describe("handoff context capacity", () => {
     const session = (await store.session(id)).session;
     expect(session.blocks.find((block) => block.id === "skill-accounting")?.text).toBe(text);
     expect(session.blocks.some((block) => block.notice === "info")).toBe(true);
+    turns[0].finish();
+  });
+
+  it("budgets real machine restrictions at the final provider boundary without duplicating them", async () => {
+    const { engine, store, provider, turns, id } = await seedHandoff(2048);
+    const policy = {
+      disabledNames: Array.from({ length: 200 }, (_, i) => `disabled-skill-${i}`),
+      disabledPaths: Array.from({ length: 200 }, (_, i) => `C:/skills/disabled-${i}/SKILL.md`),
+    };
+    // Use the production enforcement wrapper around the fake provider transport.
+    Object.assign(
+      provider,
+      withMachineSkillPolicy("codex", { ...provider }, () => policy),
+    );
+    await engine.command({
+      type: "send",
+      commandId: "machine-policy-budget",
+      sessionId: id,
+      text: "Continue.",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.text).toBe("Continue.");
+    expect(turns[0].input.skillPolicy).toEqual(policy);
+    const instructions = turns[0].input.runtimeInstructions!;
+    expect(instructions.match(/Disabled skill names:/g)).toHaveLength(1);
+    expect(instructions.match(/Disabled skill paths:/g)).toHaveLength(1);
+    expect(instructions).toContain("disabled-skill-199");
+    expect(instructions).toContain("C:/skills/disabled-199/SKILL.md");
+    const session = (await store.session(id)).session;
+    expect(session.blocks.some((block) => block.notice === "info")).toBe(true);
+    expect(session.blocks.find((block) => block.id === "machine-policy-budget")?.text).toBe(
+      "Continue.",
+    );
     turns[0].finish();
   });
 

@@ -39,6 +39,8 @@ import { withSkillPolicy } from "../src/integrations/harness/core/skillPolicy";
 
 export interface HostProvider {
   send(input: SendTurnInput): Promise<void>;
+  /** Capture machine restrictions for one handoff's budget and final provider input. */
+  prepareSendPolicy?(): (input: SendTurnInput) => SendTurnInput;
   steer?(input: SteerTurnInput): Promise<void>;
   compact?(input: CompactContextInput): Promise<void>;
   rewind?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
@@ -176,38 +178,66 @@ const providers: Record<RemoteProvider, HostProvider> = {
   },
 };
 
+/** Machine-owned preparation is shared by handoff accounting and final enforcement.
+ * Only exact objects prepared here may skip a second append at the send boundary. */
+export function withMachineSkillPolicy(
+  id: RemoteProvider,
+  provider: HostProvider,
+  readPolicy = readSkillPolicy,
+): HostProvider {
+  const preparedInputs = new WeakSet<SendTurnInput>();
+  return {
+    ...provider,
+    prepareSendPolicy: () => {
+      // Freeze this accepted send's machine settings through preparation/dispatch.
+      // The next send takes a fresh snapshot, including unattended entry points.
+      const current = readPolicy();
+      const policy = {
+        disabledNames: [...current.disabledNames],
+        disabledPaths: [...current.disabledPaths],
+      };
+      return (input) => {
+        const prepared = withSkillPolicy(id, input, policy);
+        preparedInputs.add(prepared);
+        return prepared;
+      };
+    },
+    send: (input) =>
+      provider.send(
+        preparedInputs.delete(input) ? input : withSkillPolicy(id, input, readPolicy()),
+      ),
+    ...(provider.compact
+      ? {
+          compact: (input: CompactContextInput) =>
+            provider.compact!({ ...input, skillPolicy: readPolicy() }),
+        }
+      : {}),
+    ...(provider.rewind
+      ? {
+          rewind: (input: RewindLastTurnInput) => {
+            const policy = readPolicy();
+            return provider.rewind!(
+              input.text === undefined
+                ? { ...input, skillPolicy: policy }
+                : withSkillPolicy(id, { ...input, text: input.text }, policy),
+            );
+          },
+        }
+      : {}),
+    ...(provider.steer
+      ? {
+          steer: (input: SteerTurnInput) =>
+            provider.steer!(withSkillPolicy("steer", input, readPolicy())),
+        }
+      : {}),
+  };
+}
+
 /** Every host entry point, including unattended tasks and follow-ups, uses machine settings. */
 export const hostProviders = Object.fromEntries(
   Object.entries(providers).map(([id, provider]) => [
     id,
-    {
-      ...provider,
-      send: (input: SendTurnInput) => provider.send(withSkillPolicy(id, input, readSkillPolicy())),
-      ...(provider.compact
-        ? {
-            compact: (input: CompactContextInput) =>
-              provider.compact!({ ...input, skillPolicy: readSkillPolicy() }),
-          }
-        : {}),
-      ...(provider.rewind
-        ? {
-            rewind: (input: RewindLastTurnInput) => {
-              const policy = readSkillPolicy();
-              return provider.rewind!(
-                input.text === undefined
-                  ? { ...input, skillPolicy: policy }
-                  : withSkillPolicy(id, { ...input, text: input.text }, policy),
-              );
-            },
-          }
-        : {}),
-      ...(provider.steer
-        ? {
-            steer: (input: SteerTurnInput) =>
-              provider.steer!(withSkillPolicy("steer", input, readSkillPolicy())),
-          }
-        : {}),
-    },
+    withMachineSkillPolicy(id as RemoteProvider, provider),
   ]),
 ) as Record<RemoteProvider, HostProvider>;
 
