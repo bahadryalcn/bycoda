@@ -166,7 +166,7 @@ export async function connectAcceptance(root, options) {
     };
     context.capture = (name) => captureMatrix(context, name);
     context.rpc = (method, params, cwd = context.state.project) =>
-      page.evaluate(
+      context.page.evaluate(
         async ({ method, params, cwd }) => {
           const { workspaceRequest } =
             await import("/src/features/workspaces/model/workspaceClient.ts");
@@ -195,6 +195,10 @@ export async function captureMatrix(context, name) {
             await import("/src/features/settings/model/appearance.ts");
           applyThemePreference(theme);
         }, theme);
+        await page.evaluate(async () => {
+          await document.fonts.ready;
+          await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+        });
         const path = join(output, `${name}-${width}-${theme}.png`);
         await page.screenshot({ path, animations: "disabled" });
         captures.push(path);
@@ -234,7 +238,8 @@ async function button(context, text) {
     .first();
 }
 async function click(context, text) {
-  return (await button(context, text)).click();
+  await (await button(context, text)).click();
+  context.steps.push({ step: `Activate ${text}`, actual: "Control activated" });
 }
 async function getSessions(page) {
   return page.evaluate(
@@ -245,6 +250,12 @@ async function session(context, id = context.state.sessionId) {
   const found = (await getSessions(context.page)).find((entry) => entry.id === id);
   assert(found, `Session ${id} not loaded`);
   return found;
+}
+async function closeRecoveredSessions(context) {
+  const recovered = context.page.getByRole("dialog").filter({ hasText: "Recovered sessions" });
+  await recovered.waitFor({ state: "visible", timeout: 1000 }).catch(() => {});
+  if (await recovered.isVisible())
+    await recovered.getByRole("button", { name: "Close", exact: true }).last().click();
 }
 async function waitUntil(check, message, timeout = 30000) {
   let last;
@@ -267,7 +278,7 @@ export async function prepareProject(context) {
   );
   if (!existsSync(project)) {
     await mkdir(project, { recursive: true });
-    await command("git", ["init", "-b", "acceptance-target"], project);
+    await command("git", ["init", "-b", "main"], project);
     await command("git", ["config", "user.name", "bycoda native acceptance"], project);
     await command("git", ["config", "user.email", "native-acceptance@localhost"], project);
     await writeFile(join(project, "counter.txt"), "0\n");
@@ -288,6 +299,7 @@ export async function prepareProject(context) {
     recents.notifyProjectPathsChanged();
   }, project);
   await context.page.reload({ waitUntil: "domcontentloaded" });
+  await closeRecoveredSessions(context);
   await context.page
     .getByRole("button", { name: basename(project), exact: true })
     .first()
@@ -323,6 +335,7 @@ export async function selectCodex(context, model = context.options.model) {
 
 export async function newSession(context, mode = "current", model = context.options.model) {
   await prepareProject(context);
+  await closeRecoveredSessions(context);
   await click(context, "New session");
   if (mode) {
     const trigger = context.page
@@ -390,11 +403,37 @@ export async function sendPrompt(context, prompt, { allowFailure = false, wait =
       !last.some(
         (block) =>
           block.error ||
+          block.notice === "error" ||
           (block.role === "system" && /could not start|recovery blocked/i.test(block.text)),
       ),
       "Native turn failed",
     );
+    assert(
+      last.some((block) => block.role === "assistant" && block.text.trim()),
+      "Codex did not produce a completed assistant reply",
+    );
+    if (settled.workspaceId) {
+      const { DatabaseSync } = await import("node:sqlite");
+      await waitUntil(() => {
+        const database = new DatabaseSync(join(context.run.desktopDataPath, "bycoda.db"));
+        try {
+          return (
+            database
+              .prepare("SELECT phase FROM native_managed_turns WHERE session_id=?")
+              .get(settled.id)?.phase === "complete"
+          );
+        } finally {
+          database.close();
+        }
+      }, "Native turn did not finish its durable after-capture");
+    }
   }
+  context.steps.push({
+    step: `Send real Codex turn in ${settled.id}`,
+    actual: allowFailure
+      ? "Expected rejection observed"
+      : "Assistant completed; managed capture complete when applicable",
+  });
   return settled;
 }
 
@@ -470,6 +509,18 @@ async function scenario2(context) {
       exact: true,
     })
     .click();
+  const rewindDialog = context.page.getByRole("dialog", {
+    name: "Rewind conversation and files",
+    exact: true,
+  });
+  await rewindDialog.waitFor();
+  await waitUntil(
+    () =>
+      rewindDialog
+        .getByRole("button", { name: "Rewind conversation and files", exact: true })
+        .isEnabled(),
+    "Rewind preview was not ready",
+  );
   screenshots.push(...(await context.capture("02-rewind-preview")));
   await context.page
     .getByRole("dialog")
@@ -478,25 +529,39 @@ async function scenario2(context) {
       exact: true,
     })
     .click();
+  await rewindDialog.waitFor({ state: "hidden", timeout: 30000 });
   await waitUntil(
     async () => (await command("git", ["rev-parse", "HEAD"], third.cwd)) === turns[1].head,
     "Rewind did not restore second commit",
   );
   assert.equal((await readFile(join(third.cwd, "counter.txt"), "utf8")).trim(), "2");
   await click(context, "Undo rewind");
+  const undoDialog = context.page.getByRole("dialog", { name: "Undo rewind", exact: true });
+  await undoDialog.waitFor();
+  await waitUntil(
+    () => undoDialog.getByRole("button", { name: "Undo rewind", exact: true }).isEnabled(),
+    "Undo preview was not ready",
+  );
   screenshots.push(...(await context.capture("02-undo-preview")));
   await context.page
     .getByRole("dialog")
     .getByRole("button", { name: await label(context.page, "Undo rewind"), exact: true })
     .click();
+  await undoDialog.waitFor({ state: "hidden", timeout: 30000 });
   await waitUntil(
     async () => (await command("git", ["rev-parse", "HEAD"], third.cwd)) === third.head,
     "Undo did not restore third commit",
   );
   assert.equal(await readFile(join(third.cwd, "counter.txt"), "utf8"), bytes);
-  assert.deepEqual(
-    (await session(context)).blocks.map(({ id, role, text }) => ({ id, role, text })),
+  const expectedTranscript = JSON.stringify(
     before.blocks.map(({ id, role, text }) => ({ id, role, text })),
+  );
+  await waitUntil(
+    async () =>
+      JSON.stringify(
+        (await session(context)).blocks.map(({ id, role, text }) => ({ id, role, text })),
+      ) === expectedTranscript,
+    "Undo did not reconcile the exact restored transcript",
   );
   screenshots.push(...(await context.capture("02-after-undo")));
   return { turns, restoredHead: third.head, restoredBlocks: before.blocks.length, screenshots };
@@ -531,11 +596,34 @@ async function scenario3(context) {
   assert(existsSync(databasePath), "Isolated desktop database was not found");
   let rejectedRequest;
   try {
-    await sendPrompt(
-      context,
-      "Isolated rejected admission. Reply RECOVERY without editing files.",
-      { allowFailure: true },
-    );
+    const rejected = await context.page.evaluate(async (id) => {
+      const store = await import("/src/features/sessions/model/sessionsStore.ts");
+      const { upsertSession } = await import("/src/features/sessions/data/sessionStore.ts");
+      const { desktopInstanceId } =
+        await import("/src/features/connections/model/desktopInstance.ts");
+      const original = store.sessionsRef.current.find((entry) => entry.id === id);
+      const user = {
+        id: crypto.randomUUID(),
+        role: "user",
+        text: "Isolated rejected native admission",
+        startedAt: Date.now(),
+      };
+      const next = { ...original, blocks: [...original.blocks, user] };
+      if (!(await upsertSession(next))) throw new Error("Rejected-boundary setup was not saved");
+      store.setSessions((entries) => entries.map((entry) => (entry.id === id ? next : entry)));
+      try {
+        await window.__TAURI_INTERNALS__.invoke("managed_turn_begin", {
+          sessionId: id,
+          userBlockId: user.id,
+          runId: crypto.randomUUID(),
+          clientId: desktopInstanceId(),
+        });
+        return { error: null };
+      } catch (error) {
+        return { error: String(error), userBlockId: user.id };
+      }
+    }, current.id);
+    assert(rejected.error, "Foreign editor activity did not reject native begin");
     const database = new DatabaseSync(databasePath);
     try {
       rejectedRequest = database
@@ -566,6 +654,37 @@ async function scenario3(context) {
   await sendPrompt(context, "Reply HOSTRECOVERED without editing files.");
   // Seed the exact legacy shape only in the validated development DB. Existing completed row provides identity.
   current = await session(context);
+  assert(rejectedRequest, "Failed admission did not create the native reservation");
+  const legacyRequest = JSON.parse(rejectedRequest);
+  assert.match(legacyRequest.workspaceId, /^[A-Za-z0-9_-]+$/);
+  assert.match(legacyRequest.userBlockId, /^[A-Za-z0-9_-]+$/);
+  const bindingPath = join(
+    context.run.hostDataPath,
+    "managed-workspaces",
+    "native-turns",
+    legacyRequest.workspaceId,
+    `${legacyRequest.userBlockId}.json`,
+  );
+  const turnPath = join(
+    context.run.hostDataPath,
+    "managed-workspaces",
+    "turns",
+    legacyRequest.workspaceId,
+    `${legacyRequest.userBlockId}.json`,
+  );
+  const history = await readFile(turnPath, "utf8")
+    .then(JSON.parse)
+    .catch((error) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+  assert.notEqual(history?.before?.status, "complete", "Legacy seed has a complete before-capture");
+  await controlNative(context, "stop-host");
+  const binding = JSON.parse(await readFile(bindingPath, "utf8"));
+  assert.equal(binding.runId, legacyRequest.runId);
+  assert.equal(binding.released, true, "Rejected binding was not durably cancelled");
+  delete binding.released;
+  await writeFile(bindingPath, JSON.stringify(binding));
   const database = new DatabaseSync(databasePath);
   try {
     assert(
@@ -579,13 +698,35 @@ async function scenario3(context) {
       current.blocks.findLast((block) => block.role === "user").id,
       "Rejected request was not preserved",
     );
-    database
+    const seeded = database
       .prepare("UPDATE native_managed_turns SET request_json=?,phase='starting' WHERE session_id=?")
       .run(rejectedRequest, current.id);
+    assert.equal(
+      Number(seeded.changes),
+      1,
+      "Legacy seed did not update exactly one development row",
+    );
   } finally {
     database.close();
   }
+  await controlNative(context, "start-host");
   await context.page.reload({ waitUntil: "domcontentloaded" });
+  await waitUntil(async () => {
+    const check = new DatabaseSync(databasePath);
+    try {
+      const row = check
+        .prepare("SELECT phase,request_json FROM native_managed_turns WHERE session_id=?")
+        .get(current.id);
+      return row?.phase === "complete" && row.request_json === rejectedRequest;
+    } finally {
+      check.close();
+    }
+  }, "Opening updated app did not self-heal the exact retained native row");
+  assert.equal(
+    JSON.parse(await readFile(bindingPath, "utf8")).released,
+    true,
+    "Host did not durably release the legacy binding",
+  );
   await sendPrompt(context, "Reply LEGACYRECOVERED without editing files.");
   await sendPrompt(
     context,
@@ -594,7 +735,11 @@ async function scenario3(context) {
   );
   await controlNative(context, "restart-app");
   await context.browser.close();
-  const replacement = await connectAcceptance(context.root, context.options);
+  const replacement = await waitUntil(
+    () => connectAcceptance(context.root, context.options),
+    "Restarted native app CDP did not become ready",
+    60000,
+  );
   context.browser = replacement.browser;
   context.page = replacement.page;
   await waitUntil(
@@ -615,20 +760,105 @@ async function scenario4(context) {
     context,
     "Remember this isolated test: Türkiye, İstanbul, çalışma alanı. Reply READY without editing.",
   );
+  const initialModel = (await session(context)).model;
   await selectCodex(context, context.options.switchModel);
   const prompt =
     "Bu yalıtılmış kabul denemesidir. Dosyaları değiştirme. Yalnızca TAMAM yaz.\n" +
     "Türkiye İstanbul çalışma alanı, geçmiş konuşma ve güvenli model değişimi. ".repeat(400);
   assert(Buffer.byteLength(prompt, "utf8") > 20480);
   const switched = await sendPrompt(context, prompt);
+  const replyBoundary = switched.blocks.findLastIndex(
+    (block) => block.role === "user" && block.text === prompt,
+  );
+  assert.notEqual(switched.model, initialModel, "Codex model selection did not change");
   assert(
-    switched.blocks.some((block) => /TAMAM/.test(block.text)),
+    switched.model
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "")
+      .includes(context.options.switchModel.toLowerCase().replace(/[^a-z0-9]/g, "")),
+    "Wrong target model was used",
+  );
+  assert(
+    switched.blocks
+      .slice(replyBoundary + 1)
+      .some((block) => block.role === "assistant" && block.text.trim() === "TAMAM"),
     "Switched Codex model did not answer",
   );
+  const screenshots = await context.capture("04-long-turkish-switch");
+  // Labelled setup: only browser discovery metadata is constrained. Codex still
+  // runs the real selected model; no second provider or synthetic provider reply.
+  const seed = await context.page.evaluate(async (id) => {
+    const models = await import("/src/features/sessions/model/models.ts");
+    const store = await import("/src/features/sessions/model/sessionsStore.ts");
+    const { upsertSession } = await import("/src/features/sessions/data/sessionStore.ts");
+    const originalModels = models.catalogModelsFor("codex");
+    const current = store.sessionsRef.current.find((entry) => entry.id === id);
+    const next = {
+      ...current,
+      handoffCard: {
+        from: "codex",
+        to: "codex",
+        brief: "Seeded saved history for isolated capacity recovery. ".repeat(300),
+      },
+    };
+    if (!(await upsertSession(next))) throw new Error("Capacity seed session was not saved");
+    store.setSessions((entries) => entries.map((entry) => (entry.id === id ? next : entry)));
+    models.setHarnessModels(
+      "codex",
+      originalModels.map((entry) => ({ ...entry, contextWindow: 32 })),
+    );
+    return { originalModels, contextWindow: models.modelContextWindow(current.model, "codex") };
+  }, switched.id);
+  assert.equal(seed.contextWindow, 32, "Capacity setup did not constrain the frontend estimate");
+  let capacity;
+  try {
+    const capacityPrompt = `${prompt}\nBu tur kaydedilmiş geçmiş bütçesini sınar. Yalnızca TAMAM yaz.`;
+    const completed = await sendPrompt(context, capacityPrompt);
+    const boundary = completed.blocks.findLastIndex(
+      (block) => block.role === "user" && block.text === capacityPrompt,
+    );
+    const tail = completed.blocks.slice(boundary + 1);
+    assert(
+      tail.some((block) => block.role === "assistant" && block.text.trim() === "TAMAM"),
+      "Budget-constrained real Codex request did not complete",
+    );
+    const notice = tail.find(
+      (block) =>
+        block.role === "system" && block.notice === "info" && /Saved history:/.test(block.text),
+    );
+    assert(notice, "Reduced handoff did not leave the saved-history notice");
+    const archivePath = notice.text.match(/Saved history:\s*(.+)$/m)?.[1].trim();
+    assertWithin(context.run.desktopDataPath, archivePath, "isolated handoff archive");
+    const archive = JSON.parse(await readFile(archivePath, "utf8"));
+    assert.equal(archive.sessionId, switched.id);
+    assert(
+      archive.messages.some((entry) => entry.text === prompt),
+      "Earlier Turkish request was not preserved in saved history",
+    );
+    assert(
+      !archive.messages.some((entry) => entry.text === capacityPrompt),
+      "Current request was duplicated into historical handoff",
+    );
+    capacity = {
+      setup:
+        "Explicit seeded handoff card and 32-token frontend discovery estimate; actual provider is real Codex",
+      archivePath,
+      savedMessages: archive.messages.length,
+      notice: notice.text,
+    };
+    screenshots.push(...(await context.capture("04-reduced-handoff-notice")));
+  } finally {
+    await context.page.evaluate(
+      async (models) =>
+        (await import("/src/features/sessions/model/models.ts")).setHarnessModels("codex", models),
+      seed.originalModels,
+    );
+  }
   return {
     bytes: Buffer.byteLength(prompt, "utf8"),
     model: switched.model,
-    screenshots: await context.capture("04-long-turkish-switch"),
+    capacity,
+    screenshots,
   };
 }
 
@@ -643,6 +873,7 @@ async function scenario5(context) {
       await window.__TAURI_INTERNALS__.invoke("local_host_connect");
     });
     await context.page.reload({ waitUntil: "domcontentloaded" });
+    await closeRecoveredSessions(context);
   };
   try {
     await writeFile(path, JSON.stringify({ disabled: ["workspaces.managed.v1"] }));
@@ -678,20 +909,15 @@ async function scenario5(context) {
 
 async function openWorkspaceSettings(context) {
   await context.page.keyboard.press("Control+,");
-  const sourceControl = await button(context, "Source control");
-  if (await sourceControl.isVisible()) await sourceControl.click();
-  else {
-    await click(context, "Workspace");
-    await click(context, "Source control");
-  }
+  await context.page
+    .getByRole("tab", { name: await label(context.page, "Source control"), exact: true })
+    .click();
 }
 
 async function scenario6(context) {
-  if (!context.state.worktreeSessionId) {
-    await newSession(context, "worktree");
-    await commitTurn(context, 1, "lifecycle");
-    context.state.worktreeSessionId = context.state.sessionId;
-  }
+  await newSession(context, "worktree");
+  await commitTurn(context, 1, "lifecycle");
+  context.state.worktreeSessionId = context.state.sessionId;
   const current = await session(context, context.state.worktreeSessionId);
   const workspace = await context.rpc("workspaces.get", { workspaceId: current.workspaceId });
   assertWithin(context.scratch, workspace.path, "deletable fake workspace");
@@ -708,8 +934,16 @@ async function scenario6(context) {
     join(workspace.path, "node_modules"),
     process.platform === "win32" ? "junction" : "dir",
   );
+  await click(context, "Workspace actions");
+  await context.page.getByRole("menuitem", { name: "Mark finished", exact: true }).click();
+  await waitUntil(
+    async () =>
+      (await context.rpc("workspaces.get", { workspaceId: workspace.id })).state === "finished",
+    "Mark finished did not change workspace state",
+  );
+  const finishedShots = await context.capture("06-mark-finished");
   await click(context, "Review changes");
-  const screenshots = await context.capture("06-owner-review");
+  const screenshots = [...finishedShots, ...(await context.capture("06-owner-review"))];
   const merge = context.page.getByRole("button", { name: /^(Merge into|Birleştir)/ }).last();
   await merge.click();
   await waitUntil(
@@ -754,117 +988,204 @@ async function scenario6(context) {
 
 async function scenario7(context) {
   await prepareProject(context);
+  const screenshots = [];
+  await click(context, "Tasks");
+  const taskNames = [];
+  for (const explicit of [false, true]) {
+    await click(context, "New task");
+    const form = context.page.getByRole("form", { name: "New task", exact: true });
+    const name = `Acceptance ${context.options.id} ${explicit ? "worktree" : "current"} task ${Date.now()}`;
+    taskNames.push(name);
+    await form.getByRole("textbox", { name: "Task title", exact: true }).fill(name);
+    await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
+    const mode = form.getByRole("button", { name: "Execution mode: Automatic", exact: true });
+    await mode.waitFor();
+    if (explicit) {
+      await mode.click();
+      await context.page.getByRole("option", { name: "Separate worktree", exact: true }).click();
+      await form
+        .getByRole("button", { name: "Execution mode: Separate worktree", exact: true })
+        .waitFor();
+    }
+    screenshots.push(
+      ...(await context.capture(`07-task-${explicit ? "explicit-worktree" : "automatic-current"}`)),
+    );
+    await form.getByRole("button", { name: "Add to To do", exact: true }).click();
+    await form.waitFor({ state: "hidden", timeout: 30000 });
+  }
+  await click(context, "Automations");
+  const automationNames = [];
+  for (const explicit of [false, true]) {
+    await click(context, "New automation");
+    await context.page.getByRole("button").filter({ hasText: "Start from scratch" }).click();
+    const nameField = context.page.getByRole("textbox", { name: "Automation name", exact: true });
+    const form = nameField.locator("xpath=ancestor::form");
+    const name = `Acceptance ${context.options.id} ${explicit ? "worktree" : "current"} automation ${Date.now()}`;
+    automationNames.push(name);
+    await nameField.fill(name);
+    await form
+      .getByRole("textbox", { name: "Instructions", exact: true })
+      .fill("Reply DONE without editing files.");
+    await form.getByRole("switch", { name: "Pause automation", exact: true }).click();
+    const mode = form.getByRole("button", { name: "Working copy: Automatic", exact: true });
+    await mode.waitFor();
+    if (explicit) {
+      await mode.click();
+      await context.page.getByRole("option", { name: "Fresh worktree", exact: true }).click();
+      await form
+        .getByRole("button", { name: "Working copy: Fresh worktree", exact: true })
+        .waitFor();
+    }
+    screenshots.push(
+      ...(await context.capture(
+        `07-automation-${explicit ? "explicit-worktree" : "automatic-current"}`,
+      )),
+    );
+    await form.getByRole("button", { name: "Create", exact: true }).click();
+    await waitUntil(
+      async () =>
+        context.page.evaluate(
+          async (name) =>
+            (
+              await (
+                await import("/src/features/automations/model/automations.ts")
+              ).listAutomations()
+            ).some((entry) => entry.name === name),
+          name,
+        ),
+      "Automation was not persisted",
+    );
+  }
   const result = await context.page.evaluate(
-    async ({ cwd, model }) => {
+    async ({ cwd, taskNames, automationNames }) => {
       const tasks = await import("/src/features/tasks/model/taskClient.ts");
       const automations = await import("/src/features/automations/model/automations.ts");
-      const defaultTask = tasks.newTaskDraft(cwd, "codex", model);
-      const defaultAutomation = automations.newAutomationDraft(cwd, "codex", model);
       const machines = await tasks.taskMachines(true);
-      const savedTask = await tasks.saveTask(
-        machines,
-        {
-          ...defaultTask,
-          title: "Isolated current default",
-          prompt: "Reply DONE without editing.",
-          continueUntilDone: false,
-        },
-        "todo",
+      const board = await tasks.listBoardTasks(machines);
+      const schedules = await automations.listAutomations();
+      const { resolveWorkspaceContext, workspaceRequest } =
+        await import("/src/features/workspaces/model/workspaceClient.ts");
+      const scope = await resolveWorkspaceContext(cwd);
+      const policy = await workspaceRequest(
+        "projects.workspacePolicy.get",
+        { projectId: scope.projectId, environmentId: scope.environmentId },
+        { cwd },
       );
-      const savedWorktreeTask = await tasks.saveTask(
-        machines,
-        {
-          ...defaultTask,
-          title: "Isolated explicit worktree",
-          prompt: "Reply DONE without editing.",
-          continueUntilDone: false,
-          isolate: true,
-          workspace: { baseBranch: "acceptance-target" },
-        },
-        "todo",
-      );
-      const savedAutomation = await automations.saveAutomation({
-        ...defaultAutomation,
-        name: "Isolated current default",
-        prompt: "Reply DONE without editing.",
-        enabled: false,
-      });
-      const savedWorktreeAutomation = await automations.saveAutomation({
-        ...defaultAutomation,
-        name: "Isolated explicit worktree",
-        prompt: "Reply DONE without editing.",
-        enabled: false,
-        workspaceMode: "worktree",
-      });
       return {
-        defaultTask,
-        defaultAutomation,
-        savedTask,
-        savedWorktreeTask,
-        savedAutomation,
-        savedWorktreeAutomation,
+        policy: policy.resolved.policy.defaultMode,
+        savedTask: board.find((entry) => entry.title === taskNames[0]),
+        savedWorktreeTask: board.find((entry) => entry.title === taskNames[1]),
+        savedAutomation: schedules.find((entry) => entry.name === automationNames[0]),
+        savedWorktreeAutomation: schedules.find((entry) => entry.name === automationNames[1]),
       };
     },
-    { cwd: context.state.project, model: context.options.model },
+    { cwd: context.state.project, taskNames, automationNames },
+  );
+  assert.equal(
+    result.policy,
+    "current",
+    "Automatic execution did not inherit Current checkout policy",
   );
   assert(
-    !result.defaultTask.workspace && result.defaultTask.isolate !== true,
-    "New task defaults to worktree",
-  );
-  assert(
-    !result.defaultAutomation.workspaceMode || result.defaultAutomation.workspaceMode === "current",
-    "New automation defaults to worktree",
+    result.savedTask &&
+      result.savedWorktreeTask &&
+      result.savedAutomation &&
+      result.savedWorktreeAutomation,
+    "UI did not persist all four entries",
   );
   assert(
     result.savedTask.isolate !== true && !result.savedTask.workspace,
     "Saved default task changed execution mode",
   );
-  assert(result.savedWorktreeTask.workspace, "Explicit task worktree was lost");
+  assert.equal(result.savedWorktreeTask.isolate, true, "Explicit task worktree was lost");
+  assert(
+    !result.savedAutomation.workspaceMode || result.savedAutomation.workspaceMode === "current",
+    "Default automation changed mode",
+  );
   assert.equal(result.savedWorktreeAutomation.workspaceMode, "worktree");
+  assert.equal(result.savedTask.status, "todo");
+  assert.equal(result.savedWorktreeTask.status, "todo");
+  assert.equal(result.savedAutomation.enabled, false);
+  assert.equal(result.savedWorktreeAutomation.enabled, false);
   return {
     result,
     execution:
       "Drafts persisted through the real isolated Host/native DB; tasks remain todo and automations disabled",
-    screenshots: await context.capture("07-defaults-persisted"),
+    screenshots,
   };
 }
 
 async function scenario8(context) {
   await prepareProject(context);
-  await openWorkspaceSettings(context);
-  const group = context.page.getByRole("radiogroup", {
-    name: await label(context.page, "Default workspace"),
-    exact: true,
-  });
-  const current = group.getByRole("radio", {
-    name: await label(context.page, "Current checkout"),
-    exact: true,
-  });
-  assert.equal(
-    await current.getAttribute("aria-checked"),
-    "true",
-    "Default workspace is not Current checkout",
-  );
-  const screenshots = await context.capture("08-current-policy");
-  await group.getByRole("radio", { name: "Worktree", exact: true }).click();
-  await click(context, "Save workspace policy");
-  screenshots.push(...(await context.capture("08-worktree-policy")));
-  await context.page.keyboard.press("Escape");
-  await newSession(context, null);
-  assert(
+  const policyState = () =>
+    context.page.evaluate(async (cwd) => {
+      const { resolveWorkspaceContext, workspaceRequest } =
+        await import("/src/features/workspaces/model/workspaceClient.ts");
+      const scope = await resolveWorkspaceContext(cwd);
+      return {
+        scope,
+        policy: await workspaceRequest(
+          "projects.workspacePolicy.get",
+          { projectId: scope.projectId, environmentId: scope.environmentId },
+          { cwd },
+        ),
+      };
+    }, context.state.project);
+  const restoreCurrent = async () => {
+    const { scope, policy } = await policyState();
+    if (policy.resolved.policy.defaultMode !== "current")
+      await context.rpc("projects.workspacePolicy.update", {
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        expectedRevision: policy.revision,
+        idempotencyKey: randomUUID(),
+        policy: { ...policy.resolved.policy, defaultMode: "current" },
+      });
+  };
+  await restoreCurrent();
+  try {
+    await openWorkspaceSettings(context);
+    const group = context.page.getByRole("radiogroup", {
+      name: await label(context.page, "Default workspace"),
+      exact: true,
+    });
+    const current = group.getByRole("radio", {
+      name: await label(context.page, "Current checkout"),
+      exact: true,
+    });
+    assert.equal(
+      await current.getAttribute("aria-checked"),
+      "true",
+      "Default workspace is not Current checkout",
+    );
+    const screenshots = await context.capture("08-current-policy");
+    await group.getByRole("radio", { name: "Worktree", exact: true }).click();
+    await click(context, "Save workspace policy");
+    await waitUntil(
+      async () => (await policyState()).policy.resolved.policy.defaultMode === "worktree",
+      "Workspace policy did not save",
+    );
+    screenshots.push(...(await context.capture("08-worktree-policy")));
+    await context.page.keyboard.press("Escape");
+    await newSession(context, null);
     await context.page
       .getByRole("button", { name: "Workspace New worktree", exact: true })
-      .isVisible(),
-    "New session ignored saved Worktree policy",
-  );
-  screenshots.push(...(await context.capture("08-new-session-inherits-policy")));
-  await openWorkspaceSettings(context);
-  await context.page
-    .getByRole("radio", { name: await label(context.page, "Current checkout"), exact: true })
-    .click();
-  await click(context, "Save workspace policy");
-  await context.page.keyboard.press("Escape");
-  return { screenshots };
+      .waitFor({ state: "visible", timeout: 30000 });
+    screenshots.push(...(await context.capture("08-new-session-inherits-policy")));
+    await openWorkspaceSettings(context);
+    await context.page
+      .getByRole("radio", { name: await label(context.page, "Current checkout"), exact: true })
+      .click();
+    await click(context, "Save workspace policy");
+    await waitUntil(
+      async () => (await policyState()).policy.resolved.policy.defaultMode === "current",
+      "Current-checkout policy restoration did not save",
+    );
+    await context.page.keyboard.press("Escape");
+    return { screenshots };
+  } finally {
+    await restoreCurrent();
+  }
 }
 
 export const acceptanceScenarios = {
@@ -913,7 +1234,7 @@ export async function runAcceptance(args = process.argv.slice(2)) {
       const row = {
         scenario: number,
         title: titles[number],
-        expected: "All assertions pass with a real isolated native app and Codex",
+        expected: titles[number],
         steps: context.steps,
       };
       try {
