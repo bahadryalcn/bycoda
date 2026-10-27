@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, toNamespacedPath } from "node:path";
 import {
   DEFAULT_WORKSPACE_POLICY,
   type ManagedWorkspace,
@@ -278,9 +278,13 @@ describe("storage policy", () => {
     for (const root of roots.splice(0))
       rmSync(root, { recursive: true, force: true, maxRetries: 5 });
   });
-  it.each([false, true])(
-    "measures files and hardlinks without following dependency links (linked ancestor: %s)",
-    async (linkedAncestor) => {
+  it.each([
+    { linkedAncestor: false, namespaced: false },
+    { linkedAncestor: true, namespaced: false },
+    ...(process.platform === "win32" ? [{ linkedAncestor: true, namespaced: true }] : []),
+  ])(
+    "measures files and hardlinks without following dependency links (linked ancestor: $linkedAncestor, namespaced: $namespaced)",
+    async ({ linkedAncestor, namespaced }) => {
       const root = mkdtempSync(join(tmpdir(), "workspace-storage-"));
       roots.push(root);
       const actual = join(root, "actual");
@@ -307,10 +311,16 @@ describe("storage policy", () => {
         join(first, "node_modules"),
         process.platform === "win32" ? "junction" : "dir",
       );
+      // Registry paths use native canonicalization. The JS realpath walker can
+      // retain a different Windows spelling when it resolves a junction.
+      const canonicalFirst = realpathSync.native(first);
       const status = await measureWorkspaceStorage({
         root: managed,
         workspaces: [
-          { path: realpathSync(first), directoryState: "present" },
+          {
+            path: namespaced ? toNamespacedPath(canonicalFirst) : canonicalFirst,
+            directoryState: "present",
+          },
           { path: second, directoryState: "present" },
         ],
         sharedCacheRoots: [cache],
@@ -322,31 +332,36 @@ describe("storage policy", () => {
       expect(status.freeBytes).not.toBeNull();
     },
   );
-  it("does not follow a linked root, count outside paths, or turn missing directories into zero", async () => {
-    const root = mkdtempSync(join(tmpdir(), "workspace-storage-"));
-    roots.push(root);
-    const actual = join(root, "actual");
-    mkdirSync(actual);
-    const linked = join(root, "linked");
-    symlinkSync(actual, linked, process.platform === "win32" ? "junction" : "dir");
-    expect(
-      (await measureWorkspaceStorage({ root: linked, workspaces: [] })).materializedBytes,
-    ).toBeNull();
-    expect(
-      (
-        await measureWorkspaceStorage({
-          root: actual,
-          workspaces: [{ path: join(root, "outside"), directoryState: "present" }],
-        })
-      ).materializedBytes,
-    ).toBeNull();
-    expect(
-      (
-        await measureWorkspaceStorage({
-          root: actual,
-          workspaces: [{ path: join(actual, "missing"), directoryState: "present" }],
-        })
-      ).materializedBytes,
-    ).toBeNull();
-  });
+  it.each(process.platform === "win32" ? [false, true] : [false])(
+    "does not follow a linked root, count outside paths, or turn missing directories into zero (namespaced: %s)",
+    async (namespaced) => {
+      const spelling = (path: string) => (namespaced ? toNamespacedPath(path) : path);
+      const root = mkdtempSync(join(tmpdir(), "workspace-storage-"));
+      roots.push(root);
+      const actual = join(root, "actual");
+      mkdirSync(actual);
+      const linked = join(root, "linked");
+      symlinkSync(actual, linked, process.platform === "win32" ? "junction" : "dir");
+      expect(
+        (await measureWorkspaceStorage({ root: spelling(linked), workspaces: [] }))
+          .materializedBytes,
+      ).toBeNull();
+      expect(
+        (
+          await measureWorkspaceStorage({
+            root: spelling(actual),
+            workspaces: [{ path: spelling(join(root, "outside")), directoryState: "present" }],
+          })
+        ).materializedBytes,
+      ).toBeNull();
+      expect(
+        (
+          await measureWorkspaceStorage({
+            root: spelling(actual),
+            workspaces: [{ path: spelling(join(actual, "missing")), directoryState: "present" }],
+          })
+        ).materializedBytes,
+      ).toBeNull();
+    },
+  );
 });

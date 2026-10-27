@@ -3,7 +3,7 @@ import { realpathSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 /** Keep canonical Windows paths suitable for Git arguments and display. */
-function ordinaryPath(path: string): string {
+export function ordinaryWorkspacePath(path: string): string {
   if (process.platform !== "win32") return path;
   path = path.replaceAll("/", "\\");
   return path.startsWith("\\\\?\\UNC\\") ? `\\\\${path.slice(8)}` : path.replace(/^\\\\\?\\/, "");
@@ -11,20 +11,20 @@ function ordinaryPath(path: string): string {
 
 /** Compare already canonical paths without changing their display spelling. */
 export const workspacePathKey = (path: string): string => {
-  const value = resolve(ordinaryPath(path));
+  const value = resolve(ordinaryWorkspacePath(path));
   return process.platform === "win32" ? value.toLowerCase() : value;
 };
 
 export async function canonicalWorkspacePath(path: string): Promise<string> {
-  return ordinaryPath(await realpath(ordinaryPath(path)));
+  return ordinaryWorkspacePath(await realpath(ordinaryWorkspacePath(path)));
 }
 
 export function canonicalWorkspacePathSync(path: string): string {
-  return ordinaryPath(realpathSync.native(ordinaryPath(path)));
+  return ordinaryWorkspacePath(realpathSync.native(ordinaryWorkspacePath(path)));
 }
 
 export function canonicalWorkspaceDirectorySync(path: string): string {
-  const absolute = resolve(ordinaryPath(path));
+  const absolute = resolve(ordinaryWorkspacePath(path));
   try {
     return canonicalWorkspacePathSync(absolute);
   } catch (error) {
@@ -36,7 +36,7 @@ export function canonicalWorkspaceDirectorySync(path: string): string {
 
 /** Canonicalize existing ancestors of an as-yet unmaterialized directory. */
 export async function canonicalWorkspaceDirectory(path: string): Promise<string> {
-  const absolute = resolve(ordinaryPath(path));
+  const absolute = resolve(ordinaryWorkspacePath(path));
   try {
     return await canonicalWorkspacePath(absolute);
   } catch (error) {
@@ -49,7 +49,7 @@ export async function canonicalWorkspaceDirectory(path: string): Promise<string>
 /** Resolve ancestor aliases, but never turn a workspace/root link into its target.
  * Descendants still need the caller's no-follow traversal checks. */
 export async function canonicalWorkspaceEntry(path: string): Promise<string> {
-  const absolute = resolve(ordinaryPath(path));
+  const absolute = resolve(ordinaryWorkspacePath(path));
   const entry = join(await canonicalWorkspaceDirectory(dirname(absolute)), basename(absolute));
   const info = await lstat(entry).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return null;

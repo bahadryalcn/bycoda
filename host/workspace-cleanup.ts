@@ -19,6 +19,7 @@ import { invalidateHostWorktrees } from "./git-worktrees";
 import {
   canonicalWorkspaceDirectorySync,
   canonicalWorkspacePathSync,
+  ordinaryWorkspacePath,
   workspacePathKey,
 } from "./workspace-paths";
 import type {
@@ -52,6 +53,10 @@ const inside = (root: string, target: string) => {
 
 /** Resolve aliases above the boundary, then inspect the boundary and its descendants without following links. */
 export function assertNoFollowPath(root: string, target: string): { root: string; target: string } {
+  // Compare one Windows namespace before checking lexical containment. Keep links
+  // unresolved here so the boundary/descendant no-follow walk still inspects them.
+  root = ordinaryWorkspacePath(root);
+  target = ordinaryWorkspacePath(target);
   if (/(^|[\\/])\.{1,2}([\\/]|$)/.test(root) || /(^|[\\/])\.{1,2}([\\/]|$)/.test(target))
     throw new Error("Cleanup requires normalized absolute paths without dot segments.");
   if (!isAbsolute(root) || !isAbsolute(target))
