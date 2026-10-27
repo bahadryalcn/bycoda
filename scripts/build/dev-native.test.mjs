@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import {
   nativeDevConfig,
   nativeDevHostDataPath,
+  reuseNativeDevProfile,
   supervisedChild,
   completed,
   stopChildren,
@@ -23,6 +24,47 @@ test("Windows Host data follows only the isolated native profile instead of the 
     join(environment.desktopDataPath, "host"),
   );
   assert.equal(nativeDevHostDataPath(environment, "linux"), environment.hostDataPath);
+});
+
+test("profile continuation refuses live processes and retains data only after their owned child exits", async () => {
+  const children = new Set();
+  const child = supervisedChild(process.execPath, ["-e", "setInterval(()=>{}, 1000)"], {
+    cwd: process.cwd(),
+    env: process.env,
+    children,
+  });
+  await new Promise((done, fail) => {
+    child.once("spawn", done);
+    child.once("error", fail);
+  });
+  const previous = {
+    pid: child.pid,
+    hostPid: child.pid,
+    instanceId: "old-profile",
+    desktopDataPath: "old-desktop",
+    hostDataPath: "old-host",
+  };
+  const fresh = {
+    instanceId: "new-profile",
+    desktopDataPath: "new-desktop",
+    hostDataPath: "new-host",
+    executableRunDir: "new-immutable-binary",
+    runId: "new-run",
+    ports: { cdp: 19003 },
+  };
+  try {
+    assert.throws(() => reuseNativeDevProfile(fresh, previous), /Stop the previous/);
+    await stopChildren(children);
+    const continued = reuseNativeDevProfile(fresh, previous);
+    assert.equal(continued.desktopDataPath, previous.desktopDataPath);
+    assert.equal(continued.hostDataPath, previous.hostDataPath);
+    assert.equal(continued.instanceId, previous.instanceId);
+    assert.equal(continued.executableRunDir, fresh.executableRunDir);
+    assert.deepEqual(continued.ports, fresh.ports);
+    assert.equal(continued.runId, fresh.runId);
+  } finally {
+    await stopChildren(children);
+  }
 });
 
 test("leased native URLs and CSP agree while production CSP remains untouched", async () => {

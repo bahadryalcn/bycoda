@@ -59,6 +59,27 @@ export function nativeDevHostDataPath(environment, platform = process.platform) 
     : environment.hostDataPath;
 }
 
+/** Continue an interrupted acceptance pass without copying its data or replacing a running executable. */
+export function reuseNativeDevProfile(environment, previous) {
+  for (const pid of [previous.pid, previous.hostPid]) {
+    if (!Number.isSafeInteger(pid) || pid <= 0)
+      throw new Error("The previous development run has no verifiable process identity");
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if (error.code === "ESRCH") continue;
+      throw new Error("The previous development process state is unknown");
+    }
+    throw new Error("Stop the previous development app and Host before reusing their profile");
+  }
+  return {
+    ...environment,
+    instanceId: previous.instanceId,
+    desktopDataPath: previous.desktopDataPath,
+    hostDataPath: previous.hostDataPath,
+  };
+}
+
 export function supervisedChild(command, args, { cwd, env, children }) {
   const child = spawn(command, args, {
     cwd,
@@ -263,6 +284,14 @@ export async function runNativeDev(args = process.argv.slice(2)) {
     throw new Error("--cargo-target must be absolute");
   const workspaceId = option(args, "--workspace-id", hash(root));
   const runId = option(args, "--run-id", randomUUID());
+  const previousRecord = option(args, "--reuse-profile-run");
+  const previousRun = previousRecord
+    ? (
+        await (
+          await import("./acceptance-native.mjs")
+        ).validateAcceptanceRun(root, resolve(previousRecord))
+      ).run
+    : undefined;
   const abort = new AbortController();
   const children = new Set();
   const launch = (command, parameters, env = process.env) =>
@@ -314,11 +343,12 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         runId: attempt ? `${runId}-${attempt}` : runId,
         kinds: ["vite", "hmr", "host", "cdp"],
       });
-      const environment = await bootstrap.devEnvironment({
+      let environment = await bootstrap.devEnvironment({
         workspaceId,
         runId: lease.runId,
         ports: lease,
       });
+      if (previousRun) environment = reuseNativeDevProfile(environment, previousRun);
       environment.hostDataPath = nativeDevHostDataPath(environment);
       await mkdir(environment.hostDataPath, { recursive: true });
       const env = {
@@ -561,7 +591,7 @@ export async function runNativeDev(args = process.argv.slice(2)) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv.includes("--help"))
     console.log(
-      "pnpm dev:native [--bootstrap] [--workspace-id ID] [--run-id ID] [--shared-target ABSOLUTE_CACHE_ROOT] [--cargo-target ABSOLUTE_TARGET] [--acceptance-controls]\nBuild and supervise an isolated debug app, Host and Vite run. Ctrl+C cancels this run.",
+      "pnpm dev:native [--bootstrap] [--workspace-id ID] [--run-id ID] [--shared-target ABSOLUTE_CACHE_ROOT] [--cargo-target ABSOLUTE_TARGET] [--acceptance-controls] [--reuse-profile-run OWN_STOPPED_DEV_RECORD]\nBuild and supervise an isolated debug app, Host and Vite run. Ctrl+C cancels this run.",
     );
   else
     runNativeDev().catch((error) => {
