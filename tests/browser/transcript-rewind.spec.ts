@@ -9,18 +9,16 @@ for (const width of [390, 1000]) {
     await expect(page.getByText("Stopped by you", { exact: true })).toBeVisible();
     const wrong = page.locator('[data-prompt-anchor="wrong-request"]');
     const prior = page.locator('[data-prompt-anchor="prior-request"]');
-    const actions = wrong.getByRole("button", { name: "Message actions", exact: true });
+    const actions = wrong.getByRole("button", { name: "Edit from here", exact: true });
     await actions.focus();
     await page.keyboard.press("Enter");
-    await page.getByRole("menuitem", { name: "Edit this message", exact: true }).click();
     await expect
       .poll(() => page.evaluate(() => (window as unknown as { lastRewind: unknown }).lastRewind))
       .toEqual({ blockId: "wrong-request", action: "edit" });
-    await prior.getByRole("button", { name: "Message actions", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Return before this message", exact: true }).click();
+    await prior.getByRole("button", { name: "Edit from here", exact: true }).click();
     await expect
       .poll(() => page.evaluate(() => (window as unknown as { lastRewind: unknown }).lastRewind))
-      .toEqual({ blockId: "prior-request", action: "return" });
+      .toEqual({ blockId: "prior-request", action: "edit" });
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
@@ -29,7 +27,7 @@ for (const width of [390, 1000]) {
 
 for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
-    test(`managed rewind previews files and supports undo at ${width}px ${theme}`, async ({
+    test(`experimental managed rewind previews files and supports undo at ${width}px ${theme}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
@@ -97,7 +95,7 @@ for (const width of [1280, 800])
 
 for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
-    test(`expired rewind preview explains recovery at ${width}px ${theme}`, async ({
+    test(`experimental expired rewind preview explains recovery at ${width}px ${theme}`, async ({
       page,
     }, testInfo) => {
       await page.clock.install({ time: new Date("2026-10-26T12:00:00Z") });
@@ -150,7 +148,7 @@ for (const width of [1280, 800])
     });
   }
 
-test("managed rewind on an older host explains the update without changing history", async ({
+test("experimental managed rewind on an older host explains the update without changing history", async ({
   page,
 }) => {
   await page.goto("/tests/browser/workspace-rewind.html?olderHost");
@@ -176,7 +174,7 @@ test("blocked capture keeps rewind unavailable and cancellation preserves histor
 
 for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
-    test(`real SessionPane routes managed rewind through its file preview at ${width}px ${theme}`, async ({
+    test(`real SessionPane keeps worktree files on conversation rewind at ${width}px ${theme}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
@@ -187,38 +185,19 @@ for (const width of [1280, 800])
         theme === "light",
       );
       const message = page.locator('[data-prompt-anchor="second"]');
-      await expect(message).toBeVisible();
-      await message.getByRole("button", { name: "Message actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Return before this message", exact: true }).click();
-      const preview = page.getByRole("dialog", {
-        name: "Rewind conversation and files",
-        exact: true,
-      });
+      await message.getByRole("button", { name: "Edit from here", exact: true }).click();
+      const preview = page.getByRole("dialog", { name: "Edit from here?", exact: true });
       await expect(preview).toBeVisible();
-      await expect(page.getByText("File changes stay unchanged.", { exact: false })).toHaveCount(0);
-      await mkdir("temp/verification/i2a", { recursive: true });
-      await page.screenshot({
-        path: `temp/verification/i2a/session-pane-rewind-${width}-${theme}.png`,
-        animations: "disabled",
-      });
-      await preview
-        .getByRole("button", { name: "Rewind conversation and files", exact: true })
-        .click();
+      await preview.getByRole("button", { name: "Revert and keep changes", exact: true }).click();
       await expect(message).toHaveCount(0);
-      await page.reload();
-      await page.evaluate(
-        (light) => document.documentElement.classList.toggle("theme-light", light),
-        theme === "light",
+      await expect(page.locator("textarea")).toHaveValue("Remove this later change.");
+      const methods = await page.evaluate(() =>
+        (window as any).rewindFixtureCalls.map((call: any) => call.method),
       );
-      await page.getByRole("button", { name: "Undo rewind", exact: true }).click();
-      const undo = page.getByRole("dialog", { name: "Undo rewind", exact: true });
-      await expect(undo).toBeVisible();
-      await page.screenshot({
-        path: `temp/verification/i2a/session-pane-undo-${width}-${theme}.png`,
-        animations: "disabled",
-      });
-      await undo.getByRole("button", { name: "Undo rewind", exact: true }).click();
-      await expect(message).toBeVisible();
+      expect(methods).not.toContain("provider.stop");
+      expect(methods).not.toContain("sessions.rewind.plan");
+      expect(methods).not.toContain("sessions.rewind.apply");
+      expect(methods).not.toContain("session_files_revert");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -275,7 +254,7 @@ for (const width of [1280, 800])
 
 for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
-    test(`real RemoteSession uses managed rewind and reloadable Undo at ${width}px ${theme}`, async ({
+    test(`real RemoteSession rewinds chat and files through separate contracts at ${width}px ${theme}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
@@ -286,59 +265,56 @@ for (const width of [1280, 800])
         theme === "light",
       );
       const message = page.locator('[data-prompt-anchor="second"]');
-      await message.getByRole("button", { name: "Message actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Return before this message", exact: true }).click();
-      const preview = page.getByRole("dialog", {
-        name: "Rewind conversation and files",
-        exact: true,
-      });
-      await expect(preview).toBeVisible();
-      expect(await page.evaluate(() => (window as any).tryRemoteSend())).toBe(false);
-      await mkdir("temp/verification/i2a", { recursive: true });
-      await page.screenshot({
-        path: `temp/verification/i2a/remote-managed-rewind-${width}-${theme}.png`,
-        animations: "disabled",
-      });
-      await preview
-        .getByRole("button", { name: "Rewind conversation and files", exact: true })
-        .click();
+      await message.getByRole("button", { name: "Edit from here", exact: true }).click();
+      const preview = page.getByRole("dialog", { name: "Edit from here?", exact: true });
+      await expect(preview).toContainText("Session files: 1");
+      await preview.getByRole("button", { name: "Revert files too", exact: true }).click();
       await expect(message).toHaveCount(0);
-      await page.reload();
-      await page.evaluate(
-        (light) => document.documentElement.classList.toggle("theme-light", light),
-        theme === "light",
-      );
-      await page.getByRole("button", { name: "Undo rewind", exact: true }).click();
-      const undo = page.getByRole("dialog", { name: "Undo rewind", exact: true });
-      await expect(undo).toBeVisible();
-      expect(await page.evaluate(() => (window as any).tryRemoteSend())).toBe(false);
-      await page.screenshot({
-        path: `temp/verification/i2a/remote-managed-undo-${width}-${theme}.png`,
-        animations: "disabled",
-      });
-      await undo.getByRole("button", { name: "Undo rewind", exact: true }).click();
-      await expect(message).toBeVisible();
-      const commands = await page.evaluate(() =>
-        (window as any).rewindFixtureCalls.filter(
-          (call: any) => call.method === "commands.dispatch",
-        ),
-      );
-      expect(commands).toEqual([]);
+      await expect(page.locator("textarea")).toHaveValue("Remove this later change.");
+      const calls = await page.evaluate(() => (window as any).rewindFixtureCalls);
+      expect(calls.some((call: any) => call.method === "sessions.files.revert")).toBe(true);
+      expect(
+        calls
+          .filter((call: any) => call.method === "commands.dispatch")
+          .map((call: any) => call.params.type),
+      ).toEqual(["rewind"]);
+      expect(calls.some((call: any) => call.method === "sessions.rewind.apply")).toBe(false);
     });
   }
 
-test("managed native rewind refuses an unconfirmed provider retirement", async ({ page }) => {
+test("conversation-only rewind does not require provider retirement", async ({ page }) => {
   await page.goto("/tests/browser/workspace-rewind.html?pane&retireUnknown");
   const message = page.locator('[data-prompt-anchor="second"]');
-  await message.getByRole("button", { name: "Message actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Return before this message", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("The conversation could not be rewound");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(message).toBeVisible();
+  await message.getByRole("button", { name: "Edit from here", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Revert and keep changes", exact: true })
+    .click();
+  await expect(message).toHaveCount(0);
   const methods = await page.evaluate(() =>
     (window as any).rewindFixtureCalls.map((call: any) => call.method),
   );
-  expect(methods).toContain("provider.stop");
+  expect(methods).not.toContain("provider.stop");
   expect(methods).not.toContain("sessions.rewind.plan");
   expect(methods).not.toContain("sessions.rewind.apply");
+});
+
+test("older Host permits conversation rewind while disabling only file revert", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/workspace-rewind.html?remoteRewind&olderEditHost");
+  const message = page.locator('[data-prompt-anchor="second"]');
+  await message.getByRole("button", { name: "Edit from here", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit from here?", exact: true });
+  const files = dialog.getByRole("button", { name: "Revert files too", exact: true });
+  await expect(files).toBeDisabled();
+  await expect(files).toHaveAttribute("title", /Update bycoda Host/);
+  await dialog.getByRole("button", { name: "Revert and keep changes", exact: true }).click();
+  await expect(message).toHaveCount(0);
+  await expect(page.locator("textarea")).toHaveValue("Remove this later change.");
+  const methods = await page.evaluate(() =>
+    (window as any).rewindFixtureCalls.map((call: any) => call.method),
+  );
+  expect(methods).not.toContain("sessions.files.revertPlan");
+  expect(methods).not.toContain("sessions.files.revert");
 });

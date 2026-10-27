@@ -9,7 +9,15 @@ import { registerHarness } from "../../src/integrations/harness/core/registry";
 import { rememberRemoteSession } from "../../src/features/connections/model/connections";
 import { remoteSessionActions } from "../../src/features/connections/model/remoteSessionActions";
 import { Button } from "../../src/shared/ui/Button";
-import { WorkspaceRewindPreviewHost } from "../../src/features/workspaces/ui/WorkspaceRewindPreview";
+import {
+  WorkspaceRewindPreviewHost,
+  requestWorkspaceRewindPreview,
+  offerWorkspaceRewindUndo,
+} from "../../src/features/workspaces/ui/WorkspaceRewindPreview";
+import {
+  planWorkspaceRewind,
+  applyWorkspaceRewind,
+} from "../../src/features/workspaces/model/rewindClient";
 import {
   useCompactAndRewind,
   type CompactAndRewindDeps,
@@ -99,6 +107,14 @@ Object.assign(window, {
       if (command === "local_host_connect") return machine;
       if (command === "remote_machines") return [machine];
       if (command === "plugin:event|listen") return 1;
+      if (command === "session_files_revert_plan") {
+        calls.push({ method: command, params: args });
+        return { files: [{ path: "src/fixture.ts", action: "restore" }] };
+      }
+      if (command === "session_files_revert") {
+        calls.push({ method: command, params: args });
+        return { reverted: ["src/fixture.ts"], skipped: [] };
+      }
       if (command === "session_get")
         return { ...authoritative, transcriptRevision: revision, createdAt: 1, updatedAt: 1 };
       if (command === "session_get_queue") return null;
@@ -161,6 +177,8 @@ Object.assign(window, {
                   "sessions.git-rewind.v1",
                   "sessions.git-rewind-undo.v1",
                   "sessions.draft",
+                  "sessions.rewind",
+                  ...(query.has("olderEditHost") ? [] : ["sessions.edit-from-here.v1"]),
                 ],
           };
         case "models.list":
@@ -259,6 +277,11 @@ Object.assign(window, {
             };
             revision++;
           }
+          if (input.type === "rewind") {
+            const index = authoritative.blocks.findIndex((block) => block.id === input.blockId);
+            authoritative = { ...authoritative, blocks: authoritative.blocks.slice(0, index) };
+            revision++;
+          }
           return { commandId: input.commandId, sessionId: authoritative.id, revision };
         }
         case "sessions.sync":
@@ -272,6 +295,10 @@ Object.assign(window, {
               updatedAt: 1,
             },
           };
+        case "sessions.files.revertPlan":
+          return { files: [{ path: "src/fixture.ts", action: "restore" }] };
+        case "sessions.files.revert":
+          return { reverted: ["src/fixture.ts"], skipped: [] };
         case "projects.list":
           return [{ id: "project", cwd: original.cwd, name: "Rewind fixture" }];
         case "workspaces.get":
@@ -388,6 +415,42 @@ function Fixture() {
     persistSession: () => {},
   } as unknown as CompactAndRewindDeps;
   const { onRewindMessage } = useCompactAndRewind(deps);
+  // Isolated legacy preview coverage calls the experimental APIs explicitly.
+  // Per-message actions below continue through the real default controller.
+  const experimentalPreview = async () => {
+    const plan = await planWorkspaceRewind(sessionsRef.current[0], "workspace", {
+      userBlockId: "second",
+    });
+    await requestWorkspaceRewindPreview(
+      plan,
+      async () => {
+        const result = await applyWorkspaceRewind(
+          sessionsRef.current[0],
+          plan,
+          crypto.randomUUID(),
+        );
+        setSessions([result.session]);
+        offerWorkspaceRewindUndo(original.id, async () => {
+          const undo = await planWorkspaceRewind(sessionsRef.current[0], "workspace", {
+            operationId: "rewind-operation",
+          });
+          await requestWorkspaceRewindPreview(
+            undo,
+            async () => {
+              const restored = await applyWorkspaceRewind(
+                sessionsRef.current[0],
+                undo,
+                crypto.randomUUID(),
+              );
+              setSessions([restored.session]);
+            },
+            original.id,
+          );
+        });
+      },
+      original.id,
+    );
+  };
   if (query.has("pane") || query.has("remoteCreate") || query.has("remoteRewind")) {
     const noop = () => {};
     const props = {
@@ -473,7 +536,7 @@ function Fixture() {
             setPending(true);
             setError("");
             try {
-              await onRewindMessage(original.id, "second");
+              await experimentalPreview();
             } catch (cause) {
               setError(cause instanceof Error ? cause.message : String(cause));
             } finally {
