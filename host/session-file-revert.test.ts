@@ -57,6 +57,33 @@ async function fixture(gitRepo = true) {
   };
 }
 describe("session message file revert", () => {
+  it.each(["baseline", "peer-before", "skipped"])(
+    "skips an AddFile overwrite with unknown old contents (%s), while reverting proven new files",
+    async (source) => {
+      const f = await fixture();
+      if (source === "skipped") await f.write("a.txt", "x".repeat(8 * 1024 * 1024 + 1));
+      await f.checkpoints.beginFilesTurn("s", f.cwd, "one");
+      if (source === "peer-before") await f.write("a.txt", "peer before provider overwrite\n");
+      await f.write("a.txt", "provider overwrite\n");
+      await f.write("proven-new.txt", "new\n");
+      await f.checkpoints.claimFilesProof("s", f.cwd, "one", "add-overwrite", [
+        { path: "a.txt", kind: "add", contents: "provider overwrite\n" },
+        { path: "proven-new.txt", kind: "add", contents: "new\n" },
+      ]);
+      await f.checkpoints.finishFilesTurn("s", f.cwd, "one");
+      const plan = await f.checkpoints.filesRevertPlan("s", f.cwd, "one");
+      expect(plan.unavailable).toBeUndefined();
+      expect(plan.files.find((file) => file.path === "a.txt")?.conflict).toMatch(
+        /Pre-edit contents.*unavailable/,
+      );
+      expect(plan.files.find((file) => file.path === "proven-new.txt")?.conflict).toBeUndefined();
+      const result = await f.checkpoints.filesRevert("s", f.cwd, "one");
+      expect(result.reverted).toEqual(["proven-new.txt"]);
+      expect(result.skipped.map((file) => file.path)).toEqual(["a.txt"]);
+      expect(await f.read("a.txt")).toBe("provider overwrite\n");
+      await expect(f.read("proven-new.txt")).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
   it("chains late delete/add proofs and ignores duplicate completed notifications", async () => {
     const f = await fixture();
     await f.checkpoints.beginFilesTurn("s", f.cwd, "one");

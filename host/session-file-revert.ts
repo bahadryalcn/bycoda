@@ -472,11 +472,19 @@ export class SessionFileRevert {
             throw new Error("Provider proof exceeds file capture limits");
           return { raw: Buffer.from(text, "utf8").toString("base64"), mode };
         };
+        const previous = active.proofs.get(path);
+        let unavailableBefore: string | undefined;
         let before: Image;
         let after: Image;
         if (change.kind === "add") {
           before = null;
           after = textImage(change.contents);
+          if (
+            !previous &&
+            (active.baseline.get(path) || active.excluded.has(path) || !active.complete)
+          )
+            unavailableBefore =
+              "Pre-edit contents for overwritten provider AddFile are unavailable";
         } else if (change.kind === "delete") {
           before = textImage(change.contents, active.baseline.get(path)?.mode ?? 0o644);
           after = null;
@@ -488,12 +496,12 @@ export class SessionFileRevert {
           before = textImage(reverseProviderUpdate(current, change.contents));
           after = actual;
         } else throw new Error("Unsupported provider file proof");
-        const previous = active.proofs.get(path);
         const revision = {
           before: previous ? previous.before : before,
           after,
           conflict:
             previous?.conflict ??
+            unavailableBefore ??
             (previous && !same(previous.after, before)
               ? "File changed outside this session between edits"
               : undefined),
