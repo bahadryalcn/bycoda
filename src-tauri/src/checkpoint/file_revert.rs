@@ -418,18 +418,133 @@ impl CheckpointStore {
                 turn.files.get_mut(&path).unwrap().after = Some(after);
             }
         }
+        if self.light_turn_active(session, id)? {
+            merge_light_review(&dir, &root, turn)?;
+        }
         turn.active = false;
         turn.baseline.clear();
         turn.baseline_skipped_stamps.clear();
         turn.bytes = Some(disk_bytes(&turn_dir(&dir, id)?));
         prune(&dir, &mut journal, HISTORY_BYTES)?;
         save(&dir, &journal)?;
+        self.settle_light_turn(session, id, shared)?;
         turn::leases::release(&self.leases, session, id)?;
         if baseline_dir.exists() {
             std::fs::remove_dir_all(baseline_dir).map_err(|e| e.to_string())?;
         }
         Ok(true)
     }
+}
+
+/// Keep existing per-file review and Undo fed by the lightweight raw journal.
+/// Earlier aggregate baselines and their safety flags are never reset by a new turn.
+fn merge_light_review(dir: &Path, root: &Path, turn: &FileTurn) -> Result<(), String> {
+    let Some(mut manifest) = read_manifest(dir)? else {
+        return Ok(());
+    };
+    let history = turn_dir(dir, &turn.id)?;
+    let mut changed = Vec::new();
+    for (path, pair) in &turn.files {
+        let Some(after_kind) = pair.after else {
+            continue;
+        };
+        if safe_relative(root, path).is_err() {
+            continue;
+        }
+        let before = read_snapshot_at(&history.join("before"), path, pair.before);
+        let after = read_snapshot_at(&history.join("after"), path, after_kind);
+        if before == FileState::Skipped || after == FileState::Skipped {
+            continue;
+        }
+        if !manifest.touched.contains(path) && manifest.touched.len() >= MAX_SNAPSHOT_FILES {
+            continue;
+        }
+        if manifest.touched.contains(path) && manifest.prepared.contains(path) {
+            if let Some(kind) = manifest.after.get(path) {
+                let aggregate_after = read_after_snapshot(dir, path, *kind);
+                // Structured completion already advanced the aggregate. Otherwise
+                // only an uninterrupted before->after chain remains exact.
+                if aggregate_after != before && aggregate_after != after {
+                    manifest.diverged.insert(path.clone());
+                }
+            }
+        } else {
+            let blocked = manifest.undo_blocked.contains(path);
+            if manifest.touched.contains(path) {
+                release_path(&mut manifest, path);
+            }
+            copy_state(
+                &dir.join("files"),
+                path,
+                &before,
+                snapshot_mode(&history.join("before"), path, pair.before),
+            )?;
+            manifest.files.insert(path.clone(), pair.before);
+            manifest.prepared.insert(path.clone());
+            if blocked {
+                manifest.undo_blocked.insert(path.clone());
+            }
+        }
+        if pair.conflict {
+            manifest.diverged.insert(path.clone());
+        }
+        copy_state(
+            &dir.join("after"),
+            path,
+            &after,
+            snapshot_mode(&history.join("after"), path, after_kind),
+        )?;
+        manifest.after.insert(path.clone(), after_kind);
+        manifest.touched.insert(path.clone());
+        changed.push(path.clone());
+    }
+    if changed.is_empty() {
+        return Ok(());
+    }
+    manifest.tracked.extend(paths_in_head(root, &changed));
+    if let Some(stats) = batch_session_stats(dir, &manifest, &changed) {
+        for path in &changed {
+            manifest.stats.remove(path);
+            if let Some(stats) = stats.get(path) {
+                manifest.stats.insert(path.clone(), stats.clone());
+            }
+        }
+    }
+    write_manifest(dir, &manifest)
+}
+
+fn refresh_reverted_review(
+    dir: &Path,
+    restored: &BTreeMap<String, (FileState, Option<u32>)>,
+) -> Result<(), String> {
+    let Some(mut manifest) = read_manifest(dir)? else {
+        return Ok(());
+    };
+    let mut paths = Vec::new();
+    for (path, (state, mode)) in restored {
+        if !manifest.touched.contains(path) || !manifest.prepared.contains(path) {
+            continue;
+        }
+        // Use the bytes this operation restored, not a new working-tree read
+        // that could adopt a foreign write after our per-file guard released.
+        copy_state(&dir.join("after"), path, state, *mode)?;
+        let kind = match state {
+            FileState::Contents(_) => SnapshotKind::Contents,
+            FileState::Missing => SnapshotKind::Missing,
+            FileState::Skipped => continue,
+        };
+        manifest.after.insert(path.clone(), kind);
+        paths.push(path.clone());
+    }
+    if let Some(stats) = batch_session_stats(dir, &manifest, &paths) {
+        for path in &paths {
+            manifest.stats.remove(path);
+            if let Some(stats) = stats.get(path) {
+                manifest.stats.insert(path.clone(), stats.clone());
+            }
+        }
+    }
+    write_manifest(dir, &manifest)
 }
 
 fn copy_state(root: &Path, path: &str, state: &FileState, mode: Option<u32>) -> Result<(), String> {
@@ -794,6 +909,7 @@ impl CheckpointStore {
         validate_id(session, "session")?;
         let (root, candidates) = candidates(&self.session_dir(session), message)?;
         let mut result = RevertResult::default();
+        let mut restored = BTreeMap::new();
         for file in candidates {
             let apply = || -> Result<(), String> {
                 if let Some(reason) = conflict(&root, &file) {
@@ -802,13 +918,17 @@ impl CheckpointStore {
                 apply_file(&root, &file)
             };
             match apply() {
-                Ok(()) => result.reverted.push(file.path),
+                Ok(()) => {
+                    restored.insert(file.path.clone(), (file.before, file.mode));
+                    result.reverted.push(file.path);
+                }
                 Err(reason) => result.skipped.push(SkippedFile {
                     path: file.path,
                     reason,
                 }),
             }
         }
+        refresh_reverted_review(&self.session_dir(session), &restored)?;
         Ok(result)
     }
 }
@@ -919,7 +1039,13 @@ mod tests {
         }
         fn begin(&self, session: &str, turn: &str) {
             self.store
-                .begin_files_turn(session, &self.cwd(), turn, &format!("message-{turn}"))
+                .begin_checkpoint_turn(
+                    session,
+                    &self.cwd(),
+                    turn,
+                    &format!("message-{turn}"),
+                    false,
+                )
                 .unwrap();
         }
         fn finish(&self, session: &str, turn: &str) {
@@ -1079,6 +1205,154 @@ mod tests {
         let mut journal = load(&dir).unwrap().unwrap();
         prune(&dir, &mut journal, 1).unwrap();
         assert!(!old.exists());
+    }
+
+    #[test]
+    fn checkpoint_files_revert_light_review_refreshes_stale_flags_without_unlocking_old_files() {
+        let f = Fixture::new(false);
+        f.begin("session", "one");
+        f.store
+            .prepare("session", &f.cwd(), &["a.txt".into()])
+            .unwrap();
+        f.write("a.txt", "unsafe old owned edit\n");
+        f.store
+            .capture("session", &f.cwd(), &["a.txt".into()])
+            .unwrap();
+        f.finish("session", "one");
+        let dir = f.store.session_dir("session");
+        let mut old: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("turn.json")).unwrap()).unwrap();
+        old["shared"] = true.into();
+        old["error"] = "old capture failed".into();
+        old["head"] = "outdated-head".into();
+        std::fs::write(dir.join("turn.json"), serde_json::to_vec(&old).unwrap()).unwrap();
+
+        f.begin("session", "two");
+        assert!(f
+            .store
+            .status("session", &f.cwd())
+            .unwrap_err()
+            .contains("still recording"));
+        f.store
+            .prepare("session", &f.cwd(), &["fresh.txt".into()])
+            .unwrap();
+        f.write("fresh.txt", "fresh owned edit\n");
+        f.store
+            .capture("session", &f.cwd(), &["fresh.txt".into()])
+            .unwrap();
+        f.finish("session", "two");
+        let status = f.store.status("session", &f.cwd()).unwrap();
+        assert_eq!(status.files.len(), 2);
+        assert!(
+            !status
+                .files
+                .iter()
+                .find(|file| file.relative == "a.txt")
+                .unwrap()
+                .undoable
+        );
+        assert!(
+            status
+                .files
+                .iter()
+                .find(|file| file.relative == "fresh.txt")
+                .unwrap()
+                .undoable
+        );
+        f.store
+            .undo("session", &f.cwd(), Some("fresh.txt"))
+            .unwrap();
+        assert!(!f.repo.join("fresh.txt").exists());
+        assert_eq!(f.read("a.txt"), "unsafe old owned edit\n");
+    }
+
+    #[test]
+    fn checkpoint_files_revert_light_shell_review_exists_and_keeps_original_aggregate_baseline() {
+        let f = Fixture::new(false);
+        assert!(read_manifest(&f.store.session_dir("session"))
+            .unwrap()
+            .is_none());
+        f.begin("session", "one");
+        f.write("a.txt", "one\n");
+        f.finish("session", "one");
+        assert!(f.store.status("session", &f.cwd()).unwrap().files[0].undoable);
+        f.begin("session", "two");
+        f.write("a.txt", "two\n");
+        f.finish("session", "two");
+        let diff = f.store.file_diff("session", &f.cwd(), "a.txt").unwrap();
+        assert_eq!(diff.original, "base\n");
+        assert_eq!(diff.current, "two\n");
+        f.store.files_revert("session", "message-two").unwrap();
+        let diff = f.store.file_diff("session", &f.cwd(), "a.txt").unwrap();
+        assert_eq!(diff.original, "base\n");
+        assert_eq!(diff.current, "one\n");
+        assert!(f.store.status("session", &f.cwd()).unwrap().files[0].undoable);
+        f.store.undo("session", &f.cwd(), Some("a.txt")).unwrap();
+        assert_eq!(f.read("a.txt"), "base\n");
+    }
+
+    #[test]
+    fn checkpoint_files_revert_light_review_preserves_diverged_path_guards() {
+        let f = Fixture::new(false);
+        f.begin("session", "one");
+        f.store
+            .prepare("session", &f.cwd(), &["a.txt".into()])
+            .unwrap();
+        f.write("a.txt", "one\n");
+        f.store
+            .capture("session", &f.cwd(), &["a.txt".into()])
+            .unwrap();
+        f.finish("session", "one");
+        f.write("a.txt", "foreign between turns\n");
+        f.begin("session", "two");
+        f.store
+            .prepare("session", &f.cwd(), &["a.txt".into(), "fresh.txt".into()])
+            .unwrap();
+        f.write("a.txt", "two\n");
+        f.write("fresh.txt", "fresh\n");
+        f.store
+            .capture("session", &f.cwd(), &["a.txt".into(), "fresh.txt".into()])
+            .unwrap();
+        f.finish("session", "two");
+        let status = f.store.status("session", &f.cwd()).unwrap();
+        let old = status
+            .files
+            .iter()
+            .find(|file| file.relative == "a.txt")
+            .unwrap();
+        assert!(!old.exact);
+        assert!(!old.undoable);
+        assert!(
+            status
+                .files
+                .iter()
+                .find(|file| file.relative == "fresh.txt")
+                .unwrap()
+                .undoable
+        );
+    }
+
+    #[test]
+    fn checkpoint_files_revert_experimental_begin_still_captures_a_git_tree() {
+        let f = Fixture::new(true);
+        f.store
+            .begin_checkpoint_turn("session", &f.cwd(), "one", "message-one", true)
+            .unwrap();
+        let dir = f.store.session_dir("session");
+        let turn: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("turn.json")).unwrap()).unwrap();
+        assert!(turn["before"].as_str().is_some_and(|tree| !tree.is_empty()));
+        f.write("a.txt", "one\n");
+        f.store
+            .finish_checkpoint_turn("session", &f.cwd(), "one", false)
+            .unwrap();
+        assert!(f.store.status("session", &f.cwd()).unwrap().files[0].undoable);
+        assert!(f
+            .store
+            .files_revert_plan("session", "message-one")
+            .unwrap()
+            .unavailable
+            .is_none());
     }
 
     #[test]
