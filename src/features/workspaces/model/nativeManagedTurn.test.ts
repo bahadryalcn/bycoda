@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { upsertSession } from "../../sessions/data/sessionStore";
 import { newSession } from "../../sessions/model/session";
-import { beginNativeManagedTurn } from "./nativeManagedTurn";
+import { beginNativeManagedTurn, recoverNativeManagedTurn } from "./nativeManagedTurn";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../sessions/data/sessionStore", () => ({ upsertSession: vi.fn() }));
@@ -64,6 +64,22 @@ it("keeps unknown writer retirement fenced", async () => {
   const finish = await beginNativeManagedTurn(session, "run");
   await expect(finish!(true)).rejects.toThrow("could not be retired");
   expect(invoke).toHaveBeenCalledTimes(1);
+});
+
+it("recovers only through the stored native session identity and validates acknowledgement", async () => {
+  vi.mocked(invoke).mockResolvedValueOnce({
+    released: false,
+    reason: "Native process remains active",
+  });
+  await expect(recoverNativeManagedTurn(session.id)).resolves.toEqual({
+    released: false,
+    reason: "Native process remains active",
+  });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("managed_turn_recover", { sessionId: session.id });
+  for (const value of [null, {}, { released: "yes" }, { released: true, reason: 1 }]) {
+    vi.mocked(invoke).mockResolvedValueOnce(value);
+    await expect(recoverNativeManagedTurn(session.id)).rejects.toThrow("did not confirm");
+  }
 });
 
 it("retains legacy and Host-owned remote lifecycle and refuses removed native workspaces", async () => {

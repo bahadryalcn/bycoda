@@ -1442,6 +1442,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               >
                 <AgentTranscript
                   sessionId={session.id}
+                  managedWorkspaceId={session.worktreeRemoved ? undefined : session.workspaceId}
                   blocks={session.blocks}
                   performanceTraceId={sessionPerformanceTrace(session.id)}
                   historyLoading={session.historyLoading}

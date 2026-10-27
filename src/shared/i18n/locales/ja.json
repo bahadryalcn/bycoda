@@ -7145,5 +7145,10 @@
   "Source included": "Source included",
   "Different source": "Different source",
   "Use current checkout": "現在の作業ディレクトリを使用",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "このコンピューターの Host 更新は、アクティブなセッションの終了を待ってから自動的にインストールされます。"
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "このコンピューターの Host 更新は、アクティブなセッションの終了を待ってから自動的にインストールされます。",
+  "The Host did not confirm the managed turn recovery state.": "Host は管理対象ターンの復旧状態を確認しませんでした。",
+  "Checking stuck turn": "停止したターンを確認中",
+  "Stuck turn reset. You can send again.": "停止したターンをリセットしました。再送信できます。",
+  "This turn is still fenced. The Host could not confirm that no execution occurred.": "このターンは引き続きロックされています。Host は実行がなかったことを確認できませんでした。",
+  "Reset stuck turn": "停止したターンをリセット"
 }

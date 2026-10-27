@@ -1,6 +1,93 @@
 import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`native turn recovery stays guarded at ${width}px ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.addInitScript(() => {
+        const fixture = window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<unknown> };
+          recoveryCalls: unknown[];
+          settleRecovery: (state: { released: boolean; reason?: string }) => void;
+        };
+        fixture.recoveryCalls = [];
+        fixture.__TAURI_INTERNALS__ = {
+          invoke(command, args) {
+            if (command !== "managed_turn_recover") return Promise.resolve(null);
+            fixture.recoveryCalls.push(args);
+            return new Promise((resolve) => (fixture.settleRecovery = resolve));
+          },
+        };
+      });
+      await page.goto("/tests/browser/transcript.html?native-turn-recovery");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const reset = page.locator("[data-managed-turn-recovery] button");
+      await expect(reset).toHaveAccessibleName("Reset stuck turn");
+      await expect(reset).toBeVisible();
+      await expect(
+        page.getByText("Keep my next request as a draft.", { exact: true }),
+      ).toBeVisible();
+      await mkdir("temp/verification/n1", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/n1/recovery-notice-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      await reset.focus();
+      await page.keyboard.press("Enter");
+      await expect(reset).toHaveAttribute("aria-busy", "true");
+      await page.keyboard.press("Enter");
+      await expect
+        .poll(() =>
+          page.evaluate(() => (window as unknown as { recoveryCalls: unknown[] }).recoveryCalls),
+        )
+        .toEqual([{ sessionId: "native-turn-recovery-session" }]);
+      await page.screenshot({
+        path: `temp/verification/n1/recovery-pending-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      const blocker =
+        "The Host found a complete before capture. The native provider process is still active in /isolated/worktree/very-long-workspace-directory/and-the-turn-must-remain-fenced-until-the-process-is-reconciled.";
+      await page.evaluate(
+        (reason) =>
+          (window as unknown as { settleRecovery: (state: unknown) => void }).settleRecovery({
+            released: false,
+            reason,
+          }),
+        blocker,
+      );
+      await expect(page.getByRole("status")).toContainText(blocker);
+      await expect(reset).not.toHaveAttribute("aria-busy", "true");
+      await page.screenshot({
+        path: `temp/verification/n1/recovery-blocked-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await reset.click();
+      await expect(reset).toHaveAttribute("aria-busy", "true");
+      await page.evaluate(() =>
+        (window as unknown as { settleRecovery: (state: unknown) => void }).settleRecovery({
+          released: true,
+        }),
+      );
+      await expect(reset).toHaveCount(0);
+      await expect(page.getByRole("status")).toHaveText("Stuck turn reset. You can send again.");
+      await expect(
+        page.getByText("Keep my next request as a draft.", { exact: true }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/n1/recovery-released-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
 for (const width of [390, 1000]) {
   test(`rewind actions identify their message at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });

@@ -19,6 +19,8 @@ import type { TranscriptSelection } from "../model/transcriptSelection";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
+import { ManagedTurnRecovery, ManagedTurnRecoveryContext } from "./ManagedTurnRecovery";
+import { managedTurnRecoveryNotice } from "../model/managedTurnRecovery";
 import { useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
@@ -210,6 +212,7 @@ const TURN_PAGE_SIZE = 20;
 
 type Props = {
   sessionId?: string;
+  managedWorkspaceId?: string;
   blocks: Block[];
   busy?: boolean;
   historyLoading?: boolean;
@@ -1280,7 +1283,13 @@ export const AgentTranscript = memo(function AgentTranscript(props: Props) {
     ) : (
       <AgentTranscriptComponent {...props} />
     );
-  return <Activity mode={props.visible === false ? "hidden" : "visible"}>{transcript}</Activity>;
+  return (
+    <Activity mode={props.visible === false ? "hidden" : "visible"}>
+      <ManagedTurnRecoveryContext value={managedTurnRecoveryNotice(props)}>
+        {transcript}
+      </ManagedTurnRecoveryContext>
+    </Activity>
+  );
 });
 
 type TurnProps = {
@@ -2524,6 +2533,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
         className={`${embedded ? "" : "px-4"} py-2 ${block.notice === "interrupt" ? "font-bold text-(--ui-tone-danger-fg)" : isSessionErrorBlock(block) ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
       >
         <pre className="min-w-0 whitespace-pre-wrap break-words">{text}</pre>
+        <ManagedTurnRecovery blockId={block.id} />
       </div>
     );
   }

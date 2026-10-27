@@ -4,6 +4,25 @@ import type { Session } from "../../sessions/model/session";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { t } from "../../../shared/i18n";
 
+export interface NativeManagedTurnRecovery {
+  released: boolean;
+  reason?: string;
+}
+
+/** The native store supplies the pending identity; the renderer cannot choose a turn to release. */
+export async function recoverNativeManagedTurn(
+  sessionId: string,
+): Promise<NativeManagedTurnRecovery> {
+  const result = await invoke<NativeManagedTurnRecovery>("managed_turn_recover", { sessionId });
+  if (
+    !result ||
+    typeof result.released !== "boolean" ||
+    (result.reason !== undefined && typeof result.reason !== "string")
+  )
+    throw new Error(t("The Host did not confirm the managed turn recovery state."));
+  return result;
+}
+
 /** Host admission uses the durable native boundary, never a renderer-supplied cwd. */
 export async function beginNativeManagedTurn(
   session: Session,
@@ -18,11 +37,19 @@ export async function beginNativeManagedTurn(
   if (!saved)
     throw new Error(t("The conversation could not be saved. Retry before starting a turn."));
   const request = { sessionId: session.id, userBlockId: user.id, runId };
-  await invoke("managed_turn_begin", request);
+  try {
+    await invoke("managed_turn_begin", request);
+  } catch (error) {
+    throw new Error(`Managed turn could not start: ${String(error)}`);
+  }
   return async (interrupted) => {
     // Failure to retire a writer is unknown, so its native/Host fence must remain.
     if (interrupted)
       throw new Error(t("The managed writer could not be retired. Reconnect before continuing."));
-    await invoke("managed_turn_end", request);
+    try {
+      await invoke("managed_turn_end", request);
+    } catch (error) {
+      throw new Error(`Managed turn could not finish: ${String(error)}`);
+    }
   };
 }

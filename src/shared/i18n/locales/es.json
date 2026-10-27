@@ -7145,5 +7145,10 @@
   "Source included": "Source included",
   "Different source": "Different source",
   "Use current checkout": "Usar el directorio de trabajo actual",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "La actualización del Host en este equipo está esperando a que terminen las sesiones activas y se instalará automáticamente."
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "La actualización del Host en este equipo está esperando a que terminen las sesiones activas y se instalará automáticamente.",
+  "The Host did not confirm the managed turn recovery state.": "El Host no confirmó el estado de recuperación del turno administrado.",
+  "Checking stuck turn": "Comprobando el turno bloqueado",
+  "Stuck turn reset. You can send again.": "Se restableció el turno bloqueado. Ya puede enviar de nuevo.",
+  "This turn is still fenced. The Host could not confirm that no execution occurred.": "Este turno sigue bloqueado. El Host no pudo confirmar que no se ejecutara ninguna acción.",
+  "Reset stuck turn": "Restablecer turno bloqueado"
 }

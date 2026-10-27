@@ -38,7 +38,8 @@ if (
   new URLSearchParams(window.location.search).has("rewind") ||
   new URLSearchParams(location.search).has("streaming") ||
   new URLSearchParams(location.search).has("chat-layout") ||
-  new URLSearchParams(location.search).has("message-bubbles")
+  new URLSearchParams(location.search).has("message-bubbles") ||
+  new URLSearchParams(location.search).has("native-turn-recovery")
 ) {
   root.style.width = "100%";
   root.style.height = "100dvh";
@@ -55,6 +56,9 @@ function Fixture() {
   const longText = new URLSearchParams(window.location.search).has("longText");
   const artifacts = new URLSearchParams(window.location.search).has("artifacts");
   const rewind = new URLSearchParams(window.location.search).has("rewind");
+  const nativeTurnRecovery = new URLSearchParams(window.location.search).has(
+    "native-turn-recovery",
+  );
   useEffect(() => {
     Object.assign(window, {
       appendFixtureStream: (text: string) => setStreamText((value) => value + text),
@@ -70,6 +74,29 @@ function Fixture() {
       },
     });
   }, []);
+  if (nativeTurnRecovery)
+    return (
+      <AgentTranscript
+        sessionId="native-turn-recovery-session"
+        managedWorkspaceId="native-turn-recovery-workspace"
+        cwd="/isolated/worktree"
+        blocks={[
+          { id: "native-request", role: "user", text: "Update the file in this worktree." },
+          {
+            id: "native-error",
+            role: "system",
+            notice: "error",
+            text: "A different managed turn is still active or has an unknown outcome",
+          },
+          {
+            id: "native-draft",
+            role: "user",
+            draft: true,
+            text: "Keep my next request as a draft.",
+          },
+        ]}
+      />
+    );
   return (
     <AgentTranscript
       blocks={

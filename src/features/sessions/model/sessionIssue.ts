@@ -1,5 +1,6 @@
 import type { Block, Session } from "./session";
 import { isProviderFailureText } from "./plan";
+import { isManagedTurnFailure } from "./managedTurnRecovery";
 
 /** Normalize only plain retry counters; preserve provider-specific error details. */
 export function sessionRetryNotice(message: string | undefined): {
@@ -21,7 +22,8 @@ export function isSessionErrorBlock(block: Block): boolean {
       (!block.notice &&
         !block.interjection &&
         !block.shell &&
-        /^thread \S+ already has an active writer\s*$/i.test(block.text.trim())))
+        (/^thread \S+ already has an active writer\s*$/i.test(block.text.trim()) ||
+          isManagedTurnFailure(block.text))))
   );
 }
 

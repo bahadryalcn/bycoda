@@ -7145,5 +7145,10 @@
   "Source included": "Source included",
   "Different source": "Different source",
   "Use current checkout": "使用当前工作目录",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "此计算机上的 Host 更新正在等待活跃会话结束，随后将自动安装。"
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "此计算机上的 Host 更新正在等待活跃会话结束，随后将自动安装。",
+  "The Host did not confirm the managed turn recovery state.": "Host 未确认托管轮次的恢复状态。",
+  "Checking stuck turn": "正在检查卡住的轮次",
+  "Stuck turn reset. You can send again.": "已重置卡住的轮次。您可以再次发送。",
+  "This turn is still fenced. The Host could not confirm that no execution occurred.": "此轮次仍被锁定。Host 无法确认是否未发生任何执行。",
+  "Reset stuck turn": "重置卡住的轮次"
 }
