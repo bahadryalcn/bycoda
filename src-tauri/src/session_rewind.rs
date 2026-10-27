@@ -58,12 +58,13 @@ pub(crate) fn begin_managed_turn(
     host: &impl TurnExecutionHost,
     request: &ManagedTurnRequest,
 ) -> Result<(), String> {
+    let mut request = request.clone();
     let rewind_pending: bool = store.lock_conn()?.query_row("SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE session_id=?1 AND phase!='complete')",
         [&request.session_id], |row|row.get(0)).map_err(|e|e.to_string())?;
     if rewind_pending {
         return Err("Managed rewind recovery must complete before writing".into());
     }
-    let signature = serde_json::to_string(request).map_err(|e| e.to_string())?;
+    let mut signature = serde_json::to_string(&request).map_err(|e| e.to_string())?;
     let previous = pending_turn(store, &request.session_id)?;
     if let Some((raw, phase)) = previous {
         if raw != signature {
@@ -79,13 +80,15 @@ pub(crate) fn begin_managed_turn(
         }
     } else {
         assert_writable(store, &request.session_id)?;
-        let boundary = read(store, &request.session_id)?;
-        if boundary.revision != request.conversation_revision
-            || !boundary.user_block_ids.contains(&request.user_block_id)
-        {
+        // Session metadata can be read before another accepted block save. Take
+        // the capture revision and reserve its row under the same store lock.
+        let conn = store.lock_conn()?;
+        let boundary = read_boundary(&conn, &request.session_id)?;
+        if !boundary.user_block_ids.contains(&request.user_block_id) {
             return Err("Conversation changed before managed turn capture".into());
         }
-        let conn = store.lock_conn()?;
+        request.conversation_revision = boundary.revision;
+        signature = serde_json::to_string(&request).map_err(|e| e.to_string())?;
         conn.execute("INSERT INTO native_managed_turns(session_id,request_json,phase)
             SELECT ?1,?2,'starting' WHERE (SELECT revision FROM session_block_state WHERE session_id=?1)=?3
             AND NOT EXISTS(SELECT 1 FROM native_rewind_intents WHERE session_id=?1 AND phase!='complete')
@@ -104,8 +107,8 @@ pub(crate) fn begin_managed_turn(
             return Err("Another managed turn won execution admission".into());
         }
     }
-    let record = host.capture_before(request)?;
-    validate_turn_capture(&record, request, "before")?;
+    let record = host.capture_before(&request)?;
+    validate_turn_capture(&record, &request, "before")?;
     store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='active' WHERE session_id=?1 AND request_json=?2 AND phase='starting'",
         params![request.session_id,signature]).map_err(|e| e.to_string())?;
     Ok(())
@@ -249,7 +252,11 @@ pub(crate) fn assert_writable(store: &SessionStore, session_id: &str) -> Result<
 
 pub(crate) fn read(store: &SessionStore, session_id: &str) -> Result<ConversationBoundary, String> {
     let conn = store.lock_conn()?;
-    let record = get_session(&conn, session_id)
+    read_boundary(&conn, session_id)
+}
+
+fn read_boundary(conn: &Connection, session_id: &str) -> Result<ConversationBoundary, String> {
+    let record = get_session(conn, session_id)
         .map_err(|e| e.to_string())?
         .ok_or("Conversation does not exist")?;
     Ok(ConversationBoundary {
@@ -1375,6 +1382,35 @@ mod tests {
         fn capture_after(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
             self.capture_before(request)
         }
+    }
+
+    #[test]
+    fn checkpoint_native_turn_uses_current_revision_after_accepted_block_save() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let revision = seed(&store);
+        let stale = ManagedTurnRequest {
+            workspace_id: "managed".into(),
+            session_id: "native".into(),
+            user_block_id: "u2".into(),
+            run_id: "run-2".into(),
+            conversation_revision: revision - 1,
+        };
+        begin_managed_turn(&store, &TurnHost { blocked: false }, &stale).unwrap();
+        let (raw, phase) = pending_turn(&store, "native").unwrap().unwrap();
+        let accepted: ManagedTurnRequest = serde_json::from_str(&raw).unwrap();
+        assert_eq!(accepted.conversation_revision, revision);
+        assert_eq!(phase, "active");
+        finish_managed_turn(&store, &TurnHost { blocked: false }, &accepted).unwrap();
+        let missing = ManagedTurnRequest {
+            user_block_id: "not-persisted".into(),
+            ..accepted
+        };
+        assert!(
+            begin_managed_turn(&store, &TurnHost { blocked: false }, &missing)
+                .unwrap_err()
+                .contains("Conversation changed")
+        );
+        assert!(pending_turn(&store, "native").unwrap().is_none());
     }
 
     #[test]
