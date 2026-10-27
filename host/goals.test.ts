@@ -1481,9 +1481,9 @@ describe("goal tasks", () => {
       expect(b.baseCommit).toBe(git(repo.cwd, "rev-parse", "HEAD"));
       expect(existsSync(join(b.worktreeCwd!, "from-a.txt"))).toBe(true);
       expect((await goals.list())[0].status).toBe("running");
-      // This scenario creates two worktrees and merges a real branch.
     },
-    process.platform === "win32" ? 60000 : 5000,
+    // Real Git setup, two worktrees and owner-approved delivery can exceed 5s on CI.
+    60000,
   );
   it("keeps dependents queued behind a blocked task and blocks the goal", async () => {
     const { lead, addProject, plan, planned, tasks, turnOf, settled, advance, goal, turns } =
