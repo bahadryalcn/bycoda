@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { turnGit } from "./turn-git-history";
 import { createExecutionActivityReservations } from "./workspace-cleanup";
 import { createManagedNativeActivity } from "./managed-native-activity";
+import { nativeTurnOwner } from "./native-activity-identity";
 import type { NativeBufferSnapshot } from "./managed-native-activity";
 import type { ManagedWorkspace } from "./workspace-contracts";
 const cleanups: (() => Promise<void>)[] = [];
@@ -187,21 +188,33 @@ it("shares reservations and permits the process belonging to a captured native s
   const turn = await f.activity.start({
     workspaceId: "workspace",
     kind: "provider",
-    ownerId: "native-turn:owned-session",
+    ownerId: nativeTurnOwner(owner.ownerId, {
+      workspaceId: "workspace",
+      sessionId: "session",
+      userBlockId: "user",
+      runId: "run",
+    }),
   });
   await f.service.start(
     { activityId: "captured", cwd: f.path, kind: "provider", sessionId: "session" },
     owner,
   );
-  await f.service.start(
-    { activityId: "nested-shell", cwd: f.path, kind: "shell", sessionId: "session" },
-    owner,
-  );
+  await expect(
+    f.service.start(
+      { activityId: "nested-shell", cwd: f.path, kind: "shell", sessionId: "session" },
+      owner,
+    ),
+  ).rejects.toThrow("another writer");
+  await expect(
+    f.service.start(
+      { activityId: "other-device", cwd: f.path, kind: "provider", sessionId: "session" },
+      other,
+    ),
+  ).rejects.toThrow("another writer");
   await expect(
     f.service.start({ activityId: "unrelated", cwd: f.path, kind: "shell" }, other),
   ).rejects.toThrow("another writer");
   await f.service.end({ activityId: "captured" }, owner);
-  await f.service.end({ activityId: "nested-shell" }, owner);
   await f.activity.stop(turn.id);
 });
 it("retains dirty and unknown windows and other clients until their own fresh reports settle", async () => {

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { withHostGitMutation } from "./git-mutations";
+import { nativeProcessPrefix, nativeTurnOwner } from "./native-activity-identity";
 import { durableWrite, GitTurnHistory, refComponent } from "./turn-git-history";
 import type { ManagedWorkspace, TurnGitRecord, WorkspaceActivity } from "./workspace-contracts";
 import type {
@@ -102,6 +103,7 @@ export function createManagedNativeTurns(deps: {
   const activities = async (
     request: ManagedNativeTurnRequest,
     binding: NativeTurnBinding,
+    owner: WorkspaceOwnerAuthorization,
     completed = false,
   ) => {
     const all = await deps.activity.list(request.workspaceId);
@@ -109,9 +111,22 @@ export function createManagedNativeTurns(deps: {
       (entry) => entry.kind === "provider" && entry.ownerId === binding.activityOwnerId,
     );
     if (owned.length > 1) throw new Error("Duplicate native turn activity requires reconciliation");
+    const processes = all.filter(
+      (entry) =>
+        entry.kind === "provider" &&
+        entry.ownerId.startsWith(nativeProcessPrefix(owner.ownerId, request.sessionId)),
+    );
+    // A provider process spans successive turns. Two processes are ambiguous even
+    // when both were registered by this device for the same session.
+    if (!completed && processes.length > 1)
+      throw new Error("Multiple native provider processes require reconciliation");
     if (
       !completed &&
-      all.some((entry) => entry.kind !== "readLease" && !owned.some((own) => own.id === entry.id))
+      all.some(
+        (entry) =>
+          entry.kind !== "readLease" &&
+          ![...owned, ...processes].some((own) => own.id === entry.id),
+      )
     )
       throw new Error("Another workspace writer or unknown activity is still active");
     return owned[0] ?? null;
@@ -136,23 +151,18 @@ export function createManagedNativeTurns(deps: {
           binding = {
             ...request,
             ownerFingerprint: ownerFingerprint(owner),
-            activityOwnerId: `native-turn:${createHash("sha256")
-              .update(
-                JSON.stringify([
-                  owner.ownerId,
-                  request.workspaceId,
-                  request.sessionId,
-                  request.userBlockId,
-                  request.runId,
-                ]),
-              )
-              .digest("hex")}`,
+            activityOwnerId: nativeTurnOwner(owner.ownerId, request),
           };
           // Bind the accepted boundary before installing activity/capturing Git.
           // Retries retain device identity even if the host dies before acknowledgement.
           await durableWrite(bindingPath(request), JSON.stringify(binding));
         }
-        let activity = await activities(request, binding, record?.after?.status === "complete");
+        let activity = await activities(
+          request,
+          binding,
+          owner,
+          record?.after?.status === "complete",
+        );
         if (record?.after?.status === "complete") {
           if (activity) await deps.activity.stop(activity.id);
           return record;
@@ -166,7 +176,7 @@ export function createManagedNativeTurns(deps: {
         try {
           // Admission can await durable storage. Recheck writers that appeared
           // while installing this marker before authorizing native execution.
-          await activities(request, binding);
+          await activities(request, binding, owner);
           record = await deps.history.begin(request);
           if (record.before.status !== "complete") throw new Error(record.before.reason);
           return record;
@@ -193,7 +203,12 @@ export function createManagedNativeTurns(deps: {
         checkRecord(previous, request);
         if (previous?.before.status !== "complete")
           throw new Error("Native turn has no complete before capture");
-        const activity = await activities(request, binding, previous.after?.status === "complete");
+        const activity = await activities(
+          request,
+          binding,
+          owner,
+          previous.after?.status === "complete",
+        );
         if (!activity && previous.after?.status !== "complete")
           throw new Error("Native turn activity is missing; reconcile before capturing its end");
         const record =

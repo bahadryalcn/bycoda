@@ -8,6 +8,7 @@ import {
   workspacePathKey as pathKey,
 } from "./workspace-paths";
 import { withHostGitMutation } from "./git-mutations";
+import { nativeProcessPrefix, nativeTurnPrefix } from "./native-activity-identity";
 import { durableWrite } from "./turn-git-history";
 import type { ManagedWorkspace, WorkspaceActivity } from "./workspace-contracts";
 import type {
@@ -203,7 +204,9 @@ export function createManagedNativeActivity(deps: {
               cwd: canonical,
               device,
               workspaceId: workspace.id,
-              activityOwnerId: `native-process:${digest([device, request.sessionId ?? null])}:${digest(request.activityId)}`,
+              activityOwnerId: request.sessionId
+                ? `${nativeProcessPrefix(owner.ownerId, request.sessionId)}${digest(request.activityId)}`
+                : `native-process:${digest([device, null])}:${digest(request.activityId)}`,
               phase: "starting",
             };
             await durableWrite(path, JSON.stringify(lease));
@@ -220,10 +223,11 @@ export function createManagedNativeActivity(deps: {
                 if (
                   request.sessionId === workspace.owner.id &&
                   workspace.owner.kind === "session" &&
-                  (entry.ownerId.startsWith("native-turn:") ||
-                    entry.ownerId.startsWith(
-                      `native-process:${digest([device, request.sessionId])}:`,
-                    ))
+                  request.kind === "provider" &&
+                  entry.kind === "provider" &&
+                  entry.ownerId.startsWith(
+                    nativeTurnPrefix(owner.ownerId, workspace.id, request.sessionId),
+                  )
                 )
                   return false;
                 return entry.ownerId !== lease.activityOwnerId;

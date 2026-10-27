@@ -9,6 +9,10 @@ import { createExecutionActivityReservations } from "./workspace-cleanup";
 import { hostGitRepositoryKey } from "./git-mutations";
 import { GitTurnHistory, gitText, turnGit } from "./turn-git-history";
 import { createManagedNativeTurns } from "./managed-native-turns";
+import { createManagedNativeActivity } from "./managed-native-activity";
+import { nativeProcessPrefix } from "./native-activity-identity";
+import { GitSessionRewindService } from "./session-rewind";
+import type { ConversationRewindAdapter } from "./session-rewind";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -25,6 +29,7 @@ async function fixture() {
   await turnGit(repo, ["init", "-b", "main"]);
   await turnGit(repo, ["config", "user.name", "Test"]);
   await turnGit(repo, ["config", "user.email", "test@example.test"]);
+  await turnGit(repo, ["config", "core.autocrlf", "false"]);
   await writeFile(join(repo, "source.txt"), "baseline\n");
   await turnGit(repo, ["add", "."]);
   await turnGit(repo, ["commit", "-m", "baseline"]);
@@ -36,7 +41,9 @@ async function fixture() {
     const policy = createWorkspacePolicyResolver(store, {
       hostPolicy: { root: join(root, "worktrees") },
     });
-    const registry = createManagedWorkspaceRegistry(store, policy);
+    const registry = createManagedWorkspaceRegistry(store, policy, {
+      verifyReservation: (request) => activity.verifyReservation(request),
+    });
     const workspace = async (id: string) => {
       const value = await registry.get({ workspaceId: id });
       if (
@@ -61,13 +68,24 @@ async function fixture() {
       if (!registered) throw new Error("Managed worktree is not registered");
       return value;
     };
+    let process: ReturnType<typeof createManagedNativeActivity>;
     const activity = createExecutionActivityReservations({
       get: workspace,
-      probe: async () => [],
-      pending: async (id) =>
-        (await registry.listOperations(id)).some((op) => op.phase !== "complete"),
+      probe: (id) => process.probe(id),
+      pending: async (id, exceptOperationId) =>
+        (await registry.listOperations(id)).some(
+          (op) => op.id !== exceptOperationId && op.phase !== "complete",
+        ),
       persistence: store.workspaceActivityPersistence(),
       operation: (id) => registry.getOperation(id),
+    });
+    process = createManagedNativeActivity({
+      root: join(root, "private-history"),
+      workspace,
+      listWorkspaces: () => store.managedWorkspaces(),
+      activity,
+      assertWritable: async () => {},
+      authorize: async (value) => value.authorizationId === "trusted",
     });
     const history = new GitTurnHistory({ root: join(root, "private-history"), workspace });
     let writable = true;
@@ -88,6 +106,7 @@ async function fixture() {
       activity,
       history,
       native,
+      process,
       block: () => {
         writable = false;
       },
@@ -130,7 +149,7 @@ it("captures real native turn commits with durable owner binding and idempotent 
   expect(binding).not.toContain(owner.authorizationId);
   expect(JSON.parse(binding).ownerFingerprint).toMatch(/^[a-f0-9]{64}$/);
   const pending = await f.native.status(f.request, owner);
-  expect(pending.activity?.ownerId).toMatch(/^native-turn:[a-f0-9]{64}$/);
+  expect(pending.activity?.ownerId).toMatch(/^native-turn:[a-f0-9]{64}:[a-f0-9]{64}$/);
   expect(await f.native.begin(f.request, owner)).toEqual(first);
   expect(await f.activity.list(f.workspace.id)).toHaveLength(1);
   await writeFile(join(f.workspace.path, "source.txt"), "native implementation\n");
@@ -148,6 +167,7 @@ it("captures real native turn commits with durable owner binding and idempotent 
     kind: "shell",
     ownerId: "later-turn-shell",
   });
+
   expect(await f.native.end(f.request, owner)).toEqual(ended);
   expect(await f.native.begin(f.request, owner)).toEqual(ended);
   expect((await f.activity.list(f.workspace.id)).map((value) => value.id)).toEqual([
@@ -233,3 +253,162 @@ it("does not authorize execution after failed before capture and permits an expl
   await f.activity.stop(marker.id);
   await expect(f.native.end(f.request, owner)).rejects.toThrow("activity is missing");
 }, 120_000);
+
+it("captures three committed turns with a registered native provider then rewinds and undoes", async () => {
+  const f = await fixture();
+  const provider = {
+    activityId: "provider-process",
+    cwd: f.workspace.path,
+    kind: "provider" as const,
+    sessionId: f.request.sessionId,
+  };
+  await f.process.start(provider, owner);
+  await expect(
+    f.process.start({ ...provider, activityId: "duplicate-process" }, owner),
+  ).rejects.toThrow("another writer");
+  const heads: string[] = [];
+  for (let turn = 1; turn <= 3; turn++) {
+    const request = {
+      ...f.request,
+      userBlockId: `user-${turn}`,
+      runId: `run-${turn}`,
+      conversationRevision: turn,
+    };
+    expect((await f.native.begin(request, owner)).before.status).toBe("complete");
+    await writeFile(join(f.workspace.path, "source.txt"), `native turn ${turn}\n`);
+    await turnGit(f.workspace.path, ["add", "source.txt"]);
+    await turnGit(f.workspace.path, ["commit", "-m", `native turn ${turn}`]);
+    heads.push(await gitText(f.workspace.path, ["rev-parse", "HEAD"]));
+    const record = await f.native.end(request, owner);
+    expect(record.after?.status).toBe("complete");
+    expect(await f.activity.list(f.workspace.id)).toHaveLength(1);
+  }
+  expect(new Set(heads).size).toBe(3);
+  expect((await f.history.list(f.workspace.id, f.request.sessionId)).length).toBe(3);
+  await f.process.end({ activityId: provider.activityId }, owner);
+  expect(await f.activity.list(f.workspace.id)).toEqual([]);
+  let transcript = { revision: 3, userBlockIds: ["user-1", "user-2", "user-3"] };
+  const rescues = new Map<string, typeof transcript>();
+  const receipts = new Map<string, { revision: number }>();
+  const conversation: ConversationRewindAdapter = {
+    read: async () => structuredClone(transcript),
+    settle: async () => {},
+    withSessionGate: async (_id, work) => work(),
+    rescue: async (operationId) => {
+      rescues.set(operationId, structuredClone(transcript));
+      return operationId;
+    },
+    restore: async (request) => {
+      const receipt = receipts.get(request.operationId);
+      if (receipt) return receipt;
+      expect(request.expectedRevision).toBe(transcript.revision);
+      const ids =
+        request.direction === "rewind"
+          ? transcript.userBlockIds.slice(0, transcript.userBlockIds.indexOf(request.userBlockId))
+          : rescues.get(request.transcriptRescueId!)!.userBlockIds;
+      transcript = { revision: transcript.revision + 1, userBlockIds: [...ids] };
+      const result = { revision: transcript.revision };
+      receipts.set(request.operationId, result);
+      return result;
+    },
+    receipt: async (id) => receipts.get(id) ?? null,
+  };
+  const rewind = new GitSessionRewindService({
+    root: join(f.root, "rewind"),
+    history: f.history,
+    registry: f.registry,
+    activity: f.activity,
+    conversation,
+  });
+  const plan = await rewind.plan({
+    workspaceId: f.workspace.id,
+    sessionId: f.request.sessionId,
+    expectedRevision: f.workspace.revision,
+    expectedConversationRevision: transcript.revision,
+    direction: "rewind",
+    userBlockId: "user-3",
+  });
+  expect(plan.blockers).toEqual([]);
+  const applied = await rewind.apply({
+    workspaceId: f.workspace.id,
+    sessionId: f.request.sessionId,
+    expectedRevision: plan.expectedRevision,
+    expectedConversationRevision: plan.expectedConversationRevision,
+    planToken: plan.token,
+    idempotencyKey: "rewind-third",
+  });
+  expect(await gitText(f.workspace.path, ["rev-parse", "HEAD"])).toBe(heads[1]);
+  expect(await readFile(join(f.workspace.path, "source.txt"), "utf8")).toBe("native turn 2\n");
+  expect(transcript.userBlockIds).toEqual(["user-1", "user-2"]);
+  const undo = await rewind.plan({
+    workspaceId: f.workspace.id,
+    sessionId: f.request.sessionId,
+    expectedRevision: applied.workspaceRevision,
+    expectedConversationRevision: applied.conversationRevision,
+    direction: "undo",
+    operationId: applied.operationId,
+  });
+  await rewind.undo({
+    workspaceId: f.workspace.id,
+    sessionId: f.request.sessionId,
+    expectedRevision: undo.expectedRevision,
+    expectedConversationRevision: undo.expectedConversationRevision,
+    planToken: undo.token,
+    idempotencyKey: "undo-third",
+  });
+  expect(await gitText(f.workspace.path, ["rev-parse", "HEAD"])).toBe(heads[2]);
+  expect(await readFile(join(f.workspace.path, "source.txt"), "utf8")).toBe("native turn 3\n");
+  expect(transcript.userBlockIds).toEqual(["user-1", "user-2", "user-3"]);
+}, 300_000);
+
+it("keeps foreign devices, runs, terminals, dirty buffers and duplicate providers fenced", async () => {
+  const f = await fixture();
+  const provider = {
+    activityId: "foreign-provider",
+    cwd: f.workspace.path,
+    kind: "provider" as const,
+    sessionId: f.request.sessionId,
+  };
+  await f.process.start(provider, secondOwner);
+  await expect(f.native.begin(f.request, owner)).rejects.toThrow("Another workspace writer");
+  await f.process.end({ activityId: provider.activityId }, secondOwner);
+
+  await f.process.start({ ...provider, activityId: "terminal", kind: "terminal" }, owner);
+  await expect(f.native.begin(f.request, owner)).rejects.toThrow("Another workspace writer");
+  await f.process.end({ activityId: "terminal" }, owner);
+
+  const duplicate = await f.activity.start({
+    workspaceId: f.workspace.id,
+    kind: "provider",
+    ownerId: `${nativeProcessPrefix(owner.ownerId, f.request.sessionId)}duplicate-one`,
+  });
+  const duplicateTwo = await f.activity.start({
+    workspaceId: f.workspace.id,
+    kind: "provider",
+    ownerId: `${nativeProcessPrefix(owner.ownerId, f.request.sessionId)}duplicate-two`,
+  });
+  await expect(f.native.begin(f.request, owner)).rejects.toThrow("Multiple native provider");
+  await f.activity.stop(duplicate.id);
+  await f.activity.stop(duplicateTwo.id);
+
+  const buffers = (dirty: boolean) => ({
+    clientId: "editor",
+    instanceId: "window",
+    processId: 1234,
+    owners: [
+      {
+        ownerId: "editor",
+        updatedAt: Date.now(),
+        unknown: false,
+        buffers: [{ path: join(f.workspace.path, "source.txt"), dirty }],
+      },
+    ],
+  });
+  await f.process.updateBuffers(buffers(true), owner);
+  await expect(f.native.begin(f.request, owner)).rejects.toThrow("Another workspace writer");
+  await f.process.updateBuffers(buffers(false), owner);
+  await f.native.begin(f.request, owner);
+  await expect(
+    f.native.begin({ ...f.request, userBlockId: "foreign-run", runId: "foreign-run" }, owner),
+  ).rejects.toThrow("Another workspace writer");
+}, 180_000);
