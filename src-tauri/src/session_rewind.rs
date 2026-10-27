@@ -69,7 +69,7 @@ fn recover_managed_turn(
     host: &impl TurnExecutionHost,
     session_id: &str,
 ) -> Result<ManagedTurnRecovery, String> {
-    recover_matching_managed_turn(store, host, session_id, None)
+    recover_matching_managed_turn(store, host, session_id, None, false)
 }
 
 fn recover_matching_managed_turn(
@@ -77,6 +77,7 @@ fn recover_matching_managed_turn(
     host: &impl TurnExecutionHost,
     session_id: &str,
     expected: Option<&ManagedTurnRequest>,
+    starting_only: bool,
 ) -> Result<ManagedTurnRecovery, String> {
     let Some((raw, phase)) = pending_turn(store, session_id)? else {
         return Ok(ManagedTurnRecovery {
@@ -84,6 +85,12 @@ fn recover_matching_managed_turn(
             reason: None,
         });
     };
+    if starting_only && phase != "starting" {
+        return Ok(ManagedTurnRecovery {
+            released: false,
+            reason: Some("The managed turn phase changed before buffer recovery".into()),
+        });
+    }
     if !matches!(phase.as_str(), "starting" | "active" | "finishing") {
         return Err("Unknown managed turn phase; recovery remains fenced".into());
     }
@@ -189,7 +196,8 @@ pub(crate) fn begin_managed_turn(
     if let Err(error) = capture {
         // Rejection and a lost acknowledgement look alike locally. Only Host
         // proof of no execution may release the persisted admission.
-        let _ = recover_matching_managed_turn(store, host, &request.session_id, Some(&request));
+        let _ =
+            recover_matching_managed_turn(store, host, &request.session_id, Some(&request), true);
         return Err(error);
     }
     store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='active' WHERE session_id=?1 AND request_json=?2 AND phase='starting'",
@@ -754,6 +762,56 @@ fn reconcile_starting_turns(
         .collect()
 }
 
+// A load can precede the first fresh buffer snapshot after Host/app reconnect.
+// Coalesce window heartbeats and rotate a small batch so blocked rows cannot
+// starve later sessions. No work/network is needed when no starting row exists.
+static BUFFER_RECOVERY_CURSOR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn buffer_recovery_batch(store: &SessionStore, after: Option<&str>) -> Result<Vec<String>, String> {
+    let conn = store.lock_conn()?;
+    let mut query = conn.prepare("SELECT session_id FROM native_managed_turns WHERE phase='starting' ORDER BY CASE WHEN session_id>?1 THEN 0 ELSE 1 END,session_id LIMIT 8").map_err(|e|e.to_string())?;
+    let rows = query
+        .query_map([after.unwrap_or("")], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())
+}
+
+fn reconcile_buffer_recovery_batch(
+    store: &SessionStore,
+    host: &impl TurnExecutionHost,
+    batch: Vec<String>,
+    cursor: &mut Option<String>,
+) -> Vec<String> {
+    batch
+        .into_iter()
+        .filter(|id| {
+            *cursor = Some(id.clone());
+            !recover_matching_managed_turn(store, host, id, None, true)
+                .is_ok_and(|state| state.released)
+        })
+        .collect()
+}
+
+pub(crate) fn reconcile_after_buffer_ack(
+    app: &AppHandle,
+    store: &SessionStore,
+) -> Result<(), String> {
+    let mut cursor = match BUFFER_RECOVERY_CURSOR.try_lock() {
+        Ok(cursor) => cursor,
+        Err(std::sync::TryLockError::WouldBlock) => return Ok(()),
+        Err(_) => return Err("Native buffer recovery is locked".into()),
+    };
+    let batch = buffer_recovery_batch(store, cursor.as_deref())?;
+    if batch.is_empty() {
+        return Ok(());
+    }
+    let host =
+        crate::remote::NativeWorkspaceTransport::connect(app, "sessions.native-execution.v1")?;
+    let _ = reconcile_buffer_recovery_batch(store, &host, batch, &mut cursor);
+    Ok(())
+}
+
 pub(crate) fn reconcile_pending_native(
     app: &AppHandle,
     store: &SessionStore,
@@ -851,8 +909,13 @@ pub fn managed_turn_begin(
                 .retire_managed_session(&request.session_id)
                 .is_ok()
         {
-            let _ =
-                recover_matching_managed_turn(&store, &host, &request.session_id, Some(&pending));
+            let _ = recover_matching_managed_turn(
+                &store,
+                &host,
+                &request.session_id,
+                Some(&pending),
+                true,
+            );
         }
     }
     result
@@ -1888,6 +1951,100 @@ mod tests {
         assert_eq!(server.join().unwrap().len(), 2);
         drop(store);
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn checkpoint_native_buffer_ack_retries_a_load_fenced_before_fresh_snapshot() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let request = native_turn_request(seed(&store), "legacy-before-buffers");
+        let raw = serde_json::to_string(&request).unwrap();
+        store.lock_conn().unwrap().execute("INSERT INTO native_managed_turns(session_id,request_json,phase) VALUES('native',?1,'starting')", [&raw]).unwrap();
+        let mut blocked = turn_reply(&request, false);
+        blocked["reason"] = json!("Workspace editor state is unknown until its first fresh report");
+        let (host, server) = fake_native_host(vec![
+            ("native.turn.recover", Some(blocked)),
+            ("native.buffers.update", Some(json!({"acknowledged":true}))),
+            (
+                "native.buffers.reconcile",
+                Some(json!({"acknowledged":true})),
+            ),
+            ("native.turn.recover", Some(turn_reply(&request, true))),
+        ]);
+        // This is the actual load-before-heartbeat ordering: no unsafe release
+        // is allowed while the Host cannot establish clean editor state.
+        assert!(
+            !recover_managed_turn(&store, &host, "native")
+                .unwrap()
+                .released
+        );
+        assert_eq!(
+            pending_turn(&store, "native").unwrap().unwrap(),
+            (raw, "starting".into())
+        );
+        host.call(
+            "native.buffers.update",
+            json!({"owners":[{"buffers":[],"unknown":false}]}),
+        )
+        .unwrap();
+        host.call("native.buffers.reconcile", json!({"predecessors":[]}))
+            .unwrap();
+        let mut cursor = None;
+        let batch = buffer_recovery_batch(&store, None).unwrap();
+        assert_eq!(batch, ["native"]);
+        assert!(reconcile_buffer_recovery_batch(&store, &host, batch, &mut cursor).is_empty());
+        assert_eq!(cursor.as_deref(), Some("native"));
+        assert!(pending_turn(&store, "native").unwrap().is_none());
+        assert!(buffer_recovery_batch(&store, cursor.as_deref())
+            .unwrap()
+            .is_empty());
+        assert_eq!(server.join().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn checkpoint_native_buffer_retry_rotates_bounded_starting_rows_and_never_recovers_active_turns(
+    ) {
+        let store = SessionStore::open_in_memory().unwrap();
+        let request = native_turn_request(seed(&store), "blocked");
+        for index in 0..10 {
+            store.lock_conn().unwrap().execute("INSERT INTO native_managed_turns(session_id,request_json,phase) VALUES(?1,?2,'starting')", params![format!("session-{index:02}"),serde_json::to_string(&request).unwrap()]).unwrap();
+        }
+        let first = buffer_recovery_batch(&store, None).unwrap();
+        assert_eq!(first.len(), 8);
+        let second = buffer_recovery_batch(&store, first.last().map(String::as_str)).unwrap();
+        assert_eq!(&second[..2], ["session-08", "session-09"]);
+        store
+            .lock_conn()
+            .unwrap()
+            .execute("DELETE FROM native_managed_turns", [])
+            .unwrap();
+        store.lock_conn().unwrap().execute("INSERT INTO native_managed_turns(session_id,request_json,phase) VALUES('native',?1,'starting')", [serde_json::to_string(&request).unwrap()]).unwrap();
+        let queued = buffer_recovery_batch(&store, None).unwrap();
+        store
+            .lock_conn()
+            .unwrap()
+            .execute(
+                "UPDATE native_managed_turns SET phase='active' WHERE session_id='native'",
+                [],
+            )
+            .unwrap();
+        struct NoRecoveryHost;
+        impl TurnExecutionHost for NoRecoveryHost {
+            fn capture_before(&self, _: &ManagedTurnRequest) -> Result<Value, String> {
+                panic!("buffer retry must not capture")
+            }
+            fn capture_after(&self, _: &ManagedTurnRequest) -> Result<Value, String> {
+                panic!("buffer retry must not capture")
+            }
+            fn recover_begin(&self, _: &ManagedTurnRequest) -> Result<Value, String> {
+                panic!("active turn must not be recovered by buffer heartbeat")
+            }
+        }
+        assert_eq!(
+            reconcile_buffer_recovery_batch(&store, &NoRecoveryHost, queued, &mut None),
+            ["native"]
+        );
+        assert_eq!(pending_turn(&store, "native").unwrap().unwrap().1, "active");
+        assert!(buffer_recovery_batch(&store, None).unwrap().is_empty());
     }
 
     #[test]

@@ -414,6 +414,13 @@ pub fn managed_workspace_buffers(
             rusqlite::params![window.label(), now],
         )
         .map_err(|e| e.to_string())?;
+    // The first load may have been fenced by an unrefreshed Host snapshot.
+    // Publish/confirm this snapshot first and release the report lock before
+    // retrying only pending admission recovery. Failed proof remains fenced.
+    drop(_gate);
+    if normalized.iter().all(|buffer| !buffer.dirty) {
+        let _ = crate::session_store::rewind::reconcile_after_buffer_ack(&app, &store);
+    }
     Ok(())
 }
 
