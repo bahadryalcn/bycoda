@@ -731,6 +731,63 @@ async function scenario2(context) {
   return { turns, restoredHead: third.head, restoredBlocks: before.blocks.length, screenshots };
 }
 
+async function waitForActiveNativeProcess(context, sessionId, userBlockId) {
+  const { DatabaseSync } = await import("node:sqlite");
+  const databasePath = join(context.run.desktopDataPath, "bycoda.db");
+  return waitUntil(
+    async () => {
+      const check = new DatabaseSync(databasePath);
+      let row;
+      try {
+        row = check
+          .prepare("SELECT request_json,phase FROM native_managed_turns WHERE session_id=?")
+          .get(sessionId);
+      } finally {
+        check.close();
+      }
+      if (row?.phase !== "active") return false;
+      const request = JSON.parse(row.request_json);
+      if (request.userBlockId !== userBlockId) return false;
+      const crashBindingPath = join(
+        context.run.hostDataPath,
+        "managed-workspaces",
+        "native-turns",
+        request.workspaceId,
+        `${request.userBlockId}.json`,
+      );
+      const crashBinding = JSON.parse(await readFile(crashBindingPath, "utf8"));
+      if (!crashBinding.processActivityOwnerId) return false;
+      const processDirectory = join(
+        context.run.hostDataPath,
+        "managed-workspaces",
+        "native-activity",
+        "processes",
+      );
+      for (const filename of await readdir(processDirectory)) {
+        if (!filename.endsWith(".json")) continue;
+        const lease = JSON.parse(await readFile(join(processDirectory, filename), "utf8"));
+        if (
+          lease.activityOwnerId !== crashBinding.processActivityOwnerId ||
+          lease.sessionId !== sessionId ||
+          lease.kind !== "provider"
+        )
+          continue;
+        if (
+          !Number.isSafeInteger(lease.processId) ||
+          lease.processId < 1 ||
+          lease.phase !== "active"
+        )
+          return false;
+        process.kill(lease.processId, 0);
+        return { request, processId: lease.processId, activityOwnerId: lease.activityOwnerId };
+      }
+      return false;
+    },
+    "Native turn did not reach an accepted native turn with a live durably bound provider PID",
+    60000,
+  );
+}
+
 async function scenario3(context) {
   await newSession(context, "worktree");
   await commitTurn(context, 1, "recovery");
@@ -810,17 +867,64 @@ async function scenario3(context) {
     await publishBuffers(originalBuffers);
   }
   await sendPrompt(context, "Reply RECOVERED without editing files.");
-  // Stop the isolated Host before admission, then restart it. This retains the desktop's exact pending row.
-  await controlNative(context, "stop-host");
-  await sendPrompt(context, "Reply AFTERHOSTRESTART without editing files.", {
-    allowFailure: true,
-  });
-  await controlNative(context, "start-host");
-  await context.page.evaluate(async () =>
-    (
-      await import("/src/features/automations/model/machineSnapshot.ts")
-    ).invalidateMachineSnapshot(),
+  await sendPrompt(
+    context,
+    "Use the terminal to wait 10 seconds, then reply HOSTMIDTURN. Do not edit files.",
+    { wait: false },
   );
+  const hostUserBlockId = context.state.lastUserBlockId;
+  const hostAdmission = await waitForActiveNativeProcess(context, current.id, hostUserBlockId);
+  const previousHostPid = JSON.parse(await readFile(context.recordPath, "utf8")).hostPid;
+  const restartedHost = await controlNative(context, "restart-host");
+  assert.notEqual(
+    restartedHost.hostPid,
+    previousHostPid,
+    "The isolated Host process did not restart",
+  );
+  const hostCompleted = await waitUntil(
+    async () => {
+      const candidate = await session(context, current.id);
+      if (candidate.busy) return false;
+      const boundary = candidate.blocks.findIndex((block) => block.id === hostUserBlockId);
+      if (boundary < 0) return false;
+      const tail = candidate.blocks.slice(boundary + 1);
+      const failure = tail.find((block) => block.notice === "error" || block.error);
+      if (failure) throw new Error(failure.text);
+      return tail.some((block) => block.role === "assistant" && block.text.trim() === "HOSTMIDTURN")
+        ? candidate
+        : false;
+    },
+    "The real native turn did not finish after its Host restarted",
+    90000,
+  );
+  await waitUntil(
+    () => {
+      const check = new DatabaseSync(databasePath);
+      try {
+        const row = check
+          .prepare("SELECT request_json,phase FROM native_managed_turns WHERE session_id=?")
+          .get(current.id);
+        return (
+          row?.phase === "complete" && JSON.parse(row.request_json).userBlockId === hostUserBlockId
+        );
+      } finally {
+        check.close();
+      }
+    },
+    "The Host-restarted native turn did not finish its durable after-capture",
+    60000,
+  );
+  context.steps.push({
+    step: "Restart the isolated Host during accepted real Codex execution",
+    actual: {
+      userBlockId: hostUserBlockId,
+      providerPid: hostAdmission.processId,
+      previousHostPid,
+      restartedHostPid: restartedHost.hostPid,
+      nativePhase: "complete",
+      assistant: "HOSTMIDTURN",
+    },
+  });
   await sendPrompt(context, "Reply HOSTRECOVERED without editing files.");
   // Seed the exact legacy shape only in the validated development DB. Existing completed row provides identity.
   current = await session(context);
@@ -919,58 +1023,7 @@ async function scenario3(context) {
     { wait: false },
   );
   const crashUserBlockId = context.state.lastUserBlockId;
-  const crashAdmission = await waitUntil(
-    async () => {
-      const check = new DatabaseSync(databasePath);
-      let row;
-      try {
-        row = check
-          .prepare("SELECT request_json,phase FROM native_managed_turns WHERE session_id=?")
-          .get(current.id);
-      } finally {
-        check.close();
-      }
-      if (row?.phase !== "active") return false;
-      const request = JSON.parse(row.request_json);
-      if (request.userBlockId !== crashUserBlockId) return false;
-      const crashBindingPath = join(
-        context.run.hostDataPath,
-        "managed-workspaces",
-        "native-turns",
-        request.workspaceId,
-        `${request.userBlockId}.json`,
-      );
-      const crashBinding = JSON.parse(await readFile(crashBindingPath, "utf8"));
-      if (!crashBinding.processActivityOwnerId) return false;
-      const processDirectory = join(
-        context.run.hostDataPath,
-        "managed-workspaces",
-        "native-activity",
-        "processes",
-      );
-      for (const filename of await readdir(processDirectory)) {
-        if (!filename.endsWith(".json")) continue;
-        const lease = JSON.parse(await readFile(join(processDirectory, filename), "utf8"));
-        if (
-          lease.activityOwnerId !== crashBinding.processActivityOwnerId ||
-          lease.sessionId !== current.id ||
-          lease.kind !== "provider"
-        )
-          continue;
-        if (
-          !Number.isSafeInteger(lease.processId) ||
-          lease.processId < 1 ||
-          lease.phase !== "active"
-        )
-          return false;
-        process.kill(lease.processId, 0);
-        return { request, processId: lease.processId, activityOwnerId: lease.activityOwnerId };
-      }
-      return false;
-    },
-    "Crash test did not reach an accepted native turn with a live durably bound provider PID",
-    60000,
-  );
+  const crashAdmission = await waitForActiveNativeProcess(context, current.id, crashUserBlockId);
   context.steps.push({
     step: "Verify the crash occurs during accepted execution",
     actual: {
