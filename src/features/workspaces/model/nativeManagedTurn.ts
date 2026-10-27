@@ -33,6 +33,18 @@ export async function beginNativeManagedTurn(
     throw new Error(t("Resume this managed workspace before starting a turn."));
   const user = [...session.blocks].reverse().find((block) => block.role === "user" && !block.draft);
   if (!user) throw new Error(t("The accepted user boundary is unavailable. Reload this session."));
+  // A retained starting row can fence session persistence itself. Reconcile it
+  // before saving the next boundary; no pending row is a native-only no-op.
+  let recovery: NativeManagedTurnRecovery;
+  try {
+    recovery = await recoverNativeManagedTurn(session.id);
+  } catch (error) {
+    throw new Error(`Managed turn recovery could not be confirmed: ${String(error)}`);
+  }
+  if (!recovery.released)
+    throw new Error(
+      `Managed turn recovery blocked: ${recovery.reason || t("This turn is still fenced. The Host could not confirm that no execution occurred.")}`,
+    );
   const saved = await upsertSession(session);
   if (!saved)
     throw new Error(t("The conversation could not be saved. Retry before starting a turn."));
