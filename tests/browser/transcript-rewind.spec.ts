@@ -45,7 +45,7 @@ for (const width of [1280, 800])
         .poll(() =>
           page.evaluate(() => (window as unknown as { recoveryCalls: unknown[] }).recoveryCalls),
         )
-        .toEqual([{ sessionId: "native-turn-recovery-session" }]);
+        .toEqual([{ sessionId: "native-turn-recovery-session", clientId: expect.any(String) }]);
       await page.screenshot({
         path: `temp/verification/n1/recovery-pending-${width}-${theme}.png`,
         animations: "disabled",

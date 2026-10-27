@@ -7,6 +7,9 @@ import { beginNativeManagedTurn, recoverNativeManagedTurn } from "./nativeManage
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../sessions/data/sessionStore", () => ({ upsertSession: vi.fn() }));
+vi.mock("../../connections/model/desktopInstance", () => ({
+  desktopInstanceId: () => "desktop-window-test",
+}));
 const session = {
   ...newSession("codex", "/repo"),
   workspaceId: "workspace",
@@ -31,7 +34,10 @@ it("recovers a retained starting row before saving the accepted boundary and adm
   vi.mocked(invoke).mockImplementationOnce(() => new Promise((resolve) => (recover = resolve)));
   vi.mocked(upsertSession).mockReturnValue(new Promise((resolve) => (release = resolve)));
   const pending = beginNativeManagedTurn(session, "run");
-  expect(invoke).toHaveBeenCalledExactlyOnceWith("managed_turn_recover", { sessionId: session.id });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("managed_turn_recover", {
+    sessionId: session.id,
+    clientId: "desktop-window-test",
+  });
   expect(upsertSession).not.toHaveBeenCalled();
   recover({ released: true });
   await vi.waitFor(() => expect(upsertSession).toHaveBeenCalledOnce());
@@ -42,12 +48,14 @@ it("recovers a retained starting row before saving the accepted boundary and adm
     sessionId: session.id,
     userBlockId: "user",
     runId: "run",
+    clientId: "desktop-window-test",
   });
   await finish!(false);
   expect(invoke).toHaveBeenLastCalledWith("managed_turn_end", {
     sessionId: session.id,
     userBlockId: "user",
     runId: "run",
+    clientId: "desktop-window-test",
   });
 });
 
@@ -71,7 +79,10 @@ it("does not save or start a new turn when the Host cannot release the existing 
     "Managed turn recovery blocked: Complete before capture exists",
   );
   expect(upsertSession).not.toHaveBeenCalled();
-  expect(invoke).toHaveBeenCalledExactlyOnceWith("managed_turn_recover", { sessionId: session.id });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("managed_turn_recover", {
+    sessionId: session.id,
+    clientId: "desktop-window-test",
+  });
 });
 
 it("does not save or start execution after an unknown recovery transport outcome", async () => {
@@ -80,7 +91,10 @@ it("does not save or start execution after an unknown recovery transport outcome
     "Managed turn recovery could not be confirmed: Error: Host unavailable",
   );
   expect(upsertSession).not.toHaveBeenCalled();
-  expect(invoke).toHaveBeenCalledExactlyOnceWith("managed_turn_recover", { sessionId: session.id });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("managed_turn_recover", {
+    sessionId: session.id,
+    clientId: "desktop-window-test",
+  });
 });
 
 it("propagates unknown admission and end outcomes without retrying mutations", async () => {
@@ -109,7 +123,10 @@ it("recovers only through the stored native session identity and validates ackno
     released: false,
     reason: "Native process remains active",
   });
-  expect(invoke).toHaveBeenCalledExactlyOnceWith("managed_turn_recover", { sessionId: session.id });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("managed_turn_recover", {
+    sessionId: session.id,
+    clientId: "desktop-window-test",
+  });
   for (const value of [null, {}, { released: "yes" }, { released: true, reason: 1 }]) {
     vi.mocked(invoke).mockResolvedValueOnce(value);
     await expect(recoverNativeManagedTurn(session.id)).rejects.toThrow("did not confirm");

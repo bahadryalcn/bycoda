@@ -3,6 +3,7 @@ import { upsertSession } from "../../sessions/data/sessionStore";
 import type { Session } from "../../sessions/model/session";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { t } from "../../../shared/i18n";
+import { desktopInstanceId } from "../../connections/model/desktopInstance";
 
 export interface NativeManagedTurnRecovery {
   released: boolean;
@@ -13,7 +14,10 @@ export interface NativeManagedTurnRecovery {
 export async function recoverNativeManagedTurn(
   sessionId: string,
 ): Promise<NativeManagedTurnRecovery> {
-  const result = await invoke<NativeManagedTurnRecovery>("managed_turn_recover", { sessionId });
+  const result = await invoke<NativeManagedTurnRecovery>("managed_turn_recover", {
+    sessionId,
+    clientId: desktopInstanceId(),
+  });
   if (
     !result ||
     typeof result.released !== "boolean" ||
@@ -48,7 +52,12 @@ export async function beginNativeManagedTurn(
   const saved = await upsertSession(session);
   if (!saved)
     throw new Error(t("The conversation could not be saved. Retry before starting a turn."));
-  const request = { sessionId: session.id, userBlockId: user.id, runId };
+  const request = {
+    sessionId: session.id,
+    userBlockId: user.id,
+    runId,
+    clientId: desktopInstanceId(),
+  };
   try {
     await invoke("managed_turn_begin", request);
   } catch (error) {

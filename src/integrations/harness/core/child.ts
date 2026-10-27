@@ -4,6 +4,7 @@ import { configureGeneratedImageStorage } from "./generatedImages";
 import { socialBridge, socialSpawnArgs } from "./socialBridge";
 import { runtimeLogsBridge, runtimeLogsSpawnArgs } from "./runtimeLogsBridge";
 import { conversationToolsBridge, conversationToolsSpawnArgs } from "./conversationToolsBridge";
+import { desktopInstanceId } from "../../../features/connections/model/desktopInstance";
 import {
   runtimeProviderBinaryPath,
   type ConfigurableBinaryProvider,
@@ -408,6 +409,7 @@ export async function spawnChild(
   }
   const pid = await invoke<number>("harness_spawn", {
     sessionId,
+    ...(backend ? {} : { clientId: desktopInstanceId() }),
     command,
     args: launchArgs,
     cwd,

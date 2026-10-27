@@ -10,6 +10,9 @@ import { isActivityBlock } from "../model/transcriptActivity";
 import type { Block } from "../model/session";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../../connections/model/desktopInstance", () => ({
+  desktopInstanceId: () => "desktop-window-test",
+}));
 const blocks: Block[] = [
   { id: "user", role: "user", text: "Update the file" },
   {
@@ -52,7 +55,10 @@ it("asks the native store once and waits for a positive Host recovery acknowledg
     reset()?.click();
     reset()?.click();
   });
-  expect(invoke).toHaveBeenCalledExactlyOnceWith("managed_turn_recover", { sessionId: "session" });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("managed_turn_recover", {
+    sessionId: "session",
+    clientId: "desktop-window-test",
+  });
   expect(reset()?.getAttribute("aria-busy")).toBe("true");
   expect(container.textContent).not.toContain("You can send again");
   await act(async () => resolve({ released: true }));
