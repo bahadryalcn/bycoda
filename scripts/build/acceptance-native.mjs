@@ -578,8 +578,73 @@ export async function newSession(context, mode = "current", model = context.opti
   }
 }
 
+export async function assertCodexComposer(context, expectedSessionId) {
+  const textarea = context.page.locator("textarea:visible").first();
+  const sessionId = await textarea.evaluate((element) =>
+    element.closest("[data-session-drop]")?.getAttribute("data-session-drop"),
+  );
+  assert(sessionId, "The visible composer has no native session identity; refusing to send");
+  if (expectedSessionId)
+    assert.equal(
+      sessionId,
+      expectedSessionId,
+      "The visible composer belongs to a different session; refusing to send",
+    );
+  const current = await session(context, sessionId);
+  assert.equal(
+    current.harness,
+    "codex",
+    "The visible composer is not configured for Codex; refusing to send",
+  );
+  assert.equal(
+    resolve(current.cwd).toLowerCase(),
+    resolve(context.state.project).toLowerCase(),
+    "The composer belongs to a different project; refusing to send",
+  );
+  const pane = context.page.locator(
+    `[data-session-drop=${JSON.stringify(sessionId)}][data-session-visible="true"]`,
+  );
+  const model = pane
+    .getByRole("button", { name: /^Codex (?:GPT[- ]|Codex(?:[- ]|$)|o[134](?:[- ]|$))/i })
+    .first();
+  assert(
+    await model.isVisible(),
+    "The visible session's model control does not confirm Codex; refusing to send",
+  );
+  return { textarea, sessionId };
+}
+
+export async function selectAcceptanceSession(context, sessionId) {
+  const current = await session(context, sessionId);
+  assert.equal(current.harness, "codex", "The retained acceptance session is not Codex");
+  assert.equal(
+    resolve(current.cwd).toLowerCase(),
+    resolve(context.state.project).toLowerCase(),
+    "The retained session belongs to a different project",
+  );
+  await focusNativeWindow(context);
+  await closeRecoveredSessions(context);
+  await dismissVisibleOverlays(context);
+  await closeSettings(context);
+  const row = context.page
+    .locator(`[data-session-select=${JSON.stringify(sessionId)}]:visible`)
+    .first();
+  await row.waitFor({ state: "visible", timeout: 30000 });
+  await row.click();
+  await waitUntil(
+    () => assertCodexComposer(context, sessionId),
+    "The exact retained Codex session did not reopen",
+    30000,
+  );
+  context.steps.push({
+    step: "Reopen the exact retained Codex session after native restart",
+    actual: { sessionId, cwd: current.cwd, harness: "codex" },
+  });
+}
+
 export async function sendPrompt(context, prompt, { allowFailure = false, wait = true } = {}) {
   const { page } = context;
+  const { textarea } = await assertCodexComposer(context);
   const selected = await page
     .locator('[data-project-path][data-selected="true"]')
     .first()
@@ -593,7 +658,7 @@ export async function sendPrompt(context, prompt, { allowFailure = false, wait =
       entry.blocks.filter((block) => block.role === "user").map((block) => block.id),
     ),
   );
-  await page.locator("textarea:visible").first().fill(prompt);
+  await textarea.fill(prompt);
   await click(context, "Send");
   const accepted = await waitUntil(
     async () =>
@@ -1129,6 +1194,7 @@ async function scenario3(context) {
   context.page = replacement.page;
   context.preparedProject = false;
   await closeRecoveredSessions(context);
+  await selectAcceptanceSession(context, current.id);
   await waitUntil(
     async () =>
       (await getSessions(context.page)).find((entry) => entry.id === current.id && !entry.busy),
