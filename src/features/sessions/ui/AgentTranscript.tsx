@@ -762,7 +762,6 @@ function AgentTranscriptComponent({
   const stableSecondOpinion = useStableCallback(onSecondOpinion);
   const stableHandoff = useStableCallback(onHandoff);
   const stableEditLastTurn = useStableCallback(onEditLastTurn);
-  const stableCanRewindMessage = useStableCallback(canRewindMessage);
   const stableRewindMessage = useStableCallback(onRewindMessage);
   const turnsRef = useRef(turns);
   turnsRef.current = turns;
@@ -1192,7 +1191,14 @@ function AgentTranscriptComponent({
                 onSecondOpinion={stableSecondOpinion}
                 onHandoff={stableHandoff}
                 onEditLastTurn={stableEditLastTurn}
-                canRewindMessage={stableCanRewindMessage}
+                // Eligibility is render data, not an event callback. A scalar
+                // snapshot crosses both memo boundaries without re-rendering
+                // settled turns on every streamed token.
+                rewindableMessageIds={JSON.stringify(
+                  turn
+                    .filter((block) => block.role === "user" && canRewindMessage?.(block.id))
+                    .map((block) => block.id),
+                )}
                 onRewindMessage={stableRewindMessage}
               />
             );
@@ -1337,7 +1343,7 @@ type TurnProps = {
   onSecondOpinion?: (target: ModelTarget, turn: Block[]) => void;
   onHandoff?: (target: ModelTarget, turn: Block[]) => void;
   onEditLastTurn?: () => void;
-  canRewindMessage?: (blockId: string) => boolean;
+  rewindableMessageIds: string;
   onRewindMessage?: (block: Block, action: "edit" | "return") => void;
 };
 
@@ -1390,11 +1396,12 @@ const Turn = memo(function Turn({
   onSecondOpinion,
   onHandoff,
   onEditLastTurn,
-  canRewindMessage,
+  rewindableMessageIds,
   onRewindMessage,
 }: TurnProps) {
   const t = useT();
   const userBlock = turnUserBlock(turn, managed);
+  const rewindableMessages = new Set<string>(JSON.parse(rewindableMessageIds));
   const durationMs = userBlock?.durationMs;
   const proposals = turn.filter((block) => block.orchestration);
   // Proposals are turn results, like the changes card. Keep them out
@@ -1542,7 +1549,7 @@ const Turn = memo(function Turn({
               ? onEditLastTurn
               : undefined
           }
-          canRewindMessage={canRewindMessage}
+          canRewind={rewindableMessages.has(item.block.id)}
           onRewindMessage={onRewindMessage}
           editing={
             editingLastTurn && item.block.role === "user" && item.block.id === editableUserBlockId
@@ -2350,7 +2357,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   planModel,
   planModelSettings,
   onEditLastTurn,
-  canRewindMessage,
+  canRewind = false,
   onRewindMessage,
   editing = false,
 }: {
@@ -2377,7 +2384,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   planModel?: string;
   planModelSettings?: Record<string, string>;
   onEditLastTurn?: () => void;
-  canRewindMessage?: (blockId: string) => boolean;
+  canRewind?: boolean;
   onRewindMessage?: (block: Block, action: "edit" | "return") => void;
   editing?: boolean;
 }) {
@@ -2415,7 +2422,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
                   stickyIndex={stickyIndex}
                   cwd={cwd}
                   onSaveNote={onSaveNote}
-                  canRewind={canRewindMessage?.(block.id) ?? false}
+                  canRewind={canRewind}
                   onRewind={
                     onRewindMessage ? (action) => onRewindMessage(block, action) : undefined
                   }
@@ -2435,7 +2442,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
         stickyIndex={stickyIndex}
         cwd={cwd}
         onEdit={onEditLastTurn}
-        canRewind={canRewindMessage?.(block.id) ?? false}
+        canRewind={canRewind}
         onRewind={onRewindMessage ? (action) => onRewindMessage(block, action) : undefined}
         editing={editing}
         onSaveNote={onSaveNote}

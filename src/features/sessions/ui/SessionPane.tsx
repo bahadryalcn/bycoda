@@ -944,7 +944,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const sessionBusy = !!session.busy;
   const hasPendingQuestion = !!session.pendingQuestion;
   const dockAtEnd = !showJumpToBottom;
-  const canRewindMessage = useStableCallback(
+  const canRewindMessage = useCallback(
     (blockId: string) =>
       !!onRewindMessage &&
       !managed &&
@@ -952,6 +952,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       !session.worktreeRemoved &&
       !sendBlockedReason &&
       canRewindConversation(session, blockId),
+    [onRewindMessage, managed, session, sendBlockedReason],
   );
   const rewindMessage = useStableCallback((block: Block, action: "return" | "edit") =>
     requestMessageRewind(block, action),
