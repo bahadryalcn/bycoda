@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.91]
+
+### Worktree-first sessions and tasks
+
+- Run new coding sessions, tasks, goal tasks, writing automations and steward discovery in their own managed Git worktree and branch by default; existing current-checkout sessions keep working unchanged.
+- Review a session's changes and deliver them only with owner approval: SHA-bound merge into the target branch, or push and create a pull request from one dialog. Agents can commit on their own branch but cannot merge, push or publish.
+- Rewind a conversation together with its worktree: files and commits made after the selected turn are restored, Undo rewind brings them back, and displaced commits stay in recoverable refs.
+- Clean up finished, merged, abandoned and idle worktrees automatically after configurable periods, with quick delete, pinning, a storage budget and Windows-safe removal that detaches dependency junctions first and never deletes uncommitted or unmerged work.
+
+### Verification and build identity
+
+- Give each worktree its own dependency install and leased dev-server, HMR, host and debug ports, with an isolated dev host profile for parallel native runs.
+- Stamp local builds with source branch, commit and dirty-state identity; `build:status` reports which source the installed app and running host contain.
+
+### Agent guidance
+
+- Replace the shared-checkout rules with worktree-first instructions, scope tiers that cover every surface of a named feature, verification that scales with the change, and project feature cards for the most-used areas.
+- Fix cross-platform path handling for linked temp and home directories on macOS and Linux, and align RPC metrics labels with sprint and task requests.
+
 ## [0.6.90]
 
 ### Sessions and host reliability
