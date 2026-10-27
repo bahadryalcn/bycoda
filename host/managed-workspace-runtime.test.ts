@@ -21,17 +21,22 @@ afterEach(async () => {
   vi.restoreAllMocks();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-async function fixture(options: Parameters<typeof createManagedWorkspaceRuntime>[2] = {}) {
+async function fixture(
+  options: Parameters<typeof createManagedWorkspaceRuntime>[2] = {},
+  gitRepository = true,
+) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "managed-runtime-")));
   const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true }).trim();
-  git("init", "-q", "-b", "main");
-  git("config", "user.name", "Test");
-  git("config", "user.email", "test@example.invalid");
-  git("config", "commit.gpgsign", "false");
   writeFileSync(join(root, "source.txt"), "base\n");
-  git("add", "source.txt");
-  git("commit", "-qm", "base");
+  if (gitRepository) {
+    git("init", "-q", "-b", "main");
+    git("config", "user.name", "Test");
+    git("config", "user.email", "test@example.invalid");
+    git("config", "commit.gpgsign", "false");
+    git("add", "source.txt");
+    git("commit", "-qm", "base");
+  }
   mkdirSync(join(root, "private"));
   const store = new HostStore(join(root, "private", "host.db"));
   const send = vi.fn(async () => {});
@@ -249,20 +254,98 @@ it("does not turn an unknown policy into current-checkout execution", async () =
   expect(await f.store.sessions()).toEqual([]);
 });
 
-it("preserves an explicit current choice while contextual legacy sources retain independent workspaces", async () => {
+it.each([
+  ["handoff", true],
+  ["secondOpinion", true],
+  ["handoff", false],
+  ["secondOpinion", false],
+] as const)(
+  "starts %s in Current without managed admission (Git repository: %s)",
+  async (mode, gitRepository) => {
+    const f = await fixture({}, gitRepository);
+    const prepare = vi
+      .spyOn(f.runtime.registry, "prepare")
+      .mockRejectedValue(new Error("Must not prepare"));
+    const created = await f.engine.command({
+      type: "create",
+      commandId: "explicit-current",
+      projectId: f.project.id,
+      workspaceMode: "current",
+      harness: "codex",
+      model: "fixture",
+      runtimeMode: "supervised",
+    });
+    const source = await f.store.session(created.sessionId);
+    expect(source.session.cwd).toBe(f.root);
+    await f.store.save(
+      {
+        ...source,
+        revision: source.revision + 1,
+        session: {
+          ...source.session,
+          harness: "claude",
+          blocks: [
+            { id: "legacy-user", role: "user", text: "Existing current-mode work" },
+            { id: "legacy-reply", role: "assistant", text: "Context to transfer" },
+          ],
+        },
+      },
+      { type: "test.legacy-current" },
+    );
+    const input = {
+      sessionId: created.sessionId,
+      sourceBlockId: "legacy-reply",
+      expectedRevision: source.revision + 1,
+      mode,
+      harness: "codex",
+      model: "fixture",
+      modelSettings: {},
+    };
+    const preview = await f.engine.previewContextual(input);
+    const command = {
+      ...input,
+      type: "contextual",
+      commandId: "legacy-handoff",
+      previewDigest: preview.digest,
+    };
+    const destination = await f.engine.command(command);
+    expect(await f.engine.command(command)).toEqual(destination);
+    await f.engine.waitForRun(
+      destination.sessionId,
+      (await f.store.session(destination.sessionId)).runId,
+    );
+    const session = (await f.store.session(destination.sessionId)).session;
+    expect(session.workspaceId).toBeUndefined();
+    expect(session.workspaceMode).toBe("current");
+    expect(session.cwd).toBe(f.root);
+    expect(prepare).not.toHaveBeenCalled();
+    expect(await f.runtime.list()).toEqual([]);
+    if (mode === "secondOpinion")
+      expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ cwd: f.root }));
+    expect((await f.store.session(created.sessionId)).session.cwd).toBe(f.root);
+    vi.spyOn(f.runtime.policy, "resolve").mockRejectedValueOnce(
+      new Error("Contextual policy unavailable"),
+    );
+    await expect(
+      f.engine.command({ ...command, commandId: "unknown-contextual-policy" }),
+    ).rejects.toThrow("Contextual policy unavailable");
+    expect(await f.store.sessions()).toHaveLength(2);
+  },
+);
+
+it("starts a managed source's Current contextual session in the project checkout", async () => {
   const f = await fixture();
   await f.runtime.recover();
   const created = await f.engine.command({
     type: "create",
-    commandId: "explicit-current",
+    commandId: "managed-source",
     projectId: f.project.id,
-    workspaceMode: "current",
+    workspaceMode: "worktree",
     harness: "codex",
     model: "fixture",
     runtimeMode: "supervised",
   });
   const source = await f.store.session(created.sessionId);
-  expect(source.session.cwd).toBe(f.root);
   await f.store.save(
     {
       ...source,
@@ -271,18 +354,18 @@ it("preserves an explicit current choice while contextual legacy sources retain 
         ...source.session,
         harness: "claude",
         blocks: [
-          { id: "legacy-user", role: "user", text: "Existing current-mode work" },
-          { id: "legacy-reply", role: "assistant", text: "Context to transfer" },
+          { id: "managed-user", role: "user", text: "Owned workspace work" },
+          { id: "managed-reply", role: "assistant", text: "Completed work" },
         ],
       },
     },
-    { type: "test.legacy-current" },
+    { type: "test.managed-contextual-source" },
   );
   const input = {
     sessionId: created.sessionId,
-    sourceBlockId: "legacy-reply",
+    sourceBlockId: "managed-reply",
     expectedRevision: source.revision + 1,
-    mode: "handoff",
+    mode: "secondOpinion",
     harness: "codex",
     model: "fixture",
     modelSettings: {},
@@ -291,17 +374,42 @@ it("preserves an explicit current choice while contextual legacy sources retain 
   const destination = await f.engine.command({
     ...input,
     type: "contextual",
-    commandId: "legacy-handoff",
+    commandId: "managed-source-current-context",
     previewDigest: preview.digest,
   });
+  await f.engine.waitForRun(
+    destination.sessionId,
+    (await f.store.session(destination.sessionId)).runId,
+  );
   const session = (await f.store.session(destination.sessionId)).session;
-  expect(session.workspaceId).toBeTruthy();
-  expect(session.cwd).not.toBe(f.root);
-  expect((await f.store.session(created.sessionId)).session.cwd).toBe(f.root);
+  expect(session).toMatchObject({ cwd: f.root, workspaceMode: "current" });
+  expect(session.workspaceId).toBeUndefined();
+  expect(session.worktreeCwd).toBeUndefined();
+  expect(session.branch).toBeUndefined();
+  expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ cwd: f.root }));
+  expect((await f.runtime.list()).map((workspace) => workspace.id)).toEqual([
+    source.session.workspaceId,
+  ]);
 });
 
 it("gives a reopened old Host row without workspaceMode an independent contextual workspace", async () => {
   const f = await fixture();
+  await f.runtime.withOwner("test-owner", (owner) =>
+    f.runtime.policy.update(
+      {
+        projectId: f.project.id,
+        environmentId: f.store.environmentId,
+        expectedRevision: 1,
+        idempotencyKey: "contextual-worktree-policy",
+        policy: {
+          defaultMode: "worktree",
+          root: join(f.root, "worktrees"),
+          disk: { minimumFreeBytes: 1 },
+        },
+      },
+      owner,
+    ),
+  );
   const baseCommit = f.git("rev-parse", "HEAD");
   // Seed the snapshot shape written by older Hosts, without passing through the
   // current create command (which stamps an explicit compatibility mode).
@@ -362,6 +470,18 @@ it("gives a reopened old Host row without workspaceMode an independent contextua
     modelSettings: {},
   };
   const preview = await engine.previewContextual(input);
+  vi.spyOn(runtime.registry, "prepare").mockRejectedValueOnce(
+    new Error("Worktree creation unavailable"),
+  );
+  await expect(
+    engine.command({
+      ...input,
+      type: "contextual",
+      commandId: "failed-old-host-handoff",
+      previewDigest: preview.digest,
+    }),
+  ).rejects.toThrow("Worktree creation unavailable");
+  expect(await store.sessions()).toHaveLength(1);
   const destination = await engine.command({
     ...input,
     type: "contextual",

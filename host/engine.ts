@@ -502,12 +502,12 @@ export interface ManagedTurnHistoryAdapter {
   }>;
   /** The shared reservation gate holds this activity until the process settles. */
   startActivity?(value: HostSession, kind: "provider" | "shell"): Promise<() => Promise<void>>;
-  /** A contextual handoff or second opinion is a separate scheduled writer. */
+  /** Resolve contextual policy; missing preparation must never imply Current. */
   prepareContextualWorkspace?(request: {
     source: HostSession;
     sessionId: string;
     idempotencyKey: string;
-  }): Promise<{ workspaceId: string }>;
+  }): Promise<{ workspaceId: string } | { workspaceMode: "current"; path: string }>;
 }
 
 type ManagedTurnBoundary = {
@@ -1019,14 +1019,24 @@ export class HostEngine {
       throw new Error(
         "Prepare a separate managed workspace before starting this contextual session",
       );
+    const currentWorkspace =
+      contextualWorkspace && "workspaceMode" in contextualWorkspace
+        ? contextualWorkspace
+        : undefined;
+    const preserveSourceWorkspace =
+      !contextualWorkspace ||
+      (currentWorkspace?.path === preview.cwd && !source.session.workspaceId);
     return await this.store.transaction(async () => {
       const created = await this.command({
         type: "create",
         commandId: `${command.commandId}:create`,
         projectId: source.projectId,
-        ...(contextualWorkspace
+        ...(contextualWorkspace && "workspaceId" in contextualWorkspace
           ? { workspaceId: contextualWorkspace.workspaceId }
-          : { worktreeCwd: preview.cwd }),
+          : {
+              worktreeCwd: currentWorkspace?.path ?? preview.cwd,
+              ...(currentWorkspace ? { workspaceMode: "current" as const } : {}),
+            }),
         harness: command.harness,
         model: command.model,
         modelSettings: command.modelSettings,
@@ -1051,10 +1061,10 @@ export class HostEngine {
               command.harness,
               command.mode === "handoff" ? "Handoff" : "Second opinion",
             ),
-            ...(!contextualWorkspace && source.session.worktreeCwd
+            ...(preserveSourceWorkspace && source.session.worktreeCwd
               ? { worktreeCwd: source.session.worktreeCwd }
               : {}),
-            ...(!contextualWorkspace && source.session.branch
+            ...(preserveSourceWorkspace && source.session.branch
               ? { branch: source.session.branch }
               : {}),
           },

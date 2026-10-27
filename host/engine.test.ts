@@ -1308,6 +1308,79 @@ describe("managed turn boundaries", () => {
     turns[0].finish();
   });
 
+  it.each(["missing", "failure", "current"])(
+    "accepts only authoritative Current contextual preparation (%s)",
+    async (resolution) => {
+      const { engine, store, id, directory } = await setup();
+      const original = await store.session(id);
+      await store.save(
+        {
+          ...original,
+          revision: original.revision + 1,
+          session: {
+            ...original.session,
+            worktreeCwd: directory,
+            branch: "existing-branch",
+            blocks: [
+              { id: "source-user", role: "user", text: "Implement search" },
+              { id: "source-reply", role: "assistant", text: "Search is implemented." },
+            ],
+          },
+        },
+        { type: "test.contextual-source" },
+      );
+      const { adapter } = managedHistory();
+      adapter.workspaceForSession = async () => null;
+      const prepare = vi.fn(async () => {
+        if (resolution === "failure") throw new Error("Selected Worktree preparation failed");
+        return { workspaceMode: "current" as const, path: directory };
+      });
+      if (resolution !== "missing") adapter.prepareContextualWorkspace = prepare;
+      adapter.prepareWorkspaceForCreate = vi.fn(async () => {
+        throw new Error("Must use the authoritative contextual result");
+      });
+      engine.setManagedTurnHistoryAdapter(adapter);
+      const source = await store.session(id);
+      const input = {
+        sessionId: id,
+        sourceBlockId: "source-reply",
+        expectedRevision: source.revision,
+        mode: "handoff",
+        harness: "claude",
+        model: "claude:test",
+        modelSettings: {},
+      };
+      const preview = await engine.previewContextual(input);
+      const command = {
+        ...input,
+        type: "contextual",
+        commandId: "contextual-policy",
+        previewDigest: preview.digest,
+      };
+      if (resolution !== "current") {
+        await expect(engine.command(command)).rejects.toThrow(
+          resolution === "failure"
+            ? "Selected Worktree preparation failed"
+            : "Prepare a separate managed workspace",
+        );
+        expect(await store.sessions()).toHaveLength(1);
+      } else {
+        const created = await engine.command(command);
+        expect(await engine.command(command)).toEqual(created);
+        expect(prepare).toHaveBeenCalledOnce();
+        expect((await store.session(created.sessionId)).session).toMatchObject({
+          cwd: directory,
+          worktreeCwd: directory,
+          branch: "existing-branch",
+          workspaceMode: "current",
+        });
+        expect((await store.session(created.sessionId)).session.workspaceId).toBeUndefined();
+      }
+      expect(adapter.prepareWorkspaceForCreate).not.toHaveBeenCalled();
+      expect(await store.session(id)).toEqual(source);
+    },
+  );
+
   it("allocates a separate owned workspace for a managed contextual writer", async () => {
     const { engine, store, id, directory } = await setup();
     const original = await store.session(id);

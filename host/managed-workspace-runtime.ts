@@ -340,6 +340,20 @@ export function createManagedWorkspaceRuntime(
       };
     },
     prepareContextualWorkspace: async (request) => {
+      const resolved = await policy.resolve({
+        projectId: request.source.projectId,
+        environmentId: store.environmentId,
+      });
+      if (resolved.policy.defaultMode === "current")
+        return {
+          workspaceMode: "current" as const,
+          // A managed source's owned directory cannot become an unowned writer.
+          path: request.source.session.workspaceId
+            ? (await store.project(request.source.projectId)).cwd
+            : (request.source.session.worktreeCwd ?? request.source.session.cwd),
+        };
+      if (!started && !startupRecovery.getStore())
+        throw new Error("Managed workspace startup recovery is pending");
       const source = request.source.session.workspaceId
         ? await workspace(request.source.session.workspaceId)
         : undefined;
