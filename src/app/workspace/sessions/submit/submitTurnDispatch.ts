@@ -179,7 +179,11 @@ export async function runSubmitDispatch(
         return;
       }
     }
-    const sendTurn = (text: string, turnAttachments = prepared) => {
+    const sendTurn = (
+      text: string,
+      turnAttachments = prepared,
+      prepareText?: (text: string, runtimeInstructions?: string) => Promise<string>,
+    ) => {
       if (turnGen.current.get(sessionId) !== gen) return Promise.resolve();
       recordPerformanceEvent("dispatch", {}, traceId);
       const finishDispatch = startPerformanceSpan("dispatch", {}, traceId);
@@ -202,6 +206,7 @@ export async function runSubmitDispatch(
           ? `${contextReplay}\n\nCurrent user request:\n${text}`
           : text,
         attachments: turnAttachments,
+        prepareText,
         onAccepted: () => {
           acceptContextReplay();
           acceptEditedResend();
@@ -209,29 +214,12 @@ export async function runSubmitDispatch(
         onEvent: routeTurnEvent,
       }).finally(finishDispatch);
     };
-    if (turn.wrap && !rawCommand) {
-      const historySession =
-        sessionsRef.current.find((session) => session.id === sessionId) ?? current;
-      const budgeted = await prepareBudgetedHandoff(
-        { ...historySession, model: current.model, harness: current.harness },
-        turn.wrap.text,
-        [turnPrompt.trim() || CONTINUE_PROMPT, ...earlier].join("\n\n"),
-      );
-      if (turnGen.current.get(sessionId) !== gen) return;
-      turn.wrap = { ...turn.wrap, text: budgeted };
-    }
     let sendText = orchestrator.prompt(
       sessionId,
       inboxAskPrompt(
         rawCommand ? undefined : current.inboxAsk,
         turn.wrap && !rawCommand
-          ? wrapHandoffPrompt(
-              turn.wrap.text,
-              turn.wrap.from,
-              turnPrompt.trim() || CONTINUE_PROMPT,
-              earlier,
-              turn.wrap.to,
-            )
+          ? [turnPrompt.trim() || CONTINUE_PROMPT, ...earlier].join("\n\n")
           : turnPrompt,
       ),
     );
@@ -239,7 +227,47 @@ export async function runSubmitDispatch(
       const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
       sendText += `\n\n<bycoda_app>\nThe user's Operator command enables app access in this thread, including later turns without the command. You can start session tabs or split session panes right or down, list and create project worktrees, choose a new session's checkout, read and continue other project sessions, save unsent drafts, organize session folders, and read or write saved notes through its local CLI. Run \`${cli} --help\` for exact commands and JSON fields, then use it as needed for the user's request. After sessions.send, call sessions.wait with the returned requestId as sentRequestId to get that session's reply. When reading another session, start with its latest two or three user/assistant exchanges. Request older exchanges with nextBefore or a larger excerpt only if needed. The CLI uses a session credential already in your environment; never print it. New sessions inherit this session's permission mode unless runtimeMode is set explicitly. For a new session with a draft, call sessions.start with its prompt and draft:true; do not submit a seed prompt. The returned ID can be used as besideSessionId to split its pane again or moved into a folder immediately. A normal sessions.start submits its prompt but returns after acceptance, so do not wait for that agent to finish before organizing it.\n</bycoda_app>`;
     }
-    await sendTurn(sendText);
+    await sendTurn(
+      sendText,
+      prepared,
+      turn.wrap && !rawCommand
+        ? async (text, runtimeInstructions) => {
+            const wrap = turn.wrap!;
+            // `current` predates setup's newly appended user block: the request
+            // must not be replayed as both history and the current turn.
+            const budgeted = await prepareBudgetedHandoff(
+              current,
+              wrap.text,
+              [text, runtimeInstructions].filter(Boolean).join("\n\n"),
+            );
+            if (turnGen.current.get(sessionId) !== gen)
+              throw new Error("Turn changed before handoff preparation completed");
+            turn.wrap = { ...wrap, text: budgeted.text };
+            if (budgeted.notice)
+              setSessions((prev) =>
+                prev.map((session) =>
+                  session.id === sessionId
+                    ? {
+                        ...session,
+                        blocks: [
+                          ...session.blocks,
+                          {
+                            id: crypto.randomUUID(),
+                            role: "system",
+                            text: budgeted.notice!,
+                            notice: "info",
+                          },
+                        ],
+                      }
+                    : session,
+                ),
+              );
+            return budgeted.text
+              ? wrapHandoffPrompt(budgeted.text, wrap.from, text, [], wrap.to)
+              : text;
+          }
+        : undefined,
+    );
     if (!turn.providerFailureSeen) acceptContextReplay();
     acceptEditedResend();
     if (turn.proposalDraft && !turn.providerFailureSeen) {

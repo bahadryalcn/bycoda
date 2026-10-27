@@ -557,10 +557,54 @@ export function resolveModel(harness: HarnessId, id?: string): AgentModel {
   return (fallbackId ? findModel(fallbackId) : undefined) ?? modelsFor(harness)[0];
 }
 
-/** Catalog-reported context window for a model id, when known. */
-export function modelContextWindow(id: string): number | undefined {
-  const window = findModel(id)?.contextWindow;
-  return window && window > 0 ? window : undefined;
+/** Budget fallback, not a provider limit: modern Codex/Claude get 128k; other
+ * harnesses (including custom ACP endpoints) get 32k until discovery reports one.
+ * A genuine oversized request is always left to the provider to reject. */
+export function defaultHandoffContextWindow(harness: HarnessId): number {
+  return harness === "codex" || harness === "claude" ? 128_000 : 32_000;
+}
+
+/** Exact discovered identity, then bundled identity, then a harness fallback.
+ * Do not use resolveModel's picker fallback: an unrelated model's capacity may
+ * be larger than the requested custom model's actual window. */
+export function modelContextWindow(id: string): number | undefined;
+export function modelContextWindow(id: string, harness: HarnessId): number;
+export function modelContextWindow(id: string, harness?: HarnessId): number | undefined {
+  const owner =
+    harness ??
+    findModelIdentity(id)?.harness ??
+    (HARNESSES.includes(id.split(":")[0] as HarnessId) ? (id.split(":")[0] as HarnessId) : "acp");
+  const nativeIdentity = (value: string) =>
+    comparableNativeId(
+      owner,
+      owner === "claude" ? value.trim().replace(/\[1m\]$/i, "") : value.trim(),
+    );
+  // Only bycoda's owning-harness prefix is structural. Colons inside native
+  // ids (provider:model, URLs, custom endpoints) distinguish different models.
+  const keyIdentity = (value: string) =>
+    nativeIdentity(
+      value.trim().startsWith(`${owner}:`) ? value.trim().slice(owner.length + 1) : value,
+    );
+  const requested = keyIdentity(id);
+  const matches = (model: AgentModel, alias = false) =>
+    model.harness === owner &&
+    (alias
+      ? model.aliasTarget != null && nativeIdentity(model.aliasTarget) === requested
+      : keyIdentity(model.id) === requested ||
+        (model.nativeId != null && nativeIdentity(model.nativeId) === requested));
+  const capacity = (models: AgentModel[], alias = false) =>
+    models.find(
+      (model) =>
+        matches(model, alias) &&
+        Number.isFinite(model.contextWindow) &&
+        (model.contextWindow ?? 0) > 0,
+    )?.contextWindow;
+  return (
+    capacity(overlays[owner] ?? []) ??
+    capacity(overlays[owner] ?? [], true) ??
+    capacity(MODELS) ??
+    (harness ? defaultHandoffContextWindow(owner) : undefined)
+  );
 }
 
 /** Explicit bycoda provider keys cannot cross adapters. Native/custom model ids
@@ -780,10 +824,12 @@ function pickerVisibilityStorageChanged(event: StorageEvent) {
 
 export function subscribePickerVisibility(onStoreChange: () => void): () => void {
   pickerVisibilityListeners.add(onStoreChange);
-  if (pickerVisibilityListeners.size === 1 && typeof window !== "undefined") window.addEventListener("storage", pickerVisibilityStorageChanged);
+  if (pickerVisibilityListeners.size === 1 && typeof window !== "undefined")
+    window.addEventListener("storage", pickerVisibilityStorageChanged);
   return () => {
     pickerVisibilityListeners.delete(onStoreChange);
-    if (!pickerVisibilityListeners.size && typeof window !== "undefined") window.removeEventListener("storage", pickerVisibilityStorageChanged);
+    if (!pickerVisibilityListeners.size && typeof window !== "undefined")
+      window.removeEventListener("storage", pickerVisibilityStorageChanged);
   };
 }
 

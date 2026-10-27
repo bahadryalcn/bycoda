@@ -31,7 +31,9 @@ it.each([undefined, "", "   "])(
 
 describe("Codex skill mentions", () => {
   it("does not silently start a plan without a resolved model", () => {
-    expect(() => buildTurnStartParams({ threadId: "t", runtimeMode: "full-access", intent: "plan" })).toThrow("active model");
+    expect(() =>
+      buildTurnStartParams({ threadId: "t", runtimeMode: "full-access", intent: "plan" }),
+    ).toThrow("active model");
   });
   const skills = new Map([["imagegen", "/home/u/.codex/skills/.system/imagegen/SKILL.md"]]);
 
@@ -1041,6 +1043,21 @@ describe("approvals", () => {
 });
 
 describe("parseCodexModelList", () => {
+  it("preserves discovered context capacity and ignores invalid metadata", () => {
+    const models = parseCodexModelList([
+      { model: "large", contextWindow: 272_000 },
+      { model: "small", context_window: 32_000 },
+      { model: "fallback", contextWindow: -1, context_window: 128_000 },
+      { model: "unknown", contextWindow: Infinity, context_window: "200000" },
+    ]);
+    expect(models.map((model) => model.contextWindow)).toEqual([
+      272_000,
+      32_000,
+      128_000,
+      undefined,
+    ]);
+  });
+
   it("builds models with reasoning and service tier settings", () => {
     const models = parseCodexModelList([
       {
