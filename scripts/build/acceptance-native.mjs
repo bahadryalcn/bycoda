@@ -491,11 +491,62 @@ export async function selectCodex(context, model = context.options.model) {
   }
 }
 
+/** Tool views keep project state but replace the project rail with recent sessions. */
+export async function activateAcceptanceProject(context) {
+  const newButton = await button(context, "New session");
+  if (await newButton.isVisible()) return;
+  const normalize = (value) => value.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
+  const normalizedProject = context.state.project.replaceAll("\\", "/").replace(/\/+$/, "");
+  const card = context.page
+    .locator(`[data-project-path=${JSON.stringify(normalizedProject)}]`)
+    .first();
+  if (!(await card.isVisible())) {
+    const ownSessions = (await getSessions(context.page)).filter(
+      (entry) => normalize(entry.cwd) === normalize(normalizedProject) && !entry.busy,
+    );
+    ownSessions.sort((a, b) => Number(Boolean(a.worktreeCwd)) - Number(Boolean(b.worktreeCwd)));
+    let selected = false;
+    for (const entry of ownSessions) {
+      const row = context.page.locator(`[data-session-select=${JSON.stringify(entry.id)}]`).first();
+      if (!(await row.isVisible())) continue;
+      await row.click();
+      selected = true;
+      context.steps.push({
+        step: "Return from tools through this fixture's retained session",
+        actual: { sessionId: entry.id, cwd: entry.cwd },
+      });
+      break;
+    }
+    assert(
+      selected,
+      "No visible retained session can return to this acceptance project from the tools view",
+    );
+  }
+  await card.waitFor({ state: "visible", timeout: 15000 });
+  const projectButton = card.locator(":scope > button[title]").first();
+  const title = await projectButton.getAttribute("title");
+  assert(
+    title?.split(/\r?\n/).some((line) => normalize(line) === normalize(normalizedProject)),
+    "Route-back project title differs from this acceptance fixture",
+  );
+  await projectButton.click();
+  await waitUntil(
+    async () => (await card.getAttribute("data-selected")) === "true",
+    "Route-back did not select the exact acceptance project",
+  );
+  await newButton.waitFor({ state: "visible", timeout: 15000 });
+  context.steps.push({
+    step: "Activate the exact acceptance project surface",
+    actual: { cwd: normalizedProject, newSessionVisible: true },
+  });
+}
+
 export async function newSession(context, mode = "current", model = context.options.model) {
   await prepareProject(context);
   await closeRecoveredSessions(context);
   await dismissVisibleOverlays(context);
   await closeSettings(context);
+  await activateAcceptanceProject(context);
   await click(context, "New session");
   try {
     const trigger = context.page
