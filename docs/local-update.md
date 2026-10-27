@@ -277,6 +277,14 @@ with the same `--id` to retain the fake project and evidence state. The runner
 stops on the first failure and exits nonzero; timeouts or missing native consent
 never count as passes. `--turn-timeout 240000` sets the per-turn timeout.
 
+`native-stage.json` records the current operation, active stages and session/turn
+identity; `native-stages.jsonl` keeps a bounded event history. CDP connections,
+page operations, native IPC and disconnection have separate time limits. A hung
+renderer produces a named timeout and a failed report without attempting another
+unbounded failure screenshot. The runner dismisses the existing harness-update
+notice through its close control before actions and captures; it never updates a
+provider as part of acceptance.
+
 Results, ordered steps, errors and a screenshot matrix at 1280/800 pixels in
 light/dark are saved under `temp/verification/q1/`. Open and inspect the PNGs;
 automated assertions alone do not constitute visual review. `acceptance.json`
