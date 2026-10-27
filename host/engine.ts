@@ -535,6 +535,7 @@ export class HostEngine {
       persistenceFailed: boolean;
       resumeAtReset?: boolean;
       managedTurns: ManagedTurnBoundary[];
+      filesTurn: boolean;
       managed: boolean;
       releaseActivity?: () => Promise<void>;
     }
@@ -1430,10 +1431,12 @@ export class HostEngine {
             await provider.stop(id);
             const before = await this.store.session(id);
             if (this.running.get(id)?.runId !== runId || before.runId !== runId) return;
-            if (!this.running.get(id)?.managed)
-              await this.checkpoints
-                .finish(id, before.session.cwd, runId)
-                .catch((error) => console.warn("Workspace checkpoint failed", error));
+            if (this.running.get(id)?.filesTurn || !this.running.get(id)?.managed)
+              await (
+                this.running.get(id)?.filesTurn
+                  ? this.checkpoints.finishFilesTurn(id, before.session.cwd, runId, true)
+                  : this.checkpoints.finish(id, before.session.cwd, runId)
+              ).catch((error) => console.warn("Workspace checkpoint failed", error));
             await this.store.db.scope(() =>
               this.operations.run(id, async () => {
                 if (this.running.get(id)?.runId !== runId) return;
@@ -2411,7 +2414,8 @@ export class HostEngine {
       await this.flush(command.sessionId);
       const initial = await this.store.session(command.sessionId);
       const workspace = await this.managedWorkspace(initial);
-      if (workspace && (await this.exactGitRewindEnabled()))
+      const exactGitRewind = await this.exactGitRewindEnabled();
+      if (workspace && exactGitRewind)
         throw new Error(
           "Managed workspaces require sessions.rewind.plan/apply; preview the Git rewind first",
         );
@@ -2430,7 +2434,7 @@ export class HostEngine {
         // Provider rewind APIs may restore files (for example OpenCode revert).
         // Lightweight managed rewind is explicitly transcript-only, even if a
         // persisted snapshot is missing its managed-workspace metadata.
-        !workspace && !!provider.rewind && !!initial.session.providerSessionId,
+        exactGitRewind && !workspace && !!provider.rewind && !!initial.session.providerSessionId,
         !!workspace,
       );
       let nativeProviderSessionId: string | undefined;
@@ -2494,6 +2498,9 @@ export class HostEngine {
       });
       const live = this.live.get(saved.session.id);
       if (live) live.value = saved;
+      await this.checkpoints
+        .forgetFilesFromMessage(saved.session.id, saved.session.cwd, strategy.blockId)
+        .catch((error) => console.warn("Rewound file history retirement failed", error));
       return receipt;
     } catch (error) {
       // If the provider mutated successfully but the durable transcript commit
@@ -2772,6 +2779,7 @@ export class HostEngine {
       persistenceFailed: false,
       resumeAtReset,
       managedTurns: [] as ManagedTurnBoundary[],
+      filesTurn: false,
       releaseActivity: undefined as (() => Promise<void>) | undefined,
       // Resolver failures are unknown ownership, never permission to use legacy restore.
       managed: !!this.managedTurns,
@@ -2801,9 +2809,15 @@ export class HostEngine {
               await provider.stop(session.id);
             }
             if (this.closing || active.cancelled) throw new Error("Turn cancelled");
-            // Lightweight worktrees do not fall back to the legacy whole-tree capture.
-            if (!active.managed)
-              await this.checkpoints.begin(session.id, session.cwd, runId!).catch((error) => {
+            // Message file history is independent of experimental whole-tree rewind.
+            // Current checkouts and lightweight worktrees share the bounded journal.
+            active.filesTurn = active.managed || !(await this.exactGitRewindEnabled());
+            if (active.filesTurn || !active.managed)
+              await (
+                active.filesTurn
+                  ? this.checkpoints.beginFilesTurn(session.id, session.cwd, runId!, userBlockId)
+                  : this.checkpoints.begin(session.id, session.cwd, runId!, userBlockId)
+              ).catch((error) => {
                 if (String(error).includes("checkpoint-coordination:")) throw error;
                 console.warn("Workspace checkpoint failed", error);
               });
@@ -2915,7 +2929,7 @@ export class HostEngine {
         // the provider's warm binding after success. Failed/cancelled turns still
         // settle their writer before a follow-up can start.
         if (
-          !active.managed ||
+          !active.filesTurn ||
           active.managedTurns.length ||
           this.closing ||
           active.cancelled ||
@@ -2943,10 +2957,18 @@ export class HostEngine {
               error = reason instanceof Error ? reason.message : String(reason);
             }
           }
-        } else {
-          await this.checkpoints
-            .finish(session.id, session.cwd, runId!)
-            .catch((reason) => console.warn("Workspace checkpoint failed", reason));
+        }
+        if (active.filesTurn || !active.managed) {
+          await (
+            active.filesTurn
+              ? this.checkpoints.finishFilesTurn(
+                  session.id,
+                  session.cwd,
+                  runId!,
+                  !!error || active.cancelled,
+                )
+              : this.checkpoints.finish(session.id, session.cwd, runId!)
+          ).catch((reason) => console.warn("Workspace checkpoint failed", reason));
         }
         await this.store.db.scope(() =>
           this.operations.enqueue(session.id, async () => {
@@ -3051,6 +3073,13 @@ export class HostEngine {
   private async applyEvent(id: string, runId: string, event: HarnessEvent): Promise<void> {
     const live = this.live.get(id);
     if (!live || live.value.runId !== runId || live.value.status !== "running") return;
+    if (event.type === "tool.started" && isEditTool(event.kind, event.title, event.preview)) {
+      const paths = [...(event.paths ?? []), ...(event.preview?.path ? [event.preview.path] : [])];
+      if (paths.length)
+        await this.checkpoints
+          .prepareFilesTurn(id, live.value.session.cwd, runId, paths)
+          .catch((error) => console.warn("File history edit preparation failed", error));
+    }
     if (
       event.type === "tool.updated" &&
       (event.status === "completed" || event.status === "success") &&

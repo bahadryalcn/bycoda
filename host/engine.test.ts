@@ -23,6 +23,7 @@ import { setHarnessModels, resetHarnessModelOverlays } from "../src/features/ses
 import * as runtimeGuidance from "../src/integrations/harness/core/runtimeGuidance";
 import { HandoffHistoryStore } from "./handoff-history";
 import * as skillPrompts from "./prompt-skills";
+import { execFileAsync } from "../src/shared/lib/processExecution.node";
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -832,7 +833,8 @@ it("does not expose an idle session before in-flight follow-up delivery retires"
   });
   await vi.waitFor(() => expect(provider.steer).toHaveBeenCalledOnce());
   turns[0].finish();
-  await vi.waitFor(() => expect(provider.stop).toHaveBeenCalled());
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(provider.stop).not.toHaveBeenCalled();
   expect((await store.session(id)).status).toBe("running");
   await expect(
     engine.command({ type: "send", commandId: "too-soon", sessionId: id, text: "third" }),
@@ -931,7 +933,8 @@ it("protects a delivery draft from removal until the host turn retires", async (
     }),
   ).rejects.toThrow("delivery is still active");
   turns[0].finish();
-  await vi.waitFor(() => expect(provider.stop).toHaveBeenCalled());
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(provider.stop).not.toHaveBeenCalled();
   finishSteer();
   await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
   await engine.command({
@@ -1185,6 +1188,78 @@ function managedHistory() {
 }
 
 describe("managed turn boundaries", () => {
+  it.each([false, true])(
+    "records and safely restores per-message files with exact rewind OFF (worktree %s)",
+    async (managed) => {
+      const { engine, store, id, directory, provider, turns } = await setup();
+      const cwd = join(directory, "repo");
+      mkdirSync(cwd);
+      writeFileSync(join(cwd, "own.txt"), "before own\n");
+      writeFileSync(join(cwd, "foreign.txt"), "before foreign\n");
+      const git = (...args: string[]) => execFileAsync("git", args, { cwd, windowsHide: true });
+      await git("init", "-q");
+      await git("config", "user.name", "Test");
+      await git("config", "user.email", "test@example.invalid");
+      await git("add", ".");
+      await git("commit", "-qm", "initial");
+      const initial = await store.session(id);
+      await store.save(
+        {
+          ...initial,
+          revision: initial.revision + 1,
+          session: {
+            ...initial.session,
+            cwd,
+            ...(managed ? { workspaceId: "managed", worktreeCwd: cwd } : {}),
+          },
+        },
+        { type: "test.checkout" },
+      );
+      const { adapter } = managedHistory();
+      adapter.exactGitRewindEnabled = () => false;
+      adapter.workspaceForSession = async () =>
+        managed ? { workspaceId: "managed", path: cwd } : null;
+      engine.setManagedTurnHistoryAdapter(adapter);
+      const receipt = await engine.command({
+        type: "send",
+        commandId: "edit-files-message",
+        sessionId: id,
+        text: "Edit two files",
+      });
+      await vi.waitFor(() => expect(turns).toHaveLength(1));
+      writeFileSync(join(cwd, "own.txt"), "own edit\n");
+      writeFileSync(join(cwd, "foreign.txt"), "session edit\n");
+      turns[0].input.onEvent({
+        type: "tool.updated",
+        callId: "edit",
+        kind: "write",
+        status: "completed",
+        paths: ["own.txt", "foreign.txt"],
+      });
+      turns[0].finish();
+      await engine.waitForRun(id, receipt.runId);
+      expect(provider.stop).not.toHaveBeenCalled();
+      const plan = await engine.checkpoints.filesRevertPlan(id, cwd, "edit-files-message");
+      expect(plan.unavailable).toBeUndefined();
+      expect(plan.files.map((file) => file.path).sort()).toEqual(["foreign.txt", "own.txt"]);
+      writeFileSync(join(cwd, "foreign.txt"), "someone else\n");
+      const result = await engine.checkpoints.filesRevert(id, cwd, "edit-files-message");
+      expect(result.reverted).toEqual(["own.txt"]);
+      expect(result.skipped.map((file) => file.path)).toEqual(["foreign.txt"]);
+      expect(readFileSync(join(cwd, "own.txt"), "utf8")).toBe("before own\n");
+      expect(readFileSync(join(cwd, "foreign.txt"), "utf8")).toBe("someone else\n");
+      await engine.rewind({
+        type: "rewind",
+        commandId: "rewind-edits",
+        sessionId: id,
+        blockId: "edit-files-message",
+      });
+      expect((await store.session(id)).session.blocks).toEqual([]);
+      expect(
+        (await engine.checkpoints.filesRevertPlan(id, cwd, "edit-files-message")).unavailable,
+      ).toBeTruthy();
+    },
+  );
   it.each(["unset", "off"])(
     "runs three lightweight worktree sends without capture, admission or retirement (%s)",
     async (setting) => {
@@ -2385,6 +2460,9 @@ describe("headless session ownership", () => {
 
   it("uses native rewind for the latest editable Codex turn and preserves the resulting provider binding", async () => {
     const { engine, store, provider, id } = await setup();
+    const { adapter } = managedHistory();
+    adapter.workspaceForSession = async () => null;
+    engine.setManagedTurnHistoryAdapter(adapter);
     provider.rewind = vi.fn(async (input) => {
       input.onEvent({ type: "session.providerBound", providerSessionId: "forked-thread" });
       return { submitted: false };
@@ -2436,6 +2514,9 @@ describe("headless session ownership", () => {
 
   it("keeps the visible transcript when a native rewind commits unsuccessfully and prepares fresh replay", async () => {
     const { engine, store, provider, turns, id } = await setup();
+    const { adapter } = managedHistory();
+    adapter.workspaceForSession = async () => null;
+    engine.setManagedTurnHistoryAdapter(adapter);
     provider.rewind = vi.fn(async () => ({ submitted: false }));
     const initial = await store.session(id);
     await store.save(

@@ -843,7 +843,6 @@ fn guard_parent_directories(root: &Path, relative: &str) -> Result<Vec<std::fs::
 impl CheckpointStore {
     /// Call only after the conversation rewind has persisted, including keep-files rewinds.
     /// Removing the obsolete suffix prevents later turns from inheriting abandoned history.
-    #[allow(dead_code)] // Integration hook for the separate native conversation-rewind stream.
     pub(crate) fn forget_files_from_message(
         &self,
         session: &str,
@@ -950,6 +949,20 @@ fn assert_checkout(dir: &Path, cwd: &str) -> Result<(), String> {
         return Err("The session now uses a different checkout than its file history.".into());
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn session_files_forget_from_message(
+    store: State<'_, CheckpointStore>,
+    session_id: String,
+    user_block_id: String,
+) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        store.forget_files_from_message(&session_id, &user_block_id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
