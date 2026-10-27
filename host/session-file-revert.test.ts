@@ -8,6 +8,7 @@ import {
   symlink,
   writeFile,
   readdir,
+  realpath,
 } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -28,8 +29,8 @@ afterEach(async () => {
 async function fixture(gitRepo = true) {
   const root = await mkdtemp(join(tmpdir(), "bycoda-file-revert-"));
   roots.push(root);
-  const cwd = join(root, "repo");
-  await mkdir(cwd);
+  await mkdir(join(root, "repo"));
+  const cwd = await realpath(join(root, "repo"));
   const git = async (...args: string[]) =>
     (await execFileAsync("git", args, { cwd, windowsHide: true, encoding: "utf8" })).stdout.trim();
   await writeFile(join(cwd, "a.txt"), "base\n");
