@@ -2236,33 +2236,38 @@ export async function createHostServer(
                   )
                     throw new Error("Session does not own this workspace");
                   result = await withNativeDesktopOwner<unknown>(token, params, async (owner) => {
-                    if (input.method === "native.turn.recover")
-                      return managed.nativeTurns.recover(
+                    let turnResult: unknown;
+                    if (input.method === "native.turn.recover") {
+                      turnResult = await managed.nativeTurns.recover(
                         params as unknown as Parameters<typeof managed.nativeTurns.recover>[0],
                         owner,
                       );
-                    if (input.method === "native.turn.begin")
-                      await managed.nativeRewind.bindTurn(
-                        params as unknown as Parameters<typeof managed.nativeRewind.bindTurn>[0],
-                        owner,
-                      );
-                    if (
-                      input.method === "sessions.managedTurn.begin" ||
-                      input.method === "native.turn.begin"
-                    )
-                      return managed.nativeTurns.begin(
+                    } else {
+                      if (input.method === "native.turn.begin")
+                        await managed.nativeRewind.bindTurn(
+                          params as unknown as Parameters<typeof managed.nativeRewind.bindTurn>[0],
+                          owner,
+                        );
+                      turnResult = await managed.nativeTurns[
+                        input.method === "sessions.managedTurn.begin" ||
+                        input.method === "native.turn.begin"
+                          ? "begin"
+                          : input.method === "sessions.managedTurn.end" ||
+                              input.method === "native.turn.end"
+                            ? "end"
+                            : "status"
+                      ](
                         params as unknown as Parameters<typeof managed.nativeTurns.begin>[0],
                         owner,
                       );
-                    return managed.nativeTurns[
-                      input.method === "sessions.managedTurn.end" ||
-                      input.method === "native.turn.end"
-                        ? "end"
-                        : "status"
-                    ](params as unknown as Parameters<typeof managed.nativeTurns.end>[0], owner);
+                    }
+                    // Keep the authenticated desktop context while probing activity:
+                    // its still-busy mirror is not a writer after native end retired
+                    // the actual process. A later idle beat must not stale a preview.
+                    if (input.method !== "sessions.managedTurn.status")
+                      await managedWorkspaces.touchActivity(value.id);
+                    return turnResult;
                   });
-                  if (input.method !== "sessions.managedTurn.status")
-                    await managedWorkspaces.touchActivity(value.id);
                   break;
                 }
                 case "sessions.rewind.status": {

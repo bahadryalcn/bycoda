@@ -856,6 +856,62 @@ async function nativeWindowFixture(send?: HostProvider["send"]) {
   return { ...f, workspace, sessionId, clientId, boundary, busy };
 }
 
+it("keeps a native rewind preview valid when the completed turn publishes idle after preview", async () => {
+  const f = await nativeWindowFixture();
+  await f.busy();
+  const process = {
+    activityId: "native-preview-provider",
+    cwd: f.workspace.path,
+    kind: "provider",
+    sessionId: f.sessionId,
+    clientId: f.clientId,
+  };
+  await f.call("native.activity.start", process);
+  await f.call("native.turn.begin", f.boundary);
+  writeFileSync(join(f.workspace.path, "source.txt"), "native rewind preview change\n");
+  await f.call("native.activity.end", {
+    activityId: process.activityId,
+    clientId: f.clientId,
+  });
+  await f.call("native.turn.end", f.boundary);
+  const completed = await f.call<ManagedWorkspace>("workspaces.get", {
+    workspaceId: f.workspace.id,
+  });
+  const conversation = { revision: 2, userBlockIds: [f.boundary.userBlockId] };
+  const plan = await f.call("native.rewind.plan", {
+    request: {
+      workspaceId: f.workspace.id,
+      sessionId: f.sessionId,
+      expectedRevision: completed.revision,
+      expectedConversationRevision: conversation.revision,
+      direction: "rewind",
+      userBlockId: f.boundary.userBlockId,
+    },
+    conversation,
+  });
+  // The native end receipt precedes the renderer's next idle heartbeat.
+  await f.busy(false);
+  const prepared = await f.request("native.rewind.prepare", {
+    request: {
+      workspaceId: f.workspace.id,
+      sessionId: f.sessionId,
+      expectedRevision: plan.expectedRevision,
+      expectedConversationRevision: conversation.revision,
+      planToken: plan.token,
+      idempotencyKey: "native-rewind-after-idle",
+    },
+    direction: "rewind",
+    conversation,
+  });
+  expect(prepared.value.error).toBeUndefined();
+  expect(prepared.status).toBe(200);
+  expect(completed.state).toBe("idle");
+  expect((await f.call("workspaces.get", { workspaceId: f.workspace.id })).revision).toBe(
+    completed.revision,
+  );
+  expect((await f.call("native.rewind.status", prepared.value.result)).phase).toBe("prepared");
+});
+
 it("admits authenticated native desktop busy preflight and captures end only after process retirement", async () => {
   const f = await nativeWindowFixture();
   await f.busy(); // Actual UI reports busy and implicitly acquires a desktop run lease first.
