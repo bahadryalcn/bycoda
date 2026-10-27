@@ -134,6 +134,7 @@ mockIPC((command, args = {}) => {
         capabilities: managed
           ? [
               "workspaces.managed.v1",
+              "sessions.native-process-recovery.v1",
               "workspaces.policy.v1",
               "workspaces.lifecycle.v1",
               "workspaces.delivery.v1",

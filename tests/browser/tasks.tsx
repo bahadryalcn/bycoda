@@ -470,7 +470,11 @@ Object.assign(window, {
               "tasks",
               ...(query.has("suspendedForms") ? ["stewards"] : []),
               ...(query.has("managedDelivery")
-                ? ["workspaces.managed.v1", "workspaces.delivery.v1"]
+                ? [
+                    "workspaces.managed.v1",
+                    "workspaces.delivery.v1",
+                    "sessions.native-process-recovery.v1",
+                  ]
                 : []),
               "tasks.todo",
               ...(sprintFixture ? ["tasks.sprints.v1", "tasks.history.v1"] : []),

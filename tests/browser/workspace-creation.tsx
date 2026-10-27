@@ -43,7 +43,11 @@ mockIPC((command, payload) => {
       return {
         capabilities: query.has("old-host")
           ? []
-          : ["workspaces.managed.v1", "workspaces.policy.v1"],
+          : [
+              "workspaces.managed.v1",
+              "workspaces.policy.v1",
+              "sessions.native-process-recovery.v1",
+            ],
       };
     if (payload.method === "projects.list") return [{ id: "fixture-project", cwd }];
     if (payload.method === "projects.workspacePolicy.get")

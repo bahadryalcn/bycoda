@@ -1137,6 +1137,17 @@ pub(crate) struct NativeWorkspaceTransport {
     client_id: Option<String>,
 }
 
+fn native_workspace_capabilities_support(capabilities: &Value, required: &str) -> bool {
+    let has = |capability: &str| {
+        capabilities
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(capability)))
+    };
+    has(required)
+        && (required != "sessions.native-execution.v1"
+            || has("sessions.native-process-recovery.v1"))
+}
+
 impl NativeWorkspaceTransport {
     #[cfg(test)]
     pub(crate) fn for_test(endpoint: String) -> Self {
@@ -1180,10 +1191,7 @@ impl NativeWorkspaceTransport {
                     .into(),
             );
         }
-        if !descriptor["capabilities"]
-            .as_array()
-            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(capability)))
-        {
+        if !native_workspace_capabilities_support(&descriptor["capabilities"], capability) {
             return Err("Update bycoda Host to use managed native execution safely. The project checkout will not be used as a fallback.".into());
         }
         Ok(Self {
@@ -2087,6 +2095,39 @@ pub fn remote_ssh_cancel(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_execution_requires_recovery_support_before_admission() {
+        let older = serde_json::json!([
+            "workspaces.native-activity.v1",
+            "sessions.native-execution.v1"
+        ]);
+        assert!(!super::native_workspace_capabilities_support(
+            &older,
+            "sessions.native-execution.v1"
+        ));
+        assert!(!super::native_workspace_capabilities_support(
+            &older,
+            "sessions.native-process-recovery.v1"
+        ));
+        assert!(super::native_workspace_capabilities_support(
+            &older,
+            "workspaces.native-activity.v1"
+        ));
+        let updated = serde_json::json!([
+            "workspaces.native-activity.v1",
+            "sessions.native-execution.v1",
+            "sessions.native-process-recovery.v1"
+        ]);
+        assert!(super::native_workspace_capabilities_support(
+            &updated,
+            "sessions.native-execution.v1"
+        ));
+        assert!(super::native_workspace_capabilities_support(
+            &updated,
+            "sessions.native-process-recovery.v1"
+        ));
+    }
+
     #[test]
     fn refused_tunnel_recovery_preserves_the_original_command() {
         let command = serde_json::json!({

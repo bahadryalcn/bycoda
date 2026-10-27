@@ -2870,6 +2870,7 @@ export async function createHostServer(
                         "sessions.git-rewind-undo.v1",
                         "sessions.managedCreation.v1",
                         "sessions.native-execution.v1",
+                        "sessions.native-process-recovery.v1",
                         "sessions.native-rewind.v1",
                         "workspaces.native-activity.v1",
                         ...(buildIdentity ? ["build.identity.v1"] : []),

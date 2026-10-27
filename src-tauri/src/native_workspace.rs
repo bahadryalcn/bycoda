@@ -30,9 +30,13 @@ impl Activity {
         if !managed_path(app, cwd)? {
             return Ok(None);
         }
-        let host =
-            crate::remote::NativeWorkspaceTransport::connect(app, "workspaces.native-activity.v1")?
-                .with_client_id(client_id.map(str::to_owned))?;
+        let capability = if kind == "provider" {
+            "sessions.native-process-recovery.v1"
+        } else {
+            "workspaces.native-activity.v1"
+        };
+        let host = crate::remote::NativeWorkspaceTransport::connect(app, capability)?
+            .with_client_id(client_id.map(str::to_owned))?;
         let id = uuid::Uuid::new_v4().to_string();
         let lease = host.call("native.activity.start", json!({"activityId":id,"cwd":crate::fs::path_to_js(cwd),"kind":kind,"sessionId":session_id}))?;
         if lease["activityId"] != id

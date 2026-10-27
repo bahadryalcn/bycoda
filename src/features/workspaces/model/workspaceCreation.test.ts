@@ -30,7 +30,11 @@ vi.mock("../../automations/model/machineSnapshot", () => ({
 }));
 
 vi.mock("./workspaceClient", () => ({
-  getWorkspaceCapabilities: vi.fn(async () => ["workspaces.policy.v1", "workspaces.managed.v1"]),
+  getWorkspaceCapabilities: vi.fn(async () => [
+    "workspaces.policy.v1",
+    "workspaces.managed.v1",
+    "sessions.native-process-recovery.v1",
+  ]),
   resolveWorkspaceContext: vi.fn(async () => ({
     cwd: "/project",
     projectId: "project-id",
@@ -55,6 +59,7 @@ beforeEach(() => {
   vi.mocked(getWorkspaceCapabilities).mockResolvedValue([
     "workspaces.policy.v1",
     "workspaces.managed.v1",
+    "sessions.native-process-recovery.v1",
   ]);
   vi.mocked(requireWorkspaceCapability).mockResolvedValue(undefined);
   vi.mocked(listWorktrees).mockResolvedValue({
@@ -265,6 +270,55 @@ it("settles when the capability read itself announces a new descriptor", async (
   });
   expect(requireWorkspaceCapability).toHaveBeenCalledTimes(2);
   expect(invalidateMachineSnapshot).toHaveBeenCalledTimes(1);
+});
+
+it("requires native recovery support locally while keeping explicit current usable", async () => {
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue([
+    "workspaces.policy.v1",
+    "workspaces.managed.v1",
+  ]);
+  await expect(loadWorkspaceCreation("/project", undefined, "worktree")).rejects.toBeInstanceOf(
+    WorkspaceCapabilityError,
+  );
+  expect(listWorktrees).not.toHaveBeenCalled();
+  await renderCreation("worktree");
+  expect(state).toMatchObject({ updateRequired: true, pending: false, preview: undefined });
+  await renderCreation("current");
+  expect(state).toMatchObject({
+    mode: "current",
+    updateRequired: false,
+    pending: false,
+    error: undefined,
+  });
+});
+
+it("clears the native recovery update requirement after Host reconnect", async () => {
+  const capabilities = ["workspaces.policy.v1", "workspaces.managed.v1"];
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue(capabilities);
+  await renderCreation("worktree");
+  expect(state.updateRequired).toBe(true);
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue([
+    ...capabilities,
+    "sessions.native-process-recovery.v1",
+  ]);
+  await act(async () => notifyRemoteRecovered("local-environment"));
+  expect(state).toMatchObject({
+    updateRequired: false,
+    pending: false,
+    error: undefined,
+    preview: { baseCommit: "main-sha" },
+  });
+});
+
+it("does not require native recovery support for remote Host execution", async () => {
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue([
+    "workspaces.policy.v1",
+    "workspaces.managed.v1",
+  ]);
+  const remote = remotePath("environment", "/project");
+  expect((await loadWorkspaceCreation(remote, undefined, "worktree")).preview?.baseCommit).toBe(
+    "main-sha",
+  );
 });
 
 it("defaults a legacy Host to current without policy or managed Git reads", async () => {

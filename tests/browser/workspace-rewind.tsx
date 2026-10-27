@@ -155,6 +155,7 @@ Object.assign(window, {
               ? []
               : [
                   "workspaces.managed.v1",
+                  "sessions.native-process-recovery.v1",
                   "workspaces.policy.v1",
                   "sessions.managedCreation.v1",
                   "sessions.native-rewind.v1",

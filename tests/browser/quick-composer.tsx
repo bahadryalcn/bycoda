@@ -90,7 +90,11 @@ mockIPC(
       if (args.method === "environment.describe")
         return {
           capabilities: params.has("worktree-policy")
-            ? ["workspaces.policy.v1", "workspaces.managed.v1"]
+            ? [
+                "workspaces.policy.v1",
+                "workspaces.managed.v1",
+                "sessions.native-process-recovery.v1",
+              ]
             : [],
         };
       if (args.method === "projects.list")

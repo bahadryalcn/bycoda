@@ -48,6 +48,10 @@ export async function loadWorkspaceCreation(
   );
   if ((choice ?? resolved.policy.defaultMode) === "current") return { policy: resolved.policy };
   await requireWorkspaceCapability("workspaces.managed.v1", context);
+  // Native provider spawning adds a durable PID acknowledgement. Older Hosts
+  // implementing the original managed/native v1 routes cannot safely run it.
+  if (!parseRemotePath(cwd) && !capabilities.includes("sessions.native-process-recovery.v1"))
+    throw new WorkspaceCapabilityError();
   const baseRef = selectedBase || resolved.policy.integrationBranchRef;
   const trees = await listWorktrees(cwd);
   const main = trees.worktrees.find((tree) => tree.isMain);

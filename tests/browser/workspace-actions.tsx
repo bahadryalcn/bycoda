@@ -80,6 +80,7 @@ mockIPC((command, payload) => {
       return {
         capabilities: [
           "workspaces.managed.v1",
+          "sessions.native-process-recovery.v1",
           "workspaces.delivery.v1",
           "workspaces.pr-publication.v1",
           "workspaces.lifecycle.v1",
