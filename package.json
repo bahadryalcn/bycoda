@@ -9,6 +9,7 @@
     "dev:stable": "vite --mode stable",
     "dev:native": "node scripts/build/dev-native.mjs",
     "dev:shot": "node scripts/build/dev-shot.mjs",
+    "acceptance:native": "node scripts/build/acceptance-native.mjs",
     "build:status": "node scripts/build/build-status.mjs",
     "build": "tsc-rs && vite build",
     "build:fast": "tsc-rs --fast && vite build",

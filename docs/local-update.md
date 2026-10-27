@@ -237,3 +237,47 @@ Local packages are unsigned and do not create updater artifacts; no upstream
 feed or signing key is reused. Installed apps check the signed GitHub release feed
 described in [the release reference](reference/fork.md#releases-and-updates).
 Local installation does not authorize public publishing.
+
+## Real native development acceptance
+
+Before release, exercise the real development desktop and its isolated Host with
+the installed, authenticated Codex provider. This creates fake repositories and
+development profiles; it does not run an installer or attach to the installed app.
+
+```powershell
+pnpm dev:native --acceptance-controls --shared-target G:/Projects/my_projects/monocode-worktrees/.cargo-target/n1
+# In another terminal, use the exact dev-run.json path printed above:
+pnpm acceptance:native --run <absolute-dev-run.json> --id q1
+```
+
+The shared target option is a cache root: the maintained bootstrap chooses its
+toolchain/lockfile subdirectory. Native folder consent must be limited to this
+checkout's `temp/local/q1/` and its generated fake worktrees. Use Full access only
+inside this isolated test profile. The runner selects Codex and accepts
+`--model` and `--switch-model` display names; no product provider defaults change.
+
+The gate covers default current-checkout turns, opt-in worktree commits and
+rewind/Undo, rejected admission and restart/legacy-row recovery, a model switch
+with a Turkish message over 20 KiB, old-Host capability recovery, approved local
+merge and safe directory removal, persisted task/automation defaults and
+workspace policy inheritance. Merge already puts a workspace in terminal
+`merged` state, so its separate Mark finished action is disabled. Todo tasks and
+disabled automations are persisted without launching unattended work.
+
+Use `--scenario 2` or `--scenario 3,5` to rerun selected scenarios after a fix,
+with the same `--id` to retain the fake project and evidence state. The runner
+stops on the first failure and exits nonzero; timeouts or missing native consent
+never count as passes. `--turn-timeout 240000` sets the per-turn timeout.
+
+Results, ordered steps, errors and a screenshot matrix at 1280/800 pixels in
+light/dark are saved under `temp/verification/q1/`. Open and inspect the PNGs;
+automated assertions alone do not constitute visual review. `acceptance.json`
+records the native build identity and each selected scenario. An attached Vite
+page can contain newer web source than the frozen native/Host executable, so
+rebuild after changing native or Host code and preserve exact inclusion evidence.
+Source checks, fixture tests, installed-app acceptance and publication remain
+separate. The runner validates the managed run record, development profile and
+native build identity before acting; installed data paths are rejected.
+
+`node --test scripts/build/acceptance-native.test.mjs` checks the runner's
+isolation validation independently of the provider and desktop.
