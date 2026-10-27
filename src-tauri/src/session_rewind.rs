@@ -64,6 +64,53 @@ pub struct ManagedTurnRecovery {
     pub reason: Option<String>,
 }
 
+// A starting row precedes its Host begin request. Recovering that key while
+// admission is in flight could durably cancel a request not yet received by
+// Host. Claims are per store/profile and session, keeping other turns parallel.
+static NATIVE_TURN_OPERATIONS: std::sync::Mutex<std::collections::BTreeSet<(usize, String)>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+struct NativeTurnOperation<'a> {
+    store: &'a SessionStore,
+    session_id: String,
+}
+
+impl<'a> NativeTurnOperation<'a> {
+    fn try_enter(store: &'a SessionStore, session_id: &str) -> Result<Option<Self>, String> {
+        let key = (std::ptr::from_ref(store) as usize, session_id.to_owned());
+        if !NATIVE_TURN_OPERATIONS
+            .lock()
+            .map_err(|_| "Native turn operations are locked")?
+            .insert(key)
+        {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            store,
+            session_id: session_id.to_owned(),
+        }))
+    }
+}
+
+impl Drop for NativeTurnOperation<'_> {
+    fn drop(&mut self) {
+        NATIVE_TURN_OPERATIONS
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&(
+                std::ptr::from_ref(self.store) as usize,
+                self.session_id.clone(),
+            ));
+    }
+}
+
+fn admission_in_flight() -> ManagedTurnRecovery {
+    ManagedTurnRecovery {
+        released: false,
+        reason: Some("Native turn admission is still in flight; retry after it settles".into()),
+    }
+}
+
 fn recover_managed_turn(
     store: &SessionStore,
     host: &impl TurnExecutionHost,
@@ -73,6 +120,19 @@ fn recover_managed_turn(
 }
 
 fn recover_matching_managed_turn(
+    store: &SessionStore,
+    host: &impl TurnExecutionHost,
+    session_id: &str,
+    expected: Option<&ManagedTurnRequest>,
+    starting_only: bool,
+) -> Result<ManagedTurnRecovery, String> {
+    let Some(_operation) = NativeTurnOperation::try_enter(store, session_id)? else {
+        return Ok(admission_in_flight());
+    };
+    recover_matching_managed_turn_guarded(store, host, session_id, expected, starting_only)
+}
+
+fn recover_matching_managed_turn_guarded(
     store: &SessionStore,
     host: &impl TurnExecutionHost,
     session_id: &str,
@@ -136,7 +196,18 @@ fn recover_matching_managed_turn(
     })
 }
 
-pub(crate) fn begin_managed_turn(
+#[cfg(test)]
+fn begin_managed_turn(
+    store: &SessionStore,
+    host: &impl TurnExecutionHost,
+    request: &ManagedTurnRequest,
+) -> Result<(), String> {
+    let _operation = NativeTurnOperation::try_enter(store, &request.session_id)?
+        .ok_or("Native turn admission is already in flight")?;
+    begin_managed_turn_guarded(store, host, request)
+}
+
+fn begin_managed_turn_guarded(
     store: &SessionStore,
     host: &impl TurnExecutionHost,
     request: &ManagedTurnRequest,
@@ -196,8 +267,13 @@ pub(crate) fn begin_managed_turn(
     if let Err(error) = capture {
         // Rejection and a lost acknowledgement look alike locally. Only Host
         // proof of no execution may release the persisted admission.
-        let _ =
-            recover_matching_managed_turn(store, host, &request.session_id, Some(&request), true);
+        let _ = recover_matching_managed_turn_guarded(
+            store,
+            host,
+            &request.session_id,
+            Some(&request),
+            true,
+        );
         return Err(error);
     }
     store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='active' WHERE session_id=?1 AND request_json=?2 AND phase='starting'",
@@ -870,6 +946,8 @@ pub fn managed_turn_begin(
     validate_id(&user_block_id, "user block")?;
     validate_id(&run_id, "turn run")?;
     reconcile_pending_native(&app, &store, Some(&session_id))?;
+    let _operation = NativeTurnOperation::try_enter(&store, &session_id)?
+        .ok_or("Native turn admission is already in flight")?;
     let record = stored_managed_session(&store, &session_id)?;
     let host =
         crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?
@@ -894,7 +972,7 @@ pub fn managed_turn_begin(
             conversation_revision: record.transcript_revision.unwrap_or(0),
         }
     };
-    let result = begin_managed_turn(&store, &host, &request);
+    let result = begin_managed_turn_guarded(&store, &host, &request);
     if let (Err(_), Some((raw, phase))) = (&result, pending_turn(&store, &request.session_id)?) {
         let pending: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
         // A preflight provider may already exist although no prompt was sent.
@@ -909,7 +987,7 @@ pub fn managed_turn_begin(
                 .retire_managed_session(&request.session_id)
                 .is_ok()
         {
-            let _ = recover_matching_managed_turn(
+            let _ = recover_matching_managed_turn_guarded(
                 &store,
                 &host,
                 &request.session_id,
@@ -929,6 +1007,9 @@ pub fn managed_turn_recover(
     client_id: Option<String>,
 ) -> Result<ManagedTurnRecovery, String> {
     validate_id(&session_id, "session")?;
+    let Some(_operation) = NativeTurnOperation::try_enter(&store, &session_id)? else {
+        return Ok(admission_in_flight());
+    };
     crate::native_workspace::replay_settlements(&app, Some(&session_id))?;
     let Some((raw, _phase)) = pending_turn(&store, &session_id)? else {
         return Ok(ManagedTurnRecovery {
@@ -948,7 +1029,7 @@ pub fn managed_turn_recover(
             .with_client_id(client_id)?;
     app.state::<crate::harness::HarnessHost>()
         .retire_managed_session(&session_id)?;
-    recover_managed_turn(&store, &host, &session_id)
+    recover_matching_managed_turn_guarded(&store, &host, &session_id, None, false)
 }
 
 #[tauri::command(async)]
@@ -1998,6 +2079,82 @@ mod tests {
             .unwrap()
             .is_empty());
         assert_eq!(server.join().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn checkpoint_native_inflight_admission_cannot_be_cancelled_by_load_or_buffer_recovery() {
+        use std::sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            mpsc, Mutex,
+        };
+        struct PausedHost {
+            entered: mpsc::SyncSender<()>,
+            resume: Mutex<mpsc::Receiver<()>>,
+            cancelled: AtomicBool,
+            recoveries: AtomicUsize,
+        }
+        impl TurnExecutionHost for PausedHost {
+            fn capture_before(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
+                self.entered.send(()).map_err(|e| e.to_string())?;
+                self.resume
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .map_err(|e| e.to_string())?;
+                if self.cancelled.load(Ordering::SeqCst) {
+                    return Err("Host key was tombstoned before begin arrived".into());
+                }
+                Ok(turn_reply(request, false))
+            }
+            fn capture_after(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
+                Ok(turn_reply(request, false))
+            }
+            fn recover_begin(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
+                self.recoveries.fetch_add(1, Ordering::SeqCst);
+                self.cancelled.store(true, Ordering::SeqCst);
+                Ok(turn_reply(request, true))
+            }
+        }
+        let store = SessionStore::open_in_memory().unwrap();
+        let request = native_turn_request(seed(&store), "inflight");
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        let (resume_tx, resume_rx) = mpsc::sync_channel(1);
+        let host = PausedHost {
+            entered: entered_tx,
+            resume: Mutex::new(resume_rx),
+            cancelled: AtomicBool::new(false),
+            recoveries: AtomicUsize::new(0),
+        };
+        std::thread::scope(|scope| {
+            let admission = scope.spawn(|| begin_managed_turn(&store, &host, &request));
+            entered_rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            // SQLite reservation exists, but Host has not accepted the begin.
+            // Both recovery entry points must skip it without a cancelling RPC.
+            let load = recover_managed_turn(&store, &host, "native");
+            let batch = buffer_recovery_batch(&store, None).unwrap();
+            let heartbeat = reconcile_buffer_recovery_batch(&store, &host, batch, &mut None);
+            let pending = pending_turn(&store, "native").unwrap();
+            let unrelated = recover_managed_turn(&store, &host, "another-session");
+            resume_tx.send(()).unwrap();
+            let admitted = admission.join().unwrap();
+            assert!(!load.unwrap().released);
+            assert_eq!(heartbeat, ["native"]);
+            assert_eq!(pending.unwrap().1, "starting");
+            assert!(unrelated.unwrap().released);
+            assert_eq!(host.recoveries.load(Ordering::SeqCst), 0);
+            assert!(admitted.is_ok());
+        });
+        assert_eq!(pending_turn(&store, "native").unwrap().unwrap().1, "active");
+        finish_managed_turn(&store, &host, &request).unwrap();
+        assert!(pending_turn(&store, "native").unwrap().is_none());
+        // Claims must not survive successful admission or a later app restart.
+        assert!(
+            recover_managed_turn(&store, &host, "native")
+                .unwrap()
+                .released
+        );
     }
 
     #[test]
