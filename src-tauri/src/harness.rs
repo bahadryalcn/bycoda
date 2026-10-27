@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex, OnceLock};
 use std::thread;
@@ -190,7 +190,8 @@ struct HarnessInner {
 }
 
 /// A removed child is not proof that its process and Host activity have exited.
-/// Keep this receipt across ordinary stop calls until managed capture consumes it.
+/// Keep this receipt across ordinary stop calls until acknowledged retirement
+/// consumes it. Successful older lifetimes are pruned on the next spawn.
 #[derive(Default)]
 struct ManagedProviderExit {
     result: Mutex<Option<Result<(), String>>>,
@@ -198,6 +199,16 @@ struct ManagedProviderExit {
 }
 
 impl ManagedProviderExit {
+    fn succeeded(&self) -> bool {
+        matches!(
+            self.result
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref(),
+            Some(Ok(()))
+        )
+    }
+
     fn finish(&self, result: Result<(), String>) {
         *self.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
         self.changed.notify_all();
@@ -304,6 +315,30 @@ impl HarnessHost {
             terminate(prev.pid);
         }
         None
+    }
+
+    /// Register the exit receipt in the same critical section as process creation.
+    /// A retirement that cancelled this spawn must not acknowledge ownership while
+    /// an untracked process can still be created by that old spawn stamp.
+    fn spawn_tracked(
+        &self,
+        session_id: &str,
+        epoch: u64,
+        kill_all: u64,
+        command: &mut Command,
+    ) -> Result<(Child, Arc<ManagedProviderExit>), String> {
+        let mut inner = self.lock_inner();
+        if self.kill_all_gen.load(Ordering::SeqCst) != kill_all
+            || inner.epochs.get(session_id) != Some(&epoch)
+        {
+            return Err(SPAWN_CANCELLED.into());
+        }
+        let child = spawn_managed(command).map_err(|e| format!("Failed to start harness: {e}"))?;
+        let exit = Arc::new(ManagedProviderExit::default());
+        let receipts = inner.managed_exits.entry(session_id.into()).or_default();
+        receipts.retain(|receipt| !receipt.succeeded());
+        receipts.push(Arc::clone(&exit));
+        Ok((child, exit))
     }
 
     fn kill_session(&self, session_id: &str) -> Option<Arc<LiveChild>> {
@@ -1179,10 +1214,11 @@ pub fn harness_spawn(
     // after a replacement has revoked and removed its native grant cache.
     let tool_credentials = crate::session_tools_bridge::redaction_tokens(&cmd);
 
-    let mut child = spawn_managed(&mut cmd).map_err(|e| {
-        crate::session_tools_bridge::revoke_spawn(&session_id, (epoch, kill_all));
-        format!("Failed to start {command}: {e}")
-    })?;
+    let (mut child, managed_exit) = host
+        .spawn_tracked(&session_id, epoch, kill_all, &mut cmd)
+        .inspect_err(|_| {
+            crate::session_tools_bridge::revoke_spawn(&session_id, (epoch, kill_all));
+        })?;
     let pid = child.id();
     if let Some(activity) = workspace_activity.as_mut() {
         activity.started();
@@ -1200,15 +1236,6 @@ pub fn harness_spawn(
         .stderr
         .take()
         .ok_or_else(|| "Failed to open harness stderr".to_string())?;
-    let managed_exit = workspace_activity.as_ref().map(|_| {
-        let exit = Arc::new(ManagedProviderExit::default());
-        host.lock_inner()
-            .managed_exits
-            .entry(session_id.clone())
-            .or_default()
-            .push(Arc::clone(&exit));
-        exit
-    });
 
     // The spawning window consumes the output; its JS state owns the turn.
     let owners = Arc::new(Owners::new(window.label()));
@@ -1231,9 +1258,7 @@ pub fn harness_spawn(
                 .wait()
                 .map_err(|e| e.to_string())
                 .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
-            if let Some(exit) = managed_exit {
-                exit.finish(result);
-            }
+            managed_exit.finish(result);
         });
         return Err(SPAWN_CANCELLED.to_string());
     }
@@ -1289,9 +1314,7 @@ pub fn harness_spawn(
         let settlement = exit
             .map_err(|e| e.to_string())
             .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
-        if let Some(exit) = managed_exit {
-            exit.finish(settlement);
-        }
+        managed_exit.finish(settlement);
         if let Some(host) = wait_app.try_state::<HarnessHost>() {
             if host.remove_if_pid(&wait_id, wait_pid).is_some() {
                 host.stop_sse(&wait_id);
@@ -1792,6 +1815,13 @@ pub fn harness_kill(host: State<'_, HarnessHost>, session_id: String) -> Result<
         terminate(live.pid);
     }
     Ok(())
+}
+
+/// Explicit ownership transfer waits for physical process exit and, when enabled,
+/// the execution Host's activity acknowledgement. Ordinary idle turns stay warm.
+#[tauri::command(async)]
+pub fn harness_retire(host: State<'_, HarnessHost>, session_id: String) -> Result<(), String> {
+    host.retire_managed_session(&session_id)
 }
 
 /// Off the main thread: `kill_all` waits for the children to die before it
@@ -2620,6 +2650,86 @@ fn spawn_retrying_text_file_busy(cmd: &mut Command) -> std::io::Result<std::proc
 #[cfg(test)]
 mod managed_retirement_tests {
     use super::*;
+
+    fn sleeping_command() -> Command {
+        let mut command = if cfg!(windows) {
+            let mut command = Command::new("ping");
+            command.args(["-n", "60", "127.0.0.1"]);
+            command
+        } else {
+            let mut command = Command::new("sleep");
+            command.arg("60");
+            command
+        };
+        prepare_gui_child(&mut command);
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        command
+    }
+
+    #[test]
+    fn lightweight_retirement_tracks_actual_process_without_host_activity() {
+        let host = Arc::new(HarnessHost::new());
+        let (epoch, kill_all, _) = host.begin_spawn("lightweight");
+        let (mut child, exit) = host
+            .spawn_tracked("lightweight", epoch, kill_all, &mut sleeping_command())
+            .unwrap();
+        let live = Arc::new(LiveChild {
+            cwd: std::env::temp_dir(),
+            stdin: Mutex::new(child.stdin.take().unwrap()),
+            pid: child.id(),
+            account: None,
+            owners: Arc::new(Owners::default()),
+        });
+        assert!(host
+            .install_spawn("lightweight".into(), epoch, kill_all, live)
+            .is_none());
+        assert!(exit.wait(Duration::from_millis(1)).is_err());
+        let waiter = thread::spawn(move || {
+            exit.finish(child.wait().map(|_| ()).map_err(|e| e.to_string()));
+        });
+        host.retire_managed_session("lightweight").unwrap();
+        waiter.join().unwrap();
+        assert!(host.get("lightweight").is_none());
+        assert!(!host.lock_inner().managed_exits.contains_key("lightweight"));
+        host.retire_managed_session("lightweight").unwrap();
+        // An already admitted spawn may not create a process after transfer.
+        assert_eq!(
+            host.spawn_tracked("lightweight", epoch, kill_all, &mut sleeping_command())
+                .err()
+                .unwrap(),
+            SPAWN_CANCELLED
+        );
+    }
+
+    #[test]
+    fn lightweight_spawn_prunes_only_successful_older_process_receipts() {
+        let host = HarnessHost::new();
+        let success = Arc::new(ManagedProviderExit::default());
+        success.finish(Ok(()));
+        let failed = Arc::new(ManagedProviderExit::default());
+        failed.finish(Err("Process retirement outcome is unknown".into()));
+        let pending = Arc::new(ManagedProviderExit::default());
+        host.lock_inner().managed_exits.insert(
+            "lightweight".into(),
+            vec![success, Arc::clone(&failed), Arc::clone(&pending)],
+        );
+        let (epoch, kill_all, _) = host.begin_spawn("lightweight");
+        let (mut child, exit) = host
+            .spawn_tracked("lightweight", epoch, kill_all, &mut sleeping_command())
+            .unwrap();
+        {
+            let inner = host.lock_inner();
+            let receipts = &inner.managed_exits["lightweight"];
+            assert_eq!(receipts.len(), 3);
+            assert!(receipts.iter().any(|entry| Arc::ptr_eq(entry, &failed)));
+            assert!(receipts.iter().any(|entry| Arc::ptr_eq(entry, &pending)));
+        }
+        terminate(child.id());
+        exit.finish(child.wait().map(|_| ()).map_err(|e| e.to_string()));
+    }
 
     #[test]
     fn managed_retirement_waits_for_process_exit_and_host_activity_ack() {

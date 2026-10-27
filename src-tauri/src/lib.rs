@@ -775,6 +775,7 @@ pub fn run() {
             harness::harness_spawn,
             harness::harness_write,
             harness::harness_kill,
+            harness::harness_retire,
             harness::harness_kill_all,
             harness::harness_set_owner,
             harness::harness_http,
