@@ -264,7 +264,7 @@ it("releases a rejected before capture and starts the next turn while fencing de
   await expect(f.native.end(f.request, owner)).rejects.toThrow("activity is missing");
 }, 120_000);
 
-it("captures three committed turns with a registered native provider then rewinds and undoes", async () => {
+it("captures three committed native turns after provider retirement then rewinds and undoes", async () => {
   const f = await fixture();
   const provider = {
     activityId: "provider-process",
@@ -272,12 +272,14 @@ it("captures three committed turns with a registered native provider then rewind
     kind: "provider" as const,
     sessionId: f.request.sessionId,
   };
-  await f.process.start(provider, owner);
-  await expect(
-    f.process.start({ ...provider, activityId: "duplicate-process" }, owner),
-  ).rejects.toThrow("another writer");
   const heads: string[] = [];
   for (let turn = 1; turn <= 3; turn++) {
+    const process = { ...provider, activityId: `provider-process-${turn}` };
+    await f.process.start(process, owner);
+    if (turn === 1)
+      await expect(
+        f.process.start({ ...provider, activityId: "duplicate-process" }, owner),
+      ).rejects.toThrow("another writer");
     const request = {
       ...f.request,
       userBlockId: `user-${turn}`,
@@ -285,17 +287,19 @@ it("captures three committed turns with a registered native provider then rewind
       conversationRevision: turn,
     };
     expect((await f.native.begin(request, owner)).before.status).toBe("complete");
+    await expect(f.native.end(request, owner)).rejects.toThrow("Another workspace writer");
+    expect((await f.native.status(request, owner)).record?.after).toBeUndefined();
     await writeFile(join(f.workspace.path, "source.txt"), `native turn ${turn}\n`);
     await turnGit(f.workspace.path, ["add", "source.txt"]);
     await turnGit(f.workspace.path, ["commit", "-m", `native turn ${turn}`]);
     heads.push(await gitText(f.workspace.path, ["rev-parse", "HEAD"]));
+    await f.process.end({ activityId: process.activityId }, owner);
     const record = await f.native.end(request, owner);
     expect(record.after?.status).toBe("complete");
-    expect(await f.activity.list(f.workspace.id)).toHaveLength(1);
+    expect(await f.activity.list(f.workspace.id)).toHaveLength(0);
   }
   expect(new Set(heads).size).toBe(3);
   expect((await f.history.list(f.workspace.id, f.request.sessionId)).length).toBe(3);
-  await f.process.end({ activityId: provider.activityId }, owner);
   expect(await f.activity.list(f.workspace.id)).toEqual([]);
   let transcript = { revision: 3, userBlockIds: ["user-1", "user-2", "user-3"] };
   const rescues = new Map<string, typeof transcript>();

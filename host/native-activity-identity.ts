@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 export const nativeIdentityDigest = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
-/** Provider processes live across turns; their device/session identity is stable. */
+/** Provider preflight precedes turn capture; its device/session identity is stable. */
 export const nativeProcessPrefix = (ownerId: string, sessionId: string) =>
   `native-process:${nativeIdentityDigest([nativeIdentityDigest(ownerId), sessionId])}:`;
 

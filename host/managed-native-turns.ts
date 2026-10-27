@@ -107,6 +107,7 @@ export function createManagedNativeTurns(deps: {
     binding: NativeTurnBinding,
     owner: WorkspaceOwnerAuthorization,
     completed = false,
+    admitProviderProcess = false,
   ) => {
     const all = await deps.activity.list(request.workspaceId);
     const owned = all.filter(
@@ -118,7 +119,7 @@ export function createManagedNativeTurns(deps: {
         entry.kind === "provider" &&
         entry.ownerId.startsWith(nativeProcessPrefix(owner.ownerId, request.sessionId)),
     );
-    // A provider process spans successive turns. Two processes are ambiguous even
+    // Provider preflight precedes turn capture. Two processes are ambiguous even
     // when both were registered by this device for the same session.
     if (!completed && processes.length > 1)
       throw new Error("Multiple native provider processes require reconciliation");
@@ -127,7 +128,9 @@ export function createManagedNativeTurns(deps: {
       all.some(
         (entry) =>
           entry.kind !== "readLease" &&
-          ![...owned, ...processes].some((own) => own.id === entry.id),
+          ![...owned, ...(admitProviderProcess ? processes : [])].some(
+            (own) => own.id === entry.id,
+          ),
       )
     )
       throw new Error("Another workspace writer or unknown activity is still active");
@@ -168,6 +171,7 @@ export function createManagedNativeTurns(deps: {
             binding,
             owner,
             record?.after?.status === "complete",
+            true,
           );
           if (record?.after?.status === "complete") {
             if (activity) await deps.activity.stop(activity.id);
@@ -181,7 +185,7 @@ export function createManagedNativeTurns(deps: {
             });
           // Admission can await durable storage. Recheck writers that appeared
           // while installing this marker before authorizing native execution.
-          await activities(request, binding, owner);
+          await activities(request, binding, owner, false, true);
           record = await deps.history.begin(request);
           if (record.before.status !== "complete") throw new Error(record.before.reason);
           return record;
