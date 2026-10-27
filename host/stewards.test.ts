@@ -11,7 +11,7 @@ import { HostTasks } from "./tasks";
 import { HostStewards, PREVIOUS_RUN_SKIP, openLimitSkip } from "./stewards";
 import { writerWorkspaces } from "./writer-workspaces.test-support";
 import { DAILY_LIMIT_SKIP } from "../src/features/tasks/model/hostSettings";
-// Managed runs capture real Git checkpoints before provider dispatch.
+// Managed runs use real Git worktrees; exact turn captures are explicitly opt-in.
 if (process.platform === "win32") vi.setConfig({ testTimeout: 120000 });
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
@@ -50,7 +50,7 @@ const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8", stdio: "pipe" }).trim();
 const reply = (proposals: unknown) =>
   `Here is what I found.\n\n\`\`\`json\n${JSON.stringify({ proposals })}\n\`\`\``;
-async function setup() {
+async function setup(options: { exactGitRewind?: boolean } = {}) {
   const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-stewards-test-")));
   const store = new HostStore(join(directory, "host.db"));
   const repo = await (async () => {
@@ -95,14 +95,14 @@ async function setup() {
   };
   const engine = new HostEngine(store, { claude: provider });
   // Legacy per-file checkpoints are independent of this fixture. Managed runs
-  // below attach real retained turn-history capture through writerWorkspaces.
+  // below attach real retained turn-history capture only when explicitly enabled.
   vi.spyOn(engine.checkpoints, "begin").mockResolvedValue();
   vi.spyOn(engine.checkpoints, "finish").mockResolvedValue();
   // 08:00 local; a daily steward at 09:00 is due an hour later.
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
   const tasks = new HostTasks(store, engine, () => clock.now);
   const workspaces = writerWorkspaces(directory, async (id) => (await store.project(id)).cwd);
-  await workspaces.attachEngine(engine);
+  await workspaces.attachEngine(engine, options);
   const stewards = new HostStewards(store, engine, tasks, () => clock.now, workspaces);
   cleanups.push(async () => {
     for (const turn of turns) turn.finish();
@@ -613,38 +613,46 @@ describe("host stewards", () => {
     const second = await stewards.save(input({ focus: "new focus" }));
     expect(second.updatedAt).toBeGreaterThan(first.updatedAt);
   });
-  it("removes the checkout when the steward is deleted mid-run", async () => {
-    const { stewards, input, startDue, worktrees, steward, workspaces } = await setup();
-    await stewards.save(input());
-    const turn = await startDue();
-    let releaseCapture!: () => void;
-    let captureStarted = false;
-    const gate = new Promise<void>((resolve) => {
-      releaseCapture = resolve;
-    });
-    const end = workspaces.history.end.bind(workspaces.history);
-    vi.spyOn(workspaces.history, "end").mockImplementation(async (request) => {
-      captureStarted = true;
-      await gate;
-      return await end(request);
-    });
-    let deleted = false;
-    const deletion = stewards.delete("steward").then(() => {
-      deleted = true;
-    });
-    try {
-      await vi.waitFor(() => expect(captureStarted).toBe(true));
-      expect(deleted).toBe(false);
-      expect(existsSync(turn.input.cwd)).toBe(true);
-    } finally {
-      releaseCapture();
-      await deletion;
-    }
-    expect(await stewards.list()).toEqual([]);
-    expect(worktrees()).toBe(1);
-    expect(existsSync(turn.input.cwd)).toBe(false);
-    expect(steward).toBeDefined();
-  });
+  it.each([false, true])(
+    "removes the checkout when the steward is deleted mid-run (exact rewind: %s)",
+    async (exactGitRewind) => {
+      const { stewards, input, startDue, worktrees, steward, workspaces } = await setup({
+        exactGitRewind,
+      });
+      await stewards.save(input());
+      const turn = await startDue();
+      let releaseCapture!: () => void;
+      let captureStarted = false;
+      const gate = new Promise<void>((resolve) => {
+        releaseCapture = resolve;
+      });
+      const end = workspaces.history.end.bind(workspaces.history);
+      vi.spyOn(workspaces.history, "end").mockImplementation(async (request) => {
+        captureStarted = true;
+        await gate;
+        return await end(request);
+      });
+      let deleted = false;
+      const deletion = stewards.delete("steward").then(() => {
+        deleted = true;
+      });
+      try {
+        if (exactGitRewind) {
+          await vi.waitFor(() => expect(captureStarted).toBe(true), { timeout: 30000 });
+          expect(deleted).toBe(false);
+          expect(existsSync(turn.input.cwd)).toBe(true);
+        }
+      } finally {
+        releaseCapture();
+        await deletion;
+      }
+      expect(await stewards.list()).toEqual([]);
+      expect(worktrees()).toBe(1);
+      expect(existsSync(turn.input.cwd)).toBe(false);
+      expect(steward).toBeDefined();
+      expect(captureStarted).toBe(exactGitRewind);
+    },
+  );
 });
 describe("steward work limits and merging", () => {
   it("suspends the steward automatic merge preference for new tasks", async () => {

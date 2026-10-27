@@ -146,10 +146,11 @@ export function writerWorkspaces(root: string, projectCwd: (id: string) => Promi
     root: join(root, "fixture-turn-history"),
     workspace: required,
   });
-  const attachEngine = async (engine: HostEngine) => {
+  const attachEngine = async (engine: HostEngine, options: { exactGitRewind?: boolean } = {}) => {
     await engine.ready;
     services.environmentId = engine.store.environmentId;
     engine.setManagedTurnHistoryAdapter({
+      exactGitRewindEnabled: () => options.exactGitRewind === true,
       history,
       assertWritable: async (id) => {
         await required(id);

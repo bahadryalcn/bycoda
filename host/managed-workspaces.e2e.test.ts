@@ -84,6 +84,8 @@ it("runs isolated host sessions through commits, rewind/Undo, owner delivery and
   await engine.ready;
   const runtime = createManagedWorkspaceRuntime(store, engine);
   expect(await runtime.recover()).toEqual([]);
+  // This scenario exercises experimental exact rewind across committed turns.
+  await runtime.exactGitRewind.save(true);
   const { registry, history, rewind, delivery, retention } = runtime;
   const required = runtime.get;
   await runtime.withOwner("owner", (owner) =>

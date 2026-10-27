@@ -24,6 +24,12 @@ This supersedes the unconditional per-turn capture/admission statements below.
 Live claim APIs were unavailable in this worker session; the owner's explicit
 three-stream file assignments establish the coordination boundary.
 
+V94 CI regression fixtures follow exact-rewind opt-in (`a6f73927`) and bounded
+file-history lifecycle (`62465245b`): they enable exact rewind for retained Git
+capture assertions and exercise steward deletion with the experiment OFF/ON.
+Lightweight checkpoint lifecycle tests use `beginFilesTurn`/`finishFilesTurn`;
+message-history fixtures canonicalize temporary repository paths across OSes.
+
 Delivered surface checklist:
 
 - Done: `host/exact-git-rewind.ts`, `host/managed-workspace-runtime.ts` and
