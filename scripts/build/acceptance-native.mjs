@@ -2,7 +2,7 @@
 /** Real-provider development acceptance. This command never attaches to an installed app. */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -61,6 +61,13 @@ export function assertWithin(root, path, label = "path") {
   if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel))
     throw new Error(`Refusing ${label} outside ${root}`);
   return resolve(path);
+}
+
+export function acceptanceProjectName(id, runId) {
+  const digest = (value) => createHash("sha256").update(value).digest("hex").slice(0, 8);
+  const task = id.length <= 32 ? id : `${id.slice(0, 20)}-${digest(id)}`;
+  const run = runId.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 12);
+  return `provider-repo-${task}-${run}-${digest(runId)}`;
 }
 
 /** Validate all mutable locations before CDP connection or any filesystem write. */
@@ -367,10 +374,8 @@ export async function prepareProject(context) {
   if (context.preparedProject && context.state.project) return context.state.project;
   const project =
     context.state.project ??
-    join(
-      context.scratch,
-      `provider-repo-${context.run.runId.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 40)}`,
-    );
+    join(context.scratch, acceptanceProjectName(context.options.id, context.run.runId));
+  assertWithin(context.scratch, project, "acceptance project");
   if (!existsSync(project)) {
     await mkdir(project, { recursive: true });
     await command("git", ["init", "-b", "main"], project);
@@ -388,24 +393,41 @@ export async function prepareProject(context) {
   );
   const skip = await button(context, "Set up later");
   if (await skip.isVisible()) await skip.click();
-  await context.page.evaluate(async (cwd) => {
+  const normalizedProject = await context.page.evaluate(async (cwd) => {
     const recents = await import("/src/features/projects/model/recents.ts");
     recents.rememberProject(cwd);
     recents.notifyProjectPathsChanged();
+    return recents.normalizeProjectPath(cwd);
   }, project);
   await closeRecoveredSessions(context);
   await dismissVisibleOverlays(context);
   await closeSettings(context);
-  const projectButton = context.page
-    .getByRole("button", { name: basename(project), exact: true })
+  const card = context.page
+    .locator(`[data-project-path=${JSON.stringify(normalizedProject)}]`)
     .first();
+  const projectButton = card.locator(":scope > button[title]").first();
   if (!(await projectButton.isVisible())) {
     await projectButton.waitFor({ state: "visible", timeout: 5000 }).catch(async () => {
       await context.page.reload({ waitUntil: "domcontentloaded" });
       await closeRecoveredSessions(context);
     });
   }
+  const title = await projectButton.getAttribute("title");
+  assert(
+    title
+      ?.split(/\r?\n/)
+      .some(
+        (line) =>
+          line.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase() ===
+          normalizedProject.toLowerCase(),
+      ),
+    "Project rail title does not match the exact acceptance project path",
+  );
   await projectButton.click();
+  await waitUntil(
+    async () => (await card.getAttribute("data-selected")) === "true",
+    "The exact acceptance project was not selected",
+  );
   await context.page.evaluate(async (cwd) => {
     await (
       await import("/src/features/workspaces/model/workspaceClient.ts")
@@ -507,6 +529,14 @@ export async function newSession(context, mode = "current", model = context.opti
 
 export async function sendPrompt(context, prompt, { allowFailure = false, wait = true } = {}) {
   const { page } = context;
+  const selected = await page
+    .locator('[data-project-path][data-selected="true"]')
+    .first()
+    .getAttribute("data-project-path");
+  assert(
+    selected && resolve(selected).toLowerCase() === resolve(context.state.project).toLowerCase(),
+    "The visible project differs from this acceptance fixture; refusing to send",
+  );
   const prior = new Set(
     (await getSessions(page)).flatMap((entry) =>
       entry.blocks.filter((block) => block.role === "user").map((block) => block.id),

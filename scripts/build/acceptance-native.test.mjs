@@ -3,7 +3,12 @@ import { test } from "node:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { acceptanceOptions, assertWithin, validateAcceptanceRun } from "./acceptance-native.mjs";
+import {
+  acceptanceOptions,
+  acceptanceProjectName,
+  assertWithin,
+  validateAcceptanceRun,
+} from "./acceptance-native.mjs";
 import { nativeDevDesktopDataPath } from "../../host/workspace-bootstrap.ts";
 
 test("rejects traversal and invalid scenario selectors before starting any native work", () => {
@@ -19,6 +24,19 @@ test("rejects lexical parent and sibling-prefix escapes", () => {
   for (const path of [root, join(root, "..", "owner"), `${root}-owner`])
     assert.throws(() => assertWithin(root, path));
   assert.equal(assertWithin(root, join(root, "child")), join(root, "child"));
+});
+
+test("gives independent acceptance IDs distinct visible project names in the same native run", () => {
+  assert.notEqual(
+    acceptanceProjectName("q1-case3", "q1-proof2"),
+    acceptanceProjectName("q1-case5", "q1-proof2"),
+  );
+  const prefix = "very-long-acceptance-name-".repeat(3);
+  assert.notEqual(
+    acceptanceProjectName(`${prefix}a`, "run"),
+    acceptanceProjectName(`${prefix}b`, "run"),
+  );
+  assert(acceptanceProjectName(`${prefix}a`, "run").length < 80);
 });
 
 async function fixture() {
