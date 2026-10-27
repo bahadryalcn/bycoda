@@ -1,4 +1,4 @@
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
 import type { BuiltinSkill } from "../../skills/model/skills";
 
 export type NewSessionOptions = { preserveSettings?: boolean };

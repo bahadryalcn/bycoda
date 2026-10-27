@@ -171,12 +171,25 @@ function plannerPrompt(
  * task board's timer. */
 export class HostGoals {
   readonly ready: Promise<void>;
+  private readonly engine: SessionRunEngine;
   constructor(
     private readonly store: HostStore,
-    private readonly engine: SessionRunEngine,
+    engine: SessionRunEngine,
     private readonly tasks: HostTasks,
     private readonly now: () => number = Date.now,
   ) {
+    // The Store's AsyncLocal authorization follows an admitted owner request
+    // across preparation and SQL waits. Scheduler calls have no request grant.
+    this.engine = {
+      command: async (command) => {
+        await store.db.checkAuthorization();
+        return engine.command(command);
+      },
+      updateSession: async (id, patch) => {
+        await store.db.checkAuthorization();
+        return engine.updateSession(id, patch);
+      },
+    };
     this.ready = (async () => {
       await store.ready;
       await tasks.ready;
@@ -250,6 +263,13 @@ export class HostGoals {
         tasks.trackExternalRuns(async () => await this.runningFinalReviews());
       });
     })();
+  }
+  /** Bind only this operation, never the persisted goal's autonomous lifetime. */
+  withAuthorization<T>(authorized: () => Promise<boolean>, work: () => Promise<T>): Promise<T> {
+    return this.store.db.withAuthorization(authorized, async () => {
+      await this.store.db.checkAuthorization();
+      return work();
+    });
   }
   /** The task board's tick, which settles planners and goal progress. */
   tick(): Promise<void> {
@@ -405,6 +425,7 @@ export class HostGoals {
     if (goal.status === "planning") await this.stopPlanner(goal);
     await this.stopFinalReview(goal);
     for (const taskId of goal.taskIds) {
+      await this.store.db.checkAuthorization();
       try {
         await this.tasks.cancel(taskId, GOAL_CANCELLED);
       } catch (error) {
@@ -433,7 +454,10 @@ export class HostGoals {
         "Unmerged work is protected. Review or discard those tasks individually before deleting the goal with its tasks.",
       );
     if (withTasks)
-      for (const task of orderTasksForDeletion(own)) await this.tasks.delete(task.id, false);
+      for (const task of orderTasksForDeletion(own)) {
+        await this.store.db.checkAuthorization();
+        await this.tasks.delete(task.id, false);
+      }
     await this.store.db.prepare("DELETE FROM goals WHERE id=?").run(id);
   }
   /** Settles planners and brings every goal's progress up to date. Called by
@@ -537,6 +561,9 @@ export class HostGoals {
   private async write(goal: HostGoal): Promise<HostGoal> {
     if (goal.autoMerge) goal = { ...goal, autoMerge: undefined, deliveryApprovalRequired: true };
     return await this.store.db.scope(async () => {
+      // Nested scope reuse does not repeat FIFO admission. Recheck after any
+      // awaited reconciliation/preparation before this concrete write as well.
+      await this.store.db.checkAuthorization();
       await this.store.db
         .prepare(
           "INSERT INTO goals VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
@@ -840,6 +867,7 @@ export class HostGoals {
     // No queued task may escape without its owning goal's complete task list.
     return await this.tasks.transaction(async () => {
       for (const task of planned) {
+        await this.store.db.checkAuthorization();
         const projectId = task.projectId!;
         const command = verifyCommand?.[projectId];
         const dependsOn = task.dependsOn.map((key) => ids.get(key)!);

@@ -47,8 +47,16 @@ export function SessionRecoveryControl({
         <span className="recovery-rail-label min-w-0 flex-1 truncate @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden">
           {label}
         </span>
-        <Badge className="recovery-rail-count" aria-hidden="true">
-          {count > 99 ? "99+" : count}
+        <Badge
+          variant="count"
+          size="sm"
+          tone="accent"
+          appearance="subtle"
+          max={99}
+          className="recovery-rail-count"
+          aria-hidden="true"
+        >
+          {count}
         </Badge>
       </Button>
       {onClear ? (

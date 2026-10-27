@@ -45,7 +45,7 @@ export interface SessionAccess {
   dispatch(command: HostCommand): Promise<CommandReceipt>;
   status(commandId: string): Promise<CommandReceipt | null>;
   update(sessionId: string, patch: Record<string, unknown>): Promise<unknown>;
-  delete(sessionId: string, projectId: string): Promise<unknown>;
+  delete(sessionId: string, projectId: string, authorityGeneration?: number): Promise<unknown>;
 }
 
 function hostAccess(kind: SessionAccess["kind"], request: HostSessionRequest): SessionAccess {
@@ -70,7 +70,12 @@ function hostAccess(kind: SessionAccess["kind"], request: HostSessionRequest): S
     dispatch: (command) => request("commands.dispatch", command),
     status: (commandId) => request("commands.status", { commandId }),
     update: (sessionId, patch) => request("sessions.update", { ...patch, sessionId }),
-    delete: (sessionId, projectId) => request("sessions.delete", { sessionId, projectId }),
+    delete: (sessionId, projectId, authorityGeneration) =>
+      request("sessions.delete", {
+        sessionId,
+        projectId,
+        ...(authorityGeneration === undefined ? {} : { authorityGeneration }),
+      }),
   };
 }
 export const localHostSessionAccess = (request: HostSessionRequest): SessionAccess =>

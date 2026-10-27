@@ -7164,5 +7164,12 @@
   "Reverted files: {p0}": "元に戻したファイル数: {p0}",
   "Skipped files: {p0}": "スキップしたファイル数: {p0}",
   "No session files were reverted.": "元に戻したセッションファイルはありません。",
-  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "ファイルは元に戻しましたが、チャットを巻き戻せませんでした。このメッセージの編集を完了するには再試行してください。"
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "ファイルは元に戻しましたが、チャットを巻き戻せませんでした。このメッセージの編集を完了するには再試行してください。",
+  "Compact voice companion": "音声コンパニオンを縮小",
+  "Expand voice companion": "音声コンパニオンを展開",
+  "Assistant speaking": "アシスタントが発話中",
+  "Visual style": "ビジュアルスタイル",
+  "bycoda mark": "bycoda マーク",
+  "Wave": "ウェーブ",
+  "Dots": "ドット"
 }

@@ -24,6 +24,23 @@ def package_identity(manifest):
         raise RuntimeError('Package identity is missing or incompatible; rebuild the bycoda package')
     return identity
 
+def package_components(manifest, requested):
+    """Validate all selected artifacts before any install job can be scheduled."""
+    available = manifest.get('components')
+    if available is None:
+        # Older full packages are readable, but absent artifacts never become implicit.
+        available = [name for name, field in (('host', 'hostHashes'), ('app', 'appHashes'))
+                     if manifest.get(field)]
+    if (not isinstance(available, list) or not available or
+            any(name not in ('host', 'app') for name in available) or len(set(available)) != len(available)):
+        raise RuntimeError('Package component manifest is invalid')
+    for component in requested:
+        if component not in available or not manifest.get('hostHashes' if component == 'host' else 'appHashes'):
+            raise RuntimeError(f'Package does not contain {component}; build the selected component first')
+        if component == 'app' and not manifest.get('binaryHash'):
+            raise RuntimeError('Package app executable identity is missing')
+    return available
+
 def digest(path):
     with pathlib.Path(path).open('rb') as f:
         return hashlib.file_digest(f, 'sha256').hexdigest()

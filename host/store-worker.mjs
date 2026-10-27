@@ -1,5 +1,5 @@
 import { parentPort, workerData } from "node:worker_threads";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, backup } from "node:sqlite";
 
 const db = new DatabaseSync(workerData.path);
 let active;
@@ -15,7 +15,7 @@ const closeCursors = (owner) => {
 };
 const closed = new Set();
 parentPort.postMessage({ ready: true });
-parentPort.on("message", ({ id, owner, method, sql, params }) => {
+parentPort.on("message", async ({ id, owner, method, sql, params }) => {
   try {
     if (!Number.isSafeInteger(id) || typeof owner !== "string" || !Array.isArray(params))
       throw new Error("Invalid database request.");
@@ -33,6 +33,21 @@ parentPort.on("message", ({ id, owner, method, sql, params }) => {
           db.exec("ROLLBACK");
           throw new Error("Database owner left an open transaction; it was rolled back.");
         }
+      } else if (method === "rollbackOpen") {
+        if (db.isTransaction) db.exec("ROLLBACK");
+      } else if (method === "durability") {
+        if (db.isTransaction)
+          throw new Error("Critical durability must be selected before a transaction starts.");
+        if (params[0] !== 1 && params[0] !== 2) throw new Error("Invalid durability class.");
+        db.exec(`PRAGMA synchronous=${params[0]}`);
+      } else if (method === "backup") {
+        if (db.isTransaction) throw new Error("Backup requires a settled transaction boundary.");
+        if (typeof params[0] !== "string") throw new Error("Invalid backup destination.");
+        const pageSize = Number(db.prepare("PRAGMA page_size").get().page_size);
+        const pages = Number(db.prepare("PRAGMA page_count").get().page_count);
+        if (pageSize * pages > 2 * 1024 * 1024 * 1024)
+          throw new Error("Snapshot database size limit exceeded.");
+        await backup(db, params[0]);
       } else if (method === "exec") db.exec(sql);
       else if (method === "close") {
         closeCursors();
@@ -94,6 +109,7 @@ parentPort.on("message", ({ id, owner, method, sql, params }) => {
       id,
       error: error instanceof Error ? error.message : "Database operation failed.",
       code: error?.code,
+      errcode: error?.errcode,
     });
   }
 });

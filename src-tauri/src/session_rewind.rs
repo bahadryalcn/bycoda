@@ -62,6 +62,18 @@ pub(crate) fn begin_managed_turn(
     if !exact_git_rewind {
         return Ok(());
     }
+    store
+        .authority_execution_gate()
+        .guarded(&request.session_id, "managed-turn-begin", || {
+            begin_managed_turn_inner(store, host, request)
+        })
+}
+
+fn begin_managed_turn_inner(
+    store: &SessionStore,
+    host: &impl TurnExecutionHost,
+    request: &ManagedTurnRequest,
+) -> Result<(), String> {
     let rewind_pending: bool = store.lock_conn()?.query_row("SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE session_id=?1 AND phase!='complete')",
         [&request.session_id], |row|row.get(0)).map_err(|e|e.to_string())?;
     if rewind_pending {
@@ -132,6 +144,19 @@ pub(crate) fn finish_managed_turn(
     if !exact_git_rewind {
         return Ok(());
     }
+    store.authority_execution_gate().guarded_existing(
+        &request.session_id,
+        "managed-turn-finish",
+        true,
+        || finish_managed_turn_inner(store, host, request),
+    )
+}
+
+fn finish_managed_turn_inner(
+    store: &SessionStore,
+    host: &impl TurnExecutionHost,
+    request: &ManagedTurnRequest,
+) -> Result<(), String> {
     let signature = serde_json::to_string(request).map_err(|e| e.to_string())?;
     let Some((persisted, phase)) = pending_turn(store, &request.session_id)? else {
         return Err("There is no managed turn to complete".into());
@@ -242,6 +267,7 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
 
 pub(crate) fn assert_writable(store: &SessionStore, session_id: &str) -> Result<(), String> {
     let conn = store.lock_conn()?;
+    authority::assert_checkpoint(&conn, session_id)?;
     let pending: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE session_id=?1 AND phase!='complete')
           OR EXISTS(SELECT 1 FROM native_managed_turns WHERE session_id=?1 AND phase!='complete')
@@ -853,6 +879,23 @@ fn cancel_native_preparation(
 }
 
 fn native_apply(
+    store: &SessionStore,
+    host: &crate::remote::NativeWorkspaceTransport,
+    request: Value,
+    direction: RewindDirection,
+) -> Result<Value, String> {
+    let session_id = request["sessionId"]
+        .as_str()
+        .ok_or("Session ID is required")?
+        .to_owned();
+    store
+        .authority_execution_gate()
+        .guarded(&session_id, "native-rewind", || {
+            native_apply_inner(store, host, request, direction)
+        })
+}
+
+fn native_apply_inner(
     store: &SessionStore,
     host: &crate::remote::NativeWorkspaceTransport,
     request: Value,

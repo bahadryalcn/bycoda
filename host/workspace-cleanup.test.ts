@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { HostStore } from "./store";
 import * as processExecution from "../src/shared/lib/processExecution.node";
 import { execFileSync } from "node:child_process";
 import {
@@ -28,6 +29,74 @@ import type {
 import type { WorkspaceCleanupDependencies } from "./workspace-cleanup";
 
 const roots: string[] = [];
+
+it("retains revoked removal's original failure and durable blocked ledger without restarting filesystem work", async () => {
+  const s = await setup();
+  const path = join(s.root, "authority.db");
+  const store = new HostStore(path);
+  await store.ready;
+  await store.insertManagedWorkspace(s.workspace);
+  let allowed = true;
+  const failure = new Error("request revoked before filesystem effect");
+  const update = s.deps.registry.update.bind(s.deps.registry);
+  const save = s.deps.registry.saveOperation.bind(s.deps.registry);
+  const service = createWorkspaceRemovalService({
+    ...s.deps,
+    registry: {
+      ...s.deps.registry,
+      update: async (request) => {
+        await store.db.checkAuthorization();
+        const result = await update(request);
+        await store.updateManagedWorkspace(result, request.expectedRevision);
+        return result;
+      },
+      saveOperation: async (op, phase) => {
+        await store.saveWorkspaceOperation(op, phase);
+        await save(op, phase);
+      },
+    },
+    assertAuthorized: async () => {
+      allowed = false;
+      throw failure;
+    },
+    recoveryBookkeeping: (work) => store.db.runRecoveryBookkeeping(work),
+  });
+  try {
+    const plan = await service.plan({
+      workspaceId: s.workspace.id,
+      expectedRevision: s.workspace.revision,
+    });
+    await expect(
+      store.db.withAuthorization(
+        async () => allowed,
+        () =>
+          service.apply(
+            {
+              workspaceId: s.workspace.id,
+              expectedRevision: s.workspace.revision,
+              planToken: plan.token,
+              idempotencyKey: "revoked",
+            },
+            { ownerId: "owner", authorizationId: "trusted" },
+          ),
+      ),
+    ).rejects.toBe(failure);
+    expect(readFileSync(join(s.path, "source.txt"), "utf8")).toBe("initial");
+    expect((await store.managedWorkspace(s.workspace.id))?.directoryState).toBe("blocked");
+  } finally {
+    await store.close();
+  }
+  const reopened = new HostStore(path);
+  try {
+    await reopened.ready;
+    expect((await reopened.workspaceOperations(s.workspace.id))[0]).toMatchObject({
+      phase: "blocked",
+      error: { message: failure.message },
+    });
+  } finally {
+    await reopened.close();
+  }
+});
 afterEach(() => {
   vi.restoreAllMocks();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 5 });

@@ -25,7 +25,7 @@ export default defineConfig({
     maxWorkers: 4,
     setupFiles: ["tests/browser/happy-dom-setup.ts"],
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "packages/**/*.test.ts"],
     server: { deps: { inline: [/codemirror/, /lezer/] } },
   },
 });

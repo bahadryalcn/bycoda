@@ -7164,5 +7164,12 @@
   "Reverted files: {p0}": "已还原文件数：{p0}",
   "Skipped files: {p0}": "已跳过文件数：{p0}",
   "No session files were reverted.": "未还原任何会话文件。",
-  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "文件已还原，但无法回退聊天。请重试以完成此消息的编辑。"
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "文件已还原，但无法回退聊天。请重试以完成此消息的编辑。",
+  "Compact voice companion": "缩小语音助手",
+  "Expand voice companion": "展开语音助手",
+  "Assistant speaking": "助手正在说话",
+  "Visual style": "视觉样式",
+  "bycoda mark": "bycoda 标志",
+  "Wave": "波形",
+  "Dots": "圆点"
 }

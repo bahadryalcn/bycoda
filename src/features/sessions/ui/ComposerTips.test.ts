@@ -26,26 +26,54 @@ afterEach(async () => {
 });
 const render = (active = true) => act(() => root.render(createElement(ComposerTips, { active })));
 const icon = () => container.querySelector<HTMLButtonElement>("button")!;
-const open = () => act(() => icon().dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+const open = () => act(() => icon().click());
 const text = () => document.querySelector(".composer-tips-text")?.getAttribute("aria-label");
 const advance = () => act(() => vi.advanceTimersByTime(COMPOSER_TIP_INTERVAL));
 
-it("only opens its tooltip on hover or focus and dismisses on Escape", () => {
+it("only opens by activation, updates its label and stays closed after Escape", () => {
   render();
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(icon().textContent).toBe("Tip");
+  expect(icon().getAttribute("aria-label")).toBe("Tip");
+  expect(icon().getAttribute("aria-expanded")).toBe("false");
+  expect(icon().hasAttribute("aria-describedby")).toBe(false);
+  act(() => icon().dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+  act(() => icon().focus());
   expect(document.querySelector('[role="tooltip"]')).toBeNull();
   expect(vi.getTimerCount()).toBe(0);
   open();
   expect(text()).toBe(COMPOSER_TIPS[0]);
+  expect(icon().textContent).toBe("Next tip");
+  expect(icon().getAttribute("aria-label")).toBe("Next tip");
+  expect(icon().getAttribute("aria-expanded")).toBe("true");
   expect(icon().getAttribute("aria-describedby")).toBe(
     document.querySelector('[role="tooltip"]')!.id,
   );
   act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(icon().textContent).toBe("Tip");
+  expect(icon().getAttribute("aria-expanded")).toBe("false");
+  expect(icon().hasAttribute("aria-describedby")).toBe(false);
+  act(() => icon().blur());
   act(() => icon().focus());
+  act(() => icon().dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  open();
   expect(text()).toBe(COMPOSER_TIPS[0]);
+});
+
+it("stays open when the pointer or focus leaves and dismisses on an outside click", () => {
+  render();
+  act(() => icon().focus());
+  open();
+  act(() => icon().dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
   act(() => icon().blur());
   act(() => vi.advanceTimersByTime(150));
+  expect(text()).toBe(COMPOSER_TIPS[0]);
+  act(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
   expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(icon().textContent).toBe("Tip");
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 it("cycles while visible, keeps inactive sessions still and clears timers", () => {
@@ -67,6 +95,8 @@ it("cycles while visible, keeps inactive sessions still and clears timers", () =
 
 it("advances manually by click and animates the complete new tip", () => {
   render();
+  open();
+  expect(text()).toBe(COMPOSER_TIPS[0]);
   act(() => icon().click());
   expect(text()).toBe(COMPOSER_TIPS[1]);
   expect(document.querySelector("[data-tip-fold-animate]")).not.toBeNull();
@@ -91,8 +121,7 @@ it("pauses while the document is hidden and does no cycling after closing", () =
   act(() => document.dispatchEvent(new Event("visibilitychange")));
   advance();
   expect(text()).toBe(COMPOSER_TIPS[1]);
-  act(() => icon().dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
-  act(() => vi.advanceTimersByTime(150));
+  act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(text()).toBeUndefined();
   expect(vi.getTimerCount()).toBe(0);
 });

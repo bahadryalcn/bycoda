@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { HostStore } from "./store";
 import { TASK_STATUSES } from "../src/features/tasks/model/hostTasks";
 import {
@@ -128,6 +129,13 @@ export class HostSprints {
       CREATE TABLE IF NOT EXISTS sprint_goal_contexts (id TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
   }
+  /** One paired-owner operation, not a persisted scheduling credential. */
+  withAuthorization<T>(authorized: () => Promise<boolean>, work: () => Promise<T>): Promise<T> {
+    return this.store.db.withAuthorization(authorized, async () => {
+      await this.store.db.checkAuthorization();
+      return work();
+    });
+  }
   private async read<T>(table: string, id: string): Promise<T | undefined> {
     const row = await this.store.db.prepare(`SELECT value FROM ${table} WHERE id=?`).get(id);
     return row ? (JSON.parse(String(row.value)) as T) : undefined;
@@ -137,11 +145,14 @@ export class HostSprints {
     return rows.map((row) => JSON.parse(String(row.value)) as T);
   }
   private async write(table: string, id: string, value: unknown) {
-    await this.store.db
-      .prepare(
-        `INSERT INTO ${table}(id,value) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value`,
-      )
-      .run(id, JSON.stringify(value));
+    await this.store.db.scope(async () => {
+      await this.store.db.checkAuthorization();
+      await this.store.db
+        .prepare(
+          `INSERT INTO ${table}(id,value) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value`,
+        )
+        .run(id, JSON.stringify(value));
+    });
   }
   private async command<T>(
     requestId: string,
@@ -156,11 +167,25 @@ export class HostSprints {
         .prepare("SELECT payload,result FROM sprint_receipts WHERE id=?")
         .get(requestId);
       if (receipt) {
-        if (receipt.payload !== encoded)
+        let samePayload = receipt.payload === encoded;
+        if (!samePayload) {
+          try {
+            // Strict transport validation can reorder object keys. Preserve all
+            // values/unknown keys and array order, and retain the original bytes.
+            samePayload = isDeepStrictEqual(
+              JSON.parse(String(receipt.payload)),
+              JSON.parse(encoded),
+            );
+          } catch {
+            // A corrupt retained payload cannot authorize a replay or new work.
+          }
+        }
+        if (!samePayload)
           throw new Error("Request identity was already used for different sprint changes.");
         return JSON.parse(String(receipt.result)) as T;
       }
       const result = await operation();
+      await this.store.db.checkAuthorization();
       await this.store.db
         .prepare("INSERT INTO sprint_receipts VALUES (?,?,?)")
         .run(requestId, encoded, JSON.stringify(result));
@@ -512,6 +537,7 @@ export class HostSprints {
   ) {
     const report = await this.liveReport(id);
     const lastAt = report.ledger.at(-1)?.at ?? 0;
+    await this.store.db.checkAuthorization();
     await this.store.db.prepare("INSERT INTO sprint_ledger(sprint_id,value) VALUES (?,?)").run(
       id,
       JSON.stringify({

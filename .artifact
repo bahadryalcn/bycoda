@@ -17,6 +17,9 @@ and contributors. Preserve existing work and use the established locations.
 | Expo mobile routes, feature code, shared UI, tests and package tooling | `mobile/` |
 | Native application and Tauri configuration | `src-tauri/` |
 | Browser scenarios, fixtures, servers, and fixture configurations | `tests/browser/` |
+| Offline model behavior cases, deterministic graders and harness | `evals/` |
+| Application workspace entrypoints and independent commands | `apps/<application>/` |
+| Reusable private workspace modules and their public exports/tests | `packages/<package>/` |
 | Assets required by the product | `public/`; branding in `public/brand/` |
 | Vendored dependencies and their license notices | `vendor/` |
 | Platform build helpers | `scripts/build/` |

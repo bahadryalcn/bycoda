@@ -1,42 +1,105 @@
 # Continuous integration
 
-`Issue triage` handles new GitHub issue classifications separately from build and
-release checks. Its catalog is `issue-labels.json`; see the classification guide
-in [CONTRIBUTING.md](../CONTRIBUTING.md). It runs only on newly opened issues or a
-manual catalog setup, with issue-label write access and read-only source access.
-It reads form text as allowlisted data and executes only default-branch code.
+`CI` runs on pull requests, pushes to `main`, and manual dispatches. The final
+job is named **Check**. Individual job success, a dependency cache hit, a fixture
+screenshot, or a package build is not full CI or installed-app acceptance.
+CI has read-only repository access, nonpersisted checkout credentials, and actions
+pinned to verified commit SHAs. It does not publish releases, install on developer
+machines, or run paid providers.
 
-`CI` runs on pull requests and pushes to `main`. Use `workflow_dispatch` for a
-full run on another branch. New commits cancel an older CI run for the same PR or
-branch. Release runs use a separate concurrency group and are not cancelled.
+## Selection and ownership
 
-| Check                                               | Pull requests                                                                                   | Main / manual                       |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------- |
-| Repository hygiene                                  | Always                                                                                          | Always                              |
-| Web tests, TypeScript and Vite production build     | Web/host sources, tests, assets, shared configuration or tooling                                | Always, on Linux                    |
-| Host tests and package smoke check                  | Web/host sources, tests, assets, shared configuration or tooling                                | Always, on Linux, macOS and Windows |
-| Rust format, Clippy and tests                       | Native sources/configuration, Cargo files, embedded host files, shared configuration or tooling | Always, on Linux, macOS and Windows |
-| Fedora / AlmaLinux RPM build and clean installation | Same scope as Rust                                                                              | Always                              |
+`scripts/checks/ci-changes.mjs` owns the shared local/CI decision. Git merge-base
+and a NUL-delimited diff include deleted paths and both sides of renames. Local
+selection also includes untracked, nonignored source. Unknown inputs or unavailable
+history select full coverage. Main/manual CI always select full coverage. Only
+explicitly irrelevant PR jobs may skip. New PR commits cancel older PR runs;
+distinct main SHAs retain independent runs for exact-source release prerequisites.
 
-The filters live in `workflows/ci.yml`. Host checks deliberately include all of
-`src/`: the host imports application models and shared code. Rust filters include
-the host ACL script and parity fixtures embedded with `include_str!`. Update the
-filters when adding inputs outside these directories. Documentation-only PRs
-still produce the hygiene and change-detection checks; other jobs are skipped at
-job level, so the workflow itself is not left pending by a path trigger filter.
+| Job                | Scope and evidence                                                                 | Selection                                                     |
+| ------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Changes            | Source SHA and boolean gates                                                       | Always                                                        |
+| Repository hygiene | Ignored-file policy and issue-label fixtures                                       | Always                                                        |
+| Web                | Shared Host contracts/headless boundaries, Vitest JSON, TypeScript and Vite bundle | Shared source/native parity, fixtures, common inputs          |
+| Host               | Serial files per VM; Linux 1/macOS 2/Windows 6 shards; package once per OS         | Application/Host and common inputs                            |
+| Native (`check`)   | Rust format, Clippy and tests on three OSes                                        | Native/shared embedded inputs and common inputs               |
+| RPM                | Fedora/AlmaLinux build/Requires plus clean AlmaLinux install/loader check          | Native/package and common inputs                              |
+| Scripts            | Maintained Node fixtures recursively under `scripts/` and `.github/scripts/`       | Shared source read by helpers, harness/tooling/support inputs |
+| Python             | Local-update fixtures/logs on Linux and Windows                                    | Local updater or common inputs                                |
+| Browser            | Complete fixture-owner inventory and isolated Chromium smoke                       | UI/assets/Host-dependent fixtures and common inputs           |
+| Check              | All required jobs/variants and exact-source evidence                               | Always, including failures/cancellation                       |
 
-Web checks run once instead of repeating in the native OS matrix. Rust jobs do
-not install frontend dependencies, and Clippy already provides the type checking
-previously repeated by `cargo check`. Host tests build/typecheck through their
-`pretest:host` hook; packaging reuses that output.
+Source gates are deliberately conservative: the Host imports application models,
+source tests inspect native parity, script fixtures import Host helpers, and Rust
+embeds generated contracts. Ordinary UI/Host edits keep web/Host/script/browser
+checks selected; only inventoried native embeds additionally select native/RPM.
+A repository-graph regression guards that include list. Narrow gates alongside verified dependency
+boundaries, with regression cases. Mobile remains an independent nested repository;
+its own test/typecheck and native/device acceptance are outside this desktop CI.
 
-Cargo dependency caches are separate for native checks, each RPM distribution,
-and release builds. PRs restore native/RPM caches but only `main` writes them.
-Release builds keep their own cache and still produce signed packages only on
-version tags. No CI filter grants publishing authority.
+The Scripts job also runs `pnpm eval:offline` and requires its JSON report.
+These are deterministic model-behavior grader/schema fixtures, with no provider
+calls. Context/transport byte measurements and static usage remain advisory;
+see [quality tooling](../docs/reference/quality.md).
 
-Main and manual runs intentionally ignore change filters: they retain full
-coverage and warm caches even if an earlier push was cancelled. A cold cache or
-Rust toolchain/dependency change can still require a full compile. Confirm timing
-improvements from GitHub runs after merging; local workflow validation does not
-measure hosted runner performance.
+## Dependency setup
+
+`.github/actions/setup-deps` takes explicit `node-version`, reads exact pnpm from
+`package.json#packageManager`, and installs with `--frozen-lockfile --prefer-offline`.
+`install: "false"` supplies Node without installing pnpm/JavaScript dependencies.
+The pnpm store key includes namespace, OS, architecture, Node, pnpm, manifest/lock/
+workspace files, `.npmrc`, `.pnpmfile.cjs`, and patches. Fallback cache restores
+reusable downloads; installation still validates the lockfile. Checkouts do not
+share whole `node_modules` or mutable build output. Source/test jobs use Node 24;
+package jobs retain explicit Node 22. Cargo caches remain separate, with native/RPM
+cache writes restricted to main. No remote test-result cache is enabled.
+
+## Local entry points
+
+| Current entry                                                            | Contract                                                                                          |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `node scripts/checks/check-local.mjs`                                    | Plan only; starts no tests, builds or services.                                                   |
+| `node scripts/checks/check-local.mjs --run`                              | Changed-file format/lint and changed/adjacent tests; default 12 test files, 120 seconds per step. |
+| `node scripts/checks/check-local.mjs --base <ref> --max-tests 8 --run`   | Explicit merge-base and bounded local test selection.                                             |
+| `node scripts/checks/check-local.mjs --scripts --run`                    | All maintained Node script fixtures, with no app build/install or paid provider.                  |
+| `node scripts/checks/check-host-test-shards.mjs 6`                       | Complete/disjoint Vitest partition discovery; does not execute modules.                           |
+| `pnpm test:host --shard=1/6`                                             | One Host shard, including its existing typecheck/build prehook; not full Host acceptance.         |
+| `node scripts/checks/browser-test-inventory.mjs --check`                 | Verify every browser spec has one documented owner.                                               |
+| `node scripts/checks/browser-tests.mjs --suite smoke --project chromium` | Isolated browser-fixture smoke with explicit evidence.                                            |
+
+The bounded runner uses installed tool binaries and never installs dependencies.
+Adjacent Host tests omit the prebuild hook; missing fixture artifacts cause an
+honest failure. Deleted files still select CI dependents. Failed Git detection
+selects full CI requirements, but bounded local success does not mean those suites
+ran. Each local step has a deadline and stops only its owned process tree on timeout.
+Optional reports use `--report temp/verification/<id>/local.json`.
+See [the testing guide](../docs/reference/testing.md) for legacy command scopes and separate
+acceptance lanes. Do not repeat a successful suite/typecheck via another alias
+without a relevant change or unresolved failure.
+
+## Evidence and the final Check
+
+Each selected job uploads a bounded JSON manifest in a unique `ci-evidence-*`
+artifact: source SHA, GitHub run/attempt, job/variant, result and required report
+files. Raw test JSON, Python logs, browser traces/screenshots stay in separate
+artifacts. Browser receipts explicitly say `browser-fixture`; source, completion
+time and exit code are validated.
+
+`scripts/checks/ci-results.mjs` reads manifests as regular JSON data, never code.
+Check rejects failed/cancelled/missing jobs, unexpected skips, missing successful
+variants, duplicates, invalid metadata and foreign/stale SHA/run/attempt evidence.
+Skip passes only with an explicit false change gate. Docs-only PRs still receive
+Changes, Repository hygiene and Check. A download error cannot turn missing required
+evidence into success. Branch protection/rulesets must separately require the
+intended Check after delivery; YAML alone does not configure repository policy.
+
+## Acceptance boundaries
+
+Browser smoke uses controlled fixtures, not packaged Tauri, live Host/provider,
+native permissions or physical devices. Ordinary Cargo tests exclude explicitly
+ignored SSH/native acceptance cases. Python updater fixtures do not perform live
+updates. Frozen release source/asset validation, native helper environments,
+existing-DB migration/rollback, installed app/Host identity, mobile devices and
+paid evals retain separate owners and checks. CI grants no publish/install authority.
+Local helper tests, workflow linting and partition discovery do not demonstrate
+hosted timing, an installed build, or publication; verify those after delivery.

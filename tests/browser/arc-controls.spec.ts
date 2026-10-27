@@ -70,15 +70,15 @@ test("AI question choices stay readable and support native selection", async ({
         await page.keyboard.press("ArrowDown");
         await expect(radios.nth(1)).toBeChecked();
         await expect(radios.nth(1)).toBeFocused();
-        await expect(region.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
+        await expect(region.getByRole("button", { name: /^Send answer$/ })).toBeEnabled();
       }
     }
   }
   await radios.last().locator("..").click();
   await expect(region.getByRole("textbox", { name: "Type your answer" })).toBeFocused();
-  await expect(region.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+  await expect(region.getByRole("button", { name: /^Send answer$/ })).toBeDisabled();
   await region.getByRole("textbox").fill("Yalnızca animasyon duruyor");
-  await expect(region.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
+  await expect(region.getByRole("button", { name: /^Send answer$/ })).toBeEnabled();
 });
 
 test("password reveal stays inside the input independently of its label and helper text", async ({

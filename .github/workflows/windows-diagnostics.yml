@@ -1,0 +1,45 @@
+name: Manual Windows file diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: One source-check family (not a build/install)
+        type: choice
+        options: [host, web, scripts, package-contracts, local-update]
+        required: true
+      file:
+        description: Exact repository-relative allowlisted test file
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4; official repository commit
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 24
+      - name: Validate selection and run one bounded diagnostic
+        shell: pwsh
+        env:
+          DIAGNOSTIC_SUITE: ${{ inputs.suite }}
+          DIAGNOSTIC_FILE: ${{ inputs.file }}
+        run: node scripts/checks/windows-diagnostics.mjs --run --suite "$env:DIAGNOSTIC_SUITE" --file "$env:DIAGNOSTIC_FILE" --timeout-ms 600000 --output temp/verification/windows-diagnostics
+      - name: Preserve raw logs and exact source receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4; official repository commit
+        with:
+          name: windows-diagnostic-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: temp/verification/windows-diagnostics/
+          if-no-files-found: error
+          retention-days: 7

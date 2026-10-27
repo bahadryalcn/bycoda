@@ -7,6 +7,7 @@ import {
   prepareLocalFile,
   prepareLocalFileCopy,
   setRemoteCommandRunner,
+  setRemoteMachineResolver,
 } from "./fs";
 import { saveExplorerMapping } from "../../shared/lib/remoteExplorerPaths";
 
@@ -30,6 +31,7 @@ beforeEach(() => {
       return undefined;
     });
   setRemoteCommandRunner(remote);
+  setRemoteMachineResolver(machines.remoteMachineFor);
 });
 
 it("authorizes local asset access and opens an explicitly mapped original on this computer", async () => {

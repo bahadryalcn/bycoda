@@ -1,4 +1,5 @@
 import { EngineOperations } from "./engine-operations";
+import { HostAuthorityFenceError } from "./storage/authority-fence";
 import { createHash, randomUUID } from "node:crypto";
 import { parseProviderAccountId } from "../src/features/providers/model/providerAccountId";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -42,7 +43,7 @@ import {
   pendingHandoff,
   planComposerSwitch,
 } from "../src/features/sessions/model/handoff";
-import { isVisionImage } from "../src/features/sessions/model/attachments";
+import { isVisionImage } from "../src/features/sessions/model/attachmentPrompt";
 import { isSessionErrorBlock } from "../src/features/sessions/model/sessionIssue";
 import { adoptedTranscriptLead } from "../src/features/connections/model/adoptedSessions";
 import { transcriptDigests } from "../src/features/sync/model/conversationDigest";
@@ -204,6 +205,14 @@ function secondOpinionMeta(value: unknown): SecondOpinionMeta | undefined {
 }
 
 export function parseCommand(input: unknown): HostCommand {
+  const command = parseCommandBody(input);
+  const value = (input as Record<string, unknown>).authorityGeneration;
+  if (value === undefined) return command;
+  if (!Number.isSafeInteger(value) || Number(value) < 1)
+    throw new Error("Invalid authority generation");
+  return { ...command, authorityGeneration: Number(value) };
+}
+function parseCommandBody(input: unknown): HostCommand {
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new Error("Invalid command");
   const v = input as Record<string, unknown>;
@@ -533,6 +542,7 @@ export class HostEngine {
       cancelled: boolean;
       ending: boolean;
       persistenceFailed: boolean;
+      authorityGeneration?: number;
       resumeAtReset?: boolean;
       managedTurns: ManagedTurnBoundary[];
       filesTurn: boolean;
@@ -592,6 +602,9 @@ export class HostEngine {
     this.checkpoints = new HostCheckpoints(
       checkpointRoot,
       process.env.VITEST ? undefined : join(homedir(), ".bycoda-host", "checkpoint-active"),
+      async (sessionId, generation) => {
+        await store.assertAuthority(sessionId, generation);
+      },
     );
     this.ready = this.initialize();
   }
@@ -686,9 +699,11 @@ export class HostEngine {
       return row ? { revision: Number(row.revision) } : null;
     };
     return {
-      read: async (sessionId) => {
+      read: async (sessionId, authorityGeneration) => {
         await this.ready;
+        await this.store.assertAuthority(sessionId, authorityGeneration);
         await this.flush(sessionId);
+        await this.store.assertAuthority(sessionId, authorityGeneration);
         const value = await this.store.session(sessionId);
         return {
           revision: value.revision,
@@ -697,20 +712,27 @@ export class HostEngine {
             .map((block) => block.id),
         };
       },
-      settle: async (sessionId) => {
+      settle: async (sessionId, authorityGeneration) => {
         await this.ready;
+        await this.store.assertAuthority(sessionId, authorityGeneration);
         const initial = await this.store.session(sessionId);
+        await this.store.assertAuthority(sessionId, authorityGeneration);
         const active = this.running.get(sessionId);
         const provider = this.provider(initial.session.harness);
         if (active) {
+          await this.store.assertAuthority(sessionId, authorityGeneration);
           active.cancelled = true;
           await provider.cancel(sessionId);
+          await this.store.assertAuthority(sessionId, authorityGeneration);
           await provider.stop(sessionId);
           await active.done;
         } else {
+          await this.store.assertAuthority(sessionId, authorityGeneration);
           await provider.stop(sessionId);
         }
+        await this.store.assertAuthority(sessionId, authorityGeneration);
         await this.flush(sessionId);
+        await this.store.assertAuthority(sessionId, authorityGeneration);
         const latest = await this.store.session(sessionId);
         if (
           this.running.has(sessionId) ||
@@ -722,22 +744,26 @@ export class HostEngine {
         )
           throw new Error("Settle background writers, shells and queued messages before rewinding");
       },
-      withSessionGate: async (sessionId, work) => {
+      withSessionGate: async (sessionId, work, authorityGeneration) => {
         await this.ready;
+        await this.store.assertAuthority(sessionId, authorityGeneration);
         if (this.rewinding.has(sessionId))
           throw new Error("Another conversation change is in progress");
         this.rewinding.add(sessionId);
         try {
           await this.flush(sessionId);
+          await this.store.assertAuthority(sessionId, authorityGeneration);
           return await work();
         } finally {
           this.rewinding.delete(sessionId);
           this.onUnblocked?.();
         }
       },
-      rescue: async (operationId, sessionId, expectedRevision) => {
+      rescue: async (operationId, sessionId, expectedRevision, authorityGeneration) => {
         await this.ready;
+        await this.store.assertAuthority(sessionId, authorityGeneration);
         await this.flush(sessionId);
+        await this.store.assertAuthority(sessionId, authorityGeneration);
         const value = await this.store.session(sessionId);
         if (value.revision !== expectedRevision)
           throw new Error("The conversation changed before transcript rescue");
@@ -753,15 +779,32 @@ export class HostEngine {
             throw new Error("Transcript rescue ownership mismatch");
           if (saved.value.revision !== expectedRevision)
             throw new Error("Transcript rescue revision does not match the operation");
+          if (saved.value.authorityGeneration !== authorityGeneration)
+            throw new Error("Transcript rescue authority does not match the operation");
           return operationId;
         }
+        await this.store.assertAuthority(sessionId, authorityGeneration);
         await durableWrite(path(operationId), JSON.stringify({ operationId, value }));
         return operationId;
       },
-      restore: async (request) => {
+      restore: async (input) => {
+        const request = Object.freeze({ ...input });
         await this.ready;
         await initialize();
         const signature = createHash("sha256").update(JSON.stringify(request)).digest("hex");
+        const recorded = await this.store.db.scope(() =>
+          this.store.db
+            .prepare(
+              "SELECT session_id, signature, revision FROM managed_rewind_receipts WHERE operation_id=?",
+            )
+            .get(request.operationId),
+        );
+        if (recorded) {
+          if (recorded.session_id !== request.sessionId || recorded.signature !== signature)
+            throw new Error("Rewind operation ID was already used with a different payload");
+          return { revision: Number(recorded.revision) };
+        }
+        await this.store.assertAuthority(request.sessionId, request.authorityGeneration);
         const rescued =
           request.direction === "undo"
             ? (JSON.parse(await readFile(path(request.transcriptRescueId ?? ""), "utf8")) as {
@@ -775,6 +818,7 @@ export class HostEngine {
             rescued.value.session.id !== request.sessionId)
         )
           throw new Error("Transcript rescue ownership mismatch");
+        let committedValue: HostSession | undefined;
         const result = await this.store.transaction(async () => {
           const existing = await this.store.db
             .prepare(
@@ -786,6 +830,7 @@ export class HostEngine {
               throw new Error("Rewind operation ID was already used with a different payload");
             return { revision: Number(existing.revision) };
           }
+          await this.store.assertAuthority(request.sessionId, request.authorityGeneration);
           const latest = await this.store.session(request.sessionId);
           if (
             latest.revision !== request.expectedRevision ||
@@ -823,13 +868,20 @@ export class HostEngine {
           if (session === latest.session)
             throw new Error("This conversation cannot be rewound at the selected message");
           const saved = await this.save(
-            { ...latest, session, status: "idle", runId: undefined },
+            {
+              ...latest,
+              authorityGeneration: request.authorityGeneration,
+              session,
+              status: "idle",
+              runId: undefined,
+            },
             {
               type: "conversation.gitRewound",
               operationId: request.operationId,
               direction: request.direction,
             },
           );
+          committedValue = saved;
           await this.store.db
             .prepare(
               "INSERT INTO managed_rewind_receipts (operation_id, session_id, signature, revision) VALUES (?, ?, ?, ?)",
@@ -837,9 +889,12 @@ export class HostEngine {
             .run(request.operationId, request.sessionId, signature, saved.revision);
           return { revision: saved.revision };
         });
-        forgetRuntimeHint(request.sessionId);
-        const live = this.live.get(request.sessionId);
-        if (live) live.value = await this.store.session(request.sessionId);
+        if (committedValue) {
+          forgetRuntimeHint(request.sessionId);
+          const live = this.live.get(request.sessionId);
+          if (live && live.value.authorityGeneration === request.authorityGeneration)
+            live.value = committedValue;
+        }
         return result;
       },
       receipt,
@@ -997,6 +1052,53 @@ export class HostEngine {
     return typeof this.providers[harness]?.stopItem === "function";
   }
 
+  /** Best-effort live control has no fabricated durable receipt when storage is blocked. */
+  private async emergencyControl(
+    command: Extract<HostCommand, { type: "cancel" | "stopItem" }>,
+  ): Promise<never> {
+    await this.store.db.checkAuthorization();
+    await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
+    const value =
+      this.live.get(command.sessionId)?.value ?? (await this.store.session(command.sessionId));
+    const active = this.running.get(command.sessionId);
+    if (
+      !active ||
+      active.runId !== command.runId ||
+      value.runId !== command.runId ||
+      value.status !== "running"
+    )
+      throw new Error("Emergency control requires a verified current Host-owned run.");
+    const provider = this.provider(value.session.harness);
+    if (command.type === "cancel") {
+      active.cancelled = true;
+      await provider.cancel(command.sessionId);
+    } else {
+      const block = value.session.blocks.find((entry) => entry.id === command.blockId);
+      if (
+        !provider.stopItem ||
+        active.ending ||
+        active.cancelled ||
+        !block?.agentRun ||
+        block.agentRun.endedAt !== undefined ||
+        block.tool?.callId !== command.callId ||
+        active.priorBlockIds.has(block.id) ||
+        value.session.blocks.filter((entry) => entry.tool?.callId === command.callId).length !==
+          1 ||
+        !["running", "in_progress", "pending"].includes(block.tool?.status ?? "") ||
+        (block.approval && !block.approval.decided)
+      )
+        throw new Error("This subagent changed or is no longer running.");
+      await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
+      await provider.stopItem(command.sessionId, command.callId);
+    }
+    throw Object.assign(
+      new Error(
+        "Live Stop control was sent, but its durable receipt could not be recorded. Inspect the current run before retrying.",
+      ),
+      { code: "HOST_CONTROL_RECEIPT_UNCONFIRMED", controlApplied: true, runId: command.runId },
+    );
+  }
+
   async previewContextual(raw: Record<string, unknown>, source?: HostSession) {
     await this.ready;
     const input = contextualInput(raw);
@@ -1039,6 +1141,7 @@ export class HostEngine {
     const preserveSourceWorkspace =
       !contextualWorkspace ||
       (currentWorkspace?.path === preview.cwd && !source.session.workspaceId);
+    await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
     return await this.store.transaction(async () => {
       const created = await this.command({
         type: "create",
@@ -1118,17 +1221,12 @@ export class HostEngine {
     blockChanges?: BlockChanges,
     journal = false,
   ): Promise<HostSession> {
-    return await this.store.transaction(
-      async () =>
-        await this.store.save(
-          { ...value, revision: value.revision + 1, updatedAt: Date.now() },
-          event,
-          {
-            deferred,
-            blockChanges,
-            journal,
-          },
-        ),
+    // HostStore owns the durability boundary. A second outer transaction would
+    // prevent a storage adapter's legitimate hard-save fallback from selecting FULL.
+    return this.store.save(
+      { ...value, revision: value.revision + 1, updatedAt: Date.now() },
+      event,
+      { deferred, blockChanges, journal },
     );
   }
 
@@ -1204,6 +1302,7 @@ export class HostEngine {
         if (this.rewinding.has(id)) return undefined;
         if (snapshot.status === "running" || this.live.has(id)) return undefined;
         const current = await this.store.session(id);
+        if (current.authorityGeneration !== undefined) return undefined;
         await this.managedWorkspace(current);
         if (!current.desktop || current.status === "running") return undefined;
         if (snapshot.updatedAt <= current.desktop.updatedAt) return undefined;
@@ -1359,14 +1458,19 @@ export class HostEngine {
     );
   }
 
-  async updateSession(id: string, patch: Parameters<HostStore["updateSession"]>[1]) {
+  async updateSession(
+    id: string,
+    patch: Parameters<HostStore["updateSession"]>[1],
+    authorityGeneration?: number,
+  ) {
     await this.ready;
     return this.store.db.scope(() =>
       this.operations.run(id, async () => {
+        await this.store.assertAuthority(id, authorityGeneration);
         if (this.rewinding.has(id)) throw new Error("A conversation change is in progress");
         await this.managedWorkspace(await this.store.session(id));
         await this.flush(id);
-        const summary = await this.store.updateSession(id, patch);
+        const summary = await this.store.updateSession(id, patch, authorityGeneration);
         const live = this.live.get(id);
         if (live) live.value = await this.store.session(id);
         return summary;
@@ -1403,6 +1507,7 @@ export class HostEngine {
     try {
       await this.flush(id);
     } catch (error) {
+      if (error instanceof HostAuthorityFenceError) return;
       const active = this.running.get(id);
       if (active) active.persistenceFailed = true;
       console.error(
@@ -1413,7 +1518,12 @@ export class HostEngine {
     }
   }
 
-  private retrySettlement(id: string, runId: string, provider: HostProvider): void {
+  private retrySettlement(
+    id: string,
+    runId: string,
+    provider: HostProvider,
+    authorityGeneration?: number,
+  ): void {
     if (
       this.closing ||
       this.retryTimers.has(id) ||
@@ -1428,6 +1538,7 @@ export class HostEngine {
         let retry = false;
         const work = (async () => {
           try {
+            await this.store.assertAuthority(id, authorityGeneration);
             await provider.stop(id);
             const before = await this.store.session(id);
             if (this.running.get(id)?.runId !== runId || before.runId !== runId) return;
@@ -1479,13 +1590,13 @@ export class HostEngine {
               "Retrying session persistence:",
               error instanceof Error ? error.message : "unknown error",
             );
-            retry = !this.store.db.restartRequired;
+            retry = !this.store.db.restartRequired && !(error instanceof HostAuthorityFenceError);
           }
         })();
         this.recoveryWork.set(id, work);
         void work.finally(() => {
           if (this.recoveryWork.get(id) === work) this.recoveryWork.delete(id);
-          if (retry) this.retrySettlement(id, runId, provider);
+          if (retry) this.retrySettlement(id, runId, provider, authorityGeneration);
         });
       }, 1_000),
     );
@@ -1524,6 +1635,14 @@ export class HostEngine {
 
   async command(raw: unknown): Promise<CommandReceipt> {
     await this.ready;
+    // Admission precedes workspace preparation and all provider side effects.
+    // Stop requests keep their existing control path; SQL still enforces its own gate.
+    const stopping =
+      raw &&
+      typeof raw === "object" &&
+      "type" in raw &&
+      (raw.type === "cancel" || raw.type === "stopItem");
+    if (!stopping) this.store.db.assertWriteAdmission();
     return this.store.db.scope(() =>
       this.operations.run(
         typeof raw === "object" && raw !== null && "sessionId" in raw
@@ -1562,6 +1681,15 @@ export class HostEngine {
           }
           if (this.closing) throw new Error("Host is stopping");
           const command = parseCommand(raw);
+          if (command.type !== "create")
+            await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
+          if (
+            (command.type === "cancel" || command.type === "stopItem") &&
+            this.store.db.persistenceHealth().state !== "ready"
+          )
+            return this.emergencyControl(command);
+          if (command.type !== "cancel" && command.type !== "stopItem")
+            this.store.db.assertWriteAdmission();
           if (command.type === "rewind")
             throw new Error("Rewind commands must use the asynchronous rewind handler");
           const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
@@ -1608,6 +1736,7 @@ export class HostEngine {
                 throw new Error("Requested session identity does not own this workspace");
               const cwd = managed?.path ?? resolveHostWorktree(project.cwd, command.worktreeCwd);
               const sessionId = managed?.sessionId ?? command.sessionId ?? randomUUID();
+              await this.store.assertAuthority(sessionId, command.authorityGeneration);
               if (await this.store.sessionAuthority(sessionId))
                 throw new Error(
                   "This managed workspace already has its session; resume it instead",
@@ -1785,6 +1914,7 @@ export class HostEngine {
                     command.commandId,
                     saved.session.cwd,
                     command.line,
+                    saved.authorityGeneration,
                   );
               } else if (command.type === "send" || command.type === "compact") {
                 // Legacy storage may contain a mixed provider/model identity.
@@ -2095,9 +2225,13 @@ export class HostEngine {
                   effect = () => {
                     const active = this.running.get(command.sessionId);
                     if (active) active.cancelled = true;
-                    void provider
-                      .cancel(command.sessionId)
-                      .catch(() => provider.stop(command.sessionId));
+                    void provider.cancel(command.sessionId).catch(async () => {
+                      await this.store.assertAuthority(
+                        command.sessionId,
+                        command.authorityGeneration,
+                      );
+                      await provider.stop(command.sessionId);
+                    });
                   };
                 } else if (command.type === "stopItem") {
                   const active = this.running.get(command.sessionId);
@@ -2144,6 +2278,10 @@ export class HostEngine {
                           !["running", "in_progress", "pending"].includes(target.tool.status ?? "")
                         )
                           return;
+                        await this.store.assertAuthority(
+                          command.sessionId,
+                          command.authorityGeneration,
+                        );
                         await provider.stopItem!(command.sessionId, command.callId);
                       })
                       .catch((reason) => {
@@ -2221,6 +2359,10 @@ export class HostEngine {
                           command.runId,
                           command.commandId,
                           "uncertain",
+                        );
+                        await this.store.assertAuthority(
+                          command.sessionId,
+                          command.authorityGeneration,
                         );
                         await provider.steer!({
                           sessionId: command.sessionId,
@@ -2320,6 +2462,9 @@ export class HostEngine {
               commandId: command.commandId,
               sessionId: saved.session.id,
               revision: saved.revision,
+              ...(saved.authorityGeneration === undefined
+                ? {}
+                : { authorityGeneration: saved.authorityGeneration }),
               ...((command.type === "send" || command.type === "compact") && saved.runId
                 ? { runId: saved.runId }
                 : {}),
@@ -2327,10 +2472,18 @@ export class HostEngine {
             await this.store.recordReceipt(signature, result);
             return { receipt: result, saved };
           });
+          if (command.type === "cancel") {
+            const active = this.running.get(saved.session.id);
+            if (active?.runId === command.runId) active.cancelled = true;
+          }
           const live = this.live.get(saved.session.id);
           if (live) live.value = saved;
           // A receipt means durable host acceptance, not provider completion.
-          if (effect) this.store.afterCommit(() => effect!(saved));
+          if (effect)
+            this.store.afterCommit(async () => {
+              await this.store.assertAuthority(saved.session.id, saved.authorityGeneration);
+              return effect!(saved);
+            });
           return receipt;
         },
       ),
@@ -2340,8 +2493,11 @@ export class HostEngine {
   /** /clear uses the existing send transport but never dispatches a model turn. */
   async clearConversation(raw: unknown): Promise<CommandReceipt> {
     await this.ready;
+    this.store.db.assertWriteAdmission();
     if (this.closing) throw new Error("Host is stopping");
     const command = parseCommand(raw);
+    if (command.type !== "create")
+      await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
     if (
       command.type !== "send" ||
       !isClearSessionCommand(command.text) ||
@@ -2366,6 +2522,7 @@ export class HostEngine {
         throw new Error(
           "Stop the current turn and resolve pending messages before clearing the conversation",
         );
+      await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
       await this.provider(initial.session.harness).stop(command.sessionId);
       if (
         initial.session.pendingSwitch &&
@@ -2386,6 +2543,9 @@ export class HostEngine {
           commandId: command.commandId,
           sessionId: command.sessionId,
           revision: saved.revision,
+          ...(saved.authorityGeneration === undefined
+            ? {}
+            : { authorityGeneration: saved.authorityGeneration }),
         };
         await this.store.recordReceipt(signature, receipt);
         return receipt;
@@ -2399,8 +2559,11 @@ export class HostEngine {
   /** Stop the provider binding before atomically committing a rewind. */
   async rewind(raw: unknown): Promise<CommandReceipt> {
     await this.ready;
+    this.store.db.assertWriteAdmission();
     if (this.closing) throw new Error("Host is stopping");
     const command = parseCommand(raw);
+    if (command.type !== "create")
+      await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
     if (command.type !== "rewind") throw new Error("Invalid rewind command");
     const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
     const previous = await this.store.receipt(command.commandId, signature);
@@ -2438,6 +2601,7 @@ export class HostEngine {
         !!workspace,
       );
       let nativeProviderSessionId: string | undefined;
+      await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
       // The removed turns may have carried the runtime hint; resend it next turn.
       forgetRuntimeHint(command.sessionId);
       if (strategy.preserveProviderBinding && provider.rewind) {
@@ -2492,6 +2656,9 @@ export class HostEngine {
           commandId: command.commandId,
           sessionId: value.session.id,
           revision: value.revision,
+          ...(value.authorityGeneration === undefined
+            ? {}
+            : { authorityGeneration: value.authorityGeneration }),
         };
         await this.store.recordReceipt(signature, receipt);
         return { receipt, saved: value };
@@ -2506,6 +2673,7 @@ export class HostEngine {
       // If the provider mutated successfully but the durable transcript commit
       // failed, invalidate the now-stale native binding and replay the intact
       // visible transcript on the next send. Never archive/remove messages here.
+      if (error instanceof HostAuthorityFenceError) throw error;
       if (nativeRewindApplied && nativeProvider) {
         try {
           await nativeProvider.stop(command.sessionId);
@@ -2551,6 +2719,9 @@ export class HostEngine {
   ): Promise<void> {
     return this.store.db.scope(() =>
       this.operations.run(id, async () => {
+        const active = this.running.get(id);
+        if (!active || active.runId !== runId) return;
+        await this.store.assertAuthority(id, active.authorityGeneration);
         await this.flush(id);
         const current = await this.store.session(id);
         if (current.runId !== runId) return;
@@ -2580,12 +2751,20 @@ export class HostEngine {
     );
   }
 
-  private runShell(id: string, blockId: string, cwd: string, command: string): void {
+  private runShell(
+    id: string,
+    blockId: string,
+    cwd: string,
+    command: string,
+    authorityGeneration?: number,
+  ): void {
     void (async (): Promise<ShellResult> => {
       let release: (() => Promise<void>) | undefined;
       try {
+        await this.store.assertAuthority(id, authorityGeneration);
         const value = await this.store.session(id);
         release = await this.executionActivity(value, "shell");
+        await this.store.assertAuthority(id, authorityGeneration);
         // Resolve once more at admission; never execute a renderer-supplied cwd.
         return await this.shell(value.session.worktreeCwd ?? value.session.cwd ?? cwd, command);
       } catch (error) {
@@ -2603,6 +2782,7 @@ export class HostEngine {
         return this.store.db.scope(() =>
           this.operations.run(id, async () => {
             if (this.closing) return;
+            await this.store.assertAuthority(id, authorityGeneration);
             await this.flush(id);
             const current = await this.store.session(id);
             const saved = await this.save(
@@ -2638,6 +2818,7 @@ export class HostEngine {
         const release = await this.executionActivity(value, "provider");
         try {
           const workspace = await this.managedWorkspace(value);
+          await this.store.assertAuthority(id, value.authorityGeneration);
           return await provider.generateTitle!({
             sessionId: id,
             cwd: workspace?.path ?? cwd,
@@ -2652,6 +2833,7 @@ export class HostEngine {
           return this.store.db.scope(() =>
             this.operations.run(id, async () => {
               if (this.closing) return;
+              await this.store.assertAuthority(id, value.authorityGeneration);
               if (this.rewinding.has(id)) return;
               await this.flush(id);
               const current = await this.store.session(id);
@@ -2676,11 +2858,15 @@ export class HostEngine {
     }
     const temporary = value.autoWorktreeBranch;
     if (temporary && !value.session.workspaceId && provider.generateBranchName) {
-      void provider
-        .generateBranchName(cwd, message)
+      void Promise.resolve()
+        .then(async () => {
+          await this.store.assertAuthority(id, value.authorityGeneration);
+          return provider.generateBranchName!(cwd, message);
+        })
         .then(async (fragment) => {
           const branch = fragment ? namedWorktreeBranch(fragment) : null;
           if (this.closing || !branch) return;
+          await this.store.assertAuthority(id, value.authorityGeneration);
           // A title/branch request may finish after the conversation was deleted.
           const currentBeforeRename = await this.store.session(id);
           if (this.closing || currentBeforeRename.autoWorktreeBranch !== temporary) return;
@@ -2700,6 +2886,7 @@ export class HostEngine {
           await this.store.db.scope(() =>
             this.operations.run(id, async () => {
               if (this.closing) return;
+              await this.store.assertAuthority(id, value.authorityGeneration);
               await this.flush(id);
               const current = await this.store.session(id);
               if (current.autoWorktreeBranch !== temporary) return;
@@ -2754,12 +2941,14 @@ export class HostEngine {
     promptPrepared = false,
     prepareSendPolicy?: (input: SendTurnInput) => SendTurnInput,
   ): void {
+    this.store.db.assertWriteAdmission();
     let session = value.session;
     const { runId } = value;
     const provider = this.provider(session.harness);
     let ready!: () => void;
     let replayConsumed = false;
     const acceptReplay = async () => {
+      await this.store.assertAuthority(session.id, value.authorityGeneration);
       ready();
       if (!rewindReplay || replayConsumed) return;
       replayConsumed = true;
@@ -2777,6 +2966,7 @@ export class HostEngine {
       cancelled: false,
       ending: false,
       persistenceFailed: false,
+      authorityGeneration: value.authorityGeneration,
       resumeAtReset,
       managedTurns: [] as ManagedTurnBoundary[],
       filesTurn: false,
@@ -2790,6 +2980,7 @@ export class HostEngine {
       .then(async () => {
         let error: string | undefined;
         try {
+          await this.store.assertAuthority(session.id, active.authorityGeneration);
           if (!this.closing && !active.cancelled) {
             active.releaseActivity = await this.executionActivity(value, "provider");
             const workspace = await this.managedWorkspace(value);
@@ -2851,6 +3042,7 @@ export class HostEngine {
             if (prompt === null) {
               if (active.managedTurns[0])
                 await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
+              await this.store.assertAuthority(session.id, active.authorityGeneration);
               await provider.compact!(input);
               forgetRuntimeHint(session.id);
             } else {
@@ -2914,6 +3106,7 @@ export class HostEngine {
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               if (active.managedTurns[0])
                 await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
+              await this.store.assertAuthority(session.id, active.authorityGeneration);
               await provider.send(prepareSendPolicy?.(providerInput) ?? providerInput);
               markHint();
               active.ending = true;
@@ -2923,6 +3116,7 @@ export class HostEngine {
         } catch (reason) {
           error = reason instanceof Error ? reason.message : String(reason);
         }
+        await this.store.assertAuthority(session.id, active.authorityGeneration);
         active.ending = true;
         ready();
         // Exact after-capture needs process retirement. Lightweight worktrees retain
@@ -3036,13 +3230,14 @@ export class HostEngine {
         );
       })
       .catch((error) => {
+        if (error instanceof HostAuthorityFenceError) return;
         clearTimeout(this.live.get(session.id)?.timer);
         console.error(
           "Session persistence failed; stopping its provider:",
           error instanceof Error ? error.message : "unknown error",
         );
         void provider.stop(session.id);
-        this.retrySettlement(session.id, runId!, provider);
+        this.retrySettlement(session.id, runId!, provider, active.authorityGeneration);
       });
   }
 
@@ -3050,6 +3245,7 @@ export class HostEngine {
     void this.store.db
       .scope(() => this.operations.enqueue(id, work))
       .catch((error) => {
+        if (error instanceof HostAuthorityFenceError) return;
         const active = this.running.get(id);
         if (active) active.persistenceFailed = true;
         console.error("Session event persistence failed:", error);
@@ -3065,6 +3261,9 @@ export class HostEngine {
     before?: () => Promise<void>,
   ): void {
     this.queueEvent(id, async () => {
+      const live = this.live.get(id);
+      if (!live || live.value.runId !== runId) return;
+      await this.store.assertAuthority(id, live.value.authorityGeneration);
       if (before) await before();
       await this.applyEvent(id, runId, event);
     });
@@ -3073,6 +3272,7 @@ export class HostEngine {
   private async applyEvent(id: string, runId: string, event: HarnessEvent): Promise<void> {
     const live = this.live.get(id);
     if (!live || live.value.runId !== runId || live.value.status !== "running") return;
+    await this.store.assertAuthority(id, live.value.authorityGeneration);
     if (
       event.type === "tool.started" &&
       event.fileChanges === undefined &&

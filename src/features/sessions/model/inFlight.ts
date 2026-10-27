@@ -1,4 +1,4 @@
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
 import { leafIds, newTab, type WorkspaceTab } from "../../workspace/model/layout";
 import type { DockSide, ProjectTerminalDock } from "../../projects/model/projectTerminal";
 import { isRemoteProjectPath } from "../../projects/model/recents";

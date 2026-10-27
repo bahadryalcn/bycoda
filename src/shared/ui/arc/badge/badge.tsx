@@ -18,7 +18,7 @@ import {
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./badge.module.css";
 
-export type BadgeTone = "neutral" | "success" | "info" | "warning" | "danger";
+export type BadgeTone = "neutral" | "accent" | "success" | "info" | "warning" | "danger";
 export type BadgeSize = "sm" | "md";
 
 /** `label` is the bordered default; `dot` is a status dot with optional text; `count` is a compact numeric counter. */
@@ -27,6 +27,7 @@ export type BadgeVariant = "label" | "dot" | "count";
 export type BadgeAppearance = "outline" | "subtle";
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
+  /** Use accent for workspace emphasis; semantic info/status tones stay independent. */
   tone?: BadgeTone;
   size?: BadgeSize;
   icon?: ReactNode;

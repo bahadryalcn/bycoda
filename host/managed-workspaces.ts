@@ -607,6 +607,7 @@ export function createManagedWorkspaceRegistry(
       const current = await required(request.workspaceId);
       revision(current, request.expectedRevision);
       await settled(current.id);
+      await store.db.checkAuthorization();
       if (
         active ||
         (current.state === "active" && !options.isActive) ||
@@ -642,6 +643,7 @@ export function createManagedWorkspaceRegistry(
     const current = await required(request.workspaceId);
     const project = await store.project(current.projectId);
     return withHostGitMutation(project.cwd, async () => {
+      await store.db.checkAuthorization();
       const scope = `workspace.${action}:${request.workspaceId}`;
       const previous = await store.workspaceReceipt<ManagedWorkspace>(
         scope,
@@ -656,6 +658,9 @@ export function createManagedWorkspaceRegistry(
       const next = await change(fresh);
       return store.transaction(async () => {
         await settled(fresh.id);
+        await store.db.checkAuthorization();
+        if (options.authorizeOwner && !(await options.authorizeOwner(owner)))
+          throw new Error("Workspace mutation requires authenticated owner authorization");
         await store.updateManagedWorkspace(next, fresh.revision, {
           retarget: action === "retarget",
         });

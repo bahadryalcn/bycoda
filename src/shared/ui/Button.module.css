@@ -440,3 +440,32 @@
   ):is(:hover, :active, [data-button-selected]) {
   border-color: transparent;
 }
+
+/* ButtonGroup owns one continuous surface; Button still owns each action's
+   typography, dimensions, disabled/loading state and keyboard focus. */
+:global([data-button-group="joined"])
+  > .control[data-button-tone][data-button-hierarchy][data-button-size]:is(
+    :hover,
+    :active,
+    [aria-disabled],
+    [aria-busy],
+    *
+  ) {
+  align-self: stretch;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+:global([data-button-group="joined"]) > .control:first-of-type {
+  border-start-start-radius: var(--ui-control-radius);
+  border-end-start-radius: var(--ui-control-radius);
+}
+:global([data-button-group="joined"]) > .control:last-of-type {
+  border-start-end-radius: var(--ui-control-radius);
+  border-end-end-radius: var(--ui-control-radius);
+}
+:global([data-button-group="joined"]) > .control:focus-visible {
+  outline-offset: -2px;
+}

@@ -2,7 +2,11 @@ import { createStoredSetting } from "../../../shared/lib/storedSetting";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import type { VoiceRuntimeConfig } from "./localVoiceClient";
 
+export type VoiceVisual = "mark" | "wave" | "dots" | "orb";
+
 export type VoiceSettings = {
+  visual: VoiceVisual;
+  compact: boolean;
   enabled: boolean;
   natural: boolean;
   python: string;
@@ -10,6 +14,8 @@ export type VoiceSettings = {
   ttsPath: string;
 };
 const defaults: VoiceSettings = {
+  visual: "mark",
+  compact: false,
   enabled: false,
   natural: true,
   python: "",
@@ -24,6 +30,10 @@ const preference = createStoredSetting<VoiceSettings>({
   parse: (raw) => {
     const value = JSON.parse(raw);
     return {
+      visual: ["mark", "wave", "dots", "orb"].includes(value?.visual)
+        ? (value.visual as VoiceVisual)
+        : "mark",
+      compact: value?.compact === true,
       enabled: value?.enabled === true,
       natural: value?.natural !== false,
       python: typeof value?.python === "string" ? value.python : "",

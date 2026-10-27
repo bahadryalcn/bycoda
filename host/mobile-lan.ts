@@ -11,6 +11,8 @@ import {
 } from "../src/integrations/mobile-lan";
 import type { MobileAccessStatus } from "../src/integrations/mobile-access";
 import { createLanIdentity, openLanRequest } from "./mobile-lan-crypto";
+import { createMobileWssGateway } from "./security/mobile-wss";
+import type { MobileTlsAuthority } from "./security/mobile-tls";
 
 export function localMobileAddresses(): string[] {
   return [
@@ -163,11 +165,24 @@ export function createLanGateway(
   );
 }
 
-type SavedAccess = { key: string; enabled: boolean; address?: string; port?: number };
+type SavedAccess = {
+  key: string;
+  enabled: boolean;
+  address?: string;
+  port?: number;
+  tlsPort?: number;
+};
+export type MobileLanTlsOptions = {
+  tlsAuthority: MobileTlsAuthority;
+  makeWssGateway?: typeof createMobileWssGateway;
+};
 export class MobileLanAccess {
   private saved?: SavedAccess;
   private identity?: ReturnType<typeof createLanIdentity>;
   private gateway?: ReturnType<typeof createLanGateway>;
+  private wssGateway?: ReturnType<typeof createMobileWssGateway>;
+  private tlsBootstrap?: MobileAccessStatus["tls"];
+  private renewal?: ReturnType<typeof setInterval>;
   private loading?: Promise<void>;
   private operation?: Promise<MobileAccessStatus>;
   private disposed = false;
@@ -177,6 +192,7 @@ export class MobileLanAccess {
     private readonly getPort: () => number,
     private readonly addresses = localMobileAddresses,
     private readonly makeGateway = createLanGateway,
+    private readonly tlsOptions?: MobileLanTlsOptions,
   ) {}
 
   private load(): Promise<void> {
@@ -194,7 +210,9 @@ export class MobileLanAccess {
         typeof saved.key !== "string" ||
         (saved.address !== undefined && !isLanAddress(saved.address)) ||
         (saved.port !== undefined &&
-          (!Number.isInteger(saved.port) || saved.port < 1 || saved.port > 65535))
+          (!Number.isInteger(saved.port) || saved.port < 1 || saved.port > 65535)) ||
+        (saved.tlsPort !== undefined &&
+          (!Number.isInteger(saved.tlsPort) || saved.tlsPort < 1 || saved.tlsPort > 65535))
       )
         throw new Error("Invalid saved LAN access");
       this.identity = createLanIdentity(saved.key);
@@ -213,6 +231,11 @@ export class MobileLanAccess {
     const addresses = this.addresses();
     const active = this.gateway?.address();
     const ready = active && typeof active !== "string" && addresses.includes(active.address);
+    const tlsActive = this.wssGateway?.address();
+    const tls =
+      ready && tlsActive && typeof tlsActive !== "string" && tlsActive.address === active.address
+        ? this.tlsBootstrap
+        : undefined;
     return {
       mode: "lan",
       state: ready ? "ready" : addresses.length ? "setup-required" : "unavailable",
@@ -221,6 +244,7 @@ export class MobileLanAccess {
       ...(ready
         ? { endpoint: `http://${active.address}:${active.port}`, lanKey: this.identity!.publicKey }
         : {}),
+      ...(tls ? { tls } : {}),
     };
   }
   async start(): Promise<void> {
@@ -229,17 +253,33 @@ export class MobileLanAccess {
   }
   enable(address?: unknown): Promise<MobileAccessStatus> {
     if (this.operation) return this.operation;
-    const operation = (async () => {
+    const operation = (async (): Promise<MobileAccessStatus> => {
       await this.load();
       if (this.disposed) throw new Error("Host is closing");
       const addresses = this.addresses();
       const selected = address === undefined ? addresses[0] : address;
       if (typeof selected !== "string" || !isLanAddress(selected) || !addresses.includes(selected))
         return this.status();
-      if (this.gateway?.address() && this.saved?.address === selected) return this.status();
+      if (
+        this.gateway?.address() &&
+        this.saved?.address === selected &&
+        (!this.tlsOptions || this.wssGateway?.address())
+      )
+        return this.status();
       this.identity ??= createLanIdentity();
+      let material;
+      try {
+        if (this.tlsOptions) {
+          if (this.tlsOptions.tlsAuthority.environmentId !== this.environmentId)
+            throw new Error("TLS Host identity changed");
+          material = await this.tlsOptions.tlsAuthority.issue([selected]);
+        }
+      } catch {
+        return { mode: "lan", state: "unavailable", addresses };
+      }
       await this.closeGateway();
       const gateway = this.makeGateway(this.identity, this.environmentId, this.getPort);
+      let wss: ReturnType<typeof createMobileWssGateway> | undefined;
       gateway.maxConnections = 32;
       try {
         await new Promise<void>((resolve, reject) => {
@@ -252,14 +292,74 @@ export class MobileLanAccess {
         if (this.disposed) throw new Error("Host is closing");
         const active = gateway.address();
         if (!active || typeof active === "string") throw new Error("LAN access unavailable");
+        let tls: MobileAccessStatus["tls"];
+        let tlsPort: number | undefined;
+        if (material && this.tlsOptions) {
+          wss = (this.tlsOptions.makeWssGateway ?? createMobileWssGateway)({
+            address: selected,
+            getPort: this.getPort,
+            material,
+          });
+          const listen = (port: number) =>
+            new Promise<void>((resolve, reject) => {
+              wss!.once("error", reject);
+              wss!.listen(port, selected, () => {
+                wss!.off("error", reject);
+                resolve();
+              });
+            });
+          try {
+            await listen(this.saved?.tlsPort ?? 0);
+          } catch (error) {
+            if (!this.saved?.tlsPort || (error as NodeJS.ErrnoException).code !== "EADDRINUSE")
+              throw error;
+            await listen(0);
+          }
+          const address = wss.address();
+          if (!address || typeof address === "string")
+            throw new Error("Mobile TLS access unavailable");
+          tlsPort = address.port;
+          tls = await this.tlsOptions.tlsAuthority.bootstrap(selected, tlsPort);
+        }
         await this.persist({
           key: this.identity.encoded,
           enabled: true,
           address: selected,
           port: active.port,
+          ...(tlsPort ? { tlsPort } : {}),
         });
         if (this.disposed) throw new Error("Host is closing");
         this.gateway = gateway;
+        this.wssGateway = wss;
+        this.tlsBootstrap = tls;
+        if (wss && this.tlsOptions) {
+          const secure = wss;
+          const authority = this.tlsOptions.tlsAuthority;
+          this.renewal = setInterval(() => {
+            void authority
+              .issue([selected])
+              .then((renewed) => {
+                if (this.wssGateway === secure)
+                  secure.setSecureContext({
+                    key: renewed.privateKeyPem,
+                    cert: renewed.certificatePem + renewed.caCertificatePem,
+                  });
+              })
+              .catch(() => {
+                if (this.wssGateway !== secure) return;
+                this.wssGateway = undefined;
+                this.tlsBootstrap = undefined;
+                clearInterval(this.renewal);
+                this.renewal = undefined;
+                secure.closeAllConnections();
+                secure.close();
+              });
+          }, 3_600_000);
+          this.renewal.unref();
+          wss.on("error", () => {
+            if (this.wssGateway === secure) void this.closeGateway();
+          });
+        }
         gateway.on("error", () => {
           if (this.gateway === gateway) void this.closeGateway();
         });
@@ -267,6 +367,8 @@ export class MobileLanAccess {
       } catch {
         gateway.closeAllConnections();
         gateway.close();
+        wss?.closeAllConnections();
+        wss?.close();
         return { mode: "lan", state: "unavailable", addresses } as MobileAccessStatus;
       }
     })();
@@ -287,10 +389,20 @@ export class MobileLanAccess {
   }
   private async closeGateway(): Promise<void> {
     const gateway = this.gateway;
+    const wss = this.wssGateway;
     this.gateway = undefined;
-    if (!gateway) return;
-    gateway.closeAllConnections();
-    await new Promise<void>((resolve) => gateway.close(() => resolve()));
+    this.wssGateway = undefined;
+    this.tlsBootstrap = undefined;
+    clearInterval(this.renewal);
+    this.renewal = undefined;
+    await Promise.all(
+      [gateway, wss]
+        .filter((server) => server !== undefined)
+        .map(async (server) => {
+          server.closeAllConnections();
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+        }),
+    );
   }
   async close(): Promise<void> {
     this.disposed = true;

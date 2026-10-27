@@ -1,0 +1,142 @@
+name: Desktop package
+on:
+  workflow_call:
+    inputs:
+      release-id:
+        type: string
+        default: ""
+      expected-sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      channel:
+        type: string
+        default: stable
+      candidate-artifact:
+        type: string
+        default: ""
+      tooling-sha:
+        type: string
+        default: ""
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+permissions:
+  contents: read
+jobs:
+  package:
+    # Signed builds only follow an owner-created stable tag. Nonstable manual
+    # candidates never receive signing keys or stable updater endpoints.
+    if: >-
+      (inputs.channel == 'stable' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (inputs.channel != 'stable' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            platform: windows-x64
+            args: --bundles nsis --config src-tauri/tauri.fork.conf.json
+          - runner: macos-latest
+            platform: macos-arm64
+            args: --target aarch64-apple-darwin --bundles app,dmg --config src-tauri/tauri.fork.macos.conf.json
+    runs-on: ${{ matrix.runner }}
+    env:
+      BYCODA_BUILD_MANIFEST: ${{ github.workspace }}/build/build-info.json
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected-sha }}
+          persist-credentials: false
+      - name: Load trusted release tooling separately from candidate sources
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tooling-sha || github.workflow_sha }}
+          path: temp/release-tools
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.candidate-artifact || format('release-candidate-{0}', inputs.expected-sha) }}
+          path: temp/test-results/release-candidate
+      - uses: ./temp/release-tools/.github/actions/setup-deps
+        with:
+          node-version: "22"
+      - name: Prepare frozen candidate identity and metadata-only version overlay
+        env:
+          EXPECTED_SHA: ${{ inputs.expected-sha }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          EXPECTED_CHANNEL: ${{ inputs.channel }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          import {validateCandidate} from './temp/release-tools/scripts/release/release-candidate.mjs';
+          const candidate=validateCandidate(JSON.parse(readFileSync('temp/test-results/release-candidate/candidate.json','utf8')));
+          assert.equal(candidate.sha,process.env.EXPECTED_SHA);
+          assert.equal(candidate.version,process.env.EXPECTED_VERSION);
+          assert.equal(candidate.channel,process.env.EXPECTED_CHANNEL);
+          NODE
+          node temp/release-tools/scripts/release/prepare-candidate.mjs temp/test-results/release-candidate/candidate.json
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: ${{ matrix.platform == 'macos-arm64' && 'aarch64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: desktop-release-${{ matrix.runner }}
+          save-if: false
+      - name: Package the exact bundled Host
+        run: pnpm run host:package
+      - name: Build signed stable package
+        if: inputs.channel == 'stable'
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          BYCODA_HOST_RELEASE_URL: https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version }}
+        with:
+          args: ${{ matrix.args }} --config temp/release-channel.json
+      - name: Build unsigned nonstable package
+        if: inputs.channel != 'stable'
+        run: pnpm exec tauri build ${{ matrix.args }} --config temp/release-channel.json
+      - name: Stage bounded immutable package bytes
+        shell: bash
+        run: |
+          node temp/release-tools/scripts/release/prepare-candidate.mjs --verify
+          node temp/release-tools/scripts/release/package-manifest.mjs create \
+            --candidate temp/test-results/release-candidate/candidate.json \
+            --platform ${{ matrix.platform }} --root . \
+            --output temp/build/release-package/${{ matrix.platform }}
+      - name: Exercise packaged application and isolated old database
+        run: >-
+          node temp/release-tools/scripts/build/package-smoke.mjs
+          --manifest temp/build/release-package/${{ matrix.platform }}/manifest.json
+          --root temp/build/release-package/${{ matrix.platform }}
+          --output temp/test-results/packaged-smoke/${{ matrix.platform }}.json
+      - name: Require the receipt to match these exact bytes
+        run: >-
+          node temp/release-tools/scripts/release/package-manifest.mjs attach-smoke
+          --root temp/build/release-package/${{ matrix.platform }}
+          --receipt temp/test-results/packaged-smoke/${{ matrix.platform }}.json
+      - name: Retain package and failed smoke evidence for review
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-package-${{ matrix.platform }}
+          path: temp/build/release-package/${{ matrix.platform }}/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain isolated smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: packaged-smoke-${{ matrix.platform }}
+          path: |
+            temp/test-results/packaged-smoke/${{ matrix.platform }}.json
+            temp/test-results/packaged-smoke/${{ matrix.platform }}.json.evidence/**
+          if-no-files-found: warn
+          retention-days: 14

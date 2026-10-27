@@ -28,7 +28,7 @@ vi.mock("../../core/child", () => ({
   writeChild,
 }));
 
-vi.mock("../../../../platform/tauri/fs", () => ({
+vi.mock("../../../../platform/tauri/generatedImages", () => ({
   saveGeneratedImage,
   deleteGeneratedImages,
 }));

@@ -3,6 +3,7 @@
 ## User guides
 
 - [Getting started](guides/onboarding.md): initial setup and provider accounts.
+- [Diagnostics and reports](guides/diagnostics.md): runtime identity, redacted evidence and safe recovery.
 - [Remote access](guides/remote-access.md): connect to projects on another machine.
 - [Remote folder explorer](guides/remote-folder-explorer.md): browse connected machines.
 - [Chat outputs and connected files](guides/chat-artifacts-and-connected-files.md): inspect code, preview documents and media, and open remote files and development servers.
@@ -22,7 +23,21 @@
 
 ## Technical reference
 
+- [Design language](reference/DESIGN.md): product hierarchy, compact presentation,
+  interaction, feedback and preservation principles.
+- [Desktop UI design system](reference/ui-design-system.md): shared tokens,
+  component ownership and implementation contracts.
+- [UI component selection](reference/ui-component-catalog.md): interaction choices
+  and current coverage.
+- [Arc integration](reference/arc-ui.md): implemented desktop adapters and local
+  adaptations.
 - [Repository layout](reference/repository-layout.md): source, scripts, documentation, and local archives.
+- [Testing and evidence](reference/testing.md): command scope, browser suite ownership and native acceptance boundaries.
+- [Quality tooling](reference/quality.md): offline evals, advisory context/usage reports and dependency patch governance.
+- [Platform foundation](reference/platform-foundation.md): module ownership, build inputs and release gates.
+- [Release operations](reference/releases.md): exact-source candidates, package proof, opt-in preview and cache.
+- [Repository operations](reference/platform-operations.md): staged checks, hooks, advisory reports and bounded Linux retry.
+- [Windows diagnostics](reference/windows-diagnostics.md): exact-file manual source checks and retained receipts.
 - [Product identity](reference/fork.md): package, data, and host paths.
 - [Localization](reference/localization.md): maintain application translation catalogs.
 - [Remote session protocol](reference/remote-session-protocol.md): identity, authority, and recovery.

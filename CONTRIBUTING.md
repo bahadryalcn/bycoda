@@ -22,6 +22,8 @@ installation, use the [shared update coordinator](docs/local-update.md).
 
 ## Repository layout
 
+- `apps/desktop/`: desktop main and quick-composer entry modules.
+- `packages/core/`: portable helpers with explicit exports and independent checks.
 - `src/app/`: application composition, startup, and desktop shell.
 - `src/features/`: feature interfaces, models, and tests.
 - `src/integrations/harness/`: provider adapters and shared agent contracts.
@@ -32,6 +34,10 @@ installation, use the [shared update coordinator](docs/local-update.md).
 
 See the [repository layout reference](docs/reference/repository-layout.md) for
 script groups, documentation categories, and local archive locations.
+Workspace boundaries and staged migration are described in
+[Platform foundation](docs/reference/platform-foundation.md). Optional staged
+checks, hooks, advisory PR reports and Linux retry commands are documented in
+[Repository operations](docs/reference/platform-operations.md).
 
 ## Issues and pull requests
 
@@ -125,6 +131,14 @@ until that editor integration is replaced.
 
 The broader validation commands are:
 
+For daily iteration, `pnpm check:plan` previews affected CI gates and bounded
+adjacent checks; `pnpm check:changed` runs those local checks with explicit
+limits. It never installs dependencies or represents complete CI. Full CI is
+the GitHub `CI` workflow, including its final **Check**; manual dispatch and
+main pushes exercise every required platform. See the
+[testing guide](docs/reference/testing.md) and [CI policy](.github/CI.md) for the
+single command/scope/evidence inventory.
+
 ```sh
 pnpm run check:web
 pnpm run check:rust
@@ -133,9 +147,31 @@ node scripts/i18n/check-locales.mjs
 node scripts/checks/check-repository-hygiene.mjs
 ```
 
+Host CI splits the suite across isolated runners: six Windows shards, two macOS
+shards, and one Linux shard. Files remain serial inside each runner because these
+tests launch real child processes. To reproduce one shard locally, use
+`pnpm run test:host --shard=1/6`. Keep all shards passing; a passing shard alone is
+not full Host acceptance. `node scripts/checks/check-host-test-shards.mjs 6`
+checks the actual Vitest partition without running test modules. CI saves a JSON
+report per shard and validates Host packaging once per operating system.
+
 For UI or native changes, check the relevant runtime when available. Distinguish
 source tests from packaged or installed application checks and identify any
 unverified behavior.
+
+The [platform foundation reference](docs/reference/platform-foundation.md)
+records the staged module, release, account and organization architecture. Its
+proposed directories and services are not implemented product capabilities.
+
+Offline model-behavior checks use `pnpm eval:check` (normal tsc-rs) and
+`pnpm eval:offline`; reports use
+`pnpm eval:report`. These use sanitized fixtures and production prompt/schema
+definitions. They do not call a paid provider or prove live model quality.
+`pnpm check:quality-report` reports static dependency usage for review; dynamic,
+platform and generated consumers must be checked before removal. Dependency
+patches need an exact version, reason, reproduction/regression, upstream link
+and removal condition; do not import an unrelated patch collection. No hooks or
+external review/cache service are installed by these commands.
 
 ## Documentation and repository hygiene
 

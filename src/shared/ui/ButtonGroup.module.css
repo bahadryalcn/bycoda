@@ -1,0 +1,18 @@
+.group {
+  display: flex;
+  align-items: stretch;
+  min-inline-size: 0;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .group:has(> button:not(:disabled, [aria-disabled="true"]):hover) {
+    background: var(--ui-surface-hover);
+  }
+}
+
+.group:has(> button:not(:disabled, [aria-disabled="true"]):active) {
+  background: var(--ui-surface-pressed);
+}

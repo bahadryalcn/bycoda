@@ -14,7 +14,7 @@ import traceback
 import urllib.request
 
 from local_update_lib import (alive, backup, count, digest, lock, ps, ps_quote,
-                              read_json, run, safe_child, tree_hashes, verify_tree, write_json, windows_binary_digest, PRODUCT_IDENTITY, package_identity)
+                              read_json, run, safe_child, tree_hashes, verify_tree, write_json, windows_binary_digest, PRODUCT_IDENTITY, package_identity, package_components)
 
 BASE = pathlib.Path.home() / PRODUCT_IDENTITY['hostDirectory']
 MAC_APPLICATIONS = pathlib.Path('/Applications')
@@ -416,6 +416,7 @@ def main(launch_key=None):
     component = sys.argv[2]
     if component not in ('host', 'app'):
         raise ValueError('Unknown install component')
+    package_components(manifest, (component,))
     record = BASE / 'update-jobs' / (component + '.json')
     def report(state, **values):
         message = {'pid': os.getpid(), 'id': manifest['id'], 'state': state, 'time': time.time(), **values}

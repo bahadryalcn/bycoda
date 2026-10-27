@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import "../../app/model/fileUiAdapters";
 import {
   gitCommit,
   gitFetch,

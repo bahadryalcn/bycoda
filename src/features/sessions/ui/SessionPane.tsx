@@ -583,6 +583,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     action: "edit" | "return";
     recall: LastTurnRecall;
     source: Session;
+    authorityGeneration?: number;
   } | null>(null);
   const [rewindingMessage, setRewindingMessage] = useState(false);
   const [rewindError, setRewindError] = useState<string | null>(null);
@@ -612,7 +613,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
     let current = true;
     setFilePlan(null);
     setFilePlanLoading(true);
-    void planSessionFilesRevert(pendingRewind.source, pendingRewind.block.id)
+    void planSessionFilesRevert(pendingRewind.source, pendingRewind.block.id, {
+      authorityGeneration: pendingRewind.authorityGeneration,
+    })
       .then((plan) => {
         if (current) setFilePlan(plan);
       })
@@ -906,6 +909,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       setPendingRewind({
         sessionId: session.id,
         source: session,
+        authorityGeneration: session.adoptedAuthorityGeneration,
         block,
         action,
         recall: recall ?? {
@@ -930,6 +934,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       if (
         !canRewindConversation(session, pendingRewind.block.id) ||
         session.blocks !== pendingRewind.source.blocks ||
+        session.adoptedAuthorityGeneration !== pendingRewind.authorityGeneration ||
         managed ||
         session.inboxAsk ||
         session.worktreeRemoved ||
@@ -949,6 +954,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             pendingRewind.source,
             pendingRewind.block.id,
             filePlan?.planToken,
+            filePlan ?? undefined,
           );
           if (activeSessionIdRef.current !== requestedSessionId) return;
           fileRevertResult.current = result;
@@ -956,6 +962,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
         }
         if (
           currentSessionRef.current.blocks !== pendingRewind.source.blocks ||
+          currentSessionRef.current.adoptedAuthorityGeneration !==
+            pendingRewind.authorityGeneration ||
           !canRewindConversation(currentSessionRef.current, pendingRewind.block.id)
         ) {
           throw new Error(t("This conversation can no longer be rewound."));

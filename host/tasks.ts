@@ -473,13 +473,25 @@ export class HostTasks {
     );
   }
   readonly ready: Promise<void>;
+  private readonly engine: SessionRunEngine;
   constructor(
     private readonly store: HostStore,
-    private readonly engine: SessionRunEngine,
+    engine: SessionRunEngine,
     private readonly now: () => number = Date.now,
     private readonly verifyTimeoutMs = VERIFY_TIMEOUT_MS,
     private readonly managed?: TaskWorkspaceServices,
   ) {
+    // Request guards stay in the Store's AsyncLocal context; autonomous calls have none.
+    this.engine = {
+      command: async (...args) => {
+        await this.store.db.checkAuthorization();
+        return engine.command(...args);
+      },
+      updateSession: async (...args) => {
+        await this.store.db.checkAuthorization();
+        return engine.updateSession(...args);
+      },
+    };
     this.limits = new HostLimits(store, now);
     this.budgets = new HostTaskBudgets(store, now);
     this.ready = (async () => {
@@ -1202,11 +1214,13 @@ export class HostTasks {
     }
     if (to === "blocked") {
       if (task.crewDefinitionId && this.crewRunner) {
+        await this.store.db.checkAuthorization();
         await this.crewRunner.stop(task);
         return await this.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);
       }
       if (task.status === "verifying") {
         // Keep the job registered until its shell and descendants have exited.
+        await this.store.db.checkAuthorization();
         this.jobControllers.get(id)?.abort();
         if (
           task.reviewer &&
@@ -1329,6 +1343,7 @@ export class HostTasks {
         );
       const registered = await this.managed.registry.get({ workspaceId: task.workspaceId });
       if (!registered) throw new Error("Managed task workspace is unavailable.");
+      await this.store.db.checkAuthorization();
       const changed = await this.managed.retargetWorkspace(
         {
           workspaceId: registered.id,
@@ -1363,6 +1378,7 @@ export class HostTasks {
             await this.write({ ...pending, workspace: selected, updatedAt: this.now() });
         const goal = await this.owningGoal(task.goalId);
         if (goal) {
+          await this.store.db.checkAuthorization();
           await this.store.db.prepare("UPDATE goals SET value=? WHERE id=?").run(
             JSON.stringify({
               ...goal,
@@ -1394,7 +1410,14 @@ export class HostTasks {
   async delete(id: string, discard = false, expectedUpdatedAt?: number): Promise<void> {
     await this.ready;
 
-    const task = await this.find(id);
+    // Capture the exact persisted value before any awaited cleanup. A timestamp
+    // alone cannot distinguish two edits made within the same millisecond.
+    const expected = await this.taskValue(id);
+    const task =
+      expected === undefined
+        ? undefined
+        : await this.withReviewNotes(JSON.parse(expected) as HostTask);
+    let workspaceCleanupCompleted = false;
     if (task?.artifactDeliveryPending || task?.artifactDeliveryActivityId)
       throw new Error(
         "Reconcile the recorded artifact delivery before deleting this task; its source is retained.",
@@ -1425,8 +1448,26 @@ export class HostTasks {
           `This task’s work is on ${task.branch} and was never merged. Deleting it discards that branch.`,
         );
       await this.discard(task);
+      workspaceCleanupCompleted = true;
     }
-    await this.store.db.prepare("DELETE FROM tasks WHERE id=?").run(id);
+    if (expected === undefined) return;
+    await this.store.db.checkAuthorization();
+    const deleted = await this.store.db
+      .prepare("DELETE FROM tasks WHERE id=? AND value=?")
+      .run(id, expected);
+    if (Number(deleted.changes) !== 1)
+      throw Object.assign(
+        new Error(
+          workspaceCleanupCompleted
+            ? "Task changed during workspace cleanup. Cleanup completed, but the updated task was retained. Refresh before retrying."
+            : "Task changed. The updated task was retained; refresh before deleting.",
+        ),
+        {
+          code: "TASK_REVISION_CONFLICT",
+          taskId: id,
+          workspaceCleanupCompleted,
+        },
+      );
     this.store.afterCommit(() => this.onChange?.());
     this.listCache = undefined;
     this.projectListCache.clear();
@@ -2053,6 +2094,7 @@ export class HostTasks {
     task = suspendedTaskDelivery(task);
     task = { ...task, workspaceGenerationId: task.workspaceGenerationId ?? randomUUID() };
     return await this.store.db.scope(async () => {
+      await this.store.db.checkAuthorization();
       if (task.evaluation && task.status !== "done" && task.status !== "review")
         task = { ...task, evaluation: undefined };
       const run =
@@ -2062,6 +2104,7 @@ export class HostTasks {
         if (!this.registeredBudgetRuns.has(key)) {
           const parent = await this.budgetParent(task);
           const goalId = task.goalId ?? parent?.goalId;
+          await this.store.db.checkAuthorization();
           await this.budgets.register({
             taskId: task.id,
             ...(goalId ? { goalId } : {}),
@@ -2083,6 +2126,7 @@ export class HostTasks {
       }
       task = { ...task, budgetUsage: await this.budgets.read({ taskId: task.id }) };
       const value = JSON.stringify(task);
+      await this.store.db.checkAuthorization();
       await this.store.db
         .prepare(
           "INSERT INTO tasks VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
@@ -2426,8 +2470,10 @@ export class HostTasks {
       );
   }
   private async stopWorkspaceActivity(task: HostTask): Promise<void> {
-    if (this.managed && task.workspaceActivityId)
+    if (this.managed && task.workspaceActivityId) {
+      await this.store.db.checkAuthorization();
       await this.managed.activity.stop(task.workspaceActivityId);
+    }
   }
   private async launch(
     task: HostTask,
@@ -3020,6 +3066,8 @@ export class HostTasks {
         await this.block(reviewing, `Could not start the reviewer: ${started.error}`, now);
       else await this.write({ ...reviewing, updatedAt: now });
     };
+    // Authorize enrollment now, then keep accepted background verification system-owned.
+    await this.store.db.checkAuthorization();
     const job: Promise<void> = this.store.db.outsideScope(() =>
       run()
         .catch(async (error) => {
@@ -3850,6 +3898,7 @@ export class HostTasks {
     let workspace = await this.managed.registry.get({ workspaceId: task.workspaceId });
     if (!workspace)
       throw new Error("The managed task workspace is unavailable; its branch is retained.");
+    await this.store.db.checkAuthorization();
     workspace = await this.managed.registry.close({
       workspaceId: workspace.id,
       expectedRevision: workspace.revision,
@@ -3863,6 +3912,7 @@ export class HostTasks {
       throw new Error(
         `The task branch is retained. Directory removal blocked: ${plan.blockers.join("; ") || "uncommitted changes"}`,
       );
+    await this.store.db.checkAuthorization();
     await this.managed.removal.apply(
       {
         workspaceId: workspace.id,

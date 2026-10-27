@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "basis": "2026-10-27 actual list-only case counts; advisory scheduling weights, never a coverage gate",
+  "cases": {
+    "compact-navigation": {
+      "chromium": 2,
+      "webkit": 2
+    },
+    "composer-host-compatibility": {
+      "chromium": 10,
+      "webkit": 10
+    },
+    "edit-from-here": {
+      "chromium": 13,
+      "webkit": 13
+    },
+    "arc-controls": {
+      "chromium": 28,
+      "webkit": 28
+    },
+    "automations": {
+      "chromium": 4,
+      "webkit": 4
+    },
+    "browser-annotation": {
+      "chromium": 4
+    },
+    "chat-artifacts": {
+      "chromium": 18,
+      "webkit": 18
+    },
+    "composer": {
+      "chromium": 31,
+      "webkit": 31
+    },
+    "connections": {
+      "chromium": 8
+    },
+    "crew": {
+      "chromium": 8,
+      "webkit": 8
+    },
+    "crews": {
+      "chromium": 35,
+      "webkit": 35
+    },
+    "device-panel": {
+      "chromium": 4
+    },
+    "editor-navigation": {
+      "chromium": 1,
+      "webkit": 1
+    },
+    "editor-selection": {
+      "chromium": 23,
+      "webkit": 23
+    },
+    "external-mcp": {
+      "chromium": 10,
+      "webkit": 10
+    },
+    "git-checkouts": {
+      "chromium": 10
+    },
+    "group-menu": {
+      "chromium": 4,
+      "webkit": 4
+    },
+    "host-tools": {
+      "chromium": 32
+    },
+    "jira-board": {
+      "chromium": 7,
+      "webkit": 7
+    },
+    "merge-conflicts": {
+      "chromium": 6,
+      "webkit": 6
+    },
+    "notes": {
+      "chromium": 12,
+      "webkit": 12
+    },
+    "notifications": {
+      "chromium": 7
+    },
+    "onboarding": {
+      "chromium": 8,
+      "webkit": 8
+    },
+    "operational-tools": {
+      "chromium": 10,
+      "webkit": 10
+    },
+    "orchestration": {
+      "chromium": 2,
+      "webkit": 2
+    },
+    "question-flow": {
+      "chromium": 10,
+      "webkit": 10
+    },
+    "servers": {
+      "chromium": 100,
+      "webkit": 100
+    },
+    "session-usability": {
+      "chromium": 6,
+      "webkit": 6
+    },
+    "sessions": {
+      "chromium": 31,
+      "webkit": 31
+    },
+    "settings": {
+      "chromium": 222
+    },
+    "social": {
+      "chromium": 42
+    },
+    "sprints": {
+      "chromium": 7,
+      "webkit": 7
+    },
+    "subagent-relay": {
+      "chromium": 13
+    },
+    "tasks": {
+      "chromium": 68,
+      "webkit": 68
+    },
+    "terminal-tools": {
+      "chromium": 14
+    },
+    "termius": {
+      "chromium": 4,
+      "webkit": 4
+    },
+    "text-actions": {
+      "chromium": 4,
+      "webkit": 4
+    },
+    "tools-simplify": {
+      "chromium": 10
+    },
+    "usage-budgets": {
+      "chromium": 15,
+      "webkit": 15
+    },
+    "voice-visual-styles": {
+      "chromium": 5
+    },
+    "workspace-navigation": {
+      "chromium": 12
+    },
+    "worktrees": {
+      "chromium": 37,
+      "webkit": 12
+    },
+    "session-deletion": {
+      "chromium": 2,
+      "webkit": 2
+    },
+    "session-recovery": {
+      "chromium": 8,
+      "webkit": 8
+    },
+    "update-footer": {
+      "chromium": 4,
+      "webkit": 4
+    },
+    "chat-artifacts-rewind": {
+      "chromium": 26,
+      "webkit": 26
+    },
+    "tasks-rewind": {
+      "chromium": 26,
+      "webkit": 26
+    },
+    "transcript": {
+      "chromium": 42,
+      "webkit": 42
+    },
+    "merge-conflicts-workspace": {
+      "chromium": 1,
+      "webkit": 1
+    }
+  }
+}

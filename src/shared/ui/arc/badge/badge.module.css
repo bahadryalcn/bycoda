@@ -62,6 +62,11 @@
   --badge-background: var(--ui-tone-success-subtle);
   --badge-border: var(--ui-tone-success-border);
 }
+.accent {
+  --badge-foreground: var(--ui-tone-accent-fg);
+  --badge-background: var(--ui-tone-accent-subtle);
+  --badge-border: var(--ui-tone-accent-border);
+}
 .info {
   --badge-foreground: var(--ui-tone-info-fg);
   --badge-background: var(--ui-tone-info-subtle);
@@ -95,7 +100,15 @@
 }
 .count {
   justify-content: center;
-  min-inline-size: 1.25rem;
+  flex-shrink: 0;
+  min-inline-size: 1.125rem;
+  min-block-size: 1.125rem;
+  padding-block: 0.0625rem;
   padding-inline: var(--space-1);
+  line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+.count.sm {
+  min-inline-size: 1rem;
+  min-block-size: 1rem;
 }

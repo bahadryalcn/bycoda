@@ -11,6 +11,13 @@ bycoda runs installed agent CLIs. Agents can edit files and execute commands
 within their granted permissions. Review project access, provider permissions,
 and command approvals accordingly.
 
-For vulnerabilities in the original application project, follow the
-[upstream security policy](https://github.com/bahadryalcn/bycoda/blob/main/SECURITY.md).
-Identify the affected repository and application version in your report.
+This policy covers this bycoda repository and its desktop, Host and mobile
+integration code. Identify the affected repository, component and application
+version or commit. The latest published release and current source are the
+primary investigation targets; report an issue in an older version as well if
+you are unsure whether it persists. This is not a promise to maintain every
+older release or a guaranteed response schedule.
+
+Vulnerabilities in an installed provider CLI or another dependency may require
+that project's private reporting process. Identify the dependency and version;
+do not copy private reports to a public issue.

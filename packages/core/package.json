@@ -1,0 +1,25 @@
+{
+  "name": "@bycoda/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./json-text": "./src/jsonText.ts",
+    "./concurrent": "./src/concurrent.ts",
+    "./session-title": "./src/sessionTitle.ts"
+  },
+  "scripts": {
+    "typecheck": "pnpm --dir ../.. exec tsc-rs --noEmit -p packages/core/tsconfig.json",
+    "test": "pnpm --dir ../.. exec vitest run --config packages/core/vitest.config.ts",
+    "build": "pnpm --dir ../.. exec esbuild packages/core/src/index.ts --bundle --format=esm --platform=neutral --target=es2020 --outfile=packages/core/dist/index.mjs"
+  },
+  "bycoda": {
+    "layer": "portable",
+    "legacyFacades": {
+      "src/shared/lib/jsonText.ts": "./json-text",
+      "src/shared/lib/concurrent.ts": "./concurrent",
+      "src/features/sessions/model/sessionTitle.ts": "./session-title"
+    }
+  }
+}

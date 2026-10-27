@@ -39,7 +39,12 @@ async function fixture() {
   await writeFile(join(cwd, "b.txt"), "keep\n");
   await git("add", "--", "a.txt", "b.txt");
   await git("commit", "-qm", "base");
-  return { dir, cwd, git, checkpoints: new HostCheckpoints(join(dir, "checkpoints")) };
+  return {
+    dir,
+    cwd,
+    git,
+    checkpoints: new HostCheckpoints(join(dir, "checkpoints"), undefined, async () => {}),
+  };
 }
 describe("host turn checkpoints", () => {
   it("detects changed archived legacy peers and keeps corrupt replacements fail closed", async () => {

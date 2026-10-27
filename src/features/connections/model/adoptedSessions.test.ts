@@ -54,6 +54,45 @@ const entry = (over: Partial<AdoptedEntry> = {}): AdoptedEntry => ({
   ...over,
 });
 
+it("refreshes applied authority at an unchanged transcript revision without upgrading retained queue intent", async () => {
+  const queued = [
+    { id: "retained", text: "original intent", attachments: [], authorityGeneration: 2 },
+  ];
+  let current = local({ adoptedAuthorityGeneration: 2, queuedMessages: queued });
+  const remote = { ...host({ blocks: current.blocks }), authorityGeneration: 3 };
+  const load = vi.fn(async () => remote);
+  const mirrored = new Map([["s1", remote.revision]]);
+  expect(planAdoptedFetches([entry({ authorityGeneration: 3 })], [current], mirrored)).toHaveLength(
+    1,
+  );
+  await mirrorAdoptedSessions({
+    list: async () => [entry({ authorityGeneration: 3 })],
+    load,
+    local: () => [current],
+    apply: (next) => {
+      current = next;
+    },
+    mirrored,
+  });
+  expect(load).toHaveBeenCalledTimes(1);
+  expect(current.adoptedAuthorityGeneration).toBe(3);
+  expect(current.queuedMessages).toEqual(queued);
+  expect(mirrored.get("s1")).toBe(remote.revision);
+  expect(planAdoptedFetches([entry({ authorityGeneration: 3 })], [current], mirrored)).toEqual([]);
+});
+
+it("projects validated generation into a desktop copy and refuses an invalid or regressed mirror floor", () => {
+  const remote = { ...host({}), authorityGeneration: 3 };
+  expect(desktopCopyOf(remote, "C:/proj", (a, b) => a === b).adoptedAuthorityGeneration).toBe(3);
+  expect(() =>
+    desktopCopyOf({ ...remote, authorityGeneration: 0 }, "C:/proj", (a, b) => a === b),
+  ).toThrow("authority generation");
+  const current = local({ adoptedAuthorityGeneration: 3 });
+  expect(() => mergeAdoptedSession(current, { ...remote, authorityGeneration: 2 })).toThrow(
+    "authority generation",
+  );
+});
+
 describe("adopted history timestamps", () => {
   it("keeps the host's original dates instead of the time of the desktop copy", () => {
     expect(adoptedSessionTimes({ ...host({}), createdAt: 100, updatedAt: 200 })).toEqual({

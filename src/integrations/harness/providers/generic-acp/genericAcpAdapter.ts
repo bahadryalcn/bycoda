@@ -3,7 +3,7 @@ import { reportAcpStopReason } from "../../core/acpStopReason";
 import { spawnChild, watchChild, killChild, invokeProviderCommand } from "../../core/child";
 import { registerHarness, type HarnessAdapter } from "../../core/registry";
 import type { ApprovalDecision, HarnessEvent, SendTurnInput } from "../../core/types";
-import { promptBlocks } from "../../../../features/sessions/model/attachments";
+import { promptBlocks } from "../../../../features/sessions/model/attachmentPrompt";
 import { setHarnessModels } from "../../../../features/sessions/model/models";
 import type { GenericAcpSummary } from "../../../../features/providers/model/genericAcp";
 import { textFromContent } from "../../../../shared/lib/contentText";

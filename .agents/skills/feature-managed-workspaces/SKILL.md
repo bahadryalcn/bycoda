@@ -70,6 +70,32 @@ Product implementation: `a6f73927` on `feat/v94-light-worktree` (29 files).
 Focused fast app/Host types, managed engine/Host/native tests and Clippy passed;
 this inventory does not assert a release build stamp.
 
+## Settings Source Control audit extension, 2026-10-27
+
+Five owner captures and explicit audit request; exact quote in
+`.agents/skills/feature-source-control/SKILL.md`. Current baseline
+d8bf868fae841b8b391ce148487cd7d373ea9762. Two native read-only reviews plus root:
+13 records (three V+S/ten S),17 connected Settings families. Register/brief under
+`temp/local/2026-10-27-settings-source-control-audit/`. No new default, cleanup
+policy, retention/disk value, live authority or product behavior selected.
+
+Propose clear Workspaces/Policy/Git preferences scope and bounded collections.
+Repair policy refresh/review-close draft loss, per-section freshness, minimum-free
+validation, inherited resolved-policy freeze and stale storage after cleanup.
+Preserve V94 current-checkout default, optional/lightweight worktrees and separate
+Exact Git rewind experiment. Useful retention/storage groups are not decorative
+single-control accordions. Keep explicit Save, whole Host-default reset,
+expected revisions/idempotency, pin progress, all fields/unknowns, native/Host
+owner/process/path/expiring-plan guards and uncertain cleanup/delivery recovery.
+Review changes includes merge/publication approval. Ordinary Git worktree remote
+write mismatch is a separate sub-scope, not a managed cleanup routing regression.
+
+81 existing tests/nine suites pass, five-file static scan[]. Source22 hashes match
+HEAD; actual changed UI/native/remote Host/installed/mobile checks pending. Audit
+only, no app/Git/index/worktree/policy/directory/Host/build/install/release changes.
+No exclusive live claim available; card is inventory, not reservation. Update
+user guides when implementation is delivered, not for this proposed layout.
+
 ## Purpose and keywords
 
 Default writers to the current checkout; offer owned branches/directories through

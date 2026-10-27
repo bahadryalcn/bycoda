@@ -253,6 +253,7 @@ async function fixture(linkedAncestor = false) {
   });
   const service = (afterPhase?: GitSessionRewindOptions["afterPhase"]) =>
     new GitSessionRewindService({
+      assertAuthority: async () => {}, // Legacy fixture; authority-floor integration has separate fixtures.
       root: join(data, "rewind"),
       history,
       registry,

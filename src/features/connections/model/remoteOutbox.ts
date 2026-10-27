@@ -1,7 +1,8 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { isRemoteProvider, type HostCommand } from "./protocol";
 import { RUNTIME_MODES } from "../../sessions/model/session";
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
+import { canonicalJson } from "../../sync/model/canonicalJson";
 
 const PREFIX = "bycoda.remote-command.v1:";
 const ARCHIVE_PREFIX = "bycoda.remote-command-quarantine.v1:";
@@ -23,8 +24,35 @@ const strings = (value: unknown): boolean =>
   object(value) && Object.values(value).every((v) => typeof v === "string");
 const optionalString = (value: unknown) => value === undefined || typeof value === "string";
 
+export type RemoteIntentAuthority = { authorityGeneration?: number };
+/** Capture only while constructing a new intent. Never derive persisted intent provenance again. */
+export function remoteIntentAuthority(
+  source: RemoteIntentAuthority | undefined,
+): RemoteIntentAuthority {
+  const authorityGeneration = source?.authorityGeneration;
+  if (authorityGeneration === undefined) return {};
+  if (!Number.isSafeInteger(authorityGeneration) || authorityGeneration < 1)
+    throw new Error(t("Cannot save an invalid remote request."));
+  return { authorityGeneration };
+}
+/** An absent generation is meaningful legacy provenance, never permission to upgrade. */
+export function remoteIntentAuthorityMatches(
+  intent: RemoteIntentAuthority,
+  snapshot: RemoteIntentAuthority | undefined,
+): boolean {
+  return (
+    remoteIntentAuthority(intent).authorityGeneration ===
+    remoteIntentAuthority(snapshot).authorityGeneration
+  );
+}
+
 function validCommand(value: unknown, followup = false): value is HostCommand {
   if (!object(value) || typeof value.commandId !== "string" || !value.commandId) return false;
+  if (
+    value.authorityGeneration !== undefined &&
+    (!Number.isSafeInteger(value.authorityGeneration) || Number(value.authorityGeneration) < 1)
+  )
+    return false;
   if (value.type === "create") {
     return (
       typeof value.projectId === "string" &&
@@ -49,11 +77,19 @@ function validCommand(value: unknown, followup = false): value is HostCommand {
   if (value.resumeAtReset !== undefined && typeof value.resumeAtReset !== "boolean") return false;
   switch (value.type) {
     case "contextual":
-      return typeof value.sourceBlockId === "string" && !!value.sourceBlockId &&
-        Number.isSafeInteger(value.expectedRevision) && Number(value.expectedRevision) >= 0 &&
-        ["handoff", "secondOpinion"].includes(String(value.mode)) && isRemoteProvider(value.harness) &&
-        typeof value.model === "string" && !!value.model && strings(value.modelSettings) &&
-        typeof value.previewDigest === "string" && /^[a-f0-9]{64}$/.test(value.previewDigest);
+      return (
+        typeof value.sourceBlockId === "string" &&
+        !!value.sourceBlockId &&
+        Number.isSafeInteger(value.expectedRevision) &&
+        Number(value.expectedRevision) >= 0 &&
+        ["handoff", "secondOpinion"].includes(String(value.mode)) &&
+        isRemoteProvider(value.harness) &&
+        typeof value.model === "string" &&
+        !!value.model &&
+        strings(value.modelSettings) &&
+        typeof value.previewDigest === "string" &&
+        /^[a-f0-9]{64}$/.test(value.previewDigest)
+      );
     case "configure":
       return (
         (value.harness === undefined || isRemoteProvider(value.harness)) &&
@@ -103,7 +139,9 @@ function validCommand(value: unknown, followup = false): value is HostCommand {
     case "cancel":
       return typeof value.runId === "string" && !!value.runId;
     case "stopItem":
-      return [value.runId, value.blockId, value.callId].every((entry) => typeof entry === "string" && !!entry);
+      return [value.runId, value.blockId, value.callId].every(
+        (entry) => typeof entry === "string" && !!entry,
+      );
     case "approve":
     case "answer": {
       if (
@@ -351,15 +389,24 @@ export function savePendingRemoteCommand(
         "An unfinished request needs recovery. Check the host and review the request above before sending again.",
       ),
     );
+  const existing = readPendingEntry(
+    localStorage.getItem(`${pendingPrefix(project, environment)}${command.commandId}`) ?? "",
+    command.commandId,
+  );
+  if (
+    existing &&
+    (canonicalJson(existing.command) !== canonicalJson(command) ||
+      (followup !== undefined &&
+        canonicalJson(existing.followup ?? null) !== canonicalJson(followup)))
+  )
+    throw new Error(
+      t("The pending request changed. Recover the original request before sending again."),
+    );
   const entry: PendingEntry = {
     v: 1,
-    savedAt:
-      readPendingEntry(
-        localStorage.getItem(`${pendingPrefix(project, environment)}${command.commandId}`) ?? "",
-        command.commandId,
-      )?.savedAt ?? Date.now(),
-    command,
-    shellId,
+    savedAt: existing?.savedAt ?? Date.now(),
+    command: existing?.command ?? command,
+    shellId: existing?.shellId ?? shellId,
     stopRequested: remoteCommandWasStopped(project, environment, command.commandId) || undefined,
     followup: followup ?? pendingRemoteFollowup(project, environment, command.commandId),
   };

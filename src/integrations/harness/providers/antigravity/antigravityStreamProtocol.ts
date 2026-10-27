@@ -92,7 +92,7 @@
  *   conversation); whether `--disable-slash-commands` also hides skills from
  *   the model (without it a "/x" prompt is refused in stream-json mode).
  */
-import { promptText } from "../../../../features/sessions/model/attachments";
+import { promptText } from "../../../../features/sessions/model/attachmentPrompt";
 import type { AgentModel } from "../../../../features/sessions/model/models";
 import type {
   Attachment,

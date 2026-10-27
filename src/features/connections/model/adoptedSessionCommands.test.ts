@@ -23,7 +23,9 @@ const running = {
   desktop: { updatedAt: 0 },
   executionOwner: "host",
 };
-let snapshot: typeof running | { status: string; runId?: string; executionOwner?: string };
+let snapshot: (typeof running | { status: string; runId?: string; executionOwner?: string }) & {
+  authorityGeneration?: number;
+};
 beforeEach(() => {
   vi.clearAllMocks();
   snapshot = running;
@@ -39,6 +41,34 @@ beforeEach(() => {
   });
 });
 const input = () => ({ sessionId: "s", text: "follow-up", attachments: [], isCurrent: () => true });
+
+it("retains creation-time generation through upload and final live-run lookup", async () => {
+  snapshot = { ...running, authorityGeneration: 2 };
+  io.upload.mockImplementation(async () => {
+    snapshot = { ...running, authorityGeneration: 3 };
+    return [];
+  });
+  expect(await sendAdoptedFollowUp({ ...input(), authorityGeneration: 2 })).toBe(true);
+  expect(io.request).toHaveBeenCalledWith(
+    "local",
+    "commands.dispatch",
+    expect.objectContaining({ authorityGeneration: 2 }),
+  );
+});
+
+it("never blesses an old queued intent or Stop from a newly read authority floor", async () => {
+  snapshot = { ...running, authorityGeneration: 3 };
+  await sendAdoptedFollowUp({ ...input(), queuedMessageId: "old-row" });
+  const dispatched = io.request.mock.calls.find(([, method]) => method === "commands.dispatch")![2];
+  expect(dispatched).not.toHaveProperty("authorityGeneration");
+  io.request.mockClear();
+  await cancelAdoptedTurn("s", "host-run", 2);
+  expect(io.request).toHaveBeenCalledWith(
+    "local",
+    "commands.dispatch",
+    expect.objectContaining({ authorityGeneration: 2 }),
+  );
+});
 it("steers the home host despite its desktop sharing marker, without a local provider run", async () => {
   expect(await sendAdoptedFollowUp(input())).toBe(true);
   expect(io.request).toHaveBeenCalledWith(

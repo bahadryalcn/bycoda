@@ -143,7 +143,6 @@ import { InboxNotificationMenu } from "./sidebarSurfaces";
 import { notificationMuteStatus } from "../../features/notifications/ui/notificationMuteActions";
 import { useProjectNotificationPreferences } from "../../features/notifications/hooks/useProjectNotificationPreferences";
 import { useNotificationProjects } from "../../features/notifications/hooks/useNotificationProjects";
-import { GithubStarPrompt } from "./GithubStarPrompt";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
 import { OPEN_CODE_WORKSPACE_EVENT } from "../../features/projects/model/codeWorkspace";
 import { OPEN_SESSION_IMPORT_EVENT } from "../../features/sessions/import/importModel";
@@ -1143,9 +1142,9 @@ export function ProjectRail({
                 </div>
                 <div className="flex shrink-0 flex-col gap-px p-2">
                   <div className="@max-[140px]/rail:hidden">
-                    <GithubStarPrompt />
+                    <SidebarUpdateFooter repositoryPrompt />
                   </div>
-                  <div className="flex items-center gap-1 @max-[140px]/rail:flex-col">
+                  <div className="hidden items-center gap-1 @max-[140px]/rail:flex @max-[140px]/rail:flex-col">
                     <SidebarUpdateFooter />
                   </div>
                 </div>

@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { createConnection, isIP, type Socket } from "node:net";
+import { DEV_SERVER_BRIDGE_CHUNK_BYTES } from "../src/shared/model/host-contracts/dev-servers";
 import type { DevServerDetails } from "../src/features/host-tools/devServerTypes";
 
-const CHUNK = 256 * 1024;
+const CHUNK = DEV_SERVER_BRIDGE_CHUNK_BYTES;
 const BUFFER_LIMIT = 2 * 1024 * 1024;
 const IDLE_MS = 120_000;
 type Stream = {
@@ -80,14 +81,25 @@ export class DevServerAccess {
     };
   }
 
-  async handle(method: string, params: Record<string, unknown>, owner: string) {
-    if (method === "devServers.bridgeCheck") return this.endpoint(params);
+  async handle(
+    method: string,
+    params: Record<string, unknown>,
+    owner: string,
+    authorize?: () => Promise<void>,
+  ) {
+    await authorize?.();
+    if (method === "devServers.bridgeCheck") {
+      const endpoint = await this.endpoint(params);
+      await authorize?.();
+      return endpoint;
+    }
     if (method === "devServers.bridgeOpen") {
       if (this.streams.size + this.opening >= 64)
         throw new Error("Too many development server connections are open.");
       this.opening++;
       try {
         const endpoint = await this.endpoint(params);
+        await authorize?.();
         const socket = createConnection({ host: endpoint.connectAddress, port: endpoint.port });
         const stream: Stream = {
           owner,
@@ -140,6 +152,7 @@ export class DevServerAccess {
               resolve();
             });
           });
+          await authorize?.();
         } catch (error) {
           this.dispose(id, stream);
           throw error;
@@ -155,7 +168,7 @@ export class DevServerAccess {
       throw new Error("Development server connection expired or belongs to another device.");
     if (method === "devServers.bridgeClose") {
       this.dispose(id, stream);
-      return { closed: true };
+      return { closed: true as const };
     }
     if (method === "devServers.bridgeWrite") {
       if (stream.writing) throw new Error("A development server write is already pending.");
@@ -172,6 +185,7 @@ export class DevServerAccess {
       stream.touched = Date.now();
       stream.writing = true;
       try {
+        await authorize?.();
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(() => {
             this.dispose(id, stream);
@@ -183,6 +197,7 @@ export class DevServerAccess {
             else resolve();
           });
         });
+        await authorize?.();
       } finally {
         stream.writing = false;
       }
@@ -203,6 +218,7 @@ export class DevServerAccess {
           const timer = setTimeout(finish, 1000);
           stream.wake = finish;
         });
+      await authorize?.();
       const size = Math.min(CHUNK, stream.size);
       const result = Buffer.allocUnsafe(size);
       let offset = 0;

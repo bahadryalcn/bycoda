@@ -1,0 +1,129 @@
+.visualizer {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  inline-size: 88px;
+  block-size: 88px;
+  color: var(--ui-tone-neutral-fg);
+  pointer-events: none;
+}
+.visualizer[data-small="true"] {
+  inline-size: 42px;
+  block-size: 42px;
+}
+.visualizer[data-visual="wave"] {
+  inline-size: 152px;
+}
+.visualizer[data-visual="wave"][data-small="true"] {
+  inline-size: 76px;
+}
+.visualizer[data-visual="dots"] {
+  inline-size: 96px;
+}
+.visualizer[data-visual="dots"][data-small="true"] {
+  inline-size: 48px;
+}
+.art {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+}
+/* The default accent is neutral; info keeps "you are speaking" distinct from replies. */
+.visualizer[data-state="user"] {
+  color: var(--ui-tone-info-fg);
+}
+.visualizer:is([data-state="off"], [data-state="muted"]) {
+  color: var(--ui-text-muted);
+}
+.visualizer[data-state="error"] {
+  color: var(--ui-tone-danger-fg);
+}
+.drop {
+  fill: currentColor;
+  stroke: none;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.wave:not(:first-child) {
+  opacity: 0.35;
+}
+.ring {
+  opacity: 0;
+}
+.visualizer[data-state="listening"] .ring {
+  opacity: 0.35;
+}
+.visualizer[data-state="user"] .ring {
+  opacity: 0.7;
+}
+.visualizer[data-state="off"] .core {
+  fill: var(--ui-surface-raised);
+}
+.orbBars {
+  color: var(--ui-surface);
+  display: none;
+}
+.visualizer[data-state="assistant"] .orbBars {
+  display: block;
+}
+.visualizer[data-state="user"] .orbBars {
+  display: block;
+}
+.arc,
+.off,
+.badge,
+.muted,
+.error,
+.sweep {
+  display: none;
+}
+.visualizer:is([data-state="thinking"], [data-state="connecting"]) .arc {
+  display: block;
+}
+.visualizer[data-state="connecting"] .art {
+  stroke-dasharray: 3 5;
+}
+.visualizer[data-state="off"] .off {
+  display: block;
+}
+.visualizer[data-state="off"][data-visual="mark"] .off,
+.visualizer[data-state="off"][data-visual="dots"] .off,
+.visualizer[data-state="off"][data-visual="wave"] .off {
+  display: none;
+}
+.visualizer[data-state="off"][data-visual="dots"] .art {
+  opacity: 0.5;
+}
+.visualizer[data-state="muted"][data-visual="wave"] .wave {
+  stroke-dasharray: 3 5;
+}
+.visualizer:is([data-state="muted"], [data-state="error"]) .badge {
+  display: block;
+}
+.visualizer[data-state="muted"] .muted {
+  display: block;
+}
+.visualizer[data-state="error"] .error {
+  display: block;
+}
+.badgeSurface {
+  fill: var(--ui-surface);
+}
+.visualizer[data-state="thinking"][data-visual="wave"] .arc {
+  display: none;
+}
+.visualizer[data-state="thinking"][data-visual="wave"] .sweep {
+  display: block;
+}
+.working {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 2px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 2px;
+  background: var(--ui-tone-warning-fg);
+  outline: 2px solid var(--ui-surface);
+  rotate: 45deg;
+}

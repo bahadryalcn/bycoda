@@ -1,0 +1,96 @@
+name: Prepare or publish reviewed candidate
+on:
+  workflow_dispatch:
+    inputs:
+      candidate-run-id:
+        description: Completed trusted Release/Release candidate/Nightly candidate run.
+        required: true
+        type: string
+      publish:
+        description: Publish the exact reviewed candidate; false only prepares a draft.
+        type: boolean
+        default: false
+      expected-source-sha:
+        description: Required full source SHA when publish is true.
+        type: string
+      expected-version:
+        description: Required exact version when publish is true.
+        type: string
+      expected-candidate-digest:
+        description: Required candidate receipt SHA256 when publish is true.
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: candidate-publication
+  cancel-in-progress: false
+jobs:
+  review:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: "24"
+          install: "false"
+      - id: identify
+        name: Require a completed trusted producer and bounded artifact set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate-run-id }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {appendFileSync} from 'node:fs';
+          import {api} from './scripts/release/release-candidate.mjs';
+          import {validateProducerRun} from './scripts/release/publish-candidate.mjs';
+          const id=process.env.CANDIDATE_RUN_ID, repo=process.env.GITHUB_REPOSITORY, token=process.env.GH_TOKEN;
+          assert(/^[1-9]\d*$/.test(id));
+          const producer=validateProducerRun(await api(token,`repos/${repo}/actions/runs/${id}`),repo);
+          const data=await api(token,`repos/${repo}/actions/runs/${id}/artifacts?per_page=100`);
+          assert(Array.isArray(data.artifacts)&&data.artifacts.length<100);
+          const candidates=data.artifacts.filter(a=>/^release-candidate-[a-f0-9]{40}$/.test(a.name)&&!a.expired);
+          assert.equal(candidates.length,1);
+          const packages=data.artifacts.filter(a=>a.name.startsWith('desktop-package-')&&!a.expired);
+          assert.deepEqual(packages.map(a=>a.name).sort(),['desktop-package-macos-arm64','desktop-package-windows-x64']);
+          assert(packages.every(a=>a.size_in_bytes>0&&a.size_in_bytes<=3*1024*1024*1024));
+          const hosts=data.artifacts.filter(a=>a.name==='standalone-host-packages'&&!a.expired);
+          assert.equal(hosts.length,producer.path==='.github/workflows/release.yml'?1:0);
+          appendFileSync(process.env.GITHUB_OUTPUT,`candidate=${candidates[0].name}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT,`hosts=${hosts.length===1}\n`);
+          NODE
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ steps.identify.outputs.candidate }}
+          run-id: ${{ inputs.candidate-run-id }}
+          github-token: ${{ github.token }}
+          path: temp/candidate-review
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: desktop-package-*
+          run-id: ${{ inputs.candidate-run-id }}
+          github-token: ${{ github.token }}
+          path: temp/candidate-review
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: steps.identify.outputs.hosts == 'true'
+        with:
+          name: standalone-host-packages
+          run-id: ${{ inputs.candidate-run-id }}
+          github-token: ${{ github.token }}
+          path: temp/candidate-review/standalone-host-packages
+      - name: Recheck exact source, bytes, signatures and packaged smoke before draft/publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate-run-id }}
+          PUBLISH_CANDIDATE: ${{ inputs.publish }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected-source-sha }}
+          EXPECTED_VERSION: ${{ inputs.expected-version }}
+          EXPECTED_CANDIDATE_DIGEST: ${{ inputs.expected-candidate-digest }}
+        run: node scripts/release/publish-candidate.mjs temp/candidate-review

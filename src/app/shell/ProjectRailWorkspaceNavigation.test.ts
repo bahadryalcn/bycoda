@@ -19,9 +19,9 @@ vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
   useProjectDiffStats: () => null,
   useProjectsDiffStats: () => [],
 }));
-vi.mock("./SidebarUpdate", () => ({ SidebarUpdateFooter: () => null }));
-vi.mock("./GithubStarPrompt", () => ({
-  GithubStarPrompt: () => createElement("div", { "data-github-prompt": true }),
+vi.mock("./SidebarUpdate", () => ({
+  SidebarUpdateFooter: ({ repositoryPrompt }: { repositoryPrompt?: boolean }) =>
+    repositoryPrompt ? createElement("div", { "data-github-prompt": true }) : null,
 }));
 vi.mock("../../features/projects/model/projectData", () => ({
   projectSessionCount: vi.fn(async () => 0),

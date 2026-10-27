@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+pub(crate) mod authority;
 mod content_search;
 pub(crate) mod incremental;
 #[path = "session_rewind.rs"]
@@ -36,7 +37,7 @@ CREATE INDEX IF NOT EXISTS sessions_cwd_updated_idx
 "#;
 
 pub struct SessionStore {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
     read_conn: Mutex<Option<Connection>>,
     /// Query-only connection for the UI's list/get reads. Search holds
     /// `read_conn` for its whole scan, so sharing it would queue these behind
@@ -81,7 +82,7 @@ impl SessionStore {
         let read_conn = open_reader()?;
         let list_conn = open_reader()?;
         Ok(Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
             read_conn: Mutex::new(Some(read_conn)),
             list_conn: Mutex::new(Some(list_conn)),
             search_index_lock: Mutex::new(()),
@@ -101,7 +102,7 @@ impl SessionStore {
         migrate(&conn).map_err(|e| e.to_string())?;
         crate::ssh_group_defaults::migrate(&conn)?;
         Ok(Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
             read_conn: Mutex::new(None),
             list_conn: Mutex::new(None),
             search_index_lock: Mutex::new(()),
@@ -152,13 +153,15 @@ impl SessionStore {
     /// Every stored session id, archived ones included.
     pub(crate) fn session_ids(&self) -> Result<std::collections::HashSet<String>, String> {
         self.with_read_conn(|conn| {
-            conn.prepare("SELECT id FROM sessions")
-                .and_then(|mut statement| {
-                    statement
-                        .query_map([], |row| row.get::<_, String>(0))?
-                        .collect::<rusqlite::Result<_>>()
-                })
-                .map_err(|e| e.to_string())
+            conn.prepare(
+                "SELECT id FROM sessions UNION SELECT session_id FROM native_authority_floor",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<_>>()
+            })
+            .map_err(|e| e.to_string())
         })
     }
 
@@ -1731,6 +1734,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // Source-revision/dirty metadata requires all current session columns.
     // Only metadata is reconciled here; transcripts remain lazily indexed.
     content_search::ensure_schema(conn)?;
+    authority::ensure_schema(conn)?;
     Ok(())
 }
 
@@ -1868,7 +1872,19 @@ fn upsert_session_with_git(
     git: crate::fs::GitInfo,
     expected: Option<Option<i64>>,
 ) -> rusqlite::Result<Option<SessionSummary>> {
+    authority::assert_checkpoint_sql(conn, &session.id)?;
     let tx = conn.unchecked_transaction()?;
+    let result = upsert_session_in_transaction(&tx, session, git, expected)?;
+    tx.commit()?;
+    Ok(result)
+}
+
+fn upsert_session_in_transaction(
+    conn: &Connection,
+    session: &SessionUpsert,
+    git: crate::fs::GitInfo,
+    expected: Option<Option<i64>>,
+) -> rusqlite::Result<Option<SessionSummary>> {
     // Serialise every block once: the pieces feed the per-block rows and,
     // joined, are byte-identical to the compact array text of `blocks_json`.
     let to_sql_err = |e| rusqlite::Error::ToSqlConversionFailure(Box::new(e));
@@ -1886,12 +1902,12 @@ fn upsert_session_with_git(
             None,
         ),
     };
-    let mut result = upsert_session_core(&tx, session, git, expected, &blocks_json)?;
+    let mut result = upsert_session_core(conn, session, git, expected, &blocks_json)?;
     if let Some(summary) = result.as_mut() {
         if let Some(pieces) = &pieces {
-            incremental::checkpoint(&tx, &session.id, &session.blocks, pieces)?;
+            incremental::checkpoint(conn, &session.id, &session.blocks, pieces)?;
         }
-        summary.transcript_revision = tx
+        summary.transcript_revision = conn
             .query_row(
                 "SELECT revision FROM session_block_state WHERE session_id=?1",
                 [&session.id],
@@ -1899,7 +1915,6 @@ fn upsert_session_with_git(
             )
             .optional()?;
     }
-    tx.commit()?;
     Ok(result)
 }
 
@@ -2723,6 +2738,7 @@ fn optional_json(raw: Option<String>) -> Option<Value> {
 }
 
 fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
+    authority::assert_mutation_sql(conn, session_id)?;
     let tx = conn.unchecked_transaction()?;
     let parent = worker_parent(&tx, session_id)?;
     // Ownership is also carried in transcripts for older clients. Release

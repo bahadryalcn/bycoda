@@ -44,6 +44,7 @@ export const PREVIOUS_RUN_SKIP = "Skipped: the previous run is still going.";
 /** Runs saved automations on this machine's own clock, so they keep going
  * with no desktop open. Each run is an ordinary host session. */
 export class HostAutomations {
+  private readonly engine: SessionRunEngine;
   private timer?: ReturnType<typeof setInterval>;
   private ticking?: Promise<void>;
   private closing = false;
@@ -53,10 +54,22 @@ export class HostAutomations {
   readonly ready: Promise<void>;
   constructor(
     private readonly store: HostStore,
-    private readonly engine: SessionRunEngine,
+    engine: SessionRunEngine,
     private readonly now: () => number = Date.now,
     private readonly workspaces?: AutomationWorkspaceServices,
   ) {
+    // Request authority follows manual preparation; scheduled work has no
+    // creator grant. Keep the actual engine admission guarded after every wait.
+    this.engine = {
+      command: async (...args) => {
+        await store.db.checkAuthorization();
+        return engine.command(...args);
+      },
+      updateSession: async (...args) => {
+        await store.db.checkAuthorization();
+        return engine.updateSession(...args);
+      },
+    };
     this.ready = (async () => {
       await store.ready;
       await store.db.scope(async () => {
@@ -99,6 +112,13 @@ export class HostAutomations {
     return (await this.store.db.prepare("SELECT value FROM automations").all())
       .map((row) => JSON.parse(String(row.value)) as HostAutomation)
       .sort((a, b) => a.createdAt - b.createdAt);
+  }
+  /** Bind this request only, never the saved automation's autonomous lifetime. */
+  withAuthorization<T>(authorized: () => Promise<boolean>, work: () => Promise<T>): Promise<T> {
+    return this.store.db.withAuthorization(authorized, async () => {
+      await this.store.db.checkAuthorization();
+      return work();
+    });
   }
   /** Newest first. */
   async runs(automationId: string): Promise<HostAutomationRun[]> {
@@ -153,10 +173,14 @@ export class HostAutomations {
   }
   async delete(id: string): Promise<void> {
     await this.ready;
-
-    if ((await this.runs(id)).some((run) => run.status === "running")) {
+    const history = await this.runs(id);
+    if (history.some((run) => run.status === "running")) {
       throw new Error("This automation is still running. Stop its session before deleting it.");
     }
+    if (history.some((run) => run.cleanupPending))
+      throw new Error(
+        "This automation is still releasing an owned activity. Wait for cleanup before deleting it.",
+      );
     await this.store.db.prepare("DELETE FROM automations WHERE id=?").run(id);
   }
   runNow(id: string): Promise<HostAutomationRun> {
@@ -176,7 +200,19 @@ export class HostAutomations {
     const automation = await this.find(id);
     if (!automation) throw new Error("Automation not found.");
     const now = this.now();
-    return await this.launch(automation, await this.newRun(automation, "manual", now), now);
+    const run = await this.newRun(automation, "manual", now);
+    try {
+      return await this.launch(automation, run, now);
+    } catch (error) {
+      // Covers rejected immediate busy/closing finishes too. CAS leaves an
+      // already-settled/receipt-backed row untouched and keeps stored links.
+      await this.retainOwnedRun(run, {
+        status: "failed",
+        completedAt: this.now(),
+        error: errorMessage(error),
+      });
+      throw error;
+    }
   }
   async stopRun(
     automationId: string,
@@ -206,7 +242,8 @@ export class HostAutomations {
     const now = this.now();
     for (const run of await this.activeRuns()) {
       try {
-        await this.settle(run, now);
+        if (run.cleanupPending) await this.releaseFailedRunActivity(run);
+        else await this.settle(run, now);
       } catch (error) {
         console.error("Could not settle an automation run:", errorMessage(error));
       }
@@ -234,6 +271,7 @@ export class HostAutomations {
     return row ? (JSON.parse(String(row.value)) as HostAutomation) : undefined;
   }
   private async write(automation: HostAutomation): Promise<HostAutomation> {
+    await this.store.db.checkAuthorization();
     await this.store.db
       .prepare(
         "INSERT INTO automations VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
@@ -242,6 +280,7 @@ export class HostAutomations {
     return automation;
   }
   private async writeRun(run: HostAutomationRun): Promise<HostAutomationRun> {
+    await this.store.db.checkAuthorization();
     await this.store.db
       .prepare(
         "INSERT INTO automation_runs VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
@@ -269,6 +308,7 @@ export class HostAutomations {
     ).filter(
       (run) =>
         run.status === "running" ||
+        (run.status === "failed" && run.cleanupPending === true) ||
         (run.status === "pending" &&
           Boolean((run as ManagedAutomationRun).workspaceId) &&
           !this.launching.has(run.automationId)),
@@ -282,6 +322,7 @@ export class HostAutomations {
     if (this.launching.has(automation.id))
       return this.finish(run, "skipped", PREVIOUS_RUN_SKIP, now);
     this.launching.add(automation.id);
+    let accepted: { sessionId: string; runId?: string } | undefined;
     try {
       const history = await this.runs(automation.id);
       const skip = history.some((other) => other.id !== run.id && other.status === "running")
@@ -290,87 +331,156 @@ export class HostAutomations {
           ? null
           : dailyRunLimitSkip(automationLimits(automation), history, run.id, now);
       if (skip) return await this.finish(run, "skipped", skip, now);
-      if (this.closing) return this.finish(run, "skipped", "Skipped: the host is stopping.", now);
-      try {
-        const mode = await writerWorkspaceMode(
-          this.store,
-          this.workspaces,
-          automation.projectId,
-          automation.isolate,
-        );
-        let workspace: Awaited<ReturnType<WorkspaceRegistry["prepare"]>>["workspace"] | undefined;
-        if (mode === "worktree") {
-          if (!this.workspaces)
-            throw new Error("Update the Host to enable managed automation workspaces.");
-          workspace = (
-            await this.workspaces.registry.prepare({
-              idempotencyKey: `automation:${run.id}`,
-              projectId: automation.projectId,
-              environmentId: this.workspaces.environmentId,
-              owner: { kind: "automationRun", id: run.id },
-              slug: automation.name,
-              choice: { defaultMode: "worktree" },
-            })
-          ).workspace;
-          if (
-            workspace.owner.kind !== "automationRun" ||
-            workspace.owner.id !== run.id ||
-            workspace.projectId !== automation.projectId ||
-            workspace.directoryState !== "present"
-          )
-            throw new Error("The managed workspace does not belong to this automation run.");
-          run = { ...run, workspaceId: workspace.id };
-          await this.writeRun(run);
-          const activity = await this.workspaces.activity.start({
-            workspaceId: workspace.id,
-            kind: "provider",
-            ownerId: run.id,
-          });
-          run = { ...run, activityId: activity.id };
-          await this.writeRun(run);
-        }
-        const cwd = workspace?.path ?? (await this.store.project(automation.projectId)).cwd;
-        const started = await launchSessionRun(
-          this.store,
-          this.engine,
-          {
+      if (this.closing)
+        return await this.finish(run, "skipped", "Skipped: the host is stopping.", now);
+      const mode = await writerWorkspaceMode(
+        this.store,
+        this.workspaces,
+        automation.projectId,
+        automation.isolate,
+      );
+      let workspace: Awaited<ReturnType<WorkspaceRegistry["prepare"]>>["workspace"] | undefined;
+      if (mode === "worktree") {
+        if (!this.workspaces)
+          throw new Error("Update the Host to enable managed automation workspaces.");
+        await this.store.db.checkAuthorization();
+        workspace = (
+          await this.workspaces.registry.prepare({
+            idempotencyKey: `automation:${run.id}`,
             projectId: automation.projectId,
-            harness: automation.harness,
-            model: automation.model,
-            modelSettings: automation.modelSettings,
-            runtimeMode: automation.runtimeMode,
-            title: automation.name,
-            prompt: workspace
-              ? `Work only in ${workspace.path} on ${workspace.branchRef}. Commit scoped changes on this branch and leave a clean tree. Integration, push and PR publication require separate owner approval.\n\n${automation.prompt}`
-              : `Work directly in ${cwd}, the current checkout shared with other sessions. Preserve their work and leave your changes uncommitted for owner review. Do not create a worktree, switch branches, stage, commit, merge, push or create PRs.\n\n${automation.prompt}`,
-            ...(workspace
-              ? { worktreeCwd: workspace.path, workspaceId: workspace.id }
-              : { workspaceMode: "current" as const }),
+            environmentId: this.workspaces.environmentId,
+            owner: { kind: "automationRun", id: run.id },
+            slug: automation.name,
+            choice: { defaultMode: "worktree" },
+          })
+        ).workspace;
+        if (
+          workspace.owner.kind !== "automationRun" ||
+          workspace.owner.id !== run.id ||
+          workspace.projectId !== automation.projectId ||
+          workspace.directoryState !== "present"
+        )
+          throw new Error("The managed workspace does not belong to this automation run.");
+        run = { ...run, workspaceId: workspace.id };
+        await this.writeRun(run);
+        await this.store.db.checkAuthorization();
+        const activity = await this.workspaces.activity.start({
+          workspaceId: workspace.id,
+          kind: "provider",
+          ownerId: run.id,
+        });
+        run = { ...run, activityId: activity.id };
+        await this.writeRun(run);
+      }
+      const cwd = workspace?.path ?? (await this.store.project(automation.projectId)).cwd;
+      const started = await launchSessionRun(
+        this.store,
+        {
+          command: async (command) => {
+            const receipt = await this.engine.command(command);
+            const type = (command as { type?: unknown }).type;
+            if (type === "create") run = { ...run, sessionId: receipt.sessionId };
+            if (type === "send") accepted = { sessionId: receipt.sessionId, runId: receipt.runId };
+            return receipt;
           },
-          () => !this.closing,
-        );
-        if (started.deferred)
-          return this.finish(run, "skipped", "Skipped: the host is stopping.", now);
-        if (started.error !== undefined)
-          return await this.finish(
-            { ...run, sessionId: started.sessionId },
-            "failed",
-            started.error,
-            now,
-          );
-        return await this.writeRun({
-          ...run,
+          updateSession: (...args) => this.engine.updateSession(...args),
+        },
+        {
+          projectId: automation.projectId,
+          harness: automation.harness,
+          model: automation.model,
+          modelSettings: automation.modelSettings,
+          runtimeMode: automation.runtimeMode,
+          title: automation.name,
+          prompt: workspace
+            ? `Work only in ${workspace.path} on ${workspace.branchRef}. Commit scoped changes on this branch and leave a clean tree. Integration, push and PR publication require separate owner approval.\n\n${automation.prompt}`
+            : `Work directly in ${cwd}, the current checkout shared with other sessions. Preserve their work and leave your changes uncommitted for owner review. Do not create a worktree, switch branches, stage, commit, merge, push or create PRs.\n\n${automation.prompt}`,
+          ...(workspace
+            ? { worktreeCwd: workspace.path, workspaceId: workspace.id }
+            : { workspaceMode: "current" as const }),
+        },
+        () => !this.closing,
+      );
+      if (accepted) {
+        // The engine's durable send receipt, not the creator's subsequent
+        // connection/grant, owns the accepted run. SQL bookkeeping only.
+        return this.retainOwnedRun(run, {
           status: "running",
           startedAt: now,
-          sessionId: started.sessionId,
-          runId: started.runId,
+          ...accepted,
         });
-      } catch (error) {
-        return this.finish(run, "failed", errorMessage(error), now);
       }
+      if (started.deferred)
+        return await this.finish(run, "skipped", "Skipped: the host is stopping.", now);
+      if (started.error !== undefined)
+        return await this.finish(
+          { ...run, sessionId: started.sessionId },
+          "failed",
+          started.error,
+          now,
+        );
+      return await this.writeRun({
+        ...run,
+        status: "running",
+        startedAt: now,
+        sessionId: started.sessionId,
+        runId: started.runId,
+      });
+    } catch (error) {
+      if (accepted)
+        return this.retainOwnedRun(run, { status: "running", startedAt: now, ...accepted });
+      try {
+        await this.store.db.checkAuthorization();
+      } catch (revoked) {
+        // A created pending run must not remain forever pending after denied
+        // preparation. Never bypass authority for finish's workspace effects.
+        await this.retainOwnedRun(run, {
+          status: "failed",
+          completedAt: now,
+          error: errorMessage(revoked),
+          ...(run.activityId ? { cleanupPending: true } : {}),
+        });
+        throw revoked;
+      }
+      return this.finish(run, "failed", errorMessage(error), now);
     } finally {
       this.launching.delete(automation.id);
     }
+  }
+  /** CAS only the already-owned pending row; never resurrect deleted history,
+   * overwrite a settled run, update concurrent configuration, or start effects. */
+  private retainOwnedRun(
+    owned: ManagedAutomationRun,
+    patch: Partial<HostAutomationRun>,
+  ): Promise<HostAutomationRun> {
+    return this.store.db.runRecoveryBookkeeping(() =>
+      this.store.db.scope(async () => {
+        const row = await this.store.db
+          .prepare("SELECT value FROM automation_runs WHERE id=? AND automation_id=?")
+          .get(owned.id, owned.automationId);
+        if (!row) throw new Error("Automation run history was removed during preparation.");
+        const current = JSON.parse(String(row.value)) as ManagedAutomationRun;
+        if (
+          current.id !== owned.id ||
+          current.automationId !== owned.automationId ||
+          current.createdAt !== owned.createdAt
+        )
+          throw new Error("Automation run identity changed during preparation.");
+        if (current.status !== "pending") return current;
+        const retained = {
+          ...current,
+          ...(owned.workspaceId ? { workspaceId: owned.workspaceId } : {}),
+          ...(owned.activityId ? { activityId: owned.activityId } : {}),
+          ...(owned.sessionId ? { sessionId: owned.sessionId } : {}),
+          ...patch,
+        };
+        if (retained.status === "failed" && retained.activityId) retained.cleanupPending = true;
+        await this.store.db
+          .prepare("UPDATE automation_runs SET value=? WHERE id=? AND automation_id=? AND value=?")
+          .run(JSON.stringify(retained), owned.id, owned.automationId, String(row.value));
+        return retained;
+      }),
+    );
   }
   private async settle(run: HostAutomationRun, now: number): Promise<void> {
     const automation = await this.find(run.automationId);
@@ -401,12 +511,43 @@ export class HostAutomations {
     }
     await this.finish(run, outcome.status, outcome.error, now);
   }
+  /** Compensate only a reservation this exact failed run already owns. The
+   * autonomous tick retries failure; no provider signal or workspace mutation. */
+  private async releaseFailedRunActivity(run: ManagedAutomationRun): Promise<void> {
+    if (!this.workspaces || !run.workspaceId || !run.activityId)
+      throw new Error("Failed automation activity ownership is incomplete.");
+    const workspace = await this.workspaces.registry.get({ workspaceId: run.workspaceId });
+    if (
+      !workspace ||
+      workspace.id !== run.workspaceId ||
+      workspace.owner.kind !== "automationRun" ||
+      workspace.owner.id !== run.id
+    )
+      throw new Error("Failed automation workspace ownership changed.");
+    const activity = (await this.workspaces.activity.list(run.workspaceId)).find(
+      (entry) => entry.id === run.activityId,
+    );
+    if (
+      activity &&
+      (activity.workspaceId !== run.workspaceId ||
+        activity.ownerId !== run.id ||
+        activity.kind !== "provider")
+    )
+      throw new Error("Failed automation activity ownership changed.");
+    await this.store.db.checkAuthorization();
+    if (activity) await this.workspaces.activity.stop(run.activityId);
+    const { cleanupPending: _cleanupPending, ...settled } = run;
+    await this.store.db
+      .prepare("UPDATE automation_runs SET value=? WHERE id=? AND automation_id=? AND value=?")
+      .run(JSON.stringify(settled), run.id, run.automationId, JSON.stringify(run));
+  }
   private async finish(
     run: ManagedAutomationRun,
     status: HostAutomationRun["status"],
     error: string | undefined,
     now: number,
   ): Promise<HostAutomationRun> {
+    await this.store.db.checkAuthorization();
     if (run.activityId) await this.workspaces?.activity.stop(run.activityId);
     if (run.workspaceId && this.workspaces) {
       const workspace = await this.workspaces.registry.get({ workspaceId: run.workspaceId });
@@ -423,7 +564,10 @@ export class HostAutomations {
             status = "failed";
             error =
               "Finalization requires review: commit the intended automation changes on its assigned branch before delivery.";
-          } else await this.workspaces.registry.finish(mutation);
+          } else {
+            await this.store.db.checkAuthorization();
+            await this.workspaces.registry.finish(mutation);
+          }
         }
       }
     }
@@ -452,7 +596,7 @@ export class HostAutomations {
       dayStart.setHours(0, 0, 0, 0);
       await this.store.db
         .prepare(
-          "DELETE FROM automation_runs WHERE automation_id=? AND json_extract(value, '$.status') NOT IN ('pending','running') AND COALESCE(json_extract(value, '$.startedAt'), 0) < ? AND id NOT IN (SELECT id FROM automation_runs WHERE automation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?)",
+          "DELETE FROM automation_runs WHERE automation_id=? AND json_extract(value, '$.status') NOT IN ('pending','running') AND NOT COALESCE(json_extract(value, '$.cleanupPending'), 0) AND COALESCE(json_extract(value, '$.startedAt'), 0) < ? AND id NOT IN (SELECT id FROM automation_runs WHERE automation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?)",
         )
         .run(run.automationId, dayStart.getTime(), run.automationId, MAX_RUNS_PER_AUTOMATION);
       return finished;

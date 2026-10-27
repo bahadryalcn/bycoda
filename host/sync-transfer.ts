@@ -100,6 +100,11 @@ export class SyncTransfers {
     return { data };
   }
 
+  forget(sessionId: string): void {
+    for (const [id, entry] of this.transfers)
+      if (entry.sessionId === sessionId) this.transfers.delete(id);
+  }
+
   private prune() {
     const now = Date.now();
     for (const [id, entry] of this.transfers) if (entry.expires < now) this.transfers.delete(id);

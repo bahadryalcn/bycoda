@@ -47,6 +47,7 @@ import {
 } from "./git-actions";
 import type { HostStore } from "./store";
 import { HostCheckpoints } from "./checkpoints";
+import { fileRevertGeneration } from "./session-file-revert";
 import { browseHostFolder } from "./browse";
 import { formatWorkspaceText } from "./editor-format";
 import { listHostClaudeCommands } from "./claude-commands";
@@ -187,6 +188,10 @@ export class WorkspaceCommands {
     ) => Promise<T>,
     private readonly checkpoints = new HostCheckpoints(
       resolve(dirname(store.attachmentDir), "checkpoints"),
+      undefined,
+      async (sessionId, generation) => {
+        await store.assertAuthority(sessionId, generation);
+      },
     ),
     private readonly delivery?: WorkspaceCommandDelivery,
   ) {}
@@ -993,14 +998,16 @@ export class WorkspaceCommands {
   }
 
   private async checkpoint(command: string, input: Record<string, unknown>) {
+    input = { ...input };
+    const generation = fileRevertGeneration(input.authorityGeneration);
     const cwd = await this.gitRoot(input.cwd);
     if (typeof input.sessionId !== "string") throw new Error("Invalid checkpoint session");
     const path = input.relative == null ? undefined : String(input.relative);
     if (command === "session_checkpoint_status")
-      return await this.checkpoints.status(input.sessionId, cwd);
+      return await this.checkpoints.status(input.sessionId, cwd, generation);
     if (command === "session_checkpoint_file_diff") {
       if (path === undefined) throw new Error("Choose a checkpoint file");
-      return await this.checkpoints.fileDiff(input.sessionId, cwd, path);
+      return await this.checkpoints.fileDiff(input.sessionId, cwd, path, generation);
     }
     const session = input.sessionId;
     if (input.expectedCheckpoint !== undefined && typeof input.expectedCheckpoint !== "string")
@@ -1012,6 +1019,7 @@ export class WorkspaceCommands {
         path,
         command === "session_checkpoint_undo",
         input.expectedCheckpoint as string | undefined,
+        generation,
       );
     return command === "session_checkpoint_undo"
       ? await withHostGitMutation(cwd, change)

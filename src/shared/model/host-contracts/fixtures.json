@@ -1,0 +1,211 @@
+[
+  {
+    "name": "protected-bulk-result-descriptor",
+    "schema": "bulkResult",
+    "valid": true,
+    "value": {
+      "$bulk": {
+        "kind": "bulk",
+        "transferId": "transfer-a",
+        "environmentId": "environment-a",
+        "totalBytes": 1000000,
+        "chunkBytes": 65536,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "expiresAt": 1800000000000
+      }
+    }
+  },
+  {
+    "name": "bulk-hash-final-newline-rejected",
+    "schema": "bulkDescriptor",
+    "valid": false,
+    "value": {
+      "kind": "bulk",
+      "transferId": "transfer-a",
+      "environmentId": "environment-a",
+      "totalBytes": 1000000,
+      "chunkBytes": 65536,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+      "expiresAt": 1800000000000
+    }
+  },
+  {
+    "name": "declared-project-query",
+    "schema": "request",
+    "valid": true,
+    "value": { "jsonrpc": "2.0", "id": "window-a:1", "method": "projects.list", "params": {} }
+  },
+  {
+    "name": "unknown-envelope-field",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1",
+      "method": "projects.list",
+      "params": {},
+      "extra": true
+    }
+  },
+  {
+    "name": "unknown-method-param",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1",
+      "method": "projects.list",
+      "params": { "extra": true }
+    }
+  },
+  {
+    "name": "incomplete-command-rejected",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1",
+      "method": "commands.dispatch",
+      "params": { "type": "send" }
+    }
+  },
+  {
+    "name": "run-bound-stop-is-cancel-command",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:2",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "cancel",
+        "commandId": "command-a",
+        "sessionId": "session-a",
+        "runId": "run-a"
+      }
+    }
+  },
+  {
+    "name": "steer-requires-run-identity",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:3",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "steer",
+        "commandId": "command-a",
+        "sessionId": "session-a",
+        "text": "Türkçe 😀"
+      }
+    }
+  },
+  {
+    "name": "send-preserves-unicode-body",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:4",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "send",
+        "commandId": "command-a",
+        "sessionId": "session-a",
+        "text": "Türkçe 😀"
+      }
+    }
+  },
+  {
+    "name": "queue-finish-boolean-is-not-coerced",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:5",
+      "method": "sessions.queue.finish",
+      "params": {
+        "sessionId": "session-a",
+        "clientId": "desktop:window-a",
+        "token": "claim-a",
+        "accepted": "true"
+      }
+    }
+  },
+  {
+    "name": "request-id-final-newline",
+    "schema": "request",
+    "valid": false,
+    "value": { "jsonrpc": "2.0", "id": "window-a:1\n", "method": "projects.list", "params": {} }
+  },
+  {
+    "name": "unicode-body-preserved",
+    "schema": "response",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1",
+      "result": { "text": "Türkçe 中文 😀", "missing": null }
+    }
+  },
+  {
+    "name": "one-result-or-error",
+    "schema": "response",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1",
+      "result": null,
+      "error": { "code": -32603, "message": "Internal error" }
+    }
+  },
+  {
+    "name": "parse-error-has-null-correlation",
+    "schema": "response",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": null,
+      "error": { "code": -32700, "message": "Invalid JSON", "data": { "category": "validation" } }
+    }
+  },
+  {
+    "name": "safe-sequence-upper-bound",
+    "schema": "streamCursor",
+    "valid": true,
+    "value": { "epoch": "epoch-a", "sequence": 9007199254740991 }
+  },
+  {
+    "name": "unsafe-sequence-rejected",
+    "schema": "streamCursor",
+    "valid": false,
+    "value": { "epoch": "epoch-a", "sequence": 9007199254740992 }
+  },
+  {
+    "name": "fractional-sequence-rejected",
+    "schema": "streamCursor",
+    "valid": false,
+    "value": { "epoch": "epoch-a", "sequence": 0.5 }
+  },
+  {
+    "name": "authority-is-not-socket-generation",
+    "schema": "authorityReference",
+    "valid": false,
+    "value": {
+      "environmentId": "environment-a",
+      "sessionId": "session-a",
+      "connectionGeneration": 3
+    }
+  },
+  {
+    "name": "explicit-authority-generation",
+    "schema": "authorityReference",
+    "valid": true,
+    "value": {
+      "environmentId": "environment-a",
+      "sessionId": "session-a",
+      "authorityGeneration": 3
+    }
+  }
+]

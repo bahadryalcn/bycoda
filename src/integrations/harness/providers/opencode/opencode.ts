@@ -510,7 +510,13 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
             () => serverExited,
             SERVER_TIMEOUT_MS,
           );
-    const client = new OpenCodeClient(url, input.cwd, generation, service?.password);
+    const client = new OpenCodeClient(
+      url,
+      input.cwd,
+      generation,
+      service?.password,
+      input.sessionId,
+    );
     const openCodeSession = await resolveSession(client, {
       resume: canResume ? resume : undefined,
       runtimeMode: input.runtimeMode,

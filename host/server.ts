@@ -36,6 +36,38 @@ import { probeNativeCodexImageCapability } from "./social-images";
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { sessionConversationPage } from "../src/features/agent-app/model/sessionConversation";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createEnvironmentService } from "./domains/environment/service";
+import { createProjectsService } from "./domains/projects/service";
+import { createSessionReadService } from "./domains/sessions/service";
+import { createCommandService } from "./domains/commands/service";
+import { createFileService } from "./domains/files/service";
+import { createTerminalService, type TerminalAction } from "./domains/terminals/service";
+import { fileRevertGeneration } from "./session-file-revert";
+import { createHostGitService } from "./domains/git/service";
+import { createHostNotesService } from "./domains/notes/service";
+import { createHostTasksService } from "./domains/tasks/service";
+import { createHostGoalsService } from "./domains/goals/service";
+import { createHostSprintsService } from "./domains/sprints/service";
+import { createHostAutomationsService } from "./domains/automations/service";
+import {
+  createDevServersService,
+  type DevServerAction,
+  type DevServerBridgeAction,
+} from "./domains/dev-servers/service";
+import { withHostGitMutation } from "./git-mutations";
+import { createHostPersistenceService } from "./domains/environment/persistence-service";
+import { SafeCounterSchema } from "../src/shared/model/host-contracts/schemas";
+import { rewindAuthorityGeneration } from "./session-rewind";
+import {
+  createSessionQueueService,
+  type SessionQueueAction,
+} from "./domains/sessions/queue-service";
+import { createHostDispatcher } from "./transport/dispatch";
+import { attachHostWebSocketTransport, HOST_WS_READ_CAPABILITY } from "./transport/ws/server";
+import { HostBulkTransfers, createHostBulkHandler } from "./transport/http/bulk";
+import { HostSubscriptionHub } from "./transport/ws/subscriptions";
+import { MobileTlsAuthority } from "./security/mobile-tls";
+import { JsonValueSchema, WS_LIMITS } from "../src/shared/model/host-contracts";
 import { McpHttp } from "./mcp-http";
 import { readHarnessSkill, searchHarnessSkills } from "./harness-skills";
 import { skillInvocationTokens } from "../src/features/skills/model/skillTokens";
@@ -54,6 +86,7 @@ import {
   type HostSessionSummary,
   type RemoteProvider,
   type SessionSync,
+  type SessionSyncResponse,
 } from "../src/features/connections/model/protocol";
 import { HostEngine, parseCommand } from "./engine";
 import { isClearSessionCommand } from "../src/features/sessions/model/newSessionCommand";
@@ -68,15 +101,6 @@ import { SocialPeers } from "./social-peers";
 import { createSocialAdapters } from "../src/integrations/social/platformAdapters";
 import { HostTasks } from "./tasks";
 import { HostSprints } from "./sprints";
-import type {
-  SprintCreateInput,
-  SprintUpdateInput,
-  SprintCommand,
-  SprintCompleteInput,
-  SprintPlanInput,
-  SprintIngestInput,
-  SprintGoalContextInput,
-} from "../src/features/tasks/model/hostSprints";
 import { AttachmentOwnership } from "./attachment-ownership";
 import { HostGoals } from "./goals";
 import { HostStewards } from "./stewards";
@@ -111,6 +135,7 @@ import { DesktopSessions } from "./desktopSessions";
 import { QueueDrainer, queueRowCommands } from "./queue-drainer";
 import { SessionQueues } from "./session-queue";
 import { RequestAuthorizationError } from "./store-db";
+import { HostDomainAuthorizationError } from "./domains/context";
 import { RunLeases } from "./run-lease";
 import { LeaseHeldError, type RunLease } from "../src/features/sync/model/runLease";
 import { AdoptedChanges } from "./adoptedChanges";
@@ -136,7 +161,7 @@ import { branchCache } from "./git-actions";
 import { withOverlay } from "./desktopLive";
 import { writeAttachmentChunk, readAttachmentChunk, attachmentUploadStatus } from "./attachments";
 import { sessionWorkCwd, type LinkedWorkItem } from "../src/features/sessions/model/session";
-import { parseGithubWorkItemUrl } from "../src/features/sessions/model/sessionWorkItem";
+import { parseGithubWorkItemUrl } from "../src/shared/lib/githubWorkItem";
 import { SyncTransfers, serializedResponse } from "./sync-transfer";
 import { RevisionWaits } from "./revisionWait";
 import {
@@ -449,14 +474,11 @@ export async function createHostServer(
   const browserRuntime = new BrowserRuntime(featureDirectory);
   const runtimeLogs = new RuntimeLogsService();
   const terminalLogs = new RuntimeTerminalLogs(runtimeLogs);
-  const terminalActivityCursors = new Map<string, number>();
-  const terminalActivityStates = new Map<string, string>();
   const touchTerminalWorkspace = (projectId: string, terminalId: unknown, closedCwd?: string) =>
     recordWorkspaceActivity(async () => {
       const terminal = terminals.list(projectId).terminals.find((entry) => entry.id === terminalId);
       const cwd = terminal?.cwd ?? closedCwd;
       if (!cwd) return;
-      if (terminal) terminalActivityStates.set(terminal.id, terminal.state);
       const workspaces = await managedWorkspaces.list({
         projectId,
         environmentId: engine.store.environmentId,
@@ -670,6 +692,7 @@ export async function createHostServer(
       return;
     }
     if (!current.desktop) return;
+    if (current.authorityGeneration !== undefined) return;
     const stamp = known ?? (await desktop.stampAsync(id));
     if (!stamp) return;
     if (stamp.running) throw new LeaseHeldError(runLeases.holder(id)?.holder ?? "desktop");
@@ -1369,6 +1392,14 @@ export async function createHostServer(
       if (!address || typeof address === "string") throw new Error("Host is not listening.");
       return address.port;
     },
+    undefined,
+    undefined,
+    {
+      tlsAuthority: new MobileTlsAuthority(
+        join(featureDirectory, "mobile-tls.json"),
+        engine.store.environmentId,
+      ),
+    },
   );
   const tunnels =
     tunnelsOverride ??
@@ -1398,6 +1429,573 @@ export async function createHostServer(
     conversationWorkspace,
     projectSessions: projectSessionList,
   });
+  const environmentService = createEnvironmentService({
+    snapshot: async () => ({
+      protocolVersion: HOST_PROTOCOL_VERSION,
+      environmentId: engine.store.environmentId,
+      name: hostname(),
+      webControl: webControl
+        ? { origin: webControl.origin, url: `${webControl.origin}/control` }
+        : undefined,
+      platform: process.platform,
+      mobileTls: (await mobileLan.status()).tls,
+      persistence: engine.store.db.persistenceHealth(),
+      gitRewindExecution: "host",
+      ...(buildIdentity ? { buildIdentity } : {}),
+      // Older clients validate this list against Codex and Claude only.
+      providers: [
+        ...new Set([...providers, ...((await genericAcp.list()).length ? ["acp" as const] : [])]),
+      ],
+      capabilities: [
+        HOST_WS_READ_CAPABILITY,
+        "transport.ws.sessions.v2",
+        "transport.ws.queue.v2",
+        "transport.ws.files.v2",
+        "transport.ws.terminals.v2",
+        "transport.ws.git.v2",
+        "transport.ws.notes.v2",
+        "transport.ws.tasks.v2",
+        "transport.ws.goals.v2",
+        "transport.ws.devServers.v2",
+        "transport.ws.sprints.v2",
+        "transport.ws.automations.v2",
+        "transport.ws.health.v2",
+        "transport.ws.streams.v2",
+        "transport.ws.bulk.v2",
+        WORKSPACE_CAPABILITIES.managed,
+        WORKSPACE_CAPABILITIES.policy,
+        "workspaces.delivery.v1",
+        "workspaces.pr-publication.v1",
+        "workspaces.lifecycle.v1",
+        "workspaces.pinning.v1",
+        ...((await managed.exactGitRewind.enabled())
+          ? [
+              "sessions.git-rewind.experimental.v1",
+              "sessions.git-rewind.v1",
+              "sessions.git-rewind-undo.v1",
+              "sessions.native-execution.v1",
+              "sessions.native-rewind.v1",
+            ]
+          : []),
+        "sessions.managedCreation.v1",
+        "workspaces.native-activity.v1",
+        ...(buildIdentity ? ["build.identity.v1"] : []),
+        "terminals.v1",
+        "mobile.pairing",
+        "mobile.access",
+        "tunnels.manage",
+        "sessions",
+        "sessions.createFirstTurn",
+        "sessions.pages",
+        "sessions.longPoll",
+        "sessions.lazyHistory",
+        "sessions.block",
+        "sessions.digests",
+        "machine.changes",
+        "machine.changes.inlineSync",
+        "git.watch",
+        "commands.status",
+        "sessions.harnessSwitch",
+        "sessions.steer",
+        "sessions.executionOwner",
+        "sessions.rewind",
+        "sessions.checkpoint-review",
+        "sessions.edit-from-here.v1",
+        "sessions.plan.review",
+        "sessions.contextual",
+        ...(providers.includes("claude") && engine.supportsItemStop("claude")
+          ? ["sessions.stopItem.claude"]
+          : []),
+        "projects.browse",
+        "projects.directory.v1",
+        "projects.createDirectory",
+        "models.list",
+        "crews.v1",
+        "crews.tasks.v1",
+        "crews.delete.v1",
+        "crews.run-delete.v1",
+        "crews.agent-groups.v1",
+        "approvals",
+        "questions",
+        "diff",
+        "git.branches",
+        "git.switch",
+        "git.createBranch",
+        "git.worktrees",
+        "git.worktreeCreate",
+        "files.read",
+        "files.list",
+        "files.index",
+        "workspace.run",
+        "workspace.browseDir",
+        "files.search",
+        "files.searchContent",
+        "files.create",
+        "files.write",
+        "git.index",
+        "git.fileDiff",
+        "git.action",
+        "git.actions",
+        "git.stash.clearSnapshot",
+        "git.management.snapshot.v1",
+        "git.conflicts",
+        "attachments.upload",
+        "attachments.resume",
+        "attachments.ownership.v1",
+        "attachments.read",
+        "sessions.draft",
+        "sessions.plan",
+        "sessions.shell",
+        "shell.profiles",
+        "shell.profile.compare.v1",
+        "sessions.desktop",
+        "sessions.desktopLive",
+        "sessions.desktop-writer-retirement.v1",
+        "sessions.queue",
+        "sessions.queue.lease",
+        "sessions.runLease",
+        "sync",
+        "automations",
+        "tasks",
+        "tasks.todo",
+        "tasks.history.v1",
+        "tasks.sprints.v1",
+        "tasks.workspaces",
+        "tasks.provider-accounts",
+        "goals.direct-checkout",
+        "goals.settings",
+        "goals.final-review",
+        "tasks.run-budget",
+        "tasks.preflight",
+        "tasks.evaluation",
+        "tasks.reviewer-profile",
+        "tasks.notes",
+        "tasks.review-recheck",
+        "tasks.blocked-takeover",
+        "tasks.continue-until-done",
+        "goals",
+        "stewards",
+        "host.settings",
+        "notes",
+        "notes.sessionFilter.v1",
+        "sessions.noteContext.v1",
+        "history.import.desktop.v1",
+        "projects.organization.desktop.v1",
+        "preferences.desktop.v1",
+        "worktrees.removal.desktop.v1",
+        "git.selective.review",
+        "usage.sessions.read",
+        "providers.center.read",
+        "providers.desktop.v1",
+        "providers.desktop.metadata.v1",
+        "ssh.workspace.desktop.v1",
+        "terminals.pty.desktop.v1",
+        "providers.desktop.quotaRefresh.v1",
+        "providers.acp.patchMetadata",
+        "host.access.read",
+        "devices.revokeOther",
+        "dev.servers.reviewed-impact",
+        "inbox.attention",
+        "inbox.providers.desktop",
+        "inbox.review.v1",
+        "inbox.jiraBoard.v1",
+        "device.host",
+        "devices.preview.mobile.v1",
+        "host.tools.machine-targets",
+        "generic-acp-v1",
+        "handoff-history-v1",
+        "resources.diagnostics",
+        "browser.shared.setup",
+        "browser.shared",
+        "runtime.logs",
+        "conversation.tools",
+        "runtime.logs.monitors",
+        "browser.annotation",
+        "dev.servers",
+        "dev.servers.private-access",
+        "voice.realtime.v1",
+        "voice.local.v1",
+        "voice.local.setup.v1",
+        "social.v1",
+        "social.policy.reviewed.v1",
+        "social.programs.v2",
+      ],
+    }),
+  });
+  const projectsService = createProjectsService({
+    list: async () => await engine.store.projects(),
+    directoryPorts: {
+      directory: async () =>
+        desktop.live.projectDirectory(await engine.store.projects(), engine.store.environmentId),
+      browse: browseHostDirectories,
+      createDirectory: createHostDirectory,
+      open: (cwd, authorized) =>
+        engine.store.db.withAuthorization(authorized, () => engine.openProject(cwd)),
+    },
+  });
+  const sessionService = createSessionReadService<
+    HostSession,
+    Extract<SessionSync, { kind: "delta" }>["value"],
+    HostSessionSummary,
+    SessionSyncResponse
+  >({
+    repository: {
+      projectList: projectSessionList,
+      session: (id) => engine.store.session(id),
+      sync: (id, revision) => engine.store.sync(id, revision),
+      readView: readSessionView,
+      catchUp,
+    },
+    nativeProjection: {
+      watch: desktopWatch,
+      view: desktopView,
+      sync: desktopSync,
+      recheckMs: desktopRecheckMs,
+    },
+    transcript: {
+      page: (...args) => transcriptPages.page(...args),
+      preview: previewSession,
+      summaryPage: (value) => transcriptPage(value, undefined, undefined, true),
+      partial: partialSessionSync,
+      withHead,
+      previewRewindHistory,
+    },
+    transfers,
+    revisionWaits,
+  });
+  const sessionQueueService = createSessionQueueService({
+    environmentId: engine.store.environmentId,
+    transaction: (work) => engine.store.transaction(work),
+    sessionStatus: queueSessionStatus,
+    desktopWatch,
+    queues: {
+      get: (id) => sessionQueues.get(id),
+      serve: (...args) => sessionQueues.serve(...args),
+    },
+    attachments: {
+      validateExposure: (params) => attachmentOwnership.validateExposure(params),
+      normalize: (raw) => resolveAttachments(engine.store, parseRemoteAttachments(raw)),
+    },
+  });
+  const queueOperation =
+    (action: SessionQueueAction) =>
+    async (
+      params: Record<string, unknown>,
+      context: import("./domains/context").HostDomainContext,
+    ) => {
+      const exposeAttachments = context.exposeQueueAttachments;
+      if (!exposeAttachments)
+        throw new Error("Authenticated queue attachment grant is unavailable.");
+      return sessionQueueService[action](params, { ...context, exposeAttachments });
+    };
+  const commandService = createCommandService<HostSession>({
+    repository: {
+      receiptStatus: (id) => engine.store.receiptStatus(id),
+      transaction: (operation) => engine.store.transaction(operation),
+      readView: readSessionView,
+      modelTarget: async (id) => (await featureSession(id)).session,
+      adopt,
+      touchWorkspace: touchSessionWorkspace,
+    },
+    execution: {
+      persistenceReady: () => engine.store.db.persistenceHealth().state === "ready",
+      validateCommand: (command) => {
+        parseCommand(command);
+      },
+      attachmentRefs: parseRemoteAttachments,
+      previewContextual: (command, value) => engine.previewContextual(command, value),
+      command: (command) => engine.command(command),
+      clearConversation: (command) => engine.clearConversation(command),
+      rewind: (command) => engine.rewind(command),
+      assertHostMayRun,
+      isClearCommand: isClearSessionCommand,
+    },
+    queue: {
+      reapStale: (id) => sessionQueues.reapStale(id),
+      get: (id) => sessionQueues.get(id),
+      renew: (id, client) => sessionQueues.renew(id, client),
+      assertSend: (...args) => sessionQueues.assertSend(...args),
+      consumed: (id, message) => sessionQueues.consumed(id, message),
+      sameModelTarget: sameQueuedModelTarget,
+      kick: (id) => queueDrainer.kick(id),
+      leaseHeld: (holder, detail) => new LeaseHeldError(holder, detail),
+    },
+    nativeProjection: {
+      watch: desktopWatch,
+      alive: () => !!desktop.live.alive(),
+      enqueue: (command) => desktop.live.enqueue(command),
+      withRetiredWriters: withRetiredDesktopWriters,
+    },
+    crews: { ownerDirective: (command) => crews.ownerDirective(command) },
+  });
+  const fileService = createFileService({
+    project: (id) => engine.store.project(id),
+    resolveWorkspace: resolveHostWorktreeAsync,
+    activity: startWorkspaceActivity,
+    files: {
+      read: readHostFile,
+      list: listHostFiles,
+      index: indexHostFiles,
+      search: searchHostFiles,
+      searchContent: searchHostContent,
+      create: createHostPath,
+      write: writeHostFile,
+    },
+  });
+  const terminalService = createTerminalService({
+    project: (id) => engine.store.project(id),
+    terminals,
+    activity: touchTerminalWorkspace,
+  });
+  const gitService = createHostGitService({
+    project: (id) => engine.store.project(id),
+    resolveWorktree: resolveHostWorktreeAsync,
+    withIdleProject: (id, work) => engine.withIdleProject(id, work),
+    serializeMutation: (cwd, work, scope) => withHostGitMutation(cwd, work, undefined, scope),
+    startActivity: (cwd) => startWorkspaceActivity(cwd, "mutation", "git.action"),
+    invalidateRoots: () => workspace.invalidateRoots(),
+    diff: async (cwd) =>
+      (
+        await exec(
+          "git",
+          ["-c", "core.pager=cat", "diff", "--no-ext-diff", "--no-textconv", "HEAD", "--"],
+          { cwd, timeout: 10_000, maxBuffer: 2 * 1024 * 1024 },
+        )
+      ).stdout,
+    branches: hostBranches,
+    switch: switchHostBranch,
+    createBranch: createHostBranch,
+    worktrees: hostWorktrees,
+    worktreeCreate: createHostWorktree,
+    index: hostGitIndex,
+    fileDiff: hostFileDiff,
+    action: hostGitAction,
+  });
+  const notesService = createHostNotesService({
+    session: featureSession,
+    project: (id) => engine.store.project(id),
+    notes: hostNotes,
+  });
+  const tasksService = createHostTasksService({
+    project: (id) => engine.store.project(id),
+    tasks,
+    withAuthorization: (authorized, work) => engine.store.db.withAuthorization(authorized, work),
+    retarget: (id, target, autoMerge, context) => {
+      if (!context.retargetTask)
+        throw new Error("Authenticated workspace-owner capability is required");
+      return context.retargetTask(id, target, autoMerge) as ReturnType<HostTasks["retarget"]>;
+    },
+  });
+  const goalsService = createHostGoalsService({ goals });
+  const devServersService = createDevServersService({
+    project: (id) => engine.store.project(id),
+    projects: () => engine.store.projects(),
+    workspace: async (id) => (await workspaceForOwnerRpc(id)) ?? undefined,
+    assertWorkspaceWritable: (id) => managed.assertWritable(id),
+    servers: devServers,
+    openExternal: async (url, _context, authorize) => {
+      await authorize();
+      return openDevServerBrowser(url);
+    },
+  });
+  const sprintsService = createHostSprintsService({ sprints });
+  const automationsService = createHostAutomationsService({ automations });
+  const persistenceService = createHostPersistenceService({
+    status: () => engine.store.db.persistenceHealth(),
+    recover: (authorized) =>
+      engine.store.db.withAuthorization(authorized, () => engine.store.db.recoverPersistence()),
+  });
+  const domainDispatcher = createHostDispatcher({
+    environmentId: engine.store.environmentId,
+    environment: environmentService,
+    projects: projectsService,
+    operations: {
+      "sessions.list": sessionService.list,
+      "sessions.page": sessionService.page,
+      "sessions.sync": sessionService.sync,
+      "sessions.get": sessionService.get,
+      "sessions.block": sessionService.block,
+      "sessions.syncChunk": sessionService.syncChunk,
+      "commands.status": commandService.status,
+      "commands.dispatch": commandService.dispatch,
+      "sessions.queue.get": queueOperation("get"),
+      "sessions.queue.change": queueOperation("change"),
+      "sessions.queue.claim": queueOperation("claim"),
+      "sessions.queue.finish": queueOperation("finish"),
+      "sessions.queue.release": queueOperation("release"),
+      "sessions.queue.lease": queueOperation("lease"),
+      "files.read": fileService.read,
+      "files.list": fileService.list,
+      "files.index": fileService.index,
+      "files.search": fileService.search,
+      "files.searchContent": fileService.searchContent,
+      "files.create": fileService.create,
+      "files.write": fileService.write,
+      "sprints.list": sprintsService.list,
+      "sprints.get": sprintsService.get,
+      "sprints.create": sprintsService.create,
+      "sprints.update": sprintsService.update,
+      "sprints.start": sprintsService.start,
+      "sprints.complete": sprintsService.complete,
+      "sprints.archive": sprintsService.archive,
+      "sprints.plan": sprintsService.plan,
+      "sprints.report": sprintsService.report,
+      "sprints.ingest": sprintsService.ingest,
+      "sprints.goalContext": sprintsService.setGoalContext,
+      "automations.list": automationsService.list,
+      "automations.preview": automationsService.preview,
+      "automations.save": automationsService.save,
+      "automations.delete": automationsService.delete,
+      "automations.runs": automationsService.runs,
+      "automations.runNow": automationsService.runNow,
+      "devServers.list": devServersService.list,
+      "devServers.details": devServersService.details,
+      "devServers.start": devServersService.start,
+      "devServers.stop": devServersService.stop,
+      "devServers.kill": devServersService.kill,
+      "devServers.restart": devServersService.restart,
+      "devServers.logs": devServersService.logs,
+      "devServers.openExternal": devServersService.openExternal,
+      "devServers.bridgeCheck": devServersService.bridgeCheck,
+      "devServers.bridgeOpen": devServersService.bridgeOpen,
+      "devServers.bridgeRead": devServersService.bridgeRead,
+      "devServers.bridgeWrite": devServersService.bridgeWrite,
+      "devServers.bridgeClose": devServersService.bridgeClose,
+      "goals.list": goalsService.list,
+      "goals.create": goalsService.create,
+      "goals.finalReview.recheck": goalsService.recheckFinalReview,
+      "goals.approve": goalsService.approve,
+      "goals.update": goalsService.update,
+      "goals.replan": goalsService.replan,
+      "goals.cancel": goalsService.cancel,
+      "goals.delete": goalsService.delete,
+      "tasks.snapshotWithCursor": tasksService.snapshotWithCursor,
+      "tasks.events": tasksService.events,
+      "tasks.list": tasksService.list,
+      "tasks.save": tasksService.save,
+      "tasks.move": tasksService.move,
+      "tasks.start": tasksService.start,
+      "tasks.reorder": tasksService.reorder,
+      "tasks.retarget": tasksService.retarget,
+      "tasks.review.recheck": tasksService.recheckReview,
+      "tasks.notes.read": tasksService.readNotes,
+      "tasks.notes.resolve": tasksService.resolveNote,
+      "tasks.delete": tasksService.delete,
+      "tasks.preflight": tasksService.preflight,
+      "tasks.evaluation.save": tasksService.recordEvaluation,
+      "projects.directory": projectsService.directory,
+      "projects.browse": projectsService.browse,
+      "projects.createDirectory": projectsService.createDirectory,
+      "projects.open": projectsService.open,
+      "notes.list": notesService.list,
+      "notes.get": notesService.get,
+      "notes.upsert": notesService.upsert,
+      "notes.delete": notesService.delete,
+      "git.diff": gitService.diff,
+      "git.branches": gitService.branches,
+      "git.switch": gitService.switch,
+      "git.createBranch": gitService.createBranch,
+      "git.worktrees": gitService.worktrees,
+      "git.worktreeCreate": gitService.worktreeCreate,
+      "git.index": gitService.index,
+      "git.fileDiff": gitService.fileDiff,
+      "git.action": gitService.action,
+      "terminals.list": terminalService.list,
+      "terminals.create": terminalService.create,
+      "terminals.read": terminalService.read,
+      "terminals.write": terminalService.write,
+      "terminals.interrupt": terminalService.interrupt,
+      "terminals.close": terminalService.close,
+      "environment.persistence.status": persistenceService.status,
+      "environment.persistence.recover": persistenceService.recover,
+    },
+  });
+  const bulkTransfers = new HostBulkTransfers({ environmentId: engine.store.environmentId });
+  const authenticateDevice = async (token: string) =>
+    (await engine.store.authenticated(token))
+      ? createHash("sha256").update(token).digest("hex")
+      : null;
+  const bulkHandler = createHostBulkHandler({
+    transfers: bulkTransfers,
+    authenticate: authenticateDevice,
+  });
+  const subscriptionHub = new HostSubscriptionHub({
+    environmentId: engine.store.environmentId,
+    load: async (target, principalId, signal, context) =>
+      await engine.store.db.outsideScope(async () => {
+        signal.throwIfAborted();
+        const resource =
+          target.kind === "session"
+            ? `session:${target.sessionId}`
+            : target.kind === "project"
+              ? `project:${target.projectId}`
+              : "environment";
+        const lease = bulkTransfers.begin(principalId, resource);
+        try {
+          let value: unknown;
+          let revision: number | undefined;
+          let baseRevision: number | undefined;
+          let kind: "snapshot" | "delta" = "snapshot";
+          if (target.kind === "environment") value = { projects: await projectsService.list() };
+          else if (target.kind === "project") {
+            const current = await projectSessionList(target.projectId);
+            value = { etag: current.etag, sessions: current.list };
+          } else {
+            if (
+              !(await engine.store.sessionStateMetadata(target.sessionId)) &&
+              !(await desktop.projectCwdAsync(target.sessionId))
+            )
+              return null;
+            const sync = await engine.store.db.withAuthorization(context.authorized, () =>
+              sessionService.stream(
+                { sessionId: target.sessionId, revision: context.revision },
+                { authorized: context.authorized, signal },
+              ),
+            );
+            if (sync.kind === "unchanged")
+              return { kind: "unchanged" as const, revision: sync.revision };
+            if (sync.kind === "delta") {
+              value = sync;
+              kind = "delta";
+              baseRevision = sync.base;
+            } else value = sync.value;
+            revision = sync.value.revision;
+          }
+          signal.throwIfAborted();
+          const data = JsonValueSchema.parse(JSON.parse(JSON.stringify(value)));
+          return {
+            kind,
+            revision,
+            baseRevision,
+            data: bulkTransfers.encode(lease, data, WS_LIMITS.streamChunkBytes - 1024),
+          };
+        } finally {
+          bulkTransfers.release(lease);
+        }
+      }),
+  });
+  const unsubscribeChanges = engine.store.subscribeChanges(() => subscriptionHub.invalidate());
+  const unsubscribeAuthority = engine.store.subscribeAuthorityChanges((change) => {
+    bulkTransfers.invalidate(`session:${change.sessionId}`);
+    transfers.forget(change.sessionId);
+    subscriptionHub.resnapshot({ kind: "session", sessionId: change.sessionId });
+    if (change.projectId) {
+      bulkTransfers.invalidate(`project:${change.projectId}`);
+      subscriptionHub.resnapshot({ kind: "project", projectId: change.projectId });
+    }
+  });
+  const previousDesktopChange = desktop.live.onChange;
+  desktop.live.onChange = () => {
+    previousDesktopChange?.();
+    subscriptionHub.invalidate();
+  };
+  const invalidateSessionCopies = (sessionId: string, projectId: string) => {
+    subscriptionHub.forget({ kind: "session", sessionId });
+    bulkTransfers.invalidate(`session:${sessionId}`);
+    transfers.forget(sessionId);
+    bulkTransfers.invalidate(`project:${projectId}`);
+    subscriptionHub.resnapshot({ kind: "project", projectId });
+  };
   let closing = false;
   const requests = new Set<Promise<void>>();
   const server = createServer(
@@ -1429,6 +2027,7 @@ export async function createHostServer(
         let dispatchStarted: number | undefined;
         let dispatchMethod: unknown;
         try {
+          if (await bulkHandler(request, response)) return;
           if (await mobilePairing.handle(request, response)) return;
           // Desktop native HTTP supplies credentials. This endpoint intentionally
           // accepts no browser origin and provides no permissive CORS escape hatch.
@@ -1503,6 +2102,18 @@ export async function createHostServer(
             input.params && typeof input.params === "object" && !Array.isArray(input.params)
               ? (input.params as Record<string, unknown>)
               : {};
+          const domainContext = {
+            principalId: createHash("sha256").update(token).digest("hex"),
+            devServerAccess: (
+              method: string,
+              params: Record<string, unknown>,
+              authorize: () => Promise<void>,
+            ) => devServerAccess.handle(method, params, token, authorize),
+            retargetTask: (id: string, target: unknown, autoMerge: unknown) =>
+              withWorkspaceOwner(token, (owner) => tasks.retarget(id, target, autoMerge, owner)),
+            authorized: async () => await engine.store.authenticated(token),
+            closing: () => closing || response.destroyed,
+          };
           // Scope the timer to dispatch, including all early returns and failures.
           // Never retain input/params or error contents in the metrics collector.
           dispatchStarted = performance.now();
@@ -2232,6 +2843,8 @@ export async function createHostServer(
                 case "sessions.files.revert": {
                   const sessionId = String(params.sessionId ?? "");
                   const userBlockId = String(params.userBlockId ?? "");
+                  const generation = fileRevertGeneration(params.authorityGeneration);
+                  await engine.store.assertAuthority(sessionId, generation);
                   if (!(await inHost(sessionId)))
                     throw new Error("File revert requires a host-executed session");
                   const value = await engine.store.session(sessionId);
@@ -2248,29 +2861,35 @@ export async function createHostServer(
                   const cwd = sessionWorkCwd(value.session);
                   result =
                     input.method === "sessions.files.revertPlan"
-                      ? await engine.checkpoints.filesRevertPlan(sessionId, cwd, userBlockId)
+                      ? await engine.checkpoints.filesRevertPlan(
+                          sessionId,
+                          cwd,
+                          userBlockId,
+                          ...(generation === undefined ? [] : [generation]),
+                        )
                       : await engine.checkpoints.filesRevert(
                           sessionId,
                           cwd,
                           userBlockId,
                           params.planToken as string | undefined,
+                          ...(generation === undefined ? [] : [generation]),
                         );
                   break;
                 }
                 case "sessions.rewind.status": {
-                  if (!(await managed.exactGitRewind.enabled()))
-                    throw new Error("Exact Git rewind is disabled on this execution host");
                   const value = await workspaceForOwnerRpc(params.workspaceId);
                   if (
                     !value ||
                     value.owner.kind !== "session" ||
-                    value.owner.id !== params.sessionId ||
-                    !(await inHost(String(params.sessionId)))
+                    value.owner.id !== params.sessionId
                   )
-                    throw new Error("Git rewind status requires the owning host-executed session");
+                    throw new Error("Session does not own this workspace");
+                  const current = await engine.store.sessionStateMetadata(value.owner.id);
                   result = {
                     workspace: value,
-                    conversationRevision: (await engine.store.session(value.owner.id)).revision,
+                    ...(current
+                      ? { conversationRevision: current.revision }
+                      : { currentConversationUnavailable: true }),
                     operations: (await managedWorkspaces.listOperations(value.id)).filter(
                       (operation) => operation.kind === "rewind",
                     ),
@@ -2291,7 +2910,10 @@ export async function createHostServer(
                 case "sessions.rewind.plan":
                 case "sessions.rewind.apply":
                 case "sessions.rewind.undo": {
-                  if (!(await managed.exactGitRewind.enabled()))
+                  if (
+                    input.method === "sessions.rewind.plan" &&
+                    !(await managed.exactGitRewind.enabled())
+                  )
                     throw new Error("Exact Git rewind is disabled on this execution host");
                   const value = await workspaceForOwnerRpc(params.workspaceId);
                   if (
@@ -2300,16 +2922,42 @@ export async function createHostServer(
                     value.owner.id !== params.sessionId
                   )
                     throw new Error("Session does not own this workspace");
-                  if (!(await inHost(String(params.sessionId))))
-                    throw new Error(
-                      "Git rewind requires a host-executed session; native protocol is unavailable",
-                    );
                   const action =
                     input.method === "sessions.rewind.plan"
                       ? "plan"
                       : input.method === "sessions.rewind.undo"
                         ? "undo"
                         : "apply";
+                  const existing =
+                    action !== "plan" && typeof params.idempotencyKey === "string"
+                      ? await managedWorkspaces.findOperation({
+                          workspaceId: value.id,
+                          kind: "rewind",
+                          idempotencyKey: params.idempotencyKey,
+                        })
+                      : null;
+                  // A durable historical receipt is an outcome, even if new work
+                  // is now disabled or its authority floor has advanced.
+                  if (
+                    existing?.kind === "rewind" &&
+                    existing.phase === "complete" &&
+                    existing.receipt
+                  ) {
+                    result = await managed.rewind[action as "apply" | "undo"](
+                      params as unknown as WorkspaceRpcRequest<"sessions.rewind.apply">,
+                    );
+                    break;
+                  }
+                  if (!(await managed.exactGitRewind.enabled()))
+                    throw new Error("Exact Git rewind is disabled on this execution host");
+                  await engine.store.assertAuthority(
+                    value.owner.id,
+                    rewindAuthorityGeneration(params.authorityGeneration),
+                  );
+                  if (!(await inHost(value.owner.id)))
+                    throw new Error(
+                      "Git rewind requires a host-executed session; native protocol is unavailable",
+                    );
                   result =
                     action === "plan"
                       ? await managed.rewind.plan(
@@ -2558,50 +3206,8 @@ export async function createHostServer(
                 case "terminals.write":
                 case "terminals.interrupt":
                 case "terminals.close": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  const closedCwd =
-                    input.method === "terminals.close"
-                      ? terminals
-                          .list(project.id)
-                          .terminals.find((terminal) => terminal.id === params.id)?.cwd
-                      : undefined;
-                  if (input.method === "terminals.list") result = terminals.list(project.id);
-                  else if (input.method === "terminals.create")
-                    result = await terminals.create(
-                      project,
-                      params,
-                      createHash("sha256").update(token).digest("hex"),
-                      async () => await engine.store.authenticated(token),
-                    );
-                  else if (input.method === "terminals.read")
-                    result = terminals.read(project.id, params);
-                  else if (input.method === "terminals.write")
-                    result = await terminals.write(project.id, params);
-                  else if (input.method === "terminals.interrupt")
-                    result = await terminals.interrupt(project.id, params.id);
-                  else result = await terminals.remove(project.id, params.id);
-                  if (input.method === "terminals.create")
-                    await touchTerminalWorkspace(project.id, (result as { id: string }).id);
-                  else if (input.method === "terminals.write")
-                    await touchTerminalWorkspace(project.id, params.id);
-                  else if (input.method === "terminals.read") {
-                    const read = result as {
-                      cursor: number;
-                      terminal: { id: string; state: string };
-                    };
-                    const previous = terminalActivityCursors.get(read.terminal.id) ?? 0;
-                    if (
-                      read.cursor > previous ||
-                      terminalActivityStates.get(read.terminal.id) !== read.terminal.state
-                    ) {
-                      terminalActivityCursors.set(read.terminal.id, read.cursor);
-                      await touchTerminalWorkspace(project.id, read.terminal.id);
-                    }
-                  } else if (input.method === "terminals.close" && typeof params.id === "string") {
-                    terminalActivityCursors.delete(params.id);
-                    terminalActivityStates.delete(params.id);
-                    await touchTerminalWorkspace(project.id, params.id, closedCwd);
-                  }
+                  const action = input.method.slice("terminals.".length) as TerminalAction;
+                  result = await terminalService[action](params, domainContext, { legacy: true });
                   break;
                 }
                 case "conversation.desktop.take":
@@ -2721,14 +3327,6 @@ export async function createHostServer(
                       : runtimeLogs.read(params);
                   break;
                 }
-                case "devServers.bridgeCheck":
-                case "devServers.bridgeOpen":
-                case "devServers.bridgeRead":
-                case "devServers.bridgeWrite":
-                case "devServers.bridgeClose":
-                  await engine.store.project(String(params.projectId ?? ""));
-                  result = await devServerAccess.handle(input.method, params, token);
-                  break;
                 case "devServers.list":
                 case "devServers.details":
                 case "devServers.start":
@@ -2736,48 +3334,18 @@ export async function createHostServer(
                 case "devServers.kill":
                 case "devServers.restart":
                 case "devServers.logs":
-                case "devServers.openExternal": {
-                  await engine.store.project(String(params.projectId ?? ""));
-                  const projects = (await engine.store.projects()).map((project) => ({
-                    id: project.id,
-                    name: project.name,
-                    path: project.cwd,
-                  }));
-                  if (input.method === "devServers.openExternal") {
-                    const details = (await devServers.handle(
-                      "devServers.details",
-                      params,
-                      projects,
-                    )) as DevServerDetails;
-                    const endpoint = details.server.endpoints.find(
-                      (value) =>
-                        value.port === params.port &&
-                        (params.address === undefined || value.address === params.address),
-                    );
-                    if (!endpoint)
-                      throw new Error("The selected server is no longer listening on this port");
-                    result = await openDevServerBrowser(endpoint.url);
-                  } else if (
-                    input.method === "devServers.start" &&
-                    params.workspaceId !== undefined
-                  ) {
-                    const value = await workspaceForOwnerRpc(params.workspaceId);
-                    if (!value || value.projectId !== params.projectId)
-                      throw new Error("Managed workspace belongs to another project");
-                    await managed.assertWritable(value.id);
-                    result = await devServers.startWorkspace(
-                      {
-                        workspaceId: value.id,
-                        runId: String(params.runId ?? ""),
-                        kinds: ["vite", "hmr", "host", "cdp"],
-                        command: String(params.command ?? ""),
-                        cwd: value.path,
-                        projectId: value.projectId,
-                        ...(typeof params.name === "string" ? { name: params.name } : {}),
-                      },
-                      projects,
-                    );
-                  } else result = await devServers.handle(input.method, params, projects);
+                case "devServers.openExternal":
+                case "devServers.bridgeCheck":
+                case "devServers.bridgeOpen":
+                case "devServers.bridgeRead":
+                case "devServers.bridgeWrite":
+                case "devServers.bridgeClose": {
+                  const action = input.method.slice("devServers.".length) as
+                    | DevServerAction
+                    | DevServerBridgeAction;
+                  result = await devServersService.execute(action, params, domainContext, {
+                    legacy: true,
+                  });
                   break;
                 }
                 case "resources.read":
@@ -2833,187 +3401,15 @@ export async function createHostServer(
                   break;
                 }
                 case "environment.describe":
-                  result = {
-                    protocolVersion: HOST_PROTOCOL_VERSION,
-                    environmentId: engine.store.environmentId,
-                    name: hostname(),
-                    webControl: webControl
-                      ? { origin: webControl.origin, url: `${webControl.origin}/control` }
-                      : undefined,
-                    platform: process.platform,
-                    gitRewindExecution: "host",
-                    ...(buildIdentity ? { buildIdentity } : {}),
-                    // Older clients validate this list against Codex and Claude only.
-                    providers: [
-                      ...new Set([
-                        ...providers,
-                        ...((await genericAcp.list()).length ? ["acp" as const] : []),
-                      ]),
-                    ].filter((provider) =>
-                      Array.isArray(params.supportedProviders)
-                        ? params.supportedProviders.includes(provider)
-                        : provider === "codex" || provider === "claude",
-                    ),
-                    capabilities: [
-                      WORKSPACE_CAPABILITIES.managed,
-                      WORKSPACE_CAPABILITIES.policy,
-                      "workspaces.delivery.v1",
-                      "workspaces.pr-publication.v1",
-                      "workspaces.lifecycle.v1",
-                      "workspaces.pinning.v1",
-                      ...((await managed.exactGitRewind.enabled())
-                        ? [
-                            "sessions.git-rewind.experimental.v1",
-                            "sessions.git-rewind.v1",
-                            "sessions.git-rewind-undo.v1",
-                            "sessions.native-execution.v1",
-                            "sessions.native-rewind.v1",
-                          ]
-                        : []),
-                      "sessions.managedCreation.v1",
-                      "workspaces.native-activity.v1",
-                      ...(buildIdentity ? ["build.identity.v1"] : []),
-                      "terminals.v1",
-                      "mobile.pairing",
-                      "mobile.access",
-                      "tunnels.manage",
-                      "sessions",
-                      "sessions.createFirstTurn",
-                      "sessions.pages",
-                      "sessions.longPoll",
-                      "sessions.lazyHistory",
-                      "sessions.block",
-                      "sessions.digests",
-                      "machine.changes",
-                      "machine.changes.inlineSync",
-                      "git.watch",
-                      "commands.status",
-                      "sessions.harnessSwitch",
-                      "sessions.steer",
-                      "sessions.executionOwner",
-                      "sessions.rewind",
-                      "sessions.checkpoint-review",
-                      "sessions.edit-from-here.v1",
-                      "sessions.plan.review",
-                      "sessions.contextual",
-                      ...(providers.includes("claude") && engine.supportsItemStop("claude")
-                        ? ["sessions.stopItem.claude"]
-                        : []),
-                      "projects.browse",
-                      "projects.directory.v1",
-                      "projects.createDirectory",
-                      "models.list",
-                      "crews.v1",
-                      "crews.tasks.v1",
-                      "crews.delete.v1",
-                      "crews.run-delete.v1",
-                      "crews.agent-groups.v1",
-                      "approvals",
-                      "questions",
-                      "diff",
-                      "git.branches",
-                      "git.switch",
-                      "git.createBranch",
-                      "git.worktrees",
-                      "git.worktreeCreate",
-                      "files.read",
-                      "files.list",
-                      "files.index",
-                      "workspace.run",
-                      "workspace.browseDir",
-                      "files.search",
-                      "files.searchContent",
-                      "files.create",
-                      "files.write",
-                      "git.index",
-                      "git.fileDiff",
-                      "git.action",
-                      "git.actions",
-                      "git.stash.clearSnapshot",
-                      "git.management.snapshot.v1",
-                      "git.conflicts",
-                      "attachments.upload",
-                      "attachments.resume",
-                      "attachments.ownership.v1",
-                      "attachments.read",
-                      "sessions.draft",
-                      "sessions.plan",
-                      "sessions.shell",
-                      "shell.profiles",
-                      "shell.profile.compare.v1",
-                      "sessions.desktop",
-                      "sessions.desktopLive",
-                      "sessions.desktop-writer-retirement.v1",
-                      "sessions.queue",
-                      "sessions.queue.lease",
-                      "sessions.runLease",
-                      "sync",
-                      "automations",
-                      "tasks",
-                      "tasks.todo",
-                      "tasks.history.v1",
-                      "tasks.sprints.v1",
-                      "tasks.workspaces",
-                      "tasks.provider-accounts",
-                      "goals.direct-checkout",
-                      "goals.settings",
-                      "goals.final-review",
-                      "tasks.run-budget",
-                      "tasks.preflight",
-                      "tasks.evaluation",
-                      "tasks.reviewer-profile",
-                      "tasks.notes",
-                      "tasks.review-recheck",
-                      "tasks.blocked-takeover",
-                      "tasks.continue-until-done",
-                      "goals",
-                      "stewards",
-                      "host.settings",
-                      "notes",
-                      "notes.sessionFilter.v1",
-                      "sessions.noteContext.v1",
-                      "history.import.desktop.v1",
-                      "projects.organization.desktop.v1",
-                      "preferences.desktop.v1",
-                      "worktrees.removal.desktop.v1",
-                      "git.selective.review",
-                      "usage.sessions.read",
-                      "providers.center.read",
-                      "providers.desktop.v1",
-                      "providers.desktop.metadata.v1",
-                      "ssh.workspace.desktop.v1",
-                      "terminals.pty.desktop.v1",
-                      "providers.desktop.quotaRefresh.v1",
-                      "providers.acp.patchMetadata",
-                      "host.access.read",
-                      "devices.revokeOther",
-                      "dev.servers.reviewed-impact",
-                      "inbox.attention",
-                      "inbox.providers.desktop",
-                      "inbox.review.v1",
-                      "inbox.jiraBoard.v1",
-                      "device.host",
-                      "devices.preview.mobile.v1",
-                      "host.tools.machine-targets",
-                      "generic-acp-v1",
-                      "handoff-history-v1",
-                      "resources.diagnostics",
-                      "browser.shared.setup",
-                      "browser.shared",
-                      "runtime.logs",
-                      "conversation.tools",
-                      "runtime.logs.monitors",
-                      "browser.annotation",
-                      "dev.servers",
-                      "dev.servers.private-access",
-                      "voice.realtime.v1",
-                      "voice.local.v1",
-                      "voice.local.setup.v1",
-                      "social.v1",
-                      "social.policy.reviewed.v1",
-                      "social.programs.v2",
-                    ],
-                  };
+                  result = await environmentService.describe(params);
+                  break;
+                case "environment.persistence.status":
+                  result = await persistenceService.status(params, domainContext, { legacy: true });
+                  break;
+                case "environment.persistence.recover":
+                  result = await persistenceService.recover(params, domainContext, {
+                    legacy: true,
+                  });
                   break;
                 case "voice.clientSecret":
                   await engine.store.project(String(params.projectId ?? ""));
@@ -3259,22 +3655,21 @@ export async function createHostServer(
                   break;
                 }
                 case "projects.list":
-                  result = await engine.store.projects();
+                  result = await projectsService.list({}, domainContext);
                   break;
                 case "projects.directory":
-                  result = desktop.live.projectDirectory(
-                    await engine.store.projects(),
-                    engine.store.environmentId,
-                  );
+                  result = await projectsService.directory(params, domainContext, { legacy: true });
                   break;
                 case "projects.browse":
-                  result = await browseHostDirectories(params.path);
+                  result = await projectsService.browse(params, domainContext, { legacy: true });
                   break;
                 case "projects.createDirectory":
-                  result = await createHostDirectory(params.path, params.name);
+                  result = await projectsService.createDirectory(params, domainContext, {
+                    legacy: true,
+                  });
                   break;
                 case "projects.open":
-                  result = await engine.openProject(String(params.cwd ?? ""));
+                  result = await projectsService.open(params, domainContext, { legacy: true });
                   break;
                 case "shell.profiles":
                   result = listShellProfiles();
@@ -3297,19 +3692,9 @@ export async function createHostServer(
                     params.refresh === true,
                   );
                   break;
-                case "sessions.list": {
-                  const projectId = String(params.projectId ?? "");
-                  const { list, etag } = await projectSessionList(projectId);
-                  if (!(await engine.store.authenticated(token)))
-                    throw new Error("Session authority revoked.");
-                  // A client that sends `known` can take "unchanged" instead of the
-                  // array. Clients that omit it keep getting the plain array.
-                  if (typeof params.known === "string") {
-                    result =
-                      params.known === etag ? { unchanged: true, etag } : { etag, sessions: list };
-                  } else result = list;
+                case "sessions.list":
+                  result = await sessionService.list(params, domainContext);
                   break;
-                }
                 case "machine.changes": {
                   const inlineSessionIds = params.inlineSessionIds;
                   if (
@@ -3409,7 +3794,12 @@ export async function createHostServer(
                 }
                 case "sessions.update": {
                   const sessionId = String(params.sessionId ?? "");
-                  await adopt(sessionId);
+                  const authorityGeneration =
+                    params.authorityGeneration === undefined
+                      ? undefined
+                      : SafeCounterSchema.min(1).parse(params.authorityGeneration);
+                  await engine.store.assertAuthority(sessionId, authorityGeneration);
+                  if (authorityGeneration === undefined) await adopt(sessionId);
                   const current = await engine.store.session(sessionId);
                   if (current.projectId !== params.projectId)
                     throw new Error("Session does not belong to this project");
@@ -3453,11 +3843,16 @@ export async function createHostServer(
                   }
                   if (Object.keys(patch).length === 0)
                     throw new Error("No session changes supplied");
-                  result = await engine.updateSession(sessionId, patch);
+                  result = await engine.updateSession(sessionId, patch, authorityGeneration);
                   break;
                 }
                 case "sessions.delete": {
                   const sessionId = String(params.sessionId ?? "");
+                  const authorityGeneration =
+                    params.authorityGeneration === undefined
+                      ? undefined
+                      : SafeCounterSchema.min(1).parse(params.authorityGeneration);
+                  await engine.store.assertAuthority(sessionId, authorityGeneration);
                   const host = await engine.store.sessionAuthority(sessionId);
                   const workspaceId = host
                     ? (await engine.store.session(sessionId)).session.workspaceId
@@ -3502,7 +3897,9 @@ export async function createHostServer(
                           "The desktop did not remove this conversation. Refresh the list before retrying.",
                         );
                       // An adopted transcript must go too, or it would reappear in the list.
-                      if (await inHost(sessionId)) await engine.store.deleteSession(sessionId);
+                      if (await inHost(sessionId))
+                        await engine.store.deleteSession(sessionId, authorityGeneration);
+                      invalidateSessionCopies(sessionId, project.id);
                       await sessionQueues.delete(sessionId);
                       result = { deleted: true };
                       break;
@@ -3510,7 +3907,8 @@ export async function createHostServer(
                     const current = await engine.store.session(sessionId);
                     if (current.projectId !== params.projectId)
                       throw new Error("Session does not belong to this project");
-                    await engine.store.deleteSession(sessionId);
+                    await engine.store.deleteSession(sessionId, authorityGeneration);
+                    invalidateSessionCopies(sessionId, current.projectId);
                     await sessionQueues.delete(sessionId);
                     result = { deleted: true };
                     break;
@@ -3518,166 +3916,15 @@ export async function createHostServer(
                     await release?.();
                   }
                 }
-                case "sessions.page": {
-                  const sessionId = String(params.sessionId ?? "");
-                  const watch = await desktopWatch(sessionId);
-                  const page = await transcriptPages.page(
-                    async () =>
-                      (watch && (await desktopView(sessionId, watch.projectId))) ??
-                      (await engine.store.session(sessionId)),
-                    sessionId,
-                    params.before === undefined ? undefined : Number(params.before),
-                    params.revision === undefined ? undefined : Number(params.revision),
-                    params.preview === true,
-                    params.digests === true,
-                  );
-                  result = {
-                    ...page,
-                    value: undefined,
-                    sync: transfers.respond(sessionId, {
-                      kind: "snapshot",
-                      value: {
-                        ...page.value,
-                        executionOwner:
-                          page.value.status === "running"
-                            ? watch
-                              ? "desktop"
-                              : "host"
-                            : undefined,
-                      },
-                    }),
-                  };
+                case "sessions.page":
+                  result = await sessionService.page(params, domainContext);
                   break;
-                }
-                case "sessions.sync": {
-                  const sessionId = String(params.sessionId ?? "");
-                  const revision = Number.isSafeInteger(params.revision)
-                    ? Number(params.revision)
-                    : undefined;
-                  if (
-                    revision !== undefined &&
-                    Number.isFinite(params.waitMs) &&
-                    Number(params.waitMs) > 0
-                  ) {
-                    await revisionWaits.wait(
-                      async () =>
-                        (await desktopWatch(sessionId, true))?.revision ??
-                        (await engine.store.session(sessionId)).revision,
-                      revision,
-                      Number(params.waitMs),
-                      async () =>
-                        closing || response.destroyed || !(await engine.store.authenticated(token)),
-                      async () => await desktopRecheckMs(sessionId),
-                    );
-                    if (!(await engine.store.authenticated(token)))
-                      throw new Error("Device authorization was revoked");
-                  }
-                  const watch = await desktopWatch(sessionId);
-                  let current: HostSession | undefined;
-                  let sync: SessionSync;
-                  if (watch) {
-                    // Watching a desktop turn polls fast; skip the transcript read
-                    // while the desktop copy hasn't changed.
-                    if (revision === watch.revision) {
-                      result = { kind: "unchanged", revision };
-                      break;
-                    }
-                    const view = await desktopView(sessionId, watch.projectId);
-                    if (view) {
-                      current = view;
-                      sync = desktopSync(view, revision);
-                    } else {
-                      await catchUp(sessionId);
-                      current = await engine.store.session(sessionId);
-                      sync = await engine.store.sync(sessionId, revision);
-                    }
-                  } else {
-                    await catchUp(sessionId);
-                    current = await engine.store.session(sessionId);
-                    sync = await engine.store.sync(sessionId, revision);
-                  }
-                  if (params.partial === true) {
-                    const rawIds = params.loadedBlockIds ?? [];
-                    if (
-                      !Array.isArray(rawIds) ||
-                      rawIds.length > 32768 ||
-                      rawIds.some((id) => typeof id !== "string" || !id || id.length > 512)
-                    )
-                      throw new Error("Invalid loaded block IDs");
-                    if (sync.kind !== "unchanged") {
-                      const partial = partialSessionSync(
-                        sync,
-                        current!,
-                        rawIds as string[],
-                        params.digests === true,
-                      );
-                      if (partial) sync = partial;
-                      else {
-                        const page = await transcriptPages.page(
-                          () => current!,
-                          sessionId,
-                          undefined,
-                          undefined,
-                          true,
-                          params.digests === true,
-                        );
-                        sync = { kind: "snapshot", value: page.value };
-                      }
-                    }
-                  }
-                  if (sync.kind === "snapshot") {
-                    sync = { ...sync, value: previewSession(sync.value, params.digests === true) };
-                  } else if (sync.kind === "delta") {
-                    sync = {
-                      ...sync,
-                      value: {
-                        ...sync.value,
-                        // A partial window already carries the head of the whole transcript.
-                        ...(params.digests === true && !sync.value.head ? withHead(current!) : {}),
-                        session: {
-                          ...sync.value.session,
-                          ...previewRewindHistory(sync.value.session),
-                        },
-                      },
-                    };
-                  }
-                  if (sync.kind === "snapshot") {
-                    sync = {
-                      ...sync,
-                      value: {
-                        ...sync.value,
-                        executionOwner:
-                          sync.value.status === "running"
-                            ? watch
-                              ? "desktop"
-                              : "host"
-                            : undefined,
-                      },
-                    };
-                  } else if (sync.kind === "delta") {
-                    sync = {
-                      ...sync,
-                      value: {
-                        ...sync.value,
-                        executionOwner:
-                          sync.value.status === "running"
-                            ? watch
-                              ? "desktop"
-                              : "host"
-                            : undefined,
-                      },
-                    };
-                  }
-                  result = transfers.respond(sessionId, sync!);
+                case "sessions.sync":
+                  result = await sessionService.sync(params, domainContext);
                   break;
-                }
-                case "commands.status": {
-                  const commandId = params.commandId;
-                  if (typeof commandId !== "string" || !commandId || commandId.length > 200)
-                    throw new Error("Invalid command ID");
-                  result = (await engine.store.receiptStatus(commandId)) ?? null;
+                case "commands.status":
+                  result = await commandService.status(params, domainContext);
                   break;
-                }
                 case "sessions.desktopLive": {
                   const beat = desktop.live.beat(params);
                   await heartbeatEffects;
@@ -3754,146 +4001,27 @@ export async function createHostServer(
                 case "sessions.queue.finish":
                 case "sessions.queue.release":
                 case "sessions.queue.lease": {
-                  const id = String(params.sessionId ?? "");
-                  await attachmentOwnership.validateExposure(params);
-                  const queueStatus = await queueSessionStatus(id); // Lightweight authorized session existence check.
-                  const clientId = params.clientId;
-                  if (typeof clientId !== "string" || !clientId || clientId.length > 200)
-                    throw new Error("Invalid queue client");
-                  const action = input.method.slice("sessions.queue.".length) as
-                    | "get"
-                    | "change"
-                    | "claim"
-                    | "finish"
-                    | "lease"
-                    | "release";
-                  const normalize = (raw: unknown) => {
-                    if (
-                      !raw ||
-                      typeof raw !== "object" ||
-                      !Array.isArray((raw as { messages?: unknown }).messages)
-                    )
-                      throw new Error("Invalid queue");
-                    const value =
-                      raw as import("../src/features/connections/model/remoteQueue").RemoteQueue;
-                    return {
-                      ...value,
-                      messages: value.messages.map((message) => ({
-                        ...message,
-                        attachments: resolveAttachments(
-                          engine.store,
-                          parseRemoteAttachments(message.attachments),
-                        ).map((file) => ({
-                          ...file,
-                          hostEnvironmentId: engine.store.environmentId,
-                        })),
-                      })),
-                    };
-                  };
-                  if (action === "finish") {
-                    const currentQueue = await sessionQueues.get(id);
-                    if (
-                      currentQueue.claim?.clientId !== clientId &&
-                      currentQueue.settled?.clientId !== clientId
-                    )
-                      throw new Error("Queued send belongs to another client.");
-                    if (typeof params.accepted !== "boolean")
-                      throw new Error("Invalid queue acknowledgement");
-                    if (
-                      params.accepted === false &&
-                      ((await desktopWatch(id))?.running || queueStatus === "running")
-                    )
-                      throw new Error(
-                        "Wait for the running turn before recovering its queued message.",
-                      );
-                  }
-                  const change =
-                    action === "change"
-                      ? { before: normalize(params.before), after: normalize(params.after) }
-                      : undefined;
-                  result = await engine.store.transaction(
-                    async () => await sessionQueues.serve(action, id, clientId, params, change),
-                  );
-                  const exposed =
-                    result as import("../src/features/connections/model/sharedQueue").SharedQueue;
-                  await attachmentOwnership.expose(
-                    token,
-                    exposed.messages.flatMap((message) =>
-                      message.attachments.map((file) => file.id),
-                    ),
+                  const action = input.method.slice("sessions.queue.".length) as SessionQueueAction;
+                  result = await sessionQueueService[action](
                     params,
+                    {
+                      ...domainContext,
+                      exposeAttachments: (ids, exposureParams) =>
+                        attachmentOwnership.expose(token, ids, exposureParams),
+                    },
+                    { legacy: true },
                   );
                   break;
                 }
                 case "sessions.syncChunk":
-                  result = transfers.chunk(
-                    String(params.sessionId ?? ""),
-                    String(params.transfer ?? ""),
-                    Number(params.offset),
-                  );
+                  result = await sessionService.syncChunk(params, domainContext);
                   break;
-                case "sessions.block": {
-                  const sessionId = String(params.sessionId ?? "");
-                  const blockId = String(params.blockId ?? "");
-                  if (!blockId || blockId.length > 512 || !Number.isSafeInteger(params.revision))
-                    throw new Error("Invalid transcript block request");
-                  const watch = await desktopWatch(sessionId);
-                  const value =
-                    (watch && (await desktopView(sessionId, watch.projectId))) ??
-                    (await engine.store.session(sessionId));
-                  if (value.revision !== params.revision)
-                    throw new Error("Transcript changed; reload history");
-                  const block = value.session.blocks.find((entry) => entry.id === blockId);
-                  if (!block) throw new Error("Transcript block no longer exists");
-                  result = transfers.respond(sessionId, {
-                    kind: "snapshot",
-                    value: {
-                      ...value,
-                      session: { ...value.session, blocks: [block] },
-                      history: {
-                        revision: value.revision,
-                        totalBlocks: value.session.blocks.length,
-                      },
-                    },
-                  });
+                case "sessions.block":
+                  result = await sessionService.block(params, domainContext);
                   break;
-                }
-                case "sessions.get": {
-                  const id = String(params.sessionId ?? "");
-                  const value = await readSessionView(id);
-                  result =
-                    value.revision === params.revision
-                      ? null
-                      : params.preview === true
-                        ? transcriptPage(
-                            params.summary === true
-                              ? {
-                                  ...value,
-                                  session: {
-                                    ...value.session,
-                                    blocks: [
-                                      value.session.blocks.findLast(
-                                        (block) => block.role === "assistant" && block.text.trim(),
-                                      ),
-                                      value.session.blocks.findLast(
-                                        (block) => block.role === "system" && block.text.trim(),
-                                      ),
-                                      value.session.blocks.findLast(
-                                        (block) => block.approval && !block.approval.decided,
-                                      ),
-                                    ].filter(
-                                      (block): block is NonNullable<typeof block> => !!block,
-                                    ),
-                                  },
-                                }
-                              : value,
-                            undefined,
-                            undefined,
-                            true,
-                          ).value
-                        : value;
+                case "sessions.get":
+                  result = await sessionService.get(params, domainContext);
                   break;
-                }
                 case "events.read": {
                   if (!Number.isSafeInteger(params.after) || Number(params.after) < 0)
                     throw new Error("Invalid event cursor");
@@ -4225,195 +4353,9 @@ export async function createHostServer(
                   );
                   break;
                 }
-                case "commands.dispatch": {
-                  const sessionId = String(params.sessionId ?? "");
-                  // Validate context before adoption or special slash-command handling.
-                  if (params.noteCard !== undefined) parseCommand(params);
-                  if (params.type === "contextual") {
-                    if (await engine.store.receiptStatus(String(params.commandId ?? ""))) {
-                      // Reconcile the original receipt even if the source moved after acceptance.
-                      result = await engine.command(params);
-                      break;
-                    }
-                    const parsed = parseCommand(params);
-                    if (parsed.type !== "contextual") throw new Error("Invalid contextual command");
-                    const reviewed = await engine.previewContextual(
-                      params,
-                      await readSessionView(sessionId),
-                    );
-                    if (reviewed.digest !== parsed.previewDigest)
-                      throw new Error(
-                        "The reviewed context changed. Review it again before continuing.",
-                      );
-                  }
-                  if (
-                    ["send", "steer", "compact", "configure", "plan", "rewind"].includes(
-                      String(params.type),
-                    ) &&
-                    // A claim whose sender is gone is given up on here too: it must not
-                    // make every send from this computer wait for good.
-                    (await sessionQueues.reapStale(sessionId)).claim &&
-                    !(await engine.store.receiptStatus(String(params.commandId ?? "")))
-                  )
-                    throw new LeaseHeldError(
-                      String((await sessionQueues.get(sessionId)).claim?.clientId ?? "desktop"),
-                      "The owning desktop is preparing a queued send. Wait for its acknowledgement.",
-                    );
-                  const queued = params.queued as
-                    | { id?: unknown; clientId?: unknown; revision?: unknown; selected?: unknown }
-                    | undefined;
-                  if (
-                    queued &&
-                    !(await engine.store.receiptStatus(String(params.commandId ?? "")))
-                  ) {
-                    if (!["send", "steer", "compact"].includes(String(params.type)))
-                      throw new Error("Invalid queued command");
-                    if (
-                      typeof queued.id !== "string" ||
-                      typeof queued.clientId !== "string" ||
-                      !Number.isSafeInteger(queued.revision)
-                    )
-                      throw new Error("Invalid queued send");
-                    await assertHostMayRun(sessionId);
-                    const aware = (queued as { leaseAware?: unknown }).leaseAware === true;
-                    const queuedEpoch = (queued as { epoch?: unknown }).epoch;
-                    if (!aware) await sessionQueues.renew(sessionId, String(queued.clientId));
-                    const currentQueue = await sessionQueues.assertSend(
-                      sessionId,
-                      String(queued.id),
-                      String(queued.clientId),
-                      Number(queued.revision),
-                      params.type === "steer" || queued.selected === true,
-                      {
-                        epoch: Number.isSafeInteger(queuedEpoch) ? Number(queuedEpoch) : undefined,
-                        legacy: !aware,
-                      },
-                    );
-                    const row = currentQueue.messages.find((entry) => entry.id === queued.id)!;
-                    if (
-                      params.type === "compact"
-                        ? row.text.trim().toLowerCase() !== "/compact"
-                        : params.text !== row.text
-                    )
-                      throw new Error("Queued message content changed.");
-                    if (row.modelTarget) {
-                      const session = (await featureSession(sessionId)).session;
-                      if (
-                        !sameQueuedModelTarget(row.modelTarget, {
-                          harness: session.harness,
-                          model: session.model,
-                          modelSettings: session.modelSettings,
-                        })
-                      )
-                        throw new Error("Queued message model settings changed.");
-                    }
-                    const refs = parseRemoteAttachments(params.attachments);
-                    const queuedIntent =
-                      row.intent === "plan" || row.intent === "build" ? row.intent : "default";
-                    if (
-                      JSON.stringify(refs.map((file) => [file.id, file.size])) !==
-                        JSON.stringify(row.attachments.map((file) => [file.id, file.size])) ||
-                      (params.type !== "compact" && (params.intent ?? "default") !== queuedIntent)
-                    )
-                      throw new Error("Queued message attachments or intent changed.");
-                  }
-                  if (
-                    (params.type === "steer" || params.type === "rewind") &&
-                    (await desktopWatch(sessionId))?.running
-                  )
-                    throw new Error(
-                      params.type === "rewind"
-                        ? "This desktop-owned turn must finish before its conversation can be rewound."
-                        : "This desktop-owned turn cannot be redirected through the host. Queue the message or stop it first.",
-                    );
-                  if (
-                    params.type === "rewind" &&
-                    (await sessionQueues.get(sessionId)).messages.length
-                  )
-                    throw new Error("Clear the queued messages before rewinding the conversation.");
-                  // Stopping or answering a turn the desktop app runs: leave it for
-                  // the app, which picks it up with its next heartbeat.
-                  if (
-                    params.type === "cancel" ||
-                    params.type === "approve" ||
-                    params.type === "answer"
-                  ) {
-                    const watch = await desktopWatch(sessionId);
-                    if (watch?.running) {
-                      if (!desktop.live.alive())
-                        throw new Error(
-                          "The bycoda app on that computer isn't responding. Try again when it's open.",
-                        );
-                      const command = parseCommand(params);
-                      if (
-                        command.type === "cancel" ||
-                        command.type === "approve" ||
-                        command.type === "answer"
-                      )
-                        desktop.live.enqueue(command);
-                      result = {
-                        commandId: command.commandId,
-                        sessionId,
-                        revision: watch.revision,
-                      };
-                      break;
-                    }
-                  }
-                  // A turn starts only where the run lease allows it: a desktop window
-                  // running one makes this a wait (`LEASE_HELD`), never a failure.
-                  if (
-                    ["send", "compact", "contextual"].includes(String(params.type)) &&
-                    !(await engine.store.receiptStatus(String(params.commandId ?? "")))
-                  )
-                    await assertHostMayRun(sessionId);
-                  if (params.type !== "create") await adopt(sessionId);
-                  if (
-                    params.type === "send" &&
-                    typeof params.text === "string" &&
-                    isClearSessionCommand(params.text)
-                  ) {
-                    if (
-                      (await desktopWatch(sessionId))?.running ||
-                      (await sessionQueues.get(sessionId)).messages.length
-                    )
-                      throw new Error(
-                        "Stop the current turn and clear queued messages before clearing the conversation.",
-                      );
-                    result = await engine.clearConversation(params);
-                    break;
-                  }
-                  if (params.type === "rewind") {
-                    result = await engine.rewind(params);
-                    break;
-                  }
-                  const dispatch = () =>
-                    engine.store.transaction(async () => {
-                      if (!(await engine.store.authenticated(token)))
-                        throw new Error("Device authorization was revoked");
-                      const receipt = await engine.command(params);
-                      if (
-                        queued &&
-                        (await sessionQueues.get(sessionId)).messages.some(
-                          (row) => row.id === queued.id,
-                        )
-                      )
-                        await sessionQueues.consumed(sessionId, String(queued.id));
-                      await crews.ownerDirective(params);
-                      return receipt;
-                    });
-                  result = ["send", "compact", "contextual"].includes(String(params.type))
-                    ? await withRetiredDesktopWriters(sessionId, dispatch)
-                    : await dispatch();
-                  if (
-                    ["send", "steer", "compact", "contextual", "shell"].includes(
-                      String(params.type),
-                    )
-                  )
-                    await touchSessionWorkspace(sessionId);
-                  // A usage limit that was dismissed lets a queue that waited on it go on.
-                  if (params.type === "usageLimit") queueDrainer.kick(sessionId);
+                case "commands.dispatch":
+                  result = await commandService.dispatch(params, domainContext, { legacy: true });
                   break;
-                }
                 case "sync.pull": {
                   const sinceRev = Number.isSafeInteger(params.sinceRev)
                     ? Number(params.sinceRev)
@@ -4444,62 +4386,16 @@ export async function createHostServer(
                   result = await readSessionUsage(engine.store, params);
                   break;
                 case "notes.list":
-                  if (params.sessionId !== undefined) {
-                    const session = await featureSession(String(params.sessionId));
-                    if (
-                      params.projectId !== undefined &&
-                      session.projectId !== String(params.projectId)
-                    )
-                      throw new Error("Session belongs to another project.");
-                    result = await hostNotes.list(undefined, session.session.id);
-                    if (!(await engine.store.authenticated(token)))
-                      throw new Error("Session authority revoked.");
-                    break;
-                  }
-                  result = await hostNotes.list(
-                    params.projectId === undefined
-                      ? undefined
-                      : (await engine.store.project(String(params.projectId))).cwd,
-                  );
-                  if (!(await engine.store.authenticated(token)))
-                    throw new Error("Session authority revoked.");
+                  result = await notesService.list(params, domainContext, { legacy: true });
                   break;
-                case "notes.get": {
-                  const session =
-                    params.sessionId !== undefined
-                      ? await featureSession(String(params.sessionId))
-                      : undefined;
-                  if (
-                    session &&
-                    params.projectId !== undefined &&
-                    session.projectId !== String(params.projectId)
-                  )
-                    throw new Error("Session belongs to another project.");
-                  const note = await hostNotes.get(params.id);
-                  if (!(await engine.store.authenticated(token)))
-                    throw new Error("Session authority revoked.");
-                  if (params.sessionId !== undefined) {
-                    if (note && note.sourceSessionId !== session!.session.id)
-                      throw new Error("Note belongs to another session.");
-                  }
-                  result = note;
+                case "notes.get":
+                  result = await notesService.get(params, domainContext, { legacy: true });
                   break;
-                }
                 case "notes.upsert":
-                  result = await hostNotes.save(
-                    params.note,
-                    params.expectedUpdatedAt,
-                    undefined,
-                    async () => await engine.store.authenticated(token),
-                  );
+                  result = await notesService.upsert(params, domainContext, { legacy: true });
                   break;
                 case "notes.delete":
-                  result = await hostNotes.delete(
-                    params.id,
-                    params.expectedUpdatedAt,
-                    undefined,
-                    async () => await engine.store.authenticated(token),
-                  );
+                  result = await notesService.delete(params, domainContext, { legacy: true });
                   break;
                 case "inbox.provider.status":
                   result = await providerInbox.availability();
@@ -4567,23 +4463,24 @@ export async function createHostServer(
                   break;
                 }
                 case "automations.list":
-                  result = await automations.list();
+                  result = await automationsService.list(params, domainContext, { legacy: true });
                   break;
                 case "automations.preview":
-                  result = automations.preview(params.schedule);
+                  result = await automationsService.preview(params, domainContext, {
+                    legacy: true,
+                  });
                   break;
                 case "automations.save":
-                  result = await automations.save(params.automation);
+                  result = await automationsService.save(params, domainContext, { legacy: true });
                   break;
                 case "automations.delete":
-                  await automations.delete(String(params.automationId ?? ""));
-                  result = { deleted: true };
+                  result = await automationsService.delete(params, domainContext, { legacy: true });
                   break;
                 case "automations.runs":
-                  result = await automations.runs(String(params.automationId ?? ""));
+                  result = await automationsService.runs(params, domainContext, { legacy: true });
                   break;
                 case "automations.runNow":
-                  result = await automations.runNow(String(params.automationId ?? ""));
+                  result = await automationsService.runNow(params, domainContext, { legacy: true });
                   break;
                 case "crews.list":
                 case "crews.schema":
@@ -4610,150 +4507,113 @@ export async function createHostServer(
                 // These cross-project planning routes belong only to paired owner
                 // dispatch. Project-scoped conversation tools have their own allowlist.
                 case "sprints.list":
-                  result = await sprints.list();
+                  result = await sprintsService.list(params, domainContext, { legacy: true });
                   break;
                 case "sprints.get":
-                  result = await sprints.get(String(params.id ?? ""));
+                  result = await sprintsService.get(params, domainContext, { legacy: true });
                   break;
                 case "sprints.create":
-                  result = await sprints.create(params.input as SprintCreateInput);
+                  result = await sprintsService.create(params, domainContext, { legacy: true });
                   break;
                 case "sprints.update":
-                  result = await sprints.update(
-                    String(params.id ?? ""),
-                    params.input as SprintUpdateInput,
-                  );
+                  result = await sprintsService.update(params, domainContext, { legacy: true });
                   break;
                 case "sprints.start":
-                  result = await sprints.start(
-                    String(params.id ?? ""),
-                    params.input as SprintCommand,
-                  );
+                  result = await sprintsService.start(params, domainContext, { legacy: true });
                   break;
                 case "sprints.complete":
-                  result = await sprints.complete(
-                    String(params.id ?? ""),
-                    params.input as SprintCompleteInput,
-                  );
+                  result = await sprintsService.complete(params, domainContext, { legacy: true });
                   break;
                 case "sprints.archive":
-                  result = await sprints.archive(
-                    String(params.id ?? ""),
-                    params.input as SprintCommand,
-                  );
+                  result = await sprintsService.archive(params, domainContext, { legacy: true });
                   break;
                 case "sprints.plan":
-                  result = await sprints.plan(params.input as SprintPlanInput);
+                  result = await sprintsService.plan(params, domainContext, { legacy: true });
                   break;
                 case "sprints.report":
-                  result = await sprints.report(String(params.id ?? ""));
+                  result = await sprintsService.report(params, domainContext, { legacy: true });
                   break;
                 case "sprints.ingest":
-                  result = await sprints.ingest(params.input as SprintIngestInput);
+                  result = await sprintsService.ingest(params, domainContext, { legacy: true });
                   break;
                 case "sprints.goalContext":
-                  result = await sprints.setGoalContext(params.input as SprintGoalContextInput);
+                  result = await sprintsService.setGoalContext(params, domainContext, {
+                    legacy: true,
+                  });
                   break;
                 case "tasks.snapshotWithCursor":
-                  result = await tasks.snapshotWithCursor();
+                  result = await tasksService.snapshotWithCursor(params, domainContext, {
+                    legacy: true,
+                  });
                   break;
                 case "tasks.events":
-                  result = await tasks.events(
-                    params.after as number,
-                    params.limit as number | undefined,
-                  );
+                  result = await tasksService.events(params, domainContext, { legacy: true });
                   break;
                 case "tasks.list":
-                  if (params.projectId !== undefined)
-                    await engine.store.project(String(params.projectId));
-                  result = await tasks.list(
-                    params.projectId === undefined ? undefined : String(params.projectId),
-                  );
+                  result = await tasksService.list(params, domainContext, { legacy: true });
                   break;
                 case "tasks.save":
-                  result = await tasks.save(params.task);
+                  result = await tasksService.save(params, domainContext, { legacy: true });
                   break;
                 case "tasks.move":
-                  result = await tasks.move(String(params.taskId ?? ""), params.to);
+                  result = await tasksService.move(params, domainContext, { legacy: true });
                   break;
                 case "tasks.start":
-                  result = await tasks.startTask(String(params.taskId ?? ""));
+                  result = await tasksService.start(params, domainContext, { legacy: true });
                   break;
                 case "tasks.reorder":
-                  result = await tasks.reorder(params.taskIds);
+                  result = await tasksService.reorder(params, domainContext, { legacy: true });
                   break;
                 case "tasks.retarget":
-                  result = await withWorkspaceOwner(token, (owner) =>
-                    tasks.retarget(
-                      String(params.taskId ?? ""),
-                      params.workspace,
-                      params.autoMerge,
-                      owner,
-                    ),
-                  );
+                  result = await tasksService.retarget(params, domainContext, { legacy: true });
                   break;
                 case "tasks.review.recheck":
-                  result = await tasks.recheckReview(String(params.taskId ?? ""));
+                  result = await tasksService.recheckReview(params, domainContext, {
+                    legacy: true,
+                  });
                   break;
                 case "tasks.notes.read":
-                  result = await tasks.readNotes(String(params.taskId ?? ""), params.noteIds);
+                  result = await tasksService.readNotes(params, domainContext, { legacy: true });
                   break;
                 case "tasks.notes.resolve":
-                  result = await tasks.resolveNote(
-                    String(params.taskId ?? ""),
-                    params.noteId,
-                    params.resolved,
-                  );
+                  result = await tasksService.resolveNote(params, domainContext, { legacy: true });
                   break;
                 case "tasks.delete":
-                  await tasks.delete(
-                    String(params.taskId ?? ""),
-                    params.discard === true,
-                    params.expectedUpdatedAt as number | undefined,
-                  );
-                  result = { deleted: true };
+                  result = await tasksService.delete(params, domainContext, { legacy: true });
                   break;
                 case "goals.list":
-                  result = await goals.list();
+                  result = await goalsService.list(params, domainContext, { legacy: true });
                   break;
                 case "goals.create":
-                  result = await goals.create(params.goal);
+                  result = await goalsService.create(params, domainContext, { legacy: true });
                   break;
                 case "goals.final-review.recheck":
-                  result = await goals.recheckFinalReview(
-                    String(params.goalId ?? ""),
-                    params.expectedUpdatedAt,
-                  );
+                  result = await goalsService.recheckFinalReview(params, domainContext, {
+                    legacy: true,
+                  });
                   break;
                 case "tasks.preflight":
-                  result = await tasks.preflight(params.task);
+                  result = await tasksService.preflight(params, domainContext, { legacy: true });
                   break;
                 case "tasks.evaluation.save":
-                  result = await tasks.recordEvaluation(
-                    String(params.taskId ?? ""),
-                    params.evaluation,
-                    params.expectedUpdatedAt,
-                  );
+                  result = await tasksService.recordEvaluation(params, domainContext, {
+                    legacy: true,
+                  });
                   break;
                 case "goals.approve":
-                  result = await goals.approve(String(params.goalId ?? ""));
+                  result = await goalsService.approve(params, domainContext, { legacy: true });
                   break;
                 case "goals.update":
-                  result = await goals.update(
-                    String(params.goalId ?? ""),
-                    params.settings,
-                    params.expectedUpdatedAt,
-                  );
+                  result = await goalsService.update(params, domainContext, { legacy: true });
                   break;
                 case "goals.replan":
-                  result = await goals.replan(String(params.goalId ?? ""), params.feedback);
+                  result = await goalsService.replan(params, domainContext, { legacy: true });
                   break;
                 case "goals.cancel":
-                  result = await goals.cancel(String(params.goalId ?? ""));
+                  result = await goalsService.cancel(params, domainContext, { legacy: true });
                   break;
                 case "goals.delete":
-                  await goals.delete(String(params.goalId ?? ""), params.withTasks === true);
-                  result = { deleted: true };
+                  result = await goalsService.delete(params, domainContext, { legacy: true });
                   break;
                 case "host.settings.get":
                   result = await tasks.limits.state();
@@ -4883,98 +4743,33 @@ export async function createHostServer(
                     revoked: await engine.store.revokeToken(token),
                   };
                   break;
-                case "git.diff": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  const diff = await exec(
-                    "git",
-                    [
-                      "-c",
-                      "core.pager=cat",
-                      "diff",
-                      "--no-ext-diff",
-                      "--no-textconv",
-                      "HEAD",
-                      "--",
-                    ],
-                    {
-                      cwd: await resolveHostWorktreeAsync(project.cwd, params.cwd),
-                      timeout: 10_000,
-                      maxBuffer: 2 * 1024 * 1024,
-                    },
-                  );
-                  result = diff.stdout;
+                case "git.diff":
+                  result = await gitService.diff(params, domainContext, { legacy: true });
                   break;
-                }
-                case "git.branches": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  result = await hostBranches(
-                    await resolveHostWorktreeAsync(project.cwd, params.cwd),
-                  );
+                case "git.branches":
+                  result = await gitService.branches(params, domainContext, { legacy: true });
                   break;
-                }
-                case "git.switch": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  const cwd = await resolveHostWorktreeAsync(project.cwd, params.cwd);
-                  result = await engine.withIdleProject(
-                    project.id,
-                    async () => await switchHostBranch(cwd, params.branch, params.remote),
-                  );
+                case "git.switch":
+                  result = await gitService.switch(params, domainContext, { legacy: true });
                   break;
-                }
-                case "git.createBranch": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  const cwd = await resolveHostWorktreeAsync(project.cwd, params.cwd);
-                  result = await engine.withIdleProject(
-                    project.id,
-                    async () => await createHostBranch(cwd, params.branch),
-                  );
+                case "git.createBranch":
+                  result = await gitService.createBranch(params, domainContext, { legacy: true });
                   break;
-                }
-                case "git.worktrees": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  result = await hostWorktrees(project.cwd);
+                case "git.worktrees":
+                  result = await gitService.worktrees(params, domainContext, { legacy: true });
                   break;
-                }
-                case "git.worktreeCreate": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  const cwd = await resolveHostWorktreeAsync(project.cwd, params.cwd);
-                  result = await engine.withIdleProject(
-                    project.id,
-                    async () =>
-                      await createHostWorktree(
-                        project.cwd,
-                        params.branch,
-                        params.base,
-                        params.existing,
-                        cwd,
-                      ),
-                  );
-                  workspace.invalidateRoots();
+                case "git.worktreeCreate":
+                  result = await gitService.worktreeCreate(params, domainContext, { legacy: true });
                   break;
-                }
-                case "files.read": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  result = await readHostFile(
-                    await resolveHostWorktreeAsync(project.cwd, params.cwd),
-                    params.path,
-                  );
+                case "files.read":
+                  result = await fileService.read(params, domainContext, { legacy: true });
                   break;
-                }
-                case "files.list": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  result = await listHostFiles(
-                    await resolveHostWorktreeAsync(project.cwd, params.cwd),
-                    params.path,
-                  );
+                case "files.list":
+                  result = await fileService.list(params, domainContext, { legacy: true });
                   break;
-                }
-                case "files.index": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  result = await indexHostFiles(
-                    await resolveHostWorktreeAsync(project.cwd, params.cwd),
-                  );
+                case "files.index":
+                  result = await fileService.index(params, domainContext, { legacy: true });
                   break;
-                }
                 case "workspace.run":
                   result =
                     (await workspace.run(
@@ -4983,85 +4778,27 @@ export async function createHostServer(
                       createHash("sha256").update(token).digest("hex"),
                     )) ?? null;
                   break;
-                case "files.search": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  result = await searchHostFiles(
-                    await resolveHostWorktreeAsync(project.cwd, params.cwd),
-                    params.query,
-                  );
+                case "files.search":
+                  result = await fileService.search(params, domainContext, { legacy: true });
                   break;
-                }
-                case "files.searchContent": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  result = await searchHostContent(
-                    await resolveHostWorktreeAsync(project.cwd, params.cwd),
-                    params,
-                  );
+                case "files.searchContent":
+                  result = await fileService.searchContent(params, domainContext, { legacy: true });
                   break;
-                }
-                case "files.create": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  const cwd = await resolveHostWorktreeAsync(project.cwd, params.cwd);
-                  const release = await startWorkspaceActivity(cwd, "editor", "files.create");
-                  try {
-                    result = await createHostPath(cwd, params.parent, params.name, params.isDir);
-                  } finally {
-                    await release();
-                  }
+                case "files.create":
+                  result = await fileService.create(params, domainContext, { legacy: true });
                   break;
-                }
-                case "files.write": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  const cwd = await resolveHostWorktreeAsync(project.cwd, params.cwd);
-                  const release = await startWorkspaceActivity(cwd, "editor", "files.write");
-                  try {
-                    result =
-                      (await writeHostFile(cwd, params.path, params.expected, params.content)) ??
-                      null;
-                  } finally {
-                    await release();
-                  }
+                case "files.write":
+                  result = await fileService.write(params, domainContext, { legacy: true });
                   break;
-                }
-                case "git.index": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  result = await hostGitIndex(
-                    await resolveHostWorktreeAsync(project.cwd, params.cwd),
-                  );
+                case "git.index":
+                  result = await gitService.index(params, domainContext, { legacy: true });
                   break;
-                }
-                case "git.fileDiff": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  result = await hostFileDiff(
-                    await resolveHostWorktreeAsync(project.cwd, params.cwd),
-                    params.path,
-                    params.staged === true,
-                  );
+                case "git.fileDiff":
+                  result = await gitService.fileDiff(params, domainContext, { legacy: true });
                   break;
-                }
-                case "git.action": {
-                  const project = await engine.store.project(String(params.projectId ?? ""));
-                  const cwd = await resolveHostWorktreeAsync(project.cwd, params.cwd);
-                  const release = await startWorkspaceActivity(cwd, "mutation", "git.action");
-                  try {
-                    result =
-                      (await engine.withIdleProject(
-                        project.id,
-                        async () =>
-                          await hostGitAction(
-                            cwd,
-                            params.action,
-                            params.path,
-                            params.message,
-                            params.content,
-                            params.expectedOriginal,
-                          ),
-                      )) ?? null;
-                  } finally {
-                    await release();
-                  }
+                case "git.action":
+                  result = await gitService.action(params, domainContext, { legacy: true });
                   break;
-                }
                 default:
                   throw new Error("Unsupported host method");
               }
@@ -5071,11 +4808,26 @@ export async function createHostServer(
           response.end(inline === undefined ? JSON.stringify({ result }) : `{"result":${inline}}`);
         } catch (error) {
           if (!response.destroyed)
-            response.writeHead(error instanceof RequestAuthorizationError ? 401 : 400).end(
-              JSON.stringify({
-                error: error instanceof Error ? error.message : "Host request failed",
-              }),
-            );
+            response
+              .writeHead(
+                error instanceof RequestAuthorizationError ||
+                  error instanceof HostDomainAuthorizationError
+                  ? 401
+                  : 400,
+              )
+              .end(
+                JSON.stringify({
+                  error: error instanceof Error ? error.message : "Host request failed",
+                  ...(typeof error === "object" &&
+                  error !== null &&
+                  "code" in error &&
+                  error.code === "HOST_CONTROL_RECEIPT_UNCONFIRMED" &&
+                  "controlApplied" in error &&
+                  error.controlApplied === true
+                    ? { code: "HOST_CONTROL_RECEIPT_UNCONFIRMED", delivery: "unknown" }
+                    : {}),
+                }),
+              );
         } finally {
           if (dispatchStarted !== undefined)
             perfMetrics.recordDuration(dispatchMethod, performance.now() - dispatchStarted);
@@ -5093,6 +4845,51 @@ export async function createHostServer(
         .finally(() => requests.delete(accepted));
     },
   );
+  const websocket = attachHostWebSocketTransport({
+    server,
+    environmentId: engine.store.environmentId,
+    methods: domainDispatcher.methods,
+    capabilities: [
+      "transport.ws.sessions.v2",
+      "transport.ws.queue.v2",
+      "transport.ws.files.v2",
+      "transport.ws.terminals.v2",
+      "transport.ws.git.v2",
+      "transport.ws.notes.v2",
+      "transport.ws.tasks.v2",
+      "transport.ws.goals.v2",
+      "transport.ws.devServers.v2",
+      "transport.ws.sprints.v2",
+      "transport.ws.automations.v2",
+      "transport.ws.health.v2",
+      "transport.ws.bulk.v2",
+    ],
+    subscriptions: subscriptionHub,
+    bulk: bulkTransfers,
+    authenticate: async (token) =>
+      await engine.store.db.outsideScope(async () => {
+        if (!(await engine.store.authenticated(token))) return null;
+        return {
+          id: createHash("sha256").update(token).digest("hex"),
+          devServerAccess: (method, params, authorize) =>
+            devServerAccess.handle(method, params, token, authorize),
+          retargetTask: (id, target, autoMerge) =>
+            withWorkspaceOwner(token, (owner) => tasks.retarget(id, target, autoMerge, owner)),
+          // Domain transactions already own the serialized database scope. Re-entering
+          // outsideScope here would queue authorization behind the transaction itself.
+          authorized: async () => await engine.store.authenticated(token),
+          exposeQueueAttachments: (ids, params) =>
+            engine.store.db.withAuthorization(
+              () => engine.store.authenticated(token),
+              () => attachmentOwnership.expose(token, ids, params),
+            ),
+        };
+      }),
+    dispatch: async (method, params, context) =>
+      await engine.store.db.outsideScope(
+        async () => await domainDispatcher.dispatch(method, params, context),
+      ),
+  });
   let startup: Promise<void> = Promise.resolve();
   let resourceClose: Promise<void> | undefined;
   server.on("listening", () => {
@@ -5129,6 +4926,13 @@ export async function createHostServer(
           pending.push(Promise.reject(error));
         }
       };
+      drain(async () => await websocket.close());
+      drain(() => {
+        unsubscribeChanges();
+        unsubscribeAuthority();
+        subscriptionHub.close();
+        bulkTransfers.close();
+      });
       drain(() => managed.retention.stop());
       drain(async () => await queueDrainer.close());
       drain(() => localVoice.close());

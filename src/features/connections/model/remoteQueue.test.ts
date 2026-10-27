@@ -23,6 +23,24 @@ const draft = (id: string, text = id) => ({ id, text, attachments: [] });
 const queueOf = (...ids: string[]): RemoteQueue =>
   ids.reduce((queue, id) => enqueueRemoteMessage(queue, draft(id)), EMPTY_REMOTE_QUEUE);
 
+it("preserves enqueue-time authority through queue edits/reorder and explicit resume", () => {
+  const queue = enqueueRemoteMessage(EMPTY_REMOTE_QUEUE, {
+    ...draft("old"),
+    authorityGeneration: 2,
+  });
+  const withLegacy = enqueueRemoteMessage(queue, draft("legacy"));
+  const edited = editRemoteMessage(withLegacy, "old", "reviewed text", []);
+  const resumed = releaseRemoteQueue(
+    pauseRemoteQueue(reorderRemoteMessages(edited, ["legacy", "old"])),
+  );
+  expect(resumed.messages[1]).toMatchObject({
+    id: "old",
+    authorityGeneration: 2,
+    text: "reviewed text",
+  });
+  expect(resumed.messages[0]).not.toHaveProperty("authorityGeneration");
+});
+
 describe("queue transitions", () => {
   it("rejects over-budget edits atomically, including the other rows and attachment data", () => {
     const original = setRemoteEditing(queueOf("a", "b"), "a");

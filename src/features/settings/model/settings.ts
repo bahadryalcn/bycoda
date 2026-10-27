@@ -3,7 +3,7 @@ import {
   storedFlag,
   subscribePreferenceChanges,
 } from "../../../shared/lib/storedSetting";
-import { t, sourceMessages } from "../../../shared/i18n";
+import { t, sourceMessages } from "../../../shared/i18n/core";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { HARNESSES, HARNESS_TITLE } from "../../sessions/model/session";
 import {

@@ -74,6 +74,7 @@ function setup() {
   return getUserMedia;
 }
 afterEach(() => {
+  vi.useRealTimers();
   nodes.length = 0;
   contexts.length = 0;
   playback.length = 0;
@@ -88,6 +89,7 @@ function callbacks() {
     transcript: vi.fn(),
     state: vi.fn(),
     error: vi.fn(),
+    playback: vi.fn(),
   };
 }
 it("releases the local recognizer if closed during startup without opening a microphone", async () => {
@@ -183,4 +185,121 @@ it("cancels a late synthesis acceptance without playing stale audio", async () =
   await vi.waitFor(() => expect(backend.speechCancel).toHaveBeenCalledWith("local", "late"));
   expect(playback).toHaveLength(0);
   voice.close();
+});
+
+it("smooths normalized microphone RMS without state callbacks and resets on mute and close", async () => {
+  setup();
+  const events = callbacks();
+  const level = { current: 0 };
+  const voice = new LocalVoice(events, "en", undefined, level);
+  await voice.connect();
+  events.state.mockClear();
+  expect(voice.level).toBe(level);
+  nodes[0].port.onmessage({ data: new Int16Array(1024).fill(16384).buffer });
+  expect(voice.level).toBe(level);
+  expect(level.current).toBeCloseTo(0.275);
+  expect(events.state.mock.calls).toEqual([["speaking"]]);
+  events.state.mockClear();
+  nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+  expect(level.current).toBeCloseTo(0.22);
+  expect(events.state).not.toHaveBeenCalled();
+  voice.mute(true);
+  expect(level.current).toBe(0);
+  nodes[0].port.onmessage({ data: new Int16Array(1024).fill(-32768).buffer });
+  expect(level.current).toBe(0);
+  voice.mute(false);
+  nodes[0].port.onmessage({ data: new Int16Array(1024).fill(-32768).buffer });
+  expect(level.current).toBeGreaterThan(0);
+  expect(level.current).toBeLessThanOrEqual(1);
+  voice.close();
+  expect(level.current).toBe(0);
+});
+
+async function settleSpeech() {
+  for (let i = 0; i < 15; i++) await Promise.resolve();
+}
+
+it("reports natural playback only after its audio clock starts and until the final chunk ends", async () => {
+  setup();
+  vi.useFakeTimers();
+  const chunk = { audio: btoa("\0\0".repeat(7680)), sampleRate: 48000 };
+  backend.speechNext.mockResolvedValueOnce(chunk).mockResolvedValueOnce(chunk);
+  const events = callbacks();
+  const voice = new LocalVoice(events, "en", { natural: true });
+  await voice.connect();
+  voice.speak("Hello");
+  await settleSpeech();
+  expect(playback).toHaveLength(2);
+  expect(events.playback).not.toHaveBeenCalled();
+  // A suspended audio clock does not imply audible playback, even after wall time passes.
+  contexts[0].state = "suspended";
+  await vi.advanceTimersByTimeAsync(350);
+  expect(events.playback).not.toHaveBeenCalled();
+  contexts[0].state = "running";
+  contexts[0].currentTime = 0.35;
+  await vi.advanceTimersByTimeAsync(350);
+  expect(events.playback.mock.calls).toEqual([[true]]);
+  playback[0].onended();
+  expect(events.playback.mock.calls).toEqual([[true]]);
+  playback[1].onended();
+  expect(events.playback.mock.calls).toEqual([[true], [false]]);
+  voice.close();
+});
+
+it("cancels pending natural onset and ignores ended events from replaced speech", async () => {
+  setup();
+  vi.useFakeTimers();
+  const chunk = { audio: btoa("\0\0".repeat(7680)), sampleRate: 48000 };
+  backend.speechNext.mockResolvedValueOnce(chunk);
+  const events = callbacks();
+  const voice = new LocalVoice(events, "en", { natural: true });
+  await voice.connect();
+  voice.speak("First");
+  await settleSpeech();
+  voice.silence();
+  contexts[0].currentTime = 1;
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(events.playback).not.toHaveBeenCalled();
+  backend.speechNext.mockResolvedValueOnce(chunk);
+  voice.speak("Second");
+  await settleSpeech();
+  contexts[0].currentTime = 1.35;
+  await vi.advanceTimersByTimeAsync(350);
+  expect(events.playback.mock.calls).toEqual([[true]]);
+  playback[0].onended();
+  expect(events.playback.mock.calls).toEqual([[true]]);
+  voice.silence();
+  expect(events.playback.mock.calls).toEqual([[true], [false]]);
+  voice.close();
+});
+
+it("uses system utterance lifecycle and rejects stale events after silence or replacement", () => {
+  setup();
+  vi.stubGlobal(
+    "SpeechSynthesisUtterance",
+    class {
+      constructor(public text: string) {}
+    },
+  );
+  speechSynthesis.getVoices = () =>
+    [{ localService: true, lang: "en-US" }] as SpeechSynthesisVoice[];
+  const events = callbacks();
+  const voice = new LocalVoice(events, "en");
+  voice.speak("First");
+  const first = vi.mocked(speechSynthesis.speak).mock.calls[0][0];
+  expect(events.playback).not.toHaveBeenCalled();
+  first.onstart!({} as SpeechSynthesisEvent);
+  expect(events.playback.mock.calls).toEqual([[true]]);
+  voice.speak("Second");
+  const second = vi.mocked(speechSynthesis.speak).mock.calls[1][0];
+  second.onstart!({} as SpeechSynthesisEvent);
+  first.onend!({} as SpeechSynthesisEvent);
+  expect(events.playback.mock.calls).toEqual([[true], [false], [true]]);
+  second.onerror!({} as SpeechSynthesisErrorEvent);
+  expect(events.playback.mock.calls).toEqual([[true], [false], [true], [false]]);
+  voice.speak("Third");
+  const third = vi.mocked(speechSynthesis.speak).mock.calls[2][0];
+  voice.close();
+  third.onstart!({} as SpeechSynthesisEvent);
+  expect(events.playback.mock.calls).toEqual([[true], [false], [true], [false]]);
 });

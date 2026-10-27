@@ -187,7 +187,7 @@ async function startLive(
   try {
     const url =
       generation === "v2" ? serverUrl : await waitForUrl(() => serverUrl, SERVER_TIMEOUT_MS);
-    const client = new OpenCodeClient(url, cwd, generation, service?.password);
+    const client = new OpenCodeClient(url, cwd, generation, service?.password, TEXT_CHILD_ID);
     const created = await client.createSession({
       permission: [{ permission: "*", pattern: "*", action: "deny" }],
     });

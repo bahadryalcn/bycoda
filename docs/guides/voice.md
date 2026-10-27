@@ -10,6 +10,29 @@ Open the speech bubble at the bottom right, select a session, then choose
 requested only after start. Closing the companion releases the microphone and
 its local recognizer without stopping coding work.
 
+## Visual style and compact mode
+
+Choose **Settings → Chat → Voice companion → Visual style** to select
+**bycoda mark** (default), **Wave**, **Dots** or **Orb**. Each option has a live
+preview. Changing the style updates an open companion immediately and keeps the
+voice connection running. The choice is saved on this device.
+
+The visual distinguishes disconnected, connecting, listening, your speech,
+preparing a reply, assistant playback, microphone paused and error states through
+shape as well as motion. Your speech responds to the microphone level. Assistant
+speech appears when reply audio actually starts playing, rather than while it is
+being prepared. A separate corner indicator means the target session's agent is
+working; it can appear alongside any voice state. The status text remains the
+accessible description. Reduced motion keeps recognizable still poses.
+
+Choose **Compact voice companion** in the panel header to keep a small pill with
+the visual, session title, microphone pause/resume and expand actions. The voice
+session keeps running, and the compact preference is saved with voice settings.
+Choose **Expand voice companion**, or double-click the pill's visual, to restore
+the full panel and its controls. Drag the pill's visual, or focus that move
+control and use arrow keys, to reposition it. Both sizes stay within the viewport
+when moved, resized or expanded; position is saved independently of visual style.
+
 ## Audio stays on this computer
 
 The local bycoda Host runs Faster Whisper in an on-demand hidden Python process.
@@ -64,6 +87,11 @@ to see its stage or retry a failure. GPU acceleration is recommended for natural
 replies; CPU performance depends on the machine. Detection confirms discoverable
 files/packages; starting voice checks
 that the runtime can actually load them.
+
+If **Install** immediately reports **Couldn't check voice setup. Try again.**,
+open **Technical details**. `Unsupported remote operation` means the desktop's
+native bridge cannot forward the setup request. Update the desktop application;
+updating only the Host does not repair this desktop routing error.
 
 Initial model loading and the selected conversation provider add latency. A warm
 VoxCPM2 worker streams chunks without waiting for the entire reply, but this is

@@ -11,7 +11,7 @@ import {
   attachmentPathText,
   isVisionImage,
   promptText,
-} from "../../../../features/sessions/model/attachments";
+} from "../../../../features/sessions/model/attachmentPrompt";
 import { isTaskListToolName } from "../../../../features/sessions/model/taskList";
 import { extractToolPreview } from "../../core/preview";
 import type { HarnessEvent } from "../../core/types";

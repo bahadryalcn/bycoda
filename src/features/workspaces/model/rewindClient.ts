@@ -13,13 +13,46 @@ import {
   workspaceRequest,
 } from "./workspaceClient";
 
+type RewindAuthority = { authorityGeneration?: number };
+const plannedRoutes = new WeakMap<
+  SessionRewindPlan,
+  { native: boolean; cwd: string; sessionId: string }
+>();
+function authority(source: RewindAuthority): RewindAuthority {
+  const generation = source.authorityGeneration;
+  if (generation === undefined) return {};
+  if (!Number.isSafeInteger(generation) || generation < 1)
+    throw new Error(t("The session authority changed. Refresh the rewind preview."));
+  return { authorityGeneration: generation };
+}
+function retainPlan(
+  plan: SessionRewindPlan,
+  expected: RewindAuthority,
+  route: { native: boolean; cwd: string; sessionId: string },
+): SessionRewindPlan {
+  if (
+    authority(plan).authorityGeneration !== expected.authorityGeneration ||
+    plan.sessionId !== route.sessionId
+  )
+    throw new Error(t("The session authority changed. Refresh the rewind preview."));
+  const retained = Object.freeze({ ...plan });
+  plannedRoutes.set(retained, route);
+  return retained;
+}
+
 export async function planWorkspaceRewind(
   session: Session,
   workspaceId: string,
   target: { userBlockId: string } | { operationId: string },
+  intent?: RewindAuthority,
 ): Promise<SessionRewindPlan> {
+  // Capture before discovery/read awaits; absence is a legacy intent, never an
+  // invitation to fill it from a fresher Host head.
+  const expected = authority(intent ?? { authorityGeneration: session.adoptedAuthorityGeneration });
   const context = { cwd: session.cwd };
-  const native = !parseRemotePath(session.cwd) && !remoteSessionFor(session.id);
+  const boundSessionId = remoteSessionFor(session.id);
+  const native =
+    expected.authorityGeneration === undefined && !parseRemotePath(session.cwd) && !boundSessionId;
   const capabilities = await getWorkspaceCapabilities(context);
   if (
     !capabilities.includes("sessions.git-rewind.v1") ||
@@ -45,7 +78,7 @@ export async function planWorkspaceRewind(
       throw new Error(
         t("The complete conversation could not be loaded. Retry the rewind preview."),
       );
-    return invoke<SessionRewindPlan>("managed_rewind_plan", {
+    const plan = await invoke<SessionRewindPlan>("managed_rewind_plan", {
       request: {
         workspaceId,
         sessionId: session.id,
@@ -56,9 +89,10 @@ export async function planWorkspaceRewind(
           : { direction: "rewind", userBlockId: target.userBlockId }),
       },
     });
+    return retainPlan(plan, expected, { native, cwd: session.cwd, sessionId: session.id });
   }
   const resolved = await resolveWorkspaceContext(session.cwd);
-  const authoritativeSessionId = remoteSessionFor(session.id) ?? session.id;
+  const authoritativeSessionId = boundSessionId ?? session.id;
   const [workspace, authoritative] = await Promise.all([
     workspaceRequest("workspaces.get", { workspaceId }, context),
     remoteRequest<HostSession | null>(
@@ -71,10 +105,13 @@ export async function planWorkspaceRewind(
   ]);
   if (!workspace || !authoritative || authoritative.history || authoritative.historyLoading)
     throw new Error(t("The complete conversation could not be loaded. Retry the rewind preview."));
-  return workspaceRequest(
+  if (authority(authoritative).authorityGeneration !== expected.authorityGeneration)
+    throw new Error(t("The session authority changed. Refresh the rewind preview."));
+  const plan = await workspaceRequest(
     "sessions.rewind.plan",
     {
       workspaceId,
+      ...expected,
       sessionId: authoritativeSessionId,
       expectedRevision: workspace.revision,
       expectedConversationRevision: authoritative.revision,
@@ -84,6 +121,11 @@ export async function planWorkspaceRewind(
     },
     context,
   );
+  return retainPlan(plan, expected, {
+    native,
+    cwd: session.cwd,
+    sessionId: authoritativeSessionId,
+  });
 }
 
 /** A receipt authorizes reconciliation, never a second provider/file revert. */
@@ -91,12 +133,31 @@ export async function applyWorkspaceRewind(
   session: Session,
   plan: SessionRewindPlan,
   idempotencyKey: string,
+  displayed?: RewindAuthority,
 ): Promise<{ receipt: SessionRewindReceipt; session: Session; snapshot?: HostSession }> {
   if (plan.blockers.length || plan.expiresAt <= Date.now())
     throw new Error(t("This rewind preview is blocked or expired. Refresh the preview."));
+  const expected = authority(plan);
+  const current = authority(
+    displayed ?? { authorityGeneration: session.adoptedAuthorityGeneration },
+  );
+  if (expected.authorityGeneration !== current.authorityGeneration)
+    throw new Error(t("The session authority changed. Refresh the rewind preview."));
   const context = { cwd: session.cwd };
-  const native = !parseRemotePath(session.cwd) && !remoteSessionFor(session.id);
+  const boundSessionId = remoteSessionFor(session.id) ?? session.id;
+  const native =
+    expected.authorityGeneration === undefined &&
+    !parseRemotePath(session.cwd) &&
+    !remoteSessionFor(session.id);
+  const route = plannedRoutes.get(plan);
+  if (
+    plan.sessionId !== boundSessionId ||
+    (route &&
+      (route.cwd !== session.cwd || route.native !== native || route.sessionId !== boundSessionId))
+  )
+    throw new Error(t("The session authority changed. Refresh the rewind preview."));
   const mutation = {
+    ...expected,
     workspaceId: plan.workspaceId,
     expectedRevision: plan.expectedRevision,
     idempotencyKey,
@@ -148,7 +209,9 @@ export async function applyWorkspaceRewind(
     !authoritative ||
     authoritative.history ||
     authoritative.historyLoading ||
-    authoritative.revision !== receipt.conversationRevision
+    authoritative.revision !== receipt.conversationRevision ||
+    authority(authoritative).authorityGeneration !== expected.authorityGeneration ||
+    authority(receipt).authorityGeneration !== expected.authorityGeneration
   )
     throw new Error(
       t(
@@ -161,6 +224,7 @@ export async function applyWorkspaceRewind(
     session: {
       ...session,
       ...authoritative.session,
+      adoptedAuthorityGeneration: authoritative.authorityGeneration,
       id: session.id,
       cwd: session.cwd,
       worktreeCwd: session.worktreeCwd,

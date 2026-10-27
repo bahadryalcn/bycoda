@@ -198,17 +198,30 @@ export function useCompactAndRewind({
         !editedResends.start(sessionId)
       )
         throw new Error(t("Wait for this session to finish before undoing the rewind."));
+      const authorityGeneration = current.adoptedAuthorityGeneration;
       try {
         await stopHarnessSession(current.harness, sessionId);
-        const undoPlan = await planWorkspaceRewind(current, workspaceId, { operationId });
+        const undoPlan = await planWorkspaceRewind(
+          current,
+          workspaceId,
+          { operationId },
+          { authorityGeneration },
+        );
         const undoKey = crypto.randomUUID();
         await requestWorkspaceRewindPreview(
           undoPlan,
           async () => {
             const latest = sessionsRef.current.find((session) => session.id === sessionId);
-            if (!latest || latest.blocks !== current.blocks || latest.busy)
+            if (
+              !latest ||
+              latest.blocks !== current.blocks ||
+              latest.busy ||
+              latest.adoptedAuthorityGeneration !== authorityGeneration
+            )
               throw new Error(t("The conversation changed. Close this preview and try again."));
-            const undone = await applyWorkspaceRewind(latest, undoPlan, undoKey);
+            const undone = await applyWorkspaceRewind(latest, undoPlan, undoKey, {
+              authorityGeneration,
+            });
             await forgetHarnessSession(current.harness, sessionId);
             reconcileManaged(sessionId, undone.session);
             clearWorkspaceRewindUndo(sessionId);

@@ -22,6 +22,7 @@ import {
 
 /** A host session adopted from this machine's desktop app (`sessions.adopted`). */
 export type AdoptedEntry = {
+  authorityGeneration?: number;
   id: string;
   projectId: string;
   revision: number;
@@ -33,6 +34,17 @@ export const ADOPTED_CAPABILITY = "sessions.desktop";
 /** Fired with the project folder when a session started on this machine's
  * host from another computer is first saved here. */
 export const ADOPTED_SESSION_ADDED = "bycoda:adopted-session-added";
+
+function appliedAuthorityGeneration(host: HostSession, previous?: Session): number | undefined {
+  const generation = host.authorityGeneration;
+  if (
+    (generation !== undefined && (!Number.isSafeInteger(generation) || generation < 1)) ||
+    (previous?.adoptedAuthorityGeneration !== undefined &&
+      (generation === undefined || generation < previous.adoptedAuthorityGeneration))
+  )
+    throw new Error("Host authority generation is invalid or older than the displayed mirror.");
+  return generation;
+}
 
 /** Copying history to this desktop is not new conversation activity. */
 export function adoptedSessionTimes(
@@ -76,6 +88,7 @@ export function desktopCopyOf(
     historyLoadError: undefined,
     continuingElsewhere: host.status === "running" || undefined,
     adoptedRunId: host.status === "running" ? host.runId : undefined,
+    adoptedAuthorityGeneration: appliedAuthorityGeneration(host),
     // The copy is the host's transcript, so that is where both last agreed.
     adoptedBase: hostHead(host),
   };
@@ -120,7 +133,11 @@ export function planAdoptedFetches(
   return entries.filter((entry) => {
     const session = byId.get(entry.id);
     return (
-      comparable(session) && (mirrored.get(entry.id) !== entry.revision || unconfirmed(session))
+      comparable(session) &&
+      (mirrored.get(entry.id) !== entry.revision ||
+        unconfirmed(session) ||
+        (entry.authorityGeneration !== undefined &&
+          entry.authorityGeneration !== session.adoptedAuthorityGeneration))
     );
   });
 }
@@ -445,6 +462,7 @@ export function mergeAdoptedSession(
       : {}),
     continuingElsewhere: host.status === "running" || undefined,
     adoptedRunId: host.status === "running" ? host.runId : undefined,
+    adoptedAuthorityGeneration: appliedAuthorityGeneration(host, local),
     retryMessage: host.status === "running" ? remote.retryMessage : undefined,
     adoptedSyncConflict: undefined,
     adoptedDivergence: undefined,
@@ -873,7 +891,13 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
     let present = storedHere.get(deps.mirrored);
     if (!present) storedHere.set(deps.mirrored, (present = new Set()));
     for (const entry of entries) {
-      if (loaded.has(entry.id) || deps.mirrored.get(entry.id) === entry.revision) continue;
+      if (
+        loaded.has(entry.id) ||
+        (deps.mirrored.get(entry.id) === entry.revision &&
+          (entry.authorityGeneration === undefined ||
+            known.get(entry.id)?.authorityGeneration === entry.authorityGeneration))
+      )
+        continue;
       // A running session already stored here waits for its turn to end.
       if (entry.status === "running" && present.has(entry.id)) continue;
       try {

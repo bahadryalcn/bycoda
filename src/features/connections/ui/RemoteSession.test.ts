@@ -38,6 +38,7 @@ import "../model/remoteCommands";
 import { remoteCreateIntent, resetRemoteCreateIntentsForTests } from "../model/remoteCreateIntent";
 import { notifyRemoteRecovered, resetRemoteHealth } from "../model/remoteHealth";
 import { resetAutoContinueForTests } from "../../sessions/model/autoContinue";
+import { savePendingRemoteCommand } from "../model/remoteOutbox";
 import { resetRemoteQueuesForTests } from "../model/useRemoteQueue";
 import { resetRemoteMachineChannelsForTests } from "../model/remoteMachineChannel";
 import { readRemotePageCache, writeRemotePageCache } from "../model/remotePageCache";
@@ -223,6 +224,8 @@ let describeDelay: Promise<void> | undefined;
 let steerFailure: string | undefined;
 /** What the host answers to a `send` (a refusal, as the other computer's turn makes it). */
 let sendFailure: string | undefined;
+let commandStatusSupported = false;
+let statusRequests: string[];
 let answerFailure: string | undefined;
 let receiptRunId: string | undefined;
 /** The host keeps the queue (`sessions.queue`); the test plays the host's side of it. */
@@ -243,6 +246,8 @@ let machineDown: string | undefined;
 const unreachable = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 
 beforeEach(() => {
+  commandStatusSupported = false;
+  statusRequests = [];
   transportProbe.current = undefined;
   invalidateMachineSnapshot();
   vi.mocked(invoke).mockReset();
@@ -372,6 +377,7 @@ beforeEach(() => {
           ...(inlineSyncSupported ? ["machine.changes", "machine.changes.inlineSync"] : []),
           ...(conversationRewindSupported ? ["sessions.rewind"] : []),
           ...(shellSupported ? ["sessions.shell"] : []),
+          ...(commandStatusSupported ? ["commands.status"] : []),
         ],
       };
     }
@@ -564,6 +570,10 @@ beforeEach(() => {
           revision: hostQueue.revision + 1,
         };
       return { ...structuredClone(hostQueue), leased: true, hostTime: Date.now() };
+    }
+    if (method === "commands.status") {
+      statusRequests.push(params.commandId);
+      return null;
     }
     if (method === "commands.dispatch") {
       if (dispatchDelay && params.type !== "cancel") await dispatchDelay;
@@ -2186,6 +2196,184 @@ function openExistingChat(patch: Partial<HostSession> = {}) {
   rememberRemoteSession("shell", "host-session");
 }
 
+it.each(["send", "draft", "shell"] as const)(
+  "authority intent: binds a new %s to the displayed generation",
+  async (kind) => {
+    shellSupported = true;
+    openExistingChat({ authorityGeneration: 3 });
+    await renderRemoteProbe();
+    await act(async () => {
+      if (kind === "draft") remoteOverrides.onSaveDraft!("shell", "new draft", []);
+      else remoteOverrides.onSubmit!("shell", kind === "shell" ? "!echo fixture" : "new send", []);
+    });
+    await settle();
+    expect(commands.find((command) => command.type === kind)).toMatchObject({
+      authorityGeneration: 3,
+      sessionId: "host-session",
+    });
+  },
+);
+
+it("authority intent: captures Send before upload and never upgrades it from a newer snapshot", async () => {
+  openExistingChat({ authorityGeneration: 2 });
+  await renderRemoteProbe();
+  let release!: () => void;
+  attachmentReadDelay = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await act(async () => {
+    remoteOverrides.onSubmit!("shell", "original authority", [
+      {
+        id: "file",
+        name: "note.txt",
+        kind: "file",
+        mimeType: "text/plain",
+        size: 1,
+        path: "C:/fictional/note.txt",
+      },
+    ]);
+  });
+  host = { ...host!, authorityGeneration: 3 };
+  await renderRemoteProbe();
+  await act(async () => {
+    attachmentReadDelay = undefined;
+    release();
+  });
+  await settle();
+  expect(commands.find((command) => command.type === "send")).toMatchObject({
+    authorityGeneration: 2,
+    text: "original authority",
+  });
+});
+
+it("authority intent: checks the old pending ID once and keeps its old payload when the displayed floor advances", async () => {
+  commandStatusSupported = true;
+  openExistingChat({ authorityGeneration: 3 });
+  const pending: HostCommand = {
+    type: "send",
+    commandId: "old-pending-id",
+    sessionId: "host-session",
+    text: "old unsolved request",
+    authorityGeneration: 2,
+  };
+  savePendingRemoteCommand(projectKey, "env", pending, "shell");
+  await renderRemoteProbe();
+  const retry = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+    (button) => button.textContent === "Retry",
+  )!;
+  expect(retry).toBeTruthy();
+  await act(async () => retry.click());
+  await settle();
+  expect(statusRequests).toEqual(["old-pending-id"]);
+  expect(commands).toEqual([]);
+  expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toEqual(pending);
+  expect(container.textContent).toContain("earlier session authority");
+});
+
+it.each([undefined, 2])(
+  "authority intent: keeps old queued generation %s held instead of inheriting the displayed floor",
+  async (authorityGeneration) => {
+    openExistingChat({ authorityGeneration: 3 });
+    const row = {
+      id: "old-row",
+      text: "retained queue text",
+      attachments: [],
+      ...(authorityGeneration === undefined ? {} : { authorityGeneration }),
+    };
+    savedQueue = [row];
+    await renderRemoteProbe();
+    await expect(remoteOverrides.onResumeQueue!()).rejects.toThrow("earlier session authority");
+    expect(remoteOverrides.session?.queuedMessages).toEqual([row]);
+    expect(commands).toEqual([]);
+  },
+);
+
+it("authority intent: new queued rows retain their displayed generation before persistence", async () => {
+  openRunningChat();
+  host = { ...host!, authorityGeneration: 3 };
+  await renderRemoteProbe();
+  await act(async () => {
+    remoteOverrides.onSubmit!("shell", "new queued intent", [], { followUpBehavior: "queue" });
+  });
+  await settle();
+  expect(remoteOverrides.session?.queuedMessages?.[0]).toMatchObject({
+    authorityGeneration: 3,
+    text: "new queued intent",
+  });
+  expect(queueWrites.at(-1)).toMatchObject({
+    queue: [expect.objectContaining({ authorityGeneration: 3 })],
+  });
+});
+
+it("authority intent: binds Stop to the displayed running generation", async () => {
+  openRunningChat();
+  host = { ...host!, authorityGeneration: 3 };
+  await renderRemoteProbe();
+  await act(async () => remoteOverrides.onStop!("shell"));
+  await settle();
+  expect(commands.find((command) => command.type === "cancel")).toMatchObject({
+    authorityGeneration: 3,
+    sessionId: "host-session",
+  });
+});
+
+it.each(["approve", "answer", "usageLimit", "compact", "removeDraft"] as const)(
+  "authority intent: binds a new %s control at its action boundary",
+  async (kind) => {
+    if (kind === "answer") seedQuestionHost();
+    else openExistingChat();
+    host = {
+      ...host!,
+      authorityGeneration: 3,
+      ...(kind === "approve" ? { runId: "approval-run", status: "running" as const } : {}),
+      session: {
+        ...host!.session,
+        ...(kind === "usageLimit" ? { usageLimit: { resetsAt: Date.now() + 10000 } } : {}),
+        ...(kind === "removeDraft"
+          ? {
+              blocks: [
+                ...host!.session.blocks,
+                { id: "draft", role: "user" as const, text: "draft", draft: true },
+              ],
+            }
+          : {}),
+      },
+    };
+    await renderRemoteProbe();
+    await act(async () => {
+      if (kind === "approve") remoteOverrides.onApproval!("shell", 7, "allow");
+      if (kind === "answer") remoteOverrides.onQuestionReply!("shell", 3, { kind: "skipped" });
+      if (kind === "usageLimit") remoteOverrides.onUsageLimitDismiss!("shell");
+      if (kind === "compact") remoteOverrides.onCompactContext!();
+      if (kind === "removeDraft") remoteOverrides.onRemoveDraft!("shell", "draft");
+    });
+    await settle();
+    expect(commands.find((command) => command.type === kind)).toMatchObject({
+      authorityGeneration: 3,
+    });
+  },
+);
+
+it("authority intent: keeps deferred Configure on its old generation until an explicit fresh change", async () => {
+  openRunningChat();
+  host = { ...host!, authorityGeneration: 2 };
+  await renderRemoteProbe();
+  await act(async () => remoteOverrides.onRuntimeModeChange!("shell", "auto"));
+  expect(commands.filter((command) => command.type === "configure")).toEqual([]);
+  host = { ...host!, authorityGeneration: 3 };
+  endTurn();
+  await vi.waitFor(() => expect(remoteOverrides.session?.busy).toBe(false), { timeout: 5000 });
+  await settle();
+  expect(commands.filter((command) => command.type === "configure")).toEqual([]);
+  expect(container.textContent).toContain("earlier session authority");
+  await act(async () => remoteOverrides.onRuntimeModeChange!("shell", "auto"));
+  await settle();
+  expect(commands.find((command) => command.type === "configure")).toMatchObject({
+    authorityGeneration: 3,
+    runtimeMode: "auto",
+  });
+}, 10000);
+
 it("locks remote sends through rewind and waits for an authoritative snapshot before acknowledging", async () => {
   conversationRewindSupported = true;
   openExistingChat();
@@ -2273,7 +2461,7 @@ it("locks remote sends through rewind and waits for an authoritative snapshot be
 
 it("rewinds a worktree chat through the conversation command without Git rewind support", async () => {
   conversationRewindSupported = true;
-  openExistingChat();
+  openExistingChat({ authorityGeneration: 3 });
   host = {
     ...host!,
     session: {
@@ -2297,6 +2485,7 @@ it("rewinds a worktree chat through the conversation command without Git rewind 
     expect.objectContaining({
       type: "rewind",
       sessionId: "host-session",
+      authorityGeneration: 3,
       blockId: "selected-user",
       expectedRevision: 1,
     }),

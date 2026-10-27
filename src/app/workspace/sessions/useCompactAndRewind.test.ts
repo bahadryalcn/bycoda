@@ -15,6 +15,8 @@ const effects = vi.hoisted(() => ({
   save: vi.fn(),
   reviewChanged: vi.fn(),
   retireFiles: vi.fn(),
+  preview: vi.fn(),
+  registerUndo: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: effects.retireFiles }));
 
@@ -54,8 +56,11 @@ vi.mock("../../../features/workspaces/model/rewindClient", () => ({
 }));
 vi.mock("../../../features/workspaces/ui/WorkspaceRewindPreview", () => ({
   clearWorkspaceRewindUndo: vi.fn(),
-  requestWorkspaceRewindPreview: vi.fn(),
-  registerWorkspaceRewindUndoHandler: () => () => {},
+  requestWorkspaceRewindPreview: effects.preview,
+  registerWorkspaceRewindUndoHandler: (_id: string, handler: unknown) => {
+    effects.registerUndo(handler);
+    return () => {};
+  },
 }));
 
 let root: Root;
@@ -126,6 +131,48 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
+});
+
+it("keeps a managed Undo review's original authority when it changes during preparation", async () => {
+  const original = { ...chat(true), adoptedAuthorityGeneration: 2 };
+  deps.sessionsRef.current = [original];
+  effects.stop.mockImplementationOnce(async () => {
+    deps.sessionsRef.current = [{ ...original, adoptedAuthorityGeneration: 3 }];
+  });
+  effects.plan.mockResolvedValueOnce({ authorityGeneration: 2, token: "original-preview" });
+  effects.preview.mockImplementationOnce(async (_plan, apply) => apply());
+  const undo = effects.registerUndo.mock.calls.at(-1)![0] as (
+    id: string,
+    target: { workspaceId: string; operationId: string },
+  ) => Promise<void>;
+  await expect(
+    undo("session", { workspaceId: "workspace", operationId: "original-operation" }),
+  ).rejects.toThrow("conversation changed");
+  expect(effects.plan).toHaveBeenCalledWith(
+    original,
+    "workspace",
+    { operationId: "original-operation" },
+    { authorityGeneration: 2 },
+  );
+  expect(effects.apply).not.toHaveBeenCalled();
+  expect(deps.sessionsRef.current[0].adoptedAuthorityGeneration).toBe(3);
+});
+
+it("passes the same captured authority through an explicit fresh managed Undo confirmation", async () => {
+  const current = { ...chat(true), adoptedAuthorityGeneration: 3 };
+  deps.sessionsRef.current = [current];
+  const plan = { authorityGeneration: 3, token: "fresh-preview" };
+  effects.plan.mockResolvedValueOnce(plan);
+  effects.apply.mockResolvedValueOnce({ session: current });
+  effects.preview.mockImplementationOnce(async (_plan, apply) => apply());
+  const undo = effects.registerUndo.mock.calls.at(-1)![0] as (
+    id: string,
+    target: { workspaceId: string; operationId: string },
+  ) => Promise<void>;
+  await undo("session", { workspaceId: "workspace", operationId: "operation" });
+  expect(effects.apply).toHaveBeenCalledWith(current, plan, expect.any(String), {
+    authorityGeneration: 3,
+  });
 });
 
 it.each([false, true])(

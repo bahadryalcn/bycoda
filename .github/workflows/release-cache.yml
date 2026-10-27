@@ -7,6 +7,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/release*.yml"
+      - ".github/workflows/desktop-package.yml"
+      - ".github/actions/setup-deps/**"
+      - "scripts/release/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "src-tauri/Cargo.toml"
@@ -35,23 +38,20 @@ jobs:
             args: --target aarch64-apple-darwin --config src-tauri/tauri.fork.macos.conf.json
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          version: 12.15.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         id: cache
         with:
           shared-key: desktop-release-${{ matrix.platform }}
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-deps
         if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          node-version: "22"
       - run: pnpm run host:package
         if: steps.cache.outputs.cache-hit != 'true'
       # Compile with the same Tauri configuration without installers, signing

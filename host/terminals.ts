@@ -3,7 +3,7 @@ import type {
   HostTerminal,
   HostTerminalList,
   HostTerminalRead,
-} from "../src/features/host-tools/terminalTypes";
+} from "../src/shared/model/host-contracts/terminals";
 import { listShellProfiles, type ShellProfiles } from "./shellProfiles";
 import { resolveHostWorktreeAsync } from "./git-worktrees";
 import { startTerminalProcess, type OwnedTerminalProcess } from "./terminal-process";

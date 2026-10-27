@@ -1,5 +1,6 @@
 //! Remote host connections. The renderer receives machine metadata, never the
 //! saved bearer credential. Workspace requests never fall back to local calls.
+use crate::host_ws::{HostWsBroker, NativeRoute, RequestOptions, WsFailure, WsReply};
 use crate::remote_ssh::{self, Job, JobView, SshTarget, Tunnel, Tunnels};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -8,6 +9,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 #[path = "remote_changes.rs"]
@@ -21,6 +23,12 @@ pub mod folder_access;
 
 /// Sent to every window when a machine's SSH process ends on its own.
 const TUNNEL_EXIT_EVENT: &str = "remote://tunnel-exit";
+const HOST_CONNECTION_EVENT: &str = "host-connection-event";
+
+struct WsCapability {
+    fingerprint: String,
+    enabled: bool,
+}
 
 #[derive(Default)]
 pub struct RemoteConnections {
@@ -29,6 +37,8 @@ pub struct RemoteConnections {
     pub(crate) store: Mutex<()>,
     tunnels: Tunnels,
     jobs: Mutex<HashMap<String, Arc<Job>>>,
+    ws: HostWsBroker,
+    ws_capabilities: Mutex<HashMap<String, WsCapability>>,
 }
 
 impl RemoteConnections {
@@ -36,10 +46,14 @@ impl RemoteConnections {
     pub fn emit_tunnel_exits(&self, app: AppHandle) {
         self.tunnels.set_exit_sink(Arc::new(move |exit| {
             folder_access::stop_environment(&exit.environment_id);
+            if let Some(state) = app.try_state::<RemoteConnections>() {
+                state.ws.invalidate_environment(&exit.environment_id);
+            }
             let _ = app.emit(TUNNEL_EXIT_EVENT, exit);
         }));
     }
     pub fn shutdown(&self) {
+        self.ws.shutdown();
         folder_access::shutdown();
         if let Ok(jobs) = self.jobs.lock() {
             for job in jobs.values() {
@@ -47,6 +61,66 @@ impl RemoteConnections {
             }
         }
         self.tunnels.clear();
+    }
+    pub fn detach_window(&self, label: &str) {
+        self.ws.detach(label);
+    }
+
+    fn invalidate_ws(&self, machine_id: &str) {
+        self.ws.invalidate_machine(machine_id);
+        self.ws_capabilities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(machine_id);
+    }
+
+    fn ws_enabled(&self, machine: &StoredMachine) -> bool {
+        let mut capabilities = self
+            .ws_capabilities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let fingerprint = ws_fingerprint(machine);
+        let changed = capabilities
+            .get(&machine.id)
+            .is_some_and(|entry| entry.fingerprint != fingerprint);
+        if changed {
+            capabilities.remove(&machine.id);
+            drop(capabilities);
+            self.ws.invalidate_machine(&machine.id);
+            return false;
+        }
+        capabilities
+            .get(&machine.id)
+            .is_some_and(|entry| entry.enabled)
+    }
+
+    fn observe_ws_capability(&self, machine: &StoredMachine, descriptor: &Value) {
+        if descriptor["environmentId"].as_str() != Some(machine.environment_id.as_str()) {
+            return;
+        }
+        let enabled = descriptor["capabilities"].as_array().is_some_and(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .any(HostWsBroker::supports_ws_capability)
+        });
+        self.ws_capabilities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(
+                machine.id.clone(),
+                WsCapability {
+                    fingerprint: ws_fingerprint(machine),
+                    enabled,
+                },
+            );
+        if !enabled {
+            self.ws.invalidate_machine(&machine.id);
+        }
+    }
+
+    fn ws_request_compatible(&self, machine: &StoredMachine, method: &str, params: &Value) -> bool {
+        self.ws_enabled(machine) && HostWsBroker::supports_params(method, params)
     }
     fn job(&self, id: &str) -> Result<Arc<Job>, String> {
         self.jobs
@@ -105,6 +179,19 @@ fn same_request_route(started: &StoredMachine, current: &StoredMachine) -> bool 
         && started.endpoint == current.endpoint
         && started.token == current.token
         && serde_json::to_value(&started.ssh).ok() == serde_json::to_value(&current.ssh).ok()
+}
+
+fn ws_fingerprint(machine: &StoredMachine) -> String {
+    // Credential/SSH context is native-only and is never emitted to the renderer.
+    let bytes = serde_json::to_vec(&json!([
+        machine.id,
+        machine.environment_id,
+        machine.endpoint,
+        machine.token,
+        machine.ssh
+    ]))
+    .expect("serializable native route");
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 pub(crate) fn public_inventory_machine(record: &Value) -> Result<Machine, String> {
@@ -566,6 +653,18 @@ fn machine_rpc(
     params: Value,
     allow_connect: bool,
 ) -> Result<Value, String> {
+    machine_rpc_for_consumer(state, machine, method, params, allow_connect, None, None)
+}
+
+fn machine_rpc_for_consumer(
+    state: &RemoteConnections,
+    machine: &StoredMachine,
+    method: &str,
+    params: Value,
+    allow_connect: bool,
+    consumer: Option<(&AppHandle, &str)>,
+    retained: Option<&Mutex<Option<crate::host_ws::ReplyGuard>>>,
+) -> Result<Value, String> {
     with_refused_tunnel_retry(allow_connect && machine.ssh.is_some(), || {
         let lease = machine
             .ssh
@@ -580,13 +679,62 @@ fn machine_rpc(
             .as_ref()
             .map(|lease| lease.endpoint.as_str())
             .unwrap_or(&machine.endpoint);
-        let response = rpc(
-            endpoint,
-            &machine.token,
-            Some(&machine.environment_id),
-            method,
-            params.clone(),
-        );
+        let response = if let Some((app, consumer)) =
+            consumer.filter(|_| state.ws_request_compatible(machine, method, &params))
+        {
+            let route = NativeRoute::new(
+                &machine.id,
+                &machine.environment_id,
+                endpoint,
+                &machine.token,
+                &ws_fingerprint(machine),
+            )
+            .map_err(|error| error.to_string())?;
+            let pending = with_current_ws_machine(app, state, machine, || {
+                state.ws.begin_request(
+                    &route,
+                    consumer,
+                    method,
+                    params.clone(),
+                    RequestOptions::default(),
+                )
+            });
+            match pending.and_then(|pending| pending.wait()) {
+                Ok(reply) => {
+                    let (value, guard) = reply.into_guarded_result();
+                    if let Some(retained) = retained {
+                        *retained
+                            .lock()
+                            .map_err(|_| "Native reply disclosure is unavailable")? = Some(guard);
+                    } else {
+                        guard.check().map_err(native_ws_failure)?;
+                    }
+                    Ok(value)
+                }
+                // This flag is possible only before the request was dispatched.
+                Err(error) if error.unsupported => rpc(
+                    endpoint,
+                    &machine.token,
+                    Some(&machine.environment_id),
+                    method,
+                    params.clone(),
+                ),
+                Err(error) => Err(native_ws_failure(error)),
+            }
+        } else {
+            rpc(
+                endpoint,
+                &machine.token,
+                Some(&machine.environment_id),
+                method,
+                params.clone(),
+            )
+        };
+        if method == "environment.describe" {
+            if let Ok(descriptor) = &response {
+                state.observe_ws_capability(machine, descriptor);
+            }
+        }
         let response = match response {
             Err(error)
                 if error.starts_with("The host request did not complete")
@@ -605,11 +753,24 @@ fn machine_rpc(
             .is_some_and(|error| error.starts_with("Machine is unreachable"))
         {
             if let Some(lease) = &lease {
+                state.invalidate_ws(&machine.id);
                 state.tunnels.invalidate(&machine.id, lease);
             }
         }
         response
     })
+}
+
+fn native_ws_failure(error: WsFailure) -> String {
+    format!(
+        "{}{}",
+        error,
+        if error.uncertain {
+            ". The operation outcome is unknown; reconcile its command receipt before retrying."
+        } else {
+            ""
+        }
+    )
 }
 
 pub(crate) fn store_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -720,6 +881,8 @@ fn connect_host(
     machines.retain(|m| m.id != id);
     machines.push(machine.clone());
     write(&path, &machines)?;
+    state.invalidate_ws(&machine.id);
+    state.observe_ws_capability(&machine, &descriptor);
     Ok(machine.public())
 }
 
@@ -814,6 +977,7 @@ pub fn remote_machine_update(
     )?;
     write(&path, &machines)?;
     if before != machine.ssh {
+        state.invalidate_ws(&machine_id);
         state.tunnels.remove(&machine_id);
     }
     Ok(machine.public())
@@ -889,6 +1053,7 @@ pub(crate) fn prune_stale_local_sync(
     }
     write(&path, &kept)?;
     for machine in stale {
+        state.invalidate_ws(&machine.id);
         state.tunnels.remove(&machine.id);
     }
     Ok(())
@@ -908,6 +1073,7 @@ pub fn remote_disconnect(
     let mut machines = read(&path)?;
     machines.retain(|m| m.id != machine_id);
     write(&path, &machines)?;
+    state.invalidate_ws(&machine_id);
     state.tunnels.remove(&machine_id);
     folder_access::stop_machine(&machine_id);
     Ok(())
@@ -962,12 +1128,25 @@ pub fn remote_request(
     }
     // Background polling must respect the owner's automatic reconnect setting.
     let allow = fresh == Some(true) || allow_connect != Some(false);
-    let send = |params| machine_rpc(&state, &machine, &method, params, allow);
+    let disclosure = Mutex::new(None);
+    let send = |params| {
+        machine_rpc_for_consumer(
+            &state,
+            &machine,
+            &method,
+            params,
+            allow,
+            Some((&app, window.label())),
+            Some(&disclosure),
+        )
+    };
     let response = if method == "machine.changes" {
         state
             .changes
             .request(&machine.id, window.label(), params, send)
-    } else if shareable_remote_read(&method, &params) {
+    } else if shareable_remote_read(&method, &params)
+        && !(state.ws_enabled(&machine) && HostWsBroker::supports_params(&method, &params))
+    {
         let key = serde_json::to_string(&json!([
             machine.id,
             machine.environment_id,
@@ -996,7 +1175,15 @@ pub fn remote_request(
             .iter()
             .any(|saved| same_request_route(&machine, saved))
         {
+            state.invalidate_ws(&machine.id);
             return Err("Connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.".into());
+        }
+        if let Some(guard) = disclosure
+            .lock()
+            .map_err(|_| "Native reply disclosure is unavailable")?
+            .as_ref()
+        {
+            guard.check().map_err(native_ws_failure)?;
         }
     }
     let result = response?;
@@ -1007,6 +1194,246 @@ pub fn remote_request(
         return Err("Host identity changed. Add this machine again before continuing.".into());
     }
     Ok(result)
+}
+
+fn saved_ws_machine(
+    app: &AppHandle,
+    state: &RemoteConnections,
+    machine_id: &str,
+) -> Result<StoredMachine, WsFailure> {
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| WsFailure::local("RPC_WS_STORE", "Native connection store is unavailable"))?;
+    read_shared(
+        &store_path(app).map_err(|_| {
+            WsFailure::local("RPC_WS_STORE", "Native connection store is unavailable")
+        })?,
+    )
+    .map_err(|_| WsFailure::local("RPC_WS_STORE", "Native connection store is unavailable"))?
+    .iter()
+    .find(|machine| machine.id == machine_id)
+    .cloned()
+    .ok_or_else(|| WsFailure::local("RPC_WS_DETACHED", "Machine is no longer connected"))
+}
+
+fn with_current_ws_machine<T>(
+    app: &AppHandle,
+    state: &RemoteConnections,
+    machine: &StoredMachine,
+    admit: impl FnOnce() -> Result<T, WsFailure>,
+) -> Result<T, WsFailure> {
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| WsFailure::local("RPC_WS_STORE", "Native connection store is unavailable"))?;
+    let path = store_path(app)
+        .map_err(|_| WsFailure::local("RPC_WS_STORE", "Native connection store is unavailable"))?;
+    let machines = read_shared(&path)
+        .map_err(|_| WsFailure::local("RPC_WS_STORE", "Native connection store is unavailable"))?;
+    if !machines
+        .iter()
+        .any(|current| same_request_route(machine, current))
+    {
+        state.invalidate_ws(&machine.id);
+        return Err(WsFailure::local(
+            "RPC_WS_ROUTE_CHANGED",
+            "Native connection changed before admission",
+        ));
+    }
+    admit()
+}
+
+fn native_ws_route(
+    state: &RemoteConnections,
+    machine: &StoredMachine,
+    allow_connect: bool,
+) -> Result<NativeRoute, WsFailure> {
+    let lease = machine
+        .ssh
+        .as_ref()
+        .map(|target| {
+            state
+                .tunnels
+                .endpoint(&machine.id, &machine.environment_id, target, allow_connect)
+        })
+        .transpose()
+        .map_err(|_| WsFailure::local("RPC_WS_SSH", "Verified native SSH tunnel is unavailable"))?;
+    let endpoint = lease
+        .as_ref()
+        .map(|lease| lease.endpoint.as_str())
+        .unwrap_or(&machine.endpoint);
+    NativeRoute::new(
+        &machine.id,
+        &machine.environment_id,
+        endpoint,
+        &machine.token,
+        &ws_fingerprint(machine),
+    )
+}
+
+/// Desktop adapters attach with a saved machine ID. Tokens and SSH credentials
+/// remain in this process; the sink is scoped to the invoking Tauri window.
+#[tauri::command(async)]
+pub fn host_connection_attach(
+    app: AppHandle,
+    window: tauri::Window,
+    state: State<'_, RemoteConnections>,
+    machine_id: String,
+    allow_connect: Option<bool>,
+) -> Result<bool, WsFailure> {
+    let machine = saved_ws_machine(&app, &state, &machine_id)?;
+    // Negotiate using authenticated compatibility discovery before opening WS.
+    let descriptor = machine_rpc(
+        &state,
+        &machine,
+        "environment.describe",
+        json!({}),
+        allow_connect != Some(false),
+    )
+    .map_err(|_| WsFailure::local("RPC_WS_DISCOVERY", "Authenticated Host discovery failed"))?;
+    if descriptor["environmentId"].as_str() != Some(machine.environment_id.as_str()) {
+        state.invalidate_ws(&machine.id);
+        return Err(WsFailure::local(
+            "RPC_WS_IDENTITY",
+            "Saved Host identity changed",
+        ));
+    }
+    if !state.ws_enabled(&machine) {
+        return Ok(false);
+    }
+    let route = native_ws_route(&state, &machine, allow_connect != Some(false))?;
+    let label = window.label().to_owned();
+    let consumer = label.clone();
+    let event_app = app.clone();
+    with_current_ws_machine(&app, &state, &machine, || {
+        state.ws.attach(
+            &route,
+            &consumer,
+            Arc::new(move |event| {
+                let _ = event_app.emit_to(
+                    &label,
+                    HOST_CONNECTION_EVENT,
+                    json!({"machineId":machine_id,"event":event}),
+                );
+            }),
+        )
+    })?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn host_connection_detach(
+    window: tauri::Window,
+    state: State<'_, RemoteConnections>,
+    machine_id: String,
+) {
+    state.ws.detach_machine(&machine_id, window.label());
+}
+
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn host_connection_request(
+    app: AppHandle,
+    window: tauri::Window,
+    state: State<'_, RemoteConnections>,
+    machine_id: String,
+    method: String,
+    params: Value,
+    request_id: Option<String>,
+    command_id: Option<String>,
+    response_timeout_ms: Option<u64>,
+    allow_connect: Option<bool>,
+) -> Result<WsReply, WsFailure> {
+    if !HostWsBroker::supports_method(&method) {
+        return Err(WsFailure::unsupported());
+    }
+    let machine = saved_ws_machine(&app, &state, &machine_id)?;
+    if !state.ws_enabled(&machine) {
+        return Err(WsFailure::unsupported());
+    }
+    let route = native_ws_route(&state, &machine, allow_connect != Some(false))?;
+    let command_id = command_id.or_else(|| params["commandId"].as_str().map(str::to_owned));
+    let pending = with_current_ws_machine(&app, &state, &machine, || {
+        state.ws.begin_request(
+            &route,
+            window.label(),
+            &method,
+            params,
+            RequestOptions {
+                request_id: request_id.clone(),
+                command_id: command_id.clone(),
+                response_timeout: response_timeout_ms.map(std::time::Duration::from_millis),
+            },
+        )
+    });
+    let reply = pending.and_then(|pending| pending.wait());
+    let current = saved_ws_machine(&app, &state, &machine_id);
+    if !current
+        .as_ref()
+        .is_ok_and(|current| same_request_route(&machine, current))
+    {
+        state.invalidate_ws(&machine.id);
+        let mut error = WsFailure::local(
+            "RPC_WS_ROUTE_CHANGED",
+            "Native connection changed during the request",
+        );
+        error.request_id = request_id;
+        error.command_id = command_id;
+        error.uncertain = HostWsBroker::method_has_effect(&method);
+        return Err(error);
+    }
+    reply.and_then(|reply| with_current_ws_machine(&app, &state, &machine, || reply.disclose()))
+}
+
+#[tauri::command]
+pub fn host_connection_cancel(
+    app: AppHandle,
+    window: tauri::Window,
+    state: State<'_, RemoteConnections>,
+    machine_id: String,
+    request_id: String,
+) -> Result<(), WsFailure> {
+    let machine = saved_ws_machine(&app, &state, &machine_id)?;
+    // Cancellation never creates an SSH tunnel or opens a replacement pipe.
+    if let Ok(route) = native_ws_route(&state, &machine, false) {
+        state.ws.cancel_request(&route, window.label(), &request_id);
+    }
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn host_connection_bulk(
+    app: AppHandle,
+    window: tauri::Window,
+    state: State<'_, RemoteConnections>,
+    machine_id: String,
+    descriptor: Value,
+    response_timeout_ms: Option<u64>,
+) -> Result<Value, WsFailure> {
+    let machine = saved_ws_machine(&app, &state, &machine_id)?;
+    if !state.ws_enabled(&machine) {
+        return Err(WsFailure::unsupported());
+    }
+    let route = native_ws_route(&state, &machine, false)?;
+    let result = state.ws.fetch_bulk(
+        &route,
+        window.label(),
+        &descriptor,
+        response_timeout_ms.map(std::time::Duration::from_millis),
+    );
+    if !saved_ws_machine(&app, &state, &machine_id)
+        .as_ref()
+        .is_ok_and(|current| same_request_route(&machine, current))
+    {
+        state.invalidate_ws(&machine.id);
+        return Err(WsFailure::local(
+            "RPC_WS_ROUTE_CHANGED",
+            "Native connection changed during bulk transfer",
+        ));
+    }
+    result
+        .and_then(|pending| with_current_ws_machine(&app, &state, &machine, || pending.disclose()))
 }
 
 fn shareable_remote_read(method: &str, params: &Value) -> bool {
@@ -1468,6 +1895,8 @@ fn supported_remote_method(method: &str) -> bool {
             | "workspaces.storage.status"
             | "workspaces.pin"
             | "voice.local.inspect"
+            | "voice.local.setup"
+            | "voice.local.setupStatus"
             | "voice.local.start"
             | "voice.local.transcribe"
             | "voice.local.keepAlive"
@@ -1966,6 +2395,7 @@ fn start_ssh_job(
             machines.retain(|m| m.id != machine.id);
             machines.push(machine.clone());
             write(&path, &machines)?;
+            state.invalidate_ws(&machine.id);
             state
                 .tunnels
                 .insert(machine.id.clone(), &machine.environment_id, tunnel);
@@ -2061,6 +2491,254 @@ pub fn remote_ssh_cancel(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn oversized_canonical_writes_select_http_before_dispatch_and_keep_body_identities() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        use std::{
+            net::TcpListener,
+            thread,
+            time::{Duration, Instant},
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let machine = super::StoredMachine {
+            id: "large-write.host".into(),
+            name: "Host".into(),
+            endpoint: format!("http://{}", listener.local_addr().unwrap()),
+            environment_id: "large-write.env".into(),
+            token: "paired-owner".into(),
+            ssh: None,
+            local_host: false,
+        };
+        let requests = [
+            (
+                "files.write",
+                serde_json::json!({"projectId":"project.1", "path":"file.txt",
+                "expected":"a".repeat(600 * 1024), "content":"b".repeat(600 * 1024)}),
+            ),
+            (
+                "commands.dispatch",
+                serde_json::json!({"type":"send", "commandId":"original.command.1",
+                "sessionId":"session.1", "text":"a".repeat(1024 * 1024)}),
+            ),
+        ];
+        let state = super::RemoteConnections::default();
+        state.observe_ws_capability(
+            &machine,
+            &serde_json::json!({
+                "environmentId":machine.environment_id, "capabilities":["transport.ws.v2"],
+            }),
+        );
+        assert!(state.ws_enabled(&machine));
+        for (method, params) in &requests {
+            assert!(crate::host_ws::HostWsBroker::supports_method(method));
+            assert!(!state.ws_request_compatible(&machine, method, params));
+        }
+        let expected = requests.clone();
+        let server = thread::spawn(move || {
+            for (method, params) in expected {
+                let until = Instant::now() + Duration::from_secs(5);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(stream) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(
+                                Instant::now() < until,
+                                "HTTP compatibility request was not sent"
+                            );
+                            thread::sleep(Duration::from_millis(2));
+                        }
+                        Err(error) => panic!("fixture accept failed: {error}"),
+                    }
+                };
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut first = String::new();
+                reader.read_line(&mut first).unwrap();
+                assert_eq!(first.trim_end(), "POST /rpc HTTP/1.1");
+                let mut size = None;
+                let mut authorized = false;
+                loop {
+                    let mut line = String::new();
+                    assert!(reader.read_line(&mut line).unwrap() > 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                    let lower = line.to_ascii_lowercase();
+                    if let Some(value) = lower.strip_prefix("content-length:") {
+                        size = Some(value.trim().parse::<usize>().unwrap());
+                    }
+                    if lower.starts_with("authorization:") {
+                        authorized = line.trim_end().ends_with("Bearer paired-owner");
+                    }
+                }
+                assert!(authorized);
+                let size = size.unwrap();
+                assert!(size > 1024 * 1024 && size < 16 * 1024 * 1024);
+                let mut body = vec![0; size];
+                reader.read_exact(&mut body).unwrap();
+                let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(
+                    payload,
+                    serde_json::json!({"version":1,"environmentId":"large-write.env","method":method,"params":params})
+                );
+                let body = r#"{"result":{"saved":true}}"#;
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+                stream.flush().unwrap();
+            }
+            assert_eq!(
+                listener.accept().unwrap_err().kind(),
+                std::io::ErrorKind::WouldBlock
+            );
+        });
+        for (method, params) in requests {
+            // This is the same untouched HTTP arm used after compatibility
+            // preflight rejects a frame, with no synthetic new request identity.
+            assert_eq!(
+                super::machine_rpc(&state, &machine, method, params, false).unwrap(),
+                serde_json::json!({"saved":true})
+            );
+        }
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn ws_capability_is_bound_to_authenticated_identity_and_native_route() {
+        let state = super::RemoteConnections::default();
+        let machine = super::StoredMachine {
+            id: "machine.ws".into(),
+            name: "Host".into(),
+            endpoint: "https://example.org".into(),
+            environment_id: "host.ws".into(),
+            token: "native-token".into(),
+            ssh: None,
+            local_host: false,
+        };
+        assert!(!state.ws_enabled(&machine));
+        state.observe_ws_capability(
+            &machine,
+            &serde_json::json!({"environmentId":"wrong.host","capabilities":["transport.ws.v2"]}),
+        );
+        assert!(!state.ws_enabled(&machine));
+        state.observe_ws_capability(
+            &machine,
+            &serde_json::json!({"environmentId":"host.ws","capabilities":["transport.ws.read.v2"]}),
+        );
+        assert!(state.ws_enabled(&machine));
+        let mut renamed = machine.clone();
+        renamed.name = "Renamed".into();
+        assert!(state.ws_enabled(&renamed));
+        let mut new_principal = machine.clone();
+        new_principal.token = "replacement-token".into();
+        assert!(!state.ws_enabled(&new_principal));
+        assert!(!state.ws_enabled(&machine));
+    }
+
+    #[test]
+    fn old_http_host_without_ws_capability_stays_on_compatibility_transport() {
+        let state = super::RemoteConnections::default();
+        let machine = super::StoredMachine {
+            id: "old.host".into(),
+            name: "Old Host".into(),
+            endpoint: "http://127.0.0.1:9".into(),
+            environment_id: "old.env".into(),
+            token: "native-token".into(),
+            ssh: None,
+            local_host: false,
+        };
+        state.observe_ws_capability(
+            &machine,
+            &serde_json::json!({"environmentId":"old.env","capabilities":["rpc.v1"]}),
+        );
+        assert!(!state.ws_enabled(&machine));
+        assert!(super::HostWsBroker::supports_method("projects.list"));
+        assert!(!super::HostWsBroker::supports_method("arbitrary.unknown"));
+    }
+
+    #[test]
+    fn authenticated_subset_ws_capabilities_are_recognized_from_the_native_registry() {
+        let machine = super::StoredMachine {
+            id: "subset.host".into(),
+            name: "Subset Host".into(),
+            endpoint: "https://example.org".into(),
+            environment_id: "subset.env".into(),
+            token: "native-token".into(),
+            ssh: None,
+            local_host: false,
+        };
+        for capability in [
+            "transport.ws.sessions.v2",
+            "transport.ws.health.v2",
+            "transport.ws.terminals.v2",
+            "transport.ws.git.v2",
+            "transport.ws.notes.v2",
+            "transport.ws.files.v2",
+            "transport.ws.queue.v2",
+            "transport.ws.streams.v2",
+            "transport.ws.read.v2",
+            "transport.ws.v2",
+        ] {
+            let state = super::RemoteConnections::default();
+            state.observe_ws_capability(
+                &machine,
+                &serde_json::json!({"environmentId":"subset.env","capabilities":[capability]}),
+            );
+            assert!(state.ws_enabled(&machine), "{capability}");
+            let mut changed = machine.clone();
+            changed.token = "other-principal".into();
+            assert!(!state.ws_enabled(&changed), "{capability}");
+        }
+    }
+
+    #[test]
+    fn unknown_subset_discovery_keeps_http_without_opening_or_reconnecting_a_socket() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let machine = super::StoredMachine {
+            id: "unknown.host".into(),
+            name: "Unknown Host".into(),
+            endpoint: format!("http://{}", listener.local_addr().unwrap()),
+            environment_id: "unknown.env".into(),
+            token: "native-token".into(),
+            ssh: None,
+            local_host: false,
+        };
+        let state = super::RemoteConnections::default();
+        for capabilities in [
+            serde_json::json!(["transport.ws.unregistered.v2"]),
+            serde_json::json!(["transport.ws.sessions.v999"]),
+            serde_json::json!(["sessions.list"]),
+            serde_json::json!(["rpc.v1"]),
+            serde_json::json!([]),
+            serde_json::Value::Null,
+        ] {
+            state.observe_ws_capability(&machine,&serde_json::json!({"environmentId":"unknown.env","capabilities":capabilities,"methods":["sessions.list","projects.list"]}));
+            assert!(!state.ws_enabled(&machine));
+        }
+        // A later descriptor removing all known families also retires the old
+        // discovery decision; it cannot schedule a replacement connection.
+        state.observe_ws_capability(&machine,&serde_json::json!({"environmentId":"unknown.env","capabilities":["transport.ws.sessions.v2"]}));
+        assert!(state.ws_enabled(&machine));
+        state.observe_ws_capability(&machine,&serde_json::json!({"environmentId":"unknown.env","capabilities":["transport.ws.future.v2"]}));
+        assert!(!state.ws_enabled(&machine));
+        let until = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        while std::time::Instant::now() < until {
+            assert_eq!(
+                listener.accept().unwrap_err().kind(),
+                std::io::ErrorKind::WouldBlock
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     #[test]
     fn refused_tunnel_recovery_preserves_the_original_command() {
         let command = serde_json::json!({
@@ -2450,6 +3128,8 @@ mod tests {
         use std::time::Duration;
         for method in [
             "voice.local.inspect",
+            "voice.local.setup",
+            "voice.local.setupStatus",
             "voice.local.start",
             "voice.local.transcribe",
             "voice.local.keepAlive",

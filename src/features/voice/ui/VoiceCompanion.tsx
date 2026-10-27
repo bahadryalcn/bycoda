@@ -5,6 +5,8 @@ import { Button } from "../../../shared/ui/Button";
 import { hasActiveOverlay, useOverlay } from "../../../shared/ui/overlay";
 import {
   GripVertical,
+  Minimize2,
+  Maximize2,
   MessageSquare,
   Pause,
   Pin,
@@ -18,17 +20,27 @@ import { LocalVoice, type SpeechBinding } from "../model/localVoice";
 import { converseWithSession } from "../model/voiceConversation";
 import { clampVoicePosition, voiceContext, voiceTarget } from "../model/voiceSession";
 import styles from "./VoiceCompanion.module.css";
-import { loadVoiceSettings, voiceRuntimeSettings } from "../model/voiceSettings";
-
+import {
+  loadVoiceSettings,
+  saveVoiceSettings,
+  useVoiceSettings,
+  voiceRuntimeSettings,
+} from "../model/voiceSettings";
+import { VoiceVisualizer } from "./VoiceVisualizer";
+import { voiceVisualState } from "../model/voiceVisualState";
 export type VoiceCompanionProps = {
   activeId?: string;
   sessions: Session[];
   onSubmit: (sessionId: string, text: string) => boolean | Promise<boolean>;
   onStop: (sessionId: string) => void;
 };
-
 export function VoiceCompanion(props: VoiceCompanionProps) {
   const locale = useLocale();
+  const settings = useVoiceSettings();
+  const compact = settings.compact;
+  const [playback, setPlayback] = useState(false);
+  // The visualizer reads this ref; audio frames never schedule React renders.
+  const audioLevel = useRef(0);
   const latest = useRef(props);
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<"idle" | "connecting" | "live">("idle");
@@ -48,6 +60,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const panel = useRef<HTMLElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
+  const compactToggle = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    if (open && panel.current?.contains(document.activeElement)) compactToggle.current?.focus();
+  }, [compact]);
   const returnFocus = useRef(false);
   const client = useRef<LocalVoice | null>(null);
   const generation = useRef(0);
@@ -63,7 +79,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     liveSessions.current.find((item) => item.id === id) ??
     latest.current.sessions.find((item) => item.id === id);
   const currentTarget = () => findSession(pinnedRef.current ?? latest.current.activeId);
-
   function close() {
     generation.current++;
     sequence.current++;
@@ -73,6 +88,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     client.current = null;
     jobs.current.clear();
     history.current.clear();
+    setPlayback(false);
     setStatus("idle");
     setMuted(false);
     setMessage("");
@@ -86,7 +102,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }
   useOverlay(panel, false, undefined, open, undefined, false, true);
   useLayoutEffect(() => {
-    if (open) panel.current?.querySelector<HTMLButtonElement>("[data-voice-start]")?.focus();
+    if (open)
+      (compact
+        ? compactToggle.current
+        : panel.current?.querySelector<HTMLButtonElement>("[data-voice-start]")
+      )?.focus();
     else if (returnFocus.current) {
       launcher.current?.focus();
       returnFocus.current = false;
@@ -100,7 +120,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     },
     [],
   );
-
   function reply(text: string, session?: Session) {
     const spoken =
       session && currentTarget()?.id !== session.id ? `${session.title}: ${text}` : text;
@@ -108,7 +127,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     if (!client.current?.speak(spoken))
       setError(t("No local voice is available for this language. The reply is shown here."));
   }
-
   useEffect(() => {
     for (const [id, job] of jobs.current) {
       const session = findSession(id);
@@ -138,7 +156,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       }
     }
   }, [props.sessions, target, phase]);
-
   useEffect(() => {
     if (!open) return;
     const clamp = () => {
@@ -165,7 +182,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       window.removeEventListener("resize", clamp);
     };
   }, [open]);
-
   async function onSpeech(text: string, binding: SpeechBinding, epoch: number) {
     if (
       generation.current !== epoch ||
@@ -243,7 +259,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       }
     }
   }
-
   async function start() {
     if (client.current || status === "connecting" || !currentTarget()) return;
     const epoch = ++generation.current;
@@ -263,6 +278,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         transcript: (result, binding) => {
           void onSpeech(result.text, binding, epoch);
         },
+        playback: (active) => {
+          if (generation.current === epoch) setPlayback(active);
+        },
         state: (value) => {
           if (generation.current === epoch && !sideRequest.current) setPhase(value);
         },
@@ -275,6 +293,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       },
       locale.split("-")[0],
       voiceRuntimeSettings(loadVoiceSettings()),
+      audioLevel,
     );
     client.current = voice;
     try {
@@ -286,7 +305,27 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       setError(cause instanceof Error ? cause.message : t("Local voice could not start."));
     }
   }
-
+  const visualState = voiceVisualState({ status, phase, muted, playback, error });
+  const statusText = t(
+    status === "live"
+      ? muted
+        ? "Microphone paused"
+        : playback
+          ? "Assistant speaking"
+          : phase === "transcribing"
+            ? "Transcribing locally..."
+            : phase === "replying"
+              ? "Preparing a reply..."
+              : phase === "speaking"
+                ? "Receiving speech..."
+                : "Listening"
+      : status === "connecting"
+        ? "Preparing local voice..."
+        : "Ready to connect",
+  );
+  function setCompact(value: boolean) {
+    saveVoiceSettings({ ...loadVoiceSettings(), compact: value });
+  }
   if (!open)
     return (
       <div className={styles.launcher}>
@@ -318,12 +357,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         </Button>
       </div>
     );
-
   return (
     <section
       ref={panel}
       aria-label={t("Voice companion")}
       className={styles.panel}
+      data-compact={compact || undefined}
+      data-voice-state={visualState}
       tabIndex={-1}
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented && !hasActiveOverlay()) {
@@ -342,6 +382,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           label={t("Move voice window. Use arrow keys to reposition.")}
           tooltip={t("Move voice window. Use arrow keys to reposition.")}
           className={styles.drag}
+          onDoubleClick={() => {
+            if (compact) setCompact(false);
+          }}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             const rect = panel.current!.getBoundingClientRect();
@@ -405,50 +448,94 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             }
           }}
         >
-          <GripVertical size={14} />
+          {compact ? (
+            <VoiceVisualizer
+              visual={settings.visual}
+              state={visualState}
+              working={Boolean(target?.busy)}
+              level={audioLevel}
+              small
+            />
+          ) : (
+            <GripVertical size={14} />
+          )}
         </Button>
-        <h2 className={styles.title}>{t("Voice companion")}</h2>
+        <h2 className={styles.title} title={target?.title}>
+          {compact ? target?.title || t("Select a session") : t("Voice companion")}
+        </h2>
+        {compact && (
+          <Button
+            iconOnly
+            label={t(muted ? "Resume" : "Pause mic")}
+            tooltip={t(muted ? "Resume" : "Pause mic")}
+            disabled={status !== "live"}
+            selected={muted}
+            aria-pressed={muted}
+            onClick={() => {
+              client.current?.mute(!muted);
+              setMuted(!muted);
+            }}
+          >
+            {muted ? <Play size={14} /> : <Pause size={14} />}
+          </Button>
+        )}
         <Button
+          ref={compactToggle}
           iconOnly
-          label={t(pinned ? "Follow active session" : "Pin to this session")}
-          tooltip={t(pinned ? "Follow active session" : "Pin to this session")}
-          selected={Boolean(pinned)}
-          aria-pressed={Boolean(pinned)}
-          disabled={!target && !pinned}
-          onClick={() => setPinned(pinned ? null : (target?.id ?? null))}
+          label={t(compact ? "Expand voice companion" : "Compact voice companion")}
+          tooltip={t(compact ? "Expand voice companion" : "Compact voice companion")}
+          aria-expanded={!compact}
+          onClick={() => setCompact(!compact)}
         >
-          {pinned ? <Pin size={14} /> : <PinOff size={14} />}
+          {compact ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
         </Button>
-        <Button
-          iconOnly
-          label={t("Close voice companion")}
-          tooltip={t("Close voice companion")}
-          onClick={dismiss}
-        >
-          <X size={14} />
-        </Button>
+        {!compact && (
+          <>
+            <Button
+              iconOnly
+              label={t(pinned ? "Follow active session" : "Pin to this session")}
+              tooltip={t(pinned ? "Follow active session" : "Pin to this session")}
+              selected={Boolean(pinned)}
+              aria-pressed={Boolean(pinned)}
+              disabled={!target && !pinned}
+              onClick={() => setPinned(pinned ? null : (target?.id ?? null))}
+            >
+              {pinned ? <Pin size={14} /> : <PinOff size={14} />}
+            </Button>
+            <Button
+              iconOnly
+              label={t("Close voice companion")}
+              tooltip={t("Close voice companion")}
+              onClick={dismiss}
+            >
+              <X size={14} />
+            </Button>
+          </>
+        )}
       </header>
-      <div className={styles.body}>
+      {compact && (
+        <div role="status" className={styles.srOnly}>
+          {error || statusText}
+          {target?.busy ? ` | ${t("Agent working")}` : ""}
+        </div>
+      )}
+      <div className={styles.body} hidden={compact}>
+        {!compact && (
+          <div className={styles.visual}>
+            <VoiceVisualizer
+              visual={settings.visual}
+              state={visualState}
+              working={Boolean(target?.busy)}
+              level={audioLevel}
+            />
+          </div>
+        )}
         <div className={styles.session}>
           <span className={styles.caption}>{t(pinned ? "Pinned session" : "Active session")}</span>
           <span className={styles.sessionName}>{target?.title || t("Select a session")}</span>
         </div>
         <div role="status" className={styles.status}>
-          {t(
-            status === "live"
-              ? muted
-                ? "Microphone paused"
-                : phase === "transcribing"
-                  ? "Transcribing locally..."
-                  : phase === "replying"
-                    ? "Preparing a reply..."
-                    : phase === "speaking"
-                      ? "Receiving speech..."
-                      : "Listening"
-              : status === "connecting"
-                ? "Preparing local voice..."
-                : "Ready to connect",
-          )}
+          {statusText}
         </div>
         {target?.busy ? <p className={styles.work}>{t("Agent working")}</p> : null}
         {status === "idle" && (

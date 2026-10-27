@@ -118,6 +118,9 @@ it("holds an acknowledged rewind whose transcript has not synchronized", async (
 });
 it("uses the host conversation identity while preserving the local shell and remote paths", async () => {
   binding.mockReturnValue("host-session");
+  request.mockImplementation(async (method: string) =>
+    method === "workspaces.get" ? { revision: 8 } : { ...plan, sessionId: "host-session" },
+  );
   await planWorkspaceRewind(session, "workspace", { userBlockId: "owner" });
   expect(request).toHaveBeenLastCalledWith(
     "sessions.rewind.plan",
@@ -144,6 +147,122 @@ it("uses the host conversation identity while preserving the local shell and rem
   expect(result.session.id).toBe("session");
   expect(result.session.cwd).toBe("remote://env/repo");
 });
+
+it("captures the displayed generation before discovery and carries it unchanged through apply", async () => {
+  const displayed = { ...session, adoptedAuthorityGeneration: 2 };
+  remote.mockResolvedValue({ revision: 12, authorityGeneration: 2, session });
+  request.mockImplementation(async (method: string) =>
+    method === "workspaces.get" ? { revision: 8 } : { ...plan, authorityGeneration: 2 },
+  );
+  const retained = await planWorkspaceRewind(displayed, "workspace", { userBlockId: "owner" });
+  expect(request).toHaveBeenLastCalledWith(
+    "sessions.rewind.plan",
+    expect.objectContaining({ authorityGeneration: 2 }),
+    { cwd: displayed.cwd },
+  );
+  expect(Object.isFrozen(retained)).toBe(true);
+  request.mockResolvedValue({ conversationRevision: 13, authorityGeneration: 2 });
+  remote.mockResolvedValue({ revision: 13, authorityGeneration: 2, session });
+  await applyWorkspaceRewind(displayed, retained, "same-original-key");
+  expect(request).toHaveBeenLastCalledWith(
+    "sessions.rewind.apply",
+    expect.objectContaining({ authorityGeneration: 2, idempotencyKey: "same-original-key" }),
+    { cwd: displayed.cwd },
+  );
+  expect(native).not.toHaveBeenCalled();
+});
+
+it.each([undefined, 2])(
+  "never fills captured generation %s from a newer authoritative head",
+  async (generation) => {
+    remote.mockResolvedValue({ revision: 12, authorityGeneration: 3, session });
+    await expect(
+      planWorkspaceRewind(
+        session,
+        "workspace",
+        { userBlockId: "owner" },
+        { authorityGeneration: generation },
+      ),
+    ).rejects.toThrow("authority changed");
+    expect(request.mock.calls.filter(([method]) => method === "sessions.rewind.plan")).toEqual([]);
+    expect(native).not.toHaveBeenCalled();
+  },
+);
+
+it("rejects a stale review at unchanged conversation revision before any apply request", async () => {
+  await expect(
+    applyWorkspaceRewind(
+      { ...session, adoptedAuthorityGeneration: 3 },
+      { ...plan, authorityGeneration: 2 },
+      "original-key",
+    ),
+  ).rejects.toThrow("authority changed");
+  expect(request).not.toHaveBeenCalled();
+  expect(remote).not.toHaveBeenCalled();
+  expect(native).not.toHaveBeenCalled();
+});
+
+it("routes a local displayed Host mirror through the paired home Host without native mutation fallback", async () => {
+  const mirrored = { ...session, cwd: "/repo", adoptedAuthorityGeneration: 2 };
+  remote.mockResolvedValue({ revision: 12, authorityGeneration: 2, session: mirrored });
+  request.mockImplementation(async (method: string) =>
+    method === "workspaces.get" ? { revision: 8 } : { ...plan, authorityGeneration: 2 },
+  );
+  const retained = await planWorkspaceRewind(mirrored, "workspace", { userBlockId: "owner" });
+  request.mockRejectedValue(new Error("uncertain apply reply"));
+  await expect(applyWorkspaceRewind(mirrored, retained, "original-key")).rejects.toThrow(
+    "uncertain apply reply",
+  );
+  expect(request.mock.calls.filter(([method]) => method === "sessions.rewind.apply")).toHaveLength(
+    1,
+  );
+  expect(native).not.toHaveBeenCalled();
+  expect(persist).not.toHaveBeenCalled();
+});
+
+it("fences a plan's original route when its tab binding changes before confirmation", async () => {
+  const retained = await planWorkspaceRewind(session, "workspace", { userBlockId: "owner" });
+  binding.mockReturnValue("different-session");
+  request.mockClear();
+  await expect(applyWorkspaceRewind(session, retained, "original-key")).rejects.toThrow(
+    "authority changed",
+  );
+  expect(request).not.toHaveBeenCalled();
+});
+
+it("keeps a committed old receipt unresolved locally if the current authority has advanced, without replay", async () => {
+  request.mockResolvedValue({ conversationRevision: 13, authorityGeneration: 2 });
+  remote.mockResolvedValue({ revision: 13, authorityGeneration: 3, session });
+  await expect(
+    applyWorkspaceRewind(
+      { ...session, adoptedAuthorityGeneration: 2 },
+      { ...plan, authorityGeneration: 2 },
+      "original-key",
+    ),
+  ).rejects.toThrow("recorded");
+  expect(request.mock.calls.filter(([method]) => method === "sessions.rewind.apply")).toHaveLength(
+    1,
+  );
+  expect(native).not.toHaveBeenCalled();
+});
+
+it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+  "rejects malformed captured generation %s before discovery or persistence",
+  async (generation) => {
+    await expect(
+      planWorkspaceRewind(
+        session,
+        "workspace",
+        { userBlockId: "owner" },
+        { authorityGeneration: generation },
+      ),
+    ).rejects.toThrow("authority changed");
+    expect(capabilities).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+    expect(persist).not.toHaveBeenCalled();
+    expect(native).not.toHaveBeenCalled();
+  },
+);
 
 it("uses native conversation revisions and native receipt reconciliation for local sessions", async () => {
   const local = { ...session, cwd: "/repo", workspaceId: "workspace" };

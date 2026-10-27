@@ -1,0 +1,15 @@
+name: Nightly candidate
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  candidate:
+    # Scheduled builds are controlled by an explicit repository opt-in.
+    if: github.event_name == 'workflow_dispatch' || vars.BYCODA_NIGHTLY_CANDIDATES == 'true'
+    uses: ./.github/workflows/release-candidate.yml
+    with:
+      channel: nightly

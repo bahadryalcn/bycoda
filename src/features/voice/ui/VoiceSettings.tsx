@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "../../../shared/ui/Button";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { VoiceVisualizer } from "./VoiceVisualizer";
 import { TextField } from "../../../shared/ui/TextField";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Modal } from "../../../shared/ui/Modal";
@@ -24,6 +26,7 @@ import {
   useVoiceSettings,
   voiceRuntimeSettings,
   type VoiceSettings as Preferences,
+  type VoiceVisual,
 } from "../model/voiceSettings";
 import styles from "./VoiceSettings.module.css";
 
@@ -267,6 +270,28 @@ export function VoiceSettings() {
       </Row>
       {settings.enabled ? (
         <>
+          <div className={styles.visualChoice}>
+            <Row id="voice-visual-style" label={t("Visual style")}>
+              <SegmentedControl
+                label={t("Visual style")}
+                value={settings.visual}
+                optionIdPrefix="voice-visual"
+                options={(
+                  [
+                    ["mark", t("bycoda mark")],
+                    ["wave", t("Wave")],
+                    ["dots", t("Dots")],
+                    ["orb", t("Orb")],
+                  ] as [VoiceVisual, string][]
+                ).map(([value, label]) => ({
+                  value,
+                  label,
+                  accessory: <VoiceVisualizer visual={value} state="listening" small preview />,
+                }))}
+                onValueChange={(visual) => change({ visual: visual as VoiceVisual })}
+              />
+            </Row>
+          </div>
           <fieldset className={styles.engine} disabled={installing}>
             <Row id="voice-engine" label={t("Reply voice")}>
               <Segmented

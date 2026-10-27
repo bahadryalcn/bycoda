@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 
 /** What `sessions.adopted` reports per session; a move in any of these is a change. */
 export type AdoptedRow = {
+  authorityGeneration?: number;
   id: string;
   revision: number;
   updatedAt: number;
@@ -72,7 +73,7 @@ export class AdoptedChanges {
     const live = new Set<string>();
     for (const row of rows) {
       live.add(row.id);
-      const signature = `${row.revision}|${row.updatedAt}|${row.status}|${row.desktopUpdatedAt}`;
+      const signature = `${row.revision}|${row.updatedAt}|${row.status}|${row.desktopUpdatedAt}|${row.authorityGeneration ?? ""}`;
       if (this.signatures.get(row.id) === signature) continue;
       this.signatures.set(row.id, signature);
       // The first read only establishes what is already there.

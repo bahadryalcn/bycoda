@@ -13,6 +13,7 @@ pub mod control_cli;
 mod conversation_tools_bridge;
 mod cursor_store;
 mod debug_profile;
+mod package_smoke;
 mod desktop_inbox_review;
 mod external_editor;
 mod file_access;
@@ -26,6 +27,7 @@ mod gitlab;
 mod handoff_history;
 mod harness;
 mod harness_updates;
+mod host_ws;
 mod html_preview;
 mod inbox_media;
 mod integrations;
@@ -379,19 +381,26 @@ pub fn run() {
         .manage(ssh_execution::SshExecutionReviews::default())
         .manage(std::sync::Arc::new(ssh_execution::SshExecutions::default()))
         .manage(window_transfer::WindowTransferState::new())
+        .on_page_load(package_smoke::on_page_load)
         .setup(|app| {
             for window in window::workspace_windows(app.handle()) {
                 ssh_window_lifecycle::register(window.label())?;
             }
-            harness::reap_orphaned_harness_processes();
+            if !package_smoke::active() {
+                harness::reap_orphaned_harness_processes();
+            }
             app.state::<remote::RemoteConnections>()
                 .emit_tunnel_exits(app.handle().clone());
             file_access::init(app.handle())?;
+            package_smoke::prepare(app.handle())?;
             session_store::init(app.handle())?;
+            package_smoke::start(app.handle())?;
             control::init(app.handle())?;
             reminders::init(app.handle());
             // Keep this computer's host in step with the desktop it shipped with.
-            bundled_host::start(app.handle());
+            if !package_smoke::active() {
+                bundled_host::start(app.handle());
+            }
             conversation_tools_bridge::start_desktop_relay(app.handle().clone());
             checkpoint::init(app.handle())?;
             menu::install(app.handle())?;
@@ -420,6 +429,7 @@ pub fn run() {
             html_preview::respond(request)
         })
         .invoke_handler(tauri::generate_handler![
+            package_smoke::package_smoke_dom_proof,
             build_info::build_identity,
             session_store::rewind::managed_turn_begin,
             session_store::rewind::managed_turn_end,
@@ -496,6 +506,11 @@ pub fn run() {
             handoff_history::handoff_history_read,
             remote::remote_disconnect,
             remote::remote_request,
+            remote::host_connection_attach,
+            remote::host_connection_detach,
+            remote::host_connection_request,
+            remote::host_connection_cancel,
+            remote::host_connection_bulk,
             remote::dev_access::remote_dev_server_url,
             remote::folder_access::remote_open_live_folder,
             remote_files::begin_remote_file_copy,
@@ -930,9 +945,10 @@ pub fn run() {
             project_logo::remove_project_logo,
             project_logo::forget_logo_file,
         ])
-        .build(webview_debug_context(debug_profile::context(
-            tauri::generate_context!(),
-        )))
+        .build(webview_debug_context(
+            package_smoke::context(debug_profile::context(tauri::generate_context!()))
+                .expect("invalid isolated package smoke profile"),
+        ))
         .expect("error while building bycoda");
 
     app.run(|handle, event| match event {
@@ -977,6 +993,9 @@ pub fn run() {
             ..
         } => {
             window_transfer::window_closed(handle, &label);
+            handle
+                .state::<remote::RemoteConnections>()
+                .detach_window(&label);
             ssh_window_lifecycle::close(&label);
             handle
                 .state::<ssh_forward::SshForwards>()

@@ -1,4 +1,10 @@
-import { closeHarnessSse, harnessHttp, openHarnessSse, watchSse } from "../../core/child";
+import {
+  closeHarnessSse,
+  harnessHttp,
+  openHarnessSse,
+  watchSse,
+  type NativeAuthorityScope,
+} from "../../core/child";
 import {
   asRecord,
   normalizeOpenCodeV2Event,
@@ -60,6 +66,8 @@ export class OpenCodeClient {
     readonly directory: string,
     readonly generation: OpenCodeApiGeneration = "v1",
     readonly serverPassword?: string,
+    private readonly nativeSessionId?: string,
+    private readonly nativeAuthority?: NativeAuthorityScope,
   ) {}
 
   async getSession(sessionID: string): Promise<OpenCodeSession> {
@@ -353,7 +361,7 @@ export class OpenCodeClient {
       },
       onEnd,
     );
-    await openHarnessSse(sessionId, url, this.headers());
+    await openHarnessSse(sessionId, url, this.headers(), this.nativeAuthority);
   }
 
   async closeEvents(sessionId: string): Promise<void> {
@@ -542,6 +550,13 @@ export class OpenCodeClient {
     const url = this.url(path, opts?.query);
     const hasBody = opts?.body !== undefined;
     const response = await harnessHttp({
+      ...(this.nativeSessionId ? { sessionId: this.nativeSessionId } : {}),
+      ...(this.nativeAuthority
+        ? {
+            authorityEnvironmentId: this.nativeAuthority.environmentId,
+            authorityGeneration: this.nativeAuthority.generation,
+          }
+        : {}),
       url,
       method,
       headers: this.headers(hasBody),

@@ -157,3 +157,28 @@ it("announces the end of tracked work without invoking another agent", async () 
   expect(mock.speak).toHaveBeenCalledWith(expect.stringContaining("Changes ready for review."));
   expect(mock.converse).toHaveBeenCalledTimes(1);
 });
+
+it("keeps voice running through compact mode, live appearance updates and expansion", async () => {
+  const { saveVoiceSettings, loadVoiceSettings } = await import("../model/voiceSettings");
+  const { onStop } = await setup();
+  await click("Compact voice companion");
+  expect(loadVoiceSettings().compact).toBe(true);
+  expect(container.querySelector("section")?.getAttribute("data-compact")).toBe("true");
+  expect(mock.close).not.toHaveBeenCalled();
+  await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), visual: "dots" }));
+  expect(container.querySelector('[data-visual="dots"]')).not.toBeNull();
+  await click("Expand voice companion");
+  expect(loadVoiceSettings().compact).toBe(false);
+  expect(mock.close).not.toHaveBeenCalled();
+  expect(onStop).not.toHaveBeenCalled();
+});
+it("uses playback events rather than reply text to announce assistant speech", async () => {
+  await setup();
+  await act(async () => mock.callbacks.playback(true));
+  expect(container.querySelector("section")?.getAttribute("data-voice-state")).toBe("assistant");
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("Assistant speaking");
+  await act(async () => mock.callbacks.playback(false));
+  expect(container.querySelector("section")?.getAttribute("data-voice-state")).toBe("listening");
+  await act(async () => mock.callbacks.error("Playback failed"));
+  expect(container.querySelector("section")?.getAttribute("data-voice-state")).toBe("error");
+});

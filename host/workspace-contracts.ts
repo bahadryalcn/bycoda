@@ -197,6 +197,8 @@ export interface TurnGitRecord {
   after?: TurnGitCapture;
 }
 export interface SessionRewindPlan {
+  /** Review-time execution authority; absent preserves legacy intent identity. */
+  authorityGeneration?: number;
   token: string;
   expiresAt: number;
   direction: "rewind" | "undo";
@@ -222,6 +224,7 @@ export interface SessionRewindPlan {
   merged: boolean;
 }
 export interface SessionRewindReceipt {
+  authorityGeneration?: number;
   operationId: string;
   workspaceId: string;
   sessionId: string;

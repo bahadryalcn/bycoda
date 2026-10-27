@@ -227,3 +227,29 @@ it("does not apply a completed background job over newer voice preferences", asy
   await setup();
   expect(loadVoiceSettings().python).toBe("G:/my-python.exe");
 });
+
+it("chooses visual previews with radio arrows and keeps runtime setup unchanged", async () => {
+  await setup();
+  await advance();
+  const group = container.querySelector('[role="radiogroup"][aria-label="Visual style"]')!;
+  const radios = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+  expect(radios.map((radio) => radio.textContent?.trim())).toEqual([
+    "bycoda mark",
+    "Wave",
+    "Dots",
+    "Orb",
+  ]);
+  expect(radios[0].getAttribute("aria-checked")).toBe("true");
+  const calls = backend.inspect.mock.calls.length;
+  radios[0].focus();
+  await act(async () =>
+    radios[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
+  );
+  expect(loadVoiceSettings().visual).toBe("wave");
+  expect(radios[1].getAttribute("aria-checked")).toBe("true");
+  expect(document.activeElement).toBe(radios[1]);
+  await advance();
+  expect(backend.inspect).toHaveBeenCalledTimes(calls);
+  await act(async () => radios[3].click());
+  expect(loadVoiceSettings().visual).toBe("orb");
+});

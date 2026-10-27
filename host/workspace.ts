@@ -656,6 +656,7 @@ export async function writeHostFile(
   input: unknown,
   expected: unknown,
   content: unknown,
+  authorized?: () => Promise<boolean>,
 ) {
   if (
     typeof expected !== "string" ||
@@ -666,8 +667,10 @@ export async function writeHostFile(
     throw new Error("Invalid file content");
   const path = await existingPath(root, input);
   const write = async () => {
+    await assertFileWriteAuthority(authorized);
     const current = await readHostFile(root, input);
     if (current !== expected) throw new Error("File changed on the host; reload before saving");
+    await assertFileWriteAuthority(authorized);
     try {
       await writeFile(path, content, "utf8");
     } finally {
@@ -685,8 +688,15 @@ export async function createHostPath(
   parent: unknown,
   name: unknown,
   isDir: unknown,
+  authorized?: () => Promise<boolean>,
 ): Promise<string> {
-  return withWorkspaceMutation(root, () => createHostPathUnlocked(root, parent, name, isDir));
+  return withWorkspaceMutation(root, () =>
+    createHostPathUnlocked(root, parent, name, isDir, authorized),
+  );
+}
+
+async function assertFileWriteAuthority(authorized?: () => Promise<boolean>): Promise<void> {
+  if (authorized && !(await authorized())) throw new Error("Device authorization was revoked");
 }
 
 async function createHostPathUnlocked(
@@ -694,6 +704,7 @@ async function createHostPathUnlocked(
   parent: unknown,
   name: unknown,
   isDir: unknown,
+  authorized?: () => Promise<boolean>,
 ): Promise<string> {
   if (
     typeof name !== "string" ||
@@ -722,6 +733,7 @@ async function createHostPathUnlocked(
   if (!(await stat(directory)).isDirectory()) throw new Error("Path is not a directory");
   for (const part of parts.slice(0, -1)) {
     const candidate = workspacePath(root, relative(root, resolve(directory, part)));
+    await assertFileWriteAuthority(authorized);
     await mkdir(candidate).catch((reason: NodeJS.ErrnoException) => {
       if (reason.code !== "EEXIST") throw reason;
     });
@@ -729,6 +741,7 @@ async function createHostPathUnlocked(
     if (!(await stat(directory)).isDirectory()) throw new Error("Path is not a directory");
   }
   const path = workspacePath(root, relative(root, resolve(directory, parts.at(-1)!)));
+  await assertFileWriteAuthority(authorized);
   try {
     if (isDir) await mkdir(path);
     else {

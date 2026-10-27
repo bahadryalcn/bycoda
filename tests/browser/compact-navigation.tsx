@@ -2,6 +2,8 @@ import { useState, type ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Sidebar } from "../../src/app/shell/Sidebar";
+import { SessionRecoveryControl } from "../../src/app/shell/SessionRecoveryControl";
+import { Badge } from "../../src/shared/ui/Badge";
 import { SearchView } from "../../src/features/search/ui/SearchView";
 import type { SearchRequest } from "../../src/features/search/model/appSearch";
 import {
@@ -31,6 +33,8 @@ const history = Array.from({ length: 9 }, (_, index) => ({
   updatedAt: Date.now() - index * 60_000,
 }));
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const badgeCount = Number(new URLSearchParams(location.search).get("badgeCount"));
+const expandedRail = new URLSearchParams(location.search).has("expandedRail");
 
 function Fixture() {
   const [cwd, setCwd] = useState(projects[0]);
@@ -52,11 +56,19 @@ function Fixture() {
         <Sidebar
           cwd={cwd}
           open={sidebarOpen}
-          projectRailOpen={false}
+          projectRailOpen={expandedRail}
           compactProjectRail
           titleBarAbove
           sessions={history}
-          busySessionIds={new Set(history.slice(0, 6).map((session) => session.id))}
+          busySessionIds={new Set(history.slice(0, badgeCount || 6).map((session) => session.id))}
+          recoveryControl={
+            badgeCount ? (
+              <SessionRecoveryControl
+                count={badgeCount}
+                onOpen={() => setSelected("Recovered sessions")}
+              />
+            ) : undefined
+          }
           approvalSessionIds={new Set()}
           activeSessionId={history[0].id}
           status="idle"
@@ -102,6 +114,16 @@ function Fixture() {
             </Button>
           </div>
           <div className="fixture-conversation flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6">
+            {badgeCount ? (
+              <div aria-label="Representative shared badges" className="flex items-center gap-2">
+                <Badge tone="info" data-testid="info-label">
+                  Information
+                </Badge>
+                <Badge variant="count" data-testid="neutral-count">
+                  128
+                </Badge>
+              </div>
+            ) : null}
             <article className="ml-auto max-w-prose rounded-(--ui-radius-control) bg-(--ui-surface-raised) p-4">
               <p className="text-ui-body">
                 Keep Sessions, Explorer and Changes where they are. Make project and tool navigation

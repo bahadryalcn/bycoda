@@ -163,7 +163,7 @@ describe("host automations", () => {
     const f = await setup();
     await f.automations.save(f.input({ isolate: undefined }));
     const run = await f.automations.runNow("nightly");
-    await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 5000 });
     expect(run.status).toBe("running");
     expect(f.turns[0].input.cwd).toBe(f.directory);
     expect(f.turns[0].input.text).toContain("leave your changes uncommitted");

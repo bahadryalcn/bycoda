@@ -1,0 +1,20 @@
+{
+  "name": "@bycoda/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --dir ../.. exec vite --config vite.config.ts",
+    "typecheck": "pnpm --dir ../.. exec tsc-rs --noEmit -p apps/desktop/tsconfig.json",
+    "build": "pnpm --dir ../.. exec tsc-rs --noEmit -p apps/desktop/tsconfig.json && pnpm --dir ../.. exec vite build --config vite.config.ts"
+  },
+  "dependencies": {
+    "@bycoda/core": "workspace:*"
+  },
+  "bycoda": {
+    "entrypoints": {
+      "index.html": "./src/main.ts",
+      "quick-composer.html": "./src/quick-composer.ts"
+    }
+  }
+}

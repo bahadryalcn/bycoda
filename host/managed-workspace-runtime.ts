@@ -217,6 +217,9 @@ export function createManagedWorkspaceRuntime(
     authorize: async (owner) => authorized(owner),
   });
   const nativeRewind = createManagedNativeRewind({
+    assertAuthority: async (sessionId, generation) => {
+      await store.assertAuthority(sessionId, generation);
+    },
     root,
     history,
     registry,
@@ -240,6 +243,8 @@ export function createManagedWorkspaceRuntime(
   });
   const currentPolicy = async (value: ManagedWorkspace) => (await policy.resolve(value)).policy;
   const removal = createWorkspaceRemovalService({
+    assertAuthorized: () => store.db.checkAuthorization(),
+    recoveryBookkeeping: (work) => store.db.runRecoveryBookkeeping(work),
     registry,
     reservations: activity,
     location: async (value) => ({

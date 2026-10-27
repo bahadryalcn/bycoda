@@ -485,6 +485,8 @@ export function createExecutionActivityReservations(deps: {
 }
 
 export interface GuardedRemovalInput {
+  /** Trusted request context; absent for independent autonomous recovery. */
+  assertAuthorized?(): Promise<void>;
   projectCwd: string;
   managedRoot: string;
   path: string;
@@ -524,6 +526,7 @@ export async function guardedRemoveWorkspace(
     archiveRoot: archive.target,
   };
   return withHostGitMutation(input.projectCwd, async () => {
+    await input.assertAuthorized?.();
     await validateWorkspaceCleanupPaths(input.managedRoot, input.path);
     const listed = await registrations(input.projectCwd);
     const registered = listed.find((r) => sameWorkspacePath(r.path, input.path));
@@ -566,6 +569,9 @@ export async function guardedRemoveWorkspace(
           trackedLinks.set(name, readlinkSync(link.path));
       }
     }
+    // Keep this synchronous batch intact after its grant check; do not add a
+    // cancellation yield between detaching entries and recording the phase.
+    await input.assertAuthorized?.();
     for (const link of links) {
       // Revalidate each link's parents; only detach the entry, never its target.
       assertNoFollowPath(input.managedRoot, dirname(link.path));
@@ -576,6 +582,7 @@ export async function guardedRemoveWorkspace(
     }
     await input.phase?.("links-detached", recoveryIds, archives);
     await validateWorkspaceCleanupPaths(input.managedRoot, input.path);
+    await input.assertAuthorized?.();
     mkdirSync(input.archiveRoot, { recursive: true, mode: 0o700 });
     const archive = (source: string, label: string) => {
       const destination = join(input.archiveRoot, label);
@@ -626,11 +633,13 @@ export async function guardedRemoveWorkspace(
       if (input.fingerprint && (await sourceState(input.path)).fingerprint !== input.fingerprint)
         throw new Error("Source changed while preserving recovery material; preview again.");
     }
-    if (exists(join(input.path, "temp")))
+    if (exists(join(input.path, "temp"))) {
+      await input.assertAuthorized?.();
       archive(
         join(input.path, "temp"),
         exists(join(input.archiveRoot, "temp")) ? `temp-${randomUUID()}` : "temp",
       );
+    }
     await input.phase?.("evidence-preserved", recoveryIds, archives);
     if (await input.inUse()) throw new Error("Workspace is still in use.");
     if (beforeDetachment && !input.allowDirty) {
@@ -658,6 +667,7 @@ export async function guardedRemoveWorkspace(
       archive(input.path, `recovered-directory-${randomUUID()}`);
     }
     if (registered) {
+      await input.assertAuthorized?.();
       try {
         await git(input.projectCwd, [
           "worktree",
@@ -688,7 +698,10 @@ export async function guardedRemoveWorkspace(
             throw error;
           });
       }
-    } else if (exists(input.path)) archive(input.path, `remaining-${randomUUID()}`);
+    } else if (exists(input.path)) {
+      await input.assertAuthorized?.();
+      archive(input.path, `remaining-${randomUUID()}`);
+    }
     await input.phase?.("git-removed", recoveryIds, archives);
     if (
       exists(input.path) ||
@@ -702,6 +715,9 @@ export async function guardedRemoveWorkspace(
 }
 
 export interface WorkspaceCleanupDependencies {
+  assertAuthorized?(): Promise<void>;
+  /** @internal Only the existing failed removal's blocked metadata, never filesystem work. */
+  recoveryBookkeeping?<T>(work: () => Promise<T>): Promise<T>;
   registry: Pick<
     WorkspaceRegistry,
     "get" | "update" | "saveOperation" | "getOperation" | "findOperation" | "listOperations"
@@ -1023,6 +1039,7 @@ export function createWorkspaceRemovalService(
       op.archiveRoot = archiveRoot;
       await save(op.phase);
       await guardedRemoveWorkspace({
+        assertAuthorized: deps.assertAuthorized,
         ...location,
         archiveRoot,
         path: op.plan.path,
@@ -1059,33 +1076,47 @@ export function createWorkspaceRemovalService(
       await deps.reservations.release(op.reservationId!);
       return op.receipt!;
     } catch (error) {
-      const previous = op.phase;
-      if (op.reservationId) {
-        const fresh = await get(op.workspaceId);
-        if (fresh.directoryState !== "removed" && fresh.directoryState !== "blocked") {
-          const blocked = await deps.registry.update({
-            workspaceId: fresh.id,
-            expectedRevision: fresh.revision,
-            idempotencyKey: `${op.id}:blocked:${fresh.revision}`,
-            reservationId: op.reservationId,
-            changes: { directoryState: "blocked" },
-          });
-          op.workspaceRevision = blocked.revision;
+      const preserveBlocked = async () => {
+        const previous = op.phase;
+        if (op.reservationId) {
+          const fresh = await get(op.workspaceId);
+          if (fresh.directoryState !== "removed" && fresh.directoryState !== "blocked") {
+            const blocked = await deps.registry.update({
+              workspaceId: fresh.id,
+              expectedRevision: fresh.revision,
+              idempotencyKey: `${op.id}:blocked:${fresh.revision}`,
+              reservationId: op.reservationId,
+              changes: { directoryState: "blocked" },
+            });
+            op.workspaceRevision = blocked.revision;
+          }
+        }
+        op = {
+          ...op,
+          phase: "blocked",
+          resumePhase: (previous === "blocked"
+            ? op.resumePhase
+            : previous) as WorkspaceRemovalOperation["resumePhase"],
+          updatedAt: now(),
+          error: {
+            code: "CLEANUP_BLOCKED",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+        await deps.registry.saveOperation(op, previous);
+      };
+      try {
+        if (deps.recoveryBookkeeping) await deps.recoveryBookkeeping(preserveBlocked);
+        else await preserveBlocked();
+      } catch (bookkeepingError) {
+        if (error instanceof Error) {
+          try {
+            Object.defineProperty(error, "cleanupError", { value: bookkeepingError });
+          } catch {
+            /* Preserve original failure even for frozen errors. */
+          }
         }
       }
-      op = {
-        ...op,
-        phase: "blocked",
-        resumePhase: (previous === "blocked"
-          ? op.resumePhase
-          : previous) as WorkspaceRemovalOperation["resumePhase"],
-        updatedAt: now(),
-        error: {
-          code: "CLEANUP_BLOCKED",
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
-      await deps.registry.saveOperation(op, previous);
       // Fence remains held. Startup adapters also consult unfinished durable operations.
       throw error;
     }

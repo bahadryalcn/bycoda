@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import {
   chmod,
@@ -40,9 +40,58 @@ type Active = {
   proofBytes: number;
 };
 export type FilesRevertPlan = {
+  authorityGeneration?: number;
+  planToken?: string;
   files: { path: string; action: "restore" | "delete"; conflict?: string }[];
   unavailable?: string;
 };
+export type FileRevertAuthority = (
+  sessionId: string,
+  authorityGeneration?: number,
+) => Promise<void>;
+export class FileRevertAuthorityError extends Error {
+  readonly code = "FILE_REVERT_AUTHORITY";
+  partialResult?: { reverted: string[]; skipped: Array<{ path: string; reason: string }> };
+}
+export function fileRevertGeneration(value: unknown): number | undefined {
+  if (value === undefined) return;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+    throw new FileRevertAuthorityError("Invalid file revert authority generation");
+  return value;
+}
+export async function assertFileRevertAuthority(
+  port: FileRevertAuthority | undefined,
+  session: string,
+  generation?: number,
+): Promise<void> {
+  generation = fileRevertGeneration(generation);
+  if (typeof port !== "function")
+    throw new FileRevertAuthorityError("File revert requires a durable authority guard");
+  try {
+    await port(session, generation);
+  } catch (error) {
+    throw new FileRevertAuthorityError(error instanceof Error ? error.message : String(error));
+  }
+}
+const revertToken = (
+  session: string,
+  cwd: string,
+  userBlockId: string,
+  generation: number,
+  files: Map<string, FileRevision>,
+) =>
+  createHash("sha256")
+    .update(
+      JSON.stringify([
+        "session-files-revert/v2",
+        session,
+        cwd,
+        userBlockId,
+        generation,
+        [...files],
+      ]),
+    )
+    .digest("hex");
 const MAX_FILE = 8 * 1024 * 1024;
 const MAX_HISTORY = 64 * 1024 * 1024;
 const validId = (value: string) => {
@@ -287,6 +336,7 @@ export class SessionFileRevert {
   constructor(
     private root: string,
     private budget = MAX_HISTORY,
+    private readonly authority?: FileRevertAuthority,
   ) {}
   private path(session: string) {
     return join(this.root, validId(session), "file-history.json");
@@ -642,7 +692,14 @@ export class SessionFileRevert {
       return message(error);
     }
   }
-  async plan(session: string, cwd: string, userBlockId: string): Promise<FilesRevertPlan> {
+  async plan(
+    session: string,
+    cwd: string,
+    userBlockId: string,
+    authorityGeneration?: number,
+  ): Promise<FilesRevertPlan> {
+    const generation = fileRevertGeneration(authorityGeneration);
+    await assertFileRevertAuthority(this.authority, session, generation);
     validId(userBlockId);
     cwd = await realpath(cwd);
     if (this.active.has(session)) return { files: [], unavailable: "Session is still running" };
@@ -661,7 +718,16 @@ export class SessionFileRevert {
         action: revision.before ? "restore" : "delete",
         conflict: await this.conflict(cwd, path, revision),
       });
-    return { files };
+    await assertFileRevertAuthority(this.authority, session, generation);
+    return {
+      files,
+      ...(generation === undefined
+        ? {}
+        : {
+            authorityGeneration: generation,
+            planToken: revertToken(session, cwd, userBlockId, generation, selection.files),
+          }),
+    };
   }
   /** Call only after conversation rewind has persisted, for BOTH file choices.
    * Truncation changes bookkeeping; it never modifies checkout files. */
@@ -679,16 +745,26 @@ export class SessionFileRevert {
     session: string,
     cwd: string,
     userBlockId: string,
-    _planToken?: string,
+    planToken?: string,
     onReverted?: (path: string, restored: Image) => void,
+    authorityGeneration?: number,
   ) {
+    const generation = fileRevertGeneration(authorityGeneration);
+    await assertFileRevertAuthority(this.authority, session, generation);
     validId(userBlockId);
     cwd = await realpath(cwd);
     if (this.active.has(session)) throw new Error("Session is still running");
     const history = await this.load(session, cwd);
     const selection = this.selection(history, userBlockId);
     if (selection.unavailable) throw new Error(selection.unavailable);
+    if (
+      generation !== undefined &&
+      (typeof planToken !== "string" ||
+        planToken !== revertToken(session, cwd, userBlockId, generation, selection.files))
+    )
+      throw new Error("File revert preview changed; review it again before reverting files");
     const result = { reverted: [] as string[], skipped: [] as { path: string; reason: string }[] };
+    let authorityFailure: FileRevertAuthorityError | undefined;
     for (const [path, revision] of selection.files) {
       let rescue: string | undefined;
       let staged: string | undefined;
@@ -697,10 +773,12 @@ export class SessionFileRevert {
         const conflict = await this.conflict(cwd, path, revision);
         if (conflict) throw new Error(conflict);
         let abs = await filePath(cwd, path);
+        await assertFileRevertAuthority(this.authority, session, generation);
         await mkdir(dirname(abs), { recursive: true });
         guard = await acquireRevertFileGuard(cwd, abs);
         guard.check();
         if (revision.before) {
+          await assertFileRevertAuthority(this.authority, session, generation);
           staged = join(dirname(abs), `.bycoda-restore-${randomUUID()}`);
           await writeFile(staged, Buffer.from(revision.before.raw, "base64"), { flag: "wx" });
           if (process.platform !== "win32") await chmod(staged, revision.before.mode);
@@ -712,14 +790,17 @@ export class SessionFileRevert {
         if (again) throw new Error(again);
         guard.check();
         if (revision.after) {
-          rescue = join(dirname(abs), `.bycoda-rescue-${randomUUID()}`);
-          await rename(abs, rescue);
+          const rescuePath = join(dirname(abs), `.bycoda-rescue-${randomUUID()}`);
+          await assertFileRevertAuthority(this.authority, session, generation);
+          await rename(abs, rescuePath);
+          rescue = rescuePath;
           const held = await image(cwd, relative(cwd, rescue));
           if (!same(held, revision.after)) throw new Error("File changed during revert");
         }
         // link is exclusive: never replace a new file written during this window.
         guard.check();
         await filePath(cwd, path);
+        await assertFileRevertAuthority(this.authority, session, generation);
         if (staged) await link(staged, abs);
         else if (
           await lstat(abs).then(
@@ -747,6 +828,11 @@ export class SessionFileRevert {
             reason += `; original preserved at ${rescue}`;
           }
         }
+        if (error instanceof FileRevertAuthorityError) {
+          authorityFailure = new FileRevertAuthorityError(reason);
+          result.skipped.push({ path, reason });
+          break;
+        }
         result.skipped.push({ path, reason });
       } finally {
         try {
@@ -761,7 +847,20 @@ export class SessionFileRevert {
     const index = history.turns.findIndex((turn) => turn.userBlockId === userBlockId);
     for (const turn of history.turns.slice(index))
       for (const path of result.reverted) delete turn.files[path];
-    await this.save(session, history);
+    // Finish bookkeeping for already committed per-file effects even if a later
+    // authority check fails. Cleanup/rollback must not bless any remaining file.
+    if (!result.reverted.length && !authorityFailure)
+      await assertFileRevertAuthority(this.authority, session, generation);
+    if (result.reverted.length || !authorityFailure) await this.save(session, history);
+    if (authorityFailure) {
+      authorityFailure.partialResult = {
+        reverted: [...result.reverted],
+        skipped: [...result.skipped],
+      };
+      if (result.reverted.length)
+        authorityFailure.message += `; already reverted ${result.reverted.length} file(s): ${JSON.stringify(result.reverted)}; review them before a new request`;
+      throw authorityFailure;
+    }
     return result;
   }
 }

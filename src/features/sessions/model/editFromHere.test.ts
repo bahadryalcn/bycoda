@@ -129,3 +129,118 @@ it("does not use a local folder when the remote machine is disconnected", async 
   expect(native).not.toHaveBeenCalled();
   expect(remote).not.toHaveBeenCalled();
 });
+
+it("binds a migrated file preview and confirmation to the same captured generation", async () => {
+  const displayed = { ...session, cwd: "remote://env/repo", adoptedAuthorityGeneration: 2 };
+  const reviewed = { ...plan, authorityGeneration: 2, planToken: "a".repeat(64) };
+  remote.mockImplementation(async (_machine, method) =>
+    method === "sessions.files.revertPlan" ? reviewed : result,
+  );
+  const retained = await planSessionFilesRevert(displayed, "message");
+  expect(Object.isFrozen(retained)).toBe(true);
+  await revertSessionFiles(displayed, "message", retained.planToken, retained);
+  expect(remote).toHaveBeenLastCalledWith(
+    "host",
+    "sessions.files.revert",
+    {
+      sessionId: "shell",
+      userBlockId: "message",
+      planToken: reviewed.planToken,
+      authorityGeneration: 2,
+    },
+    false,
+    true,
+  );
+  expect(native).not.toHaveBeenCalled();
+});
+
+it("rejects an older selected preview when the displayed floor advances without rebinding its token", async () => {
+  const selected = { ...session, cwd: "remote://env/repo", adoptedAuthorityGeneration: 2 };
+  const reviewed = { ...plan, authorityGeneration: 2, planToken: "a".repeat(64) };
+  remote.mockResolvedValue(reviewed);
+  const retained = await planSessionFilesRevert(selected, "message");
+  remote.mockClear();
+  await expect(
+    revertSessionFiles(
+      { ...selected, adoptedAuthorityGeneration: 3 },
+      "message",
+      retained.planToken,
+      retained,
+    ),
+  ).rejects.toThrow("authority changed");
+  expect(retained.authorityGeneration).toBe(2);
+  expect(remote).not.toHaveBeenCalled();
+  expect(native).not.toHaveBeenCalled();
+});
+
+it.each([undefined, 2])(
+  "does not fill a plan's captured generation %s from a newer Host response",
+  async (generation) => {
+    const selected = { ...session, cwd: "remote://env/repo" };
+    remote.mockResolvedValue({ ...plan, authorityGeneration: 3, planToken: "b".repeat(64) });
+    await expect(
+      planSessionFilesRevert(selected, "message", { authorityGeneration: generation }),
+    ).rejects.toThrow("authority changed");
+    expect(remote).toHaveBeenLastCalledWith(
+      "host",
+      "sessions.files.revertPlan",
+      {
+        sessionId: "shell",
+        userBlockId: "message",
+        ...(generation === undefined ? {} : { authorityGeneration: generation }),
+      },
+      false,
+      true,
+    );
+  },
+);
+
+it("requires a retained review rather than deriving a migrated mutation generation from current Session metadata", async () => {
+  await expect(
+    revertSessionFiles(
+      { ...session, cwd: "remote://env/repo", adoptedAuthorityGeneration: 3 },
+      "message",
+      "a".repeat(64),
+    ),
+  ).rejects.toThrow("authority changed");
+  expect(remote).not.toHaveBeenCalled();
+  expect(native).not.toHaveBeenCalled();
+});
+
+it("uses the paired home Host for a generation-bound local mirror and never falls back after uncertain apply", async () => {
+  const mirrored = { ...session, adoptedAuthorityGeneration: 2 };
+  const reviewed = { ...plan, authorityGeneration: 2, planToken: "a".repeat(64) };
+  native.mockResolvedValue({ id: "local-host", localHost: true });
+  remote.mockResolvedValueOnce(reviewed).mockRejectedValueOnce(new Error("uncertain write"));
+  const retained = await planSessionFilesRevert(mirrored, "message");
+  await expect(
+    revertSessionFiles(mirrored, "message", retained.planToken, retained),
+  ).rejects.toThrow("uncertain write");
+  expect(remote.mock.calls.filter(([, method]) => method === "sessions.files.revert")).toHaveLength(
+    1,
+  );
+  expect(native.mock.calls.every(([command]) => command === "local_host_connect")).toBe(true);
+});
+
+it("retains old target identity when a tab binding changes during confirmation", async () => {
+  const displayed = { ...session, cwd: "remote://env/repo", adoptedAuthorityGeneration: 2 };
+  remote.mockResolvedValue({ ...plan, authorityGeneration: 2, planToken: "a".repeat(64) });
+  const retained = await planSessionFilesRevert(displayed, "message");
+  binding.mockReturnValue("different-host-session");
+  remote.mockClear();
+  await expect(
+    revertSessionFiles(displayed, "message", retained.planToken, retained),
+  ).rejects.toThrow("authority changed");
+  expect(remote).not.toHaveBeenCalled();
+});
+
+it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+  "rejects malformed captured file authority %s before route discovery",
+  async (generation) => {
+    await expect(
+      planSessionFilesRevert(session, "message", { authorityGeneration: generation }),
+    ).rejects.toThrow("authority changed");
+    expect(native).not.toHaveBeenCalled();
+    expect(machine).not.toHaveBeenCalled();
+  },
+);

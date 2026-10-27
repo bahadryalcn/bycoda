@@ -357,6 +357,35 @@ No installer, installed-app, actual old/upgraded Host or provider acceptance is
 established by these source/fixture checks. Live feature-claim tooling was not
 available in the worker session; ownership came from the explicit C1 brief.
 
+## Click-only tips (2026-10-27)
+
+- `ComposerTips.tsx`, shared by both Composer footer variants: hovering/focusing
+  does not open tips. The closed action is **Tip**; activation opens the current
+  hint and changes the action to **Next tip**. Later activations advance the hint.
+  Outside click/Escape dismisses it; pointer leave/blur does not dismiss it.
+- Existing translations, focus/inactive/hidden cycling pauses and Fold Text motion
+  remain. Trigger `aria-expanded` and `aria-describedby` reflect actual visibility.
+- Source delivery is uncommitted on `main`, baseline `0a42b1ab4`; no delivery
+  commit exists yet. Focused unit/browser checks and opened light/dark captures
+  are recorded in `temp/verification/2026-10-27-click-tip/README.md`.
+  Installed source identity is unknown because build-status inspection timed out;
+  fixture checks do not establish installed-app acceptance.
+
+## Chat Settings and prompt-library audit dependency
+
+2026-10-27 owner requests simpler Settings > Chat and suggests template-menu
+placement. T2 inventory/quote/12 records/18 families are maintained in
+`.agents/skills/feature-chat-settings/SKILL.md`; repair register/brief:
+`temp/local/2026-10-27-settings-chat-audit/`.
+This extension does not redesign the whole composer or supersede click-tip work.
+Preserve main Composer slash/;trigger+Space/ {{cursor}} insertion without send,
+draft/attachment/IME ownership and template IDs shared with SSH reviewed snippets.
+Quick Composer and phone templates do not have established desktop-library parity.
+New menu must retain actual editor/explicit Save/conflict/draft handling and
+Settings search focus.315 baseline tests pass, no product source/manager change
+or send/voice/template/preference mutation delivered by this audit.
+||||||| temp/local/2026-10-27-sync-main/.agents_skills_feature-chat-composer_SKILL.md.base
+
 ## D1 new-session default (2026-10-27)
 
 Branch `fix/default-current-checkout`, source baseline `0a42b1ab` (0.6.92):
@@ -431,3 +460,25 @@ reply; the cause was not established. The traced repeat passed without product
 changes, and the failed attempt is retained. Explicit Worktree native first-turn
 admission still failed; see the managed-workspaces card. These findings prevent
 claiming full HOT1 native acceptance or release readiness.
+
+## Selection actions and accent consumer audit, 2026-10-27
+
+Owner's two menu crops and accent concern: register/brief
+`temp/local/2026-10-27-selection-accent-audit/`,10 records/14 families. Appearance
+promises accent for Send/bubbles, but normal Composer Send/steer branches use
+neutral primary; Quick composer explicitly uses accent. Repair intended consumer
+tones without recoloring every primary or changing send/queue/stop behavior.
+Keep current custom colors, normalized picker/sibling state and transparent
+composer highlight-layer selection. General DOM selection/menu hover use separate
+roles, so their blue/gray appearance alone is not proof of a failed preference.
+
+TranscriptSelectionMenu also needs pending-result ownership across direct A→B
+selection changes, action-specific errors and reachable short-height content.
+Preserve original-draft/range guard on translation apply, offline target detection,
+quote preparation, Notes scope, IME/native range/focus/reduced-motion and shared
+overlay/control owners. No real preference/AI/send/draft/Notes/clipboard action
+or app fix is delivered here. Actual new computed theme/menu/native/installed
+acceptance remains pending; earlier HOT1 evidence above is a separate scope.
+
+135 related existing tests/13 suites pass with fixture native/remote/skill-policy
+and act diagnostics retained. No actual accent/menu/reader acceptance inferred.

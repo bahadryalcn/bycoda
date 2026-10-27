@@ -449,7 +449,7 @@ test("hints unfold in 3D and remain complete when motion is reduced", async ({
   await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts&hint-motion");
   const hint = page.locator(".composer-tips-text");
   await expect(hint).toHaveCount(0);
-  await page.locator(".composer-tips-icon").hover();
+  await page.locator(".composer-tips-icon").click();
   await expect(hint).toBeVisible();
   const fullText = await hint.getAttribute("aria-label");
   expect((await hint.innerText()).replaceAll("\u00a0", " ")).toBe(fullText);
@@ -528,7 +528,21 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
   const controls = footer.locator("[data-composer-workspace-controls]");
   const checkout = controls.getByLabel("Workspace Current checkout", { exact: true });
   const branch = controls.getByRole("button", { name: "Branch main", exact: true });
+  await expect(hint).toHaveText("Tip");
+  await expect(hint).toHaveAccessibleName("Tip");
+  await expect(hint).toHaveAttribute("aria-expanded", "false");
+  await hint.hover();
+  await hint.focus();
+  await expect(tooltip).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(tooltip).toBeVisible();
   await expect(hint).toHaveText("Next tip");
+  await page.mouse.move(0, 0);
+  await input.focus();
+  await expect(tooltip).toBeVisible();
+  await input.click();
+  await expect(tooltip).toHaveCount(0);
+  await expect(hint).toHaveText("Tip");
   await expect(footer.locator(":scope > [data-composer-tips]")).toHaveCount(1);
   expect(
     await footer.evaluate((element) =>
@@ -569,7 +583,12 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
         ),
       ).toBe(true);
       await hint.hover();
+      await expect(tooltip).toHaveCount(0);
+      await hint.click();
       await expect(tooltip).toBeInViewport();
+      await expect(hint).toHaveText("Next tip");
+      await expect(hint).toHaveAccessibleName("Next tip");
+      await expect(hint).toHaveAttribute("aria-expanded", "true");
       await expect(tooltip.getByText("Click again for another tip", { exact: true })).toBeVisible();
       const previous = await tooltip.innerText();
       await hint.click();
@@ -584,6 +603,11 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
         });
       }
       await page.keyboard.press("Escape");
+      await expect(tooltip).toHaveCount(0);
+      await expect(hint).toHaveText("Tip");
+      await expect(hint).toHaveAttribute("aria-expanded", "false");
+      await hint.hover();
+      await hint.focus();
       await expect(tooltip).toHaveCount(0);
       await expect(input).toHaveValue("Keep this chat draft");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -600,7 +624,7 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
       main.style.inlineSize = "420px";
       main.style.zoom = String(scale);
     }, zoom);
-    await hint.hover();
+    await hint.click();
     await expect(tooltip).toBeInViewport();
     await expect(folders).toBeInViewport();
     await page.keyboard.press("Escape");

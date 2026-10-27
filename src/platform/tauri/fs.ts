@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { parentPath, slash, joinPath } from "../../shared/lib/paths";
 import { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 import { localExplorerPath } from "../../shared/lib/remoteExplorerPaths";
+import { requestFolderPicker } from "./folderPicker";
 import type { InterjectionMeta } from "../../features/sessions/model/session";
 
 export { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
@@ -20,6 +21,13 @@ export async function readProjectImage(root: string, path: string): Promise<Uint
 
 type RemoteCommandRunner = (command: string, args: Record<string, unknown>) => Promise<unknown>;
 let remoteRunner: RemoteCommandRunner | undefined;
+type RemoteMachineResolver = (environmentId: string) => Promise<{ id: string } | undefined>;
+let remoteMachineResolver: RemoteMachineResolver | undefined;
+
+/** App composition supplies recorded-machine resolution without a React import. */
+export function setRemoteMachineResolver(resolver: RemoteMachineResolver): void {
+  remoteMachineResolver = resolver;
+}
 
 /** Set once by the connections feature, which knows the connected machines. */
 export function setRemoteCommandRunner(runner: RemoteCommandRunner) {
@@ -1058,10 +1066,9 @@ export function openPathWithDefaultApp(path: string): Promise<void> {
 /** Read-only live native folder access, using the recorded owning machine. */
 export async function openLiveRemoteFolder(path: string): Promise<void> {
   const { parseRemotePath } = await import("../../features/connections/model/remoteProjects");
-  const { remoteMachineFor } = await import("../../features/connections/model/connections");
   const parsed = parseRemotePath(path);
   if (!parsed) throw new Error("Choose a folder on a connected computer.");
-  const machine = await remoteMachineFor(parsed.environmentId);
+  const machine = await remoteMachineResolver?.(parsed.environmentId);
   if (!machine) throw new Error("The owning computer is not connected.");
   return invokeLocal<void>("remote_open_live_folder", {
     machineId: machine.id,
@@ -1225,8 +1232,7 @@ export async function pickNativeFolders(
 
 /** Shared in-app browser for adding projects and session folders. */
 export async function pickFolders(title = "Open projects", multiple = true): Promise<string[]> {
-  const { openFolderPicker } = await import("../../features/projects/ui/openFolderPicker");
-  const folders = await openFolderPicker({ title, multiple });
+  const folders = await requestFolderPicker({ title, multiple });
   for (const path of folders) await invoke<void>("authorize_project_path", { path });
   return folders;
 }
@@ -1323,17 +1329,13 @@ export async function readBinaryFile(path: string): Promise<Uint8Array<ArrayBuff
     : new Uint8Array(buffer);
 }
 
-export type GeneratedImageAsset = {
-  path: string;
-  mimeType: string;
-  size: number;
-};
+export type { GeneratedImageAsset } from "./generatedImages";
 
 export function saveGeneratedImage(input: {
   data: string;
   name: string;
-}): Promise<GeneratedImageAsset> {
-  return invoke<GeneratedImageAsset>("save_generated_image", input);
+}): Promise<import("./generatedImages").GeneratedImageAsset> {
+  return invoke<import("./generatedImages").GeneratedImageAsset>("save_generated_image", input);
 }
 
 export function deleteGeneratedImages(paths: string[]): Promise<void> {

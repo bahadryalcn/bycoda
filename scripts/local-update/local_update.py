@@ -4,6 +4,7 @@ import concurrent.futures
 import gzip
 import hashlib
 import io
+import inspect
 import json
 import os
 import pathlib
@@ -11,6 +12,7 @@ import platform
 import re
 import shlex
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tarfile
@@ -20,8 +22,8 @@ import uuid
 
 from local_update_lib import (digest, lock, read_json, run, safe_child,
                               tree_hashes, verify_tree, write_json, alive, windows_binary_digest, PRODUCT_IDENTITY, package_identity,
-                              spawn_windows_updater, UpdaterLaunchRefused, assert_windows_installer_idle)
-from local_install import verify_host
+                              spawn_windows_updater, UpdaterLaunchRefused, assert_windows_installer_idle, package_components, count)
+from local_install import verify_host, desktop_db, verify_desktop_backup
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TOOLS = ('local_update.py', 'local_update_lib.py', 'local_install.py')
@@ -198,13 +200,92 @@ def sync_source(archive, source, workspace):
     return files
 
 def dependency_key(files):
-    return fingerprint({'package.json': files['package.json']})
+    # A product version is not an install input. Preserve every other package
+    # field conservatively, including lifecycle scripts and package-manager config.
+    package = json.loads(files['package.json'])
+    package.pop('version', None)
+    install_inputs = {'package.json': json.dumps(package, sort_keys=True,
+                                                separators=(',', ':')).encode('utf-8')}
+    for name, content in files.items():
+        if (name in ('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', '.pnpmfile.cjs') or name.startswith('patches/') or
+                (name.startswith(('apps/', 'packages/')) and name.endswith('/package.json'))):
+            install_inputs[name] = content
+    # Old markers intentionally refresh once; they did not track pnpm's lockfile.
+    return 'install-inputs-v3:' + fingerprint(install_inputs)
 
-def host_key(files):
-    # esbuild bundles host/cli.ts together with shared adapters under src/.
-    return fingerprint({n: b for n, b in files.items()
-                        if '.test.' not in n and
-                        (n.startswith(('host/', 'src/')) or n.startswith('package.') or n == 'LICENSE')})
+def host_key(files, graph):
+    """A compile cache hit proves equality of all resolved and dynamic Host inputs."""
+    if (graph.get('schemaVersion') != 1 or not isinstance(graph.get('inputs'), list) or
+            not graph['inputs'] or not isinstance(graph.get('outputs'), list) or not graph['outputs']):
+        raise RuntimeError('Host input graph is unavailable or invalid')
+    selected = {}
+    for name in graph['inputs']:
+        if not isinstance(name, str) or name not in files:
+            raise RuntimeError('Host input graph references a missing frozen input')
+        selected[name] = files[name]
+    selected[':dependencies'] = dependency_key(files).encode()
+    return 'host-graph-v1:' + fingerprint(selected)
+
+def host_graph(workspace, env):
+    # This trusted source helper parses build options and asks esbuild for in-memory
+    # metadata. It neither executes host/build.mjs nor writes/runs Host bundles.
+    return json.loads(run(['node', 'scripts/build/host-inputs.mjs'], cwd=workspace, env=env))
+
+def cached_pnpm_environment(env, version):
+    """Select an already provisioned exact native pnpm; never upgrade the global shim."""
+    if not re.fullmatch(r'\d+\.\d+\.\d+', version):
+        raise ValueError('Invalid pinned pnpm version')
+    if os.name != 'nt' or not env.get('LOCALAPPDATA'):
+        return None
+    arch = 'arm64' if platform.machine().lower() in ('arm64', 'aarch64') else 'x64'
+    package = '@pnpm/exe.win32-' + arch
+    cache = pathlib.Path(env['LOCALAPPDATA']) / 'pnpm/package-manager-store/v11/links' / package / version
+    if not cache.is_dir():
+        return None
+    for metadata in sorted(cache.glob('*/node_modules/@pnpm/exe.win32-' + arch + '/package.json')):
+        try:
+            value = read_json(metadata)
+        except (OSError, ValueError):
+            continue
+        executable = metadata.parent / 'pnpm.exe'
+        if isinstance(value, dict) and value.get('name') == package and value.get('version') == version and executable.is_file():
+            return dict(env, PATH=str(executable.parent) + os.pathsep + env.get('PATH', ''))
+    return None
+
+def host_outputs(workspace, graph):
+    outputs = {}
+    for name in graph['outputs']:
+        if not isinstance(name, str) or not name.startswith('build/host/'):
+            raise RuntimeError('Host output graph is invalid')
+        target = safe_child(workspace, name)
+        if not target.is_file():
+            return None
+        outputs[name] = digest(target)
+    return outputs
+
+def package_run(state, request, components):
+    # The same frozen source may produce a Host-only and a complete desktop package.
+    # Keep both immutable; a later full build must not rewrite a waiting Host package.
+    suffix = '-host' if set(components) == {'host'} else ''
+    if not isinstance(request.get('id'), str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', request['id']):
+        raise ValueError('Invalid immutable package identifier')
+    return safe_child(state / 'runs', request['id'] + suffix)
+
+def immutable_copy(source, destination):
+    if destination.exists():
+        if digest(source) != digest(destination):
+            raise RuntimeError('Immutable package payload changed; use a new frozen build request')
+    else:
+        shutil.copy2(source, destination)
+
+def write_package_manifest(path, manifest):
+    if path.exists():
+        old = read_json(path)
+        # Timings describe the first creation, not subsequent verified cache reuse.
+        if {k: v for k, v in old.items() if k != 'timings'} != {k: v for k, v in manifest.items() if k != 'timings'}:
+            raise RuntimeError('Immutable package manifest changed; use a new frozen build request')
+    else:
+        write_json(path, manifest)
 
 def bundled_host_key(archive):
     # The installer ships these generated resources even when no Rust/web source
@@ -264,8 +345,32 @@ def legacy_updaters():
 
 def status():
     base = pathlib.Path.home() / PRODUCT_IDENTITY['hostDirectory'] / 'update-jobs'
-    return {component: install_job_status(read_json(base / (component+'.json'))) if (base / (component+'.json')).exists()
-            else {'state': 'not scheduled by this pipeline'} for component in ('host', 'app')}
+    result = {}
+    for component in ('host', 'app'):
+        record = base / (component + '.json')
+        current = install_job_status(read_json(record)) if record.exists() else {'state': 'not scheduled by this pipeline'}
+        # A saved waiting count belongs to its report, not to the current machine.
+        if 'activeSessions' in current:
+            current['reportedActiveSessions'] = current.pop('activeSessions')
+        database = base.parent / 'host.db' if component == 'host' else desktop_db()
+        sql = ("select count(*) from sessions where status='running' or shell_running=1" if component == 'host'
+               else 'select count(*) from in_flight_sessions')
+        try:
+            active = count(database, sql)
+            gate = {'state': 'idle' if active == 0 else 'busy', 'activeSessions': active}
+        except (OSError, RuntimeError, sqlite3.Error):
+            gate = {'state': 'unknown', 'activeSessions': None}
+        current['idleGate'] = dict(gate, observedAt=time.time())
+        result[component] = current
+    return result
+
+def status_script():
+    """Run the same read-only projection remotely without installing updater tools."""
+    imports = 'import contextlib,ctypes,json,os,pathlib,re,sqlite3,time'
+    functions = (read_json, alive, count, desktop_db, install_job_status, status)
+    return '\n\n'.join([imports, 'PRODUCT_IDENTITY = ' + repr(PRODUCT_IDENTITY),
+                          *(inspect.getsource(function) for function in functions),
+                          'print(json.dumps(status(), indent=2))'])
 
 def install_job_status(record):
     result = dict(record)
@@ -298,11 +403,17 @@ def install_job_status(record):
             pass
     if record.get('state') in ('installed', 'failed') or type(pid) is not int or pid <= 0:
         result['helperAlive'] = None
+        if (record.get('state') in ('starting', 'waiting', 'installing') or
+                (record.get('id') is not None and record.get('state') not in ('installed', 'failed', 'launching', 'launch-unknown'))):
+            result['recordedState'] = record.get('state')
+            result['state'] = 'launch-unknown'
     else:
         result['helperAlive'] = alive(pid)
         if not result['helperAlive']:
-            result['recordedState'] = record.get('state')
+            result['recordedState'] = record.get('recordedState', record.get('state'))
             result['state'] = 'interrupted'
+            result['recovery'] = ('retry-same-package-with-install-only' if result['recordedState'] in ('starting', 'waiting')
+                                  else 'verify-recovery-before-install-only')
     return result
 
 def install_job_active(record):
@@ -322,11 +433,35 @@ def stage(name, command, workspace, env, release, timings):
         timings[name] = round(time.monotonic() - started, 2)
         write_json(release / 'timings.json', timings)
 
-def queue_install(release, components=('host', 'app')):
+def verify_interrupted_resume(release, manifest, component, old):
+    if old.get('id') != manifest['id']:
+        raise RuntimeError(f'{component} interrupted another package; recover that exact package first')
+    phase = old.get('recordedState')
+    if phase in ('starting', 'waiting'):
+        return  # A new helper still performs its independent, fresh idle check.
+    if phase != 'installing' or component != 'app' or os.name != 'nt':
+        raise RuntimeError('Interrupted updater has an uncertain effect; inspect preserved recovery artifacts')
+    app = pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName'] / (PRODUCT_IDENTITY['binaryName'] + '.exe')
+    assert_windows_installer_idle(release, app, old.get('pid'))
+    rollback = release / 'rollback-app'
+    hashes_file = rollback / 'windows-installation-hashes.json'
+    if not hashes_file.is_file() or not (rollback / 'installation').is_dir():
+        raise RuntimeError('Interrupted app has no verified rollback snapshot; recovery required')
+    hashes = read_json(hashes_file)
+    if not isinstance(hashes, dict) or app.name not in hashes:
+        raise RuntimeError('Interrupted app rollback manifest is invalid')
+    verify_tree(rollback / 'installation', hashes)
+    if not app.is_file() or tree_hashes(app.parent) != hashes:
+        raise RuntimeError('Interrupted app installation outcome is unknown; recovery required')
+    if desktop_db().exists():
+        verify_desktop_backup(rollback / 'desktop.db')
+
+def queue_install(release, components=('host', 'app'), *, resume=False):
     if not components or not set(components) <= {'host', 'app'}:
         raise ValueError('Components must be host and/or app')
     manifest = read_json(release / 'manifest.json')
     package_identity(manifest)
+    package_components(manifest, components)
     base = pathlib.Path.home() / PRODUCT_IDENTITY['hostDirectory'] / 'update-jobs'
     base.mkdir(parents=True, exist_ok=True)
     results = {}
@@ -355,6 +490,10 @@ def queue_install(release, components=('host', 'app')):
                 raise RuntimeError(f'{component} updater already running for another package; see {record}')
             results[component] = str(record)
             continue
+        if old.get('state') == 'interrupted':
+            if not resume:
+                raise RuntimeError(f'{component} updater was interrupted; inspect --status and resume the same package with --install-only')
+            verify_interrupted_resume(release, manifest, component, old)
         if os.name == 'nt' and component == 'app' and (old.get('recordedState', old.get('state')) == 'installing' or (release / 'rollback-app/installation').exists()):
             app = pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName'] / (PRODUCT_IDENTITY['binaryName'] + '.exe')
             assert_windows_installer_idle(release, app, old.get('pid'))
@@ -409,6 +548,22 @@ def archive_package(state, source, version, windows, today=None, build_id=None):
             return target
     raise RuntimeError('Too many differing packages for ' + base)
 
+def archive_host_package(state, source, version, target, build_id):
+    packages = state / 'packages'
+    packages.mkdir(parents=True, exist_ok=True)
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', build_id):
+        raise ValueError('Invalid Host package identity')
+    extension = '.zip' if target.startswith('win32-') else '.tar.gz'
+    destination = packages / f'bycoda-host_{version}_{time.strftime("%Y-%m-%d")}_{build_id}_{target}{extension}'
+    immutable_copy(source, destination)
+    checksum = pathlib.Path(str(destination) + '.sha256')
+    expected = digest(destination) + '  ' + destination.name + '\n'
+    if checksum.exists() and checksum.read_text() != expected:
+        raise RuntimeError('Immutable Host package checksum changed')
+    if not checksum.exists():
+        checksum.write_text(expected, encoding='utf-8')
+    return destination
+
 def finish_build(release, build_only=False, components=('host', 'app')):
     if build_only:
         print(f'[{sys.platform}] build-only package verified: {release}', flush=True)
@@ -420,23 +575,26 @@ def worker(request):
     if (os.name == 'nt' and platform.machine().lower() not in ('amd64', 'x86_64')) or (os.name != 'nt' and (sys.platform != 'darwin' or platform.machine() != 'arm64')):
         raise RuntimeError('Local updater supports Windows x64 and Apple Silicon Mac only')
     state = pathlib.Path(request['stateRoot']).expanduser().resolve()
-    release = state / 'runs' / request['id']
+    components = request.get('components', ['host', 'app'])
+    if not components or not set(components) <= {'host', 'app'}:
+        raise ValueError('Components must be host and/or app')
+    release = package_run(state, request, request.get('packageComponents', components) if request.get('installOnly') else components)
     release.mkdir(parents=True, exist_ok=True)
     legacy = legacy_updaters()
     if legacy:
         raise RuntimeError('Previous ad-hoc updater still running (PID '+','.join(legacy)+'); finish it before starting this pipeline')
-    components = request.get('components', ['host', 'app'])
-    if not components or not set(components) <= {'host', 'app'}:
-        raise ValueError('Components must be host and/or app')
     for component, old in status().items():
         if component in components and install_job_active(old) and old.get('id') != request['id']:
             raise RuntimeError(f'{component} has a pending package; see --status before starting another update')
     if request.get('installOnly'):
+        if not (release / 'manifest.json').is_file():
+            raise RuntimeError('Selected immutable package is unavailable; build the selected component first')
+        package_components(read_json(release / 'manifest.json'), components)
         # Reuse the immutable package with current installation bug fixes.
         # An already-running helper has imported its own code and keeps its job.
         for name in TOOLS:
             shutil.copy2(pathlib.Path(__file__).parent / name, release / name)
-        queue_install(release, components)
+        queue_install(release, components, resume=True)
         return
     with lock(state / 'build.lock'):
         archive = pathlib.Path(request['archive']).expanduser()
@@ -480,13 +638,17 @@ def worker(request):
         pnpm_version = run(['pnpm', '--version'], cwd=workspace, env=env)
         expected_pnpm = json.loads(files['package.json'])['packageManager'].removeprefix('pnpm@')
         if pnpm_version != expected_pnpm:
-            raise RuntimeError(f'pnpm {expected_pnpm} required; found {pnpm_version}')
+            provisioned = cached_pnpm_environment(env, expected_pnpm)
+            if provisioned:
+                env = provisioned
+                pnpm_version = run(['pnpm', '--version'], cwd=workspace, env=env)
+            if pnpm_version != expected_pnpm:
+                raise RuntimeError(f'pnpm {expected_pnpm} required; found {pnpm_version}; provision the pinned manager without changing the frozen source')
         timings = {}
         # Tests/docs do not affect shipped JS/Rust. Package/config/version files do.
         shipped = {n: b for n, b in files.items() if '.test.' not in n and not n.startswith('tests/')}
         keys = {
             'deps': dependency_key(files),
-            'host': host_key(shipped),
             'web': fingerprint({n: b for n, b in shipped.items()
                                 if not n.startswith(('host/', 'src-tauri/', 'Cargo.', 'scripts/', '.github/'))
                                 and n not in ('AGENTS.md', 'README.md', 'LICENSE')}),
@@ -495,13 +657,7 @@ def worker(request):
         # an earlier equal-semver source stamp. Dependency caches stay independent.
         if build_manifest:
             identity_key = ':identity-v1:' + digest(build_manifest)
-            keys['host'] += identity_key
             keys['web'] += identity_key
-        toolchain = run(['rustc', '--version'], cwd=workspace, env=env)
-        native = {n: b for n, b in shipped.items() if n.startswith(('src-tauri/', 'Cargo.'))}
-        profile = {k: v for k, v in env.items() if k.startswith('CARGO_PROFILE_RELEASE_')}
-        # Invalidate packages previously built with epoch-stamped source files.
-        keys['native'] = 'source-mtime-v2:' + fingerprint(native) + keys['web'] + request['mode'] + toolchain + json.dumps(profile, sort_keys=True)
         def needed(key, exists):
             return request.get('forceBuild') or cache.get(key) != keys[key] or not exists
         # Separate marker: older build-cache deps keys included npm lock/version normalization.
@@ -516,30 +672,61 @@ def worker(request):
         if action != 'reuse':
             stage('dependencies', ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'], workspace, env, release, timings)
         else:
-            print('Dependencies reused: package.json unchanged; no install', flush=True)
+            print('Dependencies reused: install inputs unchanged; no install', flush=True)
         write_json(deps_marker, {'hash': keys['deps']})
         windows = os.name == 'nt'
         target = 'win32-x64' if windows else 'darwin-arm64'
+        graph = host_graph(workspace, env)
+        keys['hostCompile'] = host_key(files, graph)
+        outputs = host_outputs(workspace, graph)
+        if needed('hostCompile', outputs is not None and outputs == cache.get('hostCompileHashes')):
+            stage('host-compile', ['pnpm', 'run', 'host:build'], workspace, env, release, timings)
+            outputs = host_outputs(workspace, graph)
+            if outputs is None:
+                raise RuntimeError('Host compilation did not produce every declared output')
+            cache.update(hostCompile=keys['hostCompile'], hostCompileHashes=outputs)
+            write_json(cache_file, cache)
+        # Host executable bytes have no embedded frozen-source stamp. Package-adjacent
+        # version/build-info is finalized separately, only after graph equivalence and
+        # output hashes prove that the reused code belongs to these compile inputs.
+        package_inputs = {n: b for n, b in files.items() if n in ('LICENSE', 'host/package.mjs', 'host/package-archive.mjs', 'scripts/build/build-info.mjs')}
+        keys['host'] = keys['hostCompile'] + ':package-v2:' + fingerprint(package_inputs) + target
+        if build_manifest:
+            keys['host'] += ':identity-v1:' + digest(build_manifest)
         host = workspace / 'build/host-packages' / target
         # The installer bundles this archive so the app can install its own host.
         archive = workspace / 'build/host-packages' / f"bycoda-host-{target}.{'zip' if windows else 'tar.gz'}"
-        if needed('host', (host / 'host.mjs').exists() and archive.exists() and pathlib.Path(f'{archive}.sha256').exists()):
-            stage('host', ['pnpm', 'run', 'host:package'], workspace, env, release, timings)
-            cache['host'] = keys['host']
+        host_matches = ((host / 'host.mjs').exists() and archive.exists() and pathlib.Path(f'{archive}.sha256').exists())
+        if host_matches:
+            host_matches = (cache.get('hostPayloadHashes') == tree_hashes(host) and
+                            cache.get('hostArchiveHash') == digest(archive) and
+                            cache.get('hostChecksumHash') == digest(pathlib.Path(f'{archive}.sha256')))
+        if needed('host', host_matches):
+            stage('host-package', ['node', 'host/package.mjs'], workspace, env, release, timings)
+            cache.update(host=keys['host'], hostPayloadHashes=tree_hashes(host),
+                         hostArchiveHash=digest(archive), hostChecksumHash=digest(pathlib.Path(f'{archive}.sha256')))
             write_json(cache_file, cache)
-        keys['native'] += ':bundled-host-v1:' + bundled_host_key(archive)
-        if needed('web', (workspace / 'dist/index.html').exists()):
+        build_app = 'app' in components
+        if build_app and needed('web', (workspace / 'dist/index.html').exists()):
             stage('web', ['pnpm', 'run', 'build'], workspace, env, release, timings)
             cache['web'] = keys['web']
             write_json(cache_file, cache)
+        # Host-only requests never query Rust, compile web/native, or create installers.
+        if build_app:
+            toolchain = run(['rustc', '--version'], cwd=workspace, env=env)
+            native = {n: b for n, b in shipped.items() if n.startswith(('src-tauri/', 'Cargo.'))}
+            profile = {k: v for k, v in env.items() if k.startswith('CARGO_PROFILE_RELEASE_')}
+            keys['native'] = ('source-mtime-v2:' + fingerprint(native) + keys['web'] + request['mode'] + toolchain +
+                              json.dumps(profile, sort_keys=True) + ':bundled-host-v1:' + bundled_host_key(archive))
         # Web was built explicitly once; Tauri must not run it for a second time.
         override = workspace / 'local-update-tauri.json'
-        override.write_text('{"build":{"beforeBuildCommand":""}}', encoding='utf-8')
+        if build_app:
+            override.write_text('{"build":{"beforeBuildCommand":""}}', encoding='utf-8')
         cargo = pathlib.Path(env['CARGO_TARGET_DIR'])
         artifacts = cargo / ('release' if windows else 'aarch64-apple-darwin/release')
         app = artifacts / 'bundle/nsis' / f"{PRODUCT_IDENTITY['productName']}_{version}_x64-setup.exe" if windows else artifacts / 'bundle/macos' / (PRODUCT_IDENTITY['productName']+'.app')
         native_binary = artifacts / (PRODUCT_IDENTITY['binaryName']+'.exe') if windows else app/'Contents/MacOS'/PRODUCT_IDENTITY['binaryName']
-        matches = app.exists() and native_binary.exists() and cache.get('binaryHash') == digest(native_binary)
+        matches = build_app and app.exists() and native_binary.exists() and cache.get('binaryHash') == digest(native_binary)
         if matches and windows:
             matches = cache.get('installerHash') == digest(app)
         if matches and not windows:
@@ -547,7 +734,7 @@ def worker(request):
                 run(['codesign', '--verify', '--deep', '--strict', str(app)])
             except Exception:
                 matches = False
-        if needed('native', matches):
+        if build_app and needed('native', matches):
             command = ['pnpm', 'exec', 'tauri', 'build', '--ci', '--bundles', 'nsis' if windows else 'app',
                        '--config', 'src-tauri/tauri.fork.conf.json' if windows else 'src-tauri/tauri.fork.macos.conf.json',
                        '--config', override.name]
@@ -555,9 +742,10 @@ def worker(request):
                 command += ['--target', 'aarch64-apple-darwin']
             stage('native', command, workspace, env, release, timings)
             cache['native'] = keys['native']
-        cache['binaryHash'] = digest(native_binary)
-        if windows:
-            cache['installerHash'] = digest(app)
+        if build_app:
+            cache['binaryHash'] = digest(native_binary)
+            if windows:
+                cache['installerHash'] = digest(app)
         write_json(cache_file, cache)
         # Copy immutable payloads before releasing the build workspace lock.
         payload = release / 'host'
@@ -565,30 +753,43 @@ def worker(request):
             verify_tree(payload, tree_hashes(host))
         else:
             shutil.copytree(host, payload)
-        if windows:
-            shutil.copy2(app, release / 'setup.exe')
+        app_hashes = binary_hash = None
+        if build_app and windows:
+            immutable_copy(app, release / 'setup.exe')
             native_exe = artifacts / (PRODUCT_IDENTITY['binaryName']+'.exe')
             binary_hash = windows_binary_digest(native_exe)
             app_hashes = {'setup.exe': digest(release / 'setup.exe')}
-        else:
+        elif build_app:
             destination = release / (PRODUCT_IDENTITY['productName']+'.app')
             if not destination.exists():
                 # ditto preserves bundle links and permissions.
                 run(['ditto', str(app), str(destination)])
+            else:
+                verify_tree(destination, tree_hashes(app))
             run(['codesign', '--verify', '--deep', '--strict', str(destination)])
             binary_hash = digest(destination / 'Contents/MacOS' / PRODUCT_IDENTITY['binaryName'])
             app_hashes = tree_hashes(destination)
         for name in TOOLS:
             shutil.copy2(workspace / 'scripts/local-update' / name, release / name)
         manifest = {'identity': dict(PRODUCT_IDENTITY), 'id': request['id'], 'version': version, 'source': request['source'], 'mode': request['mode'],
-                    'platform': target, 'hostHashes': tree_hashes(payload), 'appHashes': app_hashes,
-                    'binaryHash': binary_hash, 'timings': timings}
+                    'platform': target, 'components': ['host', 'app'] if build_app else ['host'],
+                    'hostHashes': tree_hashes(payload), 'timings': timings,
+                    'hostCompileInputs': keys['hostCompile'], 'hostCompileHashes': outputs}
+        if build_app:
+            manifest.update(appHashes=app_hashes, binaryHash=binary_hash)
         if build_manifest:
             manifest['buildIdentity'] = request['buildIdentity']
             shutil.copy2(build_manifest, release / 'build-info.json')
-        write_json(release / 'manifest.json', manifest)
-        archived = archive_package(state, release / 'setup.exe' if windows else destination, version, windows,
-                                   build_id=request.get('buildIdentity', {}).get('buildId'))
+        host_archive = release / archive.name
+        immutable_copy(archive, host_archive)
+        immutable_copy(pathlib.Path(str(archive) + '.sha256'), pathlib.Path(str(host_archive) + '.sha256'))
+        manifest['hostArchive'] = {'name': host_archive.name, 'sha256': digest(host_archive)}
+        write_package_manifest(release / 'manifest.json', manifest)
+        archive_id = request['id']
+        archived = (archive_package(state, release / 'setup.exe' if windows else destination, version, windows,
+                                    build_id=archive_id) if build_app else
+                    archive_host_package(state, host_archive, version, target, archive_id))
+        immutable_copy(release / 'manifest.json', pathlib.Path(str(archived) + '.manifest.json'))
         if build_manifest:
             write_json(pathlib.Path(str(archived) + '.build-info.json'), request['buildIdentity'])
         print(f'[{sys.platform}] package archived: {archived}', flush=True)
@@ -609,7 +810,7 @@ def main():
     parser.add_argument('--release', action='store_true')
     parser.add_argument('--force-build', action='store_true')
     parser.add_argument('--worker')
-    parser.add_argument('--snapshot-request', help='Reuse one frozen source across independent platform agents')
+    parser.add_argument('--snapshot-request', help='Reuse one frozen source, or select its exact package manifest with --install-only')
     parser.add_argument('--base-snapshot', help='Overlay explicitly selected source files onto a verified previous snapshot')
     parser.add_argument('--source-path', action='append', default=[])
     parser.add_argument('--status', action='store_true')
@@ -649,7 +850,7 @@ def main():
                 print('Mac:', json.dumps(status(), indent=2))
             else:
                 host = config['mac']['ssh']
-                code = 'import pathlib,json; p=pathlib.Path.home()/".bycoda-host/update-jobs"; print(json.dumps({k:json.loads((p/(k+".json")).read_text()) if (p/(k+".json")).exists() else {"state":"not scheduled by this pipeline"} for k in ("host","app")}))'
+                code = status_script()
                 command = f'{shlex.quote(config["mac"]["python"])} -c {shlex.quote(code)}'
                 print('Mac:', run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', host, command], timeout=30))
         return
@@ -661,15 +862,15 @@ def main():
                           'install': not args.build_only, 'config': config}, indent=2))
         return
     state = pathlib.Path(config['stateRoot']).expanduser().resolve()
-    if args.snapshot_request and (len(platforms) != 1 or args.version or args.install_only or args.force_build):
-        raise ValueError('snapshot-request requires one platform and no version/install-only/force-build options')
+    if args.snapshot_request and (len(platforms) != 1 or args.version or args.force_build):
+        raise ValueError('snapshot-request requires one platform and no version/force-build options')
     coordinator_lock = ('coordinator-' + platforms[0] + '.lock') if args.snapshot_request else 'coordinator.lock'
     with lock(state / coordinator_lock):
         if args.version and not args.install_only:
             run(['node', 'scripts/release/bump-version.mjs', args.version], cwd=ROOT)
         if args.snapshot_request:
             previous = read_json(pathlib.Path(args.snapshot_request))
-            if previous['mode'] != mode:
+            if not args.install_only and previous['mode'] != mode:
                 raise ValueError('Snapshot build mode does not match requested mode')
         elif args.install_only:
             previous = read_json(state / 'coordinator-latest.json')
@@ -681,6 +882,12 @@ def main():
                         'id': identity['buildId'], 'mode': mode, 'buildIdentity': identity}
             if args.force_build:
                 previous['id'] += '-' + str(time.time_ns())
+        if not args.install_only:
+            previous = dict(previous, packageComponents=components)
+        else:
+            # A preserved component manifest can select an old interrupted job even
+            # after a newer Host-only request became coordinator-latest.
+            previous = dict(previous, packageComponents=previous.get('packageComponents', previous.get('components', ['host', 'app'])))
         def update(platform):
             request = dict(previous, installOnly=args.install_only, buildOnly=args.build_only,
                            forceBuild=args.force_build, stateRoot=config['stateRoot'], components=components)

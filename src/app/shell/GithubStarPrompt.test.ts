@@ -16,6 +16,7 @@ vi.mock("../../features/inbox/model/githubTasks", () => ({
   starBycodaOnGithub: mocks.star,
 }));
 import { GithubStarPrompt } from "./GithubStarPrompt";
+import { version as appVersion } from "../../../package.json";
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -60,6 +61,41 @@ it("persists dismissal without touching the configured repository", async () => 
       ?.click(),
   );
   expect(container.innerHTML).toBe("");
-  expect(localStorage.getItem("bycoda.githubStarPrompt.dismissed.v1")).toBe("1");
+  expect(localStorage.getItem("bycoda.githubStarPrompt.dismissed.v1")).toBe(appVersion);
   expect(mocks.openUrl).not.toHaveBeenCalled();
+});
+
+it("keeps dismissal for this version across remounts and returns for the next version", async () => {
+  mocks.identity.repositoryUrl = "https://github.com/example/bycoda";
+  await act(async () => root.render(createElement(GithubStarPrompt, { version: "0.6.92" })));
+  act(() =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Dismiss GitHub repository prompt"]')!
+      .click(),
+  );
+  act(() => root.render(null));
+  await act(async () => root.render(createElement(GithubStarPrompt, { version: "0.6.92" })));
+  expect(container.innerHTML).toBe("");
+  await act(async () => root.render(createElement(GithubStarPrompt, { version: "0.6.93" })));
+  expect(container.querySelector('[aria-label="View bycoda on GitHub"]')).not.toBeNull();
+});
+
+it("keeps the adjacent update action when the repository prompt is dismissed", async () => {
+  mocks.identity.repositoryUrl = "https://github.com/example/bycoda";
+  const update = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(GithubStarPrompt, {
+        action: createElement("button", { onClick: update }, "Update"),
+      }),
+    ),
+  );
+  act(() =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Dismiss GitHub repository prompt"]')!
+      .click(),
+  );
+  expect(container.querySelector('[aria-label="View bycoda on GitHub"]')).toBeNull();
+  act(() => container.querySelector<HTMLButtonElement>("button")!.click());
+  expect(update).toHaveBeenCalledOnce();
 });

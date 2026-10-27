@@ -272,7 +272,6 @@ import {
 } from "../../features/sessions/model/sessionReminders";
 import { SessionsEmpty } from "../../features/sessions/ui/SessionsEmpty";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
-import { GithubStarPrompt } from "./GithubStarPrompt";
 import {
   refreshRemoteProjectSessions,
   sessionAccessForMachine,
@@ -582,6 +581,7 @@ function SidebarComponent({
     try {
       await sessionAccessForMachine(remote.machine.id, false, true).update(sessionId, {
         projectId: hostProject.projectId,
+        authorityGeneration: remote.sessions.find((entry) => entry.id === sessionId)?.authorityGeneration,
         ...patch,
       });
       refreshRemoteProjectSessions();
@@ -591,6 +591,7 @@ function SidebarComponent({
   };
   const remoteDelete = async (sessionIds: readonly string[]) => {
     if (sessionIds.length === 0) return;
+    const authorityById = new Map(remote.sessions.map((entry) => [entry.id, entry.authorityGeneration]));
     if (!remote.machine || !hostProject) {
       window.alert("Connect this project's machine to delete its sessions.");
       return;
@@ -606,6 +607,7 @@ function SidebarComponent({
         await sessionAccessForMachine(remote.machine.id, false, true).delete(
           sessionId,
           hostProject.projectId,
+          authorityById.get(sessionId),
         );
         forgetRemoteQueue(sessionId);
         onRemoteSessionDeleted?.(sessionId);
@@ -718,7 +720,9 @@ function SidebarComponent({
     workingSessionCount > 0 ? (
       <Badge
         variant="count"
-        tone="info"
+        size="sm"
+        tone="accent"
+        appearance="subtle"
         data-workspace-working-count
         aria-live="polite"
         aria-label={t(
@@ -1757,6 +1761,7 @@ function SidebarComponent({
 
   const bulkDeleteSessions = async (sessionIds: readonly string[]) => {
     if (bulkDeleteActive.current || sessionIds.length === 0) return;
+    const authorityById = new Map(remote.sessions.map((entry) => [entry.id, entry.authorityGeneration]));
     const machine = remote.machine;
     if (remoteProject && (!machine || !hostProject)) {
       window.alert("Connect this project's machine to delete its sessions.");
@@ -1768,6 +1773,7 @@ function SidebarComponent({
             await sessionAccessForMachine(machine.id, false, true).delete(
               sessionId,
               hostProject.projectId,
+              authorityById.get(sessionId),
             );
             forgetRemoteQueue(sessionId);
             onRemoteSessionDeleted?.(sessionId);
@@ -3209,7 +3215,7 @@ function SidebarComponent({
               onDismissUpdate={onDismissUpdate}
             />
             <div className="flex shrink-0 flex-col gap-px p-2 empty:hidden">
-              <GithubStarPrompt />
+              <SidebarUpdateFooter repositoryPrompt />
               {!compactProjectRail ? (
                 <div className="flex min-w-0 items-center gap-1">
                   <RailAction
@@ -3218,7 +3224,6 @@ function SidebarComponent({
                     onClick={onOpenSettings}
                     command="App: Settings"
                   />
-                  <SidebarUpdateFooter />
                 </div>
               ) : null}
             </div>

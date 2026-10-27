@@ -289,6 +289,8 @@ export type Attachment = {
 };
 
 export type QueuedMessage = {
+  /** Authority captured when this intent was created; never upgraded during retry/drain. */
+  authorityGeneration?: number;
   /** A written Steer has no definite delivery acknowledgement. Never replay automatically. */
   deliveryUnknown?: true;
   /** Enqueue-time selection; absent only on queues saved by older versions. */
@@ -575,6 +577,8 @@ export type Session = {
   continuingElsewhere?: boolean;
   /** Last mirrored host run, used to fence Stop to the turn the user saw. In-memory. */
   adoptedRunId?: string;
+  /** Ownership generation projected from the validated Host snapshot this mirror applied. */
+  adoptedAuthorityGeneration?: number;
   /** A host mirror was rejected; the local transcript is intact. In-memory: after
    * a restart only the record (`adoptedDivergence`) returns, and the next pass
    * that reaches the host proves the conflict again before it locks sending. */

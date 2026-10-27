@@ -13,7 +13,7 @@ import {
   isVisionImage,
   normalizeImageMime,
   promptText,
-} from "../../../../features/sessions/model/attachments";
+} from "../../../../features/sessions/model/attachmentPrompt";
 import { displayPath } from "../../../../shared/lib/paths";
 import { normalizeTaskListStatus } from "../../../../features/sessions/model/taskList";
 import { composeToolTitle, extractToolPreview, formatAgentType } from "../../core/preview";

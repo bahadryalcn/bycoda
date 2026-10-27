@@ -1,0 +1,14 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  server: { host: "127.0.0.1", port: 1487, strictPort: true },
+  build: {
+    outDir: "temp/build/browser-update-footer",
+    emptyOutDir: false,
+    rolldownOptions: { input: "tests/browser/update-footer.html" },
+  },
+  preview: { host: "127.0.0.1", port: 1487, strictPort: true },
+});

@@ -38,6 +38,8 @@ export type HostAutomation = HostAutomationInput & {
 };
 
 export type HostAutomationRun = {
+  /** Already-owned reservation compensation; no provider/workspace launch. */
+  cleanupPending?: boolean;
   id: string;
   automationId: string;
   trigger: "scheduled" | "manual";

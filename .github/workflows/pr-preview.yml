@@ -1,0 +1,61 @@
+name: Unsigned PR web preview
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled]
+permissions:
+  contents: read
+concurrency:
+  group: unsigned-preview-${{ github.event.number }}
+  cancel-in-progress: true
+jobs:
+  build:
+    # PR-scoped runtime cannot write main-scoped dependency/task caches.
+    # Owners opt in at repository level and explicitly label the PR.
+    if: vars.BYCODA_UNSIGNED_PR_PREVIEWS == 'true' && contains(github.event.pull_request.labels.*.name, 'bycoda:preview')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: temp/release-tools
+          persist-credentials: false
+      - uses: ./temp/release-tools/.github/actions/setup-deps
+        with:
+          node-version: "22"
+          cache-prefix: unsigned-pr-preview-v1
+      - name: Build unsigned web output without signing or production credentials
+        run: pnpm run build
+      - name: Archive bounded unsigned web output
+        run: |
+          python -B - <<'PY'
+          import pathlib, zipfile
+          root=pathlib.Path('dist')
+          assert root.is_dir() and not root.is_symlink()
+          files=sorted(root.rglob('*'))
+          assert len(files)<=5000
+          output=pathlib.Path('temp/pr-preview/preview.zip')
+          output.parent.mkdir(parents=True,exist_ok=True)
+          total=0
+          with zipfile.ZipFile(output,'x',zipfile.ZIP_DEFLATED) as archive:
+              for item in files:
+                  assert not item.is_symlink()
+                  if not item.is_file(): continue
+                  size=item.stat().st_size
+                  total+=size
+                  assert size<=64*1024*1024 and total<=256*1024*1024
+                  archive.write(item,item.relative_to(root).as_posix())
+          assert output.stat().st_size<=128*1024*1024
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-pr-preview-${{ github.event.number }}-${{ github.event.pull_request.head.sha }}
+          path: temp/pr-preview/preview.zip
+          if-no-files-found: error
+          retention-days: 3

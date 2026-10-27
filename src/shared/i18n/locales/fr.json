@@ -7164,5 +7164,12 @@
   "Reverted files: {p0}": "Fichiers rétablis : {p0}",
   "Skipped files: {p0}": "Fichiers ignorés : {p0}",
   "No session files were reverted.": "Aucun fichier de la session n’a été rétabli.",
-  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Les fichiers ont été rétablis, mais le chat n’a pas pu revenir en arrière. Réessayez pour terminer la modification de ce message."
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Les fichiers ont été rétablis, mais le chat n’a pas pu revenir en arrière. Réessayez pour terminer la modification de ce message.",
+  "Compact voice companion": "Réduire le compagnon vocal",
+  "Expand voice companion": "Agrandir le compagnon vocal",
+  "Assistant speaking": "L’assistant parle",
+  "Visual style": "Style visuel",
+  "bycoda mark": "Symbole bycoda",
+  "Wave": "Onde",
+  "Dots": "Points"
 }

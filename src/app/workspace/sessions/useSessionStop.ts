@@ -84,7 +84,11 @@ export function useSessionStop(deps: SessionStopDeps) {
               : entry,
           ),
         );
-        void cancelAdoptedTurn(sessionId, session.adoptedRunId).catch((error) => {
+        void cancelAdoptedTurn(
+          sessionId,
+          session.adoptedRunId,
+          session.adoptedAuthorityGeneration,
+        ).catch((error) => {
           if (turnGen.current.get(sessionId) !== stoppingGeneration) return;
           setSessions((prev) =>
             prev.map((entry) =>

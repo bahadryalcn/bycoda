@@ -19,12 +19,24 @@ import { withHostGitMutation } from "./git-mutations";
 
 /** Both HostStore and native SQLite must implement this boundary atomically. No provider file revert. */
 export interface ConversationRewindAdapter {
-  read(sessionId: string): Promise<{ revision: number; userBlockIds: string[] }>;
+  read(
+    sessionId: string,
+    authorityGeneration?: number,
+  ): Promise<{ revision: number; userBlockIds: string[] }>;
   /** Stop provider/background processes, settle queues, and reject unresolved editor buffers. */
-  settle(sessionId: string): Promise<void>;
-  withSessionGate<T>(sessionId: string, work: () => Promise<T>): Promise<T>;
+  settle(sessionId: string, authorityGeneration?: number): Promise<void>;
+  withSessionGate<T>(
+    sessionId: string,
+    work: () => Promise<T>,
+    authorityGeneration?: number,
+  ): Promise<T>;
   /** Durable immutable transcript rescue, BEFORE any Git mutation. */
-  rescue(operationId: string, sessionId: string, expectedRevision: number): Promise<string>;
+  rescue(
+    operationId: string,
+    sessionId: string,
+    expectedRevision: number,
+    authorityGeneration?: number,
+  ): Promise<string>;
   /** Atomically archive/truncate or restore rescue, clear provider binding, set literal replay,
    * and persist a receipt. A retry returns that receipt without changing the conversation again. */
   restore(request: {
@@ -34,12 +46,15 @@ export interface ConversationRewindAdapter {
     direction: "rewind" | "undo";
     transcriptRescueId?: string;
     expectedRevision: number;
+    authorityGeneration?: number;
   }): Promise<{ revision: number }>;
   receipt(operationId: string): Promise<{ revision: number } | null>;
   /** Native cross-store acknowledgement after the Host journal is durable. Idempotent. */
-  complete?(operationId: string): Promise<void>;
+  complete?(operationId: string, authorityGeneration?: number): Promise<void>;
 }
 export interface GitSessionRewindOptions {
+  /** Mandatory durable Host floor check. Never substitute a freshly read head for an intent. */
+  assertAuthority(sessionId: string, authorityGeneration?: number): Promise<void>;
   root: string;
   history: GitTurnHistory;
   registry: WorkspaceRegistry;
@@ -67,11 +82,27 @@ export interface DurableRewindOperation extends WorkspaceRewindOperation {
 type ApplyRequest = WorkspaceRpcRequest<"sessions.rewind.apply">;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
+export function rewindAuthorityGeneration(value: unknown): number | undefined {
+  if (value === undefined) return;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+    throw new Error("Invalid rewind authority generation");
+  return value;
+}
+
 /** Plans, rescue refs and journal are durable. All mutation ingress must call assertWritable,
  * including immediately after restart; recovery never silently releases an unfinished fence. */
 export class GitSessionRewindService implements SessionRewindService {
   private tails = new Map<string, Promise<unknown>>();
-  constructor(readonly options: GitSessionRewindOptions) {}
+  constructor(readonly options: GitSessionRewindOptions) {
+    if (typeof options.assertAuthority !== "function")
+      throw new Error("Rewind requires a durable authority guard");
+  }
+  private async assertAuthority(intent: { sessionId: string; authorityGeneration?: number }) {
+    await this.options.assertAuthority(
+      intent.sessionId,
+      rewindAuthorityGeneration(intent.authorityGeneration),
+    );
+  }
   private now() {
     return (this.options.now ?? Date.now)();
   }
@@ -108,116 +139,129 @@ export class GitSessionRewindService implements SessionRewindService {
     return join(this.options.root, "plans", `${refComponent(token)}.json`);
   }
   async plan(request: WorkspaceRpcRequest<"sessions.rewind.plan">): Promise<SessionRewindPlan> {
+    const generation = rewindAuthorityGeneration(request.authorityGeneration);
+    request = Object.freeze({
+      ...request,
+      ...(generation === undefined ? {} : { authorityGeneration: generation }),
+    });
+    await this.assertAuthority(request);
     await this.assertWritable(request.workspaceId);
     const workspace = await this.workspace(
       request.workspaceId,
       request.sessionId,
       request.expectedRevision,
     );
-    return this.options.conversation.withSessionGate(request.sessionId, () =>
-      withHostGitMutation(workspace.path, async () => {
-        const conversation = await this.options.conversation.read(request.sessionId);
-        if (conversation.revision !== request.expectedConversationRevision)
-          throw new Error("Conversation changed; preview again");
-        let target: TurnGitSnapshot;
-        let userBlockId: string;
-        let rescueOperationId: string | undefined;
-        let undoTranscriptRescueId: string | undefined;
-        let removedUserBlockIds: string[] = [];
-        if (request.direction === "undo") {
-          const original = (await this.options.registry.getOperation(
-            request.operationId,
-          )) as DurableRewindOperation | null;
-          if (
-            !original ||
-            original.kind !== "rewind" ||
-            original.phase !== "complete" ||
-            !original.rescue ||
-            !original.transcriptRescueId ||
-            original.workspaceId !== workspace.id ||
-            original.plan.sessionId !== request.sessionId ||
-            original.plan.direction !== "rewind"
+    return this.options.conversation.withSessionGate(
+      request.sessionId,
+      () =>
+        withHostGitMutation(workspace.path, async () => {
+          await this.assertAuthority(request);
+          const conversation = await this.options.conversation.read(request.sessionId, generation);
+          if (conversation.revision !== request.expectedConversationRevision)
+            throw new Error("Conversation changed; preview again");
+          let target: TurnGitSnapshot;
+          let userBlockId: string;
+          let rescueOperationId: string | undefined;
+          let undoTranscriptRescueId: string | undefined;
+          let removedUserBlockIds: string[] = [];
+          if (request.direction === "undo") {
+            const original = (await this.options.registry.getOperation(
+              request.operationId,
+            )) as DurableRewindOperation | null;
+            if (
+              !original ||
+              original.kind !== "rewind" ||
+              original.phase !== "complete" ||
+              !original.rescue ||
+              !original.transcriptRescueId ||
+              original.workspaceId !== workspace.id ||
+              original.plan.sessionId !== request.sessionId ||
+              original.plan.direction !== "rewind"
+            )
+              throw new Error("No completed rewind rescue for this session");
+            target = original.rescue;
+            userBlockId = original.plan.userBlockId;
+            rescueOperationId = original.id;
+            undoTranscriptRescueId = original.transcriptRescueId;
+            if (!original.rescueUserBlockIds)
+              throw new Error("Undo transcript boundary inventory is missing");
+            const restoredTurns = new Set(original.rescueUserBlockIds);
+            removedUserBlockIds = conversation.userBlockIds.filter((id) => !restoredTurns.has(id));
+          } else {
+            const boundary = await this.options.history.get(workspace.id, request.userBlockId);
+            if (
+              !boundary ||
+              boundary.sessionId !== request.sessionId ||
+              boundary.branchRef !== workspace.branchRef ||
+              boundary.before.status !== "complete"
+            )
+              throw new Error("This turn has no complete exact Git boundary");
+            const index = conversation.userBlockIds.indexOf(request.userBlockId);
+            if (index < 0) throw new Error("Turn is no longer in the active conversation");
+            target = boundary.before.snapshot;
+            userBlockId = request.userBlockId;
+            removedUserBlockIds = conversation.userBlockIds.slice(index);
+          }
+          await this.assertAuthority(request);
+          const current = await this.options.history.capture(workspace);
+          const affectedPaths = [
+            ...new Set(
+              [...current.paths, ...target.paths]
+                .filter(
+                  (entry) =>
+                    current.paths.find((path) => path.path === entry.path)?.fingerprint !==
+                    target.paths.find((path) => path.path === entry.path)?.fingerprint,
+                )
+                .map((entry) => entry.path),
+            ),
+          ].sort();
+          const affectedCommits = (
+            await gitText(workspace.path, ["rev-list", `${target.head}...${current.head}`])
           )
-            throw new Error("No completed rewind rescue for this session");
-          target = original.rescue;
-          userBlockId = original.plan.userBlockId;
-          rescueOperationId = original.id;
-          undoTranscriptRescueId = original.transcriptRescueId;
-          if (!original.rescueUserBlockIds)
-            throw new Error("Undo transcript boundary inventory is missing");
-          const restoredTurns = new Set(original.rescueUserBlockIds);
-          removedUserBlockIds = conversation.userBlockIds.filter((id) => !restoredTurns.has(id));
-        } else {
-          const boundary = await this.options.history.get(workspace.id, request.userBlockId);
-          if (
-            !boundary ||
-            boundary.sessionId !== request.sessionId ||
-            boundary.branchRef !== workspace.branchRef ||
-            boundary.before.status !== "complete"
-          )
-            throw new Error("This turn has no complete exact Git boundary");
-          const index = conversation.userBlockIds.indexOf(request.userBlockId);
-          if (index < 0) throw new Error("Turn is no longer in the active conversation");
-          target = boundary.before.snapshot;
-          userBlockId = request.userBlockId;
-          removedUserBlockIds = conversation.userBlockIds.slice(index);
-        }
-        const current = await this.options.history.capture(workspace);
-        const affectedPaths = [
-          ...new Set(
-            [...current.paths, ...target.paths]
-              .filter(
-                (entry) =>
-                  current.paths.find((path) => path.path === entry.path)?.fingerprint !==
-                  target.paths.find((path) => path.path === entry.path)?.fingerprint,
-              )
-              .map((entry) => entry.path),
-          ),
-        ].sort();
-        const affectedCommits = (
-          await gitText(workspace.path, ["rev-list", `${target.head}...${current.head}`])
-        )
-          .split("\n")
-          .filter(Boolean);
-        const publishedRefs = await gitText(workspace.path, [
-          "for-each-ref",
-          "--contains",
-          current.head,
-          "--format=%(refname)",
-          "refs/remotes/",
-        ]);
-        const upstream = await gitText(workspace.path, [
-          "for-each-ref",
-          "--format=%(upstream)",
-          workspace.branchRef,
-        ]);
-        const plan: SessionRewindPlan = {
-          token: randomUUID(),
-          expiresAt: this.now() + 60_000,
-          direction: request.direction,
-          ...(rescueOperationId ? { rescueOperationId } : {}),
-          workspaceId: workspace.id,
-          sessionId: request.sessionId,
-          userBlockId,
-          expectedRevision: workspace.revision,
-          expectedConversationRevision: conversation.revision,
-          branchRef: workspace.branchRef,
-          currentHead: current.head,
-          targetHead: target.head,
-          statusFingerprint: this.options.history.snapshotFingerprint(workspace, current),
-          removedUserBlockIds,
-          affectedCommits,
-          affectedPaths,
-          blockers: [],
-          published: !!(publishedRefs || upstream),
-          merged: workspace.state === "merged",
-        };
-        await durableWrite(
-          this.planPath(plan.token),
-          JSON.stringify({ plan, target, undoTranscriptRescueId } satisfies PlanRecord),
-        );
-        return plan;
-      }),
+            .split("\n")
+            .filter(Boolean);
+          const publishedRefs = await gitText(workspace.path, [
+            "for-each-ref",
+            "--contains",
+            current.head,
+            "--format=%(refname)",
+            "refs/remotes/",
+          ]);
+          const upstream = await gitText(workspace.path, [
+            "for-each-ref",
+            "--format=%(upstream)",
+            workspace.branchRef,
+          ]);
+          const plan: SessionRewindPlan = {
+            ...(generation === undefined ? {} : { authorityGeneration: generation }),
+            token: randomUUID(),
+            expiresAt: this.now() + 60_000,
+            direction: request.direction,
+            ...(rescueOperationId ? { rescueOperationId } : {}),
+            workspaceId: workspace.id,
+            sessionId: request.sessionId,
+            userBlockId,
+            expectedRevision: workspace.revision,
+            expectedConversationRevision: conversation.revision,
+            branchRef: workspace.branchRef,
+            currentHead: current.head,
+            targetHead: target.head,
+            statusFingerprint: this.options.history.snapshotFingerprint(workspace, current),
+            removedUserBlockIds,
+            affectedCommits,
+            affectedPaths,
+            blockers: [],
+            published: !!(publishedRefs || upstream),
+            merged: workspace.state === "merged",
+          };
+          await this.assertAuthority(request);
+          await durableWrite(
+            this.planPath(plan.token),
+            JSON.stringify({ plan, target, undoTranscriptRescueId } satisfies PlanRecord),
+          );
+          return plan;
+        }),
+      generation,
     );
   }
   async apply(request: ApplyRequest): Promise<SessionRewindReceipt> {
@@ -230,6 +274,11 @@ export class GitSessionRewindService implements SessionRewindService {
     request: ApplyRequest,
     direction: "rewind" | "undo",
   ): Promise<SessionRewindReceipt> {
+    const generation = rewindAuthorityGeneration(request.authorityGeneration);
+    request = Object.freeze({
+      ...request,
+      ...(generation === undefined ? {} : { authorityGeneration: generation }),
+    });
     return this.queue(request.sessionId, async () => {
       const duplicate = (await this.options.registry.findOperation({
         workspaceId: request.workspaceId,
@@ -244,17 +293,24 @@ export class GitSessionRewindService implements SessionRewindService {
         request.planToken,
         request.idempotencyKey,
         direction,
+        ...(generation === undefined ? [] : [["authorityGeneration", generation]]),
       ]);
       if (duplicate) {
         if (duplicate.requestFingerprint !== requestFingerprint)
           throw new Error("Idempotency key was used for another rewind request");
-        if (duplicate.phase === "complete" && duplicate.finalized && duplicate.receipt)
+        if (duplicate.phase === "complete" && duplicate.receipt) {
+          // The permanent receipt remains readable at its original identity even
+          // if a newer authority now blocks unfinished finalization effects.
+          if (!duplicate.finalized) await this.recover(duplicate.id).catch(() => undefined);
           return duplicate.receipt;
+        }
+        await this.assertAuthority(duplicate.plan);
         await this.recover(duplicate.id);
         const recovered = await this.operation(duplicate.id);
         if (!recovered.receipt) throw new Error("Rewind recovery has no receipt");
         return recovered.receipt;
       }
+      await this.assertAuthority(request);
       const saved = JSON.parse(
         await readFile(this.planPath(request.planToken), "utf8"),
       ) as PlanRecord;
@@ -265,88 +321,103 @@ export class GitSessionRewindService implements SessionRewindService {
         plan.sessionId !== request.sessionId ||
         plan.expectedRevision !== request.expectedRevision ||
         plan.expectedConversationRevision !== request.expectedConversationRevision ||
+        rewindAuthorityGeneration(plan.authorityGeneration) !== generation ||
         plan.expiresAt < this.now() ||
         plan.blockers.length
       )
         throw new Error("Rewind preview is stale or does not match the request");
       await this.assertWritable(request.workspaceId);
-      await this.options.conversation.settle(request.sessionId);
-      return this.options.conversation.withSessionGate(request.sessionId, async () => {
-        const workspace = await this.workspace(
-          request.workspaceId,
-          request.sessionId,
-          request.expectedRevision,
-        );
-        const operationId = randomUUID();
-        const reservation = await this.options.activity.reserve({
-          workspaceId: workspace.id,
-          operationId,
-          purpose: "rewind",
-          expectedRevision: workspace.revision,
-        });
-        let journaled = false;
-        try {
-          return await withHostGitMutation(workspace.path, async () => {
-            const freshWorkspace = await this.workspace(
-              workspace.id,
-              request.sessionId,
-              request.expectedRevision,
-            );
-            await this.assertWritable(workspace.id);
-            const conversation = await this.options.conversation.read(request.sessionId);
-            if (
-              conversation.revision !== plan.expectedConversationRevision ||
-              freshWorkspace.branchRef !== plan.branchRef ||
-              (await this.options.history.fingerprint(freshWorkspace)) !== plan.statusFingerprint
-            )
-              throw new Error("Workspace or conversation changed after preview");
-            const rescue = await this.options.history.capture(freshWorkspace);
-            if (
-              this.options.history.snapshotFingerprint(freshWorkspace, rescue) !==
-              plan.statusFingerprint
-            )
-              throw new Error("Workspace changed while preparing rescue; preview again");
-            await this.workspace(workspace.id, request.sessionId, request.expectedRevision);
-            await this.options.history.retain(freshWorkspace, rescue, [
-              rewindRef(operationId, "rescue-head"),
-              rewindRef(operationId, "rescue-index"),
-              rewindRef(operationId, "rescue-worktree"),
-            ]);
-            const operation: DurableRewindOperation = {
-              id: operationId,
-              kind: "rewind",
-              phase: "prepared",
-              workspaceId: workspace.id,
-              idempotencyKey: request.idempotencyKey,
-              expectedRevision: workspace.revision,
-              createdAt: this.now(),
-              updatedAt: this.now(),
-              plan,
-              rescue,
-              rescueUserBlockIds: conversation.userBlockIds.slice(),
-              target: saved.target,
-              undoTranscriptRescueId: saved.undoTranscriptRescueId,
-              reservationId: reservation.id,
-              requestFingerprint,
-            };
-            await this.options.registry.saveOperation(operation, null);
-            journaled = true;
-            // Persist the Host intent BEFORE asking native SQLite to install its durable fence.
-            // A crash between the stores can then retry rescue using the same operation identity.
-            operation.transcriptRescueId = await this.options.conversation.rescue(
-              operationId,
-              request.sessionId,
-              plan.expectedConversationRevision,
-            );
-            await this.options.registry.saveOperation(operation, "prepared");
-            await this.options.afterPhase?.("prepared");
-            return (await this.reconcile(operation, freshWorkspace)).receipt!;
+      await this.assertAuthority(request);
+      await this.options.conversation.settle(request.sessionId, generation);
+      return this.options.conversation.withSessionGate(
+        request.sessionId,
+        async () => {
+          await this.assertAuthority(request);
+          const workspace = await this.workspace(
+            request.workspaceId,
+            request.sessionId,
+            request.expectedRevision,
+          );
+          const operationId = randomUUID();
+          await this.assertAuthority(request);
+          const reservation = await this.options.activity.reserve({
+            workspaceId: workspace.id,
+            operationId,
+            purpose: "rewind",
+            expectedRevision: workspace.revision,
           });
-        } finally {
-          // Once journaled, reconciliation alone may release the reservation.
-          if (!journaled) await this.options.activity.release(reservation.id);
-        }
-      });
+          let journaled = false;
+          try {
+            return await withHostGitMutation(workspace.path, async () => {
+              const freshWorkspace = await this.workspace(
+                workspace.id,
+                request.sessionId,
+                request.expectedRevision,
+              );
+              await this.assertWritable(workspace.id);
+              const conversation = await this.options.conversation.read(
+                request.sessionId,
+                generation,
+              );
+              if (
+                conversation.revision !== plan.expectedConversationRevision ||
+                freshWorkspace.branchRef !== plan.branchRef ||
+                (await this.options.history.fingerprint(freshWorkspace)) !== plan.statusFingerprint
+              )
+                throw new Error("Workspace or conversation changed after preview");
+              await this.assertAuthority(request);
+              const rescue = await this.options.history.capture(freshWorkspace);
+              if (
+                this.options.history.snapshotFingerprint(freshWorkspace, rescue) !==
+                plan.statusFingerprint
+              )
+                throw new Error("Workspace changed while preparing rescue; preview again");
+              await this.workspace(workspace.id, request.sessionId, request.expectedRevision);
+              await this.assertAuthority(request);
+              await this.options.history.retain(freshWorkspace, rescue, [
+                rewindRef(operationId, "rescue-head"),
+                rewindRef(operationId, "rescue-index"),
+                rewindRef(operationId, "rescue-worktree"),
+              ]);
+              const operation: DurableRewindOperation = {
+                id: operationId,
+                kind: "rewind",
+                phase: "prepared",
+                workspaceId: workspace.id,
+                idempotencyKey: request.idempotencyKey,
+                expectedRevision: workspace.revision,
+                createdAt: this.now(),
+                updatedAt: this.now(),
+                plan,
+                rescue,
+                rescueUserBlockIds: conversation.userBlockIds.slice(),
+                target: saved.target,
+                undoTranscriptRescueId: saved.undoTranscriptRescueId,
+                reservationId: reservation.id,
+                requestFingerprint,
+              };
+              await this.options.registry.saveOperation(operation, null);
+              journaled = true;
+              // Persist the Host intent BEFORE asking native SQLite to install its durable fence.
+              // A crash between the stores can then retry rescue using the same operation identity.
+              await this.assertAuthority(request);
+              operation.transcriptRescueId = await this.options.conversation.rescue(
+                operationId,
+                request.sessionId,
+                plan.expectedConversationRevision,
+                generation,
+              );
+              await this.options.registry.saveOperation(operation, "prepared");
+              await this.options.afterPhase?.("prepared");
+              return (await this.reconcile(operation, freshWorkspace)).receipt!;
+            });
+          } finally {
+            // Once journaled, reconciliation alone may release the reservation.
+            if (!journaled) await this.options.activity.release(reservation.id);
+          }
+        },
+        generation,
+      );
     });
   }
   private async operation(id: string): Promise<DurableRewindOperation> {
@@ -365,6 +436,7 @@ export class GitSessionRewindService implements SessionRewindService {
     operation: DurableRewindOperation,
     workspace: ManagedWorkspace,
   ): Promise<DurableRewindOperation> {
+    await this.assertAuthority(operation.plan);
     if (!operation.rescue)
       throw new Error("Incomplete Git rescue journal; manual recovery required");
     if (
@@ -373,7 +445,10 @@ export class GitSessionRewindService implements SessionRewindService {
       workspace.owner.id !== operation.plan.sessionId
     )
       throw new Error("Workspace ownership changed during recovery");
-    const conversation = await this.options.conversation.read(operation.plan.sessionId);
+    const conversation = await this.options.conversation.read(
+      operation.plan.sessionId,
+      operation.plan.authorityGeneration,
+    );
     const conversationReceipt = await this.options.conversation.receipt(operation.id);
     if (
       !conversationReceipt &&
@@ -389,14 +464,17 @@ export class GitSessionRewindService implements SessionRewindService {
           this.options.history.snapshotFingerprint(workspace, operation.rescue)
       )
         throw new Error("Incomplete transcript rescue with Git drift; recovery blocked");
+      await this.assertAuthority(operation.plan);
       operation.transcriptRescueId = await this.options.conversation.rescue(
         operation.id,
         operation.plan.sessionId,
         operation.plan.expectedConversationRevision,
+        operation.plan.authorityGeneration,
       );
       await this.options.registry.saveOperation(operation, "prepared");
     }
     if (operation.phase === "prepared") {
+      await this.assertAuthority(operation.plan);
       await this.options.history.restore(
         workspace,
         operation.target,
@@ -411,6 +489,7 @@ export class GitSessionRewindService implements SessionRewindService {
         this.options.history.snapshotFingerprint(workspace, operation.target)
       )
         throw new Error("Git changed after restore; recovery blocked");
+      await this.assertAuthority(operation.plan);
       operation.conversationResult =
         conversationReceipt ??
         (await this.options.conversation.restore({
@@ -420,6 +499,9 @@ export class GitSessionRewindService implements SessionRewindService {
           direction: operation.plan.direction,
           transcriptRescueId: operation.undoTranscriptRescueId,
           expectedRevision: operation.plan.expectedConversationRevision,
+          ...(operation.plan.authorityGeneration === undefined
+            ? {}
+            : { authorityGeneration: operation.plan.authorityGeneration }),
         }));
       await this.phase(operation, "conversation-restored");
     }
@@ -433,6 +515,7 @@ export class GitSessionRewindService implements SessionRewindService {
       )
         throw new Error("Git changed after transcript restore");
       // Registry.update is idempotent under this key: a crash after it must not increment twice.
+      await this.assertAuthority(operation.plan);
       const updated = await this.options.registry.update({
         workspaceId: workspace.id,
         idempotencyKey: operation.id,
@@ -441,6 +524,9 @@ export class GitSessionRewindService implements SessionRewindService {
         changes: { lastActivityAt: operation.createdAt },
       });
       operation.receipt = {
+        ...(operation.plan.authorityGeneration === undefined
+          ? {}
+          : { authorityGeneration: operation.plan.authorityGeneration }),
         operationId: operation.id,
         workspaceId: workspace.id,
         sessionId: operation.plan.sessionId,
@@ -459,37 +545,49 @@ export class GitSessionRewindService implements SessionRewindService {
   }
   private async finalize(operation: DurableRewindOperation) {
     if (operation.finalized) return;
-    await this.options.conversation.complete?.(operation.id);
+    await this.assertAuthority(operation.plan);
+    await this.options.conversation.complete?.(operation.id, operation.plan.authorityGeneration);
+    await this.assertAuthority(operation.plan);
     await this.options.activity.release(operation.reservationId);
     operation.finalized = true;
     await this.options.registry.saveOperation(operation, "complete");
   }
   async recover(operationId: string): Promise<DurableRewindOperation> {
     const operation = await this.operation(operationId);
+    if (operation.phase === "complete" && operation.finalized) return operation;
+    await this.assertAuthority(operation.plan);
     // Do not nest queue(): execute duplicate recovery already owns that queue.
-    return this.options.conversation.withSessionGate(operation.plan.sessionId, async () => {
-      if (operation.phase === "complete") {
-        await this.finalize(operation);
-        return operation;
-      }
-      const workspace = await this.options.history.workspace(operation.workspaceId);
-      if (
-        workspace.revision !== operation.expectedRevision &&
-        workspace.revision !== operation.expectedRevision + 1
-      )
-        throw new Error("Workspace revision drift; recovery blocked");
-      // reserve must be durable/idempotent by operation ID; on restart this also freshly
-      // checks for surviving processes/dirty buffers before touching partially restored Git.
-      const reservation = await this.options.activity.reserve({
-        workspaceId: workspace.id,
-        operationId: operation.id,
-        purpose: "rewind",
-        expectedRevision: operation.expectedRevision,
-      });
-      if (reservation.id !== operation.reservationId)
-        throw new Error("Recovery reservation identity changed; reconcile activity journal first");
-      return withHostGitMutation(workspace.path, () => this.reconcile(operation, workspace));
-    });
+    return this.options.conversation.withSessionGate(
+      operation.plan.sessionId,
+      async () => {
+        await this.assertAuthority(operation.plan);
+        if (operation.phase === "complete") {
+          await this.finalize(operation);
+          return operation;
+        }
+        const workspace = await this.options.history.workspace(operation.workspaceId);
+        if (
+          workspace.revision !== operation.expectedRevision &&
+          workspace.revision !== operation.expectedRevision + 1
+        )
+          throw new Error("Workspace revision drift; recovery blocked");
+        // reserve must be durable/idempotent by operation ID; on restart this also freshly
+        // checks for surviving processes/dirty buffers before touching partially restored Git.
+        await this.assertAuthority(operation.plan);
+        const reservation = await this.options.activity.reserve({
+          workspaceId: workspace.id,
+          operationId: operation.id,
+          purpose: "rewind",
+          expectedRevision: operation.expectedRevision,
+        });
+        if (reservation.id !== operation.reservationId)
+          throw new Error(
+            "Recovery reservation identity changed; reconcile activity journal first",
+          );
+        return withHostGitMutation(workspace.path, () => this.reconcile(operation, workspace));
+      },
+      operation.plan.authorityGeneration,
+    );
   }
   /** Call on startup before enabling managed writes. Failed entries remain discoverable/fenced. */
   async recoverPending(): Promise<{ operationId: string; error?: string }[]> {

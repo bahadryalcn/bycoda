@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: "compact-navigation.spec.ts",
+  testMatch: ["compact-navigation.spec.ts", "shell-count-badges.spec.ts"],
   outputDir: "../../temp/verification/2026-10-26-navigation-v2",
   workers: 1,
   timeout: 120_000,

@@ -5,61 +5,56 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      deterministic_task_cache:
+        description: "Opt in to the reviewed static repository inventory output cache (never test acceptance)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
     outputs:
-      web: ${{ steps.filter.outputs.web }}
-      host: ${{ steps.filter.outputs.host }}
-      native: ${{ steps.filter.outputs.native }}
-      rpm: ${{ steps.filter.outputs.rpm }}
+      web: ${{ steps.detect.outputs.web }}
+      host: ${{ steps.detect.outputs.host }}
+      native: ${{ steps.detect.outputs.native }}
+      rpm: ${{ steps.detect.outputs.rpm }}
+      browser: ${{ steps.detect.outputs.browser }}
+      scripts: ${{ steps.detect.outputs.scripts }}
+      python: ${{ steps.detect.outputs.python }}
+      source_sha: ${{ steps.detect.outputs.source_sha }}
     steps:
-      - uses: actions/checkout@v4
-      # Keep workflow-level checks present, including documentation-only PRs.
-      # Main/manual runs exercise every platform, even after a cancelled push.
-      - uses: dorny/paths-filter@v4
-        id: filter
-        if: github.event_name == 'pull_request'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          filters: |
-            web:
-              - &shared '{package.json,pnpm-lock.yaml,pnpm-workspace.yaml,.npmrc,tsconfig*.json,vite.config.*,vitest.config.*,index.html}'
-              - &tooling '{.github,scripts,vendor,.cargo}/**'
-              - &typescript '{src,host,tests,public}/**'
-            host:
-              - *shared
-              - *tooling
-              - *typescript
-            native:
-              - *shared
-              - *tooling
-              - &rust '{src-tauri/**,Cargo.toml,Cargo.lock,rust-toolchain*,rustfmt.toml,.rustfmt.toml,clippy.toml,.clippy.toml}'
-              # Rust embeds the SSH ACL script and the host parity fixture.
-              - &embedded 'host/{windows-acl.ps1,fixtures/**}'
-            rpm:
-              - *shared
-              - *tooling
-              - *rust
-              - *embedded
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 24
+          install: "false"
+      - id: detect
+        name: Select dependent checks (full coverage if diff is unavailable)
+        env:
+          CI_BASE: ${{ github.event.pull_request.base.sha || 'HEAD^' }}
+        run: node scripts/checks/ci-changes.mjs --ci --base "$CI_BASE" --github-output "$GITHUB_OUTPUT"
 
   repository-hygiene:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
         with:
           node-version: 24
+          install: "false"
       - run: node scripts/checks/check-repository-hygiene.mjs
       - run: node --test .github/scripts/issue-labels.test.cjs
 
@@ -69,39 +64,112 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Each shard gets its own VM. Keep process integration tests serial
+        # inside that VM; Windows needs more shards than the other platforms.
+        include:
+          - { os: ubuntu-latest, shard: 1, shard-count: 1 }
+          - { os: macos-latest, shard: 1, shard-count: 2 }
+          - { os: macos-latest, shard: 2, shard-count: 2 }
+          - { os: windows-latest, shard: 1, shard-count: 6 }
+          - { os: windows-latest, shard: 2, shard-count: 6 }
+          - { os: windows-latest, shard: 3, shard-count: 6 }
+          - { os: windows-latest, shard: 4, shard-count: 6 }
+          - { os: windows-latest, shard: 5, shard-count: 6 }
+          - { os: windows-latest, shard: 6, shard-count: 6 }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          version: 12.15.0
-      - uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
         with:
           node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run test:host
+      - name: Verify Host test shard coverage
+        if: matrix.shard == 1
+        run: node scripts/checks/check-host-test-shards.mjs ${{ matrix.shard-count }}
+      - name: Run Host test shard
+        run: >-
+          pnpm run test:host --shard=${{ matrix.shard }}/${{ matrix.shard-count }}
+          --reporter=default --reporter=json
+          --outputFile.json=temp/test-results/host-ci/results.json
       # test:host's pretest hook already typechecks and builds the host.
       - run: node host/package.mjs
+        if: matrix.shard == 1
+      - name: Record shard source and result
+        if: always()
+        run: >-
+          node scripts/checks/ci-results.mjs record --job host
+          --variant ${{ matrix.os }}-${{ matrix.shard }}-of-${{ matrix.shard-count }}
+          --result ${{ job.status }} --directory temp/test-results/ci-evidence
+          --require temp/test-results/host-ci/results.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ci-evidence-host-${{ matrix.os }}-${{ matrix.shard }}
+          path: temp/test-results/ci-evidence/*.json
+          if-no-files-found: error
+      - name: Upload Host test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: host-tests-${{ matrix.os }}-${{ matrix.shard }}-of-${{ matrix.shard-count }}
+          path: temp/test-results/host-ci/results.json
+          if-no-files-found: warn
 
   web:
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          version: 12.15.0
-      - uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
         with:
           node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test
-      # Also validate the production frontend bundle without a native installer.
-      - run: pnpm run build
+      - name: Verify shared Host contracts and headless boundaries
+        run: |
+          node scripts/checks/check-host-contracts.mjs
+          node scripts/checks/check-host-runtime-boundaries.mjs
+          node scripts/checks/check-host-headless-boundaries.mjs
+      - name: Check workspace package boundaries and normal package types
+        run: |
+          pnpm run check:packages
+          pnpm run typecheck:packages
+      - run: pnpm test --reporter=default --reporter=json --outputFile.json=temp/test-results/web-ci/results.json
+      - run: pnpm exec tsc-rs --noEmit
+      - id: playwright
+        name: Read pinned web boot browser version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: browser-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Build and mount the actual production web entry (no Tauri mock)
+        run: >-
+          node scripts/checks/browser-built-boot.mjs --build
+          --dist temp/build/web-ci/dist --boundary native-unavailable
+          --output temp/test-results/web-ci/boot
+          --receipt temp/test-results/web-ci/boot.json
+      - name: Record web source and result
+        if: always()
+        run: >-
+          node scripts/checks/ci-results.mjs record --job web --variant linux
+          --result ${{ job.status }} --directory temp/test-results/ci-evidence
+          --require temp/test-results/web-ci/results.json
+          --web-receipt temp/test-results/web-ci/boot.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ci-evidence-web
+          path: temp/test-results/ci-evidence/*.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: web-test-results
+          path: temp/test-results/web-ci/
 
   check:
     needs: changes
@@ -112,16 +180,22 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 24
+          install: "false"
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: bash scripts/setup/install-linux-deps-debian.sh --sources /etc/apt/sources.list.d/ubuntu.sources
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: native-check
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -129,6 +203,17 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test
+      - name: Record native source and result
+        if: always()
+        run: >-
+          node scripts/checks/ci-results.mjs record --job check --variant ${{ matrix.os }}
+          --result ${{ job.status }} --directory temp/test-results/ci-evidence
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ci-evidence-native-${{ matrix.os }}
+          path: temp/test-results/ci-evidence/*.json
+          if-no-files-found: error
 
   rpm:
     needs: changes
@@ -149,28 +234,24 @@ jobs:
       - name: Install git
         run: dnf install -y git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
 
       - name: Install system dependencies
         run: bash scripts/setup/install-linux-deps-fedora.sh
 
-      # These containers have no Node; pnpm's self-installer needs it first.
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-deps
         with:
+          # Keep the package runtime separate from Node 24 source/test jobs.
           node-version: 22
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12.15.0
 
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: rpm-${{ matrix.image }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - run: pnpm install --frozen-lockfile
       - run: pnpm run build:fedora
 
       - name: Install the generated rpm
@@ -202,10 +283,22 @@ jobs:
         # Ship and test the EL 10 build. Fedora 43's glibc is newer, so a
         # fedora:43 rpm can dnf-install on AlmaLinux 10 and still fail to load.
         if: matrix.image == 'almalinux:10'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rpm-package
           path: target/release/bundle/rpm/*.rpm
+          if-no-files-found: error
+
+      - name: Record RPM source and result
+        if: always()
+        run: >-
+          node scripts/checks/ci-results.mjs record --job rpm --variant ${{ matrix.image }}
+          --result ${{ job.status }} --directory temp/test-results/ci-evidence
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ci-evidence-rpm-${{ strategy.job-index }}
+          path: temp/test-results/ci-evidence/*.json
           if-no-files-found: error
 
   rpm-clean-install:
@@ -222,14 +315,19 @@ jobs:
       - name: Install git
         run: dnf install -y git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
 
       - name: Enable EPEL 10
         run: dnf install -y epel-release
 
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 22
+          install: "false"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: rpm-package
           path: rpm
@@ -257,3 +355,265 @@ jobs:
             echo "bycoda cannot load on EL 10" >&2
             exit 1
           fi
+      - name: Record clean installation source and result
+        if: always()
+        run: >-
+          node scripts/checks/ci-results.mjs record --job rpm-clean-install --variant linux
+          --result ${{ job.status }} --directory temp/test-results/ci-evidence
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ci-evidence-rpm-clean-install
+          path: temp/test-results/ci-evidence/*.json
+          if-no-files-found: error
+
+  scripts:
+    needs: changes
+    if: needs.changes.outputs.scripts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 24
+      - id: inventory-cache-key
+        name: Identify complete deterministic inventory inputs (explicit main-branch opt-in only)
+        if: github.event_name == 'workflow_dispatch' && inputs.deterministic_task_cache && github.ref == 'refs/heads/main'
+        run: node scripts/checks/task-cache.mjs key --task repository-inventory
+      - id: inventory-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.inventory-cache-key.outcome == 'success'
+        with:
+          path: temp/task-cache
+          key: deterministic-inventory-${{ runner.os }}-${{ runner.arch }}-${{ steps.inventory-cache-key.outputs.key }}
+      - name: Execute or rehash restored static inventory (no test result cache)
+        if: steps.inventory-cache-key.outcome == 'success'
+        run: >-
+          node scripts/checks/task-cache.mjs run --task repository-inventory
+          --store temp/task-cache --output temp/test-results/scripts-ci/cached-inventory
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: success() && steps.inventory-cache-key.outcome == 'success' && steps.inventory-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        with:
+          path: temp/task-cache
+          key: deterministic-inventory-${{ runner.os }}-${{ runner.arch }}-${{ steps.inventory-cache-key.outputs.key }}
+      - name: Run maintained script fixtures (no app build or installation)
+        run: >-
+          node scripts/checks/check-local.mjs --scripts --run --timeout-ms 600000
+          --report temp/test-results/scripts-ci/results.json
+      - name: Typecheck the offline evaluation harness
+        run: pnpm run eval:check
+      - name: Check offline model behavior graders (no provider calls)
+        run: >-
+          pnpm run eval:offline --reporter=default --reporter=json
+          --outputFile.json=temp/test-results/scripts-ci/evals.json
+      - name: Record script source and result
+        if: always()
+        run: >-
+          node scripts/checks/ci-results.mjs record --job scripts --variant linux
+          --result ${{ job.status }} --directory temp/test-results/ci-evidence
+          --require temp/test-results/scripts-ci/results.json
+          --require temp/test-results/scripts-ci/evals.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ci-evidence-scripts
+          path: temp/test-results/ci-evidence/*.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: script-test-results
+          path: temp/test-results/scripts-ci/
+
+  python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 24
+          install: "false"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Run local-update fixtures without live updates
+        shell: bash
+        run: |
+          mkdir -p temp/test-results/python-ci
+          set -o pipefail
+          python -B -m unittest discover -s scripts/local-update -p test_local_update.py -v 2>&1 | tee temp/test-results/python-ci/results.log
+      - name: Record Python source and result
+        if: always()
+        run: >-
+          node scripts/checks/ci-results.mjs record --job python --variant ${{ matrix.os }}
+          --result ${{ job.status }} --directory temp/test-results/ci-evidence
+          --require temp/test-results/python-ci/results.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ci-evidence-python-${{ matrix.os }}
+          path: temp/test-results/ci-evidence/*.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: python-test-results-${{ matrix.os }}
+          path: temp/test-results/python-ci/
+
+  browser:
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.browser == 'true'
+    runs-on: ubuntu-latest
+    env:
+      BYCODA_BROWSER_ARTIFACT_DIR: temp/test-results/browser-ci
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 24
+      - name: Verify every browser fixture has one owner
+        run: node scripts/checks/browser-test-inventory.mjs --check
+      - name: Typecheck all maintained browser configs (normal tsc-rs)
+        run: pnpm exec tsc-rs --noEmit -p tests/browser/tsconfig.json
+      - id: playwright
+        name: Read pinned Playwright version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: browser-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+      - name: Install the pinned Chromium runtime and Linux dependencies
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Exercise the isolated browser smoke fixture
+        run: node scripts/checks/browser-tests.mjs --suite smoke --project chromium
+      - name: Record browser fixture source and result
+        if: always()
+        run: >-
+          node scripts/checks/ci-results.mjs record --job browser --variant chromium-smoke
+          --result ${{ job.status }} --directory temp/test-results/ci-evidence
+          --browser-receipt temp/test-results/browser-ci/run.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ci-evidence-browser
+          path: temp/test-results/ci-evidence/*.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: browser-fixture-results
+          path: temp/test-results/browser-ci/
+
+  browser-full:
+    name: Browser full (${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.count }})
+    needs: changes
+    if: github.event_name != 'pull_request' && needs.changes.outputs.browser == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - { project: chromium, shard: 1, count: 6 }
+          - { project: chromium, shard: 2, count: 6 }
+          - { project: chromium, shard: 3, count: 6 }
+          - { project: chromium, shard: 4, count: 6 }
+          - { project: chromium, shard: 5, count: 6 }
+          - { project: chromium, shard: 6, count: 6 }
+          - { project: webkit, shard: 1, count: 4 }
+          - { project: webkit, shard: 2, count: 4 }
+          - { project: webkit, shard: 3, count: 4 }
+          - { project: webkit, shard: 4, count: 4 }
+    env:
+      BYCODA_BROWSER_ARTIFACT_DIR: temp/test-results/browser-full
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 24
+      - name: Verify full collection ownership and normal browser config types
+        run: |
+          node scripts/checks/browser-test-inventory.mjs --check
+          pnpm exec tsc-rs --noEmit -p tests/browser/tsconfig.json
+      - id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: browser-${{ matrix.project }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+      - run: pnpm exec playwright install --with-deps ${{ matrix.project }}
+      - name: Execute all assigned owners and deliberate alternate fixtures
+        run: >-
+          node scripts/checks/browser-tests.mjs --include-variants
+          --project ${{ matrix.project }} --shard ${{ matrix.shard }}/${{ matrix.count }}
+      - name: Bind every discovered and executed report to this exact source partition
+        if: always()
+        run: >-
+          node scripts/checks/ci-results.mjs record --job browser-full
+          --variant ${{ matrix.project }}-${{ matrix.shard }}-of-${{ matrix.count }}
+          --result ${{ job.status }} --directory temp/test-results/ci-evidence
+          --browser-receipt temp/test-results/browser-full/run.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ci-evidence-browser-${{ matrix.project }}-${{ matrix.shard }}
+          path: temp/test-results/ci-evidence/*.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: browser-full-${{ matrix.project }}-${{ matrix.shard }}
+          path: temp/test-results/browser-full/
+
+  complete:
+    name: Check
+    if: always()
+    needs:
+      [
+        changes,
+        repository-hygiene,
+        web,
+        host,
+        check,
+        rpm,
+        rpm-clean-install,
+        scripts,
+        python,
+        browser,
+        browser-full,
+      ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 24
+          install: "false"
+      - name: Download data-only evidence from this run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        continue-on-error: true
+        with:
+          pattern: ci-evidence-*
+          merge-multiple: true
+          path: temp/test-results/ci-evidence-collected
+      - name: Require selected jobs and their exact-source evidence
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/checks/ci-results.mjs check --directory temp/test-results/ci-evidence-collected

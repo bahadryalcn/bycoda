@@ -108,6 +108,7 @@ export interface WorkspaceRpcContract {
   };
   "sessions.rewind.plan": {
     request: {
+      authorityGeneration?: number;
       workspaceId: string;
       sessionId: string;
       expectedRevision: number;
@@ -117,6 +118,7 @@ export interface WorkspaceRpcContract {
   };
   "sessions.rewind.apply": {
     request: WorkspaceMutation & {
+      authorityGeneration?: number;
       sessionId: string;
       expectedConversationRevision: number;
       planToken: string;

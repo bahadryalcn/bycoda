@@ -111,10 +111,25 @@ it("stops only the mirrored host run and fences follow-ups preparing on the desk
   stop(id);
   expect(current().queueStatus).toBe("paused");
   expect(deps.turnGen.current.get(id)).toBe(2);
-  expect(cancelAdopted).toHaveBeenCalledWith(id, "seen-host-run");
+  expect(cancelAdopted).toHaveBeenCalledWith(id, "seen-host-run", undefined);
   expect(cancel).not.toHaveBeenCalled();
   // Only the host mirror may announce that its turn actually finished.
   expect(current().continuingElsewhere).toBe(true);
+});
+
+it("binds adopted Stop to the generation displayed when the owner clicks it", () => {
+  const id = current().id;
+  deps.sessionsRef.current = [
+    {
+      ...current(),
+      busy: false,
+      continuingElsewhere: true,
+      adoptedRunId: "seen-host-run",
+      adoptedAuthorityGeneration: 2,
+    },
+  ];
+  stop(id);
+  expect(cancelAdopted).toHaveBeenCalledWith(id, "seen-host-run", 2);
 });
 
 it.each(["success", "failure"])(

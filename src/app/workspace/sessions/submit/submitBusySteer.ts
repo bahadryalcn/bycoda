@@ -65,6 +65,9 @@ export function queueSubmittedFollowUp(
             },
             {
               id: crypto.randomUUID(),
+              ...(storedCurrent.adoptedAuthorityGeneration !== undefined
+                ? { authorityGeneration: storedCurrent.adoptedAuthorityGeneration }
+                : {}),
               text,
               attachments,
               noteCard,
@@ -123,6 +126,9 @@ export function steerBusySubmit(
     const selected = options?.queuedMessageId
       ? storedCurrent.queuedMessages?.find((row) => row.id === options.queuedMessageId)
       : undefined;
+    const authorityGeneration = options?.queuedMessageId
+      ? selected?.authorityGeneration
+      : storedCurrent.adoptedAuthorityGeneration;
     const retain = (unknown = false) =>
       setSessions((prev) =>
         prev.map((entry) =>
@@ -130,6 +136,7 @@ export function steerBusySubmit(
           (!options?.queuedMessageId || entry.queuedMessages?.some((row) => row.id === messageId))
             ? holdUndeliveredFollowUp(entry, {
                 id: messageId,
+                ...(authorityGeneration !== undefined ? { authorityGeneration } : {}),
                 text,
                 attachments,
                 intent,
@@ -146,6 +153,7 @@ export function steerBusySubmit(
           text,
           attachments,
           queuedMessageId: options?.queuedMessageId,
+          authorityGeneration,
           isCurrent: () => {
             const latest = sessionsRef.current.find((entry) => entry.id === sessionId);
             return (

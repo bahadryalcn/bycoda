@@ -2,13 +2,24 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { notifyRemoteRecovered } from "./remoteHealth";
 import { bindMachineEnvironment } from "./remoteLifecycle";
-import { remoteRequest } from "./connections";
+import { cachedRemoteCapabilities, remoteRequest } from "./connections";
 import {
+  acquireRemoteHostRuntime,
   resetRemoteMachineChannelsForTests,
   subscribeRemoteMachineChannel,
 } from "./remoteMachineChannel";
+import { createTauriHostConnection } from "../../../platform/tauri/hostConnection";
+import type {
+  ManagedHostConnectionPort,
+  ManagedHostEvent,
+} from "../../../shared/lib/host-runtime/ports";
 
-vi.mock("./connections", () => ({ remoteRequest: vi.fn() }));
+vi.mock("./connections", () => ({
+  remoteRequest: vi.fn(),
+  cachedRemoteCapabilities: vi.fn(() => undefined),
+  mayStartTunnel: vi.fn(() => true),
+}));
+vi.mock("../../../platform/tauri/hostConnection", () => ({ createTauriHostConnection: vi.fn() }));
 
 it("does not let a late short refresh replace a newer delivered response", async () => {
   vi.useFakeTimers();
@@ -330,6 +341,7 @@ afterEach(() => {
   resetRemoteMachineChannelsForTests();
   vi.useRealTimers();
   vi.clearAllMocks();
+  vi.mocked(cachedRemoteCapabilities).mockReturnValue(undefined);
 });
 
 it("shares one machine long poll and unregisters the final consumer", async () => {
@@ -474,5 +486,366 @@ it("backs off while the host keeps answering nothing at once", async () => {
   await vi.advanceTimersByTimeAsync(3_000);
   // 100 ms re-arms would poll ~30 times; the back-off caps it near one a second.
   expect(vi.mocked(remoteRequest).mock.calls.length).toBeLessThan(10);
+  stop();
+});
+
+async function flushNative() {
+  for (let index = 0; index < 25; index++) await Promise.resolve();
+}
+function nativeFixture(machineId: string) {
+  const environmentId = `env-${machineId}`;
+  bindMachineEnvironment(machineId, environmentId);
+  vi.mocked(cachedRemoteCapabilities).mockReturnValue([
+    "transport.ws.sessions.v2",
+    "transport.ws.bulk.v2",
+  ]);
+  let listener: ((event: ManagedHostEvent) => void) | undefined;
+  const stopListening = vi.fn();
+  const port: ManagedHostConnectionPort = {
+    listen: vi.fn(async (callback) => {
+      listener = callback;
+      return stopListening;
+    }),
+    attach: vi.fn(async () => {
+      listener?.({ kind: "state", environmentId, generation: 1, phase: "ready" });
+      return true;
+    }),
+    detach: vi.fn(async () => {}),
+    cancel: vi.fn(async () => {}),
+    bulk: vi.fn(async () => null),
+    request: vi.fn(async (method, params) => ({
+      generation: 1,
+      result:
+        method === "subscriptions.open"
+          ? {
+              subscriptionId: (params as { subscriptionId: string }).subscriptionId,
+              streamId: `stream-${(params as { subscriptionId: string }).subscriptionId}`,
+            }
+          : { accepted: true },
+    })),
+  };
+  vi.mocked(createTauriHostConnection).mockReturnValue(port);
+  const calls = (method: string) =>
+    vi.mocked(port.request).mock.calls.filter(([name]) => name === method);
+  const emit = (
+    kind: "session" | "project",
+    id: string,
+    data: unknown,
+    sequence = 1,
+    eventKind: "snapshot" | "delta" = "snapshot",
+  ) => {
+    const open = calls("subscriptions.open").findLast(([, params]) => {
+      const target = (
+        params as { target: { kind: string; sessionId?: string; projectId?: string } }
+      ).target;
+      return target.kind === kind && (target.sessionId ?? target.projectId) === id;
+    });
+    const subscriptionId = (open?.[1] as { subscriptionId: string })?.subscriptionId ?? "missing";
+    const delta =
+      eventKind === "delta" ? (data as { base: number; value: { revision: number } }) : undefined;
+    listener?.({
+      kind: "subscription",
+      environmentId,
+      generation: 1,
+      event: {
+        jsonrpc: "2.0",
+        method: "subscription.event",
+        params: {
+          subscriptionId,
+          streamId: `stream-${subscriptionId}`,
+          cursor: { epoch: "epoch", sequence },
+          kind: eventKind,
+          ...(delta ? { baseRevision: delta.base, revision: delta.value.revision } : {}),
+          data,
+        },
+      },
+    } as ManagedHostEvent);
+  };
+  return { port, emit, calls, stopListening };
+}
+
+it("shares a capability-gated project stream and ACKs only after every listener commits", async () => {
+  const { port, emit, calls, stopListening } = nativeFixture("ws-project");
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const first = vi.fn();
+  const second = vi.fn(() => held);
+  const stopFirst = subscribeRemoteMachineChannel(
+    "ws-project",
+    { projects: [{ projectId: "p" }] },
+    first,
+  );
+  const stopSecond = subscribeRemoteMachineChannel(
+    "ws-project",
+    { projects: [{ projectId: "p" }] },
+    second,
+  );
+  await flushNative();
+  expect(calls("subscriptions.open")).toHaveLength(1);
+  expect(remoteRequest).not.toHaveBeenCalled();
+  emit("project", "p", { etag: "etag", sessions: [] });
+  await flushNative();
+  expect(first).toHaveBeenCalledWith(
+    expect.objectContaining({ projects: [{ projectId: "p", etag: "etag", sessions: [] }] }),
+  );
+  expect(second).toHaveBeenCalledOnce();
+  expect(calls("subscriptions.ack")).toHaveLength(0);
+  release();
+  await flushNative();
+  expect(calls("subscriptions.ack")).toHaveLength(1);
+  stopFirst();
+  await flushNative();
+  expect(port.detach).not.toHaveBeenCalled();
+  stopSecond();
+  await flushNative();
+  expect(port.detach).toHaveBeenCalledOnce();
+  expect(stopListening).toHaveBeenCalledOnce();
+  expect(remoteRequest).not.toHaveBeenCalled();
+  emit("project", "p", { etag: "late", sessions: [] }, 2);
+  await flushNative();
+  expect(first).toHaveBeenCalledOnce();
+});
+
+it("adapts a full session snapshot to a replacement delta while preserving hidden revision hints", async () => {
+  const { emit, calls } = nativeFixture("ws-session");
+  const visible = vi.fn(() => ({ appliedRevision: 5 }));
+  const hidden = vi.fn();
+  const stopVisible = subscribeRemoteMachineChannel(
+    "ws-session",
+    { inlineSync: true, sessions: [{ sessionId: "s", revision: 4 }] },
+    visible,
+  );
+  const stopHidden = subscribeRemoteMachineChannel(
+    "ws-session",
+    { inlineSync: false, sessions: [{ sessionId: "s", revision: 3 }] },
+    hidden,
+  );
+  await flushNative();
+  emit("session", "s", {
+    projectId: "p",
+    revision: 5,
+    status: "running",
+    updatedAt: 100,
+    session: {
+      id: "s",
+      cwd: "/fixture",
+      title: "Session",
+      harness: "codex",
+      model: "codex:test",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      blocks: [{ id: "b", role: "assistant", text: "new" }],
+    },
+  });
+  await flushNative();
+  expect(visible.mock.calls[0]?.[0]).toMatchObject({
+    sessions: [
+      {
+        sessionId: "s",
+        revision: 5,
+        sync: expect.objectContaining({
+          kind: "delta",
+          base: 4,
+          blockIds: ["b"],
+          blocks: [{ id: "b", role: "assistant", text: "new" }],
+        }),
+      },
+    ],
+  });
+  expect(hidden.mock.calls[0]?.[0]).toMatchObject({ sessions: [{ sessionId: "s", revision: 5 }] });
+  expect(calls("subscriptions.ack")).toHaveLength(1);
+  stopVisible();
+  stopHidden();
+});
+
+it("keeps partial-history session hints and bounded tasks/git demand on HTTP compatibility", async () => {
+  vi.useFakeTimers();
+  const { calls } = nativeFixture("ws-mixed");
+  vi.mocked(remoteRequest).mockImplementation(() => new Promise(() => {}));
+  const stop = subscribeRemoteMachineChannel(
+    "ws-mixed",
+    {
+      projects: [{ projectId: "p" }],
+      sessions: [{ sessionId: "partial", revision: 7 }],
+      inlineSync: false,
+      tasksKnown: "tasks",
+      git: Array.from({ length: 40 }, (_, index) => ({ cwd: `/fixture-${index}` })),
+    },
+    vi.fn(),
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  await flushNative();
+  expect(calls("subscriptions.open")).toHaveLength(1);
+  expect(vi.mocked(remoteRequest).mock.calls[0]?.[2]).toMatchObject({
+    projects: [],
+    sessions: [{ sessionId: "partial", revision: 7 }],
+    tasksKnown: "tasks",
+  });
+  const compatibility = vi.mocked(remoteRequest).mock.calls[0]?.[2];
+  if (!compatibility || typeof compatibility !== "object" || !("git" in compatibility))
+    throw new Error("Missing compatibility Git demand");
+  expect(compatibility.git).toHaveLength(32);
+  stop();
+});
+
+it("bounds logical resnapshot recovery before HTTP fallback without a physical retry loop", async () => {
+  vi.useFakeTimers();
+  const { emit, calls } = nativeFixture("ws-failure");
+  vi.mocked(remoteRequest).mockImplementation(() => new Promise(() => {}));
+  const errors = vi.fn();
+  const stop = subscribeRemoteMachineChannel(
+    "ws-failure",
+    { projects: [{ projectId: "p" }] },
+    () => {
+      throw new Error("Application rejected");
+    },
+    errors,
+  );
+  await flushNative();
+  emit("project", "p", { etag: "e", sessions: [] });
+  await flushNative();
+  expect(errors).not.toHaveBeenCalled();
+  emit("project", "p", { etag: "e", sessions: [] }, 2);
+  await flushNative();
+  emit("project", "p", { etag: "e", sessions: [] }, 3);
+  await flushNative();
+  expect(calls("subscriptions.open")).toHaveLength(3);
+  expect(calls("subscriptions.ack")).toHaveLength(0);
+  expect(errors).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "ws-failure",
+    "machine.changes",
+    expect.objectContaining({ projects: [{ projectId: "p" }] }),
+  );
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(createTauriHostConnection).toHaveBeenCalledOnce();
+  stop();
+});
+
+it("shares route acquisition with unary callers and releases only the final native owner", async () => {
+  const { port } = nativeFixture("ws-unary");
+  const first = acquireRemoteHostRuntime("ws-unary")!;
+  const second = acquireRemoteHostRuntime("ws-unary")!;
+  expect(first.runtime).toBe(second.runtime);
+  await first.runtime.start();
+  first.release();
+  await flushNative();
+  expect(port.detach).not.toHaveBeenCalled();
+  second.release();
+  second.release();
+  await flushNative();
+  expect(port.detach).toHaveBeenCalledOnce();
+});
+
+function streamView(revision: number) {
+  return {
+    projectId: "p",
+    revision,
+    status: "running",
+    updatedAt: 100,
+    session: {
+      id: "s",
+      cwd: "/fixture",
+      title: "Session",
+      harness: "codex",
+      model: "codex:test",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      blocks: [{ id: "a", role: "assistant", text: `revision-${revision}` }],
+    },
+  };
+}
+function streamDelta(base: number, revision: number) {
+  const {
+    session: { blocks, ...session },
+    ...metadata
+  } = streamView(revision);
+  return {
+    kind: "delta",
+    base,
+    value: { ...metadata, session },
+    blockIds: blocks.map((block) => block.id),
+    blocks,
+  };
+}
+
+it("uses committed revision receipts for ordered canonical deltas while rendered demand catches up", async () => {
+  const { emit, calls } = nativeFixture("ws-deltas");
+  let observedRevision = 4;
+  const listener = vi.fn((changes: import("./protocol").MachineChanges) => ({
+    appliedRevision: changes.sessions[0].revision,
+  }));
+  const stop = subscribeRemoteMachineChannel(
+    "ws-deltas",
+    () => ({ inlineSync: true, sessions: [{ sessionId: "s", revision: observedRevision }] }),
+    listener,
+  );
+  await flushNative();
+  emit("session", "s", streamView(5));
+  await flushNative();
+  emit("session", "s", streamDelta(5, 6), 2, "delta");
+  await flushNative();
+  emit("session", "s", streamDelta(6, 7), 3, "delta");
+  await flushNative();
+  expect(listener).toHaveBeenCalledTimes(3);
+  expect(listener.mock.calls[2]?.[0].sessions[0].sync).toEqual(streamDelta(6, 7));
+  expect(calls("subscriptions.ack")).toHaveLength(3);
+  // An independent read advanced beyond the stream's committed baseline.
+  observedRevision = 9;
+  emit("session", "s", streamDelta(7, 8), 4, "delta");
+  await flushNative();
+  expect(listener).toHaveBeenCalledTimes(3);
+  expect(calls("subscriptions.ack")).toHaveLength(3);
+  expect(calls("subscriptions.open")).toHaveLength(2);
+  emit("session", "s", streamView(10), 5);
+  await flushNative();
+  expect(listener.mock.calls[3]?.[0].sessions[0].sync).toMatchObject({
+    kind: "delta",
+    base: 9,
+    value: { revision: 10 },
+  });
+  expect(calls("subscriptions.ack")).toHaveLength(4);
+  stop();
+});
+
+it("does not ACK a void transcript callback that only queued hydration", async () => {
+  const { emit, calls } = nativeFixture("ws-uncommitted");
+  const stop = subscribeRemoteMachineChannel(
+    "ws-uncommitted",
+    { inlineSync: true, sessions: [{ sessionId: "s", revision: 4 }] },
+    vi.fn(),
+  );
+  await flushNative();
+  emit("session", "s", streamView(5));
+  await flushNative();
+  expect(calls("subscriptions.ack")).toHaveLength(0);
+  expect(calls("subscriptions.open")).toHaveLength(2);
+  stop();
+});
+
+it("awaits a guarded hydration receipt before committing its stream cursor", async () => {
+  const { emit, calls } = nativeFixture("ws-hydration");
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const stop = subscribeRemoteMachineChannel(
+    "ws-hydration",
+    { inlineSync: true, sessions: [{ sessionId: "s", revision: 4 }] },
+    async (_changes, application) => {
+      await held;
+      return application?.isCurrent() ? { appliedRevision: 5 } : undefined;
+    },
+  );
+  await flushNative();
+  emit("session", "s", streamView(5));
+  await flushNative();
+  expect(calls("subscriptions.ack")).toHaveLength(0);
+  release();
+  await flushNative();
+  expect(calls("subscriptions.ack")).toHaveLength(1);
   stop();
 });

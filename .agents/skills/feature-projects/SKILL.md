@@ -122,6 +122,21 @@ Project identity is separate from execution cwd. Keep grouping/order, recent/arc
 
 ## Owner decisions
 
+## Privacy Settings dependency, 2026-10-27
+
+Read `.agents/skills/feature-privacy-security/SKILL.md` and
+`temp/local/2026-10-27-settings-privacy-audit/` before changing group protection/
+hidden recovery.12 audit records/16 families; protection flag differs from current
+lock state, visible count excludes saved-hidden groups, ordinary list already
+bounded. projectGroups saves return a boolean that protection writers currently
+discard; propagate actual write outcomes without bypassing password/privacy/
+group-fingerprint checks. Inventory failure must not imply a successful empty
+read. Preserve hidden-name/count authorization when password exists, no-password
+recovery, temporary/permanent visibility, membership/jobs and before-paint locked
+project redirect with retained tabs/agents. No note/project deletion or exploit
+was established.68 existing privacy/project tests pass; no group/data/permission/
+source/Host/build/install/release operation performed by this audit extension.
+
 ## Proposals
 
 No additional product changes are proposed by this inventory.
@@ -137,3 +152,33 @@ Contracts baseline: `f26ac112404e326478adb687c23ca9cc032acfef`; contracts: `docs
 Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
 card and the worktree-first documentation. This reference establishes inventory
 delivery only; product/runtime acceptance remains as described above.
+
+## Settings Archive dependency, 2026-10-27
+
+Current Archive inventory/quote/11 records/15 families:
+`.agents/skills/feature-archive/SKILL.md`; register/brief
+`temp/local/2026-10-27-settings-archive-audit/`. This does not replace the whole
+project-navigation inventory or grant project deletion authority. Preserve folder,
+dirty/busy/count/confirmation/lock gates; Restore also opens/selects. Archived
+metadata is uncapped and needs truthful read/write/sibling state; old pin/order
+restoration is not guaranteed. Delete cleans desktop saved-session/app data, not
+Host filesystem.93 related tests pass; repair/installed/native/mobile acceptance
+pending, no actual archive/delete performed.
+
+## Appearance/project background dependency, 2026-10-27
+
+`temp/local/2026-10-27-settings-appearance-audit/`, records APP-09/10/11, reviews
+global/project image precedence and native replacement. Global blur affects
+project images but its Appearance control is gated on a global image; project
+preview omits effective blur. Preserve project override/default, cancellation,
+native asset validation and separate global/project removal. Repair preview/
+scope/decode/partial replacement through current project/native owners; no
+real image/project/preferences were operated.153 Appearance-focused tests pass,
+not proposed repairs or project/native acceptance. See feature-appearance for
+exact source anchors and boundary.
+
+## Host/WS source integration (2026-10-27)
+
+Project directory/browse/createDirectory/open now share the existing projects service and neutral projects.ts DTOs across HTTP/WS. Creation rechecks grant immediately before mkdir; open retains DB transaction authorization. Existing directory/root navigation is preserved; no UI or native picker redesign is implied.
+
+Source only, uncommitted; no build/install/release stamp. Current full checklist and overlapping evidence: feature-host-runtime/SKILL.md and the local IMPLEMENTATION ledger.

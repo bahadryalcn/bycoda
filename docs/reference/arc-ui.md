@@ -1,6 +1,7 @@
 # Arc UI integration
 
-The shared design policy is [bycoda UI design system](ui-design-system.md).
+Start with [bycoda design language](DESIGN.md) for the product direction.
+The detailed desktop policy is [bycoda UI design system](ui-design-system.md).
 Use [component selection](ui-component-catalog.md) to choose free Arc capabilities.
 This document describes current source contracts. A catalog decision is not a claim
 that an official registry item is installed, every consumer has migrated, or an

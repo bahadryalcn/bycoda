@@ -56,6 +56,7 @@ function queueWithinByteLimit(messages: readonly RemoteQueueDraft[]): boolean {
 }
 
 export type RemoteQueueDraft = {
+  authorityGeneration?: QueuedMessage["authorityGeneration"];
   modelTarget?: QueuedMessage["modelTarget"];
   id: string;
   text: string;

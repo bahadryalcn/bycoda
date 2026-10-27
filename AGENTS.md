@@ -98,11 +98,18 @@ Update dependent paths when moving maintained files and run
 
 # Shared UI and component reuse
 
-Read `docs/reference/arc-ui.md` and inspect relevant shared controls before UI
-work. Consult relevant ownership/control sections in
+Read `docs/reference/DESIGN.md` for the product design language, then
+`docs/reference/arc-ui.md` and relevant shared controls before UI work.
+Consult relevant ownership/control sections in
 `docs/reference/ui-design-system.md` and `docs/reference/ui-component-catalog.md`.
 Use Arc through bycoda's adapters and theme; distinguish target APIs from current
 adapters. Keep the interface compact, minimal and modern.
+Keep toolbars and lists compact, with more breathing room for reading and forms.
+Separate sections primarily with spacing and subtle surface tones; retain clear
+input, selection, focus and drag boundaries. Preserve the user's density settings.
+Make pane, task and action ownership readable before reducing containment.
+Keep independent panes and editable regions distinct at rest; subordinate metadata
+and debugging detail to useful task titles, content, consequences and recovery.
 
 - Choose controls for the task and Arc use-case guidance, reconsidering complete
   groups. Preserve capabilities, not tag/button counts. Compare segmented/radio

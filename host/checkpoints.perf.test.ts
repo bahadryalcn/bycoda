@@ -30,7 +30,11 @@ async function fixture() {
   await writeFile(join(cwd, "a.txt"), "base\n");
   await git("add", "--", "a.txt");
   await git("commit", "-qm", "base");
-  return { cwd, git, checkpoints: new HostCheckpoints(join(dir, "checkpoints")) };
+  return {
+    cwd,
+    git,
+    checkpoints: new HostCheckpoints(join(dir, "checkpoints"), undefined, async () => {}),
+  };
 }
 
 describe("host checkpoint refs (perf)", () => {

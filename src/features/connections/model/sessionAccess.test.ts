@@ -33,3 +33,16 @@ it("propagates owner failures without trying another adapter", async () => {
   await expect(remoteHostSessionAccess(request).sync("s")).rejects.toThrow("owner offline");
   expect(request).toHaveBeenCalledOnce();
 });
+
+it("passes caller-bound update/delete provenance and leaves legacy deletion unbound", async () => {
+  const request = vi.fn().mockResolvedValue(undefined);
+  const access = remoteHostSessionAccess(request);
+  await access.update("s", { title: "New title", authorityGeneration: 2 });
+  await access.delete("s", "p", 2);
+  await access.delete("legacy", "p");
+  expect(request.mock.calls).toEqual([
+    ["sessions.update", { sessionId: "s", title: "New title", authorityGeneration: 2 }],
+    ["sessions.delete", { sessionId: "s", projectId: "p", authorityGeneration: 2 }],
+    ["sessions.delete", { sessionId: "legacy", projectId: "p" }],
+  ]);
+});

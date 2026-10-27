@@ -117,9 +117,10 @@ export function createManagedNativeRewind(
     );
   };
   const adapter: ConversationRewindAdapter = {
-    async read(sessionId) {
+    async read(sessionId, authorityGeneration) {
+      await options.assertAuthority(sessionId, authorityGeneration);
       const value = await binding(sessionId);
-      if (!value) return options.conversation.read(sessionId);
+      if (!value) return options.conversation.read(sessionId, authorityGeneration);
       let conversation = value.conversation;
       for (const entry of await options.registry.listOperations(value.workspaceId)) {
         if (entry.kind !== "rewind" || entry.plan.sessionId !== sessionId) continue;
@@ -131,18 +132,33 @@ export function createManagedNativeRewind(
         )
           conversation = saved.conversation;
       }
+      await options.assertAuthority(sessionId, authorityGeneration);
       return conversation;
     },
-    async settle(sessionId) {
-      if (!(await binding(sessionId))) await options.conversation.settle(sessionId);
+    async settle(sessionId, authorityGeneration) {
+      await options.assertAuthority(sessionId, authorityGeneration);
+      if (!(await binding(sessionId)))
+        await options.conversation.settle(sessionId, authorityGeneration);
+      await options.assertAuthority(sessionId, authorityGeneration);
       // Shared activity.reserve checks native process and buffer reports.
     },
-    withSessionGate: (sessionId, work) => options.conversation.withSessionGate(sessionId, work),
-    async rescue(operationId, sessionId, revision) {
+    withSessionGate: (sessionId, work, authorityGeneration) =>
+      options.conversation.withSessionGate(
+        sessionId,
+        async () => {
+          await options.assertAuthority(sessionId, authorityGeneration);
+          return work();
+        },
+        authorityGeneration,
+      ),
+    async rescue(operationId, sessionId, revision, authorityGeneration) {
+      await options.assertAuthority(sessionId, authorityGeneration);
       const value = await binding(sessionId);
-      if (!value) return options.conversation.rescue(operationId, sessionId, revision);
+      if (!value)
+        return options.conversation.rescue(operationId, sessionId, revision, authorityGeneration);
       if (value.conversation.revision !== revision) throw new Error("Native conversation changed");
       const native = await state(operationId);
+      await options.assertAuthority(sessionId, authorityGeneration);
       if (!native.transcriptRescueId)
         throw new AwaitNativeReceipt("Awaiting native transcript rescue");
       return native.transcriptRescueId;
@@ -159,10 +175,12 @@ export function createManagedNativeRewind(
         return options.conversation.receipt(operationId);
       return (await state(operationId)).receipt ?? null;
     },
-    async complete(operationId) {
+    async complete(operationId, authorityGeneration) {
       const entry = await options.registry.getOperation(operationId);
+      if (entry?.kind === "rewind")
+        await options.assertAuthority(entry.plan.sessionId, authorityGeneration);
       if (entry?.kind !== "rewind" || !(await binding(entry.plan.sessionId)))
-        await options.conversation.complete?.(operationId);
+        await options.conversation.complete?.(operationId, authorityGeneration);
     },
   };
   const service = new GitSessionRewindService({ ...options, conversation: adapter });

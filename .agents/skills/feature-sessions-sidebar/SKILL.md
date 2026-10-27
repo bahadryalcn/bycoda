@@ -161,7 +161,53 @@ Keep archive distinct from permanent deletion, confirmation and local pending/er
 
 ## Owner decisions
 
+- 2026-10-27, interactive T3 session `064a143a-3f73-4dc2-bad5-2ad397af3d41`:
+  "bycodada update ve bu aynı anda çıksın istiyorum sol altta update ettikten sonra kapatmadıysa kalsın."
+
+## Update and repository footer refinement (2026-10-27)
+
+- `src/app/shell/Sidebar.tsx` and `ProjectRail.tsx` compose the repository link,
+  dismiss action and available-update icon through `SidebarUpdateFooter`.
+  Narrow project rails retain their update entry point.
+- `src/shared/ui/ButtonGroup.tsx` supplies the joined action surface; child
+  presentation remains in `Button.module.css`. Hover and press affect one
+  surface; click targets, keyboard focus, tooltips and async state stay separate.
+  `GithubStarPrompt` and `UpdateRailCard` consume this shared composition.
+- Repository dismissal is scoped to the bundled app version. The next version
+  reveals it again; closing it leaves an available-update icon usable.
+- `src/app/model/updateNotice.ts` retains the installed-update marker across
+  startup reads. `useUpdateNotices` removes only the displayed version on explicit
+  dismissal; reading release notes keeps the notice, and stale windows cannot
+  erase newer installed-update markers.
+- Focused model/shell/hook checks and `tests/browser/update-footer.spec.ts`
+  exercise the lifecycle and shared controls. Captures belong under
+  `temp/verification/2026-10-27-update-footer/` and are browser fixture evidence,
+  with native updater and repository-opening operations mocked.
+- Delivery is uncommitted in the owner's current `main` checkout at baseline
+  `0a42b1ab4fd891ccec5ca0fa238d7356b396b13c`. No package, installation or release
+  acceptance is asserted by this refinement.
+
 ## Proposals
+
+### 2026-10-27 shell count badge refinement
+
+Delivered narrow presentation sub-scope in the current checkout at
+`main @ 0a42b1ab4`: Sessions working count uses the shared small, subtle accent
+count badge. Shared count geometry is compact independently of label badges;
+accent consumes the existing user/theme tone roles. Local/Host count aggregation,
+accessible labels and live announcements remain owned by the existing Sidebar.
+Expanded and compact recovery use the same count presentation. Source owners:
+`src/app/shell/Sidebar.tsx`, `SessionRecoveryControl.tsx` and
+`src/shared/ui/arc/badge/badge.{tsx,module.css}`.
+
+Owner request, 2026-10-27, conversation `603ec448-f6c3-44dc-8e51-46c32b7e4ab1`:
+"bu büyüklükte badgeler var accent color a filan hiç ymuyorlar kendi renkleri filan var sanırım bunların düzeltilmesi gerkeiyot".
+Focused unit/type and browser evidence is recorded under
+`temp/verification/2026-10-27-badges/`. Browser fixtures do not establish installed
+app acceptance. Build status reports source inclusion unknown. Conversation tools
+expose no live feature-claims action; available sessions and Git worktrees were
+inspected, without claiming a cross-machine feature reservation. Delivery remains
+uncommitted; no build/install/release is included in this sub-scope.
 
 No additional product changes are proposed by this inventory.
 
@@ -176,3 +222,14 @@ Contracts baseline: `f26ac112404e326478adb687c23ca9cc032acfef`; contracts: `docs
 Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
 card and the worktree-first documentation. This reference establishes inventory
 delivery only; product/runtime acceptance remains as described above.
+
+## Settings Archive dependency, 2026-10-27
+
+Current scoped inventory/quote/11 records/15 families:
+`.agents/skills/feature-archive/SKILL.md`; register/brief:
+`temp/local/2026-10-27-settings-archive-audit/`. True showArchived selects archive-
+only, not active-plus-archived. Preserve provider/time/status filters, current-
+project history/read state and open/unarchive/delete distinctions. False result
+cannot mean Deleted. Pending/dedupe/drafts/dirty/stop/provider-release/cleanup/
+owner/privacy gates remain.93 related tests pass; no new source/record mutation
+or changed product/native/installed/mobile acceptance delivered.

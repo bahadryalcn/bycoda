@@ -6,7 +6,7 @@ import type {
   TurnMetrics,
 } from "../../../../features/sessions/model/session";
 import type { TurnUsage } from "../../../../features/sessions/model/sessionUsage";
-import { attachmentPathText, promptText } from "../../../../features/sessions/model/attachments";
+import { attachmentPathText, promptText } from "../../../../features/sessions/model/attachmentPrompt";
 import { parseResetTimestamp } from "../../../../features/providers/model/rateLimits";
 import {
   isTaskListToolName,

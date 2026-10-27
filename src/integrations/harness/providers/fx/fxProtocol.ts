@@ -2,7 +2,7 @@ import { acpUsageEvents } from "../../core/acpUsage";
 import { trimAndCapText as cap } from "../../../../shared/lib/cappedText";
 import { asRecord, numberField, pickOption, stringField } from "../../../../shared/lib/records";
 import { humanField, textFromContent } from "../../../../shared/lib/contentText";
-import type { PromptContentBlock } from "../../../../features/sessions/model/attachments";
+import type { PromptContentBlock } from "../../../../features/sessions/model/attachmentPrompt";
 import type {
   AgentModel,
   ModelSetting,

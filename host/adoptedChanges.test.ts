@@ -47,6 +47,12 @@ describe("AdoptedChanges", () => {
     expect(await changes.changesSince(first.seq + 99)).toMatchObject({ ids: [], reset: true });
   });
 
+  it("reports an authority change even when transcript revision and timestamps are unchanged", async () => {
+    const { changes, move } = setup([row("a")]);
+    const first = await changes.changesSince(undefined);
+    move([{ ...row("a"), authorityGeneration: 2 }]);
+    expect((await changes.changesSince(first.seq)).ids).toEqual(["a"]);
+  });
   it("reports a status flip, a newly adopted session and one that left", async () => {
     const { changes, move } = setup([row("a"), row("b")]);
     const first = await changes.changesSince(undefined);

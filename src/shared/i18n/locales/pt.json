@@ -7164,5 +7164,12 @@
   "Reverted files: {p0}": "Ficheiros revertidos: {p0}",
   "Skipped files: {p0}": "Ficheiros ignorados: {p0}",
   "No session files were reverted.": "Nenhum ficheiro da sessão foi revertido.",
-  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Os ficheiros foram revertidos, mas não foi possível recuar o chat. Tente novamente para terminar de editar esta mensagem."
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Os ficheiros foram revertidos, mas não foi possível recuar o chat. Tente novamente para terminar de editar esta mensagem.",
+  "Compact voice companion": "Minimizar o assistente de voz",
+  "Expand voice companion": "Expandir o assistente de voz",
+  "Assistant speaking": "O assistente está falando",
+  "Visual style": "Estilo visual",
+  "bycoda mark": "Símbolo bycoda",
+  "Wave": "Onda",
+  "Dots": "Pontos"
 }

@@ -1,6 +1,8 @@
 # bycoda UI design system
 
-This is the shared design policy for the desktop workbench. Arc supplies component
+Read [bycoda design language](DESIGN.md) first for the product's visual and
+interaction principles. This document is the detailed implementation policy for
+the desktop workbench. Arc supplies component
 source and interaction guidance; bycoda owns the application API, compact density,
 theme, accessibility, native-window integration and state contracts. Use the free
 Arc catalog. Pro source and subscriptions are outside this adoption scope.
@@ -12,18 +14,34 @@ specification, not a claim that the props or components already exist.
 
 ## Design direction
 
-The owner's direction is Apple-inspired clarity, simplicity and craft: familiar
-controls, readable type, quiet neutral surfaces and precise alignment. Keep every
-capability discoverable. Simplification removes repetition and competing emphasis,
-not functionality, necessary labels, drafts or recovery actions. Preserve bycoda's
-cross-platform behavior and existing theme preferences; decorative glass, blur and
-motion are not substitutes for a clear task hierarchy.
+Apply the compact, quiet product language in [DESIGN.md](DESIGN.md): content and
+the next action lead; alignment, spacing, type and contrast establish hierarchy.
+Preserve every capability, necessary label, draft and recovery action. Do not add
+oversized headers, eyebrow labels or competing toolbars to a workbench surface.
 
-The workbench is compact, neutral and quiet. Hierarchy comes from alignment,
-spacing, type and contrast. Color identifies an action's meaning or an actual state.
-Each surface has one purpose, a clear heading and at most one primary action per
-active task context. Avoid repeated explanations, decorative cards, oversized
-headers, eyebrow labels and competing toolbars.
+Keep toolbars and lists compact while reading and form areas have more breathing
+room. Use spacing and subtle surface-tone differences before adding boxes or
+borders; retain clear input, selection, focus and drag boundaries. This is a
+composition rule, not a change to stored density defaults or permission for local
+control-size overrides.
+
+Fewer boxes must produce clearer task ownership. Keep independent panes, resize
+edges, overlays and editable regions distinguishable at rest through existing
+semantic separator/surface roles. Give content, actions and application-wide
+status distinct groups. Human task titles lead; model, branch, hashes and other
+metadata remain subordinate. Keep safety consequences and recovery visible.
+Expanded, selected and drop-target states must not share the same meaning.
+
+Completed ordinary tool/command steps default to a compact summary with details
+on demand; active work, failures and pending approvals remain visible. Use one
+simple activity-state signal and keep the existing animated figure optional.
+These composition rules do not authorize losing exact output or lifecycle state.
+
+Do not wrap a lone ordinary value in an always-rendered disclosure. Keep short
+dates/current values inline and show optional diagnostic detail only when it has
+meaningful additional content. Preserve necessary error, approval, uncertainty
+and recovery information outside optional help. Source tests that enshrine the
+old visual hiding rule must change with a deliberate presentation migration.
 
 Keep the existing system font preference, cool neutral surfaces and desktop scale.
 Arc's marketing font, 18px control radius, large page gutters and global foundation
@@ -418,6 +436,14 @@ rows/tabs can use the shared stable rendering mode. No decorative entrances,
 blur/glow or layout movement just to demonstrate a library component.
 
 ## Contextual groups and morph interactions
+
+`src/shared/ui/ButtonGroup.tsx` joins related neutral Buttons into one surface
+with shared hover and press feedback. Each child remains an independent Button
+with its own accessible name, keyboard focus, tooltip and async state. Use it for
+a compact action strip such as repository/open, dismiss and update; use an
+ordinary action row when separate button surfaces are appropriate. It adds no
+selection, menu, overlay or roving-focus behavior. Group geometry lives in
+`ButtonGroup.module.css`; child presentation remains owned by `Button.module.css`.
 
 Expanding/floating groups and morph controls are valid workbench choices when they
 clarify actions or state. Evaluate them deliberately alongside ordinary controls;

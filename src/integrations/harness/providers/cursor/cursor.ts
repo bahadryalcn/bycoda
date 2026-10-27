@@ -22,7 +22,7 @@ import { JsonRpcResponseError } from "../../core/jsonRpc";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
-import { promptBlocks } from "../../../../features/sessions/model/attachments";
+import { promptBlocks } from "../../../../features/sessions/model/attachmentPrompt";
 import {
   isTaskListToolName,
   taskListFromToolInput,

@@ -379,6 +379,12 @@ export function unwatchSse(sessionId: string) {
   ownedSse.delete(sessionId);
 }
 
+export type NativeAuthorityScope = { environmentId: string; generation: number };
+const nativeAuthorityArgs = (scope?: NativeAuthorityScope) =>
+  scope
+    ? { authorityEnvironmentId: scope.environmentId, authorityGeneration: scope.generation }
+    : {};
+
 export async function spawnChild(
   sessionId: string,
   command: string,
@@ -387,6 +393,7 @@ export async function spawnChild(
   account?: { provider: "claude" | "codex"; id: string },
   binaryProvider?: ConfigurableBinaryProvider,
   genericAcpId?: string,
+  authority?: NativeAuthorityScope,
 ): Promise<void> {
   livePid.delete(sessionId);
   pendingExit.delete(sessionId);
@@ -415,6 +422,7 @@ export async function spawnChild(
     binaryProvider,
     binaryPath,
     genericAcpId,
+    ...nativeAuthorityArgs(authority),
   });
   if (typeof pid !== "number" || pid <= 0) return;
   livePid.set(sessionId, pid);
@@ -428,8 +436,12 @@ export async function spawnChild(
   else handler?.(exited.code);
 }
 
-export function writeChild(sessionId: string, line: string): Promise<void> {
-  return invoke("harness_write", { sessionId, line });
+export function writeChild(
+  sessionId: string,
+  line: string,
+  authority?: NativeAuthorityScope,
+): Promise<void> {
+  return invoke("harness_write", { sessionId, line, ...nativeAuthorityArgs(authority) });
 }
 
 export function killChild(sessionId: string): Promise<void> {
@@ -550,6 +562,10 @@ export function harnessHttp(input: {
   headers?: Record<string, string>;
   body?: string;
   timeoutMs?: number;
+  /** Native authority provenance; URLs never select a different app session. */
+  sessionId?: string;
+  authorityEnvironmentId?: string;
+  authorityGeneration?: number;
 }): Promise<{ status: number; body: string }> {
   return invoke("harness_http", input);
 }
@@ -558,9 +574,10 @@ export function openHarnessSse(
   sessionId: string,
   url: string,
   headers?: Record<string, string>,
+  authority?: NativeAuthorityScope,
 ): Promise<void> {
   ownedSse.add(sessionId);
-  return invoke("harness_sse_open", { sessionId, url, headers });
+  return invoke("harness_sse_open", { sessionId, url, headers, ...nativeAuthorityArgs(authority) });
 }
 
 export function closeHarnessSse(sessionId: string): Promise<void> {

@@ -135,6 +135,24 @@ The tasks and sprints configs share the tasks fixture/server. Orchestration has 
 - Exercise creation, board/list, details/session sheet, goal approval/replan, acceptance/review and delivery controls at 1280 and 800 widths in light/dark; save/open screenshots under `temp/verification/<id>/`. Cover long titles, empty/filter states, disconnected Hosts, queued dependencies, blocked preflight, budget limits, pending/cancel/error/retry, retained drafts and keyboard navigation.
 - Use isolated native/dev Host runs for orchestration and delivery; fixture screenshots cannot prove a scheduler, actual merge or physical-device behavior. Compare build identity before diagnosing screenshots.
 
+## Notification daily-summary audit dependency, 2026-10-27
+
+Current main d8bf868fae841b8b391ce148487cd7d373ea9762, audit/design only. See
+`.agents/skills/feature-notifications/SKILL.md` and
+`temp/local/2026-10-27-settings-notifications-audit/`. Gather filters locked
+projects once; stored/fresh summaries omit project access identity and render
+without a live lock check in TasksView SummaryPanel. Recheck on cached restore,
+render and relock before accepting redesign. Ordinary Tasks/Goals lists already
+use current lock state. This is a source acceptance risk, not demonstrated owner
+data exposure. Cached-summary and sent-time setters also swallow failures,
+allowing click-through/restart suppression to diverge from OS dispatch.
+Preserve lead-window/no-overlap/local-day/late-open/retry and in-memory guards;
+plan identity/storage migration and private-safe recovery through current Tasks/
+native owners.161 notification-focused tests pass, not these proposed repairs.
+No task, summary, Host, permission, private-data or app mutation in this audit.
+Mobile sources are currently present as a separate nested repository; older
+baseline omissions below are historical, not current device acceptance.
+
 ## Known concrete blockers
 
 This baseline omits mobile app sources. The managed-workspace modules are contracts at the frozen s0 baseline; actual migration and capability wiring require integration verification. No task was scheduled and no live Host was touched for this inventory.

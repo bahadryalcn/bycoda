@@ -43,6 +43,12 @@ Python 3.12+, Node.js, the packageManager-pinned pnpm version, Rust, Tauri platf
 prerequisites, and the host tools must already be installed. The coordinator does
 not install additional system tools.
 
+On Windows, if the global pnpm executable differs from the pinned version, the
+worker can select an already provisioned exact-version executable from pnpm's
+package-manager store. It validates package metadata and the executable, changes
+only the worker's PATH, then verifies the version again. It does not install or
+upgrade a global package manager; an unavailable exact version remains an error.
+
 Review `scripts/local-update/local-update.config.json` before use. The checked-in values are
 placeholder defaults, not discovered machines: `mac-builder` must resolve through
 your SSH configuration, the remote Python path must exist, and Cargo target paths
@@ -71,6 +77,23 @@ source. It cannot be combined with `-BuildOnly`.
 Use `-Components host` or `-Components app` to install only that component;
 both are selected by default. Host and app installation have independent idle gates.
 
+`-Components host` also limits the build to the Host: dependency preparation,
+Host compile checks and Host packaging. It does not query Rust, build the web app,
+or produce a desktop installer. Its immutable run directory has a `-host` suffix,
+and its manifest declares only the Host component. Host archives, checksums and
+manifest sidecars are retained in `~/.bycoda-build/packages/`. An app build still
+packages the Host because the desktop installer bundles it.
+
+`-InstallOnly` selects the last coordinator request and validates every requested
+component before scheduling anything. After a Host-only build, use
+`-Components host -InstallOnly`; requesting the app from that package is rejected.
+Building or scheduling only the Host leaves another pending app package/job intact.
+To select an older preserved package explicitly, use a single platform and
+`-InstallOnly -SnapshotRequest <runs/.../manifest.json> -Components app` (or `host`).
+The manifest selects the immutable package; no source transfer or build occurs.
+An app retry must select a manifest that contains the app. This does not resolve
+an unknown launch or an ambiguous installation state.
+
 When another session is editing the checkout, apply only completed files to a
 verified earlier snapshot with
 `-BaseSnapshot <coordinator-request.json> -SourcePaths host/device-host.ts,host/device-host.test.ts`.
@@ -82,17 +105,38 @@ repository paths. This option cannot be combined with `-SnapshotRequest`,
 
 - The persistent source directory is `~/.bycoda-build/source`. It uses real
   `node_modules`; new directories or junctions are not created for every run.
-- Existing dependencies are reused unless `package.json` changes. Missing
-  `node_modules` requires an initial install. A package change triggers
+- Existing dependencies are reused when install inputs are unchanged. A product
+  version-only change and JSON formatting do not invalidate them. Other
+  `package.json` fields, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc`,
+  `.pnpmfile.cjs`, files under `patches/`, and workspace manifests under
+  `apps/`/`packages/` are install inputs. Missing
+  `node_modules` requires an initial install. An install-input change triggers
   `pnpm install --frozen-lockfile --prefer-offline` in the managed build directory.
-  Lockfile-only changes, missing build artifacts, and `-ForceBuild` do not force
-  dependency installation.
+  Missing build artifacts and `-ForceBuild` do not force dependency installation.
+  Older cache markers refresh dependencies once because they did not track all
+  pnpm lock/workspace inputs. `package-lock.json` remains version metadata; pnpm does not use it
+  for dependency resolution.
 - `verifyDepsBeforeRun: false` prevents pnpm from automatically installing before
   `run`/`exec`; the coordinator owns installation decisions.
-- Web, host, and native inputs are tracked separately. Host-only changes reuse
-  the web build and trigger app packaging so its bundled host matches the new
-  host package; Cargo can reuse unchanged native compilation. Successful stages
-  are recorded immediately and can be reused after a later-stage failure.
+- Web, Host compilation, Host packaging, and native inputs are tracked separately.
+  Host compile inputs come from every actual entrypoint in `host/build.mjs` through
+  esbuild's in-memory dependency metadata, plus non-test Host resources retained
+  conservatively for dynamic workers, copied guards and bundled skills. Shared
+  `src/` modules are tracked through that graph, rather than every UI file. Unknown
+  dynamic build configuration fails input discovery instead of accepting an
+  incomplete cache key. Discovery does not write or execute Host bundles.
+- Host compile reuse requires equal input/dependency fingerprints and matching
+  hashes for every declared compiled output. Package-adjacent version/build
+  identity is finalized in a separate Host package stage. A provenance-only change
+  can reuse proven equivalent executable bytes while producing a new package
+  stamped for the current frozen source. It never copies an old package's identity
+  onto changed or unverified code. Cache manifests record compile-input and output
+  hashes; immutable component manifests and payloads cannot be overwritten.
+- For a desktop build, Host-only changes can reuse web assets but still trigger
+  app packaging so the embedded Host matches. Web/native source identity remains
+  part of their build keys because the desktop embeds web and native metadata;
+  this change does not relabel an old desktop executable. Cargo can reuse unchanged
+  native compilation. Successful stages are recorded immediately for later retries.
 - Web assets are built once; Tauri's duplicate `beforeBuildCommand` is skipped.
 - Host Node archives use a persistent checksum-verified cache. The host stage also
   writes the distribution archive and its checksum, because release-identity
@@ -120,6 +164,22 @@ credential. A keyed launch receipt must be verified before installation starts.
 Status projects an unfinished helper whose known PID has exited as `interrupted`,
 retaining its recorded phase. An unknown launch without a verified PID requires
 inspection and is not automatically repeated.
+
+Status also reads independent Host/app idle gates afresh, in read-only mode, with
+an observation time. A helper's old count is shown as `reportedActiveSessions`;
+it is not current activity proof. An unreadable or absent database yields an
+`unknown` idle gate. This projection never rewrites job records or repairs a DB.
+
+An interrupted helper is not automatically relaunched by another build. Inspect
+status and explicitly retry the same immutable package with `-InstallOnly` and the
+appropriate `-Components`. A known exited helper interrupted before effects
+(`starting`/`waiting`) may resume; the new helper still waits for its own fresh
+idle gate. Unknown launch/effect states and interrupted Host mutation require
+inspection. For a Windows app interrupted during installation, a retry requires
+no relevant installer/helper process, a verified full rollback tree and unchanged
+current old installation, plus any required valid DB backup. Partial or ambiguous
+replacement is left for recovery. No active session is killed and no stale
+`in_flight_sessions` row is deleted to permit a retry.
 
 `-InstallOnly` can resume the same interrupted Windows package when the preserved
 rollback installation passes its saved full-tree hashes and the current installation

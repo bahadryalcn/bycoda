@@ -6,7 +6,7 @@ import {
 } from "../questionDelivery";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { nativeModelId } from "../../../../features/sessions/model/models";
-import { t } from "../../../../shared/i18n";
+import { t } from "../../../../shared/i18n/core";
 import { PRODUCT_IDENTITY } from "../../../../shared/lib/productIdentity";
 import { sameProviderAccountId } from "../../../../features/providers/model/providerAccounts";
 import {

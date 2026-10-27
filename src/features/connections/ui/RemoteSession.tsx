@@ -12,6 +12,8 @@ import {
   markRemoteCommandStopped,
   remoteCommandWasStopped,
   remoteCommandNeedsVerification,
+  remoteIntentAuthority,
+  remoteIntentAuthorityMatches,
   useRemoteOutboxIssues,
 } from "../model/remoteOutbox";
 import type { SessionPaneProps } from "../../sessions/ui/SessionPane";
@@ -164,6 +166,7 @@ export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
 };
 
 type Configuration = {
+  authorityGeneration?: number;
   harness: RemoteProvider;
   model: string;
   settings: Record<string, string>;
@@ -171,6 +174,7 @@ type Configuration = {
 };
 
 type OptimisticTurn = {
+  authorityGeneration?: number;
   queued?: HostCommand["queued"];
   commandId: string;
   text: string;
@@ -181,7 +185,7 @@ type OptimisticTurn = {
   planBlockId?: string;
   startedAt: number;
   turnModel: NonNullable<Block["turnModel"]>;
-  acceptedRun?: { sessionId: string; runId: string };
+  acceptedRun?: { sessionId: string; runId: string; authorityGeneration?: number };
 };
 
 const noop = () => {};
@@ -542,7 +546,13 @@ function ConnectedRemoteSession({
   const [unseenSend, setUnseenSend] = useState<
     Pick<
       OptimisticTurn,
-      "commandId" | "text" | "startedAt" | "turnModel" | "attachments" | "draftBlockId"
+      | "commandId"
+      | "text"
+      | "startedAt"
+      | "turnModel"
+      | "attachments"
+      | "draftBlockId"
+      | "authorityGeneration"
     > & {
       sessionId: string;
       runId?: string;
@@ -771,8 +781,13 @@ function ConnectedRemoteSession({
     // after a failure, when the host may have been replaced.
     let described = false;
     const verifiedProjects = new Set([project.projectId]);
-    const poll = async () => {
-      if (disposed || deletedHostBinding.current === bindingKey) return;
+    const poll = async (application?: { isCurrent(): boolean }) => {
+      if (
+        disposed ||
+        deletedHostBinding.current === bindingKey ||
+        application?.isCurrent() === false
+      )
+        return;
       if (polling) {
         // A control hint can arrive while the initial tail or a delta is still
         // loading. Coalesce it into one follow-up read instead of losing it.
@@ -795,7 +810,7 @@ function ConnectedRemoteSession({
           );
           if (host.environmentId !== machine.environmentId)
             throw new Error(t("Host identity changed. Reconnect this machine before continuing."));
-          if (stale()) return;
+          if (stale() || application?.isCurrent() === false) return;
           boundedSet(cachedDescriptors, machine.id, host);
           setDescriptor(host);
           described = true;
@@ -820,8 +835,8 @@ function ConnectedRemoteSession({
                   !snapshotRef.current.history &&
                   !snapshotRef.current.historyLoading,
               }),
-              (changes) => {
-                if (stale()) return;
+              (changes, application) => {
+                if (stale() || application?.isCurrent() === false) return;
                 const recoveredControlChannel = controlChannelFailed;
                 if (controlChannelFailed) {
                   controlChannelFailed = false;
@@ -865,7 +880,12 @@ function ConnectedRemoteSession({
                   !polling &&
                   !forceTailRead.current
                 ) {
-                  if (hint.sync.value.revision <= current.revision) return;
+                  if (
+                    hint.sync.value.revision <= current.revision &&
+                    current.session.id === sessionId &&
+                    verifiedProjects.has(current.projectId)
+                  )
+                    return { appliedRevision: current.revision };
                   if (
                     !current.history &&
                     !current.historyLoading &&
@@ -893,7 +913,7 @@ function ConnectedRemoteSession({
                         phase: next.session.blocks.length ? "ready" : "empty",
                         updatedAt: Date.now(),
                       });
-                      return;
+                      return { appliedRevision: next.revision };
                     } catch {
                       /* A history/window mismatch uses the normal sync path. */
                     }
@@ -914,8 +934,21 @@ function ConnectedRemoteSession({
                         snapshotRef.current || currentData.updatedAt ? "refreshing" : "loading",
                       updatedAt: currentData.updatedAt,
                     });
-                  if (failed === 0) void poll();
-                  else if (!contentRetryTimer)
+                  if (failed === 0) {
+                    const hydration = poll(application);
+                    if (hint?.sync)
+                      return hydration.then(() => {
+                        const applied = snapshotRef.current;
+                        if (
+                          !stale() &&
+                          application?.isCurrent() !== false &&
+                          applied?.session.id === sessionId &&
+                          verifiedProjects.has(applied.projectId) &&
+                          applied.revision >= hint.revision
+                        )
+                          return { appliedRevision: applied.revision };
+                      });
+                  } else if (!contentRetryTimer)
                     contentRetryTimer = setTimeout(
                       () => {
                         contentRetryTimer = undefined;
@@ -929,6 +962,14 @@ function ConnectedRemoteSession({
                       ),
                     );
                 }
+                if (
+                  hint?.sync &&
+                  !stale() &&
+                  snapshotRef.current?.session.id === sessionId &&
+                  verifiedProjects.has(snapshotRef.current.projectId) &&
+                  snapshotRef.current.revision >= hint.revision
+                )
+                  return { appliedRevision: snapshotRef.current.revision };
               },
               (reason) => {
                 if (stale()) return;
@@ -976,9 +1017,17 @@ function ConnectedRemoteSession({
               partialHistory: cachedDescriptors
                 .get(machine.id)
                 ?.capabilities.includes("sessions.lazyHistory"),
-              isCurrent: () => !stale() && readGeneration === ownerResetGeneration,
+              isCurrent: () =>
+                !stale() &&
+                application?.isCurrent() !== false &&
+                readGeneration === ownerResetGeneration,
               onHistoryError: (reason) => {
-                if (stale() || readGeneration !== ownerResetGeneration) return;
+                if (
+                  stale() ||
+                  application?.isCurrent() === false ||
+                  readGeneration !== ownerResetGeneration
+                )
+                  return;
                 // A changed revision restarts tail loading without overwriting
                 // the transcript that has already been displayed.
                 snapshotRef.current = undefined;
@@ -990,6 +1039,7 @@ function ConnectedRemoteSession({
                 const current = snapshotRef.current;
                 if (
                   stale() ||
+                  application?.isCurrent() === false ||
                   readGeneration !== ownerResetGeneration ||
                   !canApplyRemotePreview(current, preview) ||
                   !current
@@ -1011,14 +1061,24 @@ function ConnectedRemoteSession({
           : undefined;
         // A reset invalidates replies from the previous host generation even
         // when its revision happens to match the replacement host.
-        if (stale() || readGeneration !== ownerResetGeneration) return;
+        if (
+          stale() ||
+          application?.isCurrent() === false ||
+          readGeneration !== ownerResetGeneration
+        )
+          return;
         if (next && !verifiedProjects.has(next.projectId)) {
           await verifyRemoteProjectAlias(
             (method, params) => remoteRequest(machine.id, method, params),
             { projectId: project.projectId, cwd: project.cwd },
             next.projectId,
           );
-          if (stale() || readGeneration !== ownerResetGeneration) return;
+          if (
+            stale() ||
+            application?.isCurrent() === false ||
+            readGeneration !== ownerResetGeneration
+          )
+            return;
           verifiedProjects.add(next.projectId);
         }
         const latest = snapshotRef.current;
@@ -1080,7 +1140,12 @@ function ConnectedRemoteSession({
           (next?.status === "running" ||
             !!next?.session.blocks.some((block) => block.shell?.running));
       } catch (reason) {
-        if (stale() || readGeneration !== ownerResetGeneration) return;
+        if (
+          stale() ||
+          application?.isCurrent() === false ||
+          readGeneration !== ownerResetGeneration
+        )
+          return;
         const currentData = remoteDataStateRef.current;
         publishRemoteDataState({
           phase: "error",
@@ -1251,7 +1316,11 @@ function ConnectedRemoteSession({
   };
   const configuration = saved ? (changes ?? saved) : draft;
   const updateConfiguration = (update: (current: Configuration) => Configuration) => {
-    if (saved) setChanges(update(changes ?? saved));
+    if (saved)
+      setChanges({
+        ...update(changes ?? saved),
+        authorityGeneration: remoteIntentAuthority(snapshot).authorityGeneration,
+      });
     else setDraft(update);
   };
 
@@ -1270,6 +1339,7 @@ function ConnectedRemoteSession({
     draftBlockId?: string,
     planBlockId?: string,
   ): OptimisticTurn => ({
+    ...remoteIntentAuthority(hostSession ? snapshot : undefined),
     commandId: crypto.randomUUID(),
     text,
     attachments,
@@ -1313,6 +1383,7 @@ function ConnectedRemoteSession({
           : {
               sessionId: command.sessionId,
               commandId: command.commandId,
+              ...remoteIntentAuthority(command),
               text: command.type === "send" ? command.text : "/compact",
               attachments: optimistic?.attachments ?? [],
               startedAt: optimistic?.startedAt ?? Date.now(),
@@ -1353,6 +1424,7 @@ function ConnectedRemoteSession({
             commandId: crypto.randomUUID(),
             sessionId: receipt.sessionId,
             runId: receipt.runId,
+            ...remoteIntentAuthority(receipt),
           });
         } else if (
           command.type === "send" ||
@@ -1424,7 +1496,14 @@ function ConnectedRemoteSession({
         if (command.type === "create")
           setStarting((current) =>
             current && optimistic && current.commandId === optimistic.commandId
-              ? { ...current, acceptedRun: { sessionId: receipt.sessionId, runId: receipt.runId! } }
+              ? {
+                  ...current,
+                  acceptedRun: {
+                    sessionId: receipt.sessionId,
+                    runId: receipt.runId!,
+                    ...remoteIntentAuthority(receipt),
+                  },
+                }
               : current,
           );
       }
@@ -1512,7 +1591,11 @@ function ConnectedRemoteSession({
     const version = bindingVersion.current;
     deletingSession.current = id;
     try {
-      await sessionAccessForMachine(machine.id, false, true).delete(id, project.projectId);
+      await sessionAccessForMachine(machine.id, false, true).delete(
+        id,
+        project.projectId,
+        snapshot?.session.id === id ? snapshot.authorityGeneration : undefined,
+      );
       cachedSessionSnapshots.delete(snapshotKey(machine.id, id));
       forgetRemoteQueue(id);
       if (!alive.current || version !== bindingVersion.current) return;
@@ -1563,12 +1646,26 @@ function ConnectedRemoteSession({
       setChanges(undefined);
       return;
     }
-    if (applied.current && same(changes, applied.current)) return;
+    if (
+      applied.current &&
+      same(changes, applied.current) &&
+      remoteIntentAuthorityMatches(changes, applied.current)
+    )
+      return;
     if (busy || !online || pending || applying.current) return;
+    if (!remoteIntentAuthorityMatches(changes, snapshot)) {
+      setError(
+        t(
+          "This pending request belongs to an earlier session authority. It was kept for recovery; review it before creating a new request.",
+        ),
+      );
+      return;
+    }
     applying.current = true;
     const sent = changes;
     void run({
       type: "configure",
+      ...remoteIntentAuthority(changes),
       commandId: crypto.randomUUID(),
       sessionId: hostSession.id,
       ...(descriptor?.capabilities.includes("sessions.harnessSwitch")
@@ -1623,6 +1720,7 @@ function ConnectedRemoteSession({
       turn.draft
         ? {
             type: "draft",
+            ...remoteIntentAuthority(turn),
             commandId: turn.commandId,
             sessionId: id,
             text: turn.text,
@@ -1636,6 +1734,7 @@ function ConnectedRemoteSession({
             turn.intent,
             turn.draftBlockId,
             turn.planBlockId,
+            turn.authorityGeneration,
           ),
       turn,
       undefined,
@@ -1701,6 +1800,7 @@ function ConnectedRemoteSession({
       const followup: Exclude<HostCommand, { type: "create" }> = turn.draft
         ? {
             type: "draft",
+            ...remoteIntentAuthority(turn),
             commandId: turn.commandId,
             sessionId: "",
             text: turn.text,
@@ -1714,6 +1814,7 @@ function ConnectedRemoteSession({
             turn.intent,
             turn.draftBlockId,
             turn.planBlockId,
+            turn.authorityGeneration,
           );
       const atomic = descriptor?.capabilities.includes("sessions.createFirstTurn") ?? false;
       const receipt = await run(
@@ -1787,6 +1888,7 @@ function ConnectedRemoteSession({
     intent: "default" | "plan" | "build" = "default",
     draftBlockId?: string,
     planBlockId?: string,
+    authorityGeneration?: number,
   ): Extract<HostCommand, { type: "send" | "compact" }> =>
     text.trim().toLowerCase() === "/compact" &&
     !attachments.length &&
@@ -1794,12 +1896,14 @@ function ConnectedRemoteSession({
     intent === "default"
       ? {
           type: "compact",
+          ...remoteIntentAuthority({ authorityGeneration }),
           commandId,
           sessionId: id,
           resumeAtReset: loadResumeAtReset(),
         }
       : {
           type: "send",
+          ...remoteIntentAuthority({ authorityGeneration }),
           commandId,
           sessionId: id,
           resumeAtReset: loadResumeAtReset(),
@@ -1841,6 +1945,7 @@ function ConnectedRemoteSession({
     if (turn.draft || turn.draftBlockId || turn.planBlockId || !queue.loaded) return false;
     return (
       queue.enqueue({
+        ...remoteIntentAuthority(turn),
         id: crypto.randomUUID(),
         text: turn.text,
         attachments: turn.attachments,
@@ -1976,29 +2081,38 @@ function ConnectedRemoteSession({
   };
 
   // `!commands` this window sent; the agent carries on once each one finishes.
-  const shellFollowUps = useRef(new Set<string>());
-  const dispatchShell = (id: string, command: string) => {
+  const shellFollowUps = useRef(new Map<string, { authorityGeneration?: number }>());
+  const dispatchShell = (id: string, command: string, authorityGeneration?: number) => {
     const commandId = crypto.randomUUID();
     return sessionAccessForMachine(machine.id, false, true)
       .dispatch({
         type: "shell",
+        ...remoteIntentAuthority({ authorityGeneration }),
         commandId,
         sessionId: id,
         line: command,
       })
       .then(() => {
-        shellFollowUps.current.add(commandId);
+        shellFollowUps.current.set(commandId, remoteIntentAuthority({ authorityGeneration }));
         if (alive.current) setRefresh((value) => value + 1);
       });
   };
   useEffect(() => {
-    for (const id of [...shellFollowUps.current]) {
+    for (const [id, authority] of Array.from(shellFollowUps.current)) {
       const block = hostSession?.blocks.find((entry) => entry.id === id);
       if (!block?.shell || block.shell.running) continue;
+      if (!remoteIntentAuthorityMatches(authority, snapshot)) {
+        setError(
+          t(
+            "This queued request belongs to an earlier session authority. Review it and create a new message to continue.",
+          ),
+        );
+        continue;
+      }
       shellFollowUps.current.delete(id);
       submit(SHELL_FOLLOW_UP_PROMPT);
     }
-  }, [hostSession]);
+  }, [hostSession, snapshot?.authorityGeneration]);
 
   /** Runs a `!command` on the host. It is not a turn: nothing is queued or
    * retried, and a refused one stays in the composer. */
@@ -2020,7 +2134,7 @@ function ConnectedRemoteSession({
     };
     setError("");
     if (hostSession) {
-      void dispatchShell(hostSession.id, command).catch(failed);
+      void dispatchShell(hostSession.id, command, snapshot?.authorityGeneration).catch(failed);
       return true;
     }
     // A new conversation: the command needs a session to run in.
@@ -2060,7 +2174,11 @@ function ConnectedRemoteSession({
         runtimeMode: draft.mode,
       });
     })()
-      .then((receipt) => (receipt ? dispatchShell(receipt.sessionId, command) : undefined))
+      .then((receipt) =>
+        receipt
+          ? dispatchShell(receipt.sessionId, command, receipt.authorityGeneration)
+          : undefined,
+      )
       .catch(failed)
       .finally(() => {
         preparingRef.current = false;
@@ -2087,6 +2205,22 @@ function ConnectedRemoteSession({
       return false;
     if (pageCacheOnly || remoteDeleted || snapshotRef.current?.historyLoading || queue.error)
       return false;
+    const queuedRow = queuedId
+      ? queue.current().messages.find((row) => row.id === queuedId)
+      : undefined;
+    if (queuedId && !queuedRow) return false;
+    const authority = remoteIntentAuthority(
+      queuedId ? queuedRow : hostSession ? snapshot : undefined,
+    );
+    if (queuedRow && !remoteIntentAuthorityMatches(queuedRow, snapshot)) {
+      setError(
+        t(
+          "This queued request belongs to an earlier session authority. Review it and create a new message to continue.",
+        ),
+      );
+      queue.pause();
+      return false;
+    }
     const hostDraft = options?.draftBlockId
       ? hostSession?.blocks.find((block) => block.id === options.draftBlockId)
       : undefined;
@@ -2128,6 +2262,7 @@ function ConnectedRemoteSession({
       const targetSessionId = hostSession.id;
       const runId = snapshot.runId;
       const unsent = {
+        ...authority,
         id: queuedId ?? crypto.randomUUID(),
         text,
         attachments,
@@ -2162,7 +2297,11 @@ function ConnectedRemoteSession({
         if (alive.current) {
           const intent =
             unsent.intent === "plan" || unsent.intent === "build" ? unsent.intent : "default";
-          setStarting({ ...optimisticTurn(text, attachments, intent), failed: true });
+          setStarting({
+            ...optimisticTurn(text, attachments, intent),
+            authorityGeneration: authority.authorityGeneration,
+            failed: true,
+          });
           setError(
             reason
               ? t("The follow-up could not be saved to the queue: {p0}", { p0: reason })
@@ -2201,6 +2340,7 @@ function ConnectedRemoteSession({
           }
           const receipt = await run({
             type: "steer",
+            ...authority,
             commandId,
             sessionId: targetSessionId,
             runId,
@@ -2251,6 +2391,7 @@ function ConnectedRemoteSession({
       // the composer keeps the message.
       if (queuedId || !queue.loaded || !activeSessionId) return false;
       const queued = {
+        ...authority,
         id: crypto.randomUUID(),
         text,
         attachments,
@@ -2285,6 +2426,7 @@ function ConnectedRemoteSession({
       options?.draftBlockId,
       planBlockId,
     );
+    turn.authorityGeneration = authority.authorityGeneration;
     if (queuedId) turn.queued = queue.dispatch(queuedId, options?.followUpBehavior === "steer");
     const generation = ++submissionGeneration.current;
     preparingRef.current = true;
@@ -2318,6 +2460,15 @@ function ConnectedRemoteSession({
   // reachable. A held queue loses nothing: it simply waits for both.
   useEffect(() => {
     if (!nextQueued || pageCacheOnly || remoteDeleted) return;
+    if (!remoteIntentAuthorityMatches(nextQueued, snapshot)) {
+      queue.pause();
+      setError(
+        t(
+          "This queued request belongs to an earlier session authority. Review it and create a new message to continue.",
+        ),
+      );
+      return;
+    }
     const target = nextQueued.modelTarget;
     if (
       target &&
@@ -2337,6 +2488,7 @@ function ConnectedRemoteSession({
         return;
       }
       setChanges({
+        ...remoteIntentAuthority(nextQueued),
         harness: target.harness as RemoteProvider,
         model: target.model,
         settings: { ...target.modelSettings },
@@ -2377,6 +2529,7 @@ function ConnectedRemoteSession({
     providers,
     descriptor?.capabilities,
     pageCacheOnly,
+    snapshot?.authorityGeneration,
   ]);
 
   // After a restart or a reconnect: a run this app saw working that the host
@@ -2505,6 +2658,7 @@ function ConnectedRemoteSession({
       blocks: [],
     }),
     id: shell.id,
+    adoptedAuthorityGeneration: hostSession ? snapshot?.authorityGeneration : undefined,
     cwd: remotePath(machine.environmentId, project.cwd),
     worktreeCwd:
       executionCwd === project.cwd ? undefined : remotePath(machine.environmentId, executionCwd),
@@ -2567,6 +2721,14 @@ function ConnectedRemoteSession({
         );
         return;
       }
+    }
+    if (!recovered && hostSession && !remoteIntentAuthorityMatches(pending, snapshot)) {
+      setError(
+        t(
+          "This pending request belongs to an earlier session authority. It was kept for recovery; review it before creating a new request.",
+        ),
+      );
+      return;
     }
     if (
       (recovered === null || recovered === undefined) &&
@@ -2739,11 +2901,19 @@ function ConnectedRemoteSession({
     queue.pause();
     const target =
       unseenActive && unseenSend?.runId
-        ? { sessionId: unseenSend.sessionId, runId: unseenSend.runId }
+        ? {
+            sessionId: unseenSend.sessionId,
+            runId: unseenSend.runId,
+            ...remoteIntentAuthority(unseenSend),
+          }
         : startingActive && starting?.acceptedRun
           ? starting.acceptedRun
           : snapshot?.status === "running" && hostSession && snapshot.runId
-            ? { sessionId: hostSession.id, runId: snapshot.runId }
+            ? {
+                sessionId: hostSession.id,
+                runId: snapshot.runId,
+                ...remoteIntentAuthority(snapshot),
+              }
             : undefined;
     if (!pageCacheOnly && target) {
       // What is queued waits for the user instead of sending as the turn ends.
@@ -2761,6 +2931,7 @@ function ConnectedRemoteSession({
     if (!hostSession || !snapshot?.runId) return;
     void run({
       type: "approve",
+      ...remoteIntentAuthority(snapshot),
       commandId: crypto.randomUUID(),
       sessionId: hostSession.id,
       runId: snapshot.runId,
@@ -2773,6 +2944,7 @@ function ConnectedRemoteSession({
     if (!hostSession?.usageLimit) return;
     void run({
       type: "usageLimit",
+      ...remoteIntentAuthority(snapshot),
       commandId: crypto.randomUUID(),
       sessionId: hostSession.id,
       action,
@@ -2831,6 +3003,7 @@ function ConnectedRemoteSession({
     updateDelivery("sending");
     void run({
       type: "answer",
+      ...remoteIntentAuthority(snapshot),
       commandId,
       sessionId,
       runId,
@@ -2851,7 +3024,7 @@ function ConnectedRemoteSession({
   };
   const compact = () => {
     if (!hostSession || busy || pending || changes || !online) return false;
-    void run(message(hostSession.id, "/compact"));
+    void run({ ...message(hostSession.id, "/compact"), ...remoteIntentAuthority(snapshot) });
     return true;
   };
   const undoManaged = async (
@@ -2888,18 +3061,29 @@ function ConnectedRemoteSession({
       rewindOwner.current === owner;
     try {
       const undoSession = { ...current.session, id: shell.id, cwd: project.key };
-      const plan = await planWorkspaceRewind(undoSession, workspaceId, { operationId });
+      const plan = await planWorkspaceRewind(
+        undoSession,
+        workspaceId,
+        { operationId },
+        { authorityGeneration: current.authorityGeneration },
+      );
       const key = crypto.randomUUID();
       await requestWorkspaceRewindPreview(
         plan,
         async () => {
-          if (!stillCurrent() || snapshotRef.current?.revision !== current.revision)
+          if (
+            !stillCurrent() ||
+            snapshotRef.current?.revision !== current.revision ||
+            snapshotRef.current?.authorityGeneration !== current.authorityGeneration
+          )
             throw new Error(t("The conversation changed. Close this preview and try again."));
           await deleteRemotePageCache({
             environmentId: machine.environmentId,
             sessionId: targetSessionId,
           });
-          const undone = await applyWorkspaceRewind(undoSession, plan, key);
+          const undone = await applyWorkspaceRewind(undoSession, plan, key, {
+            authorityGeneration: current.authorityGeneration,
+          });
           if (!stillCurrent() || !undone.snapshot)
             throw new Error(
               t("The complete conversation could not be loaded. Retry the rewind preview."),
@@ -2972,6 +3156,7 @@ function ConnectedRemoteSession({
       });
       const receipt = await sessionAccessForMachine(machine.id, false, true).dispatch({
         type: "rewind",
+        ...remoteIntentAuthority(known),
         commandId: crypto.randomUUID(),
         sessionId: targetSessionId,
         blockId,
@@ -3298,6 +3483,7 @@ function ConnectedRemoteSession({
       else
         void run({
           type: "removeDraft",
+          ...remoteIntentAuthority(snapshot),
           commandId: crypto.randomUUID(),
           sessionId: hostSession.id,
           draftBlockId,
@@ -3314,6 +3500,13 @@ function ConnectedRemoteSession({
     onSteerQueuedMessage: async (_, id) => {
       if (!online || !hostSession || !remoteCanSteer || sending || pending || preparingRef.current)
         throw new Error(t("This conversation is still preparing. Wait and try again."));
+      const retained = queue.current().messages.find((row) => row.id === id);
+      if (retained && !remoteIntentAuthorityMatches(retained, snapshot))
+        throw new Error(
+          t(
+            "This queued request belongs to an earlier session authority. Review it and create a new message to continue.",
+          ),
+        );
       const generation = followUpGeneration.current;
       if (!(await queue.prepareSend(true)))
         throw new Error(t("The queue could not be synchronized. Retry before sending."));
@@ -3371,6 +3564,13 @@ function ConnectedRemoteSession({
         throw new Error(t("Finish editing the queued message before resuming."));
       if (queue.current().messages[0]?.attachments.some((file) => file.missing))
         throw new Error(t("An attachment is missing. Edit the queued message before resuming."));
+      const retained = queue.current().messages[0];
+      if (retained && !remoteIntentAuthorityMatches(retained, snapshot))
+        throw new Error(
+          t(
+            "This queued request belongs to an earlier session authority. Review it and create a new message to continue.",
+          ),
+        );
       const generation = followUpGeneration.current;
       await queue.release(() => alive.current && generation === followUpGeneration.current);
       return {

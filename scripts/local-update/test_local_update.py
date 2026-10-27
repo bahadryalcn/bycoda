@@ -22,11 +22,32 @@ from local_install import wait_idle, stop_windows_host, host_install, verify_win
 from local_install import app_install, windows_app_process_filter, desktop_db, mac_app_update_paths
 from local_install import windows_app_snapshot
 from local_install import verify_desktop_backup, wait_broker_launch
-from local_update import install_job_status, git_identity, stamp_build_identity, inputs
+from local_update import install_job_status, git_identity, stamp_build_identity, inputs, verify_interrupted_resume, status, write_package_manifest, archive_host_package, main, package_run
+from local_update_lib import package_components
 from local_install import installed_identity
 from local_update_lib import spawn_windows_updater, tree_hashes, UpdaterLaunchRefused, windows_installer_idle
 
 class LocalUpdateTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows-native pnpm manager cache')
+    def test_exact_cached_pnpm_does_not_mutate_global_shim_or_accept_wrong_version(self):
+        from local_update import cached_pnpm_environment
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            base = root / 'pnpm/package-manager-store/v11/links/@pnpm/exe.win32-x64/12.15.0/hash/node_modules/@pnpm/exe.win32-x64'
+            base.mkdir(parents=True)
+            write_json(base / 'package.json', {'name': '@pnpm/exe.win32-x64', 'version': '12.15.0'})
+            (base / 'pnpm.exe').write_bytes(b'fixture exact manager')
+            env = {'LOCALAPPDATA': folder, 'PATH': 'original-manager-bin'}
+            with patch('local_update.os.name', 'nt'), patch('local_update.platform.machine', return_value='AMD64'):
+                selected = cached_pnpm_environment(env, '12.15.0')
+                self.assertTrue(selected['PATH'].startswith(str(base)))
+                self.assertEqual(env['PATH'], 'original-manager-bin')
+                write_json(base / 'package.json', {'name': '@pnpm/exe.win32-x64', 'version': '12.11.2'})
+                self.assertIsNone(cached_pnpm_environment(env, '12.15.0'))
+                self.assertIsNone(cached_pnpm_environment(env, '12.99.0'))
+                with self.assertRaises(ValueError):
+                    cached_pnpm_environment(env, '../../escape')
+
     def git_fixture(self, root):
         options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
         def git(*args):
@@ -153,7 +174,7 @@ class LocalUpdateTests(unittest.TestCase):
                 root = pathlib.Path(folder)
                 release = root / 'release'
                 release.mkdir()
-                write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY)})
+                write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
                 record = root / '.bycoda-host/update-jobs/app.json'
                 def launch(args, cwd, receipt, launch_key):
                     if outcome == 'child':
@@ -182,7 +203,7 @@ class LocalUpdateTests(unittest.TestCase):
             release = root / 'release'
             release.mkdir()
             record = root / '.bycoda-host/update-jobs/app.json'
-            write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY)})
+            write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
             def publish(path, value):
                 if path.name.endswith('.error.json'):
                     write_json(record, {'id': 'same', 'pid': 123, 'state': 'installed'})
@@ -400,7 +421,8 @@ class LocalUpdateTests(unittest.TestCase):
         original = {'state': 'installing', 'pid': 123, 'id': 'same'}
         with patch('local_update.alive', return_value=False):
             self.assertEqual(install_job_status(original), {**original, 'state': 'interrupted',
-                             'recordedState': 'installing', 'helperAlive': False})
+                             'recordedState': 'installing', 'helperAlive': False,
+                             'recovery': 'verify-recovery-before-install-only'})
             self.assertEqual(original['state'], 'installing')
             self.assertEqual(install_job_status({'state': 'launching', 'pid': None}),
                              {'state': 'launching', 'pid': None, 'helperAlive': None})
@@ -417,7 +439,7 @@ class LocalUpdateTests(unittest.TestCase):
             root = pathlib.Path(folder)
             release = root / 'release'
             release.mkdir()
-            write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY)})
+            write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
             record = root / '.bycoda-host/update-jobs/app.json'
             write_json(record, {'id': 'same', 'pid': 456, 'state': 'installing'})
             def launch(args, cwd, receipt, launch_key):
@@ -429,10 +451,12 @@ class LocalUpdateTests(unittest.TestCase):
             with patch('local_update.pathlib.Path.home', return_value=root), \
                  patch('local_update.alive', return_value=False), \
                  patch('local_update.spawn_windows_updater', side_effect=launch) as broker, \
+                 patch('local_update.verify_interrupted_resume') as recovery, \
                  patch('local_update.assert_windows_installer_idle') as installer_guard, \
                  patch('local_update.subprocess.Popen') as direct:
-                queue_install(release, ('app',))
+                queue_install(release, ('app',), resume=True)
             broker.assert_called_once()
+            recovery.assert_called_once()
             installer_guard.assert_called_once()
             direct.assert_not_called()
             self.assertEqual(read_json(record)['state'], 'starting')
@@ -505,12 +529,22 @@ class LocalUpdateTests(unittest.TestCase):
             host = workspace / 'build/host-packages/win32-x64'
             archive = host.parent / 'bycoda-host-win32-x64.zip'
             stages = []
+            commands = []
+            graph = {'schemaVersion': 1, 'inputs': ['host/cli.ts'], 'outputs': ['build/host/bycoda-host.mjs']}
+
+            def command_result(args, **kwargs):
+                commands.append(args)
+                return '12.0.0' if args[0] == 'pnpm' else 'rustc fixture'
 
             def build_stage(name, command, cwd, env, release, timings):
                 stages.append(name)
                 if request.get('buildIdentity'):
                     self.assertEqual(read_json(env['BYCODA_BUILD_MANIFEST']), request['buildIdentity'])
-                if name == 'host':
+                if name == 'host-compile':
+                    output = workspace / graph['outputs'][0]
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    output.write_bytes(files['host/cli.ts'])
+                elif name == 'host-package':
                     host.mkdir(parents=True, exist_ok=True)
                     (host / 'host.mjs').write_bytes(files['host/cli.ts'])
                     archive.write_bytes(files['host/cli.ts'])
@@ -534,18 +568,23 @@ class LocalUpdateTests(unittest.TestCase):
                  patch('local_update.validate_product_identity'), \
                  patch('local_update.legacy_updaters', return_value=[]), \
                  patch('local_update.status', return_value={}), \
-                 patch('local_update.run', side_effect=lambda args, **kwargs: '12.0.0' if args[0] == 'pnpm' else 'rustc fixture'), \
+                 patch('local_update.host_graph', return_value=graph), \
+                 patch('local_update.run', side_effect=command_result), \
                  patch('local_update.stage', side_effect=build_stage), \
-                 patch('local_update.archive_package', return_value=setup), \
+                 patch('local_update.archive_package', side_effect=lambda state, source, *args, **kwargs: source), \
                  patch('local_update.finish_build'):
                 worker(dict(request, id='baseline'))
-                self.assertEqual(stages, ['host', 'web', 'native'])
+                self.assertEqual(stages, ['host-compile', 'host-package', 'web', 'native'])
                 stages.clear()
                 worker(dict(request, id='unchanged'))
                 self.assertEqual(stages, [])
+                (workspace / graph['outputs'][0]).write_bytes(b'tampered compiler output')
+                worker(dict(request, id='tampered-output'))
+                self.assertEqual(stages, ['host-compile'])
+                stages.clear()
                 files['host/cli.ts'] = b'new host'
                 worker(dict(request, id='host-changed'))
-                self.assertEqual(stages, ['host', 'native'])
+                self.assertEqual(stages, ['host-compile', 'host-package', 'native'])
                 self.assertEqual((root / 'runs/host-changed/setup.exe').read_bytes(), b'installer:new host')
                 stages.clear()
                 worker(dict(request, id='host-unchanged'))
@@ -554,7 +593,7 @@ class LocalUpdateTests(unittest.TestCase):
                             'sourceFingerprint': 'fixture', 'version': '0.0.1', 'mode': 'local'}
                 request['buildIdentity'] = identity
                 worker(dict(request, id='stamped'))
-                self.assertEqual(stages, ['host', 'web', 'native'])
+                self.assertEqual(stages, ['host-package', 'web', 'native'])
                 self.assertEqual(read_json(root / 'runs/stamped/build-info.json'), identity)
                 self.assertEqual(read_json(root / 'runs/stamped/manifest.json')['buildIdentity'], identity)
                 stages.clear()
@@ -563,7 +602,24 @@ class LocalUpdateTests(unittest.TestCase):
                 # Equal versions and code cache hits do not permit stale component stamps.
                 request['buildIdentity'] = dict(identity, buildId='11234567890123456789-local')
                 worker(dict(request, id='different-stamp'))
-                self.assertEqual(stages, ['host', 'web', 'native'])
+                self.assertEqual(stages, ['host-package', 'web', 'native'])
+                stages.clear()
+                commands.clear()
+                files['host/cli.ts'] = b'Host-only next code'
+                worker(dict(request, id='host-only', components=['host']))
+                self.assertEqual(stages, ['host-compile', 'host-package'])
+                self.assertFalse(any(args[0] == 'rustc' for args in commands))
+                host_release = root / 'runs/host-only-host'
+                manifest = read_json(host_release / 'manifest.json')
+                self.assertEqual(manifest['components'], ['host'])
+                self.assertNotIn('appHashes', manifest)
+                self.assertNotIn('binaryHash', manifest)
+                self.assertFalse((host_release / 'setup.exe').exists())
+                self.assertEqual((host_release / manifest['hostArchive']['name']).read_bytes(), files['host/cli.ts'])
+                self.assertEqual(len(list((root / 'packages').glob('bycoda-host_*.zip'))), 1)
+                with self.assertRaisesRegex(RuntimeError, 'does not contain app'):
+                    worker(dict(request, id='host-only', installOnly=True,
+                                packageComponents=['host'], components=['host', 'app']))
 
     def test_installer_cache_tracks_bundled_host_bytes_and_checksum(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -1013,14 +1069,148 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertFalse(install_job_active({'state': 'installing', 'pid': 123}))
 
     def test_shared_provider_edit_invalidates_host_cache(self):
-        files = {'host/cli.ts': b'entry',
+        files = {'package.json': b'{}', 'host/cli.ts': b'entry',
                  'src/integrations/harness/providers/codex/codex.ts': b'old'}
-        before = host_key(files)
+        graph = {'schemaVersion': 1, 'inputs': list(files), 'outputs': ['build/host/host.mjs']}
+        before = host_key(files, graph)
         files['src/integrations/harness/providers/codex/codex.ts'] = b'excludeTurns: true'
-        self.assertNotEqual(before, host_key(files))
-        after = host_key(files)
+        self.assertNotEqual(before, host_key(files, graph))
+        after = host_key(files, graph)
         files['src/integrations/harness/providers/codex/codexLive.test.ts'] = b'test'
-        self.assertEqual(after, host_key(files))
+        self.assertEqual(after, host_key(files, graph))
+        files['src/app/shell/UnrelatedUI.tsx'] = b'UI-only change'
+        self.assertEqual(after, host_key(files, graph))
+        with self.assertRaisesRegex(RuntimeError, 'missing frozen input'):
+            host_key(files, dict(graph, inputs=['src/missing-import.ts']))
+        for name in ('host/storage/snapshot-worker.mjs', 'host/provider-guard.mjs', 'host/app-skills/example.md'):
+            files[name] = b'old runtime resource'
+            graph['inputs'].append(name)
+            before = host_key(files, graph)
+            files[name] = b'changed runtime resource'
+            self.assertNotEqual(before, host_key(files, graph), name)
+
+    def test_component_manifest_rejects_missing_app_before_any_job_is_written(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            release = root / 'release'
+            write_json(release / 'manifest.json', {'id': 'host-only', 'identity': dict(PRODUCT_IDENTITY),
+                                                  'components': ['host'], 'hostHashes': {'host.mjs': 'fixture'}})
+            with patch('local_update.pathlib.Path.home', return_value=root), \
+                 patch('local_update.spawn_windows_updater') as spawn:
+                with self.assertRaisesRegex(RuntimeError, 'does not contain app'):
+                    queue_install(release)
+            spawn.assert_not_called()
+            self.assertFalse((root / '.bycoda-host/update-jobs').exists())
+            self.assertEqual(package_components({'hostHashes': {'host.mjs': 'legacy'}}, ['host']), ['host'])
+
+    def test_component_manifest_and_host_archive_are_immutable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            manifest = {'components': ['host'], 'source': 'one', 'timings': {'host': 1}}
+            path = root / 'manifest.json'
+            write_package_manifest(path, manifest)
+            write_package_manifest(path, dict(manifest, timings={}))
+            self.assertEqual(read_json(path), manifest)
+            with self.assertRaisesRegex(RuntimeError, 'Immutable package manifest'):
+                write_package_manifest(path, dict(manifest, source='other'))
+            payload = root / 'host.zip'
+            payload.write_bytes(b'host package')
+            first = archive_host_package(root, payload, '0.6.94', 'win32-x64', 'test-local')
+            self.assertEqual(first, archive_host_package(root, payload, '0.6.94', 'win32-x64', 'test-local'))
+            payload.write_bytes(b'different bytes')
+            with self.assertRaisesRegex(RuntimeError, 'Immutable package payload'):
+                archive_host_package(root, payload, '0.6.94', 'win32-x64', 'test-local')
+            with self.assertRaisesRegex(ValueError, 'identifier'):
+                package_run(root, {'id': '../escape'}, ['host'])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows coordinator selection')
+    def test_install_only_can_explicitly_select_old_component_manifest_without_building(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            state = root / 'state'
+            write_json(root / 'scripts/local-update/local-update.config.json',
+                       {'stateRoot': str(state), 'windows': {'cargoTarget': 'target'}})
+            write_json(state / 'coordinator-latest.json', {'id': 'new-host', 'mode': 'local', 'packageComponents': ['host']})
+            manifest = state / 'runs/old-release/manifest.json'
+            write_json(manifest, {'id': 'old-release', 'mode': 'release', 'components': ['host', 'app']})
+            with patch('local_update.ROOT', root), \
+                 patch.object(sys, 'argv', ['local_update.py', '--platforms', 'windows', '--install-only',
+                                            '--components', 'app', '--snapshot-request', str(manifest)]), \
+                 patch('local_update.worker') as install, patch('local_update.snapshot') as freeze:
+                main()
+            freeze.assert_not_called()
+            request = install.call_args.args[0]
+            self.assertEqual(request['id'], 'old-release')
+            self.assertTrue(request['installOnly'])
+            self.assertEqual(request['mode'], 'release')
+            self.assertEqual(request['components'], ['app'])
+            self.assertEqual(request['packageComponents'], ['host', 'app'])
+
+    def test_interrupted_status_separates_old_count_from_fresh_independent_idle_gates(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            for component in ('host', 'app'):
+                write_json(root / '.bycoda-host/update-jobs' / (component + '.json'),
+                           {'id': 'same', 'pid': 123, 'state': 'waiting', 'activeSessions': 1})
+            with patch('local_update.pathlib.Path.home', return_value=root), \
+                 patch('local_update.alive', return_value=False), \
+                 patch('local_update.count', side_effect=[0, sqlite3.OperationalError('unreadable')]):
+                result = status()
+            self.assertEqual(result['host']['state'], 'interrupted')
+            self.assertNotIn('activeSessions', result['host'])
+            self.assertEqual(result['host']['reportedActiveSessions'], 1)
+            self.assertEqual(result['host']['idleGate']['state'], 'idle')
+            self.assertEqual(result['app']['idleGate']['state'], 'unknown')
+            self.assertIsNone(result['app']['idleGate']['activeSessions'])
+
+    def test_interrupted_job_requires_explicit_same_package_resume(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            release = root / 'release'
+            write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY),
+                                                  'components': ['host'], 'hostHashes': {'host.mjs': 'fixture'}})
+            write_json(root / '.bycoda-host/update-jobs/host.json',
+                       {'id': 'same', 'pid': 123, 'state': 'waiting', 'activeSessions': 1})
+            with patch('local_update.pathlib.Path.home', return_value=root), \
+                 patch('local_update.alive', return_value=False), \
+                 patch('local_update.spawn_windows_updater', return_value=456) as spawn:
+                with self.assertRaisesRegex(RuntimeError, 'interrupted'):
+                    queue_install(release, ('host',))
+                spawn.assert_not_called()
+                queue_install(release, ('host',), resume=True)
+                spawn.assert_called_once()
+            for phase in ('launching', 'installing', None):
+                with self.assertRaisesRegex(RuntimeError, 'uncertain effect'):
+                    verify_interrupted_resume(release, {'id': 'same'}, 'host', {'id': 'same', 'recordedState': phase})
+            for phase in ('waiting', None):
+                projected = install_job_status({'id': 'same', 'state': phase, 'pid': None})
+                self.assertEqual(projected['state'], 'launch-unknown')
+                self.assertTrue(install_job_active(projected))
+            with self.assertRaisesRegex(RuntimeError, 'another package'):
+                verify_interrupted_resume(release, {'id': 'new'}, 'host', {'id': 'old', 'recordedState': 'waiting'})
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows interrupted app recovery')
+    def test_interrupted_app_resume_verifies_rollback_and_current_tree_without_writes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            app = root / 'Local/bycoda/bycoda.exe'
+            app.parent.mkdir(parents=True)
+            app.write_bytes(b'old app')
+            saved = root / 'release/rollback-app/installation'
+            shutil.copytree(app.parent, saved)
+            write_json(saved.parent / 'windows-installation-hashes.json', tree_hashes(saved))
+            before = tree_hashes(saved.parent)
+            record = {'id': 'same', 'pid': 123, 'recordedState': 'installing'}
+            with patch.dict(os.environ, {'LOCALAPPDATA': str(root / 'Local')}), \
+                 patch('local_update.assert_windows_installer_idle') as idle, \
+                 patch('local_update.desktop_db', return_value=root / 'missing-db'):
+                verify_interrupted_resume(root / 'release', {'id': 'same'}, 'app', record)
+                idle.assert_called_once()
+                self.assertEqual(tree_hashes(saved.parent), before)
+                app.write_bytes(b'unknown replacement')
+                with self.assertRaisesRegex(RuntimeError, 'outcome is unknown'):
+                    verify_interrupted_resume(root / 'release', {'id': 'same'}, 'app', record)
+            self.assertEqual(tree_hashes(saved.parent), before)
 
     def test_exited_windows_host_does_not_require_a_live_lifecycle_endpoint(self):
         with patch('local_install.read_json', return_value={'pid': 123, 'port': 3774}), \
@@ -1090,7 +1280,7 @@ class LocalUpdateTests(unittest.TestCase):
             root = pathlib.Path(folder)
             release = root/'release'
             release.mkdir()
-            write_json(release/'manifest.json', {'id': 'new', 'identity': dict(PRODUCT_IDENTITY)})
+            write_json(release/'manifest.json', {'id': 'new', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
             base = root/'.bycoda-host/update-jobs'
             write_json(base/'host.json', {'id': 'new', 'pid': 123, 'state': 'waiting'})
             app = {'id': 'old', 'pid': 456, 'state': 'waiting'}
@@ -1152,16 +1342,31 @@ class LocalUpdateTests(unittest.TestCase):
                  'Cargo.lock': b'[[package]]\nname="bycoda"\nversion="0.8.70"'}
         self.assertEqual(validate_versions(files), '0.8.70')
 
-    def test_only_package_json_controls_dependency_key(self):
+    def test_version_only_change_reuses_dependencies_but_dependency_change_does_not(self):
         def files(version, dependency='1.0.0'):
             return {'package.json': json.dumps({'version': version, 'dependencies': {'a': dependency}}).encode(),
                     'package-lock.json': json.dumps({'version': version, 'packages': {'': {'version': version},
                                                    'node_modules/a': {'version': dependency}}}).encode()}
-        self.assertNotEqual(dependency_key(files('0.8.70')), dependency_key(files('0.8.71')))
+        self.assertEqual(dependency_key(files('0.8.70')), dependency_key(files('0.8.71')))
         self.assertNotEqual(dependency_key(files('0.8.70')), dependency_key(files('0.8.70', '2.0.0')))
         first = files('0.8.70')
-        changed_lock = dict(first, **{'package-lock.json': b'changed', 'pnpm-lock.yaml': b'changed'})
-        self.assertEqual(dependency_key(first), dependency_key(changed_lock))
+        self.assertEqual(dependency_key(first), dependency_key(dict(first, **{'package-lock.json': b'changed'})))
+        reformatted = dict(first, **{'package.json': b'{ "dependencies": { "a": "1.0.0" }, "version": "0.8.71" }'})
+        self.assertEqual(dependency_key(first), dependency_key(reformatted))
+
+    def test_pnpm_lock_configuration_and_patch_changes_refresh_dependencies(self):
+        first = {'package.json': b'{"version":"0.8.70"}'}
+        for name in ('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', '.pnpmfile.cjs', 'patches/dependency.patch',
+                     'packages/core/package.json', 'apps/desktop/package.json'):
+            with self.subTest(name=name):
+                added = dict(first, **{name: b'original'})
+                changed = dict(first, **{name: b'changed'})
+                self.assertNotEqual(dependency_key(first), dependency_key(added))
+                self.assertNotEqual(dependency_key(added), dependency_key(changed))
+                with tempfile.TemporaryDirectory() as folder:
+                    workspace = pathlib.Path(folder)
+                    (workspace / 'node_modules').mkdir()
+                    self.assertEqual(dependency_action(workspace, changed, dependency_key(added)), 'clean-install')
 
     def test_dependency_install_policy_preserves_existing_modules(self):
         files = {'package.json': b'{"version":"0.8.70"}'}
@@ -1172,7 +1377,8 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual(dependency_action(workspace, files), 'reuse')
             self.assertEqual(dependency_action(workspace, files, dependency_key(files)), 'reuse')
             self.assertEqual(dependency_action(workspace, files, previous_package=files['package.json']), 'reuse')
-            self.assertEqual(dependency_action(workspace, files, previous_package=b'{}'), 'clean-install')
+            self.assertEqual(dependency_action(workspace, files, previous_package=b'{"version":"0.8.71"}'), 'reuse')
+            self.assertEqual(dependency_action(workspace, files, previous_package=b'{"dependencies":{"a":"1"}}'), 'clean-install')
             self.assertEqual(dependency_action(workspace, files, 'old'), 'clean-install')
 
     def test_bad_database_read_never_means_idle(self):
@@ -1253,7 +1459,7 @@ class LocalUpdateTests(unittest.TestCase):
             root = pathlib.Path(folder)
             release = root/'release'
             release.mkdir()
-            write_json(release/'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY)})
+            write_json(release/'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
             base = root/'.bycoda-host/update-jobs'
             for component in ('host', 'app'):
                 write_json(base/(component+'.json'), {'id': 'same', 'pid': 123})
@@ -1266,7 +1472,7 @@ class LocalUpdateTests(unittest.TestCase):
             root = pathlib.Path(folder)
             release = root/'release'
             release.mkdir()
-            write_json(release/'manifest.json', {'id': 'new', 'identity': dict(PRODUCT_IDENTITY)})
+            write_json(release/'manifest.json', {'id': 'new', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
             write_json(root/'.bycoda-host/update-jobs/host.json', {'id': 'old', 'pid': 123})
             with patch('local_update.pathlib.Path.home', return_value=root), patch('local_update.alive', return_value=True), patch('local_update.subprocess.Popen') as spawn:
                 with self.assertRaises(RuntimeError):

@@ -37,6 +37,7 @@ pub(super) fn checkpoint(
     blocks: &Value,
     raw: &[String],
 ) -> rusqlite::Result<()> {
+    authority::assert_checkpoint_sql(conn, id)?;
     let Some(blocks) = blocks.as_array() else {
         return Ok(());
     };
@@ -89,6 +90,7 @@ pub struct DeltaAck {
 }
 
 pub(super) fn apply(conn: &Connection, delta: &SessionDelta) -> Result<Option<DeltaAck>, String> {
+    authority::assert_checkpoint(conn, &delta.session.id)?;
     validate_upsert(&delta.session)?;
     if delta.length > 1_000_000
         || delta

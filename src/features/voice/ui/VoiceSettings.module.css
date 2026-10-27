@@ -68,3 +68,14 @@
     justify-content: flex-start;
   }
 }
+
+.visualChoice :global(.settings-row) {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.visualChoice :global(.settings-row-control) {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  justify-content: flex-start;
+}

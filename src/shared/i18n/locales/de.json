@@ -7164,5 +7164,12 @@
   "Reverted files: {p0}": "Zurückgesetzte Dateien: {p0}",
   "Skipped files: {p0}": "Übersprungene Dateien: {p0}",
   "No session files were reverted.": "Es wurden keine Sitzungsdateien zurückgesetzt.",
-  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Die Dateien wurden zurückgesetzt, der Chat jedoch nicht. Versuche es erneut, um diese Nachricht fertig zu bearbeiten."
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Die Dateien wurden zurückgesetzt, der Chat jedoch nicht. Versuche es erneut, um diese Nachricht fertig zu bearbeiten.",
+  "Compact voice companion": "Sprachbegleiter verkleinern",
+  "Expand voice companion": "Sprachbegleiter erweitern",
+  "Assistant speaking": "Assistent spricht",
+  "Visual style": "Visueller Stil",
+  "bycoda mark": "bycoda-Zeichen",
+  "Wave": "Welle",
+  "Dots": "Punkte"
 }

@@ -81,7 +81,11 @@ export async function browseHostDirectories(rawPath: unknown): Promise<HostDirec
 }
 
 /** Creates exactly one child; never treats a name as a path or overwrites it. */
-export async function createHostDirectory(rawPath: unknown, name: unknown): Promise<HostDirectory> {
+export async function createHostDirectory(
+  rawPath: unknown,
+  name: unknown,
+  authorize?: () => Promise<void>,
+): Promise<HostDirectory> {
   if (
     typeof name !== "string" ||
     !name.trim() ||
@@ -96,6 +100,7 @@ export async function createHostDirectory(rawPath: unknown, name: unknown): Prom
   if (typeof rawPath !== "string" || !rawPath.trim()) throw new Error("Invalid directory path");
   const parent = await browseHostDirectories(rawPath);
   const child = resolve(parent.path, name);
+  await authorize?.();
   await mkdir(child);
   return browseHostDirectories(child);
 }

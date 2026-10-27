@@ -8056,5 +8056,12 @@
   "Reverted files: {p0}": "Reverted files: {p0}",
   "Skipped files: {p0}": "Skipped files: {p0}",
   "No session files were reverted.": "No session files were reverted.",
-  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message."
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.",
+  "Compact voice companion": "Compact voice companion",
+  "Expand voice companion": "Expand voice companion",
+  "Assistant speaking": "Assistant speaking",
+  "Visual style": "Visual style",
+  "bycoda mark": "bycoda mark",
+  "Wave": "Wave",
+  "Dots": "Dots"
 }

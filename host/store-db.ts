@@ -2,6 +2,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
 import type { SQLInputValue } from "node:sqlite";
+import {
+  PersistenceAdmissionError,
+  storageFailure,
+  type PersistenceHealth,
+} from "./storage/persistence-health";
 
 export type StoreRow = Record<string, any>;
 type Owner = { id: string; phase: "open" | "closing" | "closed" };
@@ -9,7 +14,14 @@ type AuthorizationCheck = () => boolean | Promise<boolean>;
 export type StoreAuthorization =
   | AuthorizationCheck
   | { prepare(): Promise<AuthorizationCheck>; check: AuthorizationCheck };
-type Reply = { id?: number; ready?: boolean; value?: any; error?: string; code?: string };
+type Reply = {
+  id?: number;
+  ready?: boolean;
+  value?: any;
+  error?: string;
+  code?: string;
+  errcode?: number;
+};
 
 export class RequestAuthorizationError extends Error {
   readonly code = "HOST_AUTH_REVOKED";
@@ -32,10 +44,14 @@ export class StoreDatabase {
   private tail: Promise<unknown> = Promise.resolve();
   private sequence = 0;
   admissionVersion = 0;
+  dataMutationVersion = 0;
   private failed?: Error;
   private closing = false;
   private closePromise?: Promise<void>;
   private terminating = false;
+  private critical = new AsyncLocalStorage<boolean>();
+  private recovering = new AsyncLocalStorage<boolean>();
+  private health: PersistenceHealth = { state: "ready" };
   private pending = new Map<
     number,
     {
@@ -65,10 +81,20 @@ export class StoreDatabase {
       if (!request) return;
       this.pending.delete(reply.id!);
       if (reply.error) {
-        const error = Object.assign(new Error(reply.error), { code: reply.code });
+        const error = Object.assign(new Error(reply.error), {
+          code: reply.code,
+          errcode: reply.errcode,
+        });
+        const health = storageFailure(error);
+        if (health) this.health = health;
         request.reject(error);
       } else {
         try {
+          if (
+            request.sql &&
+            /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i.test(request.sql)
+          )
+            this.dataMutationVersion++;
           if (request.mutation && request.sql)
             this.owners.run(request.owner, () => this.onMutation?.(request.sql!));
           request.resolve(reply.value);
@@ -103,18 +129,133 @@ export class StoreDatabase {
     return !!this.failed;
   }
 
+  persistenceHealth(): PersistenceHealth {
+    return { ...this.health };
+  }
+  assertWriteAdmission(): void {
+    if (this.health.state !== "ready" && !this.recovering.getStore())
+      throw new PersistenceAdmissionError(this.persistenceHealth());
+  }
+  assertCriticalScope(): void {
+    if (!this.critical.getStore())
+      throw new Error("Accepted intent requires a critical storage transaction.");
+  }
+  /** Serialized FULL selection precedes BEGIN; no implicit upgrade inside a transaction. */
+  durableScope<T>(work: () => T | Promise<T>): Promise<T> {
+    return this.scope(async () => {
+      this.assertWriteAdmission();
+      if (this.critical.getStore()) return work();
+      await this.request("durability", undefined, [2]);
+      let value!: T;
+      let primary: unknown;
+      let rejected = false;
+      try {
+        value = await this.critical.run(true, work);
+      } catch (error) {
+        primary = error;
+        rejected = true;
+      }
+      if (rejected && !this.failed) {
+        try {
+          await this.request("rollbackOpen");
+        } catch (error) {
+          this.fail(
+            new Error(
+              "Critical transaction cleanup could not prove rollback; reconcile storage before retrying.",
+              { cause: error },
+            ),
+          );
+          if (primary instanceof Error) {
+            try {
+              Object.defineProperty(primary, "cleanupError", { value: error, configurable: true });
+            } catch {
+              /* Preserve the primary failure even when its error object is immutable. */
+            }
+          }
+        }
+      }
+      if (!this.failed) {
+        try {
+          await this.request("durability", undefined, [1]);
+        } catch (error) {
+          const failure = new Error("Could not restore serialized storage durability.", {
+            cause: error,
+          });
+          this.fail(failure);
+          if (!rejected) {
+            primary = failure;
+            rejected = true;
+          }
+        }
+      }
+      if (rejected) throw primary;
+      return value;
+    });
+  }
+  /** Explicit probe; corruption/worker failures require restart or staged restore. */
+  recoverPersistence(): Promise<void> {
+    return this.scope(async () => {
+      if (this.health.state === "recovery-required")
+        throw new PersistenceAdmissionError(this.persistenceHealth());
+      const previous = this.health;
+      this.health = { state: "recovering", reason: previous.reason };
+      try {
+        await this.recovering.run(true, () =>
+          this.durableScope(async () => {
+            const rows = await this.prepare("PRAGMA quick_check").all();
+            if (rows.length !== 1 || Object.values(rows[0])[0] !== "ok")
+              throw Object.assign(new Error("Storage integrity verification failed."), {
+                errcode: 11,
+              });
+            await this.exec("BEGIN IMMEDIATE");
+            try {
+              await this.exec(
+                "CREATE TABLE IF NOT EXISTS host_persistence_probe (id INTEGER PRIMARY KEY, value BLOB NOT NULL)",
+              );
+              await this.prepare(
+                "INSERT INTO host_persistence_probe VALUES (1, randomblob(4096)) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
+              ).run();
+              await this.exec("COMMIT");
+            } catch (error) {
+              await this.exec("ROLLBACK");
+              throw error;
+            }
+          }),
+        );
+        this.health = { state: "ready" };
+      } catch (error) {
+        this.health = storageFailure(error) ?? previous;
+        throw error;
+      }
+    });
+  }
+  /** Caller holds the same source admission through manifest/blob capture. */
+  backupTo(destination: string): Promise<void> {
+    return this.scope(() => this.request("backup", undefined, [destination]));
+  }
+
   fail(error: Error): void {
     this.failed ??= error;
+    this.health = { state: "recovery-required", reason: "worker" };
     for (const request of this.pending.values()) request.reject(this.failed);
     this.pending.clear();
   }
 
   outsideScope<T>(work: () => T): T {
-    return this.owners.exit(() => this.internal.exit(() => this.authorizations.exit(work)));
+    return this.owners.exit(() =>
+      this.internal.exit(() =>
+        this.authorizations.exit(() => this.critical.exit(() => this.recovering.exit(work))),
+      ),
+    );
   }
   /** Preserve request authority across external preparation without holding SQL admission. */
   withAuthorization<T>(guard: StoreAuthorization, work: () => T): T {
     return this.authorizations.run(guard, work);
+  }
+  /** @internal Only an already-owned failure's blocked-state/operation bookkeeping.
+   * Keeps the current SQL owner; never use for new effects, retries or normal commands. */
+  runRecoveryBookkeeping<T>(work: () => T): T {
+    return this.authorizations.exit(work);
   }
   async checkAuthorization(): Promise<void> {
     const authorization = this.authorizations.getStore();
@@ -210,6 +351,18 @@ export class StoreDatabase {
     owner = this.owners.getStore(),
   ): Promise<any> {
     if (this.failed) return Promise.reject(this.failed);
+    const writes =
+      method === "run" ||
+      method === "exec" ||
+      ((method === "get" || method === "all" || method === "cursorOpen") &&
+        !/^\s*(?:SELECT\b|PRAGMA\b|EXPLAIN\b)/i.test(sql ?? ""));
+    if (writes && !/^\s*(?:ROLLBACK|PRAGMA\b)/i.test(sql ?? "")) {
+      try {
+        this.assertWriteAdmission();
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
     if (!owner || (owner.phase !== "open" && method !== "leave"))
       return Promise.reject(new Error("Database request has no live owner."));
     const id = ++this.sequence;

@@ -56,6 +56,9 @@ export type HostDescriptor = {
   providers: RemoteProvider[];
   capabilities: string[];
   platform?: "win32" | "darwin" | "linux";
+  /** Public paired-CA bootstrap; absent while the owner-controlled LAN listener is disabled. */
+  mobileTls?: import("../../../shared/model/host-contracts").MobileTlsBootstrap;
+  persistence?: import("../../../shared/model/host-contracts").HostPersistenceStatus;
   /** Absent on older hosts; semver alone does not identify the serving source. */
   buildIdentity?: BuildIdentity;
 };
@@ -146,6 +149,8 @@ export type HostWorktree = {
   missing: boolean;
 };
 export type HostSession = {
+  /** Durable execution/history floor for migrated sessions, independent of stream revision. */
+  authorityGeneration?: number;
   /** Client view is incomplete; never save this as an authoritative transcript. */
   history?: { before?: number; revision: number; totalBlocks: number };
   /** Client-only: tail is visible while bounded history pages hydrate. */
@@ -327,6 +332,8 @@ export function sessionReferenceKey(reference: SessionReference): string {
   return JSON.stringify([reference.environmentId, reference.sessionId]);
 }
 export type HostCommand = HostCommandBody & {
+  /** Required by the Host for a session with a committed authority floor. */
+  authorityGeneration?: number;
   /** Atomic queue validation/consumption on hosts advertising sessions.queue. */
   queued?: { id: string; clientId: string; revision: number; selected?: boolean };
 };
@@ -450,6 +457,7 @@ export type CommandReceipt = {
   commandId: string;
   sessionId: string;
   revision: number;
+  authorityGeneration?: number;
   /** The exact run accepted for this command, retained across receipt replay. */
   runId?: string;
 };

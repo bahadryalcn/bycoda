@@ -332,7 +332,7 @@
   "Filter commit files": "Commit dosyalarını filtrele",
   "Commit view": "Commit görünümü",
   "Previous file": "Önceki dosya",
-  "Orb": "Orb",
+  "Orb": "Küre",
   "World tree": "Dünya ağacı",
   "A flowing ring of light that breathes and brightens while the AI replies.": "AI yanıt verirken nefes alıp parlayan, akışkan bir ışık halkası.",
   "A world tree woven from code. Light travels from its roots to its branches while the AI replies.": "Koddan örülmüş bir dünya ağacı. AI yanıt verirken ışık köklerinden dallarına doğru akar.",
@@ -8056,5 +8056,12 @@
   "Reverted files: {p0}": "Geri alınan dosyalar: {p0}",
   "Skipped files: {p0}": "Atlanan dosyalar: {p0}",
   "No session files were reverted.": "Hiçbir oturum dosyası geri alınmadı.",
-  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Dosyalar geri alındı ancak sohbet geri alınamadı. Bu mesajı düzenlemeyi tamamlamak için yeniden deneyin."
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Dosyalar geri alındı ancak sohbet geri alınamadı. Bu mesajı düzenlemeyi tamamlamak için yeniden deneyin.",
+  "Compact voice companion": "Sesli yardımcıyı küçült",
+  "Expand voice companion": "Sesli yardımcıyı genişlet",
+  "Assistant speaking": "Yardımcı konuşuyor",
+  "Visual style": "Görsel stil",
+  "bycoda mark": "bycoda simgesi",
+  "Wave": "Dalga",
+  "Dots": "Noktalar"
 }

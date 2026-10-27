@@ -42,7 +42,7 @@ async function fixture(gitRepo = true) {
     await git("add", ".");
     await git("commit", "-qm", "initial");
   }
-  const checkpoints = new HostCheckpoints(join(root, "checkpoints"));
+  const checkpoints = new HostCheckpoints(join(root, "checkpoints"), undefined, async () => {});
   return {
     root,
     cwd,
@@ -354,7 +354,7 @@ describe("session message file revert", () => {
       await f.write("created.txt", "created\n");
     });
     await f.turn("three", () => f.write("a.txt", "three\n"));
-    const restarted = new HostCheckpoints(join(f.root, "checkpoints"));
+    const restarted = new HostCheckpoints(join(f.root, "checkpoints"), undefined, async () => {});
     expect(await restarted.filesRevertPlan("s", f.cwd, "two")).toEqual({
       files: [
         { path: "a.txt", action: "restore", conflict: undefined },
@@ -400,7 +400,7 @@ describe("session message file revert", () => {
   });
   it("prunes oldest history while preserving recent turns", async () => {
     const f = await fixture();
-    const history = new SessionFileRevert(join(f.root, "history"), 1800);
+    const history = new SessionFileRevert(join(f.root, "history"), 1800, async () => {});
     for (const id of ["one", "two", "three"]) {
       await history.begin("s", f.cwd, id);
       await f.write("a.txt", id.repeat(110));
@@ -575,7 +575,7 @@ describe("session message file revert", () => {
     const f = await fixture();
     await f.checkpoints.beginFilesTurn("s", f.cwd, "one");
     await f.write("a.txt", "partial\n");
-    const restarted = new HostCheckpoints(join(f.root, "checkpoints"));
+    const restarted = new HostCheckpoints(join(f.root, "checkpoints"), undefined, async () => {});
     expect((await restarted.filesRevertPlan("s", f.cwd, "one")).unavailable).toMatch(/interrupted/);
     await expect(restarted.filesRevert("s", f.cwd, "one")).rejects.toThrow(/interrupted/);
     expect(await f.read("a.txt")).toBe("partial\n");

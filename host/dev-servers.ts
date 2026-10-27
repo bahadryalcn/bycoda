@@ -234,26 +234,38 @@ export class DevServersService {
   async startWorkspace(
     request: WorkspaceDevServerRequest,
     projects: DevServerProject[],
+    authorize?: () => Promise<void>,
   ): Promise<{ lease: WorkspacePortLease; result: DevServerStartResult }> {
-    return this.exclusive("start", () => this.startWorkspaceUnlocked(request, projects));
+    return this.exclusive("start", async () => {
+      await authorize?.();
+      return this.startWorkspaceUnlocked(request, projects, authorize);
+    });
   }
 
   private async startWorkspaceUnlocked(
     request: WorkspaceDevServerRequest,
     projects: DevServerProject[],
+    authorize?: () => Promise<void>,
   ) {
     const launched = await this.portLeases.launchWithRetry(request, async (lease) => {
+      await authorize?.();
       const result = await this.start(
         { ...request, expectedPort: lease.ports.vite ?? lease.ports.host },
         projects,
         portLeaseEnvironment(lease),
+        authorize,
       );
       if (
         result.conflict ||
         (result.server?.state === "error" && /already in use/i.test(result.server.error ?? ""))
       ) {
         if (result.server) {
-          const stopped = await this.stop({ id: result.server.id, tree: true }, projects, false);
+          const stopped = await this.stop(
+            { id: result.server.id, tree: true },
+            projects,
+            false,
+            authorize,
+          );
           if (stopped.requiresForce)
             throw new Error(
               "The failed development process is still running; stop it before retrying.",
@@ -281,7 +293,12 @@ export class DevServersService {
     return promise;
   }
 
-  async handle(method: string, params: Record<string, unknown>, projects: DevServerProject[]) {
+  async handle(
+    method: string,
+    params: Record<string, unknown>,
+    projects: DevServerProject[],
+    authorize?: () => Promise<void>,
+  ) {
     if (this.active >= (this.options.maxConcurrent ?? 4)) {
       if (this.waiting.length >= 16)
         throw new Error("Dev server operations are busy; try again shortly.");
@@ -300,6 +317,7 @@ export class DevServersService {
       });
     } else this.active++;
     try {
+      await authorize?.();
       switch (method) {
         case "devServers.list":
           return await this.list(projects, params.refresh === true);
@@ -324,18 +342,21 @@ export class DevServersService {
                     ...(typeof params.name === "string" ? { name: params.name } : {}),
                   },
                   projects,
+                  authorize,
                 )
               ).result;
           }
-          return await this.exclusive("start", () => this.start(params, projects));
+          return await this.exclusive("start", () =>
+            this.start(params, projects, undefined, authorize),
+          );
         case "devServers.stop":
         case "devServers.kill":
           return await this.exclusive(this.id(params), () =>
-            this.stop(params, projects, method === "devServers.kill"),
+            this.stop(params, projects, method === "devServers.kill", authorize),
           );
         case "devServers.restart":
           return await this.exclusive(this.id(params), () =>
-            this.exclusive("start", () => this.restart(params, projects)),
+            this.exclusive("start", () => this.restart(params, projects, authorize)),
           );
         case "devServers.logs": {
           const managed = this.managed.get(this.id(params));
@@ -650,6 +671,7 @@ export class DevServersService {
     params: Record<string, unknown>,
     projects: DevServerProject[],
     force: boolean,
+    authorize?: () => Promise<void>,
   ): Promise<DevServerStop> {
     const selected = await this.selection(params, projects, true);
     if (params.expectedImpact !== undefined && params.expectedImpact !== this.impact(selected))
@@ -679,6 +701,7 @@ export class DevServersService {
           );
         if (Date.now() >= operationDeadline)
           throw new Error("Process shutdown timed out before every process could be signalled.");
+        await authorize?.();
         try {
           await this.discovery.signal(process, force);
         } catch (error) {
@@ -750,14 +773,16 @@ export class DevServersService {
     params: Record<string, unknown>,
     projects: DevServerProject[],
     environment?: Record<string, string>,
+    authorize?: () => Promise<void>,
   ): Promise<DevServerStartResult> {
+    await authorize?.();
     const project = projects.find((entry) => entry.id === params.projectId);
     const cwd = typeof params.cwd === "string" && params.cwd.trim() ? params.cwd : project?.path;
     const release = cwd
       ? await this.options.startActivity?.(cwd, `dev-server:${randomUUID()}`)
       : undefined;
     try {
-      const result = await this.startAdmitted(params, projects, environment);
+      const result = await this.startAdmitted(params, projects, environment, authorize);
       if (result.server && !["stopped", "error"].includes(result.server.state)) {
         if (release) this.activityReleases.set(result.server.id, release);
       } else await release?.();
@@ -772,6 +797,7 @@ export class DevServersService {
     params: Record<string, unknown>,
     projects: DevServerProject[],
     environment?: Record<string, string>,
+    authorize?: () => Promise<void>,
   ): Promise<DevServerStartResult> {
     const command = typeof params.command === "string" ? params.command.trim() : "";
     if (!command) throw new Error("A dev server command is required.");
@@ -817,6 +843,7 @@ export class DevServersService {
           env: {},
           verbatim: false,
         };
+    await authorize?.();
     const child = (this.options.spawnProcess ?? spawn)(invocation.file, invocation.args, {
       cwd,
       env: { ...process.env, ...invocation.env, ...environment },
@@ -1035,6 +1062,7 @@ export class DevServersService {
   private async restart(
     params: Record<string, unknown>,
     projects: DevServerProject[],
+    authorize?: () => Promise<void>,
   ): Promise<DevServerStartResult> {
     const selected = await this.server(params, projects, true);
     const workspaceLaunch = this.workspaceLaunches.get(selected.server.id);
@@ -1074,7 +1102,7 @@ export class DevServersService {
     ) {
       throw new Error("Expected port must be an integer between 1 and 65535.");
     }
-    const result = await this.stop({ ...params, tree: true }, projects, false);
+    const result = await this.stop({ ...params, tree: true }, projects, false, authorize);
     if (result.requiresForce)
       throw new Error(
         "The previous process is still running. Stop it with force before restarting.",
@@ -1084,8 +1112,9 @@ export class DevServersService {
         await this.startWorkspaceUnlocked(
           { ...workspaceLaunch, command, name: replacement.name as string | undefined },
           projects,
+          authorize,
         )
       ).result;
-    return this.start(replacement, projects);
+    return this.start(replacement, projects, undefined, authorize);
   }
 }

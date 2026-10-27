@@ -1,4 +1,16 @@
 import { ChangeSignal } from "./changeSignal";
+import { AsyncLocalStorage } from "node:async_hooks";
+import {
+  assertHostAuthority,
+  HostAuthorityFenceError,
+  initializeHostAuthorityFence,
+  withHostAuthorityPermit,
+} from "./storage/authority-fence";
+import {
+  assertProfileNotStaged,
+  captureHostSnapshot,
+  type HostSnapshotManifest,
+} from "./storage/snapshots";
 import { normalizeProjectPath } from "./desktopSessions";
 import { isSessionErrorBlock, sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { StoreDatabase, type StoreStatement } from "./store-db";
@@ -42,6 +54,7 @@ const RECEIPT_PRUNE_EVERY = 500;
 const CHECKPOINT_MS = 1000;
 /** Latest unwritten state of a session plus its event rows, in revision order. */
 interface PendingWrite {
+  authorityBlocked?: boolean;
   value: HostSession;
   events: {
     revision: number;
@@ -143,7 +156,55 @@ function patchBlockIndex(previous: Block[], blocks: Block[], changes?: BlockChan
   blockIndexes.set(blocks, { positions: before.positions, root });
   return false;
 }
+/** Cache invalidation only; the permanent authority journal remains the proof. */
+export type HostAuthorityChange = Readonly<{
+  sessionId: string;
+  authorityGeneration: number;
+  phase: "host-active" | "aborted";
+  projectId?: string;
+}>;
+
 export class HostStore {
+  private readonly authorityContexts = new AsyncLocalStorage<ReadonlyMap<string, number>>();
+  assertAuthority(sessionId: string, expectedGeneration?: number): Promise<boolean> {
+    return this.db.scope(() => assertHostAuthority(this.db, sessionId, expectedGeneration));
+  }
+  private async sessionWrite<T>(
+    sessionId: string,
+    expectedGeneration: number | undefined,
+    work: (generation?: number) => Promise<T>,
+    permit = true,
+  ): Promise<T> {
+    if (!this.transactionActive)
+      throw new Error("Host authority write permits require an active storage transaction.");
+    const contexts = this.authorityContexts.getStore();
+    const inherited = contexts?.get(sessionId);
+    if (
+      inherited !== undefined &&
+      expectedGeneration !== undefined &&
+      inherited !== expectedGeneration
+    )
+      throw new HostAuthorityFenceError();
+    const generation = expectedGeneration ?? inherited;
+    const execute = () => {
+      const next = new Map(contexts);
+      if (generation !== undefined) next.set(sessionId, generation);
+      return this.authorityContexts.run(next, () => work(generation));
+    };
+    if (!permit) {
+      await assertHostAuthority(this.db, sessionId, generation);
+      return execute();
+    }
+    return withHostAuthorityPermit(this.db, sessionId, generation, execute);
+  }
+  /** Explicit generation only; never reads a head to invent caller authority. SQL-only callback. */
+  withAuthorityGeneration<T>(
+    sessionId: string,
+    expectedGeneration: number | undefined,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    return this.transaction(() => this.sessionWrite(sessionId, expectedGeneration, work));
+  }
   readonly db: StoreDatabase;
   readonly ready: Promise<void>;
   private closePromise?: Promise<void>;
@@ -185,6 +246,70 @@ export class HostStore {
     else this.committedChangeVersion++;
   }
   readonly changes = new ChangeSignal();
+  captureSnapshot(destination: string): Promise<HostSnapshotManifest> {
+    return captureHostSnapshot({
+      database: this.db,
+      attachmentDir: this.attachmentDir,
+      destination,
+      environmentId: this.environmentId,
+      flush: () => this.flushAll(),
+    });
+  }
+  private changeListeners = new Set<() => void>();
+  private authorityListeners = new Set<(event: HostAuthorityChange) => void>();
+  subscribeAuthorityChanges(listener: (event: HostAuthorityChange) => void): () => void {
+    if (this.closePromise) return () => undefined;
+    this.authorityListeners.add(listener);
+    return () => {
+      this.authorityListeners.delete(listener);
+    };
+  }
+  /** Journal-only seam: enqueue after its terminal CAS and verified installation. */
+  authorityDecisionCommitted(event: HostAuthorityChange): void {
+    if (!this.transactionActive) throw new Error("Authority notification requires a transaction");
+    const safe = Object.freeze({
+      sessionId: event.sessionId,
+      authorityGeneration: event.authorityGeneration,
+      phase: event.phase,
+      ...(event.projectId !== undefined ? { projectId: event.projectId } : {}),
+    });
+    this.afterCommit(() => {
+      if (this.closePromise) return;
+      for (const listener of Array.from(this.authorityListeners)) {
+        if (!this.authorityListeners.has(listener)) continue;
+        try {
+          listener(safe);
+        } catch {
+          console.error("Committed authority listener failed.");
+        }
+      }
+    });
+  }
+  private changeWakeQueued = false;
+  /** Commit wake only; consumers must reload an authorized authoritative view. */
+  subscribeChanges(listener: () => void): () => void {
+    if (this.closePromise) return () => undefined;
+    this.changeListeners.add(listener);
+    return () => {
+      this.changeListeners.delete(listener);
+    };
+  }
+  private publishChanges(): void {
+    if (this.closePromise || this.changeWakeQueued) return;
+    this.changeWakeQueued = true;
+    queueMicrotask(() => {
+      this.changeWakeQueued = false;
+      if (this.closePromise) return;
+      for (const listener of Array.from(this.changeListeners)) {
+        if (!this.changeListeners.has(listener)) continue;
+        try {
+          listener();
+        } catch {
+          console.error("Committed storage listener failed.");
+        }
+      }
+    });
+  }
   private projectVersions = new Map<string, number>();
   private summaryRows = new Map<
     string,
@@ -198,6 +323,8 @@ export class HostStore {
   /** Patch one streamed row instead of reparsing the project's entire history. */
   private async savedSummary(value: HostSession): Promise<void> {
     if (this.closePromise) return;
+    if (value.authorityGeneration !== undefined)
+      await assertHostAuthority(this.db, value.session.id, value.authorityGeneration);
     if (this.inTransaction) {
       this.afterCommit(() => {
         if (!this.closePromise) return this.db.scope(() => this.savedSummary(value));
@@ -234,6 +361,7 @@ export class HostStore {
     else {
       this.projectVersions.set(projectId, this.projectVersion(projectId) + 1);
       this.changes.notify();
+      this.publishChanges();
     }
   }
   constructor(path: string) {
@@ -242,7 +370,10 @@ export class HostStore {
     this.db.onMutation = (sql) => this.externalMutation(sql);
     this.db.onCommit = (effect) => this.afterCommit(effect);
     this.ready = this.db
-      .storeScope(async () => await this.initialize())
+      .storeScope(async () => {
+        await assertProfileNotStaged(dirname(path));
+        await this.initialize();
+      })
       .catch((error) => {
         this.db.fail(error);
         throw error;
@@ -388,6 +519,7 @@ export class HostStore {
     this.environmentId = String(
       (await this.db.prepare("SELECT value FROM metadata WHERE key='environmentId'").get())!.value,
     );
+    await initializeHostAuthorityFence(this.db);
   }
   /** Narrow mirror of the `sessions` columns that checkpoints change. The
    * `sessions` row holds the multi-MB snapshot, and SQLite rewrites a whole
@@ -435,75 +567,86 @@ export class HostStore {
         provider_session_id, harness, session_cwd, shell_running
       FROM sessions WHERE id NOT IN (SELECT id FROM session_state)`);
   }
-  async transaction<T>(fn: () => T | Promise<T>): Promise<T> {
-    return this.db.scope(async () => {
-      if (this.inTransaction) return await fn();
-      await this.db.exec("BEGIN IMMEDIATE");
-      const pendingBefore = new Map(
-        [...this.pending].map(([id, entry]) => [
-          id,
-          {
-            ...entry,
-            events: [...entry.events],
-            changed: new Map(entry.changed),
-            timer: undefined,
-          },
-        ]),
-      );
-      this.inTransaction = true;
-      this.transactionChanges = 0;
-      this.transactionProjectChanges.clear();
-      this.flushedInTransaction = [];
-      try {
-        const value = await fn();
-        await this.db.exec("COMMIT");
-        this.committedChangeVersion += this.transactionChanges;
-        for (const [id, count] of this.transactionProjectChanges)
-          this.projectVersions.set(id, (this.projectVersions.get(id) ?? 0) + count);
-        const changed = this.transactionProjectChanges.size > 0;
-        this.inTransaction = false;
-        this.transactionChanges = 0;
-        this.transactionProjectChanges.clear();
-        this.flushedInTransaction = [];
-        const effects = this.commitEffects.splice(0);
-        this.db.outsideScope(() => {
-          try {
-            if (changed) this.changes.notify();
-          } catch (error) {
-            console.error("Committed change notification failed:", error);
-          }
-          for (const effect of effects) {
-            try {
-              void Promise.resolve(effect()).catch((error) =>
-                console.error("Committed command dispatch failed:", error),
-              );
-            } catch (error) {
-              console.error("Committed command dispatch failed:", error);
-            }
-          }
-        });
-        return value;
-      } catch (error) {
-        this.inTransaction = false;
-        this.transactionChanges = 0;
-        this.transactionProjectChanges.clear();
-        this.cache.clear();
-        this.summaryRows.clear();
-        this.cacheWeights.clear();
-        this.stateMetadata.clear();
-        this.authCache.clear();
-        this.commitEffects = [];
-        this.flushedInTransaction = [];
-        for (const entry of this.pending.values()) clearTimeout(entry.timer);
-        this.pending.clear();
-        for (const entry of pendingBefore.values()) this.restore(entry);
-        try {
-          await this.db.exec("ROLLBACK");
-        } catch (rollbackError) {
-          console.error("Could not roll back host transaction:", rollbackError);
-        }
-        throw error;
+  async transaction<T>(
+    fn: () => T | Promise<T>,
+    durability: "critical" | "checkpoint" = "critical",
+  ): Promise<T> {
+    return this.db.scope(() => {
+      if (this.inTransaction) {
+        if (durability === "critical") this.db.assertCriticalScope();
+        return Promise.resolve().then(fn);
       }
+      const run = async () => {
+        await this.db.exec("BEGIN IMMEDIATE");
+        const mutationVersion = this.db.dataMutationVersion;
+        const pendingBefore = new Map(
+          [...this.pending].map(([id, entry]) => [
+            id,
+            {
+              ...entry,
+              events: [...entry.events],
+              changed: new Map(entry.changed),
+              timer: undefined,
+            },
+          ]),
+        );
+        this.inTransaction = true;
+        this.transactionChanges = 0;
+        this.transactionProjectChanges.clear();
+        this.flushedInTransaction = [];
+        try {
+          const value = await fn();
+          await this.db.exec("COMMIT");
+          this.committedChangeVersion += this.transactionChanges;
+          for (const [id, count] of this.transactionProjectChanges)
+            this.projectVersions.set(id, (this.projectVersions.get(id) ?? 0) + count);
+          const changed = this.transactionProjectChanges.size > 0;
+          this.inTransaction = false;
+          this.transactionChanges = 0;
+          this.transactionProjectChanges.clear();
+          this.flushedInTransaction = [];
+          const effects = this.commitEffects.splice(0);
+          this.db.outsideScope(() => {
+            if (this.db.dataMutationVersion !== mutationVersion) this.publishChanges();
+            try {
+              if (changed) this.changes.notify();
+            } catch (error) {
+              console.error("Committed change notification failed:", error);
+            }
+            for (const effect of effects) {
+              try {
+                void Promise.resolve(effect()).catch((error) =>
+                  console.error("Committed command dispatch failed:", error),
+                );
+              } catch (error) {
+                console.error("Committed command dispatch failed:", error);
+              }
+            }
+          });
+          return value;
+        } catch (error) {
+          this.inTransaction = false;
+          this.transactionChanges = 0;
+          this.transactionProjectChanges.clear();
+          this.cache.clear();
+          this.summaryRows.clear();
+          this.cacheWeights.clear();
+          this.stateMetadata.clear();
+          this.authCache.clear();
+          this.commitEffects = [];
+          this.flushedInTransaction = [];
+          for (const entry of this.pending.values()) clearTimeout(entry.timer);
+          this.pending.clear();
+          for (const entry of pendingBefore.values()) this.restore(entry);
+          try {
+            await this.db.exec("ROLLBACK");
+          } catch (rollbackError) {
+            console.error("Could not roll back host transaction:", rollbackError);
+          }
+          throw error;
+        }
+      };
+      return durability === "critical" ? this.db.durableScope(run) : run();
     });
   }
   /** Derived readers may use uncommitted rows, but must not publish them in a
@@ -569,6 +712,7 @@ export class HostStore {
   }
   async insertManagedWorkspace(workspace: ManagedWorkspace): Promise<void> {
     return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
       await this.db
         .prepare(`INSERT INTO managed_workspaces
         (id, repository_id, project_id, environment_id, owner_kind, owner_id, path, branch_ref, state, revision, payload)
@@ -622,6 +766,7 @@ export class HostStore {
             (workspace as ManagedWorkspace & { targetDirectory?: string }).targetDirectory)
       )
         throw new Error("Workspace identity is immutable: targetBranchRef/targetDirectory");
+      await this.db.checkAuthorization();
       const result = await this.db
         .prepare(
           "UPDATE managed_workspaces SET state=?, revision=?, payload=? WHERE id=? AND revision=?",
@@ -746,6 +891,7 @@ export class HostStore {
     expectedPhase: WorkspaceOperation["phase"] | null,
   ): Promise<void> {
     return this.transaction(async () => {
+      await this.db.checkAuthorization();
       if (operation.phase === "blocked" && !operation.resumePhase)
         throw new Error("Blocked workspace operation must retain its recovery phase");
       if (expectedPhase === null) {
@@ -806,6 +952,7 @@ export class HostStore {
           throw new Error(`Workspace operation recovery identity is immutable: ${key}`);
       if (oldFields.finalized === true && newFields.finalized !== true)
         throw new Error("Workspace operation finalization cannot be reversed");
+      await this.db.checkAuthorization();
       const result = await this.db
         .prepare(
           "UPDATE workspace_operations SET phase=?, payload=? WHERE id=? AND phase=? AND payload=?",
@@ -848,6 +995,7 @@ export class HostStore {
     response: unknown,
   ): Promise<void> {
     return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
       await this.db
         .prepare(
           "INSERT INTO workspace_mutation_receipts (scope, idempotency_key, signature, response) VALUES (?, ?, ?, ?)",
@@ -883,6 +1031,7 @@ export class HostStore {
           code: "WORKSPACE_POLICY_REVISION_CONFLICT",
         });
       const revision = expectedRevision + 1;
+      await this.db.checkAuthorization();
       if (previous)
         await this.db
           .prepare(
@@ -929,6 +1078,7 @@ export class HostStore {
   }
   async insertWorkspaceFeatureClaim(claim: WorkspaceFeatureClaim): Promise<void> {
     return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
       await this.db
         .prepare(
           "INSERT INTO workspace_feature_claims (id, repository_id, project_id, feature_key, scope, workspace_id, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -945,16 +1095,18 @@ export class HostStore {
     });
   }
   async deleteWorkspaceFeatureClaim(claimId: string, workspaceId: string): Promise<boolean> {
-    return this.db.storeScope(
-      async () =>
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      return (
         Number(
           (
             await this.db
               .prepare("DELETE FROM workspace_feature_claims WHERE id=? AND workspace_id=?")
               .run(claimId, workspaceId)
           ).changes,
-        ) > 0,
-    );
+        ) > 0
+      );
+    });
   }
   async project(id: string): Promise<HostProject> {
     return this.db.storeScope(async () => {
@@ -1012,9 +1164,17 @@ export class HostStore {
   }
   private async find(id: string): Promise<HostSession | undefined> {
     const unwritten = this.pending.get(id);
-    if (unwritten) return unwritten.value;
+    if (unwritten) {
+      if (unwritten.value.authorityGeneration !== undefined)
+        await assertHostAuthority(this.db, id, unwritten.value.authorityGeneration);
+      return unwritten.value;
+    }
     const cached = this.cache.get(id);
-    if (cached) return this.remember(cached);
+    if (cached) {
+      if (cached.authorityGeneration !== undefined)
+        await assertHostAuthority(this.db, id, cached.authorityGeneration);
+      return this.remember(cached);
+    }
     const row = await this.db.prepare("SELECT snapshot FROM sessions WHERE id=?").get(id);
     if (!row) return undefined;
     let value = JSON.parse(String(row.snapshot)) as HostSession;
@@ -1097,7 +1257,15 @@ export class HostStore {
               .all(projectId)
           ).map(async (row) => {
             const unwritten = this.pending.get(String(row.id));
-            if (unwritten) return summary(unwritten.value);
+            if (unwritten) {
+              if (unwritten.value.authorityGeneration !== undefined)
+                await assertHostAuthority(
+                  this.db,
+                  String(row.id),
+                  unwritten.value.authorityGeneration,
+                );
+              return summary(unwritten.value);
+            }
             const cached = row.summary
               ? (JSON.parse(String(row.summary)) as HostSessionSummary)
               : undefined;
@@ -1110,9 +1278,14 @@ export class HostStore {
             )
               return cached;
             const fresh = summary(await this.session(String(row.id)));
-            await this.db
-              .prepare("UPDATE session_state SET summary=? WHERE id=?")
-              .run(JSON.stringify(fresh), String(row.id));
+            if (
+              !(await this.db
+                .prepare("SELECT 1 FROM host_authority_heads WHERE session_id=?")
+                .get(String(row.id)))
+            )
+              await this.db
+                .prepare("UPDATE session_state SET summary=? WHERE id=?")
+                .run(JSON.stringify(fresh), String(row.id));
             return fresh;
           }),
         )
@@ -1171,6 +1344,7 @@ export class HostStore {
    * their transcripts. */
   async adopted(projectId?: string): Promise<
     {
+      authorityGeneration?: number;
       id: string;
       projectId: string;
       revision: number;
@@ -1184,7 +1358,8 @@ export class HostStore {
       const rows = new Map(
         (
           await this.db
-            .prepare(`SELECT id, project_id, revision, updated_at, status, desktop_updated_at
+            .prepare(`SELECT id, project_id, revision, updated_at, status, desktop_updated_at,
+              json_extract(summary, '$.authorityGeneration') AS authority_generation
         FROM session_state WHERE has_desktop=1${projectId === undefined ? "" : " AND project_id=?"}`)
             .all(...(projectId === undefined ? [] : [projectId]))
         ).map((row) => [
@@ -1196,6 +1371,9 @@ export class HostStore {
             updatedAt: Number(row.updated_at),
             status: String(row.status) as HostSession["status"],
             desktopUpdatedAt: Number(row.desktop_updated_at ?? 0),
+            ...(row.authority_generation == null
+              ? {}
+              : { authorityGeneration: Number(row.authority_generation) }),
           },
         ]),
       );
@@ -1213,6 +1391,9 @@ export class HostStore {
             updatedAt: value.updatedAt,
             status: value.status,
             desktopUpdatedAt: value.desktop.updatedAt,
+            ...(value.authorityGeneration === undefined
+              ? {}
+              : { authorityGeneration: value.authorityGeneration }),
           });
       }
       return [...rows.values()];
@@ -1455,72 +1636,87 @@ export class HostStore {
     } = {},
   ): Promise<HostSession> {
     return this.db.storeScope(() =>
-      this.transaction(async () => {
-        this.bumpChangeVersion();
-        this.touchProject(input.projectId);
-        const previous = await this.find(input.session.id);
-        if (previous && previous.projectId !== input.projectId)
-          this.touchProject(previous.projectId);
-        const value = {
-          ...input,
-          // Older snapshots have no creation time. Preserve their last recorded
-          // timestamp when they are first written by this version of the host.
-          createdAt:
-            input.createdAt ?? previous?.createdAt ?? previous?.updatedAt ?? input.updatedAt,
-          blockRevisions: blockRevisions(previous, input, options.blockChanges),
-        };
-        const id = value.session.id;
-        const row = { revision: value.revision, event };
-        if (
-          (options.deferred || options.journal) &&
-          previous &&
-          previous.projectId === input.projectId
-        ) {
-          let changes =
-            options.blockChanges ?? changedBlocks(previous.session.blocks, value.session.blocks);
-          if (!changes) {
-            const position = streamingTextUpdate(previous.session.blocks, value.session.blocks);
-            if (position !== undefined)
-              changes = new Map([
-                [value.session.blocks[position].id, value.session.blocks[position]],
-              ]);
-          }
-          const structural = patchBlockIndex(
-            previous.session.blocks,
-            value.session.blocks,
-            changes,
-          );
-          const entry = this.pending.get(id) ?? {
-            value,
-            events: [],
-            changed: new Map<string, Block>(),
-            structural: false,
-          };
-          entry.structural ||= structural;
-          if (changes) for (const [id, block] of changes) if (block) entry.changed.set(id, block);
-          entry.value = value;
-          entry.events.push(row);
-          this.pending.set(id, entry);
-          this.updateStateMetadata(value);
-          if (options.journal) await this.flushPending(id);
-          else this.arm(id, entry);
-          await this.savedSummary(value);
-          return value;
-        }
-        // Pending soft state goes out in the same write, so the stored snapshot
-        // never goes backwards and event rows stay in revision order.
-        const entry = this.take(id);
-        try {
-          await this.write(value, [...(entry?.events ?? []), row]);
-        } catch (error) {
-          if (entry) this.restore(entry);
-          throw error;
-        }
-        const remembered = this.remember(value);
-        this.updateStateMetadata(value);
-        await this.savedSummary(value);
-        return remembered;
-      }),
+      this.transaction(
+        async () =>
+          this.sessionWrite(
+            input.session.id,
+            input.authorityGeneration,
+            async (authorityGeneration) => {
+              this.bumpChangeVersion();
+              this.touchProject(input.projectId);
+              const previous = await this.find(input.session.id);
+              if (previous && previous.projectId !== input.projectId)
+                this.touchProject(previous.projectId);
+              const value = {
+                ...input,
+                ...(authorityGeneration === undefined ? {} : { authorityGeneration }),
+                // Older snapshots have no creation time. Preserve their last recorded
+                // timestamp when they are first written by this version of the host.
+                createdAt:
+                  input.createdAt ?? previous?.createdAt ?? previous?.updatedAt ?? input.updatedAt,
+                blockRevisions: blockRevisions(previous, input, options.blockChanges),
+              };
+              const id = value.session.id;
+              const row = { revision: value.revision, event };
+              if (
+                (options.deferred || options.journal) &&
+                previous &&
+                previous.projectId === input.projectId
+              ) {
+                let changes =
+                  options.blockChanges ??
+                  changedBlocks(previous.session.blocks, value.session.blocks);
+                if (!changes) {
+                  const position = streamingTextUpdate(
+                    previous.session.blocks,
+                    value.session.blocks,
+                  );
+                  if (position !== undefined)
+                    changes = new Map([
+                      [value.session.blocks[position].id, value.session.blocks[position]],
+                    ]);
+                }
+                const structural = patchBlockIndex(
+                  previous.session.blocks,
+                  value.session.blocks,
+                  changes,
+                );
+                const entry = this.pending.get(id) ?? {
+                  value,
+                  events: [],
+                  changed: new Map<string, Block>(),
+                  structural: false,
+                };
+                entry.structural ||= structural;
+                if (changes)
+                  for (const [id, block] of changes) if (block) entry.changed.set(id, block);
+                entry.value = value;
+                entry.events.push(row);
+                this.pending.set(id, entry);
+                this.updateStateMetadata(value);
+                if (options.journal) await this.flushPending(id);
+                else this.arm(id, entry);
+                await this.savedSummary(value);
+                return value;
+              }
+              // Pending soft state goes out in the same write, so the stored snapshot
+              // never goes backwards and event rows stay in revision order.
+              const entry = this.take(id);
+              try {
+                await this.write(value, [...(entry?.events ?? []), row]);
+              } catch (error) {
+                if (entry) this.restore(entry);
+                throw error;
+              }
+              const remembered = this.remember(value);
+              this.updateStateMetadata(value);
+              await this.savedSummary(value);
+              return remembered;
+            },
+            false,
+          ),
+        options.deferred || options.journal ? "checkpoint" : "critical",
+      ),
     );
   }
   /** Writes every session whose latest state is still only in memory. */
@@ -1537,6 +1733,7 @@ export class HostStore {
     try {
       await this.writeJournal(entry.value, entry.events, entry);
     } catch (error) {
+      if (error instanceof HostAuthorityFenceError) entry.authorityBlocked = true;
       this.restore(entry);
       throw error;
     }
@@ -1577,7 +1774,8 @@ export class HostStore {
     this.arm(id, entry);
   }
   private arm(id: string, entry: PendingWrite): void {
-    if (entry.timer || this.closePromise || this.db.restartRequired) return;
+    if (entry.timer || entry.authorityBlocked || this.closePromise || this.db.restartRequired)
+      return;
     entry.timer = this.db.outsideScope(() =>
       setTimeout(async () => {
         entry.timer = undefined;
@@ -1649,11 +1847,12 @@ export class HostStore {
         .prepare("DELETE FROM session_journal_blocks WHERE session_id=?")
         .run(value.session.id);
     };
-    if (this.inTransaction) await run();
-    else await this.transaction(run);
+    const guarded = () => this.sessionWrite(value.session.id, value.authorityGeneration, run);
+    if (this.inTransaction) await guarded();
+    else await this.transaction(guarded);
     this.snapshotWrites++;
   }
-  /** Streaming and immediately durable provider-event checkpoints serialize
+  /** Streaming and process-crash-safe provider-event checkpoints serialize
    * changed blocks only. Commands/receipts and settled turns still commit full
    * compatible snapshots; journal publication remains in the same transaction. */
   private async writeJournal(
@@ -1723,8 +1922,9 @@ export class HostStore {
         .prepare("DELETE FROM events WHERE session_id=? AND revision<?")
         .run(id, value.revision - 2000);
     };
-    if (this.inTransaction) await run();
-    else await this.transaction(run);
+    const guarded = () => this.sessionWrite(value.session.id, value.authorityGeneration, run);
+    if (this.inTransaction) await guarded();
+    else await this.transaction(guarded, "checkpoint");
   }
   async updateSession(
     id: string,
@@ -1734,9 +1934,10 @@ export class HostStore {
       pinned?: boolean;
       linkedWorkItem?: LinkedWorkItem | null;
     },
+    authorityGeneration?: number,
   ): Promise<HostSessionSummary> {
     return this.db.storeScope(async () => {
-      return await this.transaction(async () => {
+      return await this.withAuthorityGeneration(id, authorityGeneration, async () => {
         const current = await this.session(id);
         if (patch.title !== undefined && (!patch.title.trim() || patch.title.length > 200))
           throw new Error("Invalid session title");
@@ -1760,9 +1961,9 @@ export class HostStore {
       });
     });
   }
-  async deleteSession(id: string): Promise<void> {
+  async deleteSession(id: string, authorityGeneration?: number): Promise<void> {
     return this.db.storeScope(async () => {
-      await this.transaction(async () => {
+      await this.withAuthorityGeneration(id, authorityGeneration, async () => {
         const current = await this.session(id);
         if (current.status === "running") throw new Error("Stop this session before deleting it");
         this.take(id);
@@ -1793,12 +1994,15 @@ export class HostStore {
     });
   }
   async recordReceipt(signature: string, receipt: CommandReceipt): Promise<void> {
-    return this.db.storeScope(async () => {
-      await this.db
-        .prepare("INSERT INTO receipts (id, signature, receipt, created_at) VALUES (?, ?, ?, ?)")
-        .run(receipt.commandId, signature, JSON.stringify(receipt), Date.now());
-      if (++this.receiptWrites % RECEIPT_PRUNE_EVERY === 0) await this.pruneReceipts();
-    });
+    return this.db.storeScope(() =>
+      this.transaction(async () => {
+        this.db.assertCriticalScope();
+        await this.db
+          .prepare("INSERT INTO receipts (id, signature, receipt, created_at) VALUES (?, ?, ?, ?)")
+          .run(receipt.commandId, signature, JSON.stringify(receipt), Date.now());
+        if (++this.receiptWrites % RECEIPT_PRUNE_EVERY === 0) await this.pruneReceipts();
+      }),
+    );
   }
   /** Clients retry a command for seconds to minutes, never days. */
   async pruneReceipts(now = Date.now()): Promise<void> {
@@ -1958,6 +2162,8 @@ export class HostStore {
   }
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
+    this.changeListeners.clear();
+    this.authorityListeners.clear();
     const closing = this.db.close(() => this.flushAll());
     if (this.db.ownsScope) return closing;
     this.closePromise = closing.finally(() => {
@@ -1995,6 +2201,9 @@ function summaryFromBlocks(value: HostSession): HostSessionSummary {
   const issue = sessionIssue({ ...value.session, busy: value.status === "running" });
   const turn = value.session.blocks.findLast((block) => block.role === "user" && !block.draft);
   return {
+    ...(value.authorityGeneration === undefined
+      ? {}
+      : { authorityGeneration: value.authorityGeneration }),
     ...(issue
       ? {
           issue,

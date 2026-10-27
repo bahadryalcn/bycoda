@@ -1,6 +1,6 @@
 # Shared UI component selection
 
-Read [design ownership](ui-design-system.md) and the
+Read [product design language](DESIGN.md), [design ownership](ui-design-system.md) and the
 [current Arc integration](arc-ui.md) first. Application imports come from shared
 bycoda adapters, never directly from the Arc registry. The official free catalog
 is the selection source; consult each item's current `whenToUse`, `whenNotToUse`,
@@ -68,7 +68,7 @@ fallbacks. A different animation or icon size does not justify another button AP
 | `button`                 | Integrated: Button                           | Default single action; hierarchy and semantic tone stay centralized.                                                                                                                                                   |
 | `action-button`          | Reuse: Button + caller async state           | Button loading/loadingLabel prevents duplicate activation; callers own promise, pending/result/error and permission gates. No separate ActionButton registry integration claimed.                                      |
 | `split-button`           | Integrated: SplitButton composition          | Button + DropdownMenu compose explicit alternatives. Optional menuDisabled leaves Amend reachable while primary Commit is disabled; loading/group aria-disabled gate both. Method selection never implicitly executes. |
-| `button-group`           | Reuse: shared action compositions            | SplitButton, FloatingButtonGroup and ExpandingButtonGroup own their concrete group semantics; ordinary static rows compose Button. Radio/segmented choices retain selection owners.                                    |
+| `button-group`           | Integrated: ButtonGroup                     | Joined neutral action surface with shared hover/press; ordinary Button children keep separate hit targets, focus, tooltips and busy/disabled behavior. Used by the update/GitHub footer and installed-update notice. SplitButton, FloatingButtonGroup and ExpandingButtonGroup retain their concrete semantics; choices retain selection owners. |
 | `floating-button-group`  | Integrated: shared contextual toolbar        | Transcript/terminal selection actions use the existing Popover. Preserve selection, async failures and toolbar keyboard semantics; the group is not a positioning/overlay owner.                                       |
 | `expanding-button-group` | Integrated: shared compact action group      | Session Notes editor Copy/Add/Link uses the shared group. Labels expand on pointer/keyboard intent with in-place result feedback; this is not an overflow menu. Preserve touch and actual async outcome behavior.      |
 | `dropdown-menu`          | Integrated: DropdownMenu over Popover        | Commands from an explicit trigger; preserve keyboard navigation and overlay routing.                                                                                                                                   |

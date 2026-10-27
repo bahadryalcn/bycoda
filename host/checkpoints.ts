@@ -21,7 +21,12 @@ import type {
 } from "../src/features/sessions/model/checkpoint-types";
 import { safeGitPath } from "./workspace";
 import { CheckpointLeases } from "./checkpoint-leases";
-import { SessionFileRevert } from "./session-file-revert";
+import {
+  SessionFileRevert,
+  assertFileRevertAuthority,
+  fileRevertGeneration,
+  type FileRevertAuthority,
+} from "./session-file-revert";
 
 type Blob = { oid: string; mode: string } | null;
 type Pair = {
@@ -63,9 +68,17 @@ const imageBlob = (value: FileImage): Blob => {
   };
 };
 /** Opaque identity of the authoritative captured delta, including its completed turn. */
-const checkpointToken = (record: Record) =>
+const checkpointToken = (record: Record, generation?: number) =>
   createHash("sha256")
-    .update(JSON.stringify([record.cwd, record.head, record.settledTurnId ?? null, record.files]))
+    .update(
+      JSON.stringify([
+        record.cwd,
+        record.head,
+        record.settledTurnId ?? null,
+        record.files,
+        ...(generation === undefined ? [] : [["authorityGeneration", generation]]),
+      ]),
+    )
     .digest("hex");
 const id = (v: unknown) => {
   if (typeof v !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(v))
@@ -177,9 +190,10 @@ export class HostCheckpoints {
   constructor(
     private root: string,
     leaseRoot = join(root, ".active-leases"),
+    private readonly authority?: FileRevertAuthority,
   ) {
     this.leases = new CheckpointLeases(leaseRoot);
-    this.fileHistory = new SessionFileRevert(root);
+    this.fileHistory = new SessionFileRevert(root, undefined, authority);
   }
   /** Lightweight default turn hooks: no private Git index, tree or refs. Call
    * with the actual user block ID, which differs from the provider run ID. */
@@ -264,21 +278,46 @@ export class HostCheckpoints {
       this.fileHistory.claimProof(session, cwd, turn, callId, changes),
     );
   }
-  filesRevertPlan(session: string, cwd: string, userBlockId: string) {
-    return this.queue(session, [cwd], () => this.fileHistory.plan(session, cwd, userBlockId));
+  async filesRevertPlan(
+    session: string,
+    cwd: string,
+    userBlockId: string,
+    authorityGeneration?: number,
+  ) {
+    const generation = fileRevertGeneration(authorityGeneration);
+    await assertFileRevertAuthority(this.authority, session, generation);
+    return this.queue(session, [cwd], () =>
+      this.fileHistory.plan(session, cwd, userBlockId, generation),
+    );
   }
-  filesRevert(session: string, cwd: string, userBlockId: string, planToken?: string) {
+  async filesRevert(
+    session: string,
+    cwd: string,
+    userBlockId: string,
+    planToken?: string,
+    authorityGeneration?: number,
+  ) {
+    const generation = fileRevertGeneration(authorityGeneration);
+    await assertFileRevertAuthority(this.authority, session, generation);
     return this.queue(session, [cwd], async () => {
+      await assertFileRevertAuthority(this.authority, session, generation);
       const restored = new Map<string, FileImage>();
-      const result = await this.fileHistory.revert(
-        session,
-        cwd,
-        userBlockId,
-        planToken,
-        (path, value) => restored.set(path, value),
-      );
+      let failure: unknown;
+      const result = await this.fileHistory
+        .revert(
+          session,
+          cwd,
+          userBlockId,
+          planToken,
+          (path, value) => restored.set(path, value),
+          generation,
+        )
+        .catch((error) => {
+          failure = error;
+          return undefined;
+        });
       const record = await this.load(session);
-      if (record && record.cwd === (await realpath(cwd))) {
+      if (restored.size && record && record.cwd === (await realpath(cwd))) {
         for (const [path, value] of restored) {
           const pair = record.files[path];
           if (!pair) continue;
@@ -288,7 +327,8 @@ export class HostCheckpoints {
         }
         await this.save(session, record);
       }
-      return result;
+      if (failure) throw failure;
+      return result!;
     });
   }
   forgetFilesFromMessage(session: string, cwd: string, userBlockId: string) {
@@ -771,8 +811,12 @@ export class HostCheckpoints {
   status(
     session: string,
     cwd: string,
+    authorityGeneration?: number,
   ): Promise<CheckpointStatus & { expectedCheckpoint?: string }> {
+    const generation = fileRevertGeneration(authorityGeneration);
     return this.queue(session, [cwd], async () => {
+      if (generation !== undefined)
+        await assertFileRevertAuthority(this.authority, session, generation);
       const record = await this.matching(session, cwd);
       if (!record) return { files: [] };
       const safe =
@@ -793,7 +837,7 @@ export class HostCheckpoints {
           };
         }),
       );
-      return { files, expectedCheckpoint: checkpointToken(record) };
+      return { files, expectedCheckpoint: checkpointToken(record, generation) };
     });
   }
   private async contents(cwd: string, path: string, blob: Blob, raw?: string) {
@@ -858,8 +902,12 @@ export class HostCheckpoints {
     session: string,
     cwd: string,
     path: string,
+    authorityGeneration?: number,
   ): Promise<CheckpointFileDiff & { expectedCheckpoint: string }> {
+    const generation = fileRevertGeneration(authorityGeneration);
     return this.queue(session, [cwd], async () => {
+      if (generation !== undefined)
+        await assertFileRevertAuthority(this.authority, session, generation);
       const record = await this.matching(session, cwd);
       const pair = record?.files[path];
       if (!record || !pair) throw new Error("File has no session checkpoint");
@@ -870,7 +918,7 @@ export class HostCheckpoints {
       await safeGitPath(record.cwd, path);
       const diff = await this.diff(record.cwd, path, pair);
       return {
-        expectedCheckpoint: checkpointToken(record),
+        expectedCheckpoint: checkpointToken(record, generation),
         path: resolve(record.cwd, path),
         relative: path,
         status: !pair.before ? "untracked" : !pair.after ? "deleted" : "modified",
@@ -887,15 +935,22 @@ export class HostCheckpoints {
     path: string | undefined,
     undo: boolean,
     expectedCheckpoint?: string,
+    authorityGeneration?: number,
   ) {
+    const generation = fileRevertGeneration(authorityGeneration);
     return this.queue(session, [cwd], async () => {
+      await assertFileRevertAuthority(this.authority, session, generation);
       const record = await this.matching(session, cwd);
       if (
         expectedCheckpoint !== undefined &&
         (!/^[a-f0-9]{64}$/.test(expectedCheckpoint) ||
           !record ||
-          checkpointToken(record) !== expectedCheckpoint)
+          checkpointToken(record, generation) !== expectedCheckpoint)
       )
+        throw new Error(
+          "The session checkpoint changed; review it again before keeping or undoing files",
+        );
+      if (generation !== undefined && expectedCheckpoint === undefined)
         throw new Error(
           "The session checkpoint changed; review it again before keeping or undoing files",
         );
@@ -929,20 +984,27 @@ export class HostCheckpoints {
       for (const write of writes) {
         if (!(await this.restorable(record, write.path, write.pair)))
           throw new Error("File changed while preparing undo");
+        await assertFileRevertAuthority(this.authority, session, generation);
         if (!write.pair.before) await rm(write.abs, { force: true });
         else {
           await mkdir(dirname(write.abs), { recursive: true });
+          await assertFileRevertAuthority(this.authority, session, generation);
           await writeFile(write.abs, write.bytes);
-          if (process.platform !== "win32") await chmod(write.abs, write.pair.modeBefore ?? 0o644);
+          if (process.platform !== "win32") {
+            await assertFileRevertAuthority(this.authority, session, generation);
+            await chmod(write.abs, write.pair.modeBefore ?? 0o644);
+          }
         }
       }
+      await assertFileRevertAuthority(this.authority, session, generation);
       for (const path of paths) delete record.files[path];
       if (!Object.keys(record.files).length) {
         record.shared = false;
         record.head = await head(record.cwd);
       }
+      await assertFileRevertAuthority(this.authority, session, generation);
       await this.save(session, record);
-    }).then(() => this.status(session, cwd));
+    }).then(() => this.status(session, cwd, generation));
   }
   recover(session: string, cwd: string) {
     return this.queue(

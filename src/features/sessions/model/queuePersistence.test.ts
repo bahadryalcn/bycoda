@@ -17,6 +17,23 @@ function message(patch: Partial<QueuedMessage> = {}): QueuedMessage {
   return { id: "q1", text: "hello", attachments: [], ...patch };
 }
 
+it("retains original queue intent generations and leaves legacy rows unbound through restart", () => {
+  const rows = [message({ authorityGeneration: 2 }), message({ id: "legacy" })];
+  const restored = restoreQueuedMessages(persistableQueue(rows));
+  expect(restored).toEqual(rows);
+  expect(restored[1]).not.toHaveProperty("authorityGeneration");
+});
+
+it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "2", null])(
+  "fails closed on malformed queue generation %s without silently omitting a retained message",
+  (generation) => {
+    const rows = [message({ authorityGeneration: generation as number })];
+    expect(() => persistableQueue(rows)).toThrow("kept for recovery");
+    expect(() => restoreQueuedMessages(rows)).toThrow("kept for recovery");
+    expect(rows[0].text).toBe("hello");
+  },
+);
+
 it("preserves the unknown-delivery hold across persistence and restore", () => {
   const queue = [message({ deliveryUnknown: true })];
   expect(restoreQueuedMessages(persistableQueue(queue))).toEqual(queue);

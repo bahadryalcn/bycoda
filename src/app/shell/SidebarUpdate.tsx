@@ -8,6 +8,7 @@ import { type UpdaterSnapshot } from "../model/updater";
 import type { InstalledUpdate } from "../model/updateNotice";
 import { snoozeUpdatePrompt } from "../model/updatePrompt";
 import { UpdateRailCard } from "./UpdateRailCard";
+import { GithubStarPrompt } from "./GithubStarPrompt";
 
 // The update entry point only earns its space when there is something to act on: an
 // update waiting to be installed, one downloading, or an install error to retry.
@@ -25,11 +26,13 @@ export function SidebarUpdateFooter({
   onOpenWhatsNew,
   onDismissUpdate,
   noticesOnly = false,
+  repositoryPrompt = false,
 }: {
   update?: InstalledUpdate | null;
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
   noticesOnly?: boolean;
+  repositoryPrompt?: boolean;
 }) {
   const t = useT();
   const [promptOpen, setPromptOpen] = useState(false);
@@ -61,10 +64,43 @@ export function SidebarUpdateFooter({
       : t("Update to {p0}", { p0: snapshot.availableVersion });
 
   if (noticesOnly) return card;
-  if (!card && !actionable) return null;
+  if (!card && !actionable && !repositoryPrompt) return null;
+
+  const updateAction = actionable ? (
+    <Button
+      {...(repositoryPrompt
+        ? { iconOnly: true as const, label: actionLabel }
+        : { label: actionLabel })}
+      variant={repositoryPrompt ? "ghost" : "secondary"}
+      tone={snapshot.phase === "error" ? "warning" : "neutral"}
+      motion="none"
+      tooltip={actionLabel}
+      aria-haspopup="dialog"
+      aria-expanded={promptOpen}
+      onClick={() => setPromptOpen(true)}
+      className="min-w-0"
+    >
+      {snapshot.phase === "downloading" ? (
+        <Loader className="size-4 shrink-0 motion-safe:animate-spin" aria-hidden />
+      ) : (
+        <RefreshCw className="size-4 shrink-0" aria-hidden />
+      )}
+      {!repositoryPrompt ? (
+        <span className="truncate text-[12px] font-medium leading-tight @max-[140px]/rail:hidden">
+          {snapshot.phase === "downloading"
+            ? snapshot.progress != null
+              ? `${snapshot.progress}%`
+              : t("Downloading")
+            : t("Update")}
+        </span>
+      ) : null}
+    </Button>
+  ) : null;
 
   return (
-    <div className="flex min-w-0 flex-col items-end gap-1.5">
+    <div
+      className={`flex min-w-0 flex-col gap-1.5 empty:hidden ${repositoryPrompt ? "w-full" : "items-end"}`}
+    >
       {promptOpen && actionable ? (
         <Modal
           title={snapshot.phase === "error" ? t("Retry") : t("Update available")}
@@ -96,32 +132,7 @@ export function SidebarUpdateFooter({
         </Modal>
       ) : null}
       {card}
-      {actionable ? (
-        <Button
-          variant="secondary"
-          tone={snapshot.phase === "error" ? "warning" : "neutral"}
-          motion="none"
-          label={actionLabel}
-          tooltip={actionLabel}
-          aria-haspopup="dialog"
-          aria-expanded={promptOpen}
-          onClick={() => setPromptOpen(true)}
-          className="min-w-0"
-        >
-          {snapshot.phase === "downloading" ? (
-            <Loader className="size-4 shrink-0 motion-safe:animate-spin" aria-hidden />
-          ) : (
-            <RefreshCw className="size-4 shrink-0" aria-hidden />
-          )}
-          <span className="truncate text-[12px] font-medium leading-tight @max-[140px]/rail:hidden">
-            {snapshot.phase === "downloading"
-              ? snapshot.progress != null
-                ? `${snapshot.progress}%`
-                : t("Downloading")
-              : t("Update")}
-          </span>
-        </Button>
-      ) : null}
+      {repositoryPrompt ? <GithubStarPrompt action={updateAction} /> : updateAction}
     </div>
   );
 }

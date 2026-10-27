@@ -14,7 +14,11 @@ execute a reusable team.
 
 ## Scope and ownership
 
-Enumerated from source on the s0 contract baseline `f26ac112404e326478adb687c23ca9cc032acfef`.
+Original inventory: s0 contract baseline `f26ac112404e326478adb687c23ca9cc032acfef`.
+Crew audit refreshed on 2026-10-27 against dirty shared
+`main @ 0a42b1ab4fd891ccec5ca0fa238d7356b396b13c`; see the audit extension below.
+That refresh includes current mobile counterparts and does not establish installed
+source inclusion or a live feature reservation.
 Search `rg --files` for crew filenames and `rg -n 'Crew|crew|crews\.' src host src-tauri/src tests/browser`
 when updating this card; search symbols/copy keys too. Track each affected surface
 below for T1/T2 acceptance. This card is an inventory, not a live ownership lock.
@@ -110,9 +114,16 @@ Do not confuse context growth/theme settings with saved crew execution policies.
 - Native bridge: `src-tauri/src/remote.rs` allows the exact crew RPC methods;
   there is no separate Crew Rust feature module. Keep native and Host authorization
   aligned; regression coverage is in `src/features/connections/model/remoteMethodAllowlist.test.ts`.
-- No `mobile/` tree or Crew mobile screen exists in this frozen checkout. This is
-  an explicit inventory gap, not a guessed path or a physical-device acceptance.
-  Re-search the integration checkout when mobile sources are available.
+- The original s0 snapshot lacked mobile sources. Current 2026-10-27 inventory
+  includes `mobile/src/features/management/index.tsx` routing CrewsScreen from
+  `mobile/src/features/management/crews-screen.tsx`. Counterparts under
+  `mobile/src/features/management/crews/`: `crew-editor.tsx`, `member-editor.tsx`,
+  `profile-editor.tsx`, `start-editor.tsx`, `runtime-panel.tsx`, `run-card.tsx`,
+  `assignment-editor.tsx`, `member-inspection.tsx`, `model.ts`, `runtime-model.ts`
+  and `presentation.ts`, with adjacent tests. Bridge/contracts:
+  `mobile/src/remote/services/crews-api.ts` and
+  `mobile/src/remote/contracts/crews.ts`. This is a partial current source
+  inventory, not a full mobile redesign or physical-device acceptance.
 - Translation catalogs: `src/shared/i18n/locales/` (`en.json`, `tr.json`,
   `de.json`, `es.json`, `fr.json`, `ja.json`, `pt.json`, `zh-CN.json`),
   `src/shared/i18n/en-overrides.json`, `src/shared/i18n/tr-overrides.json`.
@@ -191,6 +202,17 @@ provider execution remain separate checks.
 
 ## Owner decisions
 
+2026-10-27, owner conversation `0567326f-aade-4baa-89f3-b44c6256ae9e`:
+
+> Crew ekranıda bu şekilde gördüğün gibi butonların sollarındaki ikonlar bile gözükmüyor şuanda. Buralarında kullanımını tasarımını ui ux ini geliştirip düzenlenmesi için audit oluşturalım
+
+Clarification covering both member role/agent icons and action-button icons:
+
+> Her iki alan
+
+These select audit scope only. No new run/model/cost/permission default or actual
+start/resume operation was selected. Composition ideas below remain proposals.
+
 ## Behavior to preserve
 
 Keep every role and instruction, searchable fixed/custom model choice, independent
@@ -226,7 +248,10 @@ separately and report installed, device and released evidence independently.
 
 ## Known concrete blockers
 
-The frozen baseline contains no mobile sources. Host capability contracts do not
+The original baseline lacked mobile sources; the current mobile inventory above
+supersedes that absence. Live feature-claim APIs were unavailable in the audit;
+available Git/worktree/native session state was inspected, with no cross-machine
+reservation asserted. Host capability contracts do not
 prove the owner's running Host implements the new workspace model. No installed
 app, live provider, physical device or crew execution is exercised by this card.
 Do not start a fixture if its fixed port belongs to another session; report the
@@ -254,8 +279,145 @@ port conflict and preserve that process.
 
 ## Proposals
 
-No additional product changes are proposed by this inventory.
+The 2026-10-27 audit proposes compact task-based Team/Working settings/Work
+composition, truthful model and run context, retained nested drafts/selections
+and deliberate member/action icon presentation. This is design work only;
+implementation and actual rendered acceptance remain pending.
+
+## Crew UI/UX audit extension, 2026-10-27
+
+T2 audit/design scope: six supplied light captures, 20 surface/state families.
+Three native read-only reviews cover editor/members, settings/models and work
+lifecycle; parent verified source contracts/icon path and all six captures.
+Register: `temp/local/2026-10-27-crews-redesign/AUDIT.md` (18 records: five V+S,
+13 source-only, not 18 reproduced bugs). Composition/repair order and full
+preservation/acceptance ledger: `REDESIGN.md` in the same directory. Evidence:
+`temp/verification/2026-10-27-crews-redesign/EVIDENCE.md`.
+
+- Member rows do not render a left identity icon (`CrewEditor.tsx:573`); some
+  action glyphs are visible in the owner captures. Current direct Lucide wrapper
+  emits eight nonempty tested Crew SVGs and shared icon/Button tests pass six
+  cases. This does not establish CSS/layout/contrast or installed action-icon
+  visibility. Check actual loaded source/theme/state before assigning a cause.
+- Distinguish free member name/professional role from structural responsibility,
+  fixed model from automatic candidate pool, selected identities from hidden
+  filtered picks and Crew copies from reusable library profiles. Retain Add
+  member subform drafts, all candidate settings and explicit profile writes.
+- Settings described as automatic-only also constrain fixed models. The same
+  maxEstimatedCost property filters per-model relative ratings and reduces
+  accumulated worker/reviewer estimate budget. Resolve semantics/units before
+  implementation; do not imply currency or relax guards through restyling.
+- Existing appearance saves immediately/device-locally outside Discard. Keep
+  limits, bulk Apply, custom ranking, scope copies, revisions/conflicts, owner
+  grants and concise visible permission consequences.
+- Saved team/count/Edit context and frozen run team must be distinct. Paused
+  execution does not remove unresolved decisions/blockers. Keep direct request
+  and session controls, current reviewer routing and selection through polling.
+- UI full-request expectation exceeds real list/get serialization; inspect is
+  not a full-request alternative. Fixture launch content is not Host proof.
+  Preserve sanitized lists and privacy; add deliberate bounded detail/completeness
+  contracts if required. Keep uncertain start receipts, partial Stop, separate
+  open/resume, deletion guards, work history and managed delivery boundaries.
+
+Audit only: no product/UI/Host/native/mobile edits or live operations. Actual
+Crew light/dark 1280/800/narrow, accessibility, isolated Host/native, installed
+icon visibility and physical mobile checks are pending. Concept/SSR/unit evidence
+cannot close those acceptance items. The ambient scene is separately inventoried
+and is not redesigned from these six captures. No build/install/release performed.
+
+## Settings collections and library-profile extension, 2026-10-27
+
+Exact owner quote, conversation `0567326f-aade-4baa-89f3-b44c6256ae9e`:
+
+> crew ayarları bu şekilde gözüküyor aşağı doğru uzuyor actionlar çok sağda kalıyor ekran geniş olduğununda burayı daha güzel yönetebiliriz diye düşünüyorum.
+
+T2 audit/design at the same dirty main baseline, three new light Settings captures
+K01–K03 opened; installed source inclusion UNKNOWN. Two native read-only reviews
+plus parent source/layout checks.10 Settings-specific records (three V+S,seven S),
+13 families. Prior18 records/20 families remain dependencies; no simple summed
+reproduced-bug total. Live claim API unavailable, card remains not a lock. Preserve
+concurrent staged/unstaged source and shared controls, no index/branch operation.
+
+Register/repair: `temp/local/2026-10-27-settings-crews-audit/AUDIT.md` and
+REDESIGN.md. Evidence:
+`temp/verification/2026-10-27-settings-crews-audit/EVIDENCE.md`.
+Settings/workbench cards and main plan R link here; no duplicate feature card.
+
+### Settings-focused inventory and findings
+
+- `src/features/crews/ui/CrewsSettings.tsx`: rail preference, saved definitions,
+  scope/count, create/edit/work management. Empty/~ cwd disables hook reads but
+  can look permanently loading; retained-data refresh error is hidden. Work/open
+  management is separate from Edit and actual execution.
+- `src/features/crews/ui/CrewLibrary.tsx`: search/groups/collection, GroupDialog
+  and LibraryMemberDialog; profile draft/model validation/save/copy/delete/conflict.
+  Group rename/delete changes labels, not members; partial retries refetch remaining
+  profiles. Profile dirty close is distinct from prior CR-E01 Add-member draft.
+- `src/features/crews/ui/CrewMemberForm.tsx`, `MemberModelPicker.tsx` and
+  `src/features/crews/model/crewRoster.ts`: full instructions/name/responsibility,
+  group entry, fixed/automatic pool and independent library-to-crew update offers.
+- `src/features/crews/model/crewClient.ts`: project-scoped crews.list with progressive
+  models.list, capability/query-target gates and retained data/polling. Preserve
+  opening existing work if only model discovery fails.
+- `src/features/crews/model/crewAppearance.ts`: Show crews is device-local rail
+  visibility, not a run switch. Its swallowed write errors need local recovery.
+- `src/features/settings/ui/settingsControls.tsx`, `BycodaSettings.css`: generic
+  full-width Rows separate labels/actions too far. Controls already have labelled
+  group context; repeated Edit labels are not wholly inaccessible. Scope/count in
+  descriptions can become compact inline facts without deleting help.
+- Host `host/crews.ts`: profile save compares expectedUpdatedAt/scope; delete
+  currently owner/scope checks only. Current delete stale-edit behavior requires a
+  deliberate concurrency decision/test before claiming revision protection.
+  Exact RPCs crews.list/agent.save/agent.delete, models.list; existing crews.v1,
+  crews.agent-groups.v1 and native remote allowlist remain authoritative.
+- Mobile `mobile/src/features/management/crews/profile-editor.tsx` and
+  `member-editor.tsx`: existing dirty/pending useSheetGuard is a parity reference,
+  not desktop proof. Broader native/Host/mobile inventory above remains in force.
+
+Propose stable compact Crew/library collection views with bounded reading/action
+tracks, near-row frequent actions, direct search and focused editor. Prefer these
+over nested accordions. Keep all fields/groups/model candidates and useful
+scope/count, avoid introducing network paging for already-loaded rows.
+
+Repair profile dirty close, empty-pool Save with no visible error, revision-conflict
+recovery, stale-delete semantics, retained-data refresh/error and disabled-context
+state. Keep draft/error and pending gates, confirmation/owner/scope checks, stable
+copy retry identity and uncertain-save refetch/receipt matching. No blind overwrites
+or automatic model substitution. Library original → crew copy → running snapshot
+remains explicit; editing/deleting a profile does not mutate running work/history.
+
+Prior CR-E03 fixed/Automatic summary, CR-E04 name/responsibility, CR-E06 search
+coverage, CR-E02/CR-S01 density and CR-S04 appearance/Discard semantics carry over
+without recounting. Previous icon/runtime/permission/budget/request findings remain
+pending in their own scope, not fixed by these Settings screenshots.
+
+### Settings checks and handoff
+
+19 existing tests/four files pass once: crewClient, crewRoster, crewPresentation,
+crew allocation. Static four-file scan[]. Source tests are not new compact UI,
+profile modal, stale/conflict/delete or installed/native acceptance. Prior icon/
+SSR checks were not repeated. Browser crews.spec.ts includes Settings work-open,
+partial group retry and uncertain copy fixtures; read, not run this extension.
+
+Required repair: actual light/dark1280/800/narrow, long names/groups/zoom,
+keyboard/reader/reduced motion; collection context/stale/filter-empty and rail
+write error; dirty-close, missing model/name, conflict recovery, fresh-delete
+decision, copy receipt/group retries and frozen-snapshot independence. Isolated
+Host/native and mobile device checks remain separate. Update guides after actual
+behavior changes. Audit ready for review; no source/profile/preference/model/run/
+Host write, build/install/release, index/branch change or commit delivered.
 
 Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
 card and the worktree-first documentation. This reference establishes inventory
 delivery only; product/runtime acceptance remains as described above.
+
+## Appearance ambient-crew dependency, 2026-10-27
+
+`temp/local/2026-10-27-settings-appearance-audit/` covers Appearance's decorative
+Agent crew master/theme/context growth. It is separate from saved executable
+Crews/member library/task management. Preserve three visual themes, theme-specific
+aging/color meaning, disabled stored choices, same/sibling updates, unknown/
+compacted context and paused/still scene behavior. No executable crew/profile/
+model or ambient preference was changed. See feature-appearance for inventory,
+proposal and native/rendering acceptance; fresh153 Appearance tests do not prove
+all crew-scene/Host/device journeys.

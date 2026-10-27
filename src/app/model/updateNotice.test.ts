@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   consumeInstalledUpdate,
+  dismissInstalledUpdate,
   rememberInstalledUpdate,
   type UpdateNoticeStore,
 } from "./updateNotice";
@@ -15,11 +16,30 @@ function memoryStore(): UpdateNoticeStore {
 }
 
 describe("installed update marker", () => {
-  it("is consumed once", () => {
+  it("remains available across startup reads until explicitly dismissed", () => {
     const store = memoryStore();
     rememberInstalledUpdate("0.1.23", store);
     expect(consumeInstalledUpdate(store)).toEqual({ version: "0.1.23" });
+    expect(consumeInstalledUpdate(store)).toEqual({ version: "0.1.23" });
+    dismissInstalledUpdate("0.1.23", store);
     expect(consumeInstalledUpdate(store)).toBeNull();
+  });
+
+  it("shows the next installed version after the previous notice was dismissed", () => {
+    const store = memoryStore();
+    rememberInstalledUpdate("0.1.23", store);
+    dismissInstalledUpdate("0.1.23", store);
+    rememberInstalledUpdate(" 0.1.24 ", store);
+    expect(consumeInstalledUpdate(store)).toEqual({ version: "0.1.24" });
+  });
+
+  it("preserves a newer notice when an old window dismisses its displayed version", () => {
+    const store = memoryStore();
+    rememberInstalledUpdate("0.1.23", store);
+    const olderNotice = consumeInstalledUpdate(store)!;
+    rememberInstalledUpdate("0.1.24", store);
+    dismissInstalledUpdate(olderNotice.version, store);
+    expect(consumeInstalledUpdate(store)).toEqual({ version: "0.1.24" });
   });
 
   it.each(["", "   "])("does not store blank version %j", (version) => {
@@ -49,5 +69,6 @@ describe("installed update marker", () => {
     };
     expect(() => rememberInstalledUpdate("0.1.23", store)).not.toThrow();
     expect(() => consumeInstalledUpdate(store)).not.toThrow();
+    expect(() => dismissInstalledUpdate("0.1.23", store)).not.toThrow();
   });
 });

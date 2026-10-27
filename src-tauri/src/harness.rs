@@ -238,6 +238,34 @@ pub struct HarnessHost {
 }
 
 impl HarnessHost {
+    pub(crate) fn authority_idle(&self, session_id: &str) -> Result<(), String> {
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| "NATIVE_AUTHORITY_UNKNOWN_PROCESS")?;
+        if inner.children.contains_key(session_id) {
+            return Err("NATIVE_AUTHORITY_PROVIDER_ACTIVE".into());
+        }
+        for exit in inner.managed_exits.get(session_id).into_iter().flatten() {
+            let result = exit
+                .result
+                .lock()
+                .map_err(|_| "NATIVE_AUTHORITY_UNKNOWN_PROCESS")?;
+            if !matches!(result.as_ref(), Some(Ok(()))) {
+                return Err("NATIVE_AUTHORITY_UNKNOWN_PROVIDER_SETTLEMENT".into());
+            }
+        }
+        drop(inner);
+        if self
+            .sse
+            .lock()
+            .map_err(|_| "NATIVE_AUTHORITY_UNKNOWN_PROCESS")?
+            .contains_key(session_id)
+        {
+            return Err("NATIVE_AUTHORITY_PROVIDER_STREAM_ACTIVE".into());
+        }
+        Ok(())
+    }
     pub(crate) fn runtime_binary_path(&self, provider: &str) -> Option<String> {
         self.runtime_binary_paths
             .lock()
@@ -320,6 +348,7 @@ impl HarnessHost {
     /// Register the exit receipt in the same critical section as process creation.
     /// A retirement that cancelled this spawn must not acknowledge ownership while
     /// an untracked process can still be created by that old spawn stamp.
+    #[cfg(test)]
     fn spawn_tracked(
         &self,
         session_id: &str,
@@ -327,13 +356,38 @@ impl HarnessHost {
         kill_all: u64,
         command: &mut Command,
     ) -> Result<(Child, Arc<ManagedProviderExit>), String> {
+        self.spawn_tracked_guarded(session_id, epoch, kill_all, command, None)
+    }
+
+    fn spawn_tracked_guarded(
+        &self,
+        session_id: &str,
+        epoch: u64,
+        kill_all: u64,
+        command: &mut Command,
+        mut authority: Option<&mut crate::session_store::authority::NativeLease>,
+    ) -> Result<(Child, Arc<ManagedProviderExit>), String> {
         let mut inner = self.lock_inner();
         if self.kill_all_gen.load(Ordering::SeqCst) != kill_all
             || inner.epochs.get(session_id) != Some(&epoch)
         {
             return Err(SPAWN_CANCELLED.into());
         }
-        let child = spawn_managed(command).map_err(|e| format!("Failed to start harness: {e}"))?;
+        if let Some(lease) = authority.as_deref_mut() {
+            lease.begin_external()?;
+        }
+        let child = match spawn_managed(command) {
+            Ok(child) => child,
+            Err(error) => {
+                if let Some(lease) = authority.as_deref_mut() {
+                    lease.spawn_failed()?;
+                }
+                return Err(format!("Failed to start harness: {error}"));
+            }
+        };
+        if let Some(lease) = authority {
+            let _ = lease.spawned(child.id());
+        }
         let exit = Arc::new(ManagedProviderExit::default());
         let receipts = inner.managed_exits.entry(session_id.into()).or_default();
         receipts.retain(|receipt| !receipt.succeeded());
@@ -1141,6 +1195,8 @@ pub fn harness_spawn(
     binary_provider: Option<String>,
     binary_path: Option<String>,
     generic_acp_id: Option<String>,
+    authority_environment_id: Option<String>,
+    authority_generation: Option<u64>,
 ) -> Result<u32, String> {
     let generic = generic_acp_id
         .as_deref()
@@ -1164,6 +1220,21 @@ pub fn harness_spawn(
         return Err("harness_spawn: not a resolved harness CLI".to_string());
     }
 
+    let gate = app
+        .try_state::<crate::session_store::SessionStore>()
+        .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
+        .authority_execution_gate();
+    let scope = match (authority_environment_id, authority_generation) {
+        (Some(environment_id), Some(generation)) => {
+            Some(crate::session_store::authority::NativeScope {
+                environment_id,
+                generation,
+            })
+        }
+        (None, None) => None,
+        _ => return Err("NATIVE_AUTHORITY_STALE_GENERATION".into()),
+    };
+    let mut authority_lease = gate.reserve(&session_id, "provider", scope.as_ref())?;
     let mut workspace_activity = if exact_workspace_activity_enabled(&app, &workdir) {
         crate::native_workspace::Activity::start(&app, &workdir, "provider", Some(&session_id))?
     } else {
@@ -1215,7 +1286,13 @@ pub fn harness_spawn(
     let tool_credentials = crate::session_tools_bridge::redaction_tokens(&cmd);
 
     let (mut child, managed_exit) = host
-        .spawn_tracked(&session_id, epoch, kill_all, &mut cmd)
+        .spawn_tracked_guarded(
+            &session_id,
+            epoch,
+            kill_all,
+            &mut cmd,
+            Some(&mut authority_lease),
+        )
         .inspect_err(|_| {
             crate::session_tools_bridge::revoke_spawn(&session_id, (epoch, kill_all));
         })?;
@@ -1258,6 +1335,7 @@ pub fn harness_spawn(
                 .wait()
                 .map_err(|e| e.to_string())
                 .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
+            let result = result.and_then(|_| authority_lease.finish());
             managed_exit.finish(result);
         });
         return Err(SPAWN_CANCELLED.to_string());
@@ -1314,7 +1392,6 @@ pub fn harness_spawn(
         let settlement = exit
             .map_err(|e| e.to_string())
             .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
-        managed_exit.finish(settlement);
         if let Some(host) = wait_app.try_state::<HarnessHost>() {
             if host.remove_if_pid(&wait_id, wait_pid).is_some() {
                 host.stop_sse(&wait_id);
@@ -1322,7 +1399,15 @@ pub fn harness_spawn(
         }
         // Output first, then exit. A grandchild that inherited the pipes can
         // keep them open after the child is gone, so the wait is bounded.
-        wait_for_readers(&done_rx, EXIT_DRAIN_GRACE);
+        let readers_closed = wait_for_readers(&done_rx, EXIT_DRAIN_GRACE);
+        let settlement = settlement.and_then(|_| {
+            if readers_closed {
+                authority_lease.finish()
+            } else {
+                Err("NATIVE_AUTHORITY_UNKNOWN_PROVIDER_OUTPUT: retained process admission".into())
+            }
+        });
+        managed_exit.finish(settlement);
         emit_routed(
             &wait_app,
             &owners,
@@ -1747,10 +1832,24 @@ mod shared_agents_tests {
 /// where it would starve `harness_kill` and make the wedged child unrecoverable.
 #[tauri::command]
 pub async fn harness_write(
+    app: AppHandle,
     host: State<'_, HarnessHost>,
     session_id: String,
     line: String,
+    authority_environment_id: Option<String>,
+    authority_generation: Option<u64>,
 ) -> Result<(), String> {
+    let gate = app
+        .try_state::<crate::session_store::SessionStore>()
+        .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
+        .authority_execution_gate();
+    let scope = native_authority_scope(authority_environment_id, authority_generation)?;
+    let lease = gate.reserve_existing(
+        &session_id,
+        "provider-stdin",
+        scope.as_ref(),
+        finishing_native_frame(&line),
+    )?;
     let line = crate::social_bridge::authorize_acp_frame(&session_id, line);
     let line = crate::runtime_logs_bridge::authorize_acp_frame(&session_id, line);
     let line = crate::conversation_tools_bridge::authorize_acp_frame(&session_id, line);
@@ -1759,7 +1858,7 @@ pub async fn harness_write(
         .ok_or_else(|| "Harness process is not running".to_string())?;
     let pid = live.pid;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        write_child_with_deadline(live, line, Duration::from_secs(12))
+        write_child_with_deadline_guarded(live, line, Duration::from_secs(12), Some(lease))
     })
     .await
     .map_err(|e| format!("Harness write task failed: {e}"))?;
@@ -1770,11 +1869,24 @@ pub async fn harness_write(
     result
 }
 
+#[cfg(all(test, unix))]
 fn write_child_with_deadline(
     live: Arc<LiveChild>,
     line: String,
     timeout: Duration,
 ) -> Result<(), String> {
+    write_child_with_deadline_guarded(live, line, timeout, None)
+}
+
+fn write_child_with_deadline_guarded(
+    live: Arc<LiveChild>,
+    line: String,
+    timeout: Duration,
+    mut authority: Option<crate::session_store::authority::NativeLease>,
+) -> Result<(), String> {
+    if let Some(lease) = authority.as_mut() {
+        lease.begin_external()?;
+    }
     let pid = live.pid;
     let bytes = line.len();
     let (tx, rx) = mpsc::channel();
@@ -1785,6 +1897,7 @@ fn write_child_with_deadline(
             .and_then(|_| stdin.write_all(b"\n"))
             .and_then(|_| stdin.flush())
             .map_err(|e| format!("Failed to write to harness (pid {pid}, {bytes} bytes): {e}"));
+        let result = result.and_then(|_| authority.map_or(Ok(()), |lease| lease.finish()));
         let _ = tx.send(result);
     });
     match rx.recv_timeout(timeout) {
@@ -1803,6 +1916,229 @@ fn write_child_with_deadline(
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             Err(format!("Harness writer exited (pid {pid})"))
         }
+    }
+}
+
+fn native_authority_scope(
+    environment_id: Option<String>,
+    generation: Option<u64>,
+) -> Result<Option<crate::session_store::authority::NativeScope>, String> {
+    match (environment_id, generation) {
+        (Some(environment_id), Some(generation)) => {
+            Ok(Some(crate::session_store::authority::NativeScope {
+                environment_id,
+                generation,
+            }))
+        }
+        (None, None) => Ok(None),
+        _ => Err("NATIVE_AUTHORITY_STALE_GENERATION".into()),
+    }
+}
+
+fn finishing_native_frame(line: &str) -> bool {
+    let Ok(frame) = serde_json::from_str::<serde_json::Value>(line) else {
+        return false;
+    };
+    if frame.get("id").is_some()
+        && frame.get("method").is_none()
+        && (frame.get("result").is_some() || frame.get("error").is_some())
+    {
+        return true;
+    }
+    if matches!(
+        frame.get("method").and_then(serde_json::Value::as_str),
+        Some("turn/interrupt" | "session/cancel")
+    ) {
+        return true;
+    }
+    if matches!(
+        frame.get("type").and_then(serde_json::Value::as_str),
+        Some("control_response" | "permission_response" | "abort")
+    ) {
+        return true;
+    }
+    frame.get("type").and_then(serde_json::Value::as_str) == Some("user")
+        && frame["message"]["content"]
+            .as_array()
+            .is_some_and(|content| {
+                !content.is_empty() && content.iter().all(|part| part["type"] == "tool_result")
+            })
+}
+
+#[cfg(test)]
+mod authority_tests {
+    use super::*;
+    use crate::session_store::SessionStore;
+
+    fn store() -> SessionStore {
+        SessionStore::open_in_memory().unwrap()
+    }
+
+    #[test]
+    fn quiescing_admits_completion_frames_and_rejects_new_prompts() {
+        for frame in [
+            r#"{"id":1,"result":{}}"#,
+            r#"{"id":1,"error":{"code":1}}"#,
+            r#"{"method":"turn/interrupt","params":{}}"#,
+            r#"{"method":"session/cancel"}"#,
+            r#"{"type":"control_response","response":{}}"#,
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"completed"}]}}"#,
+        ] {
+            assert!(finishing_native_frame(frame), "{frame}");
+        }
+        for frame in [
+            r#"{"id":1,"method":"turn/start","params":{"prompt":"new"}}"#,
+            r#"{"method":"session/prompt"}"#,
+            r#"{"type":"user","message":{"content":[{"type":"text","text":"new"}]}}"#,
+            r#"{"type":"user","message":{"content":[]}}"#,
+            "unparsed",
+            "{}\n{}",
+        ] {
+            assert!(!finishing_native_frame(frame), "{frame}");
+        }
+    }
+
+    #[test]
+    fn catalog_probes_stay_read_only_while_mutating_service_and_delete_require_provenance() {
+        let args = |values: &[&str]| {
+            values
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert!(exec_requires_session_provenance(
+            Some("opencode"),
+            &args(&["service", "start"])
+        ));
+        assert!(exec_requires_session_provenance(
+            Some("grok"),
+            &args(&["--no-auto-update", "sessions", "delete", "id"])
+        ));
+        for values in [
+            vec!["--version"],
+            vec!["models"],
+            vec!["service", "status"],
+            vec!["service", "get", "password"],
+        ] {
+            assert!(!exec_requires_session_provenance(
+                Some("opencode"),
+                &args(&values)
+            ));
+        }
+    }
+
+    #[test]
+    fn idle_requires_known_provider_settlement_and_closed_event_stream() {
+        let host = HarnessHost::new();
+        let exit = Arc::new(ManagedProviderExit::default());
+        host.inner
+            .lock()
+            .unwrap()
+            .managed_exits
+            .insert("native".into(), vec![exit.clone()]);
+        assert!(host.authority_idle("native").is_err());
+        exit.finish(Err("unknown process exit".into()));
+        assert!(host.authority_idle("native").is_err());
+        exit.finish(Ok(()));
+        assert!(host.authority_idle("native").is_ok());
+        host.sse.lock().unwrap().insert(
+            "native".into(),
+            Arc::new(LiveSse {
+                stop: Arc::new(AtomicBool::new(false)),
+                owners: Arc::new(Owners::new("isolated")),
+            }),
+        );
+        assert!(host.authority_idle("native").is_err());
+        host.sse.lock().unwrap().remove("native");
+        assert!(host.authority_idle("native").is_ok());
+    }
+
+    #[test]
+    fn reader_timeout_is_unknown_and_cannot_prove_process_quiescence() {
+        let (tx, rx) = mpsc::channel();
+        assert!(!wait_for_readers(&rx, Duration::from_millis(1)));
+        drop(tx);
+        assert!(wait_for_readers(&rx, Duration::from_millis(1)));
+    }
+
+    #[test]
+    fn persisted_fence_is_checked_at_the_actual_fork_boundary() {
+        let store = store();
+        let gate = store.authority_execution_gate();
+        let mut lease = gate.reserve("native", "provider-spawn", None).unwrap();
+        // Simulate recovery observing a fence after admission but before fork.
+        // A legitimate coordinator cannot fence with the reservation present.
+        store.lock_conn().unwrap().execute("INSERT INTO native_authority_floor(environment_id,session_id,generation,phase,migration_id,min_writer_protocol) VALUES('env','native',1,'FENCED','migration',2)",[]).unwrap();
+        let host = HarnessHost::new();
+        let (epoch, kill_all, _) = host.begin_spawn("native");
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command.arg("--list");
+        isolate_child(&mut command);
+        assert!(host
+            .spawn_tracked_guarded("native", epoch, kill_all, &mut command, Some(&mut lease))
+            .is_err());
+        assert!(!host
+            .inner
+            .lock()
+            .unwrap()
+            .managed_exits
+            .contains_key("native"));
+    }
+
+    #[test]
+    fn known_spawn_failure_releases_admission_and_real_fork_stays_reserved_until_exit() {
+        let store = store();
+        let gate = store.authority_execution_gate();
+        let host = HarnessHost::new();
+        let mut failed = gate.reserve("missing", "provider-spawn", None).unwrap();
+        let (epoch, kill_all, _) = host.begin_spawn("missing");
+        let mut missing = Command::new(
+            std::env::temp_dir().join(format!("absent-provider-{}", uuid::Uuid::new_v4())),
+        );
+        isolate_child(&mut missing);
+        assert!(host
+            .spawn_tracked_guarded("missing", epoch, kill_all, &mut missing, Some(&mut failed))
+            .is_err());
+        drop(failed);
+        let mut lease = gate.reserve("real", "provider-spawn", None).unwrap();
+        let (epoch, kill_all, _) = host.begin_spawn("real");
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .arg("--list")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        isolate_child(&mut command);
+        let (mut child, exit) = host
+            .spawn_tracked_guarded("real", epoch, kill_all, &mut command, Some(&mut lease))
+            .unwrap();
+        assert!(host.authority_idle("real").is_err());
+        let phase: String = store
+            .lock_conn()
+            .unwrap()
+            .query_row(
+                "SELECT phase FROM native_authority_reservations WHERE session_id='real'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(phase, "RUNNING");
+        assert!(child.wait().unwrap().success());
+        assert!(host.authority_idle("real").is_err());
+        lease.finish().unwrap();
+        exit.finish(Ok(()));
+        assert!(host.authority_idle("real").is_ok());
+        assert_eq!(
+            store
+                .lock_conn()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM native_authority_reservations",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
     }
 }
 
@@ -1837,19 +2173,65 @@ static HTTP_AGENT: OnceLock<ureq::Agent> = OnceLock::new();
 /// One agent so calls to the local provider server reuse connections. The
 /// per-call timeout is set on each request.
 fn http_agent() -> &'static ureq::Agent {
-    HTTP_AGENT.get_or_init(|| ureq::AgentBuilder::new().build())
+    HTTP_AGENT.get_or_init(|| localhost_http_agent_builder().build())
+}
+
+fn localhost_http_agent_builder() -> ureq::AgentBuilder {
+    // A local provider response cannot redirect native requests to another host.
+    ureq::AgentBuilder::new().redirects(0)
 }
 
 #[tauri::command]
+// AppHandle plus the existing flat IPC fields and optional authority provenance.
+#[allow(clippy::too_many_arguments)]
 pub async fn harness_http(
+    app: AppHandle,
     url: String,
     method: String,
     headers: Option<HashMap<String, String>>,
     body: Option<String>,
     timeout_ms: Option<u64>,
+    session_id: Option<String>,
+    authority_environment_id: Option<String>,
+    authority_generation: Option<u64>,
 ) -> Result<HarnessHttpResponse, String> {
     tauri::async_runtime::spawn_blocking(move || {
         assert_loopback(&url)?;
+        let mut authority = if !matches!(method.as_str(), "GET" | "HEAD" | "OPTIONS") {
+            let gate = app
+                .try_state::<crate::session_store::SessionStore>()
+                .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
+                .authority_execution_gate();
+            if let Some(session_id) = session_id.as_deref() {
+                gate.assert_provider_target(session_id, &url)?;
+                let scope = native_authority_scope(authority_environment_id, authority_generation)?;
+                let path = url::Url::parse(&url)
+                    .map_err(|_| "NATIVE_AUTHORITY_INVALID_PROVIDER_TARGET")?
+                    .path()
+                    .to_owned();
+                let finishing = method == "POST"
+                    && (path.ends_with("/abort")
+                        || path.ends_with("/interrupt")
+                        || path.ends_with("/reply")
+                        || path.ends_with("/reject"));
+                Some(gate.reserve_existing(
+                    session_id,
+                    "provider-http",
+                    scope.as_ref(),
+                    finishing,
+                )?)
+            } else {
+                // Retain ordinary legacy probes, but never qualify an unknown
+                // mutating caller for a later authority promotion.
+                gate.note_unknown_ingress("sessionless-provider-http")?;
+                None
+            }
+        } else {
+            None
+        };
+        if let Some(lease) = authority.as_mut() {
+            lease.begin_external()?;
+        }
         let timeout = Duration::from_millis(timeout_ms.unwrap_or(30_000).max(1));
         let mut request = http_agent().request(&method, &url).timeout(timeout);
         if let Some(headers) = &headers {
@@ -1861,14 +2243,18 @@ pub async fn harness_http(
             Some(payload) => request.send_string(&payload),
             None => request.call(),
         };
-        match result {
+        let response = match result {
             Ok(response) => read_http_response(response),
             Err(ureq::Error::Status(status, response)) => {
                 let body = response.into_string().unwrap_or_default();
                 Ok(HarnessHttpResponse { status, body })
             }
             Err(error) => Err(format!("OpenCode HTTP failed: {error}")),
+        }?;
+        if let Some(lease) = authority {
+            lease.finish()?;
         }
+        Ok(response)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1900,6 +2286,8 @@ pub fn harness_set_owner(
 }
 
 #[tauri::command]
+// Window/AppHandle/State are injected natively; retain the existing flat IPC shape.
+#[allow(clippy::too_many_arguments)]
 pub fn harness_sse_open(
     app: AppHandle,
     window: tauri::WebviewWindow,
@@ -1907,8 +2295,18 @@ pub fn harness_sse_open(
     session_id: String,
     url: String,
     headers: Option<HashMap<String, String>>,
+    authority_environment_id: Option<String>,
+    authority_generation: Option<u64>,
 ) -> Result<(), String> {
     assert_loopback(&url)?;
+    let gate = app
+        .try_state::<crate::session_store::SessionStore>()
+        .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
+        .authority_execution_gate();
+    gate.assert_provider_target(&session_id, &url)?;
+    let scope = native_authority_scope(authority_environment_id, authority_generation)?;
+    let mut authority = gate.reserve(&session_id, "provider-events", scope.as_ref())?;
+    authority.begin_external()?;
     host.stop_sse(&session_id);
     let stop = Arc::new(AtomicBool::new(false));
     let owners = Arc::new(Owners::new(window.label()));
@@ -1921,7 +2319,7 @@ pub fn harness_sse_open(
     );
 
     thread::spawn(move || {
-        let agent = ureq::AgentBuilder::new()
+        let agent = localhost_http_agent_builder()
             .timeout_connect(Duration::from_secs(10))
             .timeout_read(Duration::from_secs(60 * 60 * 6))
             .timeout_write(Duration::from_secs(30))
@@ -1934,6 +2332,8 @@ pub fn harness_sse_open(
         }
         let result = request.call();
         if stop.load(Ordering::SeqCst) {
+            drop(result);
+            let _ = authority.finish();
             emit_sse_end(&app, &owners, &session_id, None);
             return;
         }
@@ -1951,6 +2351,9 @@ pub fn harness_sse_open(
                     Some(format!("OpenCode event stream failed: {error}")),
                 );
             }
+        }
+        if stop.load(Ordering::Acquire) {
+            let _ = authority.finish();
         }
     });
 
@@ -2096,12 +2499,15 @@ fn read_lines_batched<R: Read, F: FnMut(Vec<String>) + Send + 'static>(reader: R
 }
 
 /// Returns once every reader has dropped its sender, or after `grace`.
-fn wait_for_readers(done: &mpsc::Receiver<()>, grace: Duration) {
+fn wait_for_readers(done: &mpsc::Receiver<()>, grace: Duration) -> bool {
     let deadline = Instant::now() + grace;
-    while done
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .is_ok()
-    {}
+    loop {
+        match done.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(()) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return true,
+            Err(mpsc::RecvTimeoutError::Timeout) => return false,
+        }
+    }
 }
 
 fn read_http_response(response: ureq::Response) -> Result<HarnessHttpResponse, String> {
@@ -2174,11 +2580,11 @@ fn emit_sse_end(app: &AppHandle, owners: &Owners, session_id: &str, error: Optio
 }
 
 fn assert_loopback(url: &str) -> Result<(), String> {
-    let lower = url.to_ascii_lowercase();
-    if lower.starts_with("http://127.0.0.1:")
-        || lower.starts_with("http://127.0.0.1/")
-        || lower.starts_with("http://localhost:")
-        || lower.starts_with("http://localhost/")
+    let parsed = url::Url::parse(url).map_err(|_| "OpenCode HTTP is limited to localhost")?;
+    if parsed.scheme() == "http"
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && matches!(parsed.host_str(), Some("127.0.0.1" | "localhost"))
     {
         return Ok(());
     }
@@ -2214,6 +2620,13 @@ fn exec_args_allowed(binary_provider: Option<&str>, args: &[String]) -> bool {
             && args[2] == "delete"
             && args[3].len() == 36
             && uuid::Uuid::parse_str(&args[3]).is_ok())
+}
+
+fn exec_requires_session_provenance(binary_provider: Option<&str>, args: &[String]) -> bool {
+    (binary_provider == Some("opencode") && args == ["service", "start"])
+        || (binary_provider == Some("grok")
+            && args.get(1).is_some_and(|arg| arg == "sessions")
+            && args.get(2).is_some_and(|arg| arg == "delete"))
 }
 
 /// Must be a path a resolver would hand back, not an arbitrary binary
@@ -2266,6 +2679,7 @@ fn default_binary_matches(provider: &str, command: &Path) -> bool {
 /// One-shot capture of stdout (used for `cursor-agent --list-models`).
 #[tauri::command]
 pub async fn harness_exec(
+    app: AppHandle,
     command: String,
     args: Vec<String>,
     cwd: Option<String>,
@@ -2279,6 +2693,12 @@ pub async fn harness_exec(
         if !is_resolved_harness_binary(&command, binary_provider.as_deref(), binary_path.as_deref())
         {
             return Err("harness_exec: not a resolved harness CLI".to_string());
+        }
+        if exec_requires_session_provenance(binary_provider.as_deref(), &args) {
+            app.try_state::<crate::session_store::SessionStore>()
+                .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
+                .authority_execution_gate()
+                .note_unknown_ingress("legacy-provider-cli-mutation")?;
         }
         exec_capture(&command, &args, cwd.as_deref())
     })
@@ -4432,6 +4852,64 @@ fn command_basename(command: &str) -> &str {
         .file_stem()
         .and_then(|name| name.to_str())
         .unwrap_or(command)
+}
+
+#[cfg(test)]
+mod localhost_http_security_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    #[test]
+    fn validates_parsed_host_and_rejects_url_credentials() {
+        for value in [
+            "http://127.0.0.1:1234/api",
+            "http://localhost/api",
+            "http://LOCALHOST:80/",
+        ] {
+            assert!(assert_loopback(value).is_ok(), "{value}");
+        }
+        for value in [
+            "http://localhost:1@other.example/private",
+            "http://127.0.0.1:1@other.example/private",
+            "http://user:pass@localhost:1234/",
+            "http://localhost.other.example/",
+            "http://127.0.0.2:1234/",
+            "https://localhost:1234/",
+            "not a url",
+        ] {
+            assert!(assert_loopback(value).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn local_provider_http_does_not_follow_redirects() {
+        let target = TcpListener::bind("127.0.0.1:0").unwrap();
+        target.set_nonblocking(true).unwrap();
+        let origin = TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin_address = origin.local_addr().unwrap();
+        let target_address = target.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut socket, _) = origin.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut bytes = [0_u8; 2048];
+            assert!(socket.read(&mut bytes).unwrap() > 0);
+            write!(socket, "HTTP/1.1 302 Found\r\nLocation: http://{target_address}/external\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        });
+        let response = http_agent()
+            .get(&format!("http://{origin_address}/api"))
+            .timeout(Duration::from_secs(5))
+            .call()
+            .unwrap();
+        assert_eq!(response.status(), 302);
+        server.join().unwrap();
+        assert_eq!(
+            target.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
 }
 
 #[cfg(unix)]

@@ -8,6 +8,7 @@ import { uploadRemoteAttachments } from "./remoteAttachments";
 import { desktopQueueClientId } from "./sharedQueueClient";
 import type { SharedQueue } from "./sharedQueue";
 import { noteAdoptedBeat } from "./hostWake";
+import { remoteIntentAuthority } from "./remoteOutbox";
 
 const submitting = new Set<string>();
 export const adoptedFollowUpPending = (sessionId: string): boolean => submitting.has(sessionId);
@@ -25,10 +26,13 @@ export async function sendAdoptedFollowUp(input: {
   text: string;
   attachments: Attachment[];
   queuedMessageId?: string;
+  /** Captured from the displayed mirror or selected row before attachment preparation. */
+  authorityGeneration?: number;
   isCurrent: () => boolean;
   onDispatch?: () => void;
 }): Promise<boolean> {
   if (submitting.has(input.sessionId)) return false;
+  const authority = remoteIntentAuthority(input);
   submitting.add(input.sessionId);
   try {
     const machine = await localMachine();
@@ -74,6 +78,7 @@ export async function sendAdoptedFollowUp(input: {
         ? { type: "steer" as const, runId: snapshot.runId! }
         : { type: "send" as const }),
       commandId: crypto.randomUUID(),
+      ...authority,
       sessionId: input.sessionId,
       text: input.text,
       attachments,
@@ -102,7 +107,12 @@ export async function sendAdoptedFollowUp(input: {
   }
 }
 
-export async function cancelAdoptedTurn(sessionId: string, expectedRunId?: string): Promise<void> {
+export async function cancelAdoptedTurn(
+  sessionId: string,
+  expectedRunId?: string,
+  authorityGeneration?: number,
+): Promise<void> {
+  const authority = remoteIntentAuthority({ authorityGeneration });
   const machine = await localMachine();
   const snapshot = await remoteRequest<HostSession>(machine.id, "sessions.get", { sessionId });
   if (snapshot.status !== "running" || !snapshot.runId) return;
@@ -110,6 +120,7 @@ export async function cancelAdoptedTurn(sessionId: string, expectedRunId?: strin
   await remoteRequest(machine.id, "commands.dispatch", {
     type: "cancel",
     commandId: crypto.randomUUID(),
+    ...authority,
     sessionId,
     runId: snapshot.runId,
   });

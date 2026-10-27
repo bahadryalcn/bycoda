@@ -1,3 +1,10 @@
+import {
+  GITHUB_WORK_ITEM_URL_RE as GITHUB_URL_RE,
+  validGithubWorkItemNumber as validNumber,
+  githubWorkItemUrl as githubUrl,
+  parseGithubWorkItemUrl,
+} from "../../../shared/lib/githubWorkItem";
+export { parseGithubWorkItemUrl } from "../../../shared/lib/githubWorkItem";
 import { gitPrStatus } from "../../../platform/tauri/fs";
 import {
   githubRepo,
@@ -7,27 +14,6 @@ import {
 } from "../../inbox/model/githubTasks";
 import type { LinkedWorkItem } from "./session";
 import type { GeneratedWorkItemHint } from "./sessionTitle";
-
-const GITHUB_URL_RE =
-  /https?:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/(pull|issues)\/(\d+)\b/i;
-
-function validNumber(value: number): boolean {
-  return Number.isSafeInteger(value) && value > 0;
-}
-
-function githubUrl(repo: string, kind: GithubTaskKind, number: number): string {
-  return `https://github.com/${repo}/${kind === "pr" ? "pull" : "issues"}/${number}`;
-}
-
-export function parseGithubWorkItemUrl(message: string): LinkedWorkItem | null {
-  const match = GITHUB_URL_RE.exec(message);
-  if (!match) return null;
-  const number = Number(match[4]);
-  if (!validNumber(number)) return null;
-  const repo = `${match[1]}/${match[2]}`;
-  const kind = match[3].toLowerCase() === "pull" ? "pr" : "issue";
-  return { kind, repo, number, url: githubUrl(repo, kind, number) };
-}
 
 function explicitHint(message: string): GeneratedWorkItemHint | null {
   const patterns: Array<[GithubTaskKind, RegExp]> = [

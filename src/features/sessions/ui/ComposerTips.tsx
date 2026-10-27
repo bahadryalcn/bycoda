@@ -79,17 +79,7 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
   const [open, setOpen] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const tipId = useId();
-  const keepOpen = () => {
-    clearTimeout(closeTimer.current);
-    setOpen(true);
-  };
-  const closeSoon = () => {
-    clearTimeout(closeTimer.current);
-    closeTimer.current = setTimeout(() => setOpen(false), 150);
-  };
-  useEffect(() => () => clearTimeout(closeTimer.current), []);
   const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);
   useEffect(() => {
     const update = () => setHidden(document.hidden);
@@ -111,29 +101,22 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
         ref={anchor}
         variant="ghost"
         motion="none"
-        label={t("Next tip")}
+        label={t(open ? "Next tip" : "Tip")}
         title=""
-        aria-describedby={open || focusWithin ? tipId : undefined}
+        aria-describedby={open ? tipId : undefined}
+        aria-expanded={open}
         className="composer-tips-icon"
-        onMouseEnter={keepOpen}
-        onMouseLeave={closeSoon}
-        onFocus={() => {
-          setFocusWithin(true);
-          keepOpen();
-        }}
-        onBlur={() => {
-          setFocusWithin(false);
-          closeSoon();
-        }}
+        onFocus={() => setFocusWithin(true)}
+        onBlur={() => setFocusWithin(false)}
         onClick={() => {
-          keepOpen();
-          setTip((current) => (current + 1) % COMPOSER_TIPS.length);
+          if (open) setTip((current) => (current + 1) % COMPOSER_TIPS.length);
+          else setOpen(true);
         }}
       >
         <AiIdea size={14} />
-        <span>{t("Next tip")}</span>
+        <span>{t(open ? "Next tip" : "Tip")}</span>
       </Button>
-      {open || focusWithin ? (
+      {open ? (
         <Popover
           anchor={anchor}
           id={tipId}
@@ -142,12 +125,7 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
           align="start"
           width={320}
           restoreFocus={false}
-          onDismiss={() => {
-            setOpen(false);
-            setFocusWithin(false);
-          }}
-          onMouseEnter={keepOpen}
-          onMouseLeave={closeSoon}
+          onDismiss={() => setOpen(false)}
           className="composer-tips-copy p-3"
         >
           <FoldTip

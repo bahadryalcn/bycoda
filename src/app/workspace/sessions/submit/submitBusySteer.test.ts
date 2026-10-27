@@ -133,6 +133,7 @@ it("steers a message through the host running the adopted conversation", async (
     ...newSession("codex", "/fake"),
     id: "steer-test",
     continuingElsewhere: true,
+    adoptedAuthorityGeneration: 2,
   };
   resetSessionsStore([session]);
   const ctx = {
@@ -157,7 +158,7 @@ it("steers a message through the host running the adopted conversation", async (
   } as unknown as SubmitPreflight;
   expect(await steerBusySubmit(ctx, input, pre)).toBe(true);
   expect(transport.adopted).toHaveBeenCalledWith(
-    expect.objectContaining({ sessionId: session.id, text: input.text }),
+    expect.objectContaining({ sessionId: session.id, text: input.text, authorityGeneration: 2 }),
   );
   expect(getSessions()[0].queuedMessages ?? []).toEqual([]);
   expect(transport.steer).not.toHaveBeenCalled();
