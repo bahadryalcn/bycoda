@@ -378,3 +378,48 @@ The baseline WSL runs reproduced the three Ubuntu CI failures, 36 path-related
 failures with linked `TMPDIR`, and the automation dispatch timeout. Actual macOS
 Host/native and Linux native execution remain CI acceptance. No installer,
 installed application, live provider or release acceptance was performed.
+
+## X2 remaining cross-platform CI repair (2026-10-27)
+
+Follow-up to CI run `40447216261`, from branch baseline `8c47b83d`:
+
+- `5fee9399`: native removal fixture ignores the `node_modules` entry without a
+  trailing slash and explicitly checks clean Git status. A POSIX directory
+  symlink is a file entry to Git; dirty-source removal remains blocked.
+- `f2b98120`: managed-workspace fake repositories set local `core.autocrlf=false`
+  before their baseline commit, so checkout-byte assertions do not depend on the
+  runner's global conversion policy. Product worktree creation retains Git's
+  repository checkout behavior.
+- `52c757dc`: the real-Git dependent-task test gets 60 seconds on every platform,
+  matching its Windows budget and another real-Git scenario. The previous explicit
+  5 seconds on non-Windows overrode the Host suite's 30-second default; the supplied
+  Windows CI log completes the same test in 13.54 seconds.
+- `d81ea3a7`: cleanup normalizes Windows extended path spelling before lexical
+  containment, while retaining the boundary/descendant no-follow walk. Storage
+  fixtures use native canonical paths, matching registry identity, and exercise a
+  namespaced canonical descendant below a junctioned ancestor. Negative cases
+  retain unknown results for linked roots, outside paths and missing directories.
+
+A local Windows regression reproduced the storage `null` result for a valid
+`\\?\` descendant before the fix, then passed afterwards. The exact original
+runner trigger remains inferred: the supplied log does not contain its rejected
+path or swallowed filesystem error. Ordinary C: and D: fixtures passed locally
+before the fix; no inode or hardlink failure was reproduced.
+
+Evidence is under `temp/verification/x2/`. Windows native worktree tests (35),
+Clippy with warnings denied, rustfmt, and fast web/Host TypeScript checks passed.
+Five Host/safety files passed under WSL both normally and with an isolated
+`core.autocrlf=true` global config (121 tests, one Windows-only skip per run).
+Linux native execution remains unavailable locally because WSL lacks Rust, a C
+compiler and the GTK/WebKit development prerequisites; the POSIX Git ignore
+behavior was reproduced directly. Actual macOS and new CI acceptance remain
+unverified. No UI source or installed/released build changed.
+
+Windows Host full-file coverage is green: normal mode passed all 68 goal tests
+and a fresh final-source managed-workspaces/retention run passed all 37 tests.
+The final three-file run with isolated `GIT_CONFIG_GLOBAL` and `core.autocrlf=true`
+passed all 105 tests. An earlier normal run began before the namespace fix and
+crossed source revisions: its newly discovered namespace regression failed,
+while all other 104 tests passed. The final-source rerun above resolves that
+intermediate failure. Full commands, JSON reports and acceptance limits are in
+`temp/verification/x2/CHECKS.md`.
