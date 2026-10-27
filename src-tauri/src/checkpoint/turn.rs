@@ -2,7 +2,7 @@
 use super::*;
 use std::sync::{Condvar, PoisonError};
 #[path = "leases.rs"]
-mod leases;
+pub(super) mod leases;
 
 /// File metadata is still checked for legacy/mixed-version peers that do not
 /// publish a lease. Only changed payloads need reopening and JSON parsing.
@@ -413,7 +413,7 @@ impl RecoveryPlan {
         for (ticket, session, turn) in self.active {
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 self.store.exclusive(&session, &[&turn.cwd], |s| {
-                    s.finish_turn(&session, &turn.cwd, &turn.id, true)
+                    s.finish_checkpoint_turn(&session, &turn.cwd, &turn.id, true)
                 })
             }));
             match outcome {
@@ -443,6 +443,102 @@ impl RecoveryPlan {
 }
 
 impl CheckpointStore {
+    /// Refresh review metadata without a Git tree snapshot. Unsafe older aggregate
+    /// paths stay blocked individually instead of poisoning every later clean file.
+    pub(super) fn begin_checkpoint_turn(
+        &self,
+        session: &str,
+        cwd: &str,
+        id: &str,
+        user_block_id: &str,
+        experimental_exact_git_rewind: bool,
+    ) -> Result<(), String> {
+        if experimental_exact_git_rewind {
+            // The exact path must establish its Git baseline before any same-ID
+            // lightweight active record could trigger begin_turn's idempotence.
+            self.begin_turn(session, cwd, id)?;
+            return self.begin_files_turn(session, cwd, id, user_block_id);
+        }
+        self.ensure_timed(session, cwd)?;
+        let dir = self.session_dir(session);
+        let previous = read_turn(&dir)?;
+        if previous
+            .as_ref()
+            .is_some_and(|turn| turn.active && turn.id == id)
+        {
+            return self.begin_files_turn(session, cwd, id, user_block_id);
+        }
+        self.retire_resolved_paths(session, cwd)?;
+        let root = project_root(cwd)?;
+        let current_head = if has_git_marker(&root)? {
+            head(&root)
+        } else {
+            None
+        };
+        if let Some(old) = previous {
+            if old.active || old.shared || old.error.is_some() || old.head != current_head {
+                if let Some(mut manifest) = self.load_matching(session, cwd)? {
+                    manifest
+                        .undo_blocked
+                        .extend(manifest.touched.iter().cloned());
+                    write_manifest(&dir, &manifest)?;
+                }
+            }
+            if old.active {
+                leases::release(&self.leases, session, &old.id)?;
+            }
+        }
+        self.begin_files_turn(session, cwd, id, user_block_id)?;
+        save_turn(
+            &dir,
+            &Turn {
+                id: id.into(),
+                cwd: cwd.into(),
+                before: None,
+                head: current_head,
+                active: true,
+                shared: leases::shared(&self.leases, session, id)?,
+                error: None,
+                prepared_before: BTreeSet::new(),
+                dirty_before: BTreeMap::new(),
+                captured: BTreeSet::new(),
+            },
+        )
+    }
+
+    pub(super) fn light_turn_active(&self, session: &str, id: &str) -> Result<bool, String> {
+        Ok(read_turn(&self.session_dir(session))?
+            .is_some_and(|turn| turn.active && turn.id == id && turn.before.is_none()))
+    }
+
+    pub(super) fn settle_light_turn(
+        &self,
+        session: &str,
+        id: &str,
+        shared: bool,
+    ) -> Result<(), String> {
+        let dir = self.session_dir(session);
+        if let Some(mut turn) =
+            read_turn(&dir)?.filter(|turn| turn.active && turn.id == id && turn.before.is_none())
+        {
+            turn.shared |= shared;
+            turn.active = false;
+            save_turn(&dir, &turn)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn finish_checkpoint_turn(
+        &self,
+        session: &str,
+        cwd: &str,
+        id: &str,
+        interrupted: bool,
+    ) -> Result<(), String> {
+        self.finish_files_turn(session, cwd, id, interrupted)?;
+        self.finish_turn(session, cwd, id, interrupted)
+    }
+
     /// Retire accepted results in the existing manifest, without touching the
     /// working tree or the owner's index. A later edit must get a new baseline.
     pub(super) fn retire_resolved_paths(&self, session_id: &str, cwd: &str) -> Result<(), String> {
@@ -1183,13 +1279,21 @@ pub async fn session_checkpoint_begin_turn(
     session_id: String,
     cwd: String,
     turn_id: String,
+    user_block_id: Option<String>,
+    experimental_exact_git_rewind: Option<bool>,
 ) -> Result<(), String> {
     validate_id(&session_id, "session")?;
     validate_id(&turn_id, "turn")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&cwd], |s| {
-            s.begin_turn(&session_id, &cwd, &turn_id)
+        store.exclusive(&session_id, &[&cwd], |s| {
+            s.begin_checkpoint_turn(
+                &session_id,
+                &cwd,
+                &turn_id,
+                user_block_id.as_deref().unwrap_or(&turn_id),
+                experimental_exact_git_rewind.unwrap_or(false),
+            )
         })
     })
     .await
@@ -1207,8 +1311,8 @@ pub async fn session_checkpoint_finish_turn(
     validate_id(&turn_id, "turn")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&cwd], |s| {
-            s.finish_turn(&session_id, &cwd, &turn_id, interrupted.unwrap_or(false))
+        store.exclusive(&session_id, &[&cwd], |s| {
+            s.finish_checkpoint_turn(&session_id, &cwd, &turn_id, interrupted.unwrap_or(false))
         })
     })
     .await

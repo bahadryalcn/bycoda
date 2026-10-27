@@ -21,6 +21,7 @@ import type {
 } from "../src/features/sessions/model/checkpoint-types";
 import { safeGitPath } from "./workspace";
 import { CheckpointLeases } from "./checkpoint-leases";
+import { SessionFileRevert } from "./session-file-revert";
 
 type Blob = { oid: string; mode: string } | null;
 type Pair = {
@@ -50,6 +51,17 @@ type Record = {
 };
 const MAX_FILES = 2000;
 const MAX_BYTES = 8 * 1024 * 1024;
+type FileImage = { raw: string; mode: number } | null;
+const imageBlob = (value: FileImage): Blob => {
+  if (!value) return null;
+  const bytes = Buffer.from(value.raw, "base64");
+  return {
+    oid: createHash("sha1")
+      .update(Buffer.concat([Buffer.from(`blob ${bytes.length}\0`), bytes]))
+      .digest("hex"),
+    mode: value.mode & 0o111 ? "100755" : "100644",
+  };
+};
 /** Opaque identity of the authoritative captured delta, including its completed turn. */
 const checkpointToken = (record: Record) =>
   createHash("sha256")
@@ -161,11 +173,117 @@ export class HostCheckpoints {
   private knownSessions = new Map<string, string>();
   private legacyActive = new Map<string, string>();
   private leases: CheckpointLeases;
+  private fileHistory: SessionFileRevert;
   constructor(
     private root: string,
     leaseRoot = join(root, ".active-leases"),
   ) {
     this.leases = new CheckpointLeases(leaseRoot);
+    this.fileHistory = new SessionFileRevert(root);
+  }
+  /** Lightweight default turn hooks: no private Git index, tree or refs. Call
+   * with the actual user block ID, which differs from the provider run ID. */
+  beginFilesTurn(session: string, cwd: string, turn: string, userBlockId = turn) {
+    return this.queue(session, [cwd], async () => {
+      cwd = await realpath(cwd);
+      await this.leases.publish(session, turn, cwd);
+      try {
+        await this.fileHistory.begin(session, cwd, turn, userBlockId);
+        const previous = await this.load(session);
+        if (previous?.cwd === cwd && !previous.active) await this.retireResolved(session, previous);
+        const currentHead = await head(cwd);
+        const files = previous?.cwd === cwd ? previous.files : Object.create(null);
+        // A new clean turn can review its own files without authorizing older
+        // ambiguous aggregate entries. Preserve their restriction per file.
+        if (
+          previous &&
+          (previous.shared || previous.error || previous.active || previous.head !== currentHead)
+        )
+          for (const pair of Object.values(files) as Pair[]) pair.exact = false;
+        await this.save(session, {
+          cwd,
+          head: currentHead,
+          files,
+          shared: false,
+          noGit: !(await hasGit(cwd)),
+          active: { id: turn, tree: "", dirty: Object.create(null), modes: Object.create(null) },
+        });
+      } catch (error) {
+        await this.leases.release(session, turn);
+        throw error;
+      }
+    });
+  }
+  finishFilesTurn(session: string, cwd: string, turn: string, _interrupted = false) {
+    return this.queue(session, [cwd], async () => {
+      try {
+        const captured = await this.fileHistory.finish(
+          session,
+          cwd,
+          turn,
+          await this.leases.shared(session, turn),
+        );
+        const record = await this.load(session);
+        if (record?.active?.id === turn && record.cwd === (await realpath(cwd))) {
+          for (const [path, revision] of Object.entries(captured?.files ?? {})) {
+            const old = record.files[path];
+            record.files[path] = {
+              before: old ? old.before : imageBlob(revision.before),
+              after: imageBlob(revision.after),
+              rawBefore: old ? old.rawBefore : revision.before?.raw,
+              rawAfter: revision.after?.raw,
+              modeBefore: old ? old.modeBefore : revision.before?.mode,
+              exact:
+                !revision.conflict &&
+                (!old || (old.exact && old.rawAfter === revision.before?.raw)),
+            };
+            if (same(record.files[path].before, record.files[path].after))
+              delete record.files[path];
+          }
+          record.shared = captured?.shared ?? true;
+          record.settledTurnId = turn;
+          delete record.active;
+          await this.save(session, record);
+        }
+      } finally {
+        await this.leases.release(session, turn);
+      }
+    });
+  }
+  prepareFilesTurn(session: string, cwd: string, turn: string, paths: string[]) {
+    return this.queue(session, [cwd], () => this.fileHistory.prepare(session, cwd, turn, paths));
+  }
+  filesRevertPlan(session: string, cwd: string, userBlockId: string) {
+    return this.queue(session, [cwd], () => this.fileHistory.plan(session, cwd, userBlockId));
+  }
+  filesRevert(session: string, cwd: string, userBlockId: string, planToken?: string) {
+    return this.queue(session, [cwd], async () => {
+      const restored = new Map<string, FileImage>();
+      const result = await this.fileHistory.revert(
+        session,
+        cwd,
+        userBlockId,
+        planToken,
+        (path, value) => restored.set(path, value),
+      );
+      const record = await this.load(session);
+      if (record && record.cwd === (await realpath(cwd))) {
+        for (const [path, value] of restored) {
+          const pair = record.files[path];
+          if (!pair) continue;
+          pair.after = imageBlob(value);
+          pair.rawAfter = value?.raw;
+          if (same(pair.before, pair.after)) delete record.files[path];
+        }
+        await this.save(session, record);
+      }
+      return result;
+    });
+  }
+  forgetFilesFromMessage(session: string, cwd: string, userBlockId: string) {
+    return this.queue(session, [cwd], () =>
+      this.fileHistory.forgetFromMessage(session, cwd, userBlockId),
+    );
   }
   private queue<T>(
     session: string,
@@ -373,7 +491,7 @@ export class HostCheckpoints {
       throw e;
     }
   }
-  begin(session: string, cwd: string, turn: string) {
+  begin(session: string, cwd: string, turn: string, userBlockId = turn) {
     id(session);
     id(turn);
     return this.queue(
@@ -391,6 +509,7 @@ export class HostCheckpoints {
         const shared = await this.leases.publish(session, turn, cwd).catch((e) => {
           throw new Error(`checkpoint-coordination: ${errorText(e)}`);
         });
+        await this.fileHistory.begin(session, cwd, turn, userBlockId);
         const previous = await this.load(session);
         if (previous?.cwd === cwd) await this.retireResolved(session, previous);
         const isGit = await hasGit(cwd);
@@ -458,6 +577,7 @@ export class HostCheckpoints {
   }
   claim(session: string, cwd: string, turn: string, paths: string[]) {
     return this.queue(session, [cwd], async () => {
+      await this.fileHistory.claim(session, cwd, turn, paths);
       const record = await this.load(session);
       if (!record?.active || record.active.id !== turn || record.cwd !== (await realpath(cwd)))
         return;
@@ -477,6 +597,7 @@ export class HostCheckpoints {
       return;
     }
     const ambiguous = await this.leases.shared(session, turn);
+    await this.fileHistory.finish(session, cwd, turn, ambiguous);
     record.shared ||= ambiguous;
     record.shared ||= interrupted;
     try {

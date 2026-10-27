@@ -91,7 +91,12 @@ fn mark_shared(root: &Path, name: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     file.write_all(b"true ").map_err(|e| e.to_string())
 }
-pub(super) fn publish(root: &Path, session: &str, turn: &str, cwd: &str) -> Result<bool, String> {
+pub(in crate::checkpoint) fn publish(
+    root: &Path,
+    session: &str,
+    turn: &str,
+    cwd: &str,
+) -> Result<bool, String> {
     let own_name = name(session, turn);
     let canonical = std::fs::canonicalize(cwd).map_err(|e| e.to_string())?;
     let mut own = Lease {
@@ -115,7 +120,11 @@ pub(super) fn publish(root: &Path, session: &str, turn: &str, cwd: &str) -> Resu
     }
     Ok(own.shared)
 }
-pub(super) fn shared(root: &Path, session: &str, turn: &str) -> Result<bool, String> {
+pub(in crate::checkpoint) fn shared(
+    root: &Path,
+    session: &str,
+    turn: &str,
+) -> Result<bool, String> {
     Ok(read(root)?
         .into_iter()
         .any(|(n, lease)| n == name(session, turn) && lease.shared))
@@ -135,7 +144,7 @@ pub(super) fn sessions(root: &Path, owner: &str, cwd: &str) -> Result<Vec<String
         .map(|(_, lease)| lease.session_id)
         .collect())
 }
-pub(super) fn release(root: &Path, session: &str, turn: &str) -> Result<(), String> {
+pub(in crate::checkpoint) fn release(root: &Path, session: &str, turn: &str) -> Result<(), String> {
     match std::fs::remove_file(root.join(name(session, turn))) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),

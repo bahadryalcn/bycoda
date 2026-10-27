@@ -855,6 +855,8 @@ pub fn run() {
             notes::notes_save_image,
             notes::notes_image_path,
             checkpoint::session_checkpoint_ensure,
+            checkpoint::file_revert::session_files_revert_plan,
+            checkpoint::file_revert::session_files_revert,
             trackpad_zoom::set_trackpad_zoom_enabled,
             checkpoint::turn::session_checkpoint_begin_turn,
             checkpoint::turn::session_checkpoint_finish_turn,
