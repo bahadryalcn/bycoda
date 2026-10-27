@@ -7,31 +7,29 @@ for (const theme of ["light", "dark"]) {
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/workspace-creation.html?theme=${theme}`);
-      await expect(page.locator("[data-workspace-creation-status]")).toHaveText(
-        "Based on main @ a1b2c3d4; 2 uncommitted paths excluded",
-      );
+      await expect(page.locator("[data-workspace-creation-status]")).toHaveText("");
       await expect(
-        page.getByRole("button", { name: "Workspace New worktree", exact: true }),
+        page.getByRole("button", { name: "Workspace Current checkout", exact: true }),
       ).toBeVisible();
       await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      mkdirSync("temp/verification/s5", { recursive: true });
+      mkdirSync("temp/verification/d1", { recursive: true });
       await page.screenshot({
-        path: `temp/verification/s5/creation-${theme}-${width}.png`,
+        path: `temp/verification/d1/creation-${theme}-${width}.png`,
         fullPage: true,
       });
-      const mode = page.getByRole("button", { name: "Workspace New worktree", exact: true });
+      const mode = page.getByRole("button", { name: "Workspace Current checkout", exact: true });
       await mode.focus();
       await page.keyboard.press("Enter");
       await expect(page.getByRole("dialog", { name: "Workspace", exact: true })).toBeVisible();
       await page.screenshot({
-        path: `temp/verification/s5/creation-picker-${theme}-${width}.png`,
+        path: `temp/verification/d1/creation-picker-${theme}-${width}.png`,
         fullPage: true,
       });
       await page.keyboard.press("Escape");
-      await page.goto(`/tests/browser/workspace-creation.html?theme=${theme}&old-host`);
+      await page.goto(`/tests/browser/workspace-creation.html?theme=${theme}&old-host&worktree`);
       await expect(page.locator("[data-workspace-creation-status]")).toContainText(
         "Update bycoda Host",
       );
@@ -44,17 +42,26 @@ for (const theme of ["light", "dark"]) {
         "Update bycoda Host",
       );
       await page.screenshot({
-        path: `temp/verification/s5/creation-update-${theme}-${width}.png`,
+        path: `temp/verification/d1/creation-update-${theme}-${width}.png`,
         fullPage: true,
       });
     });
   }
 }
 
-test("project policy current checkout remains an explicit visible selection", async ({ page }) => {
-  await page.goto("/tests/browser/workspace-creation.html?current-policy");
+test("project policy worktree remains an explicit visible selection", async ({ page }) => {
+  await page.goto("/tests/browser/workspace-creation.html?worktree-policy");
+  await expect(
+    page.getByRole("button", { name: "Workspace New worktree", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+});
+
+test("older Host defaults to current checkout without managed admission", async ({ page }) => {
+  await page.goto("/tests/browser/workspace-creation.html?old-host");
   await expect(
     page.getByRole("button", { name: "Workspace Current checkout", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+  await expect(page.locator("[data-workspace-creation-status]")).toHaveText("");
 });

@@ -77,6 +77,7 @@ import { runHostShell } from "./shell";
 import type { HostStore } from "./store";
 import {
   previewTaskFinalization,
+  writerWorkspaceMode,
   suspendedTaskDelivery,
   type TaskWorkspaceServices,
 } from "./task-workspace-runtime";
@@ -2306,6 +2307,10 @@ export class HostTasks {
         ...(task.mergeRepair ? { mergeRepair: { ...task.mergeRepair, prepared: false } } : {}),
       };
     }
+    const mode = task.workspaceId
+      ? "worktree"
+      : await writerWorkspaceMode(this.store, this.managed, task.projectId, task.isolate);
+    task = { ...task, isolate: mode === "worktree" };
     if (this.managed && (task.isolate !== false || task.workspaceId)) {
       const selected = task.workspace
         ? await taskWorkspace(project.cwd, task.workspace)

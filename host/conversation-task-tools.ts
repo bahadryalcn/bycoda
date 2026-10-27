@@ -2,14 +2,14 @@ import { hasUnmergedBranch, type HostTask } from "../src/features/tasks/model/ho
 
 /** S1 applies these after untrusted task arguments at the agent-tool boundary. */
 export const CONVERSATION_TASK_EXECUTION_DEFAULTS = Object.freeze({
-  isolate: true,
   autoMerge: false,
   continueUntilDone: false,
 });
 
 export function assertConversationWorkspaceIntent(input: Record<string, unknown>): void {
+  if (input.isolate !== undefined && typeof input.isolate !== "boolean")
+    throw new Error("Workspace isolation must be a boolean.");
   if (
-    input.isolate === false ||
     [
       "autoMerge",
       "deliveryRequested",
@@ -22,7 +22,7 @@ export function assertConversationWorkspaceIntent(input: Record<string, unknown>
     ].some((key) => input[key] !== undefined && input[key] !== false)
   )
     throw new Error(
-      "Agent tools cannot request shared-checkout execution, integration delivery, push or PR publication. Use the owner UI.",
+      "Agent tools cannot request integration delivery, push or PR publication. Use the owner UI.",
     );
 }
 
@@ -39,6 +39,11 @@ const object = (properties: Record<string, unknown>) => ({
 });
 
 export const TASK_CONFIGURATION_FIELDS = {
+  isolate: {
+    type: "boolean",
+    description:
+      "Use an owned worktree when true or the current checkout when false. Omit to follow project workspace policy.",
+  },
   dependsOn: {
     type: "array",
     maxItems: 20,
@@ -65,9 +70,10 @@ export function normalizeConversationTaskConfiguration(
   taskId: string,
   projectId: string,
   tasks: readonly Pick<HostTask, "id" | "projectId">[],
-): Pick<HostTask, "dependsOn" | "verifyCommand"> {
+): Pick<HostTask, "dependsOn" | "verifyCommand" | "isolate"> {
   assertConversationWorkspaceIntent(input);
-  const patch: Pick<HostTask, "dependsOn" | "verifyCommand"> = {};
+  const patch: Pick<HostTask, "dependsOn" | "verifyCommand" | "isolate"> = {};
+  if (typeof input.isolate === "boolean") patch.isolate = input.isolate;
   if (input.dependsOn !== undefined) {
     const dependencies = input.dependsOn;
     if (

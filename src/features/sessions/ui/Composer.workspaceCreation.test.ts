@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const host = vi.hoisted(() => ({
   status: null as unknown,
+  defaultMode: "worktree" as WorkspaceMode,
   error:
     "Update bycoda Host on this project's machine to use managed workspaces. Your project checkout will not be used as a fallback.",
 }));
@@ -25,9 +26,9 @@ vi.mock("../../source-control/hooks/useProjectBranches", () => ({
 vi.mock("../../workspaces/model/workspaceCreation", () => ({
   shortWorkspaceRef: (ref: string) => ref,
   useWorkspaceCreation: (_cwd: string, _active: boolean, choice?: string) => ({
-    mode: choice ?? "worktree",
-    error: choice === "current" ? undefined : host.error,
-    updateRequired: choice !== "current",
+    mode: choice ?? host.defaultMode,
+    error: (choice ?? host.defaultMode) === "current" ? undefined : host.error,
+    updateRequired: (choice ?? host.defaultMode) !== "current",
     pending: false,
     refresh: vi.fn(),
   }),
@@ -45,6 +46,7 @@ beforeEach(async () => {
   localStorage.clear();
   await setLanguagePreference("en");
   host.status = null;
+  host.defaultMode = "worktree";
   submit = vi.fn();
   container = document.createElement("div");
   document.body.append(container);
@@ -156,4 +158,14 @@ it("keeps update recovery available when the owner changes language while the er
   await act(async () => useCurrent!.click());
   expect(container.querySelector("textarea")?.value).toBe("Preserve this draft");
   expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("shows the resolved current default and sends without managed admission", async () => {
+  host.defaultMode = "current";
+  await draw();
+  expect(button("Workspace Current checkout")).toBeDefined();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(button("Send")?.disabled).toBe(false);
+  await act(async () => button("Send")!.click());
+  expect(submit).toHaveBeenCalledWith("Preserve this draft", [], expect.anything());
 });

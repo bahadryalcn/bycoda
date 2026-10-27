@@ -1090,7 +1090,7 @@ export const Composer = memo(function Composer({
   );
   const remoteWorkspaceCreationBlocked =
     draftWorkspace &&
-    workspaceMode !== "current" &&
+    workspaceCreation.mode === "worktree" &&
     !!parseRemotePath(cwd) &&
     !managedWorkspaceCreationReady;
   const workspaceHostUpdateRequired =

@@ -42,12 +42,71 @@ Object.assign((window as any).__TAURI_INTERNALS__.metadata, {
   currentWebview: { label: "quick-fixture" },
 });
 const calls: Array<{ command: string; args: unknown }> = [];
-const controls = { hold: false, fail: false, finish: () => {} };
+const params = new URLSearchParams(location.search);
+const machine = {
+  id: "quick-fixture-host",
+  environmentId: "quick-fixture-env",
+  localHost: true,
+  name: "Fixture",
+  endpoint: "http://127.0.0.1:1",
+};
+const controls = {
+  hold: false,
+  fail: false,
+  finish: () => {},
+  pickWorkspace: async (mode: "current" | "worktree") => {
+    const call = calls.filter((entry) => entry.command === "quick_git_open").at(-1);
+    const request = (call?.args as { request: { id: string; choice: { cwd: string } } }).request;
+    await emit("quick_git_result", {
+      id: request.id,
+      choice: { cwd: request.choice.cwd, mode },
+      restoreFocus: true,
+    });
+  },
+};
 Object.assign(window, { quickFixtureCalls: calls, quickFixture: controls });
 mockIPC(
   async (command, args) => {
     calls.push({ command, args });
     if (command === "plugin:event|listen") return 1;
+    if (command === "local_host_connect") return machine;
+    if (command === "remote_machines") return [machine];
+    if (command === "git_branches")
+      return {
+        current: "main",
+        detached: false,
+        branches: [{ name: "main", current: true, remote: null }],
+      };
+    if (command === "git_worktrees")
+      return {
+        defaultRoot: "C:/fixture/worktrees",
+        worktrees: [
+          { path: "C:/fixture/alpha", branch: "main", head: "a1b2c3d4e5f", isMain: true },
+        ],
+      };
+    if (command === "git_diff_index")
+      return { branch: "main", head: "a1b2c3d4e5f", files: [], conflicts: [], repository: true };
+    if (command === "remote_request") {
+      if (args.method === "environment.describe")
+        return {
+          capabilities: params.has("worktree-policy")
+            ? ["workspaces.policy.v1", "workspaces.managed.v1"]
+            : [],
+        };
+      if (args.method === "projects.list")
+        return [
+          { id: "quick-alpha", cwd: "C:/fixture/alpha" },
+          { id: "quick-beta", cwd: "C:/fixture/beta" },
+        ];
+      if (args.method === "projects.workspacePolicy.get")
+        return {
+          revision: 1,
+          resolved: {
+            policy: { defaultMode: "worktree", integrationBranchRef: "refs/heads/main" },
+            appliedScopes: ["project"],
+          },
+        };
+    }
     if (command === "quick_composer_submit") {
       if (controls.hold)
         await new Promise<void>((resolve) => {
@@ -69,7 +128,6 @@ await listen(
   "quick_composer_catalog_request",
   () => void emit("quick_composer_catalog", { models: {}, availableHarnesses: ["codex"] }),
 );
-const params = new URLSearchParams(location.search);
 applyThemePreference(params.get("theme") === "light" ? "light" : "dark");
 await languageReady;
 createRoot(document.getElementById("root")!).render(

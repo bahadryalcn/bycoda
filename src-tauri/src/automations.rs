@@ -29,7 +29,9 @@ pub struct Automation {
     #[serde(default)]
     model_settings: HashMap<String, String>,
     cwd: String,
-    workspace_mode: String,
+    /// None inherits the execution Host's project workspace policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    workspace_mode: Option<String>,
     #[serde(default)]
     worktree_cwd: String,
     #[serde(default)]
@@ -81,7 +83,8 @@ pub struct AutomationUpsert {
     #[serde(default)]
     model_settings: HashMap<String, String>,
     cwd: String,
-    workspace_mode: String,
+    #[serde(default)]
+    workspace_mode: Option<String>,
     #[serde(default)]
     worktree_cwd: String,
     #[serde(default)]
@@ -299,12 +302,12 @@ fn validate_upsert(input: &AutomationUpsert, now: i64) -> Result<(), String> {
         return Err("Choose a project for this automation.".into());
     }
     if !matches!(
-        input.workspace_mode.as_str(),
-        "current" | "worktree" | "existing"
+        input.workspace_mode.as_deref(),
+        None | Some("current" | "worktree" | "existing")
     ) {
         return Err("Invalid automation workspace mode.".into());
     }
-    if input.workspace_mode == "existing" {
+    if input.workspace_mode.as_deref() == Some("existing") {
         let path = input.worktree_cwd.trim();
         if path.is_empty() || path.len() > 1_000 {
             return Err("Choose an existing worktree for this automation.".into());
@@ -773,7 +776,7 @@ pub fn automations_upsert(
         .as_ref()
         .map(|value| value.created_at)
         .unwrap_or(now);
-    let worktree_cwd = if automation.workspace_mode == "existing" {
+    let worktree_cwd = if automation.workspace_mode.as_deref() == Some("existing") {
         automation.worktree_cwd.trim().to_string()
     } else {
         String::new()
@@ -1178,6 +1181,70 @@ mod tests {
     use super::*;
 
     #[test]
+    fn omitted_workspace_mode_inherits_policy_and_survives_storage() {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_tables(&conn).unwrap();
+        let value = workspace_definition();
+        let input: AutomationUpsert = serde_json::from_value(value.clone()).unwrap();
+        validate_upsert(&input, 1).unwrap();
+        assert!(input.workspace_mode.is_none());
+
+        let automation: Automation = serde_json::from_value(value).unwrap();
+        write_automation(&conn, &automation).unwrap();
+        let loaded = get(&conn, &automation.id).unwrap().unwrap();
+        assert!(loaded.workspace_mode.is_none());
+        assert!(serde_json::to_value(&loaded)
+            .unwrap()
+            .get("workspaceMode")
+            .is_none());
+        assert!(list(&conn).unwrap()[0].workspace_mode.is_none());
+    }
+
+    #[test]
+    fn explicit_workspace_modes_keep_their_values_and_validation() {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_tables(&conn).unwrap();
+        for mode in ["current", "worktree", "existing"] {
+            let mut value = workspace_definition();
+            value["workspaceMode"] = serde_json::json!(mode);
+            value["worktreeCwd"] = serde_json::json!("/tmp/selected-worktree");
+            let input: AutomationUpsert = serde_json::from_value(value.clone()).unwrap();
+            validate_upsert(&input, 1).unwrap();
+            let automation: Automation = serde_json::from_value(value).unwrap();
+            write_automation(&conn, &automation).unwrap();
+            let loaded = get(&conn, &automation.id).unwrap().unwrap();
+            assert_eq!(loaded.workspace_mode.as_deref(), Some(mode));
+            assert_eq!(
+                serde_json::to_value(&loaded).unwrap()["workspaceMode"],
+                mode
+            );
+            assert_eq!(loaded.worktree_cwd, "/tmp/selected-worktree");
+        }
+        let mut value = workspace_definition();
+        value["workspaceMode"] = serde_json::json!("existing");
+        let input: AutomationUpsert = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(
+            validate_upsert(&input, 1).unwrap_err(),
+            "Choose an existing worktree for this automation."
+        );
+        value["workspaceMode"] = serde_json::json!("unknown");
+        let input: AutomationUpsert = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            validate_upsert(&input, 1).unwrap_err(),
+            "Invalid automation workspace mode."
+        );
+    }
+
+    fn workspace_definition() -> serde_json::Value {
+        serde_json::json!({
+            "id":"automation-id","name":"Audit","prompt":"Review this project","harness":"codex","model":"model",
+            "cwd":"/tmp","reuseSession":false,"runtimeMode":"supervised",
+            "scheduleKind":"daily","minute":0,"time":"09:00","dayOfWeek":1,"missedRunGraceMinutes":0,
+            "enabled":false,"nextRunAt":1000,"createdAt":1,"updatedAt":1
+        })
+    }
+
+    #[test]
     fn typed_ssh_automations_never_enter_the_legacy_agent_launcher() {
         let mut value = serde_json::json!({
             "id":"ssh-book","name":"SSH book","prompt":"agent-shaped input","harness":"codex","model":"model",
@@ -1233,7 +1300,7 @@ mod tests {
             model: "model".into(),
             model_settings: HashMap::new(),
             cwd: "/tmp".into(),
-            workspace_mode: "worktree".into(),
+            workspace_mode: Some("worktree".into()),
             worktree_cwd: String::new(),
             session_folder_id: String::new(),
             reuse_session: false,
@@ -1286,7 +1353,7 @@ mod tests {
             model: "model".into(),
             model_settings: HashMap::new(),
             cwd: "/tmp".into(),
-            workspace_mode: "worktree".into(),
+            workspace_mode: Some("worktree".into()),
             worktree_cwd: String::new(),
             session_folder_id: String::new(),
             reuse_session: false,

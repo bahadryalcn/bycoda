@@ -94,6 +94,7 @@ it("runs isolated host sessions through commits, rewind/Undo, owner delivery and
         expectedRevision: 0,
         idempotencyKey: "test-policy",
         policy: {
+          defaultMode: "worktree",
           root: worktrees,
           disk: { budgetBytes: 1024 ** 3, warningRatio: 0.8, minimumFreeBytes: 1 },
         },

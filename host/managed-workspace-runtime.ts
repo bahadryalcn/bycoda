@@ -301,6 +301,12 @@ export function createManagedWorkspaceRuntime(
       return { workspaceId: id, path: registered.path };
     },
     prepareWorkspaceForCreate: async (request) => {
+      const resolved = await policy.resolve({
+        projectId: request.projectId,
+        environmentId: store.environmentId,
+        ...(request.workspaceMode ? { choice: { defaultMode: request.workspaceMode } } : {}),
+      });
+      if (resolved.policy.defaultMode === "current") return null;
       if (!started && !startupRecovery.getStore())
         throw new Error("Managed workspace startup recovery is pending");
       const prepared = await registry.prepare({

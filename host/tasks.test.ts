@@ -1868,6 +1868,38 @@ describe("a task on its own branch", () => {
     expect((await task("b")).status).toBe("running");
     expect((await task("a")).branch).not.toBe((await task("b")).branch);
   });
+  it("defaults tasks without a workspace choice to the current checkout", async () => {
+    const { run, addRepo, turns } = await setup();
+    const repo = await addRepo("repo");
+    const task = await run({ projectId: repo.id, isolate: undefined });
+    expect(task.status).toBe("running");
+    expect(task.isolate).toBe(false);
+    expect(task.workspaceId).toBeUndefined();
+    expect(task.branch).toBeUndefined();
+    expect(turns[0].input.cwd).toBe(repo.cwd);
+    expect(turns[0].input.text).toContain("Leave changes uncommitted");
+  });
+  it("inherits worktree project policy while explicit current overrides it", async () => {
+    const { run, addRepo, store, turns } = await setup();
+    const repo = await addRepo("repo");
+    const { createWorkspacePolicyResolver } = await import("./workspace-policy");
+    await createWorkspacePolicyResolver(store).update(
+      {
+        projectId: repo.id,
+        environmentId: store.environmentId,
+        policy: { defaultMode: "worktree" },
+        expectedRevision: 0,
+        idempotencyKey: "task-worktree",
+      },
+      { ownerId: "test", authorizationId: "test" },
+    );
+    const managed = await run({ projectId: repo.id, isolate: undefined });
+    expect(managed.workspaceId).toBeTruthy();
+    expect(turns[0].input.cwd).toBe(managed.worktreeCwd);
+    const current = await run({ id: "direct", projectId: repo.id, isolate: false });
+    expect(current.workspaceId).toBeUndefined();
+    expect(turns[1].input.cwd).toBe(repo.cwd);
+  });
   it("runs explicit direct tasks in the selected folder, including non-Git projects", async () => {
     const { run, review, addRepo, turns } = await setup();
     const repo = await addRepo("repo");
@@ -1925,7 +1957,7 @@ describe("a task on its own branch", () => {
     expect(started.branch).toBeUndefined();
     expect(turns[0].input.cwd).toBe(child);
   });
-  it("blocks legacy tasks with unspecified isolation rather than falling back to the shared checkout", async () => {
+  it("runs legacy tasks with unspecified isolation in the current checkout", async () => {
     const { tasks, input, task, store, turns } = await setup();
     const saved = await tasks.save(input());
     const legacy = { ...saved, isolate: undefined };
@@ -1933,9 +1965,9 @@ describe("a task on its own branch", () => {
       .prepare("UPDATE tasks SET value=? WHERE id=?")
       .run(JSON.stringify(legacy), saved.id);
     await tasks.tick();
-    expect((await task()).status).toBe("blocked");
-    expect((await task()).error).toMatch(/Git|git|repository/i);
-    expect(turns).toHaveLength(0);
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect((await task()).status).toBe("running");
+    expect((await task()).isolate).toBe(false);
   });
   it.each([true, undefined])(
     "preserves a legacy isolated task's commits and dirty checkout on resume (isolate=%s)",

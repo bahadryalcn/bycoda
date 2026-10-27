@@ -1223,7 +1223,7 @@ it("shows an unavailable branch when Git lookup fails", async () => {
   expect((picker as HTMLButtonElement).disabled).toBe(true);
 });
 
-it("holds new remote creation and drafts when the Host lacks managed creation", async () => {
+it("holds explicit worktree remote creation and drafts when the Host lacks managed creation", async () => {
   managedCreationSupported = false;
   // Supply the new read-only discovery contract so this checks missing creator
   // readiness rather than failing earlier on an obsolete Host fixture.
@@ -1253,7 +1253,7 @@ it("holds new remote creation and drafts when the Host lacks managed creation", 
     }
     return original(command, input);
   });
-  await render();
+  await render({ ...shell(), workspaceMode: "worktree" });
   await type("Keep this unsent remote message");
   expect(container.textContent).toContain(
     "Update bycoda to create managed sessions on this remote Host.",
@@ -1311,51 +1311,52 @@ function useLegacyCreationHost() {
   });
 }
 
-it.each(["send", "draft", "shell"] as const)(
-  "transport: creates an explicit current-checkout %s on a legacy Host",
-  async (kind) => {
-    useLegacyCreationHost();
-    shellSupported = kind === "shell";
-    try {
-      await render({ ...shell(), workspaceMode: "current" });
-      if (kind === "draft") await saveDraftTransport("Review this later");
-      else {
-        await type(kind === "shell" ? "!git status" : "Use my checkout");
-        expect(byLabel("Send")!.disabled).toBe(false);
-        await act(async () => byLabel("Send")!.click());
-        await settle();
-      }
-      expect(commands.map((command) => command.type)).toEqual(
-        kind === "shell" ? ["create", "shell", "send"] : ["create", kind],
-      );
-      expect(commands[0]).toMatchObject({
-        type: "create",
-        projectId: "project",
-        workspaceMode: "current",
-        model: "codex:gpt-test",
-      });
-      expect(commands[0]).not.toHaveProperty("sessionId");
-      expect(commands[0]).not.toHaveProperty("workspaceId");
-      expect(commands[0]).not.toHaveProperty("worktreeCwd");
-      expect(commands[1]).toMatchObject({ sessionId: "host-session" });
-      if (kind === "shell") expect(commands[2]).toMatchObject({ text: SHELL_FOLLOW_UP_PROMPT });
-      expect(remoteSessionFor("shell")).toBe("host-session");
-      expect(
-        vi.mocked(invoke).mock.calls.some(([, input]) => {
-          const method = (input as { method?: string } | undefined)?.method;
-          return method === "workspaces.prepare" || method === "projects.workspacePolicy.get";
-        }),
-      ).toBe(false);
-    } finally {
-      shellSupported = false;
-    }
-  },
-);
-
 it.each([
+  ["current", "send"],
+  ["current", "draft"],
+  ["current", "shell"],
   [undefined, "send"],
   [undefined, "draft"],
   [undefined, "shell"],
+] as const)("transport: creates a %s current-checkout %s on a legacy Host", async (mode, kind) => {
+  useLegacyCreationHost();
+  shellSupported = kind === "shell";
+  try {
+    await render({ ...shell(), workspaceMode: mode });
+    if (kind === "draft") await saveDraftTransport("Review this later");
+    else {
+      await type(kind === "shell" ? "!git status" : "Use my checkout");
+      expect(byLabel("Send")!.disabled).toBe(false);
+      await act(async () => byLabel("Send")!.click());
+      await settle();
+    }
+    expect(commands.map((command) => command.type)).toEqual(
+      kind === "shell" ? ["create", "shell", "send"] : ["create", kind],
+    );
+    expect(commands[0]).toMatchObject({
+      type: "create",
+      projectId: "project",
+      ...(mode ? { workspaceMode: mode } : {}),
+      model: "codex:gpt-test",
+    });
+    expect(commands[0]).not.toHaveProperty("sessionId");
+    expect(commands[0]).not.toHaveProperty("workspaceId");
+    expect(commands[0]).not.toHaveProperty("worktreeCwd");
+    expect(commands[1]).toMatchObject({ sessionId: "host-session" });
+    if (kind === "shell") expect(commands[2]).toMatchObject({ text: SHELL_FOLLOW_UP_PROMPT });
+    expect(remoteSessionFor("shell")).toBe("host-session");
+    expect(
+      vi.mocked(invoke).mock.calls.some(([, input]) => {
+        const method = (input as { method?: string } | undefined)?.method;
+        return method === "workspaces.prepare" || method === "projects.workspacePolicy.get";
+      }),
+    ).toBe(false);
+  } finally {
+    shellSupported = false;
+  }
+});
+
+it.each([
   ["worktree", "send"],
   ["worktree", "draft"],
   ["worktree", "shell"],

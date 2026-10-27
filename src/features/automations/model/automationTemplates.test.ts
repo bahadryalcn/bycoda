@@ -91,12 +91,24 @@ describe("auto-fix GitHub issues template", () => {
     );
   });
 
-  it("starts unattended in its own worktree so a run cannot touch the open checkout", () => {
+  it("inherits project checkout policy and starts unattended without reusing a session", () => {
     const saved = savedFromTemplate();
-    expect(saved.workspaceMode).toBe("worktree");
+    expect(saved.workspaceMode).toBeUndefined();
     expect(saved.runtimeMode).toBe("auto");
     expect(saved.reuseSession).toBe(false);
     expect(saved.enabled).toBe(true);
+  });
+
+  it("stops in a current or unowned checkout before branch publication work", () => {
+    const prompt = template.prompt;
+    expect(prompt).toContain("must stop immediately with verdict SKIPPED");
+    expect(prompt).toContain("Preserve its branch, index and all dirty work");
+    expect(prompt.indexOf("STEP 0: Verify workspace ownership")).toBeLessThan(
+      prompt.indexOf("STEP 1: Name the branch"),
+    );
+    expect(prompt).toContain(
+      "Existing Host owner-review and publication permission gates still apply",
+    );
   });
 
   it("fires for a new issue in its project and hands the agent the issue number and URL", () => {

@@ -10,6 +10,14 @@ const native = vi.hoisted(() => ({
   shown: () => {},
   submitFails: false,
 }));
+vi.mock("../../workspaces/model/workspaceCreation", () => ({
+  shortWorkspaceRef: (value: string) => value,
+  useWorkspaceCreation: (_cwd: string, _active: boolean, choice?: string) => ({
+    mode: choice ?? "current",
+    pending: false,
+    refresh: vi.fn(),
+  }),
+}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ hide: native.hide }),

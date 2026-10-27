@@ -247,6 +247,7 @@ async function setup() {
     modelSettings: {},
     runtimeMode: "auto",
     maxRunMinutes: 0,
+    isolate: true,
     // The reviewer has tests of its own.
     verifyDefaults: { review: false },
     ...overrides,
@@ -1664,6 +1665,14 @@ describe("goal tasks", () => {
   });
 });
 describe("goal merging and work limits", () => {
+  it("defaults newly planned goal tasks to the current checkout", async () => {
+    const f = await setup();
+    await f.plan(planReply([{ key: "one", project: f.lead.cwd }]), { isolate: undefined });
+    const task = (await f.planned()).one;
+    expect(task).toMatchObject({ isolate: false, status: "running" });
+    expect(task.workspaceId).toBeUndefined();
+    expect(task.branch).toBeUndefined();
+  });
   it("runs direct goal tasks concurrently, preserves dirty work and releases dependencies", async () => {
     const { plan, planned, addRepo, finish, goal, advance } = await setup();
     const repo = await addRepo("direct");

@@ -63,7 +63,7 @@ export interface ResolvedWorkspacePolicy {
   appliedScopes: (typeof WORKSPACE_POLICY_PRECEDENCE)[number][];
 }
 export const DEFAULT_WORKSPACE_POLICY = {
-  defaultMode: "worktree",
+  defaultMode: "current",
   integrationBranchRef: "refs/heads/main",
   root: null,
   pinned: false,

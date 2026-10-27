@@ -6,6 +6,8 @@ import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
 import { useComposerSpelling } from "../../settings/model/composerSpelling";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { useWorkspaceCreation } from "../../workspaces/model/workspaceCreation";
+import { WorkspaceCreationStatus } from "../../workspaces/ui/WorkspaceCreationStatus";
 import { QuickWorkspaceControls } from "./QuickWorkspaceControls";
 import {
   workspaceForProject,
@@ -118,9 +120,16 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
   const [choice, setChoice] = useState(initialQuickChoice);
   const [workspaceChoice, setWorkspaceChoice] = useState<QuickWorkspace>({
     cwd,
-    mode: "current",
   });
   const workspace = workspaceForProject(workspaceChoice, cwd);
+  const workspaceCreation = useWorkspaceCreation(
+    cwd ?? "",
+    !!cwd && !workspace.tree,
+    workspace.mode,
+    workspace.base,
+  );
+  const workspaceBlocked =
+    !workspace.tree && (workspaceCreation.pending || !!workspaceCreation.error);
   const [gitOpen, setGitOpen] = useState(false);
   // Re-render when a workspace window's live catalog lands.
   const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot);
@@ -324,7 +333,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
       const path = projectOptions[index];
       if (!path) return;
       setCwd(path);
-      setWorkspaceChoice({ cwd: path, mode: "current" });
+      setWorkspaceChoice({ cwd: path });
     }
     closePicker();
   };
@@ -369,6 +378,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
       submitting.current ||
       attachments.loading ||
       gitOpen ||
+      workspaceBlocked ||
       !resolvedModel ||
       (attachments.files.length > 0 && !attachmentsSupported)
     )
@@ -488,6 +498,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
     !busy &&
     !attachments.loading &&
     !gitOpen &&
+    !workspaceBlocked &&
     resolvedModel &&
     (attachmentsSupported || !attachments.files.length),
   );
@@ -545,6 +556,8 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
         <QuickWorkspaceControls
           key={cwd}
           value={workspace}
+          resolvedMode={workspaceCreation.mode}
+          resolvedBase={workspaceCreation.base}
           enabled={!busy && !picker}
           onChange={setWorkspaceChoice}
           onError={setError}
@@ -664,6 +677,22 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
         <Alert tone="warning" role="alert">
           {t("Choose a provider that supports attachments, or remove the attached files.")}
         </Alert>
+      ) : null}
+      {!workspace.tree &&
+      (workspaceCreation.pending ||
+        workspaceCreation.error ||
+        workspaceCreation.mode === "worktree") ? (
+        <WorkspaceCreationStatus
+          preview={workspaceCreation.mode === "worktree" ? workspaceCreation.preview : undefined}
+          pending={workspaceCreation.pending}
+          error={workspaceCreation.error}
+          onRetry={workspaceCreation.refresh}
+          onUseCurrentCheckout={
+            workspaceCreation.updateRequired
+              ? () => setWorkspaceChoice({ cwd, mode: "current" })
+              : undefined
+          }
+        />
       ) : null}
       {error ? (
         <Alert tone="danger" role="alert" className="mx-3 mb-2 min-w-0 break-words">

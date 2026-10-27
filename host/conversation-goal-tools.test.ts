@@ -62,7 +62,6 @@ describe("conversation goal writes", () => {
   it("refuses direct execution, integration delivery and publication requested through conversation tools", async () => {
     const f = setup();
     for (const patch of [
-      { isolate: false },
       { autoMerge: true },
       { deliveryRequested: true },
       { push: "origin" },
@@ -74,6 +73,16 @@ describe("conversation goal writes", () => {
     expect(f.goals.create).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])("preserves an explicit goal workspace choice (%s)", async (isolate) => {
+    const f = setup();
+    const goal = await f.call("goals.create", {
+      goalId: "goal",
+      title: "Deliver",
+      prompt: "Implement",
+      isolate,
+    });
+    expect((goal as HostGoal).isolate).toBe(isolate);
+  });
   it("pins the caller account rather than using the unauthenticated host default", async () => {
     const f = setup();
     await f.create();
@@ -215,7 +224,7 @@ describe("conversation goal writes", () => {
     );
     expect(f.goals.delete).not.toHaveBeenCalled();
   });
-  it("inherits caller identity and fixes owner plan approval, manual start and managed worktree execution", async () => {
+  it("inherits caller identity and fixes owner plan approval, manual start and inherited workspace policy", async () => {
     const f = setup();
     const result = await f.call("goals.create", {
       goalId: "goal",
@@ -243,6 +252,7 @@ describe("conversation goal writes", () => {
       expect.objectContaining({ autoMerge: false, continueUntilDone: false }),
     );
     expect((result as HostGoal).autoMerge).not.toBe(true);
+    expect((result as HostGoal).isolate).toBeUndefined();
     await expect(f.create()).rejects.toThrow("already exists");
     expect(f.rows).toHaveLength(1);
   });
@@ -323,7 +333,6 @@ describe("conversation goal writes", () => {
       { approvePlan: false },
       { manualStart: false },
       { autoMerge: true },
-      { isolate: false },
       { continueUntilDone: true },
       { runtimeMode: "auto" },
       { model: "foreign" },

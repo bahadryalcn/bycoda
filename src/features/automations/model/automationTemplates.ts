@@ -421,12 +421,16 @@ HARD LIMITS (never break these):
 - Never open a PR. Never comment on, label, assign, or close any issue or PR. The push in step 5 is the only write to GitHub.
 - Never start, stop, reset, or wipe shared services, containers, or databases. Other runs may be using them.
 
-STEP 1: Name the branch after the issue and get onto a clean base. Do this first.
+STEP 0: Verify workspace ownership before any branch, fetch, edit, commit or push step.
+- Continue only in a clean Host-assigned managed worktree owned by this automation run. A current/shared checkout, an existing checkout owned by another session, or unknown ownership must stop immediately with verdict SKIPPED. Preserve its branch, index and all dirty work.
+- Report that the owner must select Worktree for this automation or configure the project policy to use worktrees before this branch-publication workflow can run. Never create a worktree yourself or treat this template as delivery approval. Existing Host owner-review and publication permission gates still apply.
+
+STEP 1: Name the branch after the issue and get onto a clean base. Run only after STEP 0 passed.
 - If \`git ls-remote --heads origin autofix/issue-<n>\` already shows the branch, stop with verdict SKIPPED (already attempted).
 - Find the remote whose URL points at <repo> with \`git remote -v\`. That is the base remote: upstream when this checkout is a fork, otherwise origin. Fetch it.
 - Get the default branch with \`gh repo view <repo> --json defaultBranchRef --jq .defaultBranchRef.name\`.
-- Rename this worktree's own branch in place with \`git branch -m autofix/issue-<n>\`. Do not create a second branch.
-- Run \`git reset --keep <base-remote>/<default-branch>\` so the branch starts from the default branch. The worktree is new, so nothing is lost.
+- Only in a clean Host-assigned managed worktree owned by this run, rename its branch in place with \`git branch -m autofix/issue-<n>\`. Do not create a second branch.
+- Only in a Host-assigned managed worktree owned by this run, and after verifying that it is clean, run \`git reset --keep <base-remote>/<default-branch>\` to start from the default branch. In a current/shared checkout, preserve the existing branch, index and all dirty work; do not reset or rename it.
 - Confirm \`git branch --show-current\` prints autofix/issue-<n>. Check again right before committing.
 
 STEP 2: Validate the issue.

@@ -7,10 +7,15 @@ import {
   needsSessionWorkspace,
   prepareSessionWorkspace,
 } from "./sessionWorkspace";
-import { requireWorkspaceCapability, workspaceRequest } from "./workspaceClient";
+import {
+  getWorkspaceCapabilities,
+  requireWorkspaceCapability,
+  workspaceRequest,
+} from "./workspaceClient";
 import { clearConversation } from "../../sessions/model/clearConversation";
 
 vi.mock("./workspaceClient", () => ({
+  getWorkspaceCapabilities: vi.fn(async () => ["workspaces.policy.v1", "workspaces.managed.v1"]),
   resolveWorkspaceContext: vi.fn(async () => ({
     cwd: "/project",
     projectId: "project-id",
@@ -54,6 +59,10 @@ const workspace: ManagedWorkspace = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue([
+    "workspaces.policy.v1",
+    "workspaces.managed.v1",
+  ]);
   vi.mocked(requireWorkspaceCapability).mockResolvedValue(undefined);
   vi.mocked(workspaceRequest).mockImplementation(async (method) => {
     if (method === "projects.workspacePolicy.get")
@@ -165,4 +174,20 @@ it("does not create another workspace for an already managed session", async () 
     prepareSessionWorkspace({ ...session, workspaceId: "managed-id" } as typeof session),
   ).resolves.toBeNull();
   expect(workspaceRequest).not.toHaveBeenCalled();
+});
+
+it("uses current by default when a known legacy Host has no policy capability", async () => {
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue([]);
+  await expect(prepareSessionWorkspace(session)).resolves.toBeNull();
+  expect(requireWorkspaceCapability).not.toHaveBeenCalled();
+  expect(workspaceRequest).not.toHaveBeenCalled();
+});
+
+it("rejects policy worktree before preparation if remote managed creation is unavailable", async () => {
+  await expect(prepareSessionWorkspace(session, false)).rejects.toThrow(
+    "Update bycoda to create managed sessions",
+  );
+  expect(
+    vi.mocked(workspaceRequest).mock.calls.some(([method]) => method === "workspaces.prepare"),
+  ).toBe(false);
 });

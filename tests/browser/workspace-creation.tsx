@@ -20,7 +20,7 @@ const machine = {
   endpoint: "http://127.0.0.1:1",
 };
 const policy = {
-  defaultMode: query.has("current-policy") ? "current" : "worktree",
+  defaultMode: query.has("worktree-policy") ? "worktree" : "current",
   integrationBranchRef: "refs/heads/main",
   root: null,
   pinned: false,
@@ -97,7 +97,7 @@ mockIPC((command, payload) => {
 applyThemePreference(query.get("theme") === "light" ? "light" : "dark");
 
 function Fixture() {
-  const [mode, setMode] = useState<WorkspaceMode>();
+  const [mode, setMode] = useState<WorkspaceMode>(query.has("worktree") ? "worktree" : undefined);
   const [base, setBase] = useState<string>();
   const [sent, setSent] = useState(false);
   return (
