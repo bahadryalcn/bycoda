@@ -427,6 +427,11 @@ export async function sendPrompt(context, prompt, { allowFailure = false, wait =
         }
       }, "Native turn did not finish its durable after-capture");
     }
+  } else {
+    assert(
+      last.some((block) => block.error || block.notice === "error"),
+      "Expected native admission failure was not observed",
+    );
   }
   context.steps.push({
     step: `Send real Codex turn in ${settled.id}`,
@@ -725,6 +730,7 @@ async function scenario3(context) {
   }
   await controlNative(context, "start-host");
   await context.page.reload({ waitUntil: "domcontentloaded" });
+  await closeRecoveredSessions(context);
   await waitUntil(async () => {
     const check = new DatabaseSync(databasePath);
     try {
@@ -760,6 +766,7 @@ async function scenario3(context) {
   );
   context.browser = replacement.browser;
   context.page = replacement.page;
+  await closeRecoveredSessions(context);
   await waitUntil(
     async () =>
       (await getSessions(context.page)).find((entry) => entry.id === current.id && !entry.busy),
