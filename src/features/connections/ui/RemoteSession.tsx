@@ -1656,7 +1656,8 @@ function ConnectedRemoteSession({
       cachedRemoteSessionIds(shell.cwd),
     );
     try {
-      if (!descriptor?.capabilities.includes("sessions.managedCreation.v1"))
+      const managedCreation = descriptor?.capabilities.includes("sessions.managedCreation.v1");
+      if (!descriptor || (!managedCreation && draftWorkspaceMode !== "current"))
         throw new Error(t("Update bycoda to create managed sessions on this remote Host."));
       const reservedSessionId = managedCreateId();
       const workspace = await prepareSessionWorkspace({
@@ -1717,7 +1718,7 @@ function ConnectedRemoteSession({
         {
           type: "create",
           commandId: reservedSessionId,
-          sessionId: reservedSessionId,
+          ...(managedCreation ? { sessionId: reservedSessionId } : {}),
           projectId: project.projectId,
           ...(workspace ? { workspaceId: workspace.id } : {}),
           ...(draftWorkspaceMode === "current" ? { workspaceMode: "current" as const } : {}),
@@ -2022,7 +2023,8 @@ function ConnectedRemoteSession({
     }
     // A new conversation: the command needs a session to run in.
     if (sessionId || !draft.model) return false;
-    if (!descriptor.capabilities.includes("sessions.managedCreation.v1")) {
+    const managedCreation = descriptor.capabilities.includes("sessions.managedCreation.v1");
+    if (!managedCreation && draftWorkspaceMode !== "current") {
       setError(t("Update bycoda to create managed sessions on this remote Host."));
       return false;
     }
@@ -2042,7 +2044,7 @@ function ConnectedRemoteSession({
       return run({
         type: "create",
         commandId: reservedSessionId,
-        sessionId: reservedSessionId,
+        ...(managedCreation ? { sessionId: reservedSessionId } : {}),
         projectId: project.projectId,
         ...(workspace ? { workspaceId: workspace.id } : {}),
         ...(draftWorkspaceMode === "current" ? { workspaceMode: "current" as const } : {}),
