@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "@playwright/test";
@@ -821,9 +821,71 @@ async function scenario3(context) {
   await sendPrompt(context, "Reply LEGACYRECOVERED without editing files.");
   await sendPrompt(
     context,
-    "Wait 20 seconds using the terminal, then reply RESTARTTEST. Do not edit any files.",
+    "Wait 40 seconds using the terminal, then reply RESTARTTEST. Do not edit any files.",
     { wait: false },
   );
+  const crashUserBlockId = context.state.lastUserBlockId;
+  const crashAdmission = await waitUntil(
+    async () => {
+      const check = new DatabaseSync(databasePath);
+      let row;
+      try {
+        row = check
+          .prepare("SELECT request_json,phase FROM native_managed_turns WHERE session_id=?")
+          .get(current.id);
+      } finally {
+        check.close();
+      }
+      if (row?.phase !== "active") return false;
+      const request = JSON.parse(row.request_json);
+      if (request.userBlockId !== crashUserBlockId) return false;
+      const crashBindingPath = join(
+        context.run.hostDataPath,
+        "managed-workspaces",
+        "native-turns",
+        request.workspaceId,
+        `${request.userBlockId}.json`,
+      );
+      const crashBinding = JSON.parse(await readFile(crashBindingPath, "utf8"));
+      if (!crashBinding.processActivityOwnerId) return false;
+      const processDirectory = join(
+        context.run.hostDataPath,
+        "managed-workspaces",
+        "native-activity",
+        "processes",
+      );
+      for (const filename of await readdir(processDirectory)) {
+        if (!filename.endsWith(".json")) continue;
+        const lease = JSON.parse(await readFile(join(processDirectory, filename), "utf8"));
+        if (
+          lease.activityOwnerId !== crashBinding.processActivityOwnerId ||
+          lease.sessionId !== current.id ||
+          lease.kind !== "provider"
+        )
+          continue;
+        if (
+          !Number.isSafeInteger(lease.processId) ||
+          lease.processId < 1 ||
+          lease.phase !== "active"
+        )
+          return false;
+        process.kill(lease.processId, 0);
+        return { request, processId: lease.processId, activityOwnerId: lease.activityOwnerId };
+      }
+      return false;
+    },
+    "Crash test did not reach an accepted native turn with a live durably bound provider PID",
+    60000,
+  );
+  context.steps.push({
+    step: "Verify the crash occurs during accepted execution",
+    actual: {
+      phase: "active",
+      userBlockId: crashUserBlockId,
+      runId: crashAdmission.request.runId,
+      providerPid: crashAdmission.processId,
+    },
+  });
   await controlNative(context, "restart-app");
   await context.browser.close();
   const replacement = await waitUntil(
@@ -843,6 +905,50 @@ async function scenario3(context) {
   );
   const reset = await button(context, "Reset stuck turn");
   if (await reset.isVisible()) await reset.click();
+  await waitUntil(
+    () => {
+      const check = new DatabaseSync(databasePath);
+      try {
+        const row = check
+          .prepare("SELECT request_json,phase FROM native_managed_turns WHERE session_id=?")
+          .get(current.id);
+        return (
+          row?.phase === "complete" && JSON.parse(row.request_json).userBlockId === crashUserBlockId
+        );
+      } finally {
+        check.close();
+      }
+    },
+    "Restarted native app did not recover the exact accepted turn",
+    60000,
+  );
+  const crashRecordPath = join(
+    context.run.hostDataPath,
+    "managed-workspaces",
+    "turns",
+    crashAdmission.request.workspaceId,
+    `${crashUserBlockId}.json`,
+  );
+  const crashRecord = JSON.parse(await readFile(crashRecordPath, "utf8"));
+  assert.equal(
+    crashRecord.before.status,
+    "complete",
+    "Crash test never had an accepted before-capture",
+  );
+  assert.equal(
+    crashRecord.after?.status,
+    "complete",
+    "Recovered accepted turn has no durable after-capture",
+  );
+  context.steps.push({
+    step: "Reconcile accepted execution after native restart",
+    actual: {
+      userBlockId: crashUserBlockId,
+      nativePhase: "complete",
+      afterCapture: "complete",
+      resetUsed: await reset.isVisible(),
+    },
+  });
   await sendPrompt(context, "Reply APPRECOVERED without editing files.");
   return { sessionId: current.id, screenshots: await context.capture("03-after-recovery") };
 }
