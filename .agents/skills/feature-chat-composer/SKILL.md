@@ -210,8 +210,17 @@ large\" error itself."
   the outgoing provider thread even when optional handoff text is empty.
 - `bdeaa630`: once the recap cannot fit, only the readback reference remains;
   smaller history entries cannot reappear ahead of the dropped recap.
-- Focused checks: 337 client/catalog/persistence cases and all 130 Host engine
-  cases passed; fast web/Host TypeScript checks passed. Evidence stays in
+- `dd0d42d6`: Host budgets the machine-owned disabled-skill restrictions through
+  the production provider wrapper. This send uses the accepted policy snapshot
+  for accounting and dispatch; subsequent sends refresh the snapshot. Unprepared
+  inputs still receive machine policy, and serialized overrides cannot bypass it.
+- `8f9f8d7f`: capacity identity matching preserves custom native colon prefixes and
+  URLs; one provider's `provider:model` capacity cannot leak to another provider.
+- Checks: `check:web:fast` passed 12,411 tests with 15 skipped across 1,282 files,
+  followed by fast web/Host TypeScript compilation. After the final native-ID fix,
+  focused handoff/model/desktop regressions passed 94 cases and fast web/Host
+  TypeScript checks passed again. Host engine/provider checks passed all 133 cases;
+  archive storage passed its focused case. Repository hygiene passed. Evidence stays in
   `temp/verification/h1/`. No existing browser fixture covers handoff notices;
   this is a text-only change using the existing transcript notice row. Native,
   installed-app and provider acceptance are unverified; no installer was built.
