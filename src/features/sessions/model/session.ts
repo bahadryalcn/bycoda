@@ -424,7 +424,7 @@ export type Block = {
    * A system row the reader must not miss — an error or an interruption —
    * rather than turn chrome like a status ping. Never folds into the trail.
    */
-  notice?: "error" | "interrupt";
+  notice?: "error" | "interrupt" | "info";
   statusKey?: string;
   /** Durable reason the turn ended before a normal assistant completion. */
   turnOutcome?: "stopped";

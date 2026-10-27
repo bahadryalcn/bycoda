@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
-import type { HostProvider } from "./providers";
+import { withMachineSkillPolicy, type HostProvider } from "./providers";
 import { HostEngine, parseCommand, type ManagedTurnHistoryAdapter } from "./engine";
 import type { TurnGitRecord, TurnGitSnapshot } from "./workspace-contracts";
 import { HostStore } from "./store";
@@ -18,6 +18,11 @@ import { sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { isActivityBlock, isNoticeBlock } from "../src/features/sessions/model/transcriptActivity";
 import { conversationHead } from "../src/features/sync/model/conversationDigest";
 import { mergeAdoptedSession } from "../src/features/connections/model/adoptedSessions";
+import { appendReadyHandoff } from "../src/features/sessions/model/handoff";
+import { setHarnessModels, resetHarnessModelOverlays } from "../src/features/sessions/model/models";
+import * as runtimeGuidance from "../src/integrations/harness/core/runtimeGuidance";
+import { HandoffHistoryStore } from "./handoff-history";
+import * as skillPrompts from "./prompt-skills";
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -1832,6 +1837,163 @@ describe("managed turn boundaries", () => {
       "before-compact",
       "compact-boundary",
     ]);
+  });
+});
+
+describe("handoff context capacity", () => {
+  async function seedHandoff(contextWindow?: number) {
+    const result = await setup("codex");
+    if (contextWindow !== undefined) {
+      setHarnessModels("codex", [
+        {
+          id: "codex:test",
+          harness: "codex",
+          name: "Discovered model",
+          contextWindow,
+        },
+      ]);
+      cleanups.push(resetHarnessModelOverlays);
+    }
+    const original = await result.store.session(result.id);
+    await result.store.save(
+      {
+        ...original,
+        revision: original.revision + 1,
+        session: appendReadyHandoff(
+          {
+            ...original.session,
+            providerSessionId: "outgoing-thread",
+            blocks: [
+              { id: "original", role: "user", text: "Preserve the original decisions." },
+              { id: "oversized", role: "assistant", text: "Previous history. ".repeat(10_000) },
+            ],
+          },
+          "codex",
+          "codex",
+          "Continue the saved conversation.",
+        ),
+      },
+      { type: "test.handoff" },
+    );
+    return result;
+  }
+
+  it("sends a long Turkish request with an unknown window and reduced history", async () => {
+    const { engine, store, turns, id } = await seedHandoff();
+    const text = "Türkçe isteği değiştirmeden gönder. ".repeat(1000);
+    expect(Buffer.byteLength(text)).toBeGreaterThan(20_000);
+    await expect(
+      engine.command({
+        type: "send",
+        commandId: "long-turkish",
+        sessionId: id,
+        text,
+      }),
+    ).resolves.toBeDefined();
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.text).toContain(text);
+    expect(turns[0].input.text).toContain("handoff-history");
+    expect(turns[0].input.text).not.toContain("Previous history. ".repeat(10_000));
+    const session = (await store.session(id)).session;
+    expect(session.blocks.find((block) => block.id === "long-turkish")?.text).toBe(text);
+    expect(session.blocks.find((block) => block.handoff)?.handoff?.pending).toBe(false);
+    turns[0].finish();
+  });
+
+  it("uses a tiny discovered window, persists a non-blocking notice, and resets the old thread", async () => {
+    const { engine, store, provider, turns, id, directory } = await seedHandoff(32);
+    await expect(
+      engine.command({
+        type: "send",
+        commandId: "tiny-capacity",
+        sessionId: id,
+        text: "Continue the work.",
+      }),
+    ).resolves.toBeDefined();
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.text).toBe("Continue the work.");
+    expect(provider.stop).toHaveBeenCalledWith(id);
+    const session = (await store.session(id)).session;
+    const notice = session.blocks.find((block) => block.notice === "info");
+    expect(notice).toBeDefined();
+    expect(isNoticeBlock(notice!)).toBe(true);
+    expect(notice!.text).toContain("handoff-history");
+    expect(notice!.text).not.toContain("Previous history.");
+    const archive = await new HandoffHistoryStore(directory).read(id);
+    expect(archive.messages.map((message) => message.id)).toEqual(["original", "oversized"]);
+    expect(session.blocks.find((block) => block.handoff)?.handoff?.pending).toBe(false);
+    turns[0].finish();
+  });
+
+  it("budgets expanded skill policy once and sends the prepared request without re-expansion", async () => {
+    const text = "/fixture Continue.";
+    const expanded = `Injected skill policy. ${"policy ".repeat(2000)}\n${text}`;
+    const skill = vi.spyOn(skillPrompts, "prepareHostSkillPrompt").mockResolvedValue(expanded);
+    cleanups.push(() => skill.mockRestore());
+    const { engine, store, turns, id } = await seedHandoff(1024);
+    await engine.command({ type: "send", commandId: "skill-accounting", sessionId: id, text });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(skill).toHaveBeenCalledTimes(1);
+    expect(turns[0].input.text).toBe(expanded);
+    const session = (await store.session(id)).session;
+    expect(session.blocks.find((block) => block.id === "skill-accounting")?.text).toBe(text);
+    expect(session.blocks.some((block) => block.notice === "info")).toBe(true);
+    turns[0].finish();
+  });
+
+  it("budgets real machine restrictions at the final provider boundary without duplicating them", async () => {
+    const { engine, store, provider, turns, id } = await seedHandoff(2048);
+    const policy = {
+      disabledNames: Array.from({ length: 200 }, (_, i) => `disabled-skill-${i}`),
+      disabledPaths: Array.from({ length: 200 }, (_, i) => `C:/skills/disabled-${i}/SKILL.md`),
+    };
+    // Use the production enforcement wrapper around the fake provider transport.
+    Object.assign(
+      provider,
+      withMachineSkillPolicy("codex", { ...provider }, () => policy),
+    );
+    await engine.command({
+      type: "send",
+      commandId: "machine-policy-budget",
+      sessionId: id,
+      text: "Continue.",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.text).toBe("Continue.");
+    expect(turns[0].input.skillPolicy).toEqual(policy);
+    const instructions = turns[0].input.runtimeInstructions!;
+    expect(instructions.match(/Disabled skill names:/g)).toHaveLength(1);
+    expect(instructions.match(/Disabled skill paths:/g)).toHaveLength(1);
+    expect(instructions).toContain("disabled-skill-199");
+    expect(instructions).toContain("C:/skills/disabled-199/SKILL.md");
+    const session = (await store.session(id)).session;
+    expect(session.blocks.some((block) => block.notice === "info")).toBe(true);
+    expect(session.blocks.find((block) => block.id === "machine-policy-budget")?.text).toBe(
+      "Continue.",
+    );
+    turns[0].finish();
+  });
+
+  it("charges injected runtime instructions once and keeps them out of the owner's transcript", async () => {
+    const hint = "Runtime skill policy. ".repeat(1000);
+    const hints = vi.spyOn(runtimeGuidance, "harnessRuntimeHints").mockResolvedValue(hint);
+    cleanups.push(() => hints.mockRestore());
+    const { engine, store, turns, id } = await seedHandoff(1024);
+    await engine.command({
+      type: "send",
+      commandId: "runtime-accounting",
+      sessionId: id,
+      text: "Continue.",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.text).toBe("Continue.");
+    expect(turns[0].input.runtimeInstructions).toBe(hint);
+    const session = (await store.session(id)).session;
+    expect(session.blocks.find((block) => block.id === "runtime-accounting")?.text).toBe(
+      "Continue.",
+    );
+    expect(session.blocks.some((block) => block.notice === "info")).toBe(true);
+    turns[0].finish();
   });
 });
 

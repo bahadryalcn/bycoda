@@ -158,11 +158,15 @@ function parseModel(raw: unknown): AgentModel | null {
     stringField(rec, "displayName") ?? stringField(rec, "name") ?? nativeId,
   );
   const settings = parseModelSettings(rec);
+  const contextWindow = [rec.contextWindow, rec.context_window].find(
+    (value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0,
+  );
   return {
     id: `codex:${nativeId}`,
     harness: "codex",
     name,
     nativeId,
+    ...(contextWindow ? { contextWindow } : {}),
     ...(settings.length > 0 ? { settings } : {}),
   };
 }

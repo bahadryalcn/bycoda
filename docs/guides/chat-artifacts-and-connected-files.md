@@ -4,6 +4,18 @@ Tool rows keep the conversation compact. Use **Changes** beside an edit or the o
 
 These details describe the tool call at that point in the conversation. They do not reread the current file and present it as historical output. New code details are bounded to keep long conversations responsive; subagent history has a shared retention budget. When only an older shortened preview remains, the viewer says so.
 
+## Earlier conversation after a provider or model change
+
+When a switch needs a conversation handoff, bycoda saves the earlier messages on
+the conversation's owning computer. It includes as much history and recap as the
+target model's context budget allows, followed by a reference to the saved history.
+
+If even the reference cannot fit, your message still sends. An information row
+explains that the earlier conversation was not transferred and shows the saved
+history path. The current message is preserved in full; the provider may still
+reject a request that exceeds its actual limit. Native reasoning and tool state
+are not transferred.
+
 ## Documents, tables, and media
 
 Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio use native playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.

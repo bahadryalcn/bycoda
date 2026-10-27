@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import { buildBudgetedHandoff, handoffHistory } from "../../features/sessions/model/handoffBudget";
+import {
+  buildBudgetedHandoff,
+  handoffHistory,
+  type BudgetedHandoff,
+} from "../../features/sessions/model/handoffBudget";
 import { modelContextWindow } from "../../features/sessions/model/models";
 import type { Session } from "../../features/sessions/model/session";
 import { parseRemotePath } from "../../features/connections/model/remoteProjects";
@@ -10,7 +14,7 @@ export async function prepareBudgetedHandoff(
   session: Session,
   brief: string,
   request: string,
-): Promise<string> {
+): Promise<BudgetedHandoff> {
   const history = handoffHistory(session);
   const archive = parseRemotePath(session.cwd)
     ? await hostFeatureRequest<{ path: string }>(
@@ -21,9 +25,9 @@ export async function prepareBudgetedHandoff(
       )
     : await invoke<{ path: string }>("handoff_history_save", { history });
   return buildBudgetedHandoff(session, {
-    contextWindow: modelContextWindow(session.model),
+    contextWindow: modelContextWindow(session.model, session.harness),
     request,
     brief,
     historyPath: archive.path,
-  }).text;
+  });
 }

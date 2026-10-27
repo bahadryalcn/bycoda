@@ -311,10 +311,19 @@ export function listHarnesses(): HarnessAdapter[] {
 
 function assertHarnessModel(harness: HarnessId, model?: string): void {
   if (model !== undefined && !modelBelongsToHarness(harness, model))
-    throw new Error(`Model "${model}" does not belong to provider "${harness}". Select a matching provider and model.`);
+    throw new Error(
+      `Model "${model}" does not belong to provider "${harness}". Select a matching provider and model.`,
+    );
 }
 
-export function sendHarnessTurn(input: SendTurnInput & { harness: HarnessId }) {
+export function sendHarnessTurn(
+  request: SendTurnInput & {
+    harness: HarnessId;
+    /** Local prompt preparation after runtime and skill guidance; never sent to a provider. */
+    prepareText?: (text: string, runtimeInstructions?: string) => Promise<string>;
+  },
+) {
+  const { prepareText, ...input } = request;
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   let ready!: () => void;
   const started = new Promise<void>((resolve) => {
@@ -362,7 +371,7 @@ export function sendHarnessTurn(input: SendTurnInput & { harness: HarnessId }) {
           );
           if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
             throw new Error("Turn cancelled before it started");
-          await adapter.sendTurn({
+          const preparedInput = {
             ...restricted,
             ...(input.harness === "codex"
               ? {
@@ -374,6 +383,16 @@ export function sendHarnessTurn(input: SendTurnInput & { harness: HarnessId }) {
                   text: withSkillPolicy(input.harness, { ...input, text }, restricted.skillPolicy!)
                     .text,
                 }),
+          };
+          if (prepareText)
+            preparedInput.text = await prepareText(
+              preparedInput.text,
+              preparedInput.runtimeInstructions,
+            );
+          if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
+            throw new Error("Turn cancelled before it started");
+          await adapter.sendTurn({
+            ...preparedInput,
             onAccepted: () => {
               accepted();
               input.onAccepted?.();

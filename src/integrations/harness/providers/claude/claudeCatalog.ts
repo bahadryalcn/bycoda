@@ -383,12 +383,16 @@ function modelFromListRow(raw: unknown): AgentModel | null {
   const description = stringField(rec, "description") ?? "";
   const name = pickerName(displayName, description, nativeId, fromResolved.id);
   const settings = settingsFromListRow(rec, fromValue.context1m || fromResolved.context1m);
+  const capacity = [rec.contextWindow, rec.context_window].find(
+    (value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0,
+  );
 
   return {
     id: claudeCatalogId(nativeId),
     harness: "claude",
     name,
     nativeId,
+    ...(capacity ? { contextWindow: capacity } : {}),
     ...(fromResolved.id && fromResolved.id !== nativeId ? { aliasTarget: fromResolved.id } : {}),
     ...(settings.length > 0 ? { settings } : {}),
   };
