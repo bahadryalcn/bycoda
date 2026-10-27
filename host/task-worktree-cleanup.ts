@@ -3,11 +3,17 @@ import { join } from "node:path";
 import { hostWorktrees, invalidateHostWorktrees } from "./git-worktrees";
 import { guardedRemoveWorkspace, sameWorkspacePath } from "./workspace-cleanup";
 import { runGitText } from "../src/shared/lib/processExecution.node";
+import {
+  canonicalWorkspaceDirectorySync,
+  canonicalWorkspaceEntry,
+  canonicalWorkspacePath,
+  workspacePathKey,
+} from "./workspace-paths";
 
 /** Same filesystem path; only Windows paths are case-insensitive. */
 export const sameHostPath = sameWorkspacePath;
 const removing = new Set<string>();
-const key = (path: string) => (process.platform === "win32" ? path.toLowerCase() : path);
+const key = (path: string) => workspacePathKey(canonicalWorkspaceDirectorySync(path));
 /** Legacy launch adapters must check this inside their process-start admission gate. */
 export const isTaskWorktreeRemoving = (path: string) => removing.has(key(path));
 
@@ -20,6 +26,10 @@ export async function cleanupTaskWorktree(
   evidence: { head?: string; deliveredCommit?: string },
   inUse: () => boolean | Promise<boolean> = () => false,
 ): Promise<string[]> {
+  [projectCwd, path] = await Promise.all([
+    canonicalWorkspacePath(projectCwd),
+    canonicalWorkspaceEntry(path),
+  ]);
   if (removing.has(key(path))) throw new Error("The task checkout is still in use.");
   removing.add(key(path));
   try {

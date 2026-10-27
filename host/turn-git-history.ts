@@ -313,6 +313,7 @@ export class GitTurnHistory implements TurnGitHistory {
       throw new Error("Finish the in-progress Git operation before capture");
   }
   async fingerprint(workspace: ManagedWorkspace): Promise<string> {
+    workspace = { ...workspace, path: await canonicalWorkspaceEntry(workspace.path) };
     return this.fingerprintFrom(workspace, await this.assertBranch(workspace));
   }
   private async fingerprintFrom(workspace: ManagedWorkspace, context: GitContext) {
@@ -338,6 +339,7 @@ export class GitTurnHistory implements TurnGitHistory {
   }
   /** Caller holds the common Git gate and a writer reservation when preparing rescue. */
   async capture(workspace: ManagedWorkspace): Promise<TurnGitSnapshot> {
+    workspace = { ...workspace, path: await canonicalWorkspaceEntry(workspace.path) };
     const context = await this.assertBranch(workspace);
     await this.validateIndex(workspace.path, context.gitDirectory);
     if ((await this.options.uncapturedInputs?.(workspace))?.length)
@@ -595,6 +597,7 @@ export class GitTurnHistory implements TurnGitHistory {
     source: TurnGitSnapshot,
     operationId = digest(`${source.worktree}:${target.worktree}`),
   ) {
+    workspace = { ...workspace, path: await canonicalWorkspaceEntry(workspace.path) };
     await this.assertBranch(workspace);
     const cwd = workspace.path;
     const head = await gitText(cwd, ["rev-parse", "HEAD"]);

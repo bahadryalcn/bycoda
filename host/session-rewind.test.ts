@@ -421,7 +421,7 @@ describe("managed session Git rewind", () => {
       });
       expect(boundary.before).toMatchObject({
         status: "blocked",
-        reason: expect.stringContaining("Unsafe symlink"),
+        reason: expect.stringMatching(/Unsafe (captured path|symlink|parent)/),
       });
       expect(await readFile(join(f.main, "owner.txt"), "utf8")).toBe("owner untracked\n");
       expect(await gitText(f.main, ["rev-parse", "HEAD"])).toBe(f.base);

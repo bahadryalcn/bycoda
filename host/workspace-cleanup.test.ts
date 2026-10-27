@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -269,7 +270,7 @@ it.skipIf(process.platform === "win32")(
     ).rejects.toThrow(/changed|uncommitted/);
     expect(readFileSync(join(s.path, "source.txt"), "utf8")).toBe("concurrent edit");
     expect(git(s.project, "worktree", "list", "--porcelain")).toContain(
-      s.path.replaceAll("\\", "/"),
+      realpathSync(s.path).replaceAll("\\", "/"),
     );
   },
   120_000,
@@ -307,7 +308,7 @@ it.skipIf(process.platform === "win32")(
       "concurrent edit before detachment baseline",
     );
     expect(git(s.project, "worktree", "list", "--porcelain")).toContain(
-      s.path.replaceAll("\\", "/"),
+      realpathSync(s.path).replaceAll("\\", "/"),
     );
   },
   120_000,

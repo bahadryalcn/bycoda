@@ -162,6 +162,7 @@ export async function previewTaskDeliveryArtifacts(
       };
       await walk(sourceRoot);
       const paths = Object.keys(hashes).sort();
+      for (const path of paths) await safeEntry(target, join(target, path));
       const ignoredChecks = await Promise.allSettled([
         requireIgnored(source, paths),
         requireIgnored(target, paths),

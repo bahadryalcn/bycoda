@@ -87,16 +87,18 @@ it("reads legacy registry paths beneath an aliased ancestor and rejects a linked
   const legacy = {
     ...workspace,
     path: join(alias, "worktrees", basename(workspace.path)),
-    revision: workspace.revision + 1,
   };
-  await f.store.updateManagedWorkspace(legacy, workspace.revision);
+  // Seed a pre-canonicalization row directly; the public write API must keep
+  // rejecting path changes to an existing workspace's immutable identity.
+  await f.store.db
+    .prepare("UPDATE managed_workspaces SET path=?, payload=? WHERE id=?")
+    .run(legacy.path, JSON.stringify(legacy), workspace.id);
   expect((await f.runtime.workspace(workspace.id)).path).toBe(workspace.path);
   const endpoint = join(f.root, "linked-workspace");
   symlinkSync(workspace.path, endpoint, process.platform === "win32" ? "junction" : "dir");
-  await f.store.updateManagedWorkspace(
-    { ...legacy, path: endpoint, revision: legacy.revision + 1 },
-    legacy.revision,
-  );
+  await f.store.db
+    .prepare("UPDATE managed_workspaces SET path=?, payload=? WHERE id=?")
+    .run(endpoint, JSON.stringify({ ...legacy, path: endpoint }), workspace.id);
   await expect(f.runtime.workspace(workspace.id)).rejects.toThrow("symbolic link or reparse point");
 });
 
