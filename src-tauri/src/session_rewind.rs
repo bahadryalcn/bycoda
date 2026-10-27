@@ -51,6 +51,78 @@ pub(crate) struct ManagedTurnRequest {
 pub(crate) trait TurnExecutionHost {
     fn capture_before(&self, request: &ManagedTurnRequest) -> Result<Value, String>;
     fn capture_after(&self, request: &ManagedTurnRequest) -> Result<Value, String>;
+    fn recover_begin(&self, _request: &ManagedTurnRequest) -> Result<Value, String> {
+        Err("Managed turn recovery is unavailable; reconnect to the execution Host".into())
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedTurnRecovery {
+    pub released: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+fn recover_managed_turn(
+    store: &SessionStore,
+    host: &impl TurnExecutionHost,
+    session_id: &str,
+) -> Result<ManagedTurnRecovery, String> {
+    recover_matching_managed_turn(store, host, session_id, None)
+}
+
+fn recover_matching_managed_turn(
+    store: &SessionStore,
+    host: &impl TurnExecutionHost,
+    session_id: &str,
+    expected: Option<&ManagedTurnRequest>,
+) -> Result<ManagedTurnRecovery, String> {
+    let Some((raw, phase)) = pending_turn(store, session_id)? else {
+        return Ok(ManagedTurnRecovery {
+            released: true,
+            reason: None,
+        });
+    };
+    if phase != "starting" {
+        return Ok(ManagedTurnRecovery {
+            released: false,
+            reason: Some("The managed turn was authorized or is still completing. Reconnect to finish its capture.".into()),
+        });
+    }
+    let request: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if expected.is_some_and(|expected| expected != &request) {
+        return Err("The managed turn changed during recovery. Retry.".into());
+    }
+    if request.session_id != session_id {
+        return Err("Managed turn recovery identity does not match this session".into());
+    }
+    let response = host.recover_begin(&request)?;
+    validate_turn_identity(&response, &request)?;
+    let released = response["released"]
+        .as_bool()
+        .ok_or("Execution Host did not confirm managed turn recovery")?;
+    if !released {
+        return Ok(ManagedTurnRecovery {
+            released: false,
+            reason: Some(
+                response["reason"]
+                    .as_str()
+                    .unwrap_or("The execution Host could not prove that no turn ran.")
+                    .to_owned(),
+            ),
+        });
+    }
+    // Consume only the exact unresolved request acknowledged by the Host.
+    let changed = store.lock_conn()?.execute(
+        "UPDATE native_managed_turns SET phase='complete' WHERE session_id=?1 AND request_json=?2 AND phase='starting'",
+        params![session_id, raw],
+    ).map_err(|e| e.to_string())?;
+    let released = changed == 1 || pending_turn(store, session_id)?.is_none();
+    Ok(ManagedTurnRecovery {
+        released,
+        reason: (!released).then(|| "The managed turn changed during recovery. Retry.".into()),
+    })
 }
 
 pub(crate) fn begin_managed_turn(
@@ -107,8 +179,15 @@ pub(crate) fn begin_managed_turn(
             return Err("Another managed turn won execution admission".into());
         }
     }
-    let record = host.capture_before(&request)?;
-    validate_turn_capture(&record, &request, "before")?;
+    let capture = host
+        .capture_before(&request)
+        .and_then(|record| validate_turn_capture(&record, &request, "before"));
+    if let Err(error) = capture {
+        // Rejection and a lost acknowledgement look alike locally. Only Host
+        // proof of no execution may release the persisted admission.
+        let _ = recover_matching_managed_turn(store, host, &request.session_id, Some(&request));
+        return Err(error);
+    }
     store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='active' WHERE session_id=?1 AND request_json=?2 AND phase='starting'",
         params![request.session_id,signature]).map_err(|e| e.to_string())?;
     Ok(())
@@ -148,14 +227,7 @@ fn validate_turn_capture(
     request: &ManagedTurnRequest,
     phase: &str,
 ) -> Result<(), String> {
-    if record["conversationRevision"].as_i64() != Some(request.conversation_revision)
-        || record["workspaceId"] != request.workspace_id
-        || record["sessionId"] != request.session_id
-        || record["userBlockId"] != request.user_block_id
-        || record["runId"] != request.run_id
-    {
-        return Err("Execution Host returned a different turn capture".into());
-    }
+    validate_turn_identity(record, request)?;
     if record[phase]["status"] != "complete" {
         return Err(format!(
             "Managed turn capture blocked: {}",
@@ -163,6 +235,18 @@ fn validate_turn_capture(
                 .as_str()
                 .unwrap_or("capture unavailable; retry before continuing")
         ));
+    }
+    Ok(())
+}
+
+fn validate_turn_identity(record: &Value, request: &ManagedTurnRequest) -> Result<(), String> {
+    if record["conversationRevision"].as_i64() != Some(request.conversation_revision)
+        || record["workspaceId"] != request.workspace_id
+        || record["sessionId"] != request.session_id
+        || record["userBlockId"] != request.user_block_id
+        || record["runId"] != request.run_id
+    {
+        return Err("Execution Host returned a different turn capture".into());
     }
     Ok(())
 }
@@ -595,6 +679,12 @@ impl TurnExecutionHost for crate::remote::NativeWorkspaceTransport {
             serde_json::to_value(request).map_err(|e| e.to_string())?,
         )
     }
+    fn recover_begin(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
+        self.call(
+            "native.turn.recover",
+            serde_json::to_value(request).map_err(|e| e.to_string())?,
+        )
+    }
 }
 
 impl RewindExecutionHost for crate::remote::NativeWorkspaceTransport {
@@ -649,21 +739,52 @@ fn stored_managed_session(store: &SessionStore, session_id: &str) -> Result<Sess
     Ok(record)
 }
 
+fn reconcile_starting_turns(
+    store: &SessionStore,
+    host: &impl TurnExecutionHost,
+    session_ids: Vec<String>,
+) -> Vec<String> {
+    session_ids
+        .into_iter()
+        .filter(|id| !recover_managed_turn(store, host, id).is_ok_and(|result| result.released))
+        .collect()
+}
+
 pub(crate) fn reconcile_pending_native(
     app: &AppHandle,
     store: &SessionStore,
     session_id: Option<&str>,
 ) -> Result<Vec<String>, String> {
+    let starting = {
+        let conn = store.lock_conn()?;
+        let mut statement = conn.prepare("SELECT session_id FROM native_managed_turns WHERE phase='starting' AND (?1 IS NULL OR session_id=?1)").map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map([session_id], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())?
+    };
+    let mut blocked = vec![];
+    if !starting.is_empty() {
+        match crate::remote::NativeWorkspaceTransport::connect(app, "sessions.native-execution.v1")
+        {
+            Ok(host) => {
+                blocked.extend(reconcile_starting_turns(store, &host, starting));
+            }
+            Err(_) => blocked.extend(starting),
+        }
+    }
     let pending: bool = store.lock_conn()?.query_row("SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1))
         OR EXISTS(SELECT 1 FROM native_rewind_intents WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1))", params![session_id], |row|row.get(0)).map_err(|e|e.to_string())?;
     if !pending {
-        return Ok(vec![]);
+        return Ok(blocked);
     }
     let host = crate::remote::NativeWorkspaceTransport::connect(app, "sessions.native-rewind.v1")?;
-    match session_id {
+    blocked.extend(match session_id {
         Some(id) => reconcile_pending_transport(store, &host, Some(id)),
         None => reconcile_pending_transport(store, &host, None),
-    }
+    }?);
+    Ok(blocked)
 }
 
 #[tauri::command(async)]
@@ -708,7 +829,55 @@ pub fn managed_turn_begin(
             conversation_revision: record.transcript_revision.unwrap_or(0),
         }
     };
-    begin_managed_turn(&store, &host, &request)
+    let result = begin_managed_turn(&store, &host, &request);
+    if let (Err(_), Some((raw, phase))) = (&result, pending_turn(&store, &request.session_id)?) {
+        let pending: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        // A preflight provider may already exist although no prompt was sent.
+        // Retire our process before asking the Host for no-execution proof.
+        if phase == "starting"
+            && pending.workspace_id == request.workspace_id
+            && pending.session_id == request.session_id
+            && pending.user_block_id == request.user_block_id
+            && pending.run_id == request.run_id
+            && app
+                .state::<crate::harness::HarnessHost>()
+                .retire_managed_session(&request.session_id)
+                .is_ok()
+        {
+            let _ =
+                recover_matching_managed_turn(&store, &host, &request.session_id, Some(&pending));
+        }
+    }
+    result
+}
+
+#[tauri::command(async)]
+pub fn managed_turn_recover(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    session_id: String,
+) -> Result<ManagedTurnRecovery, String> {
+    validate_id(&session_id, "session")?;
+    let Some((raw, phase)) = pending_turn(&store, &session_id)? else {
+        return Ok(ManagedTurnRecovery {
+            released: true,
+            reason: None,
+        });
+    };
+    let record = stored_managed_session(&store, &session_id)?;
+    let request: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if request.session_id != session_id
+        || Some(&request.workspace_id) != record.workspace_id.as_ref()
+    {
+        return Err("Managed turn recovery identity does not match this session".into());
+    }
+    let host =
+        crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
+    if phase == "starting" {
+        app.state::<crate::harness::HarnessHost>()
+            .retire_managed_session(&session_id)?;
+    }
+    recover_managed_turn(&store, &host, &session_id)
 }
 
 #[tauri::command(async)]
@@ -1504,6 +1673,126 @@ mod tests {
             methods
         });
         (transport, server)
+    }
+
+    fn native_turn_request(revision: i64, run_id: &str) -> ManagedTurnRequest {
+        ManagedTurnRequest {
+            workspace_id: "managed".into(),
+            session_id: "native".into(),
+            user_block_id: "u2".into(),
+            run_id: run_id.into(),
+            conversation_revision: revision,
+        }
+    }
+
+    fn turn_reply(request: &ManagedTurnRequest, released: bool) -> Value {
+        let mut response = serde_json::to_value(request).unwrap();
+        response["released"] = json!(released);
+        response["before"] = json!({"status":"complete"});
+        response["after"] = json!({"status":"complete"});
+        response
+    }
+
+    #[test]
+    fn checkpoint_native_rejected_begin_releases_row_and_next_turn_executes_over_transport() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let request = native_turn_request(seed(&store), "rejected");
+        let next = native_turn_request(request.conversation_revision, "next");
+        let (host, server) = fake_native_host(vec![
+            (
+                "native.turn.begin",
+                Some(json!({"fixtureRpcError":"foreign writer"})),
+            ),
+            ("native.turn.recover", Some(turn_reply(&request, true))),
+            ("native.turn.begin", Some(turn_reply(&next, false))),
+            ("native.turn.end", Some(turn_reply(&next, false))),
+        ]);
+        assert!(begin_managed_turn(&store, &host, &request)
+            .unwrap_err()
+            .contains("foreign writer"));
+        assert!(pending_turn(&store, "native").unwrap().is_none());
+        assert!(assert_writable(&store, "native").is_ok());
+        assert_eq!(
+            serde_json::to_value(recover_managed_turn(&store, &host, "native").unwrap()).unwrap(),
+            json!({"released":true})
+        );
+        begin_managed_turn(&store, &host, &next).unwrap();
+        finish_managed_turn(&store, &host, &next).unwrap();
+        assert!(assert_writable(&store, "native").is_ok());
+        assert_eq!(server.join().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn checkpoint_native_unknown_begin_needs_positive_matching_recovery_receipt() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let request = native_turn_request(seed(&store), "unknown");
+        let mut blocked = turn_reply(&request, false);
+        blocked["reason"] = json!("A complete before capture exists");
+        let mut mismatched = turn_reply(&request, true);
+        mismatched["runId"] = json!("foreign-run");
+        let (host, server) = fake_native_host(vec![
+            ("native.turn.begin", None),
+            (
+                "native.turn.recover",
+                Some(json!({"fixtureRpcError":"Host unavailable"})),
+            ),
+            ("native.turn.recover", Some(blocked)),
+            ("native.turn.recover", Some(mismatched)),
+            ("native.turn.recover", Some(turn_reply(&request, true))),
+        ]);
+        assert!(begin_managed_turn(&store, &host, &request).is_err());
+        assert!(assert_writable(&store, "native").is_err());
+        let refused = recover_managed_turn(&store, &host, "native").unwrap();
+        assert!(!refused.released);
+        assert!(refused.reason.unwrap().contains("complete before capture"));
+        assert!(recover_managed_turn(&store, &host, "native").is_err());
+        assert!(assert_writable(&store, "native").is_err());
+        assert!(
+            recover_managed_turn(&store, &host, "native")
+                .unwrap()
+                .released
+        );
+        assert!(assert_writable(&store, "native").is_ok());
+        assert_eq!(server.join().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn checkpoint_native_stuck_starting_row_self_heals_after_reopen_only_with_host_proof() {
+        let path =
+            std::env::temp_dir().join(format!("bycoda-stuck-turn-{}.db", uuid::Uuid::new_v4()));
+        let store = SessionStore::open(path.clone()).unwrap();
+        let request = native_turn_request(seed(&store), "old-starting");
+        store.lock_conn().unwrap().execute(
+            "INSERT INTO native_managed_turns(session_id,request_json,phase) VALUES(?1,?2,'starting')",
+            params![request.session_id, serde_json::to_string(&request).unwrap()],
+        ).unwrap();
+        drop(store);
+        let store = SessionStore::open(path.clone()).unwrap();
+        let mut blocked = turn_reply(&request, false);
+        blocked["reason"] = json!("Native process activity is still active");
+        let (host, server) = fake_native_host(vec![
+            ("native.turn.recover", Some(blocked)),
+            ("native.turn.recover", Some(turn_reply(&request, true))),
+        ]);
+        assert_eq!(
+            reconcile_starting_turns(&store, &host, vec!["native".into()]),
+            ["native"]
+        );
+        assert!(assert_writable(&store, "native").is_err());
+        assert!(reconcile_starting_turns(&store, &host, vec!["native".into()]).is_empty());
+        assert!(assert_writable(&store, "native").is_ok());
+        let next = native_turn_request(request.conversation_revision, "next");
+        begin_managed_turn(&store, &TurnHost { blocked: false }, &next).unwrap();
+        assert!(
+            !recover_managed_turn(&store, &TurnHost { blocked: false }, "native")
+                .unwrap()
+                .released
+        );
+        assert!(assert_writable(&store, "native").is_err());
+        finish_managed_turn(&store, &TurnHost { blocked: false }, &next).unwrap();
+        assert_eq!(server.join().unwrap().len(), 2);
+        drop(store);
+        std::fs::remove_file(path).unwrap();
     }
 
     fn managed_seed(store: &SessionStore) -> (i64, Value) {

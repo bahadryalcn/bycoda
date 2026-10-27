@@ -1192,6 +1192,7 @@ impl NativeWorkspaceTransport {
             method,
             "native.turn.begin"
                 | "native.turn.end"
+                | "native.turn.recover"
                 | "native.activity.start"
                 | "native.activity.end"
                 | "native.buffers.update"
