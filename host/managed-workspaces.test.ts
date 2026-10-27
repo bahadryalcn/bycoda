@@ -45,6 +45,8 @@ async function fixture() {
   git("init", "-q", "-b", "main");
   git("config", "user.name", "Test");
   git("config", "user.email", "test@example.com");
+  // Keep byte assertions stable when the runner enables checkout conversion globally.
+  git("config", "core.autocrlf", "false");
   writeFileSync(join(cwd, "source.txt"), "committed\n");
   git("add", ".");
   git("commit", "-qm", "baseline");
