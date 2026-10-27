@@ -5,9 +5,22 @@ use std::path::Path;
 use tauri::{AppHandle, Manager};
 
 pub(crate) struct Activity {
+    app: AppHandle,
     host: crate::remote::NativeWorkspaceTransport,
     id: String,
     started: bool,
+    settlement: ProcessSettlement,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessSettlement {
+    activity_id: String,
+    client_id: Option<String>,
+    session_id: Option<String>,
+    cwd: String,
+    kind: String,
+    process_id: Option<u32>,
 }
 
 impl Activity {
@@ -30,6 +43,9 @@ impl Activity {
         if !managed_path(app, cwd)? {
             return Ok(None);
         }
+        if kind == "provider" {
+            replay_settlements(app, session_id)?;
+        }
         let capability = if kind == "provider" {
             "sessions.native-process-recovery.v1"
         } else {
@@ -47,7 +63,16 @@ impl Activity {
             return Err("Execution Host did not admit managed workspace activity".into());
         }
         Ok(Some(Self {
+            app: app.clone(),
             host,
+            settlement: ProcessSettlement {
+                activity_id: id.clone(),
+                client_id: client_id.map(str::to_owned),
+                session_id: session_id.map(str::to_owned),
+                cwd: crate::fs::path_to_js(cwd),
+                kind: kind.into(),
+                process_id: None,
+            },
             id,
             started: false,
         }))
@@ -59,9 +84,10 @@ impl Activity {
         // An uncertain registration must not cause Drop to release a child
         // which may already exist. The spawn caller kills/waits it on failure.
         self.started = true;
+        self.settlement.process_id = Some(process_id);
         let result = self.host.call(
             "native.activity.spawned",
-            json!({"activityId":self.id,"processId":process_id}),
+            json!({"activityId":self.id,"processId":process_id,"desktopProcessId":std::process::id()}),
         )?;
         if result["acknowledged"] != true {
             return Err("Execution Host has not recorded native process identity".into());
@@ -72,6 +98,18 @@ impl Activity {
         // Do not retry an unknown release from Drop. The durable Host lease stays
         // fenced unless this exact release receives its acknowledgement.
         self.started = true;
+        // This method is called only after child.wait succeeded. Preserve that
+        // exact exit proof before attempting a potentially unavailable Host.
+        if self.settlement.process_id.is_some() {
+            return settle_proved_exit(
+                &self.app.state::<crate::session_store::SessionStore>(),
+                &self.settlement,
+                || {
+                    self.host
+                        .call("native.activity.end", json!({"activityId":self.id}))
+                },
+            );
+        }
         let result = self
             .host
             .call("native.activity.end", json!({"activityId":self.id}))?;
@@ -80,6 +118,115 @@ impl Activity {
         }
         Ok(())
     }
+    pub(crate) fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+fn save_settlement(
+    store: &crate::session_store::SessionStore,
+    receipt: &ProcessSettlement,
+) -> Result<String, String> {
+    let raw = serde_json::to_string(receipt).map_err(|e| e.to_string())?;
+    let conn = store.lock_conn()?;
+    conn.execute("INSERT INTO native_workspace_settlements(activity_id,receipt_json) VALUES(?1,?2) ON CONFLICT(activity_id) DO NOTHING", rusqlite::params![receipt.activity_id,raw]).map_err(|e|e.to_string())?;
+    let stored: String = conn
+        .query_row(
+            "SELECT receipt_json FROM native_workspace_settlements WHERE activity_id=?1",
+            [&receipt.activity_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if stored != raw {
+        return Err("Native exit settlement identity changed".into());
+    }
+    Ok(raw)
+}
+
+fn remove_settlement(
+    store: &crate::session_store::SessionStore,
+    id: &str,
+    raw: &str,
+) -> Result<(), String> {
+    store
+        .lock_conn()?
+        .execute(
+            "DELETE FROM native_workspace_settlements WHERE activity_id=?1 AND receipt_json=?2",
+            rusqlite::params![id, raw],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn settle_proved_exit(
+    store: &crate::session_store::SessionStore,
+    receipt: &ProcessSettlement,
+    settle: impl FnOnce() -> Result<serde_json::Value, String>,
+) -> Result<(), String> {
+    let raw = save_settlement(store, receipt)?;
+    if settle()?["acknowledged"] != true {
+        return Err("Host has not acknowledged the pending native process exit".into());
+    }
+    remove_settlement(store, &receipt.activity_id, &raw)
+}
+
+fn replay_proved_settlements(
+    store: &crate::session_store::SessionStore,
+    session_id: Option<&str>,
+    mut settle: impl FnMut(&ProcessSettlement) -> Result<serde_json::Value, String>,
+) -> Result<Vec<String>, String> {
+    let receipts = {
+        let conn = store.lock_conn()?;
+        let mut query = conn.prepare("SELECT activity_id,receipt_json FROM native_workspace_settlements ORDER BY activity_id").map_err(|e|e.to_string())?;
+        let rows = query
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())?
+    };
+    let mut acknowledged = vec![];
+    for (id, raw) in receipts {
+        let receipt: ProcessSettlement = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        if session_id.is_some_and(|id| receipt.session_id.as_deref() != Some(id)) {
+            continue;
+        }
+        if receipt.activity_id != id || receipt.process_id.is_none_or(|pid| pid == 0) {
+            return Err("Native exit settlement has no matching process identity".into());
+        }
+        if settle(&receipt)?["acknowledged"] != true {
+            return Err("Host has not acknowledged the pending native process exit".into());
+        }
+        remove_settlement(store, &id, &raw)?;
+        acknowledged.push(id);
+    }
+    Ok(acknowledged)
+}
+
+pub(crate) fn replay_settlements(app: &AppHandle, session_id: Option<&str>) -> Result<(), String> {
+    replay_proved_settlements(
+        &app.state::<crate::session_store::SessionStore>(),
+        session_id,
+        |receipt| {
+            let host = crate::remote::NativeWorkspaceTransport::connect(
+                app,
+                "workspaces.native-activity.v1",
+            )?
+            .with_client_id(receipt.client_id.clone())?;
+            let result = host.call(
+                "native.activity.end",
+                json!({"activityId":receipt.activity_id}),
+            )?;
+            if result["acknowledged"] == true {
+                if let Some(host) = app.try_state::<crate::harness::HarnessHost>() {
+                host.acknowledge_managed_settlements(std::slice::from_ref(&receipt.activity_id));
+                }
+            }
+            Ok(result)
+        },
+    )?;
+    Ok(())
 }
 
 impl Drop for Activity {
@@ -180,7 +327,9 @@ pub(crate) fn ensure_schema(conn: &rusqlite::Connection) -> rusqlite::Result<()>
         "CREATE TABLE IF NOT EXISTS native_workspace_buffers (
         owner_id TEXT PRIMARY KEY, snapshot_json TEXT NOT NULL, updated_at INTEGER NOT NULL,
         confirmed INTEGER NOT NULL DEFAULT 0);
-        UPDATE native_workspace_buffers SET confirmed=0;",
+        UPDATE native_workspace_buffers SET confirmed=0;
+        CREATE TABLE IF NOT EXISTS native_workspace_settlements (
+        activity_id TEXT PRIMARY KEY, receipt_json TEXT NOT NULL);",
     )
 }
 
@@ -350,6 +499,66 @@ fn now_millis() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_settlement_replays_proved_exit_after_host_outage_and_desktop_restart() {
+        let path =
+            std::env::temp_dir().join(format!("native-settlement-{}.db", uuid::Uuid::new_v4()));
+        let receipt = ProcessSettlement {
+            activity_id: "owned-activity".into(),
+            client_id: Some("original-desktop".into()),
+            session_id: Some("managed-session".into()),
+            cwd: "/isolated/repo".into(),
+            kind: "provider".into(),
+            process_id: Some(42),
+        };
+        {
+            let store = crate::session_store::SessionStore::open(path.clone()).unwrap();
+            // Represents the actual post-child.wait branch: both registration
+            // acknowledgement and the first native.activity.end can be lost.
+            assert!(settle_proved_exit(&store, &receipt, || Err(
+                "Host offline after child exit".into()
+            ))
+            .is_err());
+            assert!(
+                replay_proved_settlements(&store, None, |_| Ok(json!({"acknowledged":false})))
+                    .is_err()
+            );
+            let mut changed = receipt.clone();
+            changed.process_id = Some(99);
+            assert!(save_settlement(&store, &changed)
+                .unwrap_err()
+                .contains("identity changed"));
+        }
+        {
+            let store = crate::session_store::SessionStore::open(path.clone()).unwrap();
+            assert!(
+                replay_proved_settlements(&store, Some("another-session"), |_| panic!(
+                    "foreign session replayed"
+                ))
+                .unwrap()
+                .is_empty()
+            );
+            let mut calls = 0;
+            let acknowledged =
+                replay_proved_settlements(&store, Some("managed-session"), |pending| {
+                    calls += 1;
+                    assert_eq!(pending.activity_id, receipt.activity_id);
+                    assert_eq!(pending.client_id, receipt.client_id);
+                    assert_eq!(pending.process_id, receipt.process_id);
+                    Ok(json!({"acknowledged":true}))
+                })
+                .unwrap();
+            assert_eq!(calls, 1);
+            assert_eq!(acknowledged, ["owned-activity"]);
+            assert!(replay_proved_settlements(&store, None, |_| panic!(
+                "acknowledged exit replayed twice"
+            ))
+            .unwrap()
+            .is_empty());
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn worktree_activity_preserves_known_legacy_and_fences_ambiguous_or_managed_paths() {
         let root = std::env::temp_dir().join(format!("native-activity-{}", uuid::Uuid::new_v4()));

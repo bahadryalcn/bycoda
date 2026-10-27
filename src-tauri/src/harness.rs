@@ -193,13 +193,20 @@ struct HarnessInner {
 /// Keep this receipt across ordinary stop calls until managed capture consumes it.
 #[derive(Default)]
 struct ManagedProviderExit {
+    activity_id: Option<String>,
+    settlement_acknowledged: AtomicBool,
     result: Mutex<Option<Result<(), String>>>,
     changed: Condvar,
 }
 
 impl ManagedProviderExit {
     fn finish(&self, result: Result<(), String>) {
-        *self.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
+        *self.result.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(if self.settlement_acknowledged.load(Ordering::SeqCst) {
+                Ok(())
+            } else {
+                result
+            });
         self.changed.notify_all();
     }
 
@@ -209,6 +216,9 @@ impl ManagedProviderExit {
             .changed
             .wait_timeout_while(result, timeout, |result| result.is_none())
             .unwrap_or_else(|e| e.into_inner());
+        if self.settlement_acknowledged.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         result.clone().unwrap_or_else(|| {
             Err(
                 "Managed provider exit is not confirmed; reconnect before capturing the turn"
@@ -339,6 +349,23 @@ impl HarnessHost {
         }
         inner.managed_exits.remove(session_id);
         Ok(())
+    }
+
+    pub(crate) fn acknowledge_managed_settlements(&self, activity_ids: &[String]) {
+        for exits in self.lock_inner().managed_exits.values() {
+            for exit in exits {
+                if exit
+                    .activity_id
+                    .as_ref()
+                    .is_some_and(|id| activity_ids.contains(id))
+                {
+                    // Only a persisted post-wait receipt acknowledged by Host
+                    // reaches here; an uncertain child exit has no receipt.
+                    exit.settlement_acknowledged.store(true, Ordering::SeqCst);
+                    exit.finish(Ok(()));
+                }
+            }
+        }
     }
 
     fn remove_if_pid(&self, session_id: &str, pid: u32) -> Option<Arc<LiveChild>> {
@@ -1198,8 +1225,11 @@ pub fn harness_spawn(
         .stderr
         .take()
         .ok_or_else(|| "Failed to open harness stderr".to_string())?;
-    let managed_exit = workspace_activity.as_ref().map(|_| {
-        let exit = Arc::new(ManagedProviderExit::default());
+    let managed_exit = workspace_activity.as_ref().map(|activity| {
+        let exit = Arc::new(ManagedProviderExit {
+            activity_id: Some(activity.id().to_owned()),
+            ..Default::default()
+        });
         host.lock_inner()
             .managed_exits
             .entry(session_id.clone())
@@ -2697,6 +2727,26 @@ mod managed_retirement_tests {
                 .contains("outcome is unknown"));
             assert!(host.lock_inner().managed_exits.contains_key("managed"));
         }
+    }
+
+    #[test]
+    fn managed_retirement_replays_only_the_exact_acknowledged_exit_receipt() {
+        let host = HarnessHost::new();
+        let exit = Arc::new(ManagedProviderExit {
+            activity_id: Some("owned-exit".into()),
+            ..Default::default()
+        });
+        exit.finish(Err("Host acknowledgement was lost".into()));
+        host.lock_inner()
+            .managed_exits
+            .insert("managed".into(), vec![Arc::clone(&exit)]);
+        host.acknowledge_managed_settlements(&["foreign-exit".into()]);
+        assert!(host.retire_managed_session("managed").is_err());
+        host.acknowledge_managed_settlements(&["owned-exit".into()]);
+        // A late error from the original waiter cannot overwrite proved ack.
+        exit.finish(Err("old waiter".into()));
+        assert!(host.retire_managed_session("managed").is_ok());
+        assert!(!host.lock_inner().managed_exits.contains_key("managed"));
     }
 }
 

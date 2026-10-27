@@ -759,6 +759,7 @@ pub(crate) fn reconcile_pending_native(
     store: &SessionStore,
     session_id: Option<&str>,
 ) -> Result<Vec<String>, String> {
+    crate::native_workspace::replay_settlements(app, session_id)?;
     let starting = {
         let conn = store.lock_conn()?;
         let mut statement = conn.prepare("SELECT session_id FROM native_managed_turns WHERE phase IN ('starting','active','finishing') AND (?1 IS NULL OR session_id=?1)").map_err(|e| e.to_string())?;
@@ -865,6 +866,7 @@ pub fn managed_turn_recover(
     client_id: Option<String>,
 ) -> Result<ManagedTurnRecovery, String> {
     validate_id(&session_id, "session")?;
+    crate::native_workspace::replay_settlements(&app, Some(&session_id))?;
     let Some((raw, _phase)) = pending_turn(&store, &session_id)? else {
         return Ok(ManagedTurnRecovery {
             released: true,
