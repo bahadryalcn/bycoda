@@ -119,3 +119,23 @@ it("does not capture incomplete, failed or in-progress post-write file notificat
   expect(mocks.capture).not.toHaveBeenCalled();
   expect(mocks.fileChanges).not.toHaveBeenCalled();
 });
+
+it("forwards unsupported completed Codex evidence so history becomes unavailable instead of using a baseline", () => {
+  const mapped = mapCodexNotification("item/completed", {
+    item: {
+      id: "unsupported-edit",
+      type: "fileChange",
+      status: "completed",
+      changes: [{ path: "counter.txt", kind: { type: "unknown" }, diff: "unsupported proof" }],
+    },
+  });
+  for (const event of mapped.events) trackSessionEdits("unsupported-proof", "/repo", event);
+  expect(mocks.fileChanges).toHaveBeenCalledExactlyOnceWith(
+    "unsupported-proof",
+    "/repo",
+    "unsupported-edit",
+    [],
+  );
+  expect(mocks.prepare).not.toHaveBeenCalled();
+  expect(mocks.capture).not.toHaveBeenCalled();
+});

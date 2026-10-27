@@ -162,7 +162,9 @@ export function captureSessionFileChanges(
   callId: string,
   changes: HarnessFileChange[],
 ): Promise<void> {
-  if (changes.length === 0) return Promise.resolve();
+  // Empty evidence on a completed post-write edit means the runtime must mark
+  // its history unavailable, rather than infer ownership from a disk baseline.
+  if (!cwd || cwd === "~") return Promise.resolve();
   return enqueueCheckpoint(sessionId, () =>
     invoke<void>("session_checkpoint_file_changes", { sessionId, cwd, callId, changes }),
   );

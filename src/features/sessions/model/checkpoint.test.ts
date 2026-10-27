@@ -100,5 +100,9 @@ it("propagates proof persistence failure and preserves remote IDs and empty file
     },
   ]);
   await captureSessionFileChanges("renderer-session", "remote://machine/repo", "incomplete", []);
-  expect(transport).toHaveBeenCalledTimes(2);
+  expect(transport).toHaveBeenCalledTimes(3);
+  expect(transport.mock.lastCall).toEqual([
+    "session_checkpoint_file_changes",
+    { sessionId: "host-session", cwd: "remote://machine/repo", callId: "incomplete", changes: [] },
+  ]);
 });
