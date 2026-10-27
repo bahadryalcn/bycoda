@@ -32,6 +32,16 @@ struct FileTurn {
     baseline_skipped_stamps: BTreeMap<String, String>,
     #[serde(default)]
     bytes: Option<u64>,
+    #[serde(default)]
+    provider_calls: BTreeSet<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderFileChange {
+    path: String,
+    kind: String,
+    contents: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -167,6 +177,11 @@ fn prune(dir: &Path, journal: &mut Journal, limit: u64) -> Result<(), String> {
             .keys()
             .map(|path| path.len() * 2 + 128)
             .sum::<usize>()
+            + turn
+                .provider_calls
+                .iter()
+                .map(|call| call.len() + 32)
+                .sum::<usize>()
     };
     let mut metadata: usize = journal.turns.iter().map(metadata_cost).sum();
     for (turn, size) in journal.turns.iter_mut().zip(&mut sizes) {
@@ -180,6 +195,7 @@ fn prune(dir: &Path, journal: &mut Journal, limit: u64) -> Result<(), String> {
             std::fs::remove_dir_all(path).map_err(|e| e.to_string())?;
         }
         turn.files.clear();
+        turn.provider_calls.clear();
         turn.bytes = Some(0);
         turn.unavailable = Some(UNAVAILABLE.into());
     }
@@ -306,6 +322,7 @@ impl CheckpointStore {
             baseline_complete: false,
             baseline_skipped_stamps: BTreeMap::new(),
             bytes: Some(0),
+            provider_calls: BTreeSet::new(),
         };
         match discover(&root) {
             Ok((paths, complete)) => {
@@ -621,6 +638,247 @@ pub(super) fn capture(dir: &Path, root: &Path, paths: &[String]) -> Result<(), S
     turn.bytes = Some(disk_bytes(&history_dir));
     prune(dir, &mut journal, HISTORY_BYTES)?;
     save(dir, &journal)
+}
+
+/// Codex add/delete notifications carry the actual full contents consumed or
+/// produced by the operation. They can arrive after the disk has advanced through
+/// a delete/recreate pair, so observing that disk is not a pre-edit barrier.
+fn capture_provider_changes(
+    dir: &Path,
+    root: &Path,
+    call_id: &str,
+    changes: &[ProviderFileChange],
+) -> Result<(), String> {
+    if call_id.is_empty() || call_id.len() > 512 {
+        return Err("Invalid provider file-change proof".into());
+    }
+    let Some(mut journal) = load(dir)?.filter(|j| same_cwd(&j.cwd, &root.to_string_lossy())) else {
+        return Err("File history belongs to another checkout".into());
+    };
+    let turn = journal
+        .turns
+        .last_mut()
+        .filter(|turn| turn.active)
+        .ok_or("No active turn is recording file history")?;
+    if changes.is_empty() || changes.len() > 1024 {
+        turn.unavailable = Some("Provider file-change proof is unsupported or incomplete".into());
+        return save(dir, &journal);
+    }
+    if turn.provider_calls.contains(call_id) {
+        return Ok(());
+    }
+    if turn.provider_calls.len() >= 4096 {
+        return Err("The turn exceeded the provider proof limit".into());
+    }
+    // Validate the entire batch before writing snapshots or changing its chain.
+    let changes = changes
+        .iter()
+        .map(|change| {
+            if !matches!(change.kind.as_str(), "add" | "delete" | "update")
+                || change.contents.len() as u64 > MAX_TEXT_FILE_BYTES
+            {
+                return Err("Unsupported provider file-change proof".to_string());
+            }
+            let path = safe_relative(root, &change.path)?;
+            if path_contains_symlink(root, &path) {
+                return Err("Unsafe provider file-change path".into());
+            }
+            Ok((path, change))
+        })
+        .collect::<Result<Vec<_>, String>>();
+    let changes = match changes {
+        Ok(changes) => changes,
+        Err(reason) => {
+            turn.unavailable = Some(reason);
+            return save(dir, &journal);
+        }
+    };
+    let history = turn_dir(dir, &turn.id)?;
+    for (path, change) in changes {
+        let contents = FileState::Contents(change.contents.as_bytes().to_vec());
+        let (before, after, before_kind, after_kind) = if change.kind == "update" {
+            let after = read_worktree(root, &path);
+            let FileState::Contents(ref bytes) = after else {
+                turn.unavailable = Some("Provider update contents are unavailable".into());
+                return save(dir, &journal);
+            };
+            let before = std::str::from_utf8(bytes)
+                .ok()
+                .and_then(|after| reverse_provider_diff(after, &change.contents).ok());
+            let Some(before) = before else {
+                turn.unavailable =
+                    Some("Provider update diff could not verify the pre-edit contents".into());
+                return save(dir, &journal);
+            };
+            if before.len() as u64 > MAX_TEXT_FILE_BYTES {
+                turn.unavailable =
+                    Some("Provider pre-edit contents exceeded the file size limit".into());
+                return save(dir, &journal);
+            }
+            (
+                FileState::Contents(before.into_bytes()),
+                after,
+                SnapshotKind::Contents,
+                SnapshotKind::Contents,
+            )
+        } else if change.kind == "delete" {
+            (
+                contents,
+                FileState::Missing,
+                SnapshotKind::Contents,
+                SnapshotKind::Missing,
+            )
+        } else {
+            (
+                FileState::Missing,
+                contents,
+                SnapshotKind::Missing,
+                SnapshotKind::Contents,
+            )
+        };
+        let baseline_kind = turn
+            .baseline
+            .get(&path)
+            .copied()
+            .unwrap_or(SnapshotKind::Missing);
+        let before_mode = if change.kind == "update" {
+            file_mode(&root.join(&path))
+        } else if before == read_snapshot_at(&dir.join("files-baseline"), &path, baseline_kind) {
+            snapshot_mode(&dir.join("files-baseline"), &path, baseline_kind)
+        } else {
+            None
+        };
+        let after_mode = if matches!(after, FileState::Contents(_)) {
+            file_mode(&root.join(&path))
+        } else {
+            None
+        };
+        if let Some(pair) = turn.files.get_mut(&path) {
+            if let Some(previous_after) = pair.after {
+                // A provider-proven chain must still consume exactly our last
+                // output. Foreign contributions between own edits stay fenced.
+                pair.conflict |=
+                    read_snapshot_at(&history.join("after"), &path, previous_after) != before;
+            } else {
+                copy_state(&history.join("before"), &path, &before, before_mode)?;
+                pair.before = before_kind;
+            }
+            pair.after = Some(after_kind);
+        } else {
+            copy_state(&history.join("before"), &path, &before, before_mode)?;
+            turn.files.insert(
+                path.clone(),
+                Pair {
+                    before: before_kind,
+                    after: Some(after_kind),
+                    conflict: false,
+                },
+            );
+        }
+        copy_state(&history.join("after"), &path, &after, after_mode)?;
+    }
+    turn.provider_calls.insert(call_id.into());
+    turn.bytes = Some(disk_bytes(&history));
+    prune(dir, &mut journal, HISTORY_BYTES)?;
+    save(dir, &journal)
+}
+
+/// Reverse only verified unified hunks. Unchanged lines come from the current
+/// file, retaining peer changes outside the provider's edit. No paths in a diff
+/// header are interpreted and no Git index or working-copy file is touched.
+fn reverse_provider_diff(after: &str, diff: &str) -> Result<String, String> {
+    let source: Vec<&str> = after.split_inclusive('\n').collect();
+    let lines: Vec<&str> = diff.split_inclusive('\n').collect();
+    let mut index = lines
+        .iter()
+        .position(|line| line.starts_with("@@ "))
+        .ok_or("Missing unified hunks")?;
+    let mut cursor = 0;
+    let mut old_cursor = 0;
+    let mut old_line_open = false;
+    let mut before = String::new();
+    while index < lines.len() {
+        let header: Vec<_> = lines[index].split_whitespace().collect();
+        if header.len() < 4 || header[0] != "@@" || header[3] != "@@" {
+            return Err("Invalid hunk".into());
+        }
+        let range = |value: &str, prefix: char| -> Result<(usize, usize), String> {
+            let value = value.strip_prefix(prefix).ok_or("Invalid hunk range")?;
+            let (start, count) = value.split_once(',').unwrap_or((value, "1"));
+            Ok((
+                start.parse().map_err(|_| "Invalid hunk start")?,
+                count.parse().map_err(|_| "Invalid hunk count")?,
+            ))
+        };
+        let (old_start, expected_old) = range(header[1], '-')?;
+        let (new_start, expected_new) = range(header[2], '+')?;
+        let start = if expected_new == 0 {
+            new_start
+        } else {
+            new_start.checked_sub(1).ok_or("Invalid hunk offset")?
+        };
+        if start < cursor || start > source.len() {
+            return Err("Hunk is outside current contents".into());
+        }
+        let unchanged = &source[cursor..start];
+        if old_line_open && !unchanged.is_empty() {
+            return Err("Invalid missing newline before unchanged lines".into());
+        }
+        before.extend(unchanged.iter().copied());
+        if let Some(last) = unchanged.last() {
+            old_line_open = !last.ends_with('\n');
+        }
+        old_cursor += start - cursor;
+        let old_offset = if expected_old == 0 {
+            old_start
+        } else {
+            old_start.checked_sub(1).ok_or("Invalid old hunk offset")?
+        };
+        if old_offset != old_cursor {
+            return Err("Old hunk location does not match contents".into());
+        }
+        cursor = start;
+        index += 1;
+        let mut old = 0;
+        let mut new = 0;
+        while index < lines.len() && !lines[index].starts_with("@@ ") {
+            let line = lines[index].strip_suffix('\n').unwrap_or(lines[index]);
+            let operation = *line.as_bytes().first().ok_or("Invalid hunk line")?;
+            if !matches!(operation, b' ' | b'+' | b'-') {
+                return Err("Unsupported hunk line".into());
+            }
+            let mut content = format!("{}\n", &line[1..]);
+            index += 1;
+            if index < lines.len() && lines[index].starts_with("\\ No newline at end of file") {
+                content.pop();
+                index += 1;
+            }
+            if operation != b'-' {
+                if source.get(cursor).copied() != Some(content.as_str()) {
+                    return Err("Provider changed lines no longer match".into());
+                }
+                cursor += 1;
+                new += 1;
+            }
+            if operation != b'+' {
+                if old_line_open {
+                    return Err("Invalid missing newline inside old contents".into());
+                }
+                before.push_str(&content);
+                old_line_open = !content.ends_with('\n');
+                old += 1;
+            }
+        }
+        if old != expected_old || new != expected_new {
+            return Err("Incomplete unified hunk".into());
+        }
+        old_cursor += old;
+    }
+    if old_line_open && cursor < source.len() {
+        return Err("Invalid missing newline before trailing contents".into());
+    }
+    before.extend(source[cursor..].iter().copied());
+    Ok(before)
 }
 
 struct Candidate {
@@ -952,6 +1210,26 @@ fn assert_checkout(dir: &Path, cwd: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn session_checkpoint_file_changes(
+    store: State<'_, CheckpointStore>,
+    session_id: String,
+    cwd: String,
+    call_id: String,
+    changes: Vec<ProviderFileChange>,
+) -> Result<(), String> {
+    validate_id(&session_id, "session")?;
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = project_root(&cwd)?;
+        store.exclusive(&session_id, &[&cwd], |store| {
+            capture_provider_changes(&store.session_dir(&session_id), &root, &call_id, &changes)
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn session_files_forget_from_message(
     store: State<'_, CheckpointStore>,
     session_id: String,
@@ -1083,6 +1361,240 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.dir);
         }
+    }
+
+    #[test]
+    fn checkpoint_files_revert_codex_late_delete_add_notifications_keep_each_message_boundary() {
+        let f = Fixture::new(true);
+        let dir = f.store.session_dir("session");
+        for (turn, before, after) in [("one", "base\n", "one\n"), ("two", "one\n", "two\n")] {
+            f.begin("session", turn);
+            // Real Codex fileChange starts/completions can reach the renderer
+            // only after both DeleteFile and AddFile already changed the disk.
+            std::fs::remove_file(f.repo.join("a.txt")).unwrap();
+            f.write("a.txt", after);
+            let deletion = ProviderFileChange {
+                path: "a.txt".into(),
+                kind: "delete".into(),
+                contents: before.into(),
+            };
+            capture_provider_changes(&dir, &f.repo, &format!("{turn}-delete"), &[deletion])
+                .unwrap();
+            let addition = ProviderFileChange {
+                path: "a.txt".into(),
+                kind: "add".into(),
+                contents: after.into(),
+            };
+            capture_provider_changes(&dir, &f.repo, &format!("{turn}-add"), &[addition]).unwrap();
+            f.finish("session", turn);
+        }
+        let plan = f.store.files_revert_plan("session", "message-two").unwrap();
+        assert!(plan.unavailable.is_none());
+        assert_eq!(plan.files[0].action, "restore");
+        assert!(plan.files[0].conflict.is_none());
+        assert_eq!(
+            f.store
+                .files_revert("session", "message-two")
+                .unwrap()
+                .reverted,
+            ["a.txt"]
+        );
+        assert_eq!(f.read("a.txt"), "one\n");
+    }
+
+    #[test]
+    fn checkpoint_files_revert_provider_proofs_preserve_peer_before_and_after_edits() {
+        let f = Fixture::new(false);
+        f.begin("session", "one");
+        let dir = f.store.session_dir("session");
+        // The provider deleted peer contents, not the older turn-start baseline.
+        f.write("a.txt", "own after peer\n");
+        capture_provider_changes(
+            &dir,
+            &f.repo,
+            "delete",
+            &[ProviderFileChange {
+                path: "a.txt".into(),
+                kind: "delete".into(),
+                contents: "peer before tool\n".into(),
+            }],
+        )
+        .unwrap();
+        capture_provider_changes(
+            &dir,
+            &f.repo,
+            "add",
+            &[ProviderFileChange {
+                path: "a.txt".into(),
+                kind: "add".into(),
+                contents: "own after peer\n".into(),
+            }],
+        )
+        .unwrap();
+        // A duplicated notification cannot reset the before state or its chain.
+        capture_provider_changes(
+            &dir,
+            &f.repo,
+            "delete",
+            &[ProviderFileChange {
+                path: "a.txt".into(),
+                kind: "delete".into(),
+                contents: "peer before tool\n".into(),
+            }],
+        )
+        .unwrap();
+        f.finish("session", "one");
+        assert!(f
+            .store
+            .files_revert_plan("session", "message-one")
+            .unwrap()
+            .files[0]
+            .conflict
+            .is_none());
+        f.write("a.txt", "peer after tool\n");
+        assert_eq!(
+            f.store
+                .files_revert("session", "message-one")
+                .unwrap()
+                .skipped[0]
+                .reason,
+            FOREIGN
+        );
+        f.write("a.txt", "own after peer\n");
+        assert_eq!(
+            f.store
+                .files_revert("session", "message-one")
+                .unwrap()
+                .reverted,
+            ["a.txt"]
+        );
+        assert_eq!(f.read("a.txt"), "peer before tool\n");
+    }
+
+    #[test]
+    fn checkpoint_files_revert_provider_update_preserves_outside_hunk_peer_bytes() {
+        let f = Fixture::new(false);
+        f.write("a.txt", "old owner\nold\n");
+        f.begin("session", "one");
+        f.write("a.txt", "peer outside hunk\nnew\n");
+        let dir = f.store.session_dir("session");
+        capture_provider_changes(
+            &dir,
+            &f.repo,
+            "update",
+            &[ProviderFileChange {
+                path: "a.txt".into(),
+                kind: "update".into(),
+                contents: "@@ -2 +2 @@\n-old\n+new\n".into(),
+            }],
+        )
+        .unwrap();
+        f.finish("session", "one");
+        assert_eq!(
+            f.store
+                .files_revert("session", "message-one")
+                .unwrap()
+                .reverted,
+            ["a.txt"]
+        );
+        assert_eq!(f.read("a.txt"), "peer outside hunk\nold\n");
+    }
+
+    #[test]
+    fn checkpoint_files_revert_provider_chain_mismatch_remains_conflicted() {
+        let f = Fixture::new(false);
+        f.begin("session", "one");
+        let dir = f.store.session_dir("session");
+        for (call, kind, contents) in [
+            ("delete-base", "delete", "base\n"),
+            ("add-own", "add", "own first\n"),
+            ("delete-peer", "delete", "peer between tools\n"),
+            ("add-last", "add", "own last\n"),
+        ] {
+            capture_provider_changes(
+                &dir,
+                &f.repo,
+                call,
+                &[ProviderFileChange {
+                    path: "a.txt".into(),
+                    kind: kind.into(),
+                    contents: contents.into(),
+                }],
+            )
+            .unwrap();
+        }
+        f.write("a.txt", "own last\n");
+        f.finish("session", "one");
+        assert!(f
+            .store
+            .files_revert_plan("session", "message-one")
+            .unwrap()
+            .files[0]
+            .conflict
+            .is_some());
+        assert!(f
+            .store
+            .files_revert("session", "message-one")
+            .unwrap()
+            .reverted
+            .is_empty());
+        assert_eq!(f.read("a.txt"), "own last\n");
+    }
+
+    #[test]
+    fn checkpoint_files_revert_provider_invalid_updates_fail_closed() {
+        assert!(reverse_provider_diff(
+            "new\n",
+            "@@ -1,2 +1 @@\n-old\n\\ No newline at end of file\n-more\n+new\n"
+        )
+        .is_err());
+        let unsupported = Fixture::new(false);
+        unsupported.begin("session", "one");
+        unsupported.write("a.txt", "unsupported provider edit\n");
+        capture_provider_changes(
+            &unsupported.store.session_dir("session"),
+            &unsupported.repo,
+            "unknown-kind",
+            &[],
+        )
+        .unwrap();
+        unsupported.finish("session", "one");
+        assert!(unsupported
+            .store
+            .files_revert_plan("session", "message-one")
+            .unwrap()
+            .unavailable
+            .is_some());
+        for diff in ["@@ -1 +1 @@\n-old\n+new\n", "not a unified diff"] {
+            let f = Fixture::new(false);
+            f.begin("session", "one");
+            f.write("a.txt", "peer changed the edited hunk\n");
+            capture_provider_changes(
+                &f.store.session_dir("session"),
+                &f.repo,
+                "update",
+                &[ProviderFileChange {
+                    path: "a.txt".into(),
+                    kind: "update".into(),
+                    contents: diff.into(),
+                }],
+            )
+            .unwrap();
+            f.finish("session", "one");
+            assert!(f
+                .store
+                .files_revert_plan("session", "message-one")
+                .unwrap()
+                .unavailable
+                .is_some());
+            assert!(f.store.files_revert("session", "message-one").is_err());
+            assert_eq!(f.read("a.txt"), "peer changed the edited hunk\n");
+        }
+        assert_eq!(reverse_provider_diff("new", "@@ -1 +1 @@\n-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file\n").unwrap(), "old");
+        assert_eq!(
+            reverse_provider_diff("a\nnew\nz\n", "@@ -1,0 +2 @@\n+new\n").unwrap(),
+            "a\nz\n"
+        );
     }
 
     #[test]

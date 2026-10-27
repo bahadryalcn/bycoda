@@ -859,6 +859,7 @@ pub fn run() {
             checkpoint::file_revert::session_files_revert_plan,
             checkpoint::file_revert::session_files_revert,
             checkpoint::file_revert::session_files_forget_from_message,
+            checkpoint::file_revert::session_checkpoint_file_changes,
             trackpad_zoom::set_trackpad_zoom_enabled,
             checkpoint::turn::session_checkpoint_begin_turn,
             checkpoint::turn::session_checkpoint_finish_turn,
