@@ -658,7 +658,8 @@ export async function selectCodex(context, model = context.options.model) {
     }
   }
   if (await modelEntry.isVisible()) await modelEntry.click();
-  await codexTab.click();
+  await codexTab.focus();
+  await page.keyboard.press("Enter");
   const choice = page.getByRole("option").filter({ hasText: model }).first();
   await choice.click();
   await waitUntil(
