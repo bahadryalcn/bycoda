@@ -62,6 +62,16 @@ query cancellation `a114ebb6`. Accepted crash recovery may complete during the
 next guarded send after reopening the exact retained session; an old native row
 must not be required to remain current after the next legitimate turn replaces it.
 
+`3dacec07` retries retained `starting` admissions after a fresh native buffer
+acknowledgement. An initial session-load recovery can correctly refuse before
+that first fresh report; the acknowledgement provides a bounded retry trigger.
+The buffer-report gate is released first, overlapping retries coalesce, and each
+batch visits at most eight starting rows. Active/finishing turns are excluded;
+Host evidence and exact request/phase guards still decide whether release is safe.
+Focused SQLite/transport regressions cover initial refusal, later release, batch
+fairness and a starting-to-active race. Final native evidence belongs to the Q1
+handoff, separately from these source checks.
+
 ## Purpose and keywords
 
 Default writers to the current checkout; offer owned branches/directories through
