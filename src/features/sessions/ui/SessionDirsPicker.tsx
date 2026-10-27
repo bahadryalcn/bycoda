@@ -155,6 +155,7 @@ export function SessionDirsPicker({
     <div ref={root} className="relative shrink-0">
       <Button
         variant="ghost"
+        motion="none"
         type="button"
         title={effective.map(prettyCwd).join("\n")}
         aria-label={t("Folders for this session")}
