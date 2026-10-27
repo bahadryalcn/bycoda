@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { modelsForClaudeVersion, modelsFromClaudeListModels } from "./claudeCatalog";
 
 it("records the concrete version behind a moving Claude alias", () => {
-  const models = modelsFromClaudeListModels([{ value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus" }]);
+  const models = modelsFromClaudeListModels([
+    { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus" },
+  ]);
   expect(models[0]).toMatchObject({ nativeId: "opus", aliasTarget: "claude-opus-5-5" });
 });
 import {
@@ -360,13 +362,33 @@ describe("usage limits", () => {
 
 describe("turnStatusFromResult", () => {
   it("does not accept a success subtype when the result marks an error", () => {
-    expect(turnStatusFromResult({ subtype: "success", is_error: true, errors: ["OAuth refresh failed"] })).toEqual({ status: "failed", error: "OAuth refresh failed" });
+    expect(
+      turnStatusFromResult({
+        subtype: "success",
+        is_error: true,
+        errors: ["OAuth refresh failed"],
+      }),
+    ).toEqual({ status: "failed", error: "OAuth refresh failed" });
   });
   it("reads typed assistant API failures without treating ordinary error discussions as failures", () => {
-    const row = { type: "assistant", message: { content: [{ type: "text", text: "Failed to authenticate: OAuth session expired and could not be refreshed" }] } };
-    expect(errorFromAssistant({ ...row, error: "authentication_failed" })).toBe("Failed to authenticate: OAuth session expired and could not be refreshed");
+    const row = {
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "text",
+            text: "Failed to authenticate: OAuth session expired and could not be refreshed",
+          },
+        ],
+      },
+    };
+    expect(errorFromAssistant({ ...row, error: "authentication_failed" })).toBe(
+      "Failed to authenticate: OAuth session expired and could not be refreshed",
+    );
     expect(errorFromAssistant(row)).toBeUndefined();
-    expect(errorFromAssistant({ ...row, error: "authentication_failed", parent_tool_use_id: "child" })).toBeUndefined();
+    expect(
+      errorFromAssistant({ ...row, error: "authentication_failed", parent_tool_use_id: "child" }),
+    ).toBeUndefined();
   });
   it("treats aborted terminals as interrupted", () => {
     expect(
@@ -421,6 +443,21 @@ describe("modelsForClaudeVersion", () => {
 });
 
 describe("list_models catalog", () => {
+  it("preserves discovered context capacity without inferring it from picker settings", () => {
+    const models = modelsFromClaudeListModels([
+      { value: "large", contextWindow: 200_000 },
+      { value: "small", context_window: 32_000 },
+      { value: "fallback", contextWindow: 0, context_window: 128_000 },
+      { value: "unknown[1m]", contextWindow: NaN, context_window: "1000000" },
+    ]);
+    expect(models.map((model) => model.contextWindow)).toEqual([
+      200_000,
+      32_000,
+      128_000,
+      undefined,
+    ]);
+  });
+
   const listed = {
     type: "control_response",
     response: {
