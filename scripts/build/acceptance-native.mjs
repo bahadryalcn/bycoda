@@ -215,6 +215,14 @@ export async function captureMatrix(context, name) {
       }
   } finally {
     if (previous) await page.setViewportSize(previous);
+    else {
+      const session = await page.context().newCDPSession(page);
+      try {
+        await session.send("Emulation.clearDeviceMetricsOverride");
+      } finally {
+        await session.detach();
+      }
+    }
   }
   return captures;
 }
@@ -222,6 +230,24 @@ export async function captureMatrix(context, name) {
 /** Query-backed screens intentionally pause while the native window is unfocused. */
 export async function focusNativeWindow(context) {
   await context.page.bringToFront();
+  if (process.platform === "win32") {
+    await validateAcceptanceRun(context.root, context.recordPath);
+    await command(
+      "powershell.exe",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        join(context.root, "scripts", "build", "acceptance-native-focus.ps1"),
+        "-Run",
+        context.recordPath,
+      ],
+      context.root,
+    );
+  }
   await context.page.evaluate(async () => {
     const { getCurrentWindow } = await import("/node_modules/@tauri-apps/api/window.js");
     const native = getCurrentWindow();
@@ -359,15 +385,21 @@ export async function prepareProject(context) {
 
 export async function selectCodex(context, model = context.options.model) {
   const { page } = context;
-  await page
+  await focusNativeWindow(context);
+  await page.keyboard.press("Escape");
+  const trigger = page
     .getByRole("button", { name: /^(Claude Code|Cursor|Codex|OpenCode|Pi|OMP|Grok) / })
-    .first()
-    .click();
-  await page
-    .getByRole("menuitem", { name: /^Model|^Model seç/ })
-    .first()
-    .click();
-  await page.getByRole("tab", { name: "Codex", exact: true }).click();
+    .first();
+  await trigger.click();
+  const modelEntry = page.getByRole("menuitem", { name: /^Model|^Model seç/ }).first();
+  const codexTab = page.getByRole("tab", { name: "Codex", exact: true });
+  await waitUntil(
+    async () => (await modelEntry.isVisible()) || (await codexTab.isVisible()),
+    "Model picker did not open on the focused development window",
+    10000,
+  );
+  if (await modelEntry.isVisible()) await modelEntry.click();
+  await codexTab.click();
   const choice = page.getByRole("option").filter({ hasText: model }).first();
   await choice.click();
   await page.keyboard.press("Escape");
