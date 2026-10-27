@@ -235,11 +235,11 @@ no-follow Windows removal protocols.
 
 ## Known limitations and acceptance boundary
 
-The D1 default change excludes the concurrently owned contextual handoff block
-in `host/engine.ts`. `prepareContextualWorkspace` in
-`host/managed-workspace-runtime.ts` still forces a managed worktree for handoffs
-and second opinions. Its owner must coordinate policy resolution and current
-execution acceptance before this default can be claimed for that path.
+HOT1 extends the D1 default to contextual handoffs and second opinions in
+`host/engine.ts` and `host/managed-workspace-runtime.ts`. Authoritative Current
+works in Git/plain folders; a managed source uses the project checkout and an
+unmanaged source retains its execution checkout. Worktree policy and preparation
+failures retain their managed ownership and fail-closed behavior.
 
 The integrated tree contains managed service routing and the desktop/native
 adapters. Missing or older execution-Host capabilities remain a visible blocker;
@@ -292,7 +292,8 @@ missing-choice worktree default below; the recovery and identity rules remain.
 
 - Host creation prepares an owned workspace for missing choices, including older
   authenticated clients. Explicit `workspaceMode: "current"` is the compatibility
-  exception. Contextual legacy sessions receive independent branches. Interrupted
+  exception. Contextual legacy sessions received independent branches in that
+  revision; HOT1 below supersedes that default. Interrupted
   legacy task branch/path identities remain outside automatic ownership until
   explicit migration. Implemented in `e0b2c9b7` and `b5820fe1`.
 - Goal final reviewers retain authoritative execution-workspace identity across
@@ -547,13 +548,36 @@ The GitHub issue auto-fix
 template now guards branch/publication steps with clean owned managed-worktree
 admission and skips current/shared/unknown ownership; see the guide above.
 
-Protected integration requests remain: the `host/engine.ts` managed-turn contract
-and contextual creation must support resolved current together with
-`host/managed-workspace-runtime.ts:prepareContextualWorkspace`; they still force
-managed creation. `host/managed-native-turns.test.ts` needs an explicit worktree
+HOT1 resolves the former contextual integration request (`c40bf96b`): the
+`host/engine.ts` adapter accepts `{ workspaceMode: "current", path }` alongside
+managed identity, and runtime policy resolves before Git preparation. The deeper
+native managed-turn changes remain outside HOT1. `host/managed-native-turns.test.ts` needs an explicit worktree
 choice in its fixture prepare request; `host/managed-native-rewind.test.ts` needs
 that choice in its shared fixture request. The diagnostic remaining-fixture run
 passed six safe suites (67 tests, three skipped) and failed those nine protected
 native cases on managed preparation resolving to current
 (`remaining-managed-fixtures.log`). No protected native files were changed.
 Build/installed/live-provider/release inclusion was not exercised by D1.
+
+## HOT1 contextual Current and retry (2026-10-27)
+
+Owner HOT1 brief: "resolve the contextual workspace policy and accept an
+authoritative Current result; keep hard failures when Worktree is selected".
+`c40bf96b` implements this in `host/engine.ts` and
+`host/managed-workspace-runtime.ts`; the two Host suites passed 149/149, including
+handoff/second-opinion creation in Git/plain folders, managed-source Current,
+policy/preparation failure and existing branch preservation.
+
+`263ce591` preserves unresolved first-send policy across persisted user blocks
+and Retry; see the composer card for mutation/persistence ownership. `d295f2e6`
+adds `scripts/build/acceptance-native.mjs --suite hot1`: Current three turns,
+Turkish model switch and handoff recovery, contextual Current, transient Retry,
+task/automation defaults, Settings Current and explicit Worktree one turn.
+It uses isolated dev profiles and real Codex; screenshots cover 1280/800 in both
+themes. The reduced-handoff branch labels seeded history/capacity metadata.
+Exact native results, source stamp and the per-surface acceptance ledger live in
+`temp/verification/hot1/` and `temp/local/hot1/`.
+
+Coordination: no live feature-claim API was available; the owner's explicit HOT1
+assignment and sibling worktree inventory established the sub-scope. Deeper native
+managed-turn/rewind implementation, installation and release remain separate.

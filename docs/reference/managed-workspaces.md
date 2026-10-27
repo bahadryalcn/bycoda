@@ -84,11 +84,17 @@ owned managed worktree and returns `SKIPPED` before any branch or publication
 step in shared/current or unknown ownership. This guard preserves shared branch,
 index and dirty work; it grants no publication authority.
 
-Contextual handoffs and second opinions remain an integration exception: their
-protected Host creation path still requires an independent managed worktree,
-including from current-mode sources. Applying current/project-policy resolution
-there requires the contextual handoff owner's coordinated change in
-`host/engine.ts` and `host/managed-workspace-runtime.ts`.
+Contextual handoffs and second opinions resolve project/Host policy too. An
+authoritative Current result works in Git repositories and plain folders. Current
+from an owned managed source uses the project checkout; unmanaged sources retain
+their selected execution checkout and branch. A Worktree policy still prepares a
+separate owned workspace and propagates preparation failures. Missing contextual
+preparation is an error, never an inferred Current result.
+
+First-send preparation keeps Automatic unresolved until policy succeeds. A
+persisted user-block `workspacePreparationPending` marker survives a transient
+failure and reload, so Retry resolves policy again. Authoritative success clears
+the marker and records Current or the managed workspace identity.
 
 For managed worktree creation, resolve the selected committed base to an immutable
 SHA; never copy an unrelated dirty checkout. A configured root applies to new

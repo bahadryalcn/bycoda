@@ -336,7 +336,29 @@ tsc-rs. Final Tasks browser checks passed 186/186 in Chromium/WebKit, followed b
 The broad web run preceded the last quick/task follow-ups; focused follow-ups and
 final web/Host fast type checks establish their source verification. Exact ledger:
 `temp/verification/d1/CHECKS.md`.
-Contextual handoffs and second opinions remain the protected integration exception
-described above. Nine protected native turn/rewind fixture cases also still need
+HOT1 `c40bf96b` removes the contextual exception: handoffs and second opinions
+accept authoritative Current policy, including plain folders. Nine protected
+native turn/rewind fixture cases still need
 explicit worktree choices; the diagnostic failures and exact fixture requests are
 recorded in the managed-workspaces card and `remaining-managed-fixtures.log`.
+
+## HOT1 retry preparation (2026-10-27)
+
+Owner HOT1 stream brief: "A failed first send turns Automatic into explicit
+Worktree"; requested "Retry follows the policy (Current by default)".
+Implemented in `263ce591` on `hotfix/0.6.93`:
+
+- `submitTurnSetup.ts` preserves the selected workspace mode and marks the saved
+  user block with `workspacePreparationPending` while policy is unresolved.
+- `sessionStore.ts` preserves the marker through JSON persistence;
+  `sessionWorkspace.ts` recognizes unresolved preparation after saved user turns.
+- `submitTurnRun.ts` clears markers only after authoritative preparation succeeds.
+  Existing explicit choices and already-established sessions retain their intent.
+- Regression in `submitModelSwitch.integration.test.ts` exercises transient failure,
+  persistence reload, actual Retry text, one provider dispatch in Current and no
+  managed workspace creation. Focused checks passed 86/86 across three files.
+
+`scripts/build/acceptance-native.mjs --suite hot1` provides the seven owner
+acceptance scenarios with real Codex and isolated profiles, plus light/dark
+1280/800 captures. Native outcomes and exact logs belong in
+`temp/verification/hot1/`; source checks alone do not establish those outcomes.

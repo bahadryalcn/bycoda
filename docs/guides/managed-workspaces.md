@@ -57,9 +57,11 @@ with its build stamp. The separate mobile repository is inventoried read-only in
 
 The authenticated Host also resolves policy for older and direct clients: an
 omitted workspace choice uses the current checkout unless project policy selects
-a worktree. Contextual handoffs still prepare an independent worktree, including
-from a current-mode source conversation; this path still needs a coordinated
-update to follow the new default. Second opinions share that exception. Interrupted legacy
+a worktree. Handoffs and second opinions follow the same policy, including in
+plain folders. A Current contextual session from a managed source uses the project
+checkout; other Current sources retain their selected checkout. If first-send
+preparation fails temporarily, Retry reads the policy again and preserves the
+original workspace choice and request. Interrupted legacy
 tasks retain their recorded branch and directory outside automatic lifecycle
 ownership until explicitly migrated.
 Goal final reviews retain their authoritative execution identity across
