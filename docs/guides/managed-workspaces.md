@@ -1,46 +1,65 @@
 # Coding workspaces and delivery
 
-The worktree-first model gives each new coding session or task its own Git branch
-and execution directory. The project remains the same project; edits, terminals,
-checks and development servers run in the assigned directory. Existing `current`
-sessions remain in their checkout until explicitly migrated.
+New coding sessions and other writers start in the current checkout by default.
+Choose **Worktree** for an independent Git branch and execution directory, or
+configure worktrees as the project default. The project remains the same project;
+edits, terminals, checks and development servers use the execution directory.
+Existing sessions retain their checkout until explicitly migrated.
 Clearing a conversation preserves that execution identity, including after restart.
 Upgrading also retains current-checkout identity for legacy sessions cleared by
 an older app; it does not assign managed ownership to them.
 
-This guide describes the integrated managed-workspace workflow. A connected Host
-must advertise the
-required capability before a client offers its operation. Older Hosts need an
-update explanation; creation failure must never send work into main silently.
+This guide describes the integrated managed-workspace workflow. Managed operations
+require the connected Host's advertised capability; an older Host shows an update
+explanation for those operations. Current-checkout creation remains available.
+Failed worktree creation must never send work into main silently.
 
 ## Starting and continuing work
 
 Select the intended project and machine. The model resolves an explicit creation
-choice before project policy and then the execution Host's default. New coding
-work defaults to a worktree based on a resolved committed SHA. It does not copy
-uncommitted work from another checkout. To depend on another session, use its
-committed result and record that dependency.
+choice before project policy and then the execution Host's default, **Current
+checkout**. Existing explicit project policies remain in effect. The same default
+applies to tasks, goal tasks, writing automations and steward runs; they can opt
+into worktrees through their creation choice or project policy.
+
+The GitHub issue auto-fix template performs branch and publication work only in
+a clean Host-assigned managed worktree owned by that automation run. In a current
+or shared checkout, another writer's checkout, or unknown ownership, it stops with
+`SKIPPED` before branch changes, fetch, edits, commits or push. Select Worktree for
+that automation or configure the project policy; existing owner review and
+publication permissions still apply. The shared checkout's branch, index and
+dirty work remain intact.
+
+In a shared checkout, agents preserve other sessions' changes and keep their own
+work uncommitted unless you direct otherwise. An opted-in worktree starts from a
+resolved committed SHA and does not copy another checkout's uncommitted work. To
+depend on another session, use its committed result and record that dependency.
 
 The composer offers workspace/base selection for a blank session. Settings →
 Workspace → Source control includes managed workspace policy, retention, storage,
-pinning and directory management. Review the selected execution Host and committed
-base before creating work; missing Host support shows an update requirement.
+pinning and directory management. **Current checkout** is selected unless an
+explicit choice or project policy selects **Worktree**. Current execution does
+not require managed-workspace admission. For a worktree, review the selected
+execution Host and committed base; missing Host support shows an update requirement.
+The quick composer follows the same policy and preserves an explicit
+**Current checkout** choice when the project default is Worktree.
 If the bundled local Host update is waiting for active sessions, the composer
 explains that it will install automatically after those sessions finish. You can
 wait for the update, or choose **Use current checkout** for this draft. An explicit
 **Current checkout** choice works with older local and remote Hosts through the
-existing creation path. An unset choice or **Worktree** keeps the update
-requirement; neither silently switches to the project checkout. After the Host
-reconnects or advertises updated capabilities, the workspace check refreshes
+existing creation path. A choice or project policy resolving to **Worktree** keeps
+the update requirement and never silently switches to the project checkout. After
+the Host reconnects or advertises updated capabilities, the workspace check refreshes
 automatically without clearing the draft or requiring Retry.
 The source includes these controls, but the installed app must still be compared
 with its build stamp. The separate mobile repository is inventoried read-only in
 `.agents/skills/feature-mobile/SKILL.md`; its source is not included in this branch.
 
-The authenticated Host also enforces creation for older and direct clients: an
-omitted workspace choice prepares an owned worktree. Current-checkout execution
-requires an explicit choice. A contextual conversation gets an independent branch
-even when its source is a legacy current-mode conversation. Interrupted legacy
+The authenticated Host also resolves policy for older and direct clients: an
+omitted workspace choice uses the current checkout unless project policy selects
+a worktree. Contextual handoffs still prepare an independent worktree, including
+from a current-mode source conversation; this path still needs a coordinated
+update to follow the new default. Second opinions share that exception. Interrupted legacy
 tasks retain their recorded branch and directory outside automatic lifecycle
 ownership until explicitly migrated.
 Goal final reviews retain their authoritative execution identity across
@@ -53,10 +72,11 @@ Owner-approved delivery must enter the saved lead target before acceptance; a
 delivery to the integration branch alone does not satisfy a different lead target.
 An unresolved or detached lead is an error, with no integration fallback.
 
-The assigned branch is where the worker can commit its own coherent changes.
-Review the branch and execution path before starting an independent writer.
-Parallel writers need separate workspaces. Feature cards describe all affected
-surfaces; live feature claims coordinate ownership across branches.
+In an assigned managed worktree, the worker commits its own coherent changes on
+its assigned branch. Review the branch and execution path before starting an
+independent writer. Managed parallel writers use separate owned workspaces.
+Feature cards describe affected surfaces; live feature claims coordinate ownership
+across branches.
 
 ## Reviewing and delivering a result
 

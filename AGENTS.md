@@ -1,27 +1,28 @@
-# Worktree-first workflow
+# Checkout workflow
 
-Each new coding session or task works in its assigned Git worktree and branch.
-Use the host-assigned workspace; do not create a second one or change branches.
-Keep project identity separate from execution cwd. Run edits, terminals, checks
-and dev servers in the execution worktree. Existing sessions in the main checkout
-(`current` mode) keep working there without committing until explicitly migrated.
+Sessions, tasks, goal tasks, writing automations and stewards default to current
+checkout. Worktree is opt-in per session or project policy. Inspect Git state
+first. In shared checkouts, keep changes uncommitted unless directed otherwise.
+Preserve others' edits, drafts and state; never stage, reset, stash or clean them.
 
-Inspect Git state before editing. You may stage and commit your own work on your
-assigned branch with clear messages. Commit coherent changes and leave a clean
-source tree at handoff. Never modify the main checkout from another workspace,
-commit to main, push, create a PR or merge into an integration branch; delivery
-requires the owner's UI approval. Do not rewrite published history.
+In a host-assigned managed worktree, use its directory/branch; do not create another
+or change branches. Keep project identity separate from execution cwd; run edits,
+terminals, checks and dev servers there. Commit your own coherent changes and
+leave a clean tree at handoff. Never modify main from another workspace, commit
+to main, push, create a PR or merge into an integration branch; delivery requires
+the owner's UI approval. Never
+rewrite published history or fall back to main after worktree preparation fails.
 
-Other branches may contain concurrent work. Read applicable cards and live feature
-claims before starting; coordinate dependencies instead of duplicating a redesign.
+Read cards and live feature claims first; coordinate concurrent work and
+dependencies instead of duplicating redesigns.
 Never edit or reset another workspace. Do not stash or clean work to make a check
 pass. Stay in a host-assigned task workspace; the host owns task commits when the
 execution brief says so. Explicit owner instructions take precedence.
 
-Scale handoff detail to the tier below. Finished means ready for review, separate
-from merged, installed or released. Leave directory retirement to the managed
-lifecycle service. Detailed ownership, cleanup, recovery and development contracts
-are in `docs/reference/managed-workspaces.md`.
+Use handoff tiers below. Finished means ready for review, separate from merged,
+installed or released. Leave directory retirement to the managed
+lifecycle service. Ownership, cleanup, recovery and development details:
+`docs/reference/managed-workspaces.md`.
 
 # Scope, features and done
 

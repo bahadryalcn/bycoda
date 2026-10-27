@@ -1,14 +1,15 @@
 ---
 name: feature-managed-workspaces
-description: Worktree-first workspace ownership, creation, execution cwd, feature claims, branch delivery, retention, Windows-safe removal, Git rewind and build provenance in bycoda.
+description: Current-checkout defaults and opt-in managed workspace ownership, creation, execution cwd, feature claims, branch delivery, retention, Windows-safe removal, Git rewind and build provenance in bycoda.
 ---
 
 # Managed workspaces
 
 ## Purpose and keywords
 
-Keep each independent coding writer on an owned branch/directory while preserving
-project identity, recovery and owner-controlled delivery. Keywords: worktree,
+Default writers to the current checkout; offer owned branches/directories through
+explicit Worktree selection or project policy while preserving project identity,
+recovery and owner-controlled delivery. Keywords: worktree,
 workspaceId, current mode, base SHA, branch, merge, PR, cleanup, retention, pin,
 storage budget, rewind, Undo, checkpoint, feature claim, bootstrap, ports, build
 stamp. Read `docs/reference/managed-workspaces.md` and the contract modules before
@@ -187,6 +188,11 @@ runtime capabilities and exercised acceptance remain separate.
 
 ## Owner decisions
 
+- 2026-10-27, owner D1 stream brief in the `fix/default-current-checkout` session:
+  "current checkout ile başlasın yeni bi session; kendi worktree aç diye zorluyor muyuz biz?"
+  This supersedes the original design's worktree default and the unset-choice
+  restriction recorded under F1/C1 below. Explicit worktree choices and stored
+  project policies still apply; worktree failures never fall back to current.
 - 2026-10-26, owner I3 stream brief in this integration session: "Merge
   `bycoda/wt-model/i2-host` then `bycoda/wt-model/i2-app` (`--no-ff`), resolving
   conflicts by preserving both intents."
@@ -196,9 +202,11 @@ runtime capabilities and exercised acceptance remain separate.
 
 ## Behavior to preserve
 
-One independent writer per owned workspace; immutable base; no fallback to main;
-existing current sessions remain there without committing until migrated. No
-profile edits, silent installation or delivery authority. Preserve drafts,
+Current-checkout writers preserve shared work and keep changes uncommitted unless
+directed otherwise. Managed execution retains one independent writer per owned
+workspace, immutable base and no fallback to main. Existing sessions keep their
+execution identity. No profile edits, silent installation or delivery authority.
+Preserve drafts,
 validation, async recovery, conversations, branches, staged state and rescue refs.
 Removal is not branch deletion. Active/dirty/unknown/in-use state blocks automatic
 cleanup. Rewind must be exact or visibly unavailable; published/integration history
@@ -226,6 +234,12 @@ no-follow Windows removal protocols.
   distinct from isolated native/Host, installed and released evidence.
 
 ## Known limitations and acceptance boundary
+
+The D1 default change excludes the concurrently owned contextual handoff block
+in `host/engine.ts`. `prepareContextualWorkspace` in
+`host/managed-workspace-runtime.ts` still forces a managed worktree for handoffs
+and second opinions. Its owner must coordinate policy resolution and current
+execution acceptance before this default can be claimed for that path.
 
 The integrated tree contains managed service routing and the desktop/native
 adapters. Missing or older execution-Host capabilities remain a visible blocker;
@@ -272,6 +286,9 @@ card and the worktree-first documentation. This reference establishes inventory
 delivery only; product/runtime acceptance remains as described above.
 
 ## F1 review repairs (2026-10-26)
+
+Historical implementation evidence: D1's 2026-10-27 decision above supersedes the
+missing-choice worktree default below; the recovery and identity rules remain.
 
 - Host creation prepares an owned workspace for missing choices, including older
   authenticated clients. Explicit `workspaceMode: "current"` is the compatibility
@@ -426,6 +443,9 @@ intermediate failure. Full commands, JSON reports and acceptance limits are in
 
 ## C1 explicit current during Host update (2026-10-27)
 
+Historical implementation evidence: D1's later decision above supersedes the
+unset-choice admission restriction below. Resolved worktree admission remains.
+
 Owner decision, C1 stream brief in this session: "an explicit owner choice is not
 a silent fallback" and "Never silently fall back when the mode is unset/worktree."
 
@@ -477,3 +497,63 @@ worker's scope. Local recovery/capability subscriptions use existing global
 notifications; remote recovery filters environment identity. This is local
 source/fixture evidence, with no installed-app, real Host upgrade, live provider
 or release acceptance. No capability contract or publishing authority changed.
+
+## D1 current-checkout default (2026-10-27)
+
+Implemented on `fix/default-current-checkout`, from `0a42b1ab` (0.6.92):
+
+- `0f9d0f15`: `host/workspace-contracts.ts`, `host/workspace-policy.ts` and
+  `host/managed-workspace-runtime.ts` resolve missing creation choices to current
+  by default. Explicit choices override stored project policy, then Host default;
+  existing worktree policies and no-silent-fallback errors remain intact.
+- `65910028`: `host/tasks.ts`, `host/goals.ts`, `host/automations.ts`,
+  `host/stewards.ts` and conversation task/goal tools let scheduled writers inherit
+  policy. Shared-checkout work stays uncommitted; managed worktree behavior remains.
+- `ce2d915b`: Composer, `workspaceCreation.ts`, `sessionWorkspace.ts` and
+  `RemoteSession.tsx` select current by default and preserve Worktree admission,
+  project policy, draft recovery and compatibility with known older Hosts.
+- `22a550bf`: `src-tauri/src/automations.rs` accepts omitted mode and preserves
+  explicit current/worktree/existing values across native JSON/SQLite persistence.
+- `c0ecb0a0`: task/goal and desktop automation editors inherit policy, retain
+  explicit choices, and use shared Select for the three task execution modes.
+- `841298dd`: goal planners/reviewers preserve a selected checkout; task worker
+  workspace choices remain independent.
+- `df1d62d0`: quick composer displays inherited policy, carries explicit current
+  through launch, and retains managed admission and draft recovery for worktrees.
+
+Verified local evidence under `temp/verification/d1/`:
+
+- Default/policy Host checks: three files, 22 passed/14 skipped (`host-defaults.log`).
+  Six core managed suites passed 57 tests; `host-core-final.log` also records one
+  intermittent server attachment-authorization failure. That unchanged server test
+  passed alone and the full server rerun passed 118/118 (`server-final.log`).
+- Focused UI: 192/192 (`ui-fast-tests.log`); RemoteSession: 120/120
+  (`remote-tests.log`); automation follow-up: 54/54 (`automation-final-tests.log`).
+  Worktrees Playwright: 37/37 (`playwright-worktrees.log`). Rust automation:
+  20/20 (`native-automation-tests.log`), with isolated Cargo target `d1`.
+- Light/dark new-session fixture captures at 1280 and 800:
+  `creation-light-1280.png`, `creation-dark-1280.png` and their 800 variants.
+  These are browser fixture evidence, not installed application acceptance.
+
+Final Tasks Playwright passed 186/186 in Chromium/WebKit; the final helper/capture
+follow-up passed 14/14. Full web passed 1,277 files/12,412 tests (four files and
+15 tests skipped), plus fast tsc-rs. Subsequent quick-composer checks passed 50/50
+and isolated browser checks passed 8/8; latest task controls passed 80/80 and final
+web/Host fast type checks passed. Corrected tasks passed 147/147; other writer
+suites passed 80/80. Goals passed 68/69 before the selected-checkout fix, whose
+failing case and two representative default/review cases then passed 3/3.
+See `temp/verification/d1/CHECKS.md` for exact source/check boundaries and logs.
+The GitHub issue auto-fix
+template now guards branch/publication steps with clean owned managed-worktree
+admission and skips current/shared/unknown ownership; see the guide above.
+
+Protected integration requests remain: the `host/engine.ts` managed-turn contract
+and contextual creation must support resolved current together with
+`host/managed-workspace-runtime.ts:prepareContextualWorkspace`; they still force
+managed creation. `host/managed-native-turns.test.ts` needs an explicit worktree
+choice in its fixture prepare request; `host/managed-native-rewind.test.ts` needs
+that choice in its shared fixture request. The diagnostic remaining-fixture run
+passed six safe suites (67 tests, three skipped) and failed those nine protected
+native cases on managed preparation resolving to current
+(`remaining-managed-fixtures.log`). No protected native files were changed.
+Build/installed/live-provider/release inclusion was not exercised by D1.

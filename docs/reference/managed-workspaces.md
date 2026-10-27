@@ -1,6 +1,6 @@
 # Managed workspaces
 
-This reference describes the integrated worktree-first implementation and its
+This reference describes the integrated managed-workspace implementation and its
 versioned contracts. The source includes the registry, policy, turn history,
 delivery, retention, bootstrap and desktop surfaces. A connected execution Host
 must advertise an operation's capability; a contract or matching app version
@@ -16,8 +16,8 @@ Providers, shells, terminals, editor writes and development servers participate
 in shared durable activity/reservation admission. Uncertain activity remains
 blocked instead of expiring by age.
 
-The desktop now includes worktree-default creation, policy/retention/storage
-settings, managed directory review and removal, task delivery state and artifact
+The desktop includes current-checkout creation by default, opt-in worktrees,
+policy/retention/storage settings, managed directory review and removal, task delivery state and artifact
 previews, rewind/Undo previews, and General build details. Native session storage
 preserves workspace identity through full and incremental reloads. Native turn,
 activity and rewind adapters use native-kept paired Host credentials and durable
@@ -55,8 +55,8 @@ until compared with the actual running build identity.
 `ManagedWorkspace.id` is the authoritative workspace identity. `repositoryId`
 identifies the canonical common Git directory; `cwd` remains project identity and
 the workspace path is the execution directory. Owners are sessions, tasks,
-automation runs or steward runs. One independently scheduled writer owns a
-workspace; parallel child writers receive separate workspaces.
+automation runs or steward runs. For managed execution, one independently scheduled
+writer owns a workspace; parallel child writers receive separate workspaces.
 
 Path comparisons resolve existing ancestor aliases before comparing registry and
 Git paths. Removal fixes its canonical boundary first, then checks the boundary
@@ -65,16 +65,41 @@ that boundary are valid, including macOS temporary-directory ancestors. Missing
 descendants in interrupted-removal recovery retain that same boundary. Windows
 canonical paths are exposed to Git and UI consumers without verbatim prefixes.
 
-New coding work defaults to worktrees. Existing sessions keep their checkout
-until explicitly migrated. Policy precedence is explicit owner creation choice,
-then project policy, then execution-host default. Resolve the selected committed
-base to an immutable SHA before creation; never copy an unrelated dirty checkout.
-A configured root applies to new directories and does not move existing ones.
+New sessions, tasks, goal tasks, writing automation runs and steward runs default
+to the current checkout. Policy precedence is explicit owner creation choice,
+then stored project policy, then execution-host default (`current`). Existing
+project policies retain their explicit values, including `worktree`; existing
+sessions retain their execution identity. The composer selects **Current checkout**
+unless a choice or project policy resolves to **Worktree**. Current execution
+does not require managed-workspace admission. In a shared checkout, agents keep
+changes uncommitted unless directed otherwise and preserve other sessions' work.
+Quick composer uses the same resolved policy for its display and admission, while
+keeping explicit current/worktree choices through the native popup and launch.
+
+Desktop automation definitions preserve an omitted workspace mode through native
+JSON persistence so execution can inherit Host policy. Explicit `current`,
+`worktree` and `existing` modes keep their values; `existing` still requires its
+selected worktree path. The GitHub issue auto-fix template requires a clean,
+owned managed worktree and returns `SKIPPED` before any branch or publication
+step in shared/current or unknown ownership. This guard preserves shared branch,
+index and dirty work; it grants no publication authority.
+
+Contextual handoffs and second opinions remain an integration exception: their
+protected Host creation path still requires an independent managed worktree,
+including from current-mode sources. Applying current/project-policy resolution
+there requires the contextual handoff owner's coordinated change in
+`host/engine.ts` and `host/managed-workspace-runtime.ts`.
+
+For managed worktree creation, resolve the selected committed base to an immutable
+SHA; never copy an unrelated dirty checkout. A configured root applies to new
+directories and does not move existing ones. Preparation failure for a resolved
+or explicitly selected worktree remains an error; it never switches to current.
 
 Branches use `bycoda/s/<slug>-<12id>` or `bycoda/t/<slug>-<12id>`; directories use
 `wt-<12id>`. Generate names once. Validate collisions and ownership with the full
 workspace ID, not its shortened display form. Creation failure never falls back
-to main. Older Hosts require a visible update explanation.
+to main. Unsupported managed operations on older Hosts require a visible update
+explanation; current-checkout creation uses the existing compatible path.
 
 `host/managed-workspaces.ts` implements branch/directory naming and
 `host/turn-git-history.ts` implements turn/rewind refs. Constants define prefixes
@@ -263,7 +288,7 @@ See the
 | Lifecycle/removal / S4       | Startup/transition/hourly eligibility, timers/pins/Never, active/dirty/unknown/in-use blocking, Windows no-follow dependency detachment, blocked-handle recovery, evidence preservation, resume after removal, branch/ref retention                      | Temporary repos/link targets, with target content checked unchanged; actual Windows handle scenario distinct from mocks     |
 | UI / S5                      | Creation/defaults, workspace identity, review/delivery/retirement, rewind/Undo preview, settings policy/storage/retention and update explanations; local pending/error/retry/cancel feedback and keyboard use                                            | Every affected surface at 1280/800, light/dark, opened screenshots; fixtures separate from isolated native/Host integration |
 | Development/build / S6       | Own dependency links, deduplicated cancellable bootstrap, cache lease feedback, isolated Host/desktop data and executable run dirs, Vite/HMR/Host/CDP bind-race handling, consistent URLs/CSP, immutable frozen manifest and comparison                  | Concurrent isolated runs plus provenance checks; unstamped or unresponsive runtime remains unknown                          |
-| Instructions/cards/docs / S7 | AGENTS at most 11,000 UTF-8 bytes; worktree-first and current-session transition; complete searchable surface cards; current crew guide; runtime missing-capability/feature guidance; valid cited paths                                                  | Focused runtime tests, byte count, reference and repository-hygiene checks; no product/native acceptance inferred           |
+| Instructions/cards/docs / S7 | AGENTS at most 11,000 UTF-8 bytes; current-checkout default and managed-worktree opt-in; complete searchable surface cards; current crew guide; runtime missing-capability/feature guidance; valid cited paths                                           | Focused runtime tests, byte count, reference and repository-hygiene checks; no product/native acceptance inferred           |
 
 For final integration, exercise one complete native scenario: create independent
 writers, commit and review a result, approve delivery, rewind/Undo another branch,
