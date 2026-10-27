@@ -153,6 +153,10 @@ With the setting off, old unfinished exact-rewind turns do not block new turns,
 and the Host does not advertise `sessions.git-rewind*` capabilities.
 Lightweight worktree sessions keep their provider warm between turns and park it
 after five idle minutes. Explicit stop or ownership transfer still releases it.
+An updated Host confirms desktop provider retirement before continuing the
+conversation on another device. An unreachable desktop or unconfirmed process
+exit leaves the transfer blocked with a retryable reason. Older Hosts keep the
+previous immediate-release behavior.
 
 Every completed user message offers **Edit from here** in its message actions.
 Confirm **Revert and keep changes** to rewind chat to before that exact message

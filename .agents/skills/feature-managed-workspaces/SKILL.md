@@ -8,6 +8,16 @@ description: Current-checkout defaults and opt-in managed workspace ownership, c
 ## V94 lightweight execution (2026-10-27)
 
 T2, V94-W1, baseline `86a8c870`, branch `feat/v94-light-worktree`.
+V94-I integration on `release/0.6.94` resolves the original shared-registry
+dependency: `src/integrations/harness/core/registry.ts` retains lightweight
+worktree providers, while explicit Host transfer requests retirement over the
+existing desktop heartbeat command/ACK channel. The native `harness_retire`
+command acknowledges actual process exit; missing acknowledgement blocks the
+transfer. Warm retention requires `sessions.desktop-writer-retirement.v1`;
+older Hosts retain immediate provider release. Normal local turns do not use
+the transfer fence. Per-message bounded file history remains active with Exact
+Git rewind OFF in both Current and Worktree sessions. Frontend integration:
+`03a8cea7c`; Host integration: `62465245b`; native retirement: `4df6e9c8e`.
 Owner decision, 2026-10-27 V94 common/stream brief: "Worktrees must be
 lightweight and optional: a worktree session is just its own folder + branch."
 This supersedes the unconditional per-turn capture/admission statements below.
@@ -31,8 +41,8 @@ Delivered surface checklist:
   admission. Native opt-in requires fresh `sessions.git-rewind.experimental.v1`
   advertising; older Hosts do not accidentally enable exact rewind.
 - Done: `src/app/workspace/sessions/submit/submitTurnDispatch.ts`: OFF skips
-  managed begin/end and whole-tree checkpoint fallback. The shared harness's
-  separate Codex idle writer-lock release remains outside this stream's ownership.
+  managed begin/end and whole-tree checkpoint fallback. V94-I separately wires
+  bounded message file history and capability-gated warm provider retention.
 - Done: `src/features/settings/model/exactGitRewind.ts`,
   `src/features/settings/ui/WorkspaceSettings.tsx`, settings search catalog and
   all eight locale catalogs: shared Toggle, acknowledged saving, loading,

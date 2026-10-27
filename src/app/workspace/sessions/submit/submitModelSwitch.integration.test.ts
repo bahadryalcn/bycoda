@@ -176,7 +176,9 @@ beforeEach(async () => {
   stoppedSessions.length = 0;
   events = new Map();
   native.invoke.mockReset();
-  vi.mocked(getWorkspaceCapabilities).mockReset().mockResolvedValue(["workspaces.policy.v1"]);
+  vi.mocked(getWorkspaceCapabilities)
+    .mockReset()
+    .mockResolvedValue(["workspaces.policy.v1", "sessions.desktop-writer-retirement.v1"]);
   vi.mocked(workspaceRequest)
     .mockReset()
     .mockResolvedValue({
@@ -418,6 +420,21 @@ it("runs three worktree sends without managed turn calls or forced managed retir
     expect(exact).toBe(false);
   }
 });
+
+it.each([true, false])(
+  "keeps a Codex worktree warm only with acknowledged Host transfer support=%s",
+  async (supported) => {
+    vi.mocked(getWorkspaceCapabilities).mockResolvedValue(
+      supported ? ["sessions.desktop-writer-retirement.v1"] : [],
+    );
+    const original = getSessions()[0];
+    resetSessionsStore([{ ...original, workspaceId: "managed", worktreeCwd: "/owned/worktree" }]);
+    await submit("completed", {}, "Continue this isolated worktree");
+    expect(sends).toHaveLength(1);
+    expect(stoppedSessions.filter((id) => id === original.id)).toHaveLength(supported ? 0 : 1);
+    expect(fileHistory.begin).toHaveBeenCalledOnce();
+  },
+);
 
 it("does not invoke a managed provider when native admission has an unknown outcome", async () => {
   vi.mocked(getExactGitRewindEnabled).mockResolvedValue(true);

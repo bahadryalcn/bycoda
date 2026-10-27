@@ -61,6 +61,7 @@ import { isRemoteProjectPath } from "../../../../features/projects/model/recents
 import { beginNativeManagedTurn } from "../../../../features/workspaces/model/nativeManagedTurn";
 import { t } from "../../../../shared/i18n";
 import { getExactGitRewindEnabled } from "../../../../features/settings/model/exactGitRewind";
+import { getWorkspaceCapabilities } from "../../../../features/workspaces/model/workspaceClient";
 
 export async function runSubmitDispatch(
   ctx: SubmitDeps,
@@ -107,6 +108,13 @@ export async function runSubmitDispatch(
       (await getExactGitRewindEnabled())
     )
       finishManagedTurn = await beginNativeManagedTurn(latest, checkpointTurnId);
+    const lightweightWorktree = Boolean(
+      latest.workspaceId &&
+      !finishManagedTurn &&
+      (await getWorkspaceCapabilities({ cwd: latest.cwd }).catch(() => [])).includes(
+        "sessions.desktop-writer-retirement.v1",
+      ),
+    );
     const preparation = await prepareLocalTurn({
       traceId,
       checkpoint: async () => {
@@ -203,7 +211,7 @@ export async function runSubmitDispatch(
       markSharedProviderSend(sessionId);
       return sendHarnessTurn({
         harness: current.harness,
-        lightweightWorktree: Boolean(latest.workspaceId && !finishManagedTurn),
+        lightweightWorktree,
         sessionId,
         cwd: workCwd,
         model: current.model,
