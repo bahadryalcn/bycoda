@@ -1,4 +1,8 @@
 {
+  "Exact Git rewind (experimental)": "Retrocesso exato do Git (experimental)",
+  "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.": "Desativado por padrão. Captura árvores Git completas para um retrocesso exato. Aplica-se a novos turnos no Host deste computador.",
+  "The local Host is unavailable. Reconnect and retry.": "O Host local está indisponível. Reconecte-se e tente novamente.",
+  "The local Host returned an invalid setting. Reconnect and retry.": "O Host local retornou uma configuração inválida. Reconecte-se e tente novamente.",
   "Tools": "Ferramentas",
   "Projects and groups": "Projetos e grupos",
   "Pending sprint assignments": "Atribuições de sprint pendentes",

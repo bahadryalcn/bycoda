@@ -1,4 +1,8 @@
 {
+  "Exact Git rewind (experimental)": "Tam Git geri sarma (deneysel)",
+  "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.": "Varsayılan olarak kapalıdır. Tam geri sarma için Git ağaçlarının tamamını kaydeder. Bu bilgisayarın Host'undaki yeni turlara uygulanır.",
+  "The local Host is unavailable. Reconnect and retry.": "Yerel Host kullanılamıyor. Yeniden bağlanıp tekrar deneyin.",
+  "The local Host returned an invalid setting. Reconnect and retry.": "Yerel Host geçersiz bir ayar döndürdü. Yeniden bağlanıp tekrar deneyin.",
   "Tools": "Araçlar",
   "Projects and groups": "Projeler ve gruplar",
   "Pending sprint assignments": "Bekleyen sprint atamaları",

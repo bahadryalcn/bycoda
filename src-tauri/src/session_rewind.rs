@@ -57,7 +57,11 @@ pub(crate) fn begin_managed_turn(
     store: &SessionStore,
     host: &impl TurnExecutionHost,
     request: &ManagedTurnRequest,
+    exact_git_rewind: bool,
 ) -> Result<(), String> {
+    if !exact_git_rewind {
+        return Ok(());
+    }
     let rewind_pending: bool = store.lock_conn()?.query_row("SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE session_id=?1 AND phase!='complete')",
         [&request.session_id], |row|row.get(0)).map_err(|e|e.to_string())?;
     if rewind_pending {
@@ -123,7 +127,11 @@ pub(crate) fn finish_managed_turn(
     store: &SessionStore,
     host: &impl TurnExecutionHost,
     request: &ManagedTurnRequest,
+    exact_git_rewind: bool,
 ) -> Result<(), String> {
+    if !exact_git_rewind {
+        return Ok(());
+    }
     let signature = serde_json::to_string(request).map_err(|e| e.to_string())?;
     let Some((persisted, phase)) = pending_turn(store, &request.session_id)? else {
         return Err("There is no managed turn to complete".into());
@@ -642,6 +650,23 @@ fn stored_managed_session(store: &SessionStore, session_id: &str) -> Result<Sess
     Ok(record)
 }
 
+/// The execution Host owns this opt-in. Unavailable/older Hosts cannot enable
+/// experimental capture, and must not prevent ordinary worktree execution.
+pub(crate) fn exact_git_rewind_enabled(app: &AppHandle) -> bool {
+    // connect fetches environment.describe afresh and verifies Host identity;
+    // this capability is advertised only while the Host's policy is enabled.
+    crate::remote::NativeWorkspaceTransport::connect(app, "sessions.git-rewind.experimental.v1")
+        .is_ok()
+}
+
+fn require_exact_git_rewind(app: &AppHandle) -> Result<(), String> {
+    if exact_git_rewind_enabled(app) {
+        Ok(())
+    } else {
+        Err("Enable Exact Git rewind (experimental) on the execution Host first".into())
+    }
+}
+
 pub(crate) fn reconcile_pending_native(
     app: &AppHandle,
     store: &SessionStore,
@@ -649,7 +674,7 @@ pub(crate) fn reconcile_pending_native(
 ) -> Result<Vec<String>, String> {
     let pending: bool = store.lock_conn()?.query_row("SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1))
         OR EXISTS(SELECT 1 FROM native_rewind_intents WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1))", params![session_id], |row|row.get(0)).map_err(|e|e.to_string())?;
-    if !pending {
+    if !pending || !exact_git_rewind_enabled(app) {
         return Ok(vec![]);
     }
     let host = crate::remote::NativeWorkspaceTransport::connect(app, "sessions.native-rewind.v1")?;
@@ -675,6 +700,9 @@ pub fn managed_turn_begin(
     user_block_id: String,
     run_id: String,
 ) -> Result<(), String> {
+    if !exact_git_rewind_enabled(&app) {
+        return Ok(());
+    }
     validate_id(&user_block_id, "user block")?;
     validate_id(&run_id, "turn run")?;
     reconcile_pending_native(&app, &store, Some(&session_id))?;
@@ -701,7 +729,7 @@ pub fn managed_turn_begin(
             conversation_revision: record.transcript_revision.unwrap_or(0),
         }
     };
-    begin_managed_turn(&store, &host, &request)
+    begin_managed_turn(&store, &host, &request, true)
 }
 
 #[tauri::command(async)]
@@ -712,6 +740,9 @@ pub fn managed_turn_end(
     user_block_id: String,
     run_id: String,
 ) -> Result<(), String> {
+    if !exact_git_rewind_enabled(&app) {
+        return Ok(());
+    }
     let record = stored_managed_session(&store, &session_id)?;
     let Some((raw, _)) = pending_turn(&store, &session_id)? else {
         return Err("There is no managed turn to complete".into());
@@ -730,7 +761,7 @@ pub fn managed_turn_end(
         .retire_managed_session(&request.session_id)?;
     let host =
         crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
-    finish_managed_turn(&store, &host, &request)
+    finish_managed_turn(&store, &host, &request, true)
 }
 
 fn validate_rewind_input(
@@ -762,6 +793,7 @@ pub fn managed_rewind_plan(
     store: State<'_, SessionStore>,
     request: Value,
 ) -> Result<Value, String> {
+    require_exact_git_rewind(&app)?;
     if let Some(session_id) = request["sessionId"].as_str() {
         reconcile_pending_native(&app, &store, Some(session_id))?;
     }
@@ -1017,6 +1049,7 @@ pub fn managed_rewind_apply(
     store: State<'_, SessionStore>,
     request: Value,
 ) -> Result<Value, String> {
+    require_exact_git_rewind(&app)?;
     let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
     native_apply(&store, &host, request, RewindDirection::Rewind)
 }
@@ -1027,6 +1060,7 @@ pub fn managed_rewind_undo(
     store: State<'_, SessionStore>,
     request: Value,
 ) -> Result<Value, String> {
+    require_exact_git_rewind(&app)?;
     let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
     native_apply(&store, &host, request, RewindDirection::Undo)
 }
@@ -1388,15 +1422,53 @@ mod tests {
             run_id: "run-2".into(),
             conversation_revision: revision,
         };
-        assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &request).is_ok());
-        assert!(finish_managed_turn(&store, &TurnHost { blocked: false }, &request).is_ok());
+        assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &request, true).is_ok());
+        assert!(finish_managed_turn(&store, &TurnHost { blocked: false }, &request, true).is_ok());
         assert!(
-            begin_managed_turn(&store, &TurnHost { blocked: true }, &request)
+            begin_managed_turn(&store, &TurnHost { blocked: true }, &request, true)
                 .unwrap_err()
                 .contains("sparse checkout")
         );
         rescue(&store, "rewind-1", "native", revision).unwrap();
-        assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &request).is_err());
+        assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &request, true).is_err());
+    }
+
+    #[test]
+    fn checkpoint_native_lightweight_turns_ignore_stuck_rows_without_capture() {
+        struct NoCapture;
+        impl TurnExecutionHost for NoCapture {
+            fn capture_before(&self, _: &ManagedTurnRequest) -> Result<Value, String> {
+                panic!("lightweight turns must not capture Git state")
+            }
+            fn capture_after(&self, _: &ManagedTurnRequest) -> Result<Value, String> {
+                panic!("lightweight turns must not capture Git state")
+            }
+        }
+        for phase in ["starting", "active"] {
+            let store = SessionStore::open_in_memory().unwrap();
+            let revision = seed(&store);
+            store.lock_conn().unwrap().execute(
+                "INSERT INTO native_managed_turns(session_id,request_json,phase) VALUES('native','old-turn',?1)",
+                [phase],
+            ).unwrap();
+            for index in 0..3 {
+                let request = ManagedTurnRequest {
+                    workspace_id: "managed".into(),
+                    session_id: "native".into(),
+                    user_block_id: "u2".into(),
+                    run_id: format!("run-{index}"),
+                    conversation_revision: revision,
+                };
+                begin_managed_turn(&store, &NoCapture, &request, false).unwrap();
+                finish_managed_turn(&store, &NoCapture, &request, false).unwrap();
+            }
+            // Opting out ignores old evidence rather than claiming the old
+            // provider exited or destroying reconciliation information.
+            assert_eq!(
+                pending_turn(&store, "native").unwrap(),
+                Some(("old-turn".into(), phase.into()))
+            );
+        }
     }
 
     fn fake_native_host(
@@ -1830,17 +1902,17 @@ mod tests {
             run_id: "run-2".into(),
             conversation_revision: revision,
         };
-        assert!(begin_managed_turn(&store, &TurnHost { blocked: true }, &request).is_err());
+        assert!(begin_managed_turn(&store, &TurnHost { blocked: true }, &request, true).is_err());
         assert!(assert_writable(&store, "native").is_err());
         drop(store);
         let store = SessionStore::open(path.clone()).unwrap();
         let mut other = request.clone();
         other.run_id = "another-run".into();
-        assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &other).is_err());
-        begin_managed_turn(&store, &TurnHost { blocked: false }, &request).unwrap();
-        assert!(finish_managed_turn(&store, &TurnHost { blocked: true }, &request).is_err());
+        assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &other, true).is_err());
+        begin_managed_turn(&store, &TurnHost { blocked: false }, &request, true).unwrap();
+        assert!(finish_managed_turn(&store, &TurnHost { blocked: true }, &request, true).is_err());
         assert!(assert_writable(&store, "native").is_err());
-        finish_managed_turn(&store, &TurnHost { blocked: false }, &request).unwrap();
+        finish_managed_turn(&store, &TurnHost { blocked: false }, &request, true).unwrap();
         assert!(assert_writable(&store, "native").is_ok());
         drop(store);
         std::fs::remove_file(path).unwrap();

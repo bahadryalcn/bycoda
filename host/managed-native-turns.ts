@@ -26,6 +26,7 @@ interface NativeTurnBinding extends ManagedNativeTurnBeginRequest {
 /** Trusted owner/native capture bridge only. This does not implement native
  * conversation rescue/restore and does not authorize native Git rewind. */
 export function createManagedNativeTurns(deps: {
+  exactGitRewindEnabled?(): Promise<boolean>;
   workspace(workspaceId: string): Promise<ManagedWorkspace>;
   history: GitTurnHistory;
   activity: ExecutionActivityReservations;
@@ -58,6 +59,8 @@ export function createManagedNativeTurns(deps: {
   ) => {
     if (!owner?.ownerId || !owner.authorizationId || !(await deps.authorize(owner)))
       throw new Error("Managed native turns require authenticated owner authorization");
+    if ((await deps.exactGitRewindEnabled?.()) !== true)
+      throw new Error("Exact Git rewind is disabled on this execution host");
     for (const value of [
       request.workspaceId,
       request.sessionId,

@@ -1,4 +1,8 @@
 {
+  "Exact Git rewind (experimental)": "精确 Git 回退（实验性）",
+  "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.": "默认关闭。记录完整的 Git 树以进行精确回退。适用于此计算机 Host 上的新轮次。",
+  "The local Host is unavailable. Reconnect and retry.": "本地 Host 不可用。请重新连接后重试。",
+  "The local Host returned an invalid setting. Reconnect and retry.": "本地 Host 返回了无效设置。请重新连接后重试。",
   "Tools": "工具",
   "Projects and groups": "项目和分组",
   "Pending sprint assignments": "待处理的迭代分配",

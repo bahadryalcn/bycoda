@@ -2109,6 +2109,27 @@ export async function createHostServer(
                 case "workspaces.get":
                   result = await workspaceForOwnerRpc(params.workspaceId);
                   break;
+                case "workspaces.exactGitRewind.get":
+                case "workspaces.exactGitRewind.set": {
+                  result = await withWorkspaceOwner(token, async () => {
+                    if (input.method === "workspaces.exactGitRewind.set") {
+                      if (typeof params.enabled !== "boolean")
+                        throw new Error("Exact Git rewind must be a boolean");
+                      if (
+                        params.enabled &&
+                        (await engine.store.startupStates()).some(
+                          (state) => state.workspaceId && (state.running || state.shellRunning),
+                        )
+                      )
+                        throw new Error(
+                          "Wait for running worktree turns before enabling exact Git rewind",
+                        );
+                      await managed.exactGitRewind.save(params.enabled);
+                    }
+                    return { enabled: await managed.exactGitRewind.read() };
+                  });
+                  break;
+                }
                 case "native.activity.start":
                 case "native.activity.end":
                 case "native.buffers.retire":
@@ -2136,6 +2157,8 @@ export async function createHostServer(
                 case "native.rewind.apply":
                 case "native.rewind.status":
                 case "native.rewind.ack": {
+                  if (!(await managed.exactGitRewind.enabled()))
+                    throw new Error("Exact Git rewind is disabled on this execution host");
                   const action = String(input.method).slice("native.rewind.".length) as
                     | "plan"
                     | "prepare"
@@ -2154,6 +2177,8 @@ export async function createHostServer(
                 case "sessions.managedTurn.begin":
                 case "sessions.managedTurn.end":
                 case "sessions.managedTurn.status": {
+                  if (!(await managed.exactGitRewind.enabled()))
+                    throw new Error("Exact Git rewind is disabled on this execution host");
                   const value = await workspaceForOwnerRpc(params.workspaceId);
                   if (
                     !value ||
@@ -2187,6 +2212,8 @@ export async function createHostServer(
                   break;
                 }
                 case "sessions.rewind.status": {
+                  if (!(await managed.exactGitRewind.enabled()))
+                    throw new Error("Exact Git rewind is disabled on this execution host");
                   const value = await workspaceForOwnerRpc(params.workspaceId);
                   if (
                     !value ||
@@ -2218,6 +2245,8 @@ export async function createHostServer(
                 case "sessions.rewind.plan":
                 case "sessions.rewind.apply":
                 case "sessions.rewind.undo": {
+                  if (!(await managed.exactGitRewind.enabled()))
+                    throw new Error("Exact Git rewind is disabled on this execution host");
                   const value = await workspaceForOwnerRpc(params.workspaceId);
                   if (
                     !value ||
@@ -2786,11 +2815,16 @@ export async function createHostServer(
                       "workspaces.pr-publication.v1",
                       "workspaces.lifecycle.v1",
                       "workspaces.pinning.v1",
-                      "sessions.git-rewind.v1",
-                      "sessions.git-rewind-undo.v1",
+                      ...((await managed.exactGitRewind.enabled())
+                        ? [
+                            "sessions.git-rewind.experimental.v1",
+                            "sessions.git-rewind.v1",
+                            "sessions.git-rewind-undo.v1",
+                            "sessions.native-execution.v1",
+                            "sessions.native-rewind.v1",
+                          ]
+                        : []),
                       "sessions.managedCreation.v1",
-                      "sessions.native-execution.v1",
-                      "sessions.native-rewind.v1",
                       "workspaces.native-activity.v1",
                       ...(buildIdentity ? ["build.identity.v1"] : []),
                       "terminals.v1",

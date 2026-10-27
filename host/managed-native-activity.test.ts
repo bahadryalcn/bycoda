@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 const owner = { ownerId: "device-one", authorizationId: "trusted" };
 const other = { ownerId: "device-two", authorizationId: "trusted" };
-async function fixture(linkedAncestor = false) {
+async function fixture(linkedAncestor = false, exactGitRewind = true) {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "native-activity-"));
   cleanups.push(() => rm(temporaryRoot, { recursive: true, force: true }));
   let root = temporaryRoot;
@@ -66,6 +66,7 @@ async function fixture(linkedAncestor = false) {
   });
   const compose = () =>
     createManagedNativeActivity({
+      exactGitRewindEnabled: async () => exactGitRewind,
       root: join(root, "private"),
       workspace: async (id) => {
         const value = await get(id);
@@ -116,6 +117,35 @@ async function fixture(linkedAncestor = false) {
     },
   };
 }
+it("admits lightweight processes despite dirty buffers and stale activity without a managed lease", async () => {
+  const f = await fixture(false, false);
+  // An old unknown turn must remain a destructive-operation guard, not a turn admission fence.
+  await f.activity.start({
+    workspaceId: f.workspace.id,
+    kind: "provider",
+    ownerId: "native-turn:stuck",
+  });
+  await f.service.updateBuffers(f.report(true), owner);
+  for (let turn = 0; turn < 3; turn++) {
+    expect(
+      await f.service.start(
+        {
+          activityId: `light-${turn}`,
+          cwd: f.path,
+          kind: "provider",
+          sessionId: "session",
+        },
+        owner,
+      ),
+    ).toEqual({ activityId: `light-${turn}`, workspaceId: f.workspace.id });
+    expect(await f.service.end({ activityId: `light-${turn}` }, owner)).toEqual({
+      acknowledged: true,
+    });
+  }
+  const entries = await f.activity.list(f.workspace.id);
+  expect(entries.filter((entry) => entry.ownerId.startsWith("native-process:"))).toEqual([]);
+});
+
 it("admits canonical native processes and buffers beneath an aliased workspace ancestor", async () => {
   const f = await fixture(true);
   await f.service.updateBuffers(f.report(true), owner);

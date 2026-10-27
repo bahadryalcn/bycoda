@@ -56,6 +56,7 @@ const identity = (value: unknown, label: string) => {
 /** Native process reports are device-bound durable leases. Time alone never releases them.
  * Buffer probes are evaluated freshly by the shared reservation gate, including after restart. */
 export function createManagedNativeActivity(deps: {
+  exactGitRewindEnabled?(): Promise<boolean>;
   root: string;
   workspace(id: string): Promise<ManagedWorkspace>;
   listWorkspaces(): Promise<ManagedWorkspace[]>;
@@ -181,6 +182,10 @@ export function createManagedNativeActivity(deps: {
           (workspace.owner.kind !== "session" || workspace.owner.id !== request.sessionId)
         )
           throw new Error("Native session does not own this workspace");
+        // Ordinary execution needs no durable admission lease. Retain old leases
+        // for explicit lifecycle/destructive-operation safety and experimental recovery.
+        if ((await deps.exactGitRewindEnabled?.()) !== true)
+          return { activityId: request.activityId, workspaceId: workspace.id };
         return withHostGitMutation(workspace.path, async () => {
           await deps.workspace(workspace.id);
           await deps.assertWritable(workspace.id);
@@ -251,6 +256,8 @@ export function createManagedNativeActivity(deps: {
         identity(request.activityId, "activity identity");
         const path = leasePath(request.activityId);
         const lease = await read<ProcessLease>(path);
+        if (!lease && (await deps.exactGitRewindEnabled?.()) !== true)
+          return { acknowledged: true as const };
         if (!lease || lease.device !== device)
           throw new Error("Native activity is unavailable or belongs to another owner device");
         if (lease.phase === "ended") return { acknowledged: true as const };

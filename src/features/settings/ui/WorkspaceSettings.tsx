@@ -1,5 +1,5 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -18,7 +18,88 @@ import {
 } from "../model/settings";
 import { Group, Row, Segmented, SettingsFeedback, Toggle } from "./settingsControls";
 import { WorkspaceFeatureSettings, WorkspaceToolsHelp } from "./WorkspaceFeatureSettings";
+import { loadExactGitRewind, saveExactGitRewind } from "../model/exactGitRewind";
+import { Button } from "../../../shared/ui/Button";
 import "./WorkspaceSettings.css";
+
+function ExactGitRewindSetting() {
+  const [enabled, setEnabled] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [pending, setPending] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [readAttempt, setReadAttempt] = useState(0);
+  const saving = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPending(true);
+    setError(null);
+    void loadExactGitRewind()
+      .then((value) => {
+        if (cancelled) return;
+        setEnabled(value);
+        setLoaded(true);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setLoaded(false);
+          setError(String(cause));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPending(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [readAttempt]);
+
+  const save = async (next: boolean) => {
+    if (saving.current || pending || !loaded) return;
+    saving.current = true;
+    setPending(true);
+    setError(null);
+    try {
+      setEnabled(await saveExactGitRewind(next));
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      saving.current = false;
+      setPending(false);
+    }
+  };
+
+  return (
+    <Row
+      id="exact-git-rewind"
+      label={t("Exact Git rewind (experimental)")}
+      description={t(
+        "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.",
+      )}
+      feedback={
+        pending ? (
+          <SettingsFeedback state="loading">
+            {saving.current ? t("Saving…") : t("Loading…")}
+          </SettingsFeedback>
+        ) : error ? (
+          <SettingsFeedback state="error">
+            {error}{" "}
+            <Button variant="link" onClick={() => setReadAttempt((value) => value + 1)}>
+              {t("Retry")}
+            </Button>
+          </SettingsFeedback>
+        ) : undefined
+      }
+    >
+      <Toggle
+        label={t("Exact Git rewind (experimental)")}
+        on={enabled}
+        disabled={pending || !loaded}
+        onChange={save}
+      />
+    </Row>
+  );
+}
 
 export function WorkspacePage({ children }: { children?: ReactNode }) {
   useLocale();
@@ -96,6 +177,7 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
         <WorkspaceFeatureSettings />
       </Group>
       <Group title={t("Session access")} layout="full">
+        <ExactGitRewindSetting />
         {IS_MAC && (
           <Row
             id="quick-composer"

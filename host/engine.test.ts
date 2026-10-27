@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
@@ -1159,6 +1159,7 @@ function managedHistory() {
     capturedAt: 1,
   };
   const adapter: ManagedTurnHistoryAdapter = {
+    exactGitRewindEnabled: () => true,
     workspaceForSession: vi.fn(async () => ({ workspaceId: "managed" })),
     assertWritable: vi.fn(async () => {}),
     history: {
@@ -1184,6 +1185,119 @@ function managedHistory() {
 }
 
 describe("managed turn boundaries", () => {
+  it.each(["unset", "off"])(
+    "runs three lightweight worktree sends without capture, admission or retirement (%s)",
+    async (setting) => {
+      const { store, id, provider, turns, directory } = await setup();
+      const original = await store.session(id);
+      await store.save(
+        {
+          ...original,
+          revision: original.revision + 1,
+          status: "running",
+          runId: "old-stuck-turn",
+          session: { ...original.session, workspaceId: "managed", worktreeCwd: directory },
+        },
+        { type: "test.stuck-managed-turn" },
+      );
+      const { adapter } = managedHistory();
+      if (setting === "unset") delete adapter.exactGitRewindEnabled;
+      else adapter.exactGitRewindEnabled = async () => false;
+      adapter.workspaceForSession = vi.fn(async () => ({
+        workspaceId: "managed",
+        path: directory,
+      }));
+      vi.mocked(adapter.assertWritable).mockRejectedValue(new Error("Old native writer is active"));
+      vi.mocked(adapter.history.list).mockRejectedValue(new Error("Old turn has no after capture"));
+      adapter.startActivity = vi.fn(async () => {
+        throw new Error("Another workspace writer is active");
+      });
+      const restarted = new HostEngine(store, { codex: provider }, undefined, adapter);
+      cleanups.push(() => restarted.close());
+      await restarted.ready;
+      expect((await store.session(id)).status).toBe("interrupted");
+      const legacyBegin = vi.spyOn(restarted.checkpoints, "begin");
+      const legacyFinish = vi.spyOn(restarted.checkpoints, "finish");
+      for (let turn = 0; turn < 3; turn += 1) {
+        expect(await restarted.busyReason(id)).toBeUndefined();
+        const receipt = await restarted.command({
+          type: "send",
+          commandId: `light-send-${turn}`,
+          sessionId: id,
+          text: `Send ${turn}`,
+        });
+        await vi.waitFor(() => expect(turns).toHaveLength(turn + 1));
+        expect(turns[turn].input.cwd).toBe(directory);
+        turns[turn].finish();
+        await restarted.waitForRun(id, receipt.runId);
+        expect((await store.session(id)).status).toBe("idle");
+      }
+      expect(adapter.workspaceForSession).toHaveBeenCalled();
+      expect(adapter.assertWritable).not.toHaveBeenCalled();
+      expect(adapter.startActivity).not.toHaveBeenCalled();
+      expect(adapter.history.begin).not.toHaveBeenCalled();
+      expect(adapter.history.end).not.toHaveBeenCalled();
+      expect(adapter.history.list).not.toHaveBeenCalled();
+      expect(legacyBegin).not.toHaveBeenCalled();
+      expect(legacyFinish).not.toHaveBeenCalled();
+      expect(provider.stop).not.toHaveBeenCalled();
+      await restarted.close();
+      expect(provider.stop).toHaveBeenCalledExactlyOnceWith(id);
+    },
+  );
+
+  it.each([
+    ["codex", true],
+    ["codex", false],
+    ["opencode", true],
+    ["opencode", false],
+  ] as const)(
+    "rewinds only the lightweight transcript without provider file revert (%s, metadata %s)",
+    async (harness, hasMetadata) => {
+      const { adapter } = managedHistory();
+      adapter.exactGitRewindEnabled = () => false;
+      const { engine, store, id, provider, directory } = await setup(harness, {}, adapter);
+      const editedFile = join(directory, "retain-edits.txt");
+      writeFileSync(editedFile, "Keep the current file edits");
+      const original = await store.session(id);
+      await store.save(
+        {
+          ...original,
+          revision: original.revision + 1,
+          session: {
+            ...original.session,
+            workspaceId: hasMetadata ? "managed" : undefined,
+            providerSessionId: "old-provider",
+            blocks: [
+              { id: "keep-user", role: "user", text: "keep" },
+              { id: "remove-user", role: "user", text: "edit me", providerTurnId: "native-turn" },
+              { id: "remove-assistant", role: "assistant", text: "old answer" },
+            ],
+          },
+        },
+        { type: "test.lightweight-rewind" },
+      );
+      provider.rewind = vi.fn(async () => {
+        writeFileSync(editedFile, "Provider reverted the file");
+      });
+      await engine.rewind({
+        type: "rewind",
+        commandId: "lightweight-rewind",
+        sessionId: id,
+        blockId: "remove-user",
+      });
+      expect((await store.session(id)).session.blocks.map((block) => block.id)).toEqual([
+        "keep-user",
+      ]);
+      expect(provider.rewind).not.toHaveBeenCalled();
+      const rewound = (await store.session(id)).session;
+      expect(rewound.providerSessionId).toBeUndefined();
+      expect(rewound.pendingContextReplay).toContain("keep");
+      expect(readFileSync(editedFile, "utf8")).toBe("Keep the current file edits");
+      expect(adapter.assertWritable).not.toHaveBeenCalled();
+    },
+  );
+
   it("keeps unavailable managed sessions unchanged during startup while recovering legacy sessions", async () => {
     const { store, engine, id, provider, project } = await setup();
     const legacy = await engine.command({

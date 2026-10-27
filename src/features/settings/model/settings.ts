@@ -685,6 +685,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "live running sessions rail card",
   },
   {
+    id: "exact-git-rewind",
+    section: "workspace",
+    get label() {
+      return t("Exact Git rewind (experimental)");
+    },
+    keywords: "experimental exact git rewind snapshot managed worktree host capture turn",
+  },
+  {
     id: "file-tabs",
     section: "workspace",
     get label() {

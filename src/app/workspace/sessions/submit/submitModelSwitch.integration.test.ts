@@ -27,6 +27,10 @@ import {
 import { sanitizeSessionForPersist } from "../../../../features/sessions/data/sessionStore";
 import { needsSessionWorkspace } from "../../../../features/workspaces/model/sessionWorkspace";
 import { failedTurnRetry } from "../../../../features/sessions/ui/RetryFailedTurn";
+import { getExactGitRewindEnabled } from "../../../../features/settings/model/exactGitRewind";
+vi.mock("../../../../features/settings/model/exactGitRewind", () => ({
+  getExactGitRewindEnabled: vi.fn(async () => false),
+}));
 import {
   getWorkspaceCapabilities,
   workspaceRequest,
@@ -161,6 +165,7 @@ function initialSession(): Session {
 }
 
 beforeEach(async () => {
+  vi.mocked(getExactGitRewindEnabled).mockReset().mockResolvedValue(false);
   sends.length = 0;
   stoppedSessions.length = 0;
   events = new Map();
@@ -289,6 +294,7 @@ it("retries a transient first-send preparation failure in Current after persiste
 });
 
 it("admits a managed native provider only after its accepted boundary is durable, and ends the same run", async () => {
+  vi.mocked(getExactGitRewindEnabled).mockResolvedValue(true);
   const original = {
     ...getSessions()[0],
     workspaceId: "managed",
@@ -371,7 +377,32 @@ it("continues a tiny-window send with an informational saved-history notice", as
   );
 });
 
+it("runs three worktree sends without managed turn calls or forced managed retirement when exact rewind is OFF", async () => {
+  resetSessionsStore([
+    {
+      ...getSessions()[0],
+      harness: "antigravity",
+      model: "antigravity:gemini-3.8-flash-high",
+      workspaceId: "managed",
+      worktreeCwd: "/owned/worktree",
+    },
+  ]);
+  native.invoke.mockImplementation(async (command: string) => {
+    if (command === "managed_turn_begin" || command === "managed_turn_end")
+      throw new Error("Stuck managed turn must not be consulted");
+    return null;
+  });
+  for (let turn = 0; turn < 3; turn++) await submit("completed", {}, `turn ${turn}`);
+  expect(sends).toHaveLength(3);
+  expect(sends.every(({ input }) => input.cwd === "/owned/worktree")).toBe(true);
+  expect(native.invoke.mock.calls.some(([command]) => command.startsWith("managed_turn_"))).toBe(
+    false,
+  );
+  expect(stoppedSessions).toHaveLength(0);
+});
+
 it("does not invoke a managed provider when native admission has an unknown outcome", async () => {
+  vi.mocked(getExactGitRewindEnabled).mockResolvedValue(true);
   resetSessionsStore([
     { ...getSessions()[0], workspaceId: "managed", worktreeCwd: "/owned/worktree" },
   ]);

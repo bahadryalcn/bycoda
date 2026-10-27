@@ -141,6 +141,19 @@ materialization pauses; it does not discard dirty work or unmerged branches.
 
 ## Rewind and Undo
 
+Worktree sessions normally run directly in their own folder and branch, without
+per-turn Git snapshots, managed-turn admission locks or exact-capture provider retirement.
+**Settings → Workspace → Exact Git rewind (experimental)** is off by default.
+The setting applies to new turns on this computer's execution Host and is shared
+by desktop-native and Host-owned sessions. It is persisted on that Host in
+`managed-workspaces/exact-git-rewind.json`, outside project checkouts. Remote
+Hosts retain their own policy. Unavailable policy disables the experimental
+path so ordinary work can continue; Settings shows a retryable read error.
+With the setting off, old unfinished exact-rewind turns do not block new turns,
+and the Host does not advertise `sessions.git-rewind*` capabilities.
+The exact-rewind workflow below applies only when the experimental setting is on.
+Codex's separate idle writer-lock release for cross-device handoff remains in effect.
+
 Managed Git rewind restores the selected accepted user boundary's conversation,
 branch HEAD, index and working copy together. Preview shows affected commits and
 paths and capture blockers. Unsupported or incomplete capture cannot promise an
