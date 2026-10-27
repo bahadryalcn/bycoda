@@ -8,9 +8,41 @@ import {
   acceptanceProjectName,
   acceptanceStage,
   assertWithin,
+  assertRejectedNativeAdmission,
   validateAcceptanceRun,
 } from "./acceptance-native.mjs";
 import { nativeDevDesktopDataPath } from "../../host/workspace-bootstrap.ts";
+
+test("requires the Host writer rejection and exact new reservation before legacy recovery seeding", () => {
+  const expected = {
+    sessionId: "session",
+    workspaceId: "workspace",
+    userBlockId: "new-user",
+    runId: "new-run",
+  };
+  const writerError =
+    "Host rejected request: Another workspace writer or unknown activity is still active";
+  assert.doesNotThrow(() => assertRejectedNativeAdmission(writerError, expected, expected));
+  assert.throws(() =>
+    assertRejectedNativeAdmission(
+      "Conversation changed before managed turn capture",
+      expected,
+      expected,
+    ),
+  );
+  assert.throws(() =>
+    assertRejectedNativeAdmission(
+      writerError,
+      { ...expected, userBlockId: "completed-user" },
+      expected,
+    ),
+  );
+  assert.throws(() =>
+    assertRejectedNativeAdmission(writerError, { ...expected, runId: "completed-run" }, expected),
+  );
+  assert.throws(() => assertRejectedNativeAdmission(null, expected, expected));
+  assert.throws(() => assertRejectedNativeAdmission(writerError, null, expected));
+});
 
 test("rejects traversal and invalid scenario selectors before starting any native work", () => {
   for (const id of ["../owner", "..", "q1/other", "q1\\other"])

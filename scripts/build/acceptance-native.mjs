@@ -1098,6 +1098,118 @@ async function waitForActiveNativeProcess(context, sessionId, userBlockId) {
   );
 }
 
+export function assertRejectedNativeAdmission(error, request, expected) {
+  assert.match(
+    error ?? "",
+    /Another workspace writer or unknown activity is still active|Workspace has another writer or unsettled native buffers/,
+    "Native begin did not reach the expected Host dirty-writer rejection",
+  );
+  assert(request, "Rejected begin did not retain a native reservation");
+  for (const key of ["sessionId", "workspaceId", "userBlockId", "runId"])
+    assert.equal(request[key], expected[key], `Rejected native reservation has a different ${key}`);
+}
+
+async function nativeDirtyBufferOwner(context, path, current) {
+  const ownerId = `tools-acceptance-${crypto.randomUUID()}`;
+  let page;
+  const release = async () => {
+    try {
+      if (page && !page.isClosed())
+        await page.evaluate(() =>
+          window.__TAURI_INTERNALS__.invoke("managed_workspace_buffers", { buffers: [] }),
+        );
+    } finally {
+      try {
+        await context.page.evaluate(async (label) => {
+          const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+          const window = await WebviewWindow.getByLabel(label);
+          if (window) await window.destroy();
+        }, ownerId);
+      } finally {
+        // Remove only this synthetic owner's DEV row after clearing/closing it.
+        // Otherwise a closed window's old clean report becomes unknown after45s.
+        const { DatabaseSync } = await import("node:sqlite");
+        const database = new DatabaseSync(join(context.run.desktopDataPath, "bycoda.db"));
+        let mainBuffers;
+        try {
+          database.prepare("DELETE FROM native_workspace_buffers WHERE owner_id=?").run(ownerId);
+          const main = database
+            .prepare("SELECT snapshot_json FROM native_workspace_buffers WHERE owner_id='main'")
+            .get();
+          mainBuffers = main ? JSON.parse(main.snapshot_json) : [];
+        } finally {
+          database.close();
+        }
+        // Preserve the latest main snapshot, and acknowledge the complete owner list.
+        await context.page.evaluate(
+          (buffers) => window.__TAURI_INTERNALS__.invoke("managed_workspace_buffers", { buffers }),
+          mainBuffers,
+        );
+      }
+    }
+  };
+  try {
+    await context.page.evaluate(
+      async ({ ownerId, current }) => {
+        const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+        // The existing hostTools role never loads App/useManagedWorkspaceBuffers.
+        // Its own authenticated dirty row cannot be overwritten by main's clean heartbeat.
+        const payload = {
+          cwd: current.worktreeCwd,
+          sessionId: current.id,
+          title: "Acceptance buffer owner",
+          onlyTab: "logs",
+        };
+        const view = new WebviewWindow(ownerId, {
+          url: `index.html?acceptanceBufferOwner=${encodeURIComponent(ownerId)}&hostTools=${encodeURIComponent(JSON.stringify(payload))}`,
+          title: "bycoda isolated acceptance buffer owner",
+          visible: false,
+          focus: false,
+          skipTaskbar: true,
+          width: 640,
+          height: 480,
+        });
+        await new Promise((resolve, reject) => {
+          void view.once("tauri://created", resolve).catch(reject);
+          void view
+            .once("tauri://error", (event) => reject(new Error(String(event.payload))))
+            .catch(reject);
+        });
+      },
+      { ownerId, current: { id: current.id, worktreeCwd: current.worktreeCwd } },
+    );
+    page = await waitUntil(
+      () =>
+        context.browser
+          .contexts()
+          .flatMap((entry) => entry.pages())
+          .find((entry) => entry.url().includes(`acceptanceBufferOwner=${ownerId}`)),
+      "The owned native buffer window did not attach",
+      15000,
+    );
+    instrumentAcceptancePage(context, page);
+    await waitUntil(
+      async () =>
+        (await page.evaluate(() => window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label)) ===
+        ownerId,
+      "The native buffer window identity did not become ready",
+      15000,
+    );
+    await verifyNativeIdentity(page, context.identity);
+    await page.evaluate(
+      (path) =>
+        window.__TAURI_INTERNALS__.invoke("managed_workspace_buffers", {
+          buffers: [{ path, dirty: true }],
+        }),
+      path,
+    );
+    return { ownerId, release };
+  } catch (error) {
+    await release();
+    throw error;
+  }
+}
+
 async function scenario3(context) {
   await newSession(context, "worktree");
   const screenshots = [];
@@ -1110,38 +1222,15 @@ async function scenario3(context) {
   const { DatabaseSync } = await import("node:sqlite");
   const databasePath = join(context.run.desktopDataPath, "bycoda.db");
   assert(existsSync(databasePath), "Isolated desktop database was not found");
-  const bufferDatabase = new DatabaseSync(databasePath);
-  let originalBuffers;
-  try {
-    const row = bufferDatabase
-      .prepare("SELECT snapshot_json FROM native_workspace_buffers WHERE owner_id='main'")
-      .get();
-    originalBuffers = row ? JSON.parse(row.snapshot_json) : [];
-  } finally {
-    bufferDatabase.close();
-  }
   const dirtyPath = join(current.worktreeCwd, "counter.txt");
   assertWithin(context.scratch, dirtyPath, "simulated dirty buffer");
-  const buffers = new Map(originalBuffers.map((entry) => [entry.path, entry]));
-  buffers.set(dirtyPath, { path: dirtyPath, dirty: true });
-  const publishBuffers = (snapshot) =>
-    context.page.evaluate(
-      async (buffers) =>
-        window.__TAURI_INTERNALS__.invoke("managed_workspace_buffers", { buffers }),
-      snapshot,
-    );
+  const dirtyOwner = await nativeDirtyBufferOwner(context, dirtyPath, current);
   let rejectedRequest;
   try {
-    await publishBuffers([...buffers.values()]);
-    context.steps.push({
-      step: "Publish a simulated dirty editor buffer through the real native buffer bridge",
-      actual: { path: dirtyPath, dirty: true },
-    });
-    const rejected = await context.page.evaluate(async (id) => {
+    const rejectedBoundary = await context.page.evaluate(async (id) => {
       const store = await import("/src/features/sessions/model/sessionsStore.ts");
-      const { upsertSession } = await import("/src/features/sessions/data/sessionStore.ts");
-      const { desktopInstanceId } =
-        await import("/src/features/connections/model/desktopInstance.ts");
+      const { upsertSession, flushSessionWrites } =
+        await import("/src/features/sessions/data/sessionStore.ts");
       const original = store.sessionsRef.current.find((entry) => entry.id === id);
       const user = {
         id: crypto.randomUUID(),
@@ -1150,24 +1239,59 @@ async function scenario3(context) {
         startedAt: Date.now(),
       };
       const next = { ...original, blocks: [...original.blocks, user] };
-      if (!(await upsertSession(next))) throw new Error("Rejected-boundary setup was not saved");
       store.setSessions((entries) => entries.map((entry) => (entry.id === id ? next : entry)));
+      await flushSessionWrites();
+      if (!(await upsertSession(next))) throw new Error("Rejected-boundary setup was not saved");
+      await flushSessionWrites();
+      return {
+        sessionId: id,
+        workspaceId: original.workspaceId,
+        userBlockId: user.id,
+        runId: crypto.randomUUID(),
+      };
+    }, current.id);
+    await waitUntil(
+      () => {
+        const check = new DatabaseSync(databasePath);
+        try {
+          return Boolean(
+            check
+              .prepare(
+                "SELECT 1 FROM session_blocks b JOIN session_block_state s ON s.session_id=b.session_id AND s.length>=0 WHERE b.session_id=? AND block_id=? AND json_extract(block_json,'$.role')='user' AND COALESCE(json_extract(block_json,'$.draft'),0)=0",
+              )
+              .get(current.id, rejectedBoundary.userBlockId),
+          );
+        } finally {
+          check.close();
+        }
+      },
+      "The exact rejected-admission user boundary did not become durable",
+      15000,
+    );
+    const rejected = await context.page.evaluate(async (boundary) => {
+      const { desktopInstanceId } =
+        await import("/src/features/connections/model/desktopInstance.ts");
       try {
         await window.__TAURI_INTERNALS__.invoke("managed_turn_begin", {
-          sessionId: id,
-          userBlockId: user.id,
-          runId: crypto.randomUUID(),
+          sessionId: boundary.sessionId,
+          userBlockId: boundary.userBlockId,
+          runId: boundary.runId,
           clientId: desktopInstanceId(),
         });
         return { error: null };
       } catch (error) {
-        return { error: String(error), userBlockId: user.id };
+        return { error: String(error) };
       }
-    }, current.id);
-    assert(rejected.error, "Dirty native editor state did not reject native begin");
+    }, rejectedBoundary);
     context.steps.push({
-      step: "Attempt native begin with an unsettled editor buffer",
-      actual: rejected.error,
+      step: "Publish a simulated dirty editor buffer and attempt native begin after the exact user boundary is durable",
+      actual: {
+        path: dirtyPath,
+        dirty: true,
+        bufferOwnerId: dirtyOwner.ownerId,
+        ...rejectedBoundary,
+        error: rejected.error,
+      },
     });
     const database = new DatabaseSync(databasePath);
     try {
@@ -1177,9 +1301,14 @@ async function scenario3(context) {
     } finally {
       database.close();
     }
+    assertRejectedNativeAdmission(
+      rejected.error,
+      rejectedRequest ? JSON.parse(rejectedRequest) : null,
+      rejectedBoundary,
+    );
     screenshots.push(...(await context.capture("03-rejected-begin")));
   } finally {
-    await publishBuffers(originalBuffers);
+    await dirtyOwner.release();
   }
   await sendPrompt(context, "Reply RECOVERED without editing files.");
   await sendPrompt(
