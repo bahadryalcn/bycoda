@@ -563,6 +563,10 @@ export function createManagedWorkspaceRegistry(
         await settled(id);
         if (current.directoryState !== "present")
           throw new Error("Workspace directory is not available");
+        // A duplicate idle/recovery report is not new workspace activity. Keep
+        // owner-reviewed revisions stable when the activity gate proves idle;
+        // real state transitions and unknown activity still invalidate them.
+        if (active === false && current.state === "idle") return;
         await store.updateManagedWorkspace(
           {
             ...current,

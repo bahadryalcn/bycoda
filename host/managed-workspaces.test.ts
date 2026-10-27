@@ -621,6 +621,54 @@ it("tracks meaningful activity, rejects active lifecycle transitions and require
   ).rejects.toThrow("reservation");
 });
 
+it("keeps an idle approval revision stable across duplicate idle activity reports", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  const registry = createManagedWorkspaceRegistry(f.store, f.policy, {
+    isActive: async () => false,
+  });
+  const before = (await registry.get({ workspaceId: workspace.id }))!;
+  expect(before.state).toBe("idle");
+  await registry.touchOwnerActivity(workspace.owner);
+  await registry.touchActivity(workspace.id);
+  expect(await registry.get({ workspaceId: workspace.id })).toEqual(before);
+  // A late idle heartbeat must not invalidate an owner-approved lifecycle action.
+  const finished = await registry.finish({
+    workspaceId: workspace.id,
+    expectedRevision: before.revision,
+    idempotencyKey: "finish-after-idle-reports",
+  });
+  expect(finished.state).toBe("finished");
+});
+
+it("invalidates an idle approval revision after meaningful activity even when idle again", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  let active = false;
+  const registry = createManagedWorkspaceRegistry(f.store, f.policy, {
+    isActive: async () => active,
+  });
+  const before = (await registry.get({ workspaceId: workspace.id }))!;
+  active = true;
+  await registry.touchActivity(workspace.id);
+  const running = (await registry.get({ workspaceId: workspace.id }))!;
+  expect(running.state).toBe("active");
+  expect(running.revision).toBeGreaterThan(before.revision);
+  active = false;
+  await registry.touchActivity(workspace.id);
+  const settled = (await registry.get({ workspaceId: workspace.id }))!;
+  expect(settled.state).toBe("idle");
+  expect(settled.revision).toBeGreaterThan(running.revision);
+  expect(settled.lastActivityAt).toBeGreaterThan(running.lastActivityAt);
+  await expect(
+    registry.finish({
+      workspaceId: workspace.id,
+      expectedRevision: before.revision,
+      idempotencyKey: "finish-after-real-activity",
+    }),
+  ).rejects.toThrow("revision changed");
+});
+
 it("uses fresh activity evidence to finish a workspace whose cached state is still active", async () => {
   const f = await fixture();
   const { workspace } = await f.registry.prepare(f.request);
