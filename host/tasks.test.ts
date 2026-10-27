@@ -205,11 +205,11 @@ async function setup(verifyTimeoutMs?: number) {
     answer: vi.fn(),
   };
   const engine = new HostEngine(store, { claude: provider });
-  // Stub legacy per-file checkpoints for direct-mode scenarios. Managed runs
-  // below attach real turn-history capture through writerWorkspaces.
-  // Direct held-checkpoint tests replace these stubs with their barriers.
-  vi.spyOn(engine.checkpoints, "begin").mockResolvedValue(undefined);
-  vi.spyOn(engine.checkpoints, "finish").mockResolvedValue(undefined);
+  // Scheduler fixtures use the default lightweight file-history lifecycle.
+  // Held-checkpoint tests replace these stubs with their barriers; file-history
+  // behavior itself is exercised by session-file-revert.test.ts.
+  vi.spyOn(engine.checkpoints, "beginFilesTurn").mockResolvedValue(undefined);
+  vi.spyOn(engine.checkpoints, "finishFilesTurn").mockResolvedValue(undefined);
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
   const workspaces = writerWorkspaces(directory, async (id) => (await store.project(id)).cwd);
   await workspaces.attachEngine(engine);
@@ -1071,7 +1071,7 @@ describe("explicit task workspaces and owner controls", () => {
     const captured = new Promise<void>((resolve) => {
       release = resolve;
     });
-    vi.spyOn(engine.checkpoints, "begin").mockImplementation(async () => {
+    vi.spyOn(engine.checkpoints, "beginFilesTurn").mockImplementation(async () => {
       entered();
       await captured;
     });

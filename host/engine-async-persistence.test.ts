@@ -299,7 +299,7 @@ it("re-reads accepted edits after recovery checkpoints and joins started recover
       releaseSettled = resolve;
     });
     let checkpoints = 0;
-    vi.spyOn(engine.checkpoints, "finish").mockImplementation(async () => {
+    vi.spyOn(engine.checkpoints, "finishFilesTurn").mockImplementation(async () => {
       if (++checkpoints === 2) {
         checkpointStarted();
         await checkpointHold;
