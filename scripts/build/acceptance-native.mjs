@@ -209,6 +209,33 @@ export async function captureMatrix(context, name) {
   return captures;
 }
 
+/** Query-backed screens intentionally pause while the native window is unfocused. */
+export async function focusNativeWindow(context) {
+  await context.page.bringToFront();
+  await context.page.evaluate(async () => {
+    const { getCurrentWindow } = await import("/node_modules/@tauri-apps/api/window.js");
+    const native = getCurrentWindow();
+    await native.unminimize();
+    await native.show();
+    await native.setFocus();
+  });
+  await waitUntil(
+    async () =>
+      context.page.evaluate(async () => {
+        const state = await import("/src/platform/tauri/windowState.ts");
+        await state.refreshWindowState();
+        const current = state.getWindowState();
+        return current?.visible && !current.minimized && current.focused;
+      }),
+    "The isolated native window could not receive focus for live UI queries",
+    15000,
+  );
+  context.steps.push({
+    step: "Focus the verified development window",
+    actual: "Native window is visible, restored and focused; live query gates are open",
+  });
+}
+
 export async function controlNative(context, action) {
   const path = context.run.acceptanceControlPath;
   if (!path)
@@ -1038,12 +1065,25 @@ async function scenario6(context) {
 
 async function scenario7(context) {
   await prepareProject(context);
+  await context.page.keyboard.press("Escape");
+  await focusNativeWindow(context);
   const screenshots = [];
   await click(context, "Tasks");
+  await waitUntil(
+    async () => context.page.locator('[data-remote-data-state="ready"]').count() > 0,
+    "Task board did not discover the connected development Host",
+    45000,
+  );
   const taskNames = [];
   for (const explicit of [false, true]) {
     await click(context, "New task");
     const form = context.page.getByRole("form", { name: "New task", exact: true });
+    const machine = form.getByRole("button", { name: /^Machine:/ });
+    await machine.waitFor();
+    if (!/This computer/.test(await machine.innerText())) {
+      await machine.click();
+      await context.page.getByRole("option", { name: "This computer", exact: true }).click();
+    }
     const name = `Acceptance ${context.options.id} ${explicit ? "worktree" : "current"} task ${Date.now()}`;
     taskNames.push(name);
     await form.getByRole("textbox", { name: "Task title", exact: true }).fill(name);
@@ -1214,6 +1254,13 @@ async function scenario8(context) {
     await waitUntil(
       async () => (await policyState()).policy.resolved.policy.defaultMode === "worktree",
       "Workspace policy did not save",
+    );
+    await waitUntil(
+      async () =>
+        (await button(context, "Save workspace policy")).isDisabled() &&
+        (await (await button(context, "Save workspace policy")).getAttribute("aria-busy")) !==
+          "true",
+      "Workspace policy save control did not settle",
     );
     screenshots.push(...(await context.capture("08-worktree-policy")));
     await context.page.keyboard.press("Escape");
