@@ -1359,6 +1359,7 @@ mod tests {
             std::fs::write(repo.join("a.txt"), "base\n").unwrap();
             if git {
                 git_checked(&repo, &["init"]).unwrap();
+                git_checked(&repo, &["config", "core.autocrlf", "false"]).unwrap();
                 git_checked(&repo, &["config", "user.email", "fixture@example.invalid"]).unwrap();
                 git_checked(&repo, &["config", "user.name", "Fixture"]).unwrap();
                 git_checked(&repo, &["add", "."]).unwrap();
@@ -2060,38 +2061,48 @@ mod tests {
 
     #[test]
     fn checkpoint_files_revert_worktree_keeps_commits_and_index() {
-        let mut f = Fixture::new(true);
-        let worktree = f.dir.join("worktree");
-        git_checked(
-            &f.repo,
-            &[
-                "worktree",
-                "add",
-                "-b",
-                "session",
-                &worktree.to_string_lossy(),
-            ],
-        )
-        .unwrap();
-        f.repo = worktree;
-        f.begin("session", "one");
-        f.write("a.txt", "committed session edit\n");
-        git_checked(&f.repo, &["add", "a.txt"]).unwrap();
-        git_checked(&f.repo, &["commit", "-m", "session edit"]).unwrap();
-        f.finish("session", "one");
-        let head = git_output(&f.repo, &["rev-parse", "HEAD"]).unwrap();
-        let index = git_output(&f.repo, &["ls-files", "--stage"]).unwrap();
-        let result = f.store.files_revert("session", "message-one").unwrap();
-        assert_eq!(result.reverted, ["a.txt"]);
-        assert_eq!(f.read("a.txt"), "base\n");
-        assert_eq!(head, git_output(&f.repo, &["rev-parse", "HEAD"]).unwrap());
-        assert_eq!(
-            index,
-            git_output(&f.repo, &["ls-files", "--stage"]).unwrap()
-        );
-        assert!(!git_output(&f.repo, &["diff", "--name-only"])
-            .unwrap()
-            .is_empty());
+        for autocrlf in ["false", "true"] {
+            let mut f = Fixture::new(true);
+            git_checked(&f.repo, &["config", "core.autocrlf", autocrlf]).unwrap();
+            let worktree = f.dir.join("worktree");
+            git_checked(
+                &f.repo,
+                &[
+                    "worktree",
+                    "add",
+                    "-b",
+                    "session",
+                    &worktree.to_string_lossy(),
+                ],
+            )
+            .unwrap();
+            f.repo = worktree;
+            // Checkpoint restoration preserves checkout bytes, including Git's CRLF conversion.
+            let expected = if autocrlf == "true" {
+                "base\r\n"
+            } else {
+                "base\n"
+            };
+            assert_eq!(f.read("a.txt"), expected);
+            f.begin("session", "one");
+            f.write("a.txt", "committed session edit\n");
+            git_checked(&f.repo, &["add", "a.txt"]).unwrap();
+            git_checked(&f.repo, &["commit", "-m", "session edit"]).unwrap();
+            f.finish("session", "one");
+            let head = git_output(&f.repo, &["rev-parse", "HEAD"]).unwrap();
+            let index = git_output(&f.repo, &["ls-files", "--stage"]).unwrap();
+            let result = f.store.files_revert("session", "message-one").unwrap();
+            assert_eq!(result.reverted, ["a.txt"]);
+            assert_eq!(f.read("a.txt"), expected);
+            assert_eq!(head, git_output(&f.repo, &["rev-parse", "HEAD"]).unwrap());
+            assert_eq!(
+                index,
+                git_output(&f.repo, &["ls-files", "--stage"]).unwrap()
+            );
+            assert!(!git_output(&f.repo, &["diff", "--name-only"])
+                .unwrap()
+                .is_empty());
+        }
     }
 
     #[test]
