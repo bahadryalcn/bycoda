@@ -44,7 +44,7 @@ it("runs isolated host sessions through commits, rewind/Undo, owner delivery and
   git(target, "config", "user.email", "managed-e2e@example.test");
   git(target, "config", "commit.gpgsign", "false");
   git(target, "config", "core.autocrlf", "false");
-  writeFileSync(join(target, ".gitignore"), "/node_modules/\n/temp/\n");
+  writeFileSync(join(target, ".gitignore"), "/node_modules\n/temp/\n");
   writeFileSync(join(target, "first.txt"), "base first\n");
   writeFileSync(join(target, "second.txt"), "base second\n");
   writeFileSync(join(target, "owner.txt"), "owner base\n");

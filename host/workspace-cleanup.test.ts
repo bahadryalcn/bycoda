@@ -33,11 +33,16 @@ afterEach(() => {
 }, 120_000);
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8", windowsHide: true }).trim();
-async function setup() {
+async function setup(linkedAncestor = false) {
   const root = mkdtempSync(join(tmpdir(), "workspace-cleanup-"));
   roots.push(root);
-  const project = join(root, "project"),
-    managedRoot = join(root, "worktrees"),
+  const parent = join(root, "parent");
+  mkdirSync(parent);
+  const ancestor = linkedAncestor ? join(root, "alias") : parent;
+  if (linkedAncestor)
+    symlinkSync(parent, ancestor, process.platform === "win32" ? "junction" : "dir");
+  const project = join(ancestor, "project"),
+    managedRoot = join(ancestor, "worktrees"),
     path = join(managedRoot, "wt-test"),
     archiveRoot = join(root, "recovery");
   mkdirSync(project);
@@ -46,7 +51,7 @@ async function setup() {
   git(project, "checkout", "-q", "-b", "main");
   git(project, "config", "user.name", "Test");
   git(project, "config", "user.email", "test@example.test");
-  writeFileSync(join(project, ".gitignore"), "/temp/\n/node_modules/\n");
+  writeFileSync(join(project, ".gitignore"), "/temp/\n/node_modules\n");
   writeFileSync(join(project, "source.txt"), "initial");
   git(project, "add", ".");
   git(project, "commit", "-q", "-m", "initial");
@@ -191,6 +196,28 @@ it("detaches a node_modules junction before Git removal and preserves the outsid
   ).toBe("evidence");
   expect(receipt.directoryState).toBe("removed");
   expect([...s.operations.values()].map((op) => op.phase)).toEqual(["complete"]);
+}, 120_000);
+
+it("cleans a registered workspace below a linked ancestor and detaches only its dependency link", async () => {
+  const s = await setup(true);
+  const outside = join(s.root, "outside");
+  mkdirSync(outside);
+  writeFileSync(join(outside, "sentinel.txt"), "outside survives");
+  symlinkSync(
+    outside,
+    join(s.path, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const head = git(s.path, "rev-parse", "HEAD");
+  const ref = "refs/bycoda/rewinds/linked-ancestor/rescue-head";
+  git(s.project, "update-ref", ref, head);
+  expect((await s.plan()).blockers).toEqual([]);
+  const receipt = await s.apply({ kind: "retentionScheduler" });
+  expect(receipt.directoryState).toBe("removed");
+  expect(existsSync(s.path)).toBe(false);
+  expect(readFileSync(join(outside, "sentinel.txt"), "utf8")).toBe("outside survives");
+  expect(git(s.project, "rev-parse", s.workspace.branchRef)).toBe(head);
+  expect(git(s.project, "rev-parse", ref)).toBe(head);
 }, 120_000);
 
 it.skipIf(process.platform === "win32")(

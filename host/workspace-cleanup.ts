@@ -12,10 +12,15 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { execFileAsync, runGitText } from "../src/shared/lib/processExecution.node";
 import { withHostGitMutation } from "./git-mutations";
 import { invalidateHostWorktrees } from "./git-worktrees";
+import {
+  canonicalWorkspaceDirectorySync,
+  canonicalWorkspacePathSync,
+  workspacePathKey,
+} from "./workspace-paths";
 import type {
   ManagedWorkspace,
   WorkspaceActivity,
@@ -37,29 +42,36 @@ import type {
 import type { WorkspaceMutation, WorkspaceOperation } from "./workspace-contracts";
 
 export const sameWorkspacePath = (a: string, b: string) =>
-  process.platform === "win32"
-    ? resolve(a).toLowerCase() === resolve(b).toLowerCase()
-    : resolve(a) === resolve(b);
+  workspacePathKey(canonicalWorkspaceDirectorySync(a)) ===
+  workspacePathKey(canonicalWorkspaceDirectorySync(b));
 const exists = (path: string) => !!lstatSync(path, { throwIfNoEntry: false });
 const inside = (root: string, target: string) => {
   const rel = relative(root, target);
   return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 };
 
-/** Check every ancestor lexically, before any realpath or filesystem mutation. */
-export function assertNoFollowPath(root: string, target: string): void {
+/** Resolve aliases above the boundary, then inspect the boundary and its descendants without following links. */
+export function assertNoFollowPath(root: string, target: string): { root: string; target: string } {
   if (/(^|[\\/])\.{1,2}([\\/]|$)/.test(root) || /(^|[\\/])\.{1,2}([\\/]|$)/.test(target))
     throw new Error("Cleanup requires normalized absolute paths without dot segments.");
-  if (!isAbsolute(root) || !isAbsolute(target) || !inside(resolve(root), resolve(target)))
+  if (!isAbsolute(root) || !isAbsolute(target))
     throw new Error("Cleanup path is outside its absolute managed root.");
-  let current = parse(resolve(target)).root;
-  for (const part of relative(current, resolve(target)).split(sep)) {
-    current = join(current, part);
+  const boundary = join(canonicalWorkspaceDirectorySync(dirname(root)), basename(root));
+  // A registry row may already use the canonical spelling while its configured root still uses an alias.
+  const within = (base: string) =>
+    workspacePathKey(base) === workspacePathKey(target) || inside(base, resolve(target));
+  const base = within(resolve(root)) ? resolve(root) : boundary;
+  if (!within(base)) throw new Error("Cleanup path is outside its absolute managed root.");
+  const parts = relative(base, resolve(target)).split(sep).filter(Boolean);
+  let current = boundary;
+  for (const part of ["", ...parts]) {
+    if (part) current = join(current, part);
     const info = lstatSync(current, { throwIfNoEntry: false });
     if (info?.isSymbolicLink())
       throw new Error("Cleanup cannot follow a reparse point or symbolic link.");
     if (info && !info.isDirectory()) throw new Error("Cleanup path ancestor is not a directory.");
   }
+  return { root: boundary, target: current };
 }
 
 type Link = WorkspaceCleanupPlan["links"][number];
@@ -118,9 +130,9 @@ export async function inventoryWorkspaceLinks(target: string): Promise<Link[]> {
 
 /** Reject unknown reparse ancestors on Windows (Node only identifies known symlink tags). */
 export async function validateWorkspaceCleanupPaths(root: string, target: string) {
-  assertNoFollowPath(root, target);
-  if (process.platform !== "win32") return;
-  const script = `$ErrorActionPreference='Stop'; $p=$env:BYCODA_CLEANUP_SCAN; while($p) { if(Test-Path -LiteralPath $p) { $e=Get-Item -LiteralPath $p -Force; if(($e.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Unsafe reparse ancestor' } }; $p=[IO.Path]::GetDirectoryName($p) }`;
+  const paths = assertNoFollowPath(root, target);
+  if (process.platform !== "win32") return paths;
+  const script = `$ErrorActionPreference='Stop'; $p=$env:BYCODA_CLEANUP_SCAN; while($p) { if(Test-Path -LiteralPath $p) { $e=Get-Item -LiteralPath $p -Force; if(($e.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Unsafe reparse ancestor' } }; if($p -eq $env:BYCODA_CLEANUP_ROOT) { break }; $p=[IO.Path]::GetDirectoryName($p) }`;
   await execFileAsync(
     "powershell.exe",
     [
@@ -129,8 +141,13 @@ export async function validateWorkspaceCleanupPaths(root: string, target: string
       "-EncodedCommand",
       Buffer.from(script, "utf16le").toString("base64"),
     ],
-    { windowsHide: true, timeout: 30_000, env: { ...process.env, BYCODA_CLEANUP_SCAN: target } },
+    {
+      windowsHide: true,
+      timeout: 30_000,
+      env: { ...process.env, BYCODA_CLEANUP_SCAN: paths.target, BYCODA_CLEANUP_ROOT: paths.root },
+    },
   );
+  return paths;
 }
 
 const git = (cwd: string, args: string[]) =>
@@ -490,6 +507,17 @@ export interface GuardedRemovalInput {
 export async function guardedRemoveWorkspace(
   input: GuardedRemovalInput,
 ): Promise<{ archives: string[]; recoveryIds: string[] }> {
+  const paths = await validateWorkspaceCleanupPaths(input.managedRoot, input.path);
+  if (!inside(paths.root, paths.target))
+    throw new Error("Cleanup path is outside its absolute managed root.");
+  const archive = await validateWorkspaceCleanupPaths(input.archiveRoot, input.archiveRoot);
+  input = {
+    ...input,
+    projectCwd: canonicalWorkspacePathSync(input.projectCwd),
+    managedRoot: paths.root,
+    path: paths.target,
+    archiveRoot: archive.target,
+  };
   return withHostGitMutation(input.projectCwd, async () => {
     await validateWorkspaceCleanupPaths(input.managedRoot, input.path);
     const listed = await registrations(input.projectCwd);
@@ -517,7 +545,7 @@ export async function guardedRemoveWorkspace(
         throw new Error("Cleanup blocked: uncommitted changes (changes made after delivery).");
       beforeDetachment = state;
     }
-    await validateWorkspaceCleanupPaths(dirname(input.archiveRoot), input.archiveRoot);
+    await validateWorkspaceCleanupPaths(input.archiveRoot, input.archiveRoot);
     if (sameWorkspacePath(input.archiveRoot, input.path) || inside(input.path, input.archiveRoot))
       throw new Error("Recovery must be outside the workspace.");
     const archives: string[] = [];

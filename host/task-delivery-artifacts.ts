@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { lstat, readdir, realpath } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { runGitText } from "../src/shared/lib/processExecution.node";
 import { hashTaskArtifact } from "./task-artifacts";
 import { sameHostPath } from "./task-worktree-cleanup";
+import { canonicalWorkspaceEntry } from "./workspace-paths";
 
 const ROOT = "temp/local";
 const MAX_ENTRIES = 10_000;
@@ -124,11 +125,16 @@ export async function previewTaskDeliveryArtifacts(
   let bytes = 0;
   let files = 0;
   try {
-    const [sourcePath, targetPath] = await Promise.all([realpath(source), realpath(target)]);
-    if (sameHostPath(sourcePath, targetPath))
+    [source, target] = await Promise.all([
+      canonicalWorkspaceEntry(source),
+      canonicalWorkspaceEntry(target),
+    ]);
+    if (sameHostPath(source, target))
       throw new Error("Task artifacts require separate source and target checkouts.");
     const sourceRoot = join(source, ROOT);
     const root = await safeEntry(source, sourceRoot);
+    // Git's ignore matching differs for directories and POSIX links. Reject links before asking Git about ignores.
+    await safeEntry(target, join(target, ROOT));
     if (root) {
       if (!root.isDirectory()) throw new Error("Task artifact root must be a directory.");
       const walk = async (folder: string): Promise<void> => {

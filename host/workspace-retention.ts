@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { lstat, readdir, statfs } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { join } from "node:path";
 import {
   DEFAULT_WORKSPACE_POLICY,
   type ManagedWorkspace,
@@ -243,8 +243,8 @@ export async function measureWorkspaceStorage(
     let bytes = 0;
     const measured = new Set<string>();
     try {
-      for (const root of roots) {
-        await validateWorkspaceCleanupPaths(dirname(root), root);
+      for (const entry of roots) {
+        const { target: root } = await validateWorkspaceCleanupPaths(entry, entry);
         const links = await inventoryWorkspaceLinks(root);
         if (links.some((link) => link.kind === "unsafe")) return null;
         const linked = new Set(links.map((link) => link.path));
@@ -278,19 +278,14 @@ export async function measureWorkspaceStorage(
   let materializedBytes: number | null = null;
   let freeBytes: number | null = null;
   try {
-    await validateWorkspaceCleanupPaths(dirname(request.root), request.root);
-    const paths = request.workspaces
-      .filter((workspace) => workspace.directoryState !== "removed")
-      .map((workspace) => {
-        if (!isAbsolute(workspace.path)) throw new Error("Workspace path must be absolute");
-        const rel = relative(request.root, workspace.path);
-        if (!rel || isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`))
-          throw new Error("Workspace escaped root");
-        return workspace.path;
-      });
-    for (const path of paths) await validateWorkspaceCleanupPaths(request.root, path);
+    const { target: root } = await validateWorkspaceCleanupPaths(request.root, request.root);
+    const paths: string[] = [];
+    for (const workspace of request.workspaces) {
+      if (workspace.directoryState !== "removed")
+        paths.push((await validateWorkspaceCleanupPaths(request.root, workspace.path)).target);
+    }
     materializedBytes = await measure(paths);
-    const stats = await statfs(request.root, { bigint: true });
+    const stats = await statfs(root, { bigint: true });
     freeBytes = Number(stats.bavail * stats.bsize);
   } catch {
     /* Unknown is preserved; a failed read is never zero. */

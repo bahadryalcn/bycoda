@@ -4,9 +4,11 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmdirSync,
   rmSync,
   symlinkSync,
   truncateSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -145,10 +147,18 @@ describe("task delivery artifact approval", () => {
       mkdirSync(outside);
       writeFileSync(join(outside, "sentinel.txt"), "do not follow\n");
       if (side === "source") {
-        symlinkSync(outside, join(r.source, "temp/local/linked"), "junction");
+        symlinkSync(
+          outside,
+          join(r.source, "temp/local/linked"),
+          process.platform === "win32" ? "junction" : "dir",
+        );
       } else {
         mkdirSync(join(r.target, "temp"));
-        symlinkSync(outside, join(r.target, "temp/local"), "junction");
+        symlinkSync(
+          outside,
+          join(r.target, "temp/local"),
+          process.platform === "win32" ? "junction" : "dir",
+        );
       }
       const preview = await previewTaskDeliveryArtifacts(r.source, r.target);
       expect(preview.blockers.join(" ")).toContain("symbolic links or junctions");
@@ -157,6 +167,36 @@ describe("task delivery artifact approval", () => {
       expect(existsSync(join(outside, "task"))).toBe(false);
     },
   );
+
+  it("reviews and copies artifacts below a linked ancestor while refusing internal links", async () => {
+    const r = fixture();
+    const alias = join(r.root, "alias");
+    symlinkSync(r.root, alias, process.platform === "win32" ? "junction" : "dir");
+    // Remove the alias before recursive teardown, including on older Node versions.
+    try {
+      const source = join(alias, "source");
+      const target = join(alias, "target");
+      r.output(source, r.first);
+      const preview = await previewTaskDeliveryArtifacts(source, target);
+      expect(preview.blockers).toEqual([]);
+      await validateTaskDeliveryArtifacts(preview, source, target);
+      await transferTaskArtifacts(source, target, preview.paths, preview.hashes);
+      expect(readFileSync(join(r.target, r.first), "utf8")).toBe("approved output\n");
+      symlinkSync(
+        r.source,
+        join(target, "temp/local/linked"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      r.output(source, "temp/local/linked/sentinel.txt");
+      expect((await previewTaskDeliveryArtifacts(source, target)).blockers.join(" ")).toContain(
+        "symbolic links or junctions",
+      );
+      expect(existsSync(join(r.source, "sentinel.txt"))).toBe(false);
+    } finally {
+      if (process.platform === "win32") rmdirSync(alias);
+      else unlinkSync(alias);
+    }
+  });
 
   it.each(["source", "target"])("rejects tracked or non-ignored %s outputs", async (side) => {
     const r = fixture();

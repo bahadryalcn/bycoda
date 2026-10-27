@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve, relative, sep } from "node:path";
 import { sameHostPath } from "./task-worktree-cleanup";
 import { runGitText } from "../src/shared/lib/processExecution.node";
+import { canonicalWorkspaceEntry } from "./workspace-paths";
 
 const ROOT = "temp/local";
 export async function hashTaskArtifact(path: string, signal?: AbortSignal): Promise<string> {
@@ -32,6 +33,10 @@ export async function transferTaskArtifacts(
 ): Promise<string[]> {
   signal?.throwIfAborted();
   if (paths?.length === 0) return [];
+  [source, target] = await Promise.all([
+    canonicalWorkspaceEntry(source),
+    canonicalWorkspaceEntry(target),
+  ]);
   if (sameHostPath(source, target)) return [];
   const sourceRoot = join(source, ROOT);
   if (!(await exists(sourceRoot))) {

@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -270,42 +278,50 @@ describe("storage policy", () => {
     for (const root of roots.splice(0))
       rmSync(root, { recursive: true, force: true, maxRetries: 5 });
   });
-  it("measures real files, deduplicates hardlinks, reports caches separately and skips junction targets", async () => {
-    const root = mkdtempSync(join(tmpdir(), "workspace-storage-"));
-    roots.push(root);
-    const managed = join(root, "managed");
-    const first = join(managed, "first");
-    const second = join(managed, "second");
-    const cache = join(root, "cache");
-    const recovery = join(root, "recovery");
-    const sentinel = join(root, "sentinel");
-    for (const path of [first, second, cache, recovery, sentinel])
-      mkdirSync(path, { recursive: true });
-    writeFileSync(join(cache, "dependency"), "dependency");
-    linkSync(join(cache, "dependency"), join(first, "dependency"));
-    writeFileSync(join(first, "source"), "source");
-    linkSync(join(first, "source"), join(second, "source"));
-    writeFileSync(join(recovery, "rescue"), "rescue");
-    writeFileSync(join(sentinel, "outside"), "external source must not count");
-    symlinkSync(
-      sentinel,
-      join(first, "node_modules"),
-      process.platform === "win32" ? "junction" : "dir",
-    );
-    const status = await measureWorkspaceStorage({
-      root: managed,
-      workspaces: [
-        { path: first, directoryState: "present" },
-        { path: second, directoryState: "present" },
-      ],
-      sharedCacheRoots: [cache],
-      recoveryRoots: [recovery],
-    });
-    expect(status.materializedBytes).toBe(6);
-    expect(status.sharedCacheBytes).toBe(10);
-    expect(status.recoveryBytes).toBe(6);
-    expect(status.freeBytes).not.toBeNull();
-  });
+  it.each([false, true])(
+    "measures files and hardlinks without following dependency links (linked ancestor: %s)",
+    async (linkedAncestor) => {
+      const root = mkdtempSync(join(tmpdir(), "workspace-storage-"));
+      roots.push(root);
+      const actual = join(root, "actual");
+      mkdirSync(actual);
+      const ancestor = linkedAncestor ? join(root, "alias") : actual;
+      if (linkedAncestor)
+        symlinkSync(actual, ancestor, process.platform === "win32" ? "junction" : "dir");
+      const managed = join(ancestor, "managed");
+      const first = join(managed, "first");
+      const second = join(managed, "second");
+      const cache = join(root, "cache");
+      const recovery = join(root, "recovery");
+      const sentinel = join(root, "sentinel");
+      for (const path of [first, second, cache, recovery, sentinel])
+        mkdirSync(path, { recursive: true });
+      writeFileSync(join(cache, "dependency"), "dependency");
+      linkSync(join(cache, "dependency"), join(first, "dependency"));
+      writeFileSync(join(first, "source"), "source");
+      linkSync(join(first, "source"), join(second, "source"));
+      writeFileSync(join(recovery, "rescue"), "rescue");
+      writeFileSync(join(sentinel, "outside"), "external source must not count");
+      symlinkSync(
+        sentinel,
+        join(first, "node_modules"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      const status = await measureWorkspaceStorage({
+        root: managed,
+        workspaces: [
+          { path: realpathSync(first), directoryState: "present" },
+          { path: second, directoryState: "present" },
+        ],
+        sharedCacheRoots: [cache],
+        recoveryRoots: [recovery],
+      });
+      expect(status.materializedBytes).toBe(6);
+      expect(status.sharedCacheBytes).toBe(10);
+      expect(status.recoveryBytes).toBe(6);
+      expect(status.freeBytes).not.toBeNull();
+    },
+  );
   it("does not follow a linked root, count outside paths, or turn missing directories into zero", async () => {
     const root = mkdtempSync(join(tmpdir(), "workspace-storage-"));
     roots.push(root);
