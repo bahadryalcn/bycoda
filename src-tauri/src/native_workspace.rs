@@ -220,7 +220,9 @@ pub(crate) fn replay_settlements(app: &AppHandle, session_id: Option<&str>) -> R
             )?;
             if result["acknowledged"] == true {
                 if let Some(host) = app.try_state::<crate::harness::HarnessHost>() {
-                host.acknowledge_managed_settlements(std::slice::from_ref(&receipt.activity_id));
+                    host.acknowledge_managed_settlements(std::slice::from_ref(
+                        &receipt.activity_id,
+                    ));
                 }
             }
             Ok(result)
