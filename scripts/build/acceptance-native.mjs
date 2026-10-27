@@ -130,10 +130,20 @@ export async function connectAcceptance(root, options) {
     { timeout: 15000 },
   );
   try {
-    const page = browser
+    const candidates = browser
       .contexts()
       .flatMap((context) => context.pages())
-      .find((entry) => entry.url().startsWith(verified.run.devUrl));
+      .filter((entry) => entry.url().startsWith(verified.run.devUrl));
+    let page;
+    for (const candidate of candidates) {
+      const windowLabel = await candidate
+        .evaluate(() => window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label)
+        .catch(() => null);
+      if (windowLabel === "main") {
+        page = candidate;
+        break;
+      }
+    }
     assert(page, "The isolated native development page is unavailable");
     await verifyNativeIdentity(page, verified.identity);
     const output = join(root, "temp", "verification", options.id);
