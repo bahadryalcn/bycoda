@@ -320,6 +320,21 @@ async function closeRecoveredSessions(context) {
   if (await recovered.isVisible())
     await recovered.getByRole("button", { name: "Close", exact: true }).last().click();
 }
+async function dismissVisibleOverlays(context) {
+  for (let remaining = 3; remaining > 0; remaining--) {
+    const overlay = context.page.locator('[role="dialog"]:visible,[role="menu"]:visible').last();
+    if (!(await overlay.count())) return;
+    const target = overlay.locator("button,input,textarea,[tabindex]").first();
+    if (await target.count()) await target.focus();
+    else return;
+    await context.page.keyboard.press("Escape");
+  }
+}
+async function closeSettings(context) {
+  const settings = context.page.getByRole("region", { name: "Settings", exact: true });
+  if (await settings.isVisible())
+    await settings.getByRole("button", { name: "Back to workspace", exact: true }).click();
+}
 async function waitUntil(check, message, timeout = 30000) {
   let last;
   for (const deadline = Date.now() + timeout; Date.now() < deadline; await sleep(200)) {
@@ -386,7 +401,7 @@ export async function prepareProject(context) {
 export async function selectCodex(context, model = context.options.model) {
   const { page } = context;
   await focusNativeWindow(context);
-  await page.keyboard.press("Escape");
+  await dismissVisibleOverlays(context);
   const trigger = page
     .getByRole("button", { name: /^(Claude Code|Cursor|Codex|OpenCode|Pi|OMP|Grok) / })
     .first();
@@ -402,7 +417,10 @@ export async function selectCodex(context, model = context.options.model) {
   await codexTab.click();
   const choice = page.getByRole("option").filter({ hasText: model }).first();
   await choice.click();
-  await page.keyboard.press("Escape");
+  await waitUntil(
+    async () => (await trigger.getAttribute("aria-label"))?.includes(model),
+    "Selected Codex model did not reach the composer",
+  );
   const supervised = page.getByRole("button", { name: "Supervised", exact: true });
   if (await supervised.isVisible()) {
     await supervised.click();
@@ -413,7 +431,8 @@ export async function selectCodex(context, model = context.options.model) {
 export async function newSession(context, mode = "current", model = context.options.model) {
   await prepareProject(context);
   await closeRecoveredSessions(context);
-  await context.page.keyboard.press("Escape");
+  await dismissVisibleOverlays(context);
+  await closeSettings(context);
   await click(context, "New session");
   try {
     const trigger = context.page
@@ -440,7 +459,7 @@ export async function newSession(context, mode = "current", model = context.opti
     }
     await selectCodex(context, model);
   } catch (error) {
-    await context.page.keyboard.press("Escape").catch(() => {});
+    await dismissVisibleOverlays(context).catch(() => {});
     throw error;
   }
 }
@@ -993,11 +1012,26 @@ async function scenario4(context) {
     "Remember this isolated test: Türkiye, İstanbul, çalışma alanı. Reply READY without editing.",
   );
   const initialModel = (await session(context)).model;
-  await selectCodex(context, context.options.switchModel);
   const prompt =
     "Bu yalıtılmış kabul denemesidir. Dosyaları değiştirme. Yalnızca TAMAM yaz.\n" +
     "Türkiye İstanbul çalışma alanı, geçmiş konuşma ve güvenli model değişimi. ".repeat(400);
   assert(Buffer.byteLength(prompt, "utf8") > 20480);
+  const draft = context.page.locator("textarea:visible").first();
+  await draft.fill(prompt);
+  await selectCodex(context, context.options.switchModel);
+  await waitUntil(
+    async () =>
+      (await session(context)).model
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "")
+        .includes(context.options.switchModel.toLowerCase().replace(/[^a-z0-9]/g, "")),
+    "Target model was not saved to the current session",
+  );
+  assert.equal(
+    await draft.inputValue(),
+    prompt,
+    "Model selection discarded the unsent long Turkish draft",
+  );
   const switched = await sendPrompt(context, prompt);
   const switchedUserId = context.state.lastUserBlockId;
   const replyBoundary = switched.blocks.findLastIndex((block) => block.id === switchedUserId);
@@ -1285,7 +1319,7 @@ async function scenario6(context) {
     branch,
   );
   screenshots.push(...(await context.capture("06-retained-branch")));
-  await context.page.keyboard.press("Escape");
+  await dismissVisibleOverlays(context);
   return {
     workspaceId: workspace.id,
     branch: workspace.branchRef,
@@ -1297,7 +1331,7 @@ async function scenario6(context) {
 
 async function scenario7(context) {
   await prepareProject(context);
-  await context.page.keyboard.press("Escape");
+  await dismissVisibleOverlays(context);
   await focusNativeWindow(context);
   const screenshots = [];
   await click(context, "Tasks");
@@ -1496,7 +1530,7 @@ async function scenario8(context) {
       "Workspace policy save control did not settle",
     );
     screenshots.push(...(await context.capture("08-worktree-policy")));
-    await context.page.keyboard.press("Escape");
+    await closeSettings(context);
     await newSession(context, null);
     await context.page
       .getByRole("button", { name: "Workspace New worktree", exact: true })
@@ -1511,7 +1545,7 @@ async function scenario8(context) {
       async () => (await policyState()).policy.resolved.policy.defaultMode === "current",
       "Current-checkout policy restoration did not save",
     );
-    await context.page.keyboard.press("Escape");
+    await closeSettings(context);
     return { screenshots };
   } finally {
     await restoreCurrent();
