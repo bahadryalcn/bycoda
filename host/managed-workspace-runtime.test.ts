@@ -74,6 +74,7 @@ async function fixture(options: Parameters<typeof createManagedWorkspaceRuntime>
     owner: { kind: "session" as const, id: "owned-session" },
     slug: "source",
     idempotencyKey: "prepare",
+    choice: { defaultMode: "worktree" as const },
   };
   return { root, git, store, engine, runtime, project, request, send };
 }
@@ -145,12 +146,77 @@ it("reads legacy registry paths beneath an aliased ancestor and rejects a linked
   await expect(f.runtime.workspace(workspace.id)).rejects.toThrow("symbolic link or reparse point");
 });
 
-it("prepares an owned workspace at the Host creation boundary for a client without workspace fields", async () => {
+it.each(["explicit", "policy"])(
+  "prepares an owned workspace at the Host creation boundary for %s worktree mode",
+  async (mode) => {
+    const f = await fixture();
+    await f.runtime.recover();
+    if (mode === "policy")
+      await f.runtime.withOwner("test-owner", (owner) =>
+        f.runtime.policy.update(
+          {
+            projectId: f.project.id,
+            environmentId: f.store.environmentId,
+            expectedRevision: 1,
+            idempotencyKey: "worktree-policy",
+            policy: {
+              defaultMode: "worktree",
+              root: join(f.root, "worktrees"),
+              disk: { minimumFreeBytes: 1 },
+            },
+          },
+          owner,
+        ),
+      );
+    const command = {
+      type: "create",
+      commandId: "older-client",
+      projectId: f.project.id,
+      harness: "codex",
+      model: "fixture",
+      runtimeMode: "supervised",
+      ...(mode === "explicit" ? { workspaceMode: "worktree" } : {}),
+    };
+    const created = await f.engine.command(command);
+    expect(await f.engine.command(command)).toEqual(created);
+    const session = (await f.store.session(created.sessionId)).session;
+    expect(session.workspaceId).toBeTruthy();
+    expect(session.cwd).not.toBe(f.root);
+    expect(session.worktreeCwd).toBe(session.cwd);
+    expect((await f.runtime.workspace(session.workspaceId!)).owner).toEqual({
+      kind: "session",
+      id: created.sessionId,
+    });
+    await f.engine.command({
+      type: "send",
+      commandId: "older-send",
+      sessionId: created.sessionId,
+      text: "Work independently",
+    });
+    await f.engine.waitForRun(created.sessionId, (await f.store.session(created.sessionId)).runId);
+    expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ cwd: session.cwd }));
+    const prepare = vi
+      .spyOn(f.runtime.registry, "prepare")
+      .mockRejectedValueOnce(new Error("Preparation unavailable"));
+    await expect(f.engine.command({ ...command, commandId: "preparation-failed" })).rejects.toThrow(
+      "Preparation unavailable",
+    );
+    expect(prepare).toHaveBeenCalledOnce();
+    expect((await f.store.sessions()).filter((entry) => entry.session.cwd === f.root)).toHaveLength(
+      0,
+    );
+  },
+);
+
+it("creates a client without a workspace choice in the current checkout without managed admission", async () => {
   const f = await fixture();
-  await f.runtime.recover();
+  // Current execution does not need managed startup recovery or registry writes.
+  const prepare = vi
+    .spyOn(f.runtime.registry, "prepare")
+    .mockRejectedValue(new Error("Preparation unavailable"));
   const command = {
     type: "create",
-    commandId: "older-client",
+    commandId: "default-current",
     projectId: f.project.id,
     harness: "codex",
     model: "fixture",
@@ -159,34 +225,31 @@ it("prepares an owned workspace at the Host creation boundary for a client witho
   const created = await f.engine.command(command);
   expect(await f.engine.command(command)).toEqual(created);
   const session = (await f.store.session(created.sessionId)).session;
-  expect(session.workspaceId).toBeTruthy();
-  expect(session.cwd).not.toBe(f.root);
-  expect(session.worktreeCwd).toBe(session.cwd);
-  expect((await f.runtime.workspace(session.workspaceId!)).owner).toEqual({
-    kind: "session",
-    id: created.sessionId,
-  });
-  await f.engine.command({
-    type: "send",
-    commandId: "older-send",
-    sessionId: created.sessionId,
-    text: "Work independently",
-  });
-  await f.engine.waitForRun(created.sessionId, (await f.store.session(created.sessionId)).runId);
-  expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ cwd: session.cwd }));
-  const prepare = vi
-    .spyOn(f.runtime.registry, "prepare")
-    .mockRejectedValueOnce(new Error("Preparation unavailable"));
-  await expect(f.engine.command({ ...command, commandId: "preparation-failed" })).rejects.toThrow(
-    "Preparation unavailable",
-  );
-  expect(prepare).toHaveBeenCalledOnce();
-  expect((await f.store.sessions()).filter((entry) => entry.session.cwd === f.root)).toHaveLength(
-    0,
-  );
+  expect(session.cwd).toBe(f.root);
+  expect(session.workspaceMode).toBe("current");
+  expect(session.workspaceId).toBeUndefined();
+  expect(session.worktreeCwd).toBeUndefined();
+  expect(prepare).not.toHaveBeenCalled();
+  expect(await f.runtime.list()).toEqual([]);
 });
 
-it("requires an explicit current choice and gives a contextual legacy source an independent workspace", async () => {
+it("does not turn an unknown policy into current-checkout execution", async () => {
+  const f = await fixture();
+  vi.spyOn(f.runtime.policy, "resolve").mockRejectedValueOnce(new Error("Policy unavailable"));
+  await expect(
+    f.engine.command({
+      type: "create",
+      commandId: "unknown-policy",
+      projectId: f.project.id,
+      harness: "codex",
+      model: "fixture",
+      runtimeMode: "supervised",
+    }),
+  ).rejects.toThrow("Policy unavailable");
+  expect(await f.store.sessions()).toEqual([]);
+});
+
+it("preserves an explicit current choice while contextual legacy sources retain independent workspaces", async () => {
   const f = await fixture();
   await f.runtime.recover();
   const created = await f.engine.command({

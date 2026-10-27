@@ -39,7 +39,7 @@ async function fixture() {
 }
 
 describe("project workspace policy", () => {
-  it("defaults coding work to worktrees, retaining active directories forever", async () => {
+  it("defaults coding work to the current checkout, retaining active directories forever", async () => {
     const { store, project } = await fixture();
     expect(
       await createWorkspacePolicyResolver(store).get({
@@ -50,6 +50,7 @@ describe("project workspace policy", () => {
       revision: 0,
       resolved: { policy: DEFAULT_WORKSPACE_POLICY, appliedScopes: ["host"] },
     });
+    expect(DEFAULT_WORKSPACE_POLICY.defaultMode).toBe("current");
   });
   it("shares canonical project policy across sibling worktrees and merges nested owner choices", async () => {
     const { store, project, other, directory } = await fixture();
@@ -66,6 +67,7 @@ describe("project workspace policy", () => {
         expectedRevision: 0,
         idempotencyKey: "policy-1",
         policy: {
+          defaultMode: "worktree",
           root: join(directory, "managed"),
           disk: { warningRatio: 0.5 },
           retention: { finished: "never" },
@@ -96,6 +98,38 @@ describe("project workspace policy", () => {
     expect(
       (await service.resolve({ projectId: project.id, environmentId: "host" })).policy.defaultMode,
     ).toBe("worktree");
+  });
+  it("resolves policy for plain folders without requiring a Git repository", async () => {
+    const { store, directory } = await fixture();
+    const folder = join(directory, "plain-folder");
+    mkdirSync(folder);
+    const project = await store.addProject(folder, "Plain folder");
+    const service = createWorkspacePolicyResolver(store);
+    expect(
+      (await service.resolve({ projectId: project.id, environmentId: "host" })).policy.defaultMode,
+    ).toBe("current");
+    await service.update(
+      {
+        projectId: project.id,
+        environmentId: "host",
+        expectedRevision: 0,
+        idempotencyKey: "plain-worktree",
+        policy: { defaultMode: "worktree" },
+      },
+      owner,
+    );
+    expect(
+      (await service.resolve({ projectId: project.id, environmentId: "host" })).policy.defaultMode,
+    ).toBe("worktree");
+    expect(
+      (
+        await service.resolve({
+          projectId: project.id,
+          environmentId: "host",
+          choice: { defaultMode: "current" },
+        })
+      ).policy.defaultMode,
+    ).toBe("current");
   });
   it("persists idempotent receipts, rejects changed payloads and stale revisions, and replaces overrides", async () => {
     const { store, project } = await fixture(),

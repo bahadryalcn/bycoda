@@ -63,6 +63,7 @@ async function fixture() {
     owner: { kind: "session" as const, id: "session-a" },
     slug: "Fix file picker",
     idempotencyKey: "create-a",
+    choice: { defaultMode: "worktree" as const },
   };
   cleanup.push(async () => {
     await store.close();

@@ -71,6 +71,7 @@ it("delivers a worker seeded from a nondefault lead prerequisite only to its own
         expectedRevision: 0,
         idempotencyKey: "policy",
         policy: {
+          defaultMode: "worktree",
           root: join(root, "workers"),
           disk: { minimumFreeBytes: 1, budgetBytes: 1024 ** 3, warningRatio: 0.8 },
         },

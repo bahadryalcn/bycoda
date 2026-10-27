@@ -94,6 +94,7 @@ it("releases a prior Host provider after restart even when its shared session st
     owner: { kind: "session", id: sessionId },
     idempotencyKey: "restart-workspace",
     slug: "Restart writer",
+    choice: { defaultMode: "worktree" },
   });
   await first.engine.command({
     type: "create",
