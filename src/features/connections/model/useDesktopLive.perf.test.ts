@@ -6,6 +6,7 @@ import type { Session } from "../../sessions/model/session";
 import { DESKTOP_LIVE_CAPABILITY, DESKTOP_LIVE_MS, type DesktopLiveHandlers } from "./desktopLive";
 import { adoptedBeatFresh, setAdoptedWaker } from "./hostWake";
 import { useDesktopLive } from "./useDesktopLive";
+import { flushDesktopLive } from "./desktopLiveFlush";
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), build: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -48,6 +49,7 @@ async function advance(ms: number) {
 }
 
 beforeEach(() => {
+  hostReachable.current = true;
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.request.mockReset();
@@ -149,4 +151,48 @@ describe("desktop live heartbeat while nothing changes", () => {
     const payload = mocks.request.mock.calls.at(-1)?.[2] as { sessions: { id: string }[] };
     expect(payload.sessions.map((row) => row.id)).toEqual(["a"]);
   });
+});
+
+it("flushes current idle state only after an older busy publication is acknowledged", async () => {
+  let acknowledgeBusy!: (value: object) => void;
+  mocks.request.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        acknowledgeBusy = resolve;
+      }),
+  );
+  sessionsRef.current = [{ ...sessionsRef.current[0], busy: true }];
+  await act(async () => root.render(createElement(Probe)));
+  expect(mocks.request).toHaveBeenCalledOnce();
+  sessionsRef.current = [{ ...sessionsRef.current[0], busy: false }];
+  const flushed = flushDesktopLive();
+  await Promise.resolve();
+  expect(mocks.request).toHaveBeenCalledOnce();
+  acknowledgeBusy({});
+  await flushed;
+  expect(mocks.request).toHaveBeenCalledTimes(2);
+  expect(mocks.request.mock.calls[0][2].sessions).toEqual([
+    expect.objectContaining({ id: "a", busy: true }),
+  ]);
+  expect(mocks.request.mock.calls[1][2].sessions).toEqual([]);
+});
+
+it("forces an acknowledged idle flush inside the normal idle throttle window", async () => {
+  await act(async () => root.render(createElement(Probe)));
+  const before = mocks.request.mock.calls.length;
+  await flushDesktopLive();
+  expect(mocks.request.mock.calls.length).toBe(before + 1);
+});
+
+it("preserves actual busy state and propagates Host failure from an explicit flush", async () => {
+  await act(async () => root.render(createElement(Probe)));
+  sessionsRef.current = [{ ...sessionsRef.current[0], busy: true }];
+  await flushDesktopLive();
+  expect(mocks.request.mock.calls.at(-1)?.[2].sessions).toEqual([
+    expect.objectContaining({ id: "a", busy: true }),
+  ]);
+  mocks.request.mockRejectedValueOnce(new Error("Host unavailable"));
+  await expect(flushDesktopLive()).rejects.toThrow("Host unavailable");
+  hostReachable.current = false;
+  await expect(flushDesktopLive()).rejects.toThrow("unreachable");
 });

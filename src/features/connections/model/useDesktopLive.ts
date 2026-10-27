@@ -13,6 +13,7 @@ import type { DesktopInboxReply } from "../../inbox/model/remoteInbox";
 import { loadRemoteCapabilities, remoteRequest } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import { desktopInstanceId } from "./desktopInstance";
+import { registerDesktopLivePublisher } from "./desktopLiveFlush";
 import { heldRunLeases, noteRunLeases } from "./runLeaseClient";
 import { adoptedBeatFailed, noteAdoptedBeat } from "./hostWake";
 import {
@@ -55,8 +56,15 @@ export function useDesktopLive(
     let checkedAt = 0;
     const { unacked, handled, beat, inboxResults, inboxRunning } = state.current;
 
-    const tick = async () => {
-      if (running || !hostReachable.current) return;
+    let inFlight: Promise<void> = Promise.resolve();
+    const runTick = async (force = false) => {
+      if (!hostReachable.current) {
+        if (force)
+          throw new Error(
+            "The local Host is unreachable. Reconnect before changing workspace state.",
+          );
+        return;
+      }
       running = true;
       try {
         if (!machineId || Date.now() - checkedAt > MACHINE_RECHECK_MS) {
@@ -64,12 +72,22 @@ export function useDesktopLive(
           machineId = undefined;
           const machines = await invoke<RemoteMachine[]>("remote_machines");
           const machine = (Array.isArray(machines) ? machines : []).find(isLocalSyncMachine);
-          if (!machine || stopped) return;
+          if (!machine || stopped) {
+            if (force)
+              throw new Error(
+                "The local Host is unavailable. Reconnect before changing workspace state.",
+              );
+            return;
+          }
           const capabilities = await loadRemoteCapabilities(machine.environmentId);
-          if (!supportsDesktopLive(capabilities) || stopped) return;
+          if (!supportsDesktopLive(capabilities) || stopped) {
+            if (force) throw new Error("Update the local Host before changing workspace state.");
+            return;
+          }
           machineId = machine.id;
         }
         const id = machineId;
+        if (force) beat.idleAt = undefined;
         await runDesktopLiveTick({
           clientId: desktopClientId,
           request: (payload) =>
@@ -98,7 +116,11 @@ export function useDesktopLive(
           beat,
           deletions: state.current.deletions,
           inbox: {
-            jira: async (operation, deadline) => (await import("../../inbox/model/jiraMobileBridge")).executeRemoteJiraBoard(operation, deadline),
+            jira: async (operation, deadline) =>
+              (await import("../../inbox/model/jiraMobileBridge")).executeRemoteJiraBoard(
+                operation,
+                deadline,
+              ),
             invoke: (command, args) => invoke(command, args),
             list: async (projects, query) => {
               const { listInboxItems } = await import("../../inbox/model/githubTasks");
@@ -113,18 +135,33 @@ export function useDesktopLive(
             },
           },
         });
-      } catch {
+      } catch (error) {
         machineId = undefined; // Host unreachable; the next tick looks again.
         beat.idleAt = undefined;
         adoptedBeatFailed();
+        if (force) throw error;
       } finally {
         running = false;
       }
     };
+    const tick = (force = false) => {
+      if (running) return inFlight;
+      inFlight = runTick(force);
+      return inFlight;
+    };
+    const unregister = registerDesktopLivePublisher(async () => {
+      // Drain older busy snapshots before publishing current state. A timer or
+      // another flush can start during the wait, so recheck until we own a turn.
+      while (running) await inFlight.catch(() => undefined);
+      if (stopped)
+        throw new Error("This desktop publisher has stopped. Reconnect before continuing.");
+      await tick(true);
+    });
     const timer = window.setInterval(() => void tick(), DESKTOP_LIVE_MS);
     void tick();
     return () => {
       stopped = true;
+      unregister();
       window.clearInterval(timer);
     };
   }, [sessionsRef, handlersRef, hostReachable]);

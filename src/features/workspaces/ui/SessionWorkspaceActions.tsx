@@ -4,8 +4,9 @@ import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { MoreHorizontal } from "../../../shared/ui/icons";
 import { shouldPersistSession, upsertSession } from "../../sessions/data/sessionStore";
-import { setSessions, useSession } from "../../sessions/model/sessionsStore";
+import { getSessions, setSessions, useSession } from "../../sessions/model/sessionsStore";
 import { remotePath, parseRemotePath } from "../../connections/model/remoteProjects";
+import { flushDesktopLive } from "../../connections/model/desktopLiveFlush";
 import type { ManagedWorkspace } from "../model/contracts";
 import {
   getWorkspaceCapabilities,
@@ -115,6 +116,9 @@ export function SessionWorkspaceActions({
     setError(null);
     setMenu(false);
     try {
+      if (!parseRemotePath(cwd)) await flushDesktopLive();
+      if (getSessions().some((entry) => entry.id === sessionId && entry.busy))
+        throw new Error(t("Wait for the current operation to finish"));
       const fresh = await workspaceRequest(
         "workspaces.get",
         { workspaceId: workspace.id },

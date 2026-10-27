@@ -912,6 +912,45 @@ it("keeps a native rewind preview valid when the completed turn publishes idle a
   expect((await f.call("native.rewind.status", prepared.value.result)).phase).toBe("prepared");
 });
 
+it("requires an acknowledged idle publication before native lifecycle finish and still fences foreign activity", async () => {
+  const f = await nativeWindowFixture();
+  await f.busy();
+  const process = {
+    activityId: "native-lifecycle-provider",
+    cwd: f.workspace.path,
+    kind: "provider",
+    sessionId: f.sessionId,
+    clientId: f.clientId,
+  };
+  await f.call("native.activity.start", process);
+  await f.call("native.turn.begin", f.boundary);
+  await f.call("native.activity.end", { activityId: process.activityId, clientId: f.clientId });
+  await f.call("native.turn.end", f.boundary);
+  const completed = await f.call<ManagedWorkspace>("workspaces.get", {
+    workspaceId: f.workspace.id,
+  });
+  const request = {
+    workspaceId: completed.id,
+    expectedRevision: completed.revision,
+    idempotencyKey: "finish-after-native-flush",
+  };
+  expect((await f.request("workspaces.finish", request)).value.error).toMatch(/idle/i);
+  // This is the fresh, acknowledged publication the lifecycle UI now awaits.
+  await f.busy(false);
+  await f.call("native.activity.start", {
+    activityId: "foreign-lifecycle-shell",
+    cwd: f.workspace.path,
+    kind: "shell",
+    clientId: "foreign-window",
+  });
+  expect((await f.request("workspaces.finish", request)).value.error).toMatch(/idle/i);
+  await f.call("native.activity.end", {
+    activityId: "foreign-lifecycle-shell",
+    clientId: "foreign-window",
+  });
+  expect((await f.call("workspaces.finish", request)).state).toBe("finished");
+});
+
 it("admits authenticated native desktop busy preflight and captures end only after process retirement", async () => {
   const f = await nativeWindowFixture();
   await f.busy(); // Actual UI reports busy and implicitly acquires a desktop run lease first.

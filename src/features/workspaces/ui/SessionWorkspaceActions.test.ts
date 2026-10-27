@@ -7,6 +7,9 @@ import { newSession } from "../../sessions/model/session";
 import type { ManagedWorkspace } from "../model/contracts";
 import { getWorkspaceCapabilities, workspaceRequest } from "../model/workspaceClient";
 import { SessionWorkspaceActions } from "./SessionWorkspaceActions";
+import { remotePath } from "../../connections/model/remoteProjects";
+import { flushDesktopLive } from "../../connections/model/desktopLiveFlush";
+vi.mock("../../connections/model/desktopLiveFlush", () => ({ flushDesktopLive: vi.fn() }));
 
 vi.mock("../model/workspaceClient", () => ({
   getWorkspaceCapabilities: vi.fn(),
@@ -43,6 +46,8 @@ const workspace: ManagedWorkspace = {
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
+  vi.mocked(flushDesktopLive).mockReset().mockResolvedValue();
+  vi.mocked(workspaceRequest).mockReset();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(getWorkspaceCapabilities).mockResolvedValue([
     "workspaces.managed.v1",
@@ -91,4 +96,77 @@ it("reconciles a rematerialized directory without replacing the conversation", a
   );
   expect(getSessions()[0].worktreeRemoved).toBe(false);
   expect(getSessions()[0].blocks).toBe(blocks);
+});
+
+async function finishFromMenu() {
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Workspace actions"]')!.click(),
+  );
+  const finish = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent?.includes("Mark finished"),
+  );
+  expect(finish).toBeDefined();
+  await act(async () => finish!.click());
+}
+function idleWorkspace() {
+  vi.mocked(workspaceRequest).mockImplementation(
+    async (method) =>
+      (method === "workspaces.list"
+        ? [{ ...workspace, state: "idle", directoryState: "present" }]
+        : { ...workspace, state: "idle", directoryState: "present" }) as never,
+  );
+}
+it("waits for a fresh native desktop acknowledgement before requesting finish", async () => {
+  idleWorkspace();
+  let acknowledge!: () => void;
+  vi.mocked(flushDesktopLive).mockImplementation(
+    () =>
+      new Promise<void>((done) => {
+        acknowledge = done;
+      }),
+  );
+  await act(async () =>
+    root.render(createElement(SessionWorkspaceActions, { sessionId: "session", cwd: "/project" })),
+  );
+  await finishFromMenu();
+  expect(flushDesktopLive).toHaveBeenCalledOnce();
+  expect(
+    vi.mocked(workspaceRequest).mock.calls.some(([method]) => method === "workspaces.finish"),
+  ).toBe(false);
+  await act(async () => acknowledge());
+  expect(
+    vi.mocked(workspaceRequest).mock.calls.some(([method]) => method === "workspaces.finish"),
+  ).toBe(true);
+});
+it("keeps finish blocked when publication fails or the session starts another turn", async () => {
+  idleWorkspace();
+  vi.mocked(flushDesktopLive).mockRejectedValueOnce(new Error("Host unavailable"));
+  await act(async () =>
+    root.render(createElement(SessionWorkspaceActions, { sessionId: "session", cwd: "/project" })),
+  );
+  await finishFromMenu();
+  expect(container.textContent).toContain("Host unavailable");
+  expect(
+    vi.mocked(workspaceRequest).mock.calls.some(([method]) => method === "workspaces.finish"),
+  ).toBe(false);
+  vi.mocked(flushDesktopLive).mockImplementationOnce(async () => {
+    setSessions((sessions) => sessions.map((entry) => ({ ...entry, busy: true })));
+  });
+  await finishFromMenu();
+  expect(
+    vi.mocked(workspaceRequest).mock.calls.some(([method]) => method === "workspaces.finish"),
+  ).toBe(false);
+});
+
+it("keeps remote lifecycle operations independent of this window's local publisher", async () => {
+  idleWorkspace();
+  const cwd = remotePath("remote-host", "/project");
+  await act(async () =>
+    root.render(createElement(SessionWorkspaceActions, { sessionId: "session", cwd })),
+  );
+  await finishFromMenu();
+  expect(flushDesktopLive).not.toHaveBeenCalled();
+  expect(
+    vi.mocked(workspaceRequest).mock.calls.some(([method]) => method === "workspaces.finish"),
+  ).toBe(true);
 });

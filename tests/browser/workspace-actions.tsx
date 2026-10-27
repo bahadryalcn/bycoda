@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import { registerDesktopLivePublisher } from "../../src/features/connections/model/desktopLiveFlush";
 import { SessionWorkspaceActions } from "../../src/features/workspaces/ui/SessionWorkspaceActions";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { setLanguagePreference } from "../../src/shared/i18n";
@@ -40,6 +41,11 @@ let workspace: ManagedWorkspace = {
 };
 const calls: { method: string; params: unknown }[] = [];
 (window as unknown as { workspaceCalls: typeof calls }).workspaceCalls = calls;
+// This standalone browser fixture has no native publisher. Its explicit mock
+// acknowledgement exercises UI wiring only, never native/Host idle acceptance.
+registerDesktopLivePublisher(async () => {
+  calls.push({ method: "fixture.desktopLive.ack", params: { sessionId: "session" } });
+});
 const review = (action: "merge" | "publish", publication?: unknown) =>
   ({
     token: "sha-bound-review",
