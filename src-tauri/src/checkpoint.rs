@@ -13,6 +13,7 @@ use crate::fs::{
     expand_home, git_checked, git_cmd, git_cmd_output, git_diff_files_for, git_output, path_to_js,
     resolve_repo_path, GitChangedFile, GitDiffIndex, MAX_TEXT_FILE_BYTES,
 };
+pub(crate) mod file_revert;
 pub(crate) mod turn;
 
 const MAX_SNAPSHOT_FILES: usize = 2000;
@@ -235,6 +236,7 @@ impl CheckpointStore {
         self.retire_resolved_paths(session_id, cwd)?;
         let root = project_root(cwd)?;
         let dir = self.session_dir(session_id);
+        file_revert::prepare(&dir, &root, paths)?;
         let mut manifest = match read_manifest(&dir)? {
             Some(manifest) if same_cwd(&manifest.cwd, cwd) => manifest,
             _ => return Ok(()),
@@ -294,6 +296,7 @@ impl CheckpointStore {
         }
         let root = project_root(cwd)?;
         let dir = self.session_dir(session_id);
+        file_revert::capture(&dir, &root, paths)?;
         let mut manifest = match read_manifest(&dir)? {
             Some(manifest) if same_cwd(&manifest.cwd, cwd) => manifest,
             _ => return Ok(()),

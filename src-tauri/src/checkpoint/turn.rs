@@ -2,7 +2,7 @@
 use super::*;
 use std::sync::{Condvar, PoisonError};
 #[path = "leases.rs"]
-mod leases;
+pub(super) mod leases;
 
 /// File metadata is still checked for legacy/mixed-version peers that do not
 /// publish a lease. Only changed payloads need reopening and JSON parsing.
@@ -1183,13 +1183,24 @@ pub async fn session_checkpoint_begin_turn(
     session_id: String,
     cwd: String,
     turn_id: String,
+    user_block_id: Option<String>,
+    experimental_exact_git_rewind: Option<bool>,
 ) -> Result<(), String> {
     validate_id(&session_id, "session")?;
     validate_id(&turn_id, "turn")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&cwd], |s| {
-            s.begin_turn(&session_id, &cwd, &turn_id)
+        store.exclusive(&session_id, &[&cwd], |s| {
+            s.begin_files_turn(
+                &session_id,
+                &cwd,
+                &turn_id,
+                user_block_id.as_deref().unwrap_or(&turn_id),
+            )?;
+            if experimental_exact_git_rewind.unwrap_or(false) {
+                s.begin_turn(&session_id, &cwd, &turn_id)?;
+            }
+            Ok(())
         })
     })
     .await
@@ -1207,7 +1218,8 @@ pub async fn session_checkpoint_finish_turn(
     validate_id(&turn_id, "turn")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&cwd], |s| {
+        store.exclusive(&session_id, &[&cwd], |s| {
+            s.finish_files_turn(&session_id, &cwd, &turn_id, interrupted.unwrap_or(false))?;
             s.finish_turn(&session_id, &cwd, &turn_id, interrupted.unwrap_or(false))
         })
     })
