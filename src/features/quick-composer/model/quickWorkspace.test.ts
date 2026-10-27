@@ -70,7 +70,7 @@ it("rejects worktrees that were removed after selecting them", async () => {
 it("resets the base and existing worktree when the project changes", () => {
   expect(
     workspaceForProject({ cwd: base.cwd, mode: "worktree", base: "feature", tree }, "/tmp/other"),
-  ).toEqual({ cwd: "/tmp/other", mode: "current" });
+  ).toEqual({ cwd: "/tmp/other" });
 });
 
 it("keeps ordinary launches compatible and rejects conflicting workspace fields", () => {
@@ -83,4 +83,24 @@ it("keeps ordinary launches compatible and rejects conflicting workspace fields"
     { worktreeCwd: 42 },
   ])
     expect(parseQuickLaunch({ ...base, ...fields })).toBeNull();
+});
+
+it("keeps an unset quick launch on policy and preserves explicit current through session creation", async () => {
+  expect(await quickWorkspaceLaunch({ cwd: base.cwd })).toEqual({});
+  const fields = await quickWorkspaceLaunch({ cwd: base.cwd, mode: "current" });
+  expect(fields).toEqual({ workspaceMode: "current" });
+  const launch = parseQuickLaunch({ ...base, ...fields })!;
+  expect(applyQuickWorkspace(newSession("codex", base.cwd), launch).workspaceMode).toBe("current");
+});
+
+it("keeps an explicitly selected project checkout current when project policy would otherwise apply", async () => {
+  const main = { ...tree, path: base.cwd, isMain: true };
+  vi.mocked(invoke).mockResolvedValue({ worktrees: [main] });
+  const fields = await quickWorkspaceLaunch({ cwd: base.cwd, mode: "current", tree: main });
+  expect(fields).toEqual({ workspaceMode: "current" });
+  expect(invoke).toHaveBeenCalledWith("git_worktrees", { cwd: base.cwd });
+  const launch = parseQuickLaunch({ ...base, ...fields })!;
+  const session = applyQuickWorkspace(newSession("codex", base.cwd), launch);
+  expect(session.workspaceMode).toBe("current");
+  expect(session.worktreeCwd).toBeUndefined();
 });

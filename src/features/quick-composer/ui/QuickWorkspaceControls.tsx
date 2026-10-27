@@ -13,10 +13,13 @@ import {
   type QuickGitRequest,
   type QuickGitResult,
 } from "../model/quickGitPopup";
+import type { WorkspaceMode } from "../../sessions/model/session";
 import type { QuickWorkspace } from "../model/quickWorkspace";
 
 export function QuickWorkspaceControls({
   value,
+  resolvedMode = value.mode ?? "current",
+  resolvedBase,
   enabled,
   onChange,
   onOpenChange,
@@ -24,6 +27,8 @@ export function QuickWorkspaceControls({
   onError,
 }: {
   value: QuickWorkspace;
+  resolvedMode?: WorkspaceMode;
+  resolvedBase?: string;
   enabled: boolean;
   onChange: (choice: QuickWorkspace) => void;
   onOpenChange: (open: boolean) => void;
@@ -41,7 +46,7 @@ export function QuickWorkspaceControls({
   props.current = { value, onChange, onOpenChange, onClose, onError };
   const cwd = value.tree?.path ?? value.cwd ?? "";
   const { branches, settled } = useProjectBranchesState(cwd, enabled && !!cwd);
-  const base = value.base || branches?.current || "HEAD";
+  const base = value.base || resolvedBase || branches?.current || "HEAD";
 
   const cancel = () => {
     const id = active.current;
@@ -120,7 +125,7 @@ export function QuickWorkspaceControls({
     const request: QuickGitRequest = {
       id,
       kind,
-      choice: { ...value, base: value.mode === "worktree" ? base : undefined },
+      choice: { ...value, resolvedMode, base: resolvedMode === "worktree" ? base : undefined },
       branches: branches ?? undefined,
       anchor: {
         x: bounds.x,
@@ -145,8 +150,8 @@ export function QuickWorkspaceControls({
     }
   };
   const disabled = !enabled || !ready || !branches?.current;
-  const Icon = value.mode === "worktree" ? FolderTree : Folder;
-  const label = value.mode === "worktree" ? "New worktree" : "Current checkout";
+  const Icon = resolvedMode === "worktree" ? FolderTree : Folder;
+  const label = resolvedMode === "worktree" ? "New worktree" : "Current checkout";
   return (
     <div className="flex min-w-0 items-center gap-2 pl-1.5">
       <Button
@@ -169,12 +174,12 @@ export function QuickWorkspaceControls({
       </Button>
       <GitPickerTrigger
         label={
-          value.mode === "worktree"
+          resolvedMode === "worktree"
             ? t("From {p0}", { p0: base })
             : branches?.current || (settled ? t("No repo") : t("Loading…"))
         }
         aria-label={
-          value.mode === "worktree"
+          resolvedMode === "worktree"
             ? t("Create worktree from {p0}", { p0: base })
             : t("Choose branch")
         }
@@ -185,10 +190,10 @@ export function QuickWorkspaceControls({
         worktree={!!value.tree && !value.tree.isMain}
         onMouseDown={(event) => {
           event.preventDefault();
-          beginClick(value.mode === "worktree" ? "base" : "branch");
+          beginClick(resolvedMode === "worktree" ? "base" : "branch");
         }}
         onClick={(event) =>
-          void show(value.mode === "worktree" ? "base" : "branch", event.currentTarget)
+          void show(resolvedMode === "worktree" ? "base" : "branch", event.currentTarget)
         }
       />
     </div>
