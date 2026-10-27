@@ -15,6 +15,14 @@ export type WorkspaceContext = { cwd?: string; environmentId?: string };
 export const WORKSPACE_UPDATE_REQUIRED =
   "Update bycoda Host on this project's machine to use managed workspaces. Your project checkout will not be used as a fallback.";
 
+/** Stable classification for UI recovery actions, independent of translated copy. */
+export class WorkspaceCapabilityError extends Error {
+  constructor() {
+    super(t(WORKSPACE_UPDATE_REQUIRED));
+    this.name = "WorkspaceCapabilityError";
+  }
+}
+
 const requiredCapability = (method: WorkspaceRpcMethod): string => {
   if (method.startsWith("projects.workspacePolicy.")) return "workspaces.policy.v1";
   if (method === "sessions.rewind.undo") return "sessions.git-rewind-undo.v1";
@@ -65,7 +73,7 @@ export async function requireWorkspaceCapability(
   context: WorkspaceContext = {},
 ) {
   if (!(await getWorkspaceCapabilities(context)).includes(capability))
-    throw new Error(t(WORKSPACE_UPDATE_REQUIRED));
+    throw new WorkspaceCapabilityError();
 }
 
 /** Owner UI calls use the paired authenticated transport. No mutation is retried here. */
@@ -76,8 +84,7 @@ export async function workspaceRequest<K extends WorkspaceRpcMethod>(
 ): Promise<WorkspaceRpcResults[K]> {
   const machine = await owningMachine(context);
   const capabilities = await machineCapabilities(machine);
-  if (!capabilities.includes(requiredCapability(method)))
-    throw new Error(t(WORKSPACE_UPDATE_REQUIRED));
+  if (!capabilities.includes(requiredCapability(method))) throw new WorkspaceCapabilityError();
   // A publish review is meaningful only when the same host can publish it.
   if (
     method === "workspaces.delivery.review" &&
@@ -85,7 +92,7 @@ export async function workspaceRequest<K extends WorkspaceRpcMethod>(
     params.action === "publish" &&
     !capabilities.includes("workspaces.pr-publication.v1")
   )
-    throw new Error(t(WORKSPACE_UPDATE_REQUIRED));
+    throw new WorkspaceCapabilityError();
   let input: Record<string, unknown> = { ...params };
   if (context.cwd && "projectId" in input) {
     const project = await hostProjectFor(machine, context.cwd);

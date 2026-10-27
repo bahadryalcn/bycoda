@@ -37,7 +37,6 @@ import type { QueueAction } from "../model/queueAction";
 import { useComposerSpelling } from "../../settings/model/composerSpelling";
 import { ComposerTips } from "./ComposerTips";
 import { useWorkspaceCreation } from "../../workspaces/model/workspaceCreation";
-import { WORKSPACE_UPDATE_REQUIRED } from "../../workspaces/model/workspaceClient";
 import {
   bundledHostWaitsForSessions,
   useBundledHostStatus,
@@ -1095,7 +1094,7 @@ export const Composer = memo(function Composer({
     !!parseRemotePath(cwd) &&
     !managedWorkspaceCreationReady;
   const workspaceHostUpdateRequired =
-    workspaceCreation.error === t(WORKSPACE_UPDATE_REQUIRED) || remoteWorkspaceCreationBlocked;
+    workspaceCreation.updateRequired || remoteWorkspaceCreationBlocked;
   const bundledHostStatus = useBundledHostStatus(
     draftWorkspace && workspaceHostUpdateRequired && !parseRemotePath(cwd),
   );

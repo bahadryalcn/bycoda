@@ -7,6 +7,7 @@ import {
   requireWorkspaceCapability,
   resolveWorkspaceContext,
   workspaceRequest,
+  WorkspaceCapabilityError,
 } from "./workspaceClient";
 import { listWorktrees } from "../../source-control/model/worktrees";
 import { fetchGitIndex } from "../../source-control/model/gitIndexStore";
@@ -33,6 +34,7 @@ vi.mock("./workspaceClient", () => ({
     projectId: "project-id",
     environmentId: "environment",
   })),
+  WorkspaceCapabilityError: class extends Error {},
   requireWorkspaceCapability: vi.fn(async () => {}),
   workspaceRequest: vi.fn(async () => ({
     resolved: { policy: { defaultMode: "worktree", integrationBranchRef: "refs/heads/main" } },
@@ -135,6 +137,16 @@ it("skips all managed reads for an explicit current checkout on an older Host", 
     capabilityListeners.forEach((listener) => listener());
   });
   expect(requireWorkspaceCapability).not.toHaveBeenCalled();
+});
+
+it("retains a stable update-required classification independently of the error text", async () => {
+  vi.mocked(requireWorkspaceCapability).mockRejectedValue(
+    new WorkspaceCapabilityError("Host needs an update"),
+  );
+  await renderCreation();
+  expect(state).toMatchObject({ updateRequired: true, error: "Host needs an update" });
+  await renderCreation("current");
+  expect(state.updateRequired).toBe(false);
 });
 
 it.each([undefined, "worktree"] as const)(

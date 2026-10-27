@@ -13,6 +13,7 @@ import {
   requireWorkspaceCapability,
   resolveWorkspaceContext,
   workspaceRequest,
+  WorkspaceCapabilityError,
 } from "./workspaceClient";
 
 export type WorkspaceCreationPreview = {
@@ -81,6 +82,7 @@ export function useWorkspaceCreation(
     policy?: WorkspacePolicy;
     preview?: WorkspaceCreationPreview;
     error?: string;
+    updateRequired?: boolean;
   }>();
   const refresh = useCallback(() => setReload((value) => value + 1), []);
   useEffect(() => {
@@ -119,6 +121,7 @@ export function useWorkspaceCreation(
             base,
             reload,
             error: error instanceof Error ? error.message : String(error),
+            updateRequired: error instanceof WorkspaceCapabilityError,
           });
       },
     );
@@ -137,6 +140,7 @@ export function useWorkspaceCreation(
       (current?.policy ? shortWorkspaceRef(current.policy.integrationBranchRef) : undefined),
     preview: current?.preview,
     error: current?.error,
+    updateRequired: current?.updateRequired ?? false,
     pending: managedActive && !current,
     refresh,
   };

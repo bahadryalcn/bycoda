@@ -27,6 +27,7 @@ vi.mock("../../workspaces/model/workspaceCreation", () => ({
   useWorkspaceCreation: (_cwd: string, _active: boolean, choice?: string) => ({
     mode: choice ?? "worktree",
     error: choice === "current" ? undefined : host.error,
+    updateRequired: choice !== "current",
     pending: false,
     refresh: vi.fn(),
   }),
@@ -34,22 +35,25 @@ vi.mock("../../workspaces/model/workspaceCreation", () => ({
 
 import { Composer } from "./Composer";
 import type { WorkspaceMode } from "../model/session";
+import { setLanguagePreference } from "../../../shared/i18n";
 
 let container: HTMLDivElement;
 let root: Root;
 let submit: ReturnType<typeof vi.fn>;
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
+  await setLanguagePreference("en");
   host.status = null;
   submit = vi.fn();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
 });
-afterEach(() => {
+afterEach(async () => {
   act(() => root.unmount());
   container.remove();
+  await setLanguagePreference("en");
   vi.unstubAllGlobals();
 });
 
@@ -137,4 +141,19 @@ it("does not describe a local pending update as the remote machine's update", as
   await draw({ cwd: "remote://older/repo", executionCwd: "remote://older/repo" });
   expect(container.textContent).not.toContain("will install automatically");
   expect(button("Send")?.disabled).toBe(true);
+});
+
+it("keeps update recovery available when the owner changes language while the error is visible", async () => {
+  host.status = {
+    state: "deferred",
+    message: "The host update waits until running sessions finish.",
+  };
+  await draw();
+  await act(async () => setLanguagePreference("tr"));
+  expect(container.textContent).toContain("etkin oturumların bitmesini bekliyor");
+  const useCurrent = button("Geçerli çalışma dizinini kullan");
+  expect(useCurrent).toBeDefined();
+  await act(async () => useCurrent!.click());
+  expect(container.querySelector("textarea")?.value).toBe("Preserve this draft");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
 });

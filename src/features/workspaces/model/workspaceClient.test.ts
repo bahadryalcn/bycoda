@@ -3,7 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { hostProjectFor } from "../../automations/model/hostAutomationClient";
 import { machineCapabilities } from "../../automations/model/machineSnapshot";
 import { remoteRequest } from "../../connections/model/connections";
-import { resolveWorkspaceContext, workspaceRequest } from "./workspaceClient";
+import {
+  resolveWorkspaceContext,
+  workspaceRequest,
+  WorkspaceCapabilityError,
+} from "./workspaceClient";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../automations/model/hostAutomationClient", () => ({
@@ -69,7 +73,7 @@ it("checks the execution machine capability before attempting creation", async (
       { workspaceId: "owned", expectedRevision: 4, idempotencyKey: "resume" },
       { cwd: "/repo" },
     ),
-  ).rejects.toThrow("will not be used as a fallback");
+  ).rejects.toBeInstanceOf(WorkspaceCapabilityError);
   expect(remoteRequest).not.toHaveBeenCalled();
 });
 
