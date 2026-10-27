@@ -19,15 +19,17 @@ import {
   type SessionRunEngine,
 } from "./sessionRuns";
 import type { HostStore } from "./store";
-import { previewTaskFinalization } from "./task-workspace-runtime";
+import { previewTaskFinalization, writerWorkspaceMode } from "./task-workspace-runtime";
 import type {
   ExecutionActivityReservations,
   WorkspaceRegistry,
+  WorkspacePolicyResolver,
 } from "./workspace-service-contracts";
 import type { HostAutomationRun as StoredAutomationRun } from "../src/features/automations/model/hostAutomations";
 
-/** Supplied by the execution host. Missing managed-workspace support fails closed. */
+/** Supplied by the execution host. A resolved worktree choice requires managed support. */
 export interface AutomationWorkspaceServices {
+  policy?: WorkspacePolicyResolver;
   registry: WorkspaceRegistry;
   activity: ExecutionActivityReservations;
   environmentId: string;
@@ -289,38 +291,45 @@ export class HostAutomations {
           : dailyRunLimitSkip(automationLimits(automation), history, run.id, now);
       if (skip) return await this.finish(run, "skipped", skip, now);
       if (this.closing) return this.finish(run, "skipped", "Skipped: the host is stopping.", now);
-      if (!this.workspaces)
-        return this.finish(
-          run,
-          "failed",
-          "Update the Host to enable managed automation workspaces.",
-          now,
-        );
       try {
-        const { workspace } = await this.workspaces.registry.prepare({
-          idempotencyKey: `automation:${run.id}`,
-          projectId: automation.projectId,
-          environmentId: this.workspaces.environmentId,
-          owner: { kind: "automationRun", id: run.id },
-          slug: automation.name,
-          choice: { defaultMode: "worktree" },
-        });
-        if (
-          workspace.owner.kind !== "automationRun" ||
-          workspace.owner.id !== run.id ||
-          workspace.projectId !== automation.projectId ||
-          workspace.directoryState !== "present"
-        )
-          throw new Error("The managed workspace does not belong to this automation run.");
-        run = { ...run, workspaceId: workspace.id };
-        await this.writeRun(run);
-        const activity = await this.workspaces.activity.start({
-          workspaceId: workspace.id,
-          kind: "provider",
-          ownerId: run.id,
-        });
-        run = { ...run, activityId: activity.id };
-        await this.writeRun(run);
+        const mode = await writerWorkspaceMode(
+          this.store,
+          this.workspaces,
+          automation.projectId,
+          automation.isolate,
+        );
+        let workspace: Awaited<ReturnType<WorkspaceRegistry["prepare"]>>["workspace"] | undefined;
+        if (mode === "worktree") {
+          if (!this.workspaces)
+            throw new Error("Update the Host to enable managed automation workspaces.");
+          workspace = (
+            await this.workspaces.registry.prepare({
+              idempotencyKey: `automation:${run.id}`,
+              projectId: automation.projectId,
+              environmentId: this.workspaces.environmentId,
+              owner: { kind: "automationRun", id: run.id },
+              slug: automation.name,
+              choice: { defaultMode: "worktree" },
+            })
+          ).workspace;
+          if (
+            workspace.owner.kind !== "automationRun" ||
+            workspace.owner.id !== run.id ||
+            workspace.projectId !== automation.projectId ||
+            workspace.directoryState !== "present"
+          )
+            throw new Error("The managed workspace does not belong to this automation run.");
+          run = { ...run, workspaceId: workspace.id };
+          await this.writeRun(run);
+          const activity = await this.workspaces.activity.start({
+            workspaceId: workspace.id,
+            kind: "provider",
+            ownerId: run.id,
+          });
+          run = { ...run, activityId: activity.id };
+          await this.writeRun(run);
+        }
+        const cwd = workspace?.path ?? (await this.store.project(automation.projectId)).cwd;
         const started = await launchSessionRun(
           this.store,
           this.engine,
@@ -331,9 +340,12 @@ export class HostAutomations {
             modelSettings: automation.modelSettings,
             runtimeMode: automation.runtimeMode,
             title: automation.name,
-            prompt: `Work only in ${workspace.path} on ${workspace.branchRef}. Commit scoped changes on this branch and leave a clean tree. Integration, push and PR publication require separate owner approval.\n\n${automation.prompt}`,
-            worktreeCwd: workspace.path,
-            workspaceId: workspace.id,
+            prompt: workspace
+              ? `Work only in ${workspace.path} on ${workspace.branchRef}. Commit scoped changes on this branch and leave a clean tree. Integration, push and PR publication require separate owner approval.\n\n${automation.prompt}`
+              : `Work directly in ${cwd}, the current checkout shared with other sessions. Preserve their work and leave your changes uncommitted for owner review. Do not create a worktree, switch branches, stage, commit, merge, push or create PRs.\n\n${automation.prompt}`,
+            ...(workspace
+              ? { worktreeCwd: workspace.path, workspaceId: workspace.id }
+              : { workspaceMode: "current" as const }),
           },
           () => !this.closing,
         );

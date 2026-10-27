@@ -231,7 +231,6 @@ describe("goal client", () => {
       modelSettings: {},
       runtimeMode: "auto",
       maxRunMinutes: 30,
-      isolate: false,
       verifyDefaults: { review: false },
       approvePlan: true,
       continueUntilDone: true,
@@ -382,3 +381,16 @@ describe("confirmed goal mutation results", () => {
     expect(current.status).toBe("planning");
   });
 });
+
+it.each([undefined, true, false])(
+  "preserves goal policy inheritance and explicit choices (%s)",
+  (isolate) => {
+    const draft = {
+      ...newGoalDraft("G:/app", "claude", "claude:test"),
+      title: "Goal",
+      prompt: "Do the work",
+      isolate,
+    };
+    expect(hostGoalFromDraft(draft, "goal", ["project"], "project").isolate).toBe(isolate);
+  },
+);

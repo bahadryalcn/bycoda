@@ -116,3 +116,14 @@ describe("background automations", () => {
     ).toThrow(BACKGROUND_TRIGGER_ERROR);
   });
 });
+
+it.each([true, false])(
+  "preserves an explicit background automation checkout choice (%s) through editing",
+  (isolate) => {
+    const draft = draftFromAutomation(
+      automationFromHost(mac, "remote://env-mac/Users/me/app", { ...stored, isolate }),
+    );
+    expect(draft.workspaceMode).toBe(isolate ? "worktree" : "current");
+    expect(hostAutomationFromDraft(draft, stored.id, stored.projectId).isolate).toBe(isolate);
+  },
+);

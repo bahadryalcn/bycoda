@@ -486,7 +486,8 @@ export interface ManagedTurnHistoryAdapter {
     projectId: string;
     sessionId: string;
     idempotencyKey: string;
-  }): Promise<{ workspaceId: string }>;
+    workspaceMode?: "current" | "worktree";
+  }): Promise<{ workspaceId: string } | null>;
   workspaceForCreate?(request: {
     projectId: string;
     workspaceId: string;
@@ -1486,7 +1487,10 @@ export class HostEngine {
         command.sessionId ??
         createHash("sha256").update(`host-session:${command.commandId}`).digest("hex").slice(0, 32),
       idempotencyKey: `host-session:${command.commandId}:workspace`,
+      workspaceMode: command.workspaceMode,
     });
+    // Only an authoritative current policy result may skip managed preparation.
+    if (prepared === null) return undefined;
     if (!prepared)
       throw new Error("Managed session creation requires workspace preparation; update this Host");
     return prepared;

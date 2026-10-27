@@ -10,6 +10,7 @@ import { fetchGitIndex } from "../../source-control/model/gitIndexStore";
 import { listWorktrees } from "../../source-control/model/worktrees";
 import type { WorkspacePolicy } from "./contracts";
 import {
+  getWorkspaceCapabilities,
   requireWorkspaceCapability,
   resolveWorkspaceContext,
   workspaceRequest,
@@ -24,9 +25,19 @@ export type WorkspaceCreationPreview = {
 export const shortWorkspaceRef = (ref: string) => ref.replace(/^refs\/(heads|remotes)\//, "");
 
 /** Read-only observation. Creation always resolves the ref again on the owning Host. */
-export async function loadWorkspaceCreation(cwd: string, selectedBase?: string) {
+export async function loadWorkspaceCreation(
+  cwd: string,
+  selectedBase?: string,
+  choice?: WorkspaceMode,
+): Promise<{ policy?: WorkspacePolicy; preview?: WorkspaceCreationPreview }> {
+  // Legacy Hosts have no project policy and retain their current-checkout behavior.
+  // A failed policy read on a capable Host remains an error, never a fallback.
+  const capabilities = await getWorkspaceCapabilities({ cwd });
+  if (!capabilities.includes("workspaces.policy.v1")) {
+    if (choice === "worktree") await requireWorkspaceCapability("workspaces.managed.v1", { cwd });
+    else return {};
+  }
   const context = await resolveWorkspaceContext(cwd);
-  await requireWorkspaceCapability("workspaces.managed.v1", context);
   const { resolved } = await workspaceRequest(
     "projects.workspacePolicy.get",
     {
@@ -35,6 +46,8 @@ export async function loadWorkspaceCreation(cwd: string, selectedBase?: string) 
     },
     context,
   );
+  if ((choice ?? resolved.policy.defaultMode) === "current") return { policy: resolved.policy };
+  await requireWorkspaceCapability("workspaces.managed.v1", context);
   const baseRef = selectedBase || resolved.policy.integrationBranchRef;
   const trees = await listWorktrees(cwd);
   const main = trees.worktrees.find((tree) => tree.isMain);
@@ -77,6 +90,7 @@ export function useWorkspaceCreation(
   const [reload, setReload] = useState(0);
   const [result, setResult] = useState<{
     cwd: string;
+    choice?: WorkspaceMode;
     base?: string;
     reload: number;
     policy?: WorkspacePolicy;
@@ -110,14 +124,15 @@ export function useWorkspaceCreation(
     setResult(undefined);
     if (!managedActive || !cwd || cwd === "~") return;
     let cancelled = false;
-    void loadWorkspaceCreation(cwd, base).then(
+    void loadWorkspaceCreation(cwd, base, choice).then(
       (value) => {
-        if (!cancelled) setResult({ cwd, base, reload, ...value });
+        if (!cancelled) setResult({ cwd, choice, base, reload, ...value });
       },
       (error: unknown) => {
         if (!cancelled)
           setResult({
             cwd,
+            choice,
             base,
             reload,
             error: error instanceof Error ? error.message : String(error),
@@ -128,13 +143,17 @@ export function useWorkspaceCreation(
     return () => {
       cancelled = true;
     };
-  }, [cwd, managedActive, base, reload]);
+  }, [cwd, managedActive, choice, base, reload]);
   const current =
-    managedActive && result?.cwd === cwd && result.base === base && result.reload === reload
+    managedActive &&
+    result?.cwd === cwd &&
+    result.choice === choice &&
+    result.base === base &&
+    result.reload === reload
       ? result
       : undefined;
   return {
-    mode: choice ?? current?.policy?.defaultMode ?? "worktree",
+    mode: choice ?? current?.policy?.defaultMode ?? "current",
     base:
       base ||
       (current?.policy ? shortWorkspaceRef(current.policy.integrationBranchRef) : undefined),

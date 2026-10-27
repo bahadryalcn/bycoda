@@ -168,7 +168,7 @@ export function QuickGitPopupPicker({
   return (
     <WorkspacePicker
       cwd={cwd}
-      mode={choice.mode}
+      mode={choice.mode ?? choice.resolvedMode ?? "current"}
       base={choice.base}
       initialPicker={request.kind}
       onModeChange={(mode, base) =>
@@ -178,7 +178,7 @@ export function QuickGitPopupPicker({
           ...(mode === "worktree" ? { base } : {}),
         })
       }
-      onBaseChange={(base) => finish({ ...choice, base })}
+      onBaseChange={(base) => finish({ ...choice, mode: "worktree", base })}
       onSelectWorktree={async (tree) => finish({ cwd: choice.cwd, mode: "current", tree })}
       onClose={() => finish()}
     />

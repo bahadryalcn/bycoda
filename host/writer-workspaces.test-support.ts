@@ -7,6 +7,7 @@ import type { StewardWorkspaceServices } from "./stewards";
 import { invalidateHostWorktrees } from "./git-worktrees";
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 import type { HostEngine } from "./engine";
+import { writerWorkspaceMode } from "./task-workspace-runtime";
 import { GitTurnHistory } from "./turn-git-history";
 
 /** Test execution adapter: real Git worktrees; in-memory lifecycle records with
@@ -154,6 +155,10 @@ export function writerWorkspaces(root: string, projectCwd: (id: string) => Promi
         await required(id);
       },
       prepareWorkspaceForCreate: async (request) => {
+        const mode =
+          request.workspaceMode ??
+          (await writerWorkspaceMode(engine.store, services, request.projectId));
+        if (mode === "current") return null;
         const prepared = await prepare({
           projectId: request.projectId,
           environmentId: services.environmentId,
@@ -217,6 +222,15 @@ export function writerWorkspaces(root: string, projectCwd: (id: string) => Promi
   };
   return {
     ...services,
+    get environmentId() {
+      return services.environmentId;
+    },
+    get policy() {
+      return services.policy;
+    },
+    set policy(value) {
+      services.policy = value;
+    },
     prepare,
     get,
     finish,

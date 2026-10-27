@@ -5,14 +5,16 @@ import { pathKey } from "../../../shared/lib/paths";
 
 export type QuickWorkspace = {
   cwd: string | null;
-  mode: WorkspaceMode;
+  mode?: WorkspaceMode;
+  /** Read-only policy resolution passed through the native popup boundary. */
+  resolvedMode?: WorkspaceMode;
   base?: string;
   tree?: Worktree;
 };
 
 /** Switching projects must never carry another repository's working copy/base. */
 export function workspaceForProject(choice: QuickWorkspace, cwd: string | null): QuickWorkspace {
-  return choice.cwd === cwd ? choice : { cwd, mode: "current" };
+  return choice.cwd === cwd ? choice : { cwd };
 }
 
 export async function quickWorkspaceLaunch(
@@ -28,9 +30,11 @@ export async function quickWorkspaceLaunch(
     );
     if (!tree)
       throw new Error("This worktree is no longer available. Select another working copy.");
-    return pathKey(tree.path) === pathKey(choice.cwd) ? {} : { worktreeCwd: tree.path };
+    return pathKey(tree.path) === pathKey(choice.cwd)
+      ? { workspaceMode: "current" }
+      : { worktreeCwd: tree.path };
   }
-  return {};
+  return choice.mode === "current" ? { workspaceMode: "current" } : {};
 }
 
 /** Feed the same deferred worktree creation path that the main composer uses. */
@@ -42,5 +46,6 @@ export function applyQuickWorkspace(session: Session, launch: QuickLaunch): Sess
       worktreeBase: launch.worktreeBase || "HEAD",
     };
   }
-  return launch.worktreeCwd ? { ...session, worktreeCwd: launch.worktreeCwd } : session;
+  if (launch.worktreeCwd) return { ...session, worktreeCwd: launch.worktreeCwd };
+  return launch.workspaceMode === "current" ? { ...session, workspaceMode: "current" } : session;
 }

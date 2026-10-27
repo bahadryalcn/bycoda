@@ -50,15 +50,19 @@ describe("conversation task configuration", () => {
     expect(normalizeConversationTaskConfiguration({}, "second", "project", rows)).toEqual({});
   });
 
-  it("keeps agent-created tasks isolated and refuses delivery or publication requests", () => {
+  it("inherits workspace policy and refuses delivery or publication requests", () => {
     expect(CONVERSATION_TASK_EXECUTION_DEFAULTS).toEqual({
-      isolate: true,
       autoMerge: false,
       continueUntilDone: false,
     });
     expect(Object.isFrozen(CONVERSATION_TASK_EXECUTION_DEFAULTS)).toBe(true);
+    expect(
+      normalizeConversationTaskConfiguration({ isolate: false }, "task", "project", []),
+    ).toEqual({ isolate: false });
+    expect(
+      normalizeConversationTaskConfiguration({ isolate: true }, "task", "project", []),
+    ).toEqual({ isolate: true });
     for (const patch of [
-      { isolate: false },
       { autoMerge: true },
       { deliveryRequested: true },
       { integrationDelivery: "main" },

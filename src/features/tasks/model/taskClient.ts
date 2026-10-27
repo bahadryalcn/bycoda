@@ -88,7 +88,7 @@ export type TaskDraft = {
   runtimeMode: RuntimeMode;
   maxRunMinutes: number;
   /** Run on a new branch of its own when the project is a git repository. */
-  isolate: boolean;
+  isolate?: boolean;
   /** Empty for no check. */
   verifyCommand: string;
   review: boolean;
@@ -171,7 +171,7 @@ export function newTaskDraft(cwd: string, harness: HarnessId, model: string): Ta
     modelSettings: {},
     runtimeMode: "auto",
     maxRunMinutes: 0,
-    isolate: false,
+
     verifyCommand: "",
     review: false,
     autoMerge: false,
@@ -200,7 +200,7 @@ export function draftFromTask(task: BoardTask): TaskDraft {
     modelSettings: task.modelSettings,
     runtimeMode: task.runtimeMode,
     maxRunMinutes: task.maxRunMinutes,
-    isolate: task.isolate !== false,
+    isolate: task.isolate,
     workspace: task.workspace,
     workspaceLocked: Boolean(task.branch || task.sessionId),
     verifyCommand: task.verifyCommand ?? "",

@@ -1,5 +1,4 @@
 import { isAbsolute } from "node:path";
-import { execFileAsync } from "../src/shared/lib/processExecution.node";
 import { hostGitRepositoryKey } from "./git-mutations";
 import type { HostStore } from "./store";
 import {
@@ -20,12 +19,8 @@ export async function projectRepositoryIdentity(
   projectId: string,
 ): Promise<string> {
   const project = await store.project(projectId);
-  await execFileAsync("git", ["rev-parse", "--git-common-dir"], {
-    cwd: project.cwd,
-    windowsHide: true,
-    timeout: 10_000,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
-  });
+  // Plain folders also support current-checkout policy. The canonical key keeps
+  // repository aliases shared and still rejects unreadable or malformed markers.
   return hostGitRepositoryKey(project.cwd);
 }
 

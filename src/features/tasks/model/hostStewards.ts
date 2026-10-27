@@ -39,6 +39,8 @@ export type HostStewardInput = AutomationSchedule & {
   /** Merge the tasks it creates once their checks pass, without waiting for
    * approval. Absent counts as false. */
   autoMerge?: boolean;
+  /** Omitted inherits the execution Host project policy. */
+  isolate?: boolean;
 };
 
 /** The run a steward is in the middle of. */
@@ -109,12 +111,14 @@ export function parseHostSteward(input: unknown): HostStewardInput {
   if (typeof focus !== "string" || focus.length > FOCUS_LIMIT || focus.includes("\0"))
     throw new Error("Invalid steward focus.");
   if (
+    (v.isolate !== undefined && typeof v.isolate !== "boolean") ||
     (v.autoStart !== undefined && typeof v.autoStart !== "boolean") ||
     (v.autoMerge !== undefined && typeof v.autoMerge !== "boolean") ||
     (v.enabled !== undefined && typeof v.enabled !== "boolean")
   )
     throw new Error("Invalid steward options");
   return {
+    ...(typeof v.isolate === "boolean" ? { isolate: v.isolate } : {}),
     id: v.id,
     projectId: v.projectId,
     enabled: v.enabled !== false,

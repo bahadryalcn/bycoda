@@ -21,7 +21,7 @@ export function TaskWorkspacePicker({
   onChange,
   disabled = false,
   branchName = false,
-  isolate = true,
+  isolate,
   onBusyChange,
   onValidityChange,
 }: {
@@ -246,13 +246,15 @@ export function TaskWorkspacePicker({
           >
             {t("Create a separate worktree")}
           </Button>
-          <p>
-            {t(
-              isolate
-                ? "Tasks start from committed changes. A separate integration worktree keeps the queue independent of edits in your project checkout."
-                : "Direct tasks preserve existing uncommitted changes and write to the selected checkout.",
-            )}
-          </p>
+          {isolate === undefined ? null : (
+            <p>
+              {t(
+                isolate
+                  ? "Tasks start from committed changes. A separate integration worktree keeps the queue independent of edits in your project checkout."
+                  : "Direct tasks preserve existing uncommitted changes and write to the selected checkout.",
+              )}
+            </p>
+          )}
           {branchName ? (
             <label>
               {t("Task branch name (optional)")}

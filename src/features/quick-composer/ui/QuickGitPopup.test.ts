@@ -188,3 +188,10 @@ it("keeps branch creation inside the popup and finishes only after creating the 
   expect(gitCreateBranch).toHaveBeenCalledWith("/repo", "feature/popup");
   expect(onFinish).toHaveBeenCalledTimes(1);
 });
+
+it("shows inherited worktree policy and returns an explicit current override", async () => {
+  await render("workspace", { cwd: "/repo", resolvedMode: "worktree" });
+  expect(button("New worktree").getAttribute("aria-pressed")).toBe("true");
+  await act(async () => button("Current checkout").click());
+  expect(selection).toMatchObject({ cwd: "/repo", mode: "current" });
+});

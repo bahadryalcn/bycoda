@@ -181,11 +181,23 @@ Preserve session-owned drafts across hibernation/remount and account/model chang
 
 ## Owner decisions
 
+- 2026-10-27, owner D1 stream brief in the `fix/default-current-checkout` session:
+  "current checkout ile başlasın yeni bi session; kendi worktree aç diye zorluyor muyuz biz?"
+  New sessions default to **Current checkout**; **Worktree** remains an explicit
+  session choice or stored project policy. This supersedes the C1 unset-choice
+  restriction below; a resolved worktree still must never silently fall back.
+
 ## Proposals
 
 No additional product changes are proposed by this inventory.
 
 ## Known blockers and evidence limits
+
+Contextual handoffs and second opinions still use forced managed creation in the
+concurrently owned `host/engine.ts` handoff block and
+`host/managed-workspace-runtime.ts:prepareContextualWorkspace`. They require the
+handoff owner's coordinated policy/current update; D1 does not establish current
+default acceptance for those paths.
 
 This frozen checkout has no mobile source directory. Mobile screen enumeration and physical-device acceptance require the mobile source checkout; the shared Host/native paths above do not establish mobile proof. This inventory checks source paths, not installed behavior. Live feature claims and build status depend on serving Host capabilities.
 
@@ -237,6 +249,9 @@ delivery only; product/runtime acceptance remains as described above.
 
 ## C1 older-Host creation compatibility (2026-10-27)
 
+Historical implementation evidence: D1's later decision above supersedes the
+unset-choice admission restriction below. Resolved worktree admission remains.
+
 Owner decision, C1 stream brief in this session: "When the owner explicitly chose
 `current` ("Current checkout"), an older Host must not block" and "Never silently
 fall back when the mode is unset/worktree."
@@ -287,3 +302,41 @@ Source baseline: `745f4644` (0.6.91), branch `fix/composer-current-checkout`.
 No installer, installed-app, actual old/upgraded Host or provider acceptance is
 established by these source/fixture checks. Live feature-claim tooling was not
 available in the worker session; ownership came from the explicit C1 brief.
+
+## D1 new-session default (2026-10-27)
+
+Branch `fix/default-current-checkout`, source baseline `0a42b1ab` (0.6.92):
+
+- `ce2d915b`: `Composer.tsx`, `workspaceCreation.ts`, `sessionWorkspace.ts` and
+  `RemoteSession.tsx` show **Current checkout** by default. Explicit worktree and
+  project-policy worktree still require managed admission; preparation failures
+  remain retryable without changing mode or losing drafts. Known older Hosts use
+  compatible current creation for send, draft and shell-command paths.
+- Host creation/policy resolution: `0f9d0f15`; scheduled writer policy:
+  `65910028`; optional native automation JSON mode: `22a550bf`. Desktop automation
+  defaults and task controls: `c0ecb0a0`; selected goal checkout preservation:
+  `841298dd`.
+- `df1d62d0`: quick composer distinguishes an inherited default from explicit
+  Current checkout, displays the resolved project policy, and keeps Worktree
+  capability errors/draft recovery. Explicit selection of the project checkout
+  survives launch and overrides a worktree project policy.
+- Focused UI passed 192/192 (`temp/verification/d1/ui-fast-tests.log`), and
+  RemoteSession passed 120/120 (`remote-tests.log`). Automation checks passed 54/54
+  (`automation-final-tests.log`); Worktrees Playwright passed 37/37
+  (`playwright-worktrees.log`). Native automation serde/SQLite checks passed 20/20
+  (`native-automation-tests.log`).
+- New-session browser fixture captures: `temp/verification/d1/creation-light-1280.png`
+  and `creation-dark-1280.png`, plus 800 variants. They establish fixture behavior;
+  installed app, actual Host/provider and release inclusion remain unverified.
+
+Full web passed 1,277 files/12,412 tests (four files/15 tests skipped), plus fast
+tsc-rs. Final Tasks browser checks passed 186/186 in Chromium/WebKit, followed by
+14/14 final helper/capture cases. Quick composer passed 50/50 focused checks and
+8/8 browser cases, with light/dark 1280/800 captures under `temp/verification/d1/`.
+The broad web run preceded the last quick/task follow-ups; focused follow-ups and
+final web/Host fast type checks establish their source verification. Exact ledger:
+`temp/verification/d1/CHECKS.md`.
+Contextual handoffs and second opinions remain the protected integration exception
+described above. Nine protected native turn/rewind fixture cases also still need
+explicit worktree choices; the diagnostic failures and exact fixture requests are
+recorded in the managed-workspaces card and `remaining-managed-fixtures.log`.

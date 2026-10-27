@@ -1671,12 +1671,17 @@ function AutomationEditor({
                     <SettingsRow label={t("Working copy")} hint="This repo, or a fresh worktree">
                       <SettingsSelect
                         label={t("Working copy")}
-                        value={draft.workspaceMode === "worktree" ? "worktree" : "current"}
+                        value={
+                          draft.workspaceMode === "existing"
+                            ? "current"
+                            : (draft.workspaceMode ?? "automatic")
+                        }
                         options={WORKSPACE_OPTIONS}
                         onChange={(value) =>
                           onChange({
                             ...draft,
-                            workspaceMode: value as "current" | "worktree",
+                            workspaceMode:
+                              value === "automatic" ? undefined : (value as "current" | "worktree"),
                             worktreeCwd: "",
                             reuseSession: value === "current" && draft.reuseSession,
                           })
@@ -1953,6 +1958,12 @@ function ToggleSwitch({
 }
 
 const WORKSPACE_OPTIONS = [
+  {
+    value: "automatic",
+    get label() {
+      return t("Automatic");
+    },
+  },
   {
     value: "current",
     get label() {

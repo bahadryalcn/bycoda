@@ -124,7 +124,7 @@ export function useAutomationLaunch({
                   !entry.busy &&
                   !entry.worktreeRemoved &&
                   !automationSessionReservations.current.has(entry.id) &&
-                  (automation.workspaceMode === "current"
+                  (automation.workspaceMode === "current" || automation.workspaceMode === undefined
                     ? entry.workspaceMode !== "worktree" &&
                       !entry.worktreeCwd &&
                       pathKey(entry.cwd) === pathKey(automation.cwd)
@@ -150,9 +150,11 @@ export function useAutomationLaunch({
             ...(linkedWorkItem ? { linkedWorkItem } : {}),
             ...(automation.workspaceMode === "worktree"
               ? { workspaceMode: "worktree" as const, worktreeBase: "HEAD" }
-              : automation.workspaceMode === "existing" && automation.worktreeCwd
-                ? { worktreeCwd: automation.worktreeCwd }
-                : {}),
+              : automation.workspaceMode === "current"
+                ? { workspaceMode: "current" as const }
+                : automation.workspaceMode === "existing" && automation.worktreeCwd
+                  ? { worktreeCwd: automation.worktreeCwd }
+                  : {}),
           };
           const nextSessions = [...sessionsRef.current, session];
           sessionsRef.current = nextSessions;

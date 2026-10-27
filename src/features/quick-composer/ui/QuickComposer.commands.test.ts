@@ -8,6 +8,14 @@ import { QuickComposer } from "./QuickComposer";
 const native = vi.hoisted(() => ({
   shown: () => {},
 }));
+vi.mock("../../workspaces/model/workspaceCreation", () => ({
+  shortWorkspaceRef: (value: string) => value,
+  useWorkspaceCreation: (_cwd: string, _active: boolean, choice?: string) => ({
+    mode: choice ?? "current",
+    pending: false,
+    refresh: vi.fn(),
+  }),
+}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({
   emit: vi.fn().mockResolvedValue(undefined),

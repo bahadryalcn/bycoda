@@ -97,6 +97,7 @@ async function fixture(buildIdentity: BuildIdentity | null = null) {
     expectedRevision: 0,
     idempotencyKey: "rpc-fixture-policy",
     policy: {
+      defaultMode: "worktree",
       root: join(root, "worktrees"),
       disk: { budgetBytes: 1024 ** 3, warningRatio: 0.8, minimumFreeBytes: 1 },
     },
@@ -104,7 +105,39 @@ async function fixture(buildIdentity: BuildIdentity | null = null) {
   return { root, target, store, engine, projectScope, server, device, request, call };
 }
 
-it("prepares independent execution before authenticated old-client atomic creation can dispatch its first turn", async () => {
+it("defaults authenticated creation without a choice to current and preserves explicit worktree opt-in", async () => {
+  const f = await fixture();
+  await f.call("projects.workspacePolicy.update", {
+    ...f.projectScope,
+    expectedRevision: 1,
+    idempotencyKey: "default-policy",
+    policy: { root: join(f.root, "worktrees"), disk: { minimumFreeBytes: 1 } },
+  });
+  const command = {
+    type: "create",
+    commandId: "rpc-current-default",
+    projectId: f.projectScope.projectId,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  };
+  const receipt = await f.call("commands.dispatch", command);
+  expect(await f.call("commands.dispatch", command)).toEqual(receipt);
+  const session = (await f.store.session(receipt.sessionId)).session;
+  expect(session.cwd).toBe(f.target);
+  expect(session.workspaceId).toBeUndefined();
+  expect(session.workspaceMode).toBe("current");
+  const managed = await f.call("commands.dispatch", {
+    ...command,
+    commandId: "rpc-worktree-opt-in",
+    workspaceMode: "worktree",
+  });
+  const managedSession = (await f.store.session(managed.sessionId)).session;
+  expect(managedSession.workspaceId).toBeTruthy();
+  expect(managedSession.cwd).not.toBe(f.target);
+});
+
+it("prepares independent execution for project worktree policy before authenticated old-client atomic creation dispatches its first turn", async () => {
   const f = await fixture();
   const originalHead = git(f.target, "rev-parse", "HEAD");
   const command = {

@@ -765,19 +765,15 @@ test("execution mode is selectable in task and goal dialogs", async ({ page }, t
     const form = await start(page, kind);
     if (kind === "task")
       await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
-    expect(
-      await form
-        .getByRole("radiogroup", { name: "Execution mode", exact: true })
-        .evaluate((node) => getComputedStyle(node).borderTopStyle),
-    ).toBe("solid");
-    await expect(form.getByRole("radio", { name: "Shared checkout", exact: true })).toBeChecked();
-    await form.getByRole("radio", { name: "Separate worktree", exact: true }).click();
-    await expect(form.getByRole("radio", { name: "Separate worktree", exact: true })).toBeChecked();
+    const mode = form.getByRole("button", { name: /^Execution mode:/ });
+    await expect(mode).toHaveAccessibleName("Execution mode: Automatic");
+    await choose(page, mode, "Separate worktree");
+    await expect(mode).toHaveAccessibleName("Execution mode: Separate worktree");
     if (kind === "task")
       await form.getByRole("button", { name: "Agent settings", exact: true }).click();
     const merge = form.getByRole("checkbox", { name: /^Merge automatically/ });
     await expect(merge).toBeDisabled();
-    await form.getByRole("radio", { name: "Shared checkout", exact: true }).click();
+    await choose(page, mode, "Shared checkout");
     await expect(merge).toBeDisabled();
     await page.screenshot({
       path: testInfo.outputPath(`${kind}-execution-mode.png`),
@@ -1474,7 +1470,38 @@ test("compact task form keeps advanced choices and long instructions manageable"
     animations: "disabled",
   });
   await advanced.locator("summary").click();
-  await expect(form.getByRole("radio", { name: "Shared checkout", exact: true })).toBeVisible();
+  await expect(form.getByRole("button", { name: /^Execution mode:/ })).toBeVisible();
   await choose(page, form.getByRole("button", { name: /^Base branch:/ }), "main");
   await expect(form.getByRole("button", { name: /^Base branch:/ })).toContainText("main");
 });
+
+for (const width of [1280, 800]) {
+  for (const theme of ["light", "dark"]) {
+    test(`inherited execution mode fits task and goal forms at ${width}px ${theme}`, async ({
+      page,
+    }, testInfo) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 1000 });
+      await mkdir("temp/verification/d1", { recursive: true });
+      for (const kind of ["task", "goal"] as const) {
+        const form = await start(page, kind);
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        if (kind === "task")
+          await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
+        const mode = form.getByRole("button", { name: "Execution mode: Automatic", exact: true });
+        await expect(mode).toBeVisible();
+        await mode.scrollIntoViewIfNeeded();
+        const bounds = (await mode.boundingBox())!;
+        expect(bounds.x).toBeGreaterThanOrEqual(0);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+        await page.screenshot({
+          path: `temp/verification/d1/${kind}-execution-${theme}-${width}-${testInfo.project.name}.png`,
+          animations: "disabled",
+        });
+      }
+    });
+  }
+}

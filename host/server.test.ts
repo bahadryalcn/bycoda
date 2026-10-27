@@ -71,7 +71,11 @@ async function enableManagedFixture(s: Awaited<ReturnType<typeof setup>>) {
     environmentId: s.store.environmentId,
     expectedRevision: 0,
     idempotencyKey: "managed-fixture-policy",
-    policy: { root: join(s.directory, "managed"), disk: { minimumFreeBytes: 1 } },
+    policy: {
+      defaultMode: "worktree",
+      root: join(s.directory, "managed"),
+      disk: { minimumFreeBytes: 1 },
+    },
   });
   expect(configured.value.error).toBeUndefined();
 }
@@ -122,12 +126,12 @@ describe("managed workspace owner RPCs", () => {
     const project = { projectId: s.project.id, environmentId: s.store.environmentId };
     const policy = await s.call("projects.workspacePolicy.get", project);
     expect(policy.value.error).toBeUndefined();
-    expect(policy.value.result.resolved.policy.defaultMode).toBe("worktree");
+    expect(policy.value.result.resolved.policy.defaultMode).toBe("current");
     const update = {
       ...project,
       expectedRevision: policy.value.result.revision,
       idempotencyKey: "rpc-policy",
-      policy: { root: join(s.directory, "managed") },
+      policy: { defaultMode: "worktree", root: join(s.directory, "managed") },
     };
     expect((await s.call("projects.workspacePolicy.update", update, "invalid")).status).toBe(401);
     expect((await s.call("projects.workspacePolicy.update", update)).value.error).toBeUndefined();
@@ -1959,9 +1963,9 @@ describe("scoped Conversation Tools RPC", () => {
         runtimeMode: source.session.runtimeMode,
         approvePlan: true,
         manualStart: true,
-        isolate: true,
         autoMerge: false,
       });
+      expect(result.value.result.isolate).toBeUndefined();
       expect(create).toHaveBeenCalledOnce();
       await expect((async () => await s.store.session(id))()).rejects.toThrow(
         "Session not found on this machine",

@@ -120,6 +120,7 @@ async function setup() {
     model: "claude:test",
     modelSettings: {},
     runtimeMode: "auto",
+    isolate: true,
     scheduleKind: "daily",
     minute: 0,
     time: "09:00",
@@ -190,6 +191,44 @@ async function setup() {
   };
 }
 describe("host stewards", () => {
+  it("inherits worktree project policy when no steward choice is supplied", async () => {
+    const f = await setup();
+    const { createWorkspacePolicyResolver } = await import("./workspace-policy");
+    const policy = createWorkspacePolicyResolver(f.store);
+    await policy.update(
+      {
+        projectId: f.repo.id,
+        environmentId: f.workspaces.environmentId,
+        policy: { defaultMode: "worktree" },
+        expectedRevision: 0,
+        idempotencyKey: "steward-worktree",
+      },
+      { ownerId: "test", authorizationId: "test" },
+    );
+    f.workspaces.policy = policy;
+    await f.stewards.save(f.input({ isolate: undefined }));
+    await f.stewards.runNow("steward");
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 20000 });
+    expect(f.workspaces.prepare).toHaveBeenCalledOnce();
+    expect(f.turns[0].input.cwd).toBe([...f.workspaces.rows.values()][0].path);
+  });
+  it("defaults steward runs and proposed tasks to the current checkout", async () => {
+    const f = await setup();
+    await f.stewards.save(f.input({ isolate: undefined }));
+    await f.stewards.runNow("steward");
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+    expect(f.turns[0].input.cwd).toBe(f.repo.cwd);
+    expect(f.workspaces.prepare).not.toHaveBeenCalled();
+    expect(f.turns[0].input.text).toContain("the project folder itself");
+    await f.finish(reply([{ title: "Cover retry", description: "Test retry recovery" }]));
+    const proposal = (await f.tasks.list())[0];
+    expect(proposal.isolate).toBeUndefined();
+    await f.tasks.move(proposal.id, "queued");
+    await f.tasks.tick();
+    await vi.waitFor(() => expect(f.turns).toHaveLength(2));
+    expect(f.turns[1].input.cwd).toBe(f.repo.cwd);
+    expect((await f.tasks.get(proposal.id))?.isolate).toBe(false);
+  });
   it("retains unexpected steward source through the removal interface", async () => {
     const f = await setup();
     await f.stewards.save(f.input());
