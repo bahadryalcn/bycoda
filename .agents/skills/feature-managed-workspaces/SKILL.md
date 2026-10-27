@@ -328,6 +328,53 @@ delivery only; product/runtime acceptance remains as described above.
   at 1280 and 800 and were opened for inspection. These are local and fixture
   acceptance, separate from installed/live-provider/released behavior.
 
+## N1 native managed turn repair (2026-10-27)
+
+Tier T2, branch `fix/native-managed-turns`, baseline `0a42b1ab`. Scope: native
+provider admission, rejected/unknown begin recovery, accepted transcript revision
+and the session notice action (eight implementation surfaces below). Live claim
+APIs were unavailable; the owner assigned this isolated N1 workspace. Other
+workspace ownership and delivery behavior is preserved.
+
+Owner instruction, exact quote from the N1 stream brief in this session,
+2026-10-27:
+
+> Never release a row whose Host record shows a complete before-capture.
+
+| Status | Surface                    | Implementation and checks                                                                                                                                                                                                                                                                          |
+| ------ | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Done   | Provider admission         | `host/native-activity-identity.ts`, `host/managed-native-activity.ts`, `host/managed-native-turns.ts`: one authenticated device/session provider may precede begin; accepted markers remain run-bound; foreign writers and duplicate providers block. Provider retirement is mandatory before end. |
+| Done   | Rejected begin             | `host/managed-native-turns.ts`: before-capture rejection retires its marker and durably cancels its key; delayed begins cannot authorize it.                                                                                                                                                       |
+| Done   | Recovery transport         | `host/server.ts` routes authenticated `native.turn.recover`; `src-tauri/src/remote.rs` permits that trusted route. Complete identity and revision acknowledgements are required.                                                                                                                   |
+| Done   | Native revision            | `src-tauri/src/session_rewind.rs`: current accepted transcript boundary and starting-row reservation share one SQLite lock; stale session metadata cannot cause normal-send revision rejection.                                                                                                    |
+| Done   | Native row recovery        | `src-tauri/src/session_rewind.rs`, registration in `lib.rs`: only matching `starting` rows release on Host proof; absent rows are local no-ops. Session-load reconciliation self-heals old rows; active/finishing or complete-before outcomes stay fenced.                                         |
+| Done   | Next send                  | `src/features/workspaces/model/nativeManagedTurn.ts`: recovery precedes persistence and begin, preserving the fence and draft on unknown/negative responses.                                                                                                                                       |
+| Done   | Session notice             | `AgentTranscript.tsx`, `SessionPane.tsx`, `ManagedTurnRecovery.tsx`, `managedTurnRecovery.ts`, `sessionIssue.ts`: latest local idle managed failure exposes shared Reset button with local pending, blocker, retry and success state; eight locale catalogs.                                       |
+| Done   | Documentation and evidence | This card, managed workspace guide/reference; focused model, HTTP transport and real-Git Host regressions plus browser fixture matrix. Native/provider results are recorded separately below and in the N1 handoff.                                                                                |
+
+Regression inventory: `host/managed-native-turns.test.ts` exercises provider-first
+begin, foreign activity, three committed turns with rewind/Undo, rejected begins,
+legacy restart recovery, complete-before fencing and delayed cancellation keys.
+`managed-native-activity.test.ts` covers device/session process admission.
+`src-tauri/src/session_rewind.rs` tests current revisions, rejected begin followed
+by execution, unknown/mismatched HTTP acknowledgements and reopened SQLite rows.
+`nativeManagedTurn.test.ts` and `submitModelSwitch.integration.test.ts` verify
+recovery before save before begin. `ManagedTurnRecovery.test.ts` and
+`managedTurnRecovery.test.ts` cover notice gating and local feedback.
+
+Browser fixture: `tests/browser/transcript.html?native-turn-recovery` and
+`transcript-rewind.spec.ts`: four Chromium cases passed; all sixteen light/dark,
+1280/800 notice/pending/blocked/released captures were opened and reviewed under
+`temp/verification/n1/`. These mock recovery IPC and do not establish native
+provider acceptance. Isolated native evidence, final check results and immutable
+commit references are recorded in the N1 handoff; installation/release remain
+outside this stream.
+
+Committed fixes so far: `570c5207` (revision), `573cfd27` (own process admission),
+`e26c1f57` (notice action), `c7927040` (native recovery), `86ae09ae` (pre-save
+recovery), `64cb6fbb` (Host cancellation/recovery). Final native after-capture
+retirement refinement is recorded with its commit at handoff.
+
 ## X1 cross-platform path repair (2026-10-27)
 
 Scope: Host/native path identity, cleanup, rewind and automation execution on

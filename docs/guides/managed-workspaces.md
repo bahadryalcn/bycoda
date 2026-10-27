@@ -117,6 +117,23 @@ space. Shared caches and Git recovery objects are counted separately. Pressure
 can accelerate only already eligible safe cleanup. If that is insufficient, new
 materialization pauses; it does not discard dirty work or unmerged branches.
 
+## Recovering a turn that could not start
+
+The app releases a rejected managed turn only after the execution Host confirms
+that its execution was never authorized. Existing turns left in `starting` by an
+older version are checked when the conversation opens and before the next send
+is saved. When no before-capture or workspace activity exists, the Host cancels
+that exact request durably and the next send can proceed. A late retry of the
+cancelled request cannot start execution.
+
+If the outcome remains unknown, the session's error notice offers **Reset stuck
+turn**. The action checks the retained request with the Host and shows the
+blocking reason when it cannot release it. Transport errors preserve the fence
+and the draft. A complete before-capture means execution may have started, so
+Reset cannot discard it; reconcile the existing execution and capture instead.
+Active provider processes, terminals, other writers and dirty or unknown editor
+buffers continue to block recovery of an unknown request.
+
 ## Rewind and Undo
 
 Managed Git rewind restores the selected accepted user boundary's conversation,
