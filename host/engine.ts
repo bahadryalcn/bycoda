@@ -3073,7 +3073,11 @@ export class HostEngine {
   private async applyEvent(id: string, runId: string, event: HarnessEvent): Promise<void> {
     const live = this.live.get(id);
     if (!live || live.value.runId !== runId || live.value.status !== "running") return;
-    if (event.type === "tool.started" && isEditTool(event.kind, event.title, event.preview)) {
+    if (
+      event.type === "tool.started" &&
+      event.fileChanges === undefined &&
+      isEditTool(event.kind, event.title, event.preview)
+    ) {
       const paths = [...(event.paths ?? []), ...(event.preview?.path ? [event.preview.path] : [])];
       if (paths.length)
         await this.checkpoints
@@ -3083,13 +3087,22 @@ export class HostEngine {
     if (
       event.type === "tool.updated" &&
       (event.status === "completed" || event.status === "success") &&
-      isEditTool(event.kind, event.title, event.preview)
+      (event.fileChanges !== undefined || isEditTool(event.kind, event.title, event.preview))
     ) {
-      const paths = [...(event.paths ?? []), ...(event.preview?.path ? [event.preview.path] : [])];
-      if (paths.length)
-        void this.checkpoints
-          .claim(id, live.value.session.cwd, runId, paths)
-          .catch((error) => console.warn("Checkpoint tool attribution failed", error));
+      if (event.fileChanges !== undefined) {
+        await this.checkpoints
+          .claimFilesProof(id, live.value.session.cwd, runId, event.callId, event.fileChanges)
+          .catch((error) => console.warn("File history provider proof failed", error));
+      } else {
+        const paths = [
+          ...(event.paths ?? []),
+          ...(event.preview?.path ? [event.preview.path] : []),
+        ];
+        if (paths.length)
+          void this.checkpoints
+            .claim(id, live.value.session.cwd, runId, paths)
+            .catch((error) => console.warn("Checkpoint tool attribution failed", error));
+      }
     }
     // The host cannot read the desktop's settings; the turn carried them.
     const session = applyHarnessEvent(live.value.session, event, {

@@ -1188,6 +1188,89 @@ function managedHistory() {
 }
 
 describe("managed turn boundaries", () => {
+  it("uses successful post-write Codex proof without late pre-edit capture", async () => {
+    const { engine, store, id, directory, turns } = await setup();
+    const cwd = join(directory, "proof-repo");
+    mkdirSync(cwd);
+    writeFileSync(join(cwd, "own.txt"), "before\n");
+    const git = (...args: string[]) => execFileAsync("git", args, { cwd, windowsHide: true });
+    await git("init", "-q");
+    await git("config", "user.name", "Test");
+    await git("config", "user.email", "test@example.invalid");
+    await git("add", ".");
+    await git("commit", "-qm", "initial");
+    const initial = await store.session(id);
+    await store.save(
+      { ...initial, revision: initial.revision + 1, session: { ...initial.session, cwd } },
+      { type: "test.checkout" },
+    );
+    const prepare = vi.spyOn(engine.checkpoints, "prepareFilesTurn");
+    const legacyClaim = vi.spyOn(engine.checkpoints, "claim");
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "proof-message",
+      sessionId: id,
+      text: "Replace file",
+    });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    writeFileSync(join(cwd, "own.txt"), "after\n");
+    for (const [callId, kind, contents] of [
+      ["delete", "delete", "before\n"],
+      ["add", "add", "after\n"],
+    ] as const) {
+      const proof = [{ path: "own.txt", kind, contents }];
+      turns[0].input.onEvent({
+        type: "tool.started",
+        callId,
+        kind: "write",
+        paths: ["own.txt"],
+        fileChanges: proof,
+        title: "Write own.txt",
+      });
+      turns[0].input.onEvent({
+        type: "tool.updated",
+        callId,
+        kind: "write",
+        paths: ["own.txt"],
+        fileChanges: proof,
+        status: "completed",
+      });
+      turns[0].input.onEvent({
+        type: "tool.updated",
+        callId,
+        kind: "write",
+        paths: ["own.txt"],
+        fileChanges: proof,
+        status: "completed",
+      });
+    }
+    // A failed or empty started notification is not evidence of a successful write.
+    turns[0].input.onEvent({
+      type: "tool.started",
+      callId: "failed",
+      title: "Write own.txt",
+      kind: "write",
+      fileChanges: [],
+    });
+    turns[0].input.onEvent({
+      type: "tool.updated",
+      callId: "failed",
+      kind: "write",
+      status: "failed",
+      fileChanges: [],
+    });
+    turns[0].finish();
+    await engine.waitForRun(id, receipt.runId);
+    expect(prepare).not.toHaveBeenCalled();
+    expect(legacyClaim).not.toHaveBeenCalled();
+    expect(await engine.checkpoints.filesRevertPlan(id, cwd, "proof-message")).toEqual({
+      files: [{ path: "own.txt", action: "restore", conflict: undefined }],
+    });
+    expect((await engine.checkpoints.filesRevert(id, cwd, "proof-message")).reverted).toEqual([
+      "own.txt",
+    ]);
+    expect(readFileSync(join(cwd, "own.txt"), "utf8")).toBe("before\n");
+  });
   it.each([false, true])(
     "records and safely restores per-message files with exact rewind OFF (worktree %s)",
     async (managed) => {

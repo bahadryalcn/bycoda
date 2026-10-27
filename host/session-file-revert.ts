@@ -15,6 +15,7 @@ import {
 import { dirname, join, relative } from "node:path";
 import { execFileAsync } from "../src/shared/lib/processExecution.node";
 import { safeGitPath } from "./workspace";
+import type { HarnessFileChange } from "../src/integrations/harness/core/types";
 
 type Image = { raw: string; mode: number } | null;
 export type FileRevision = { before: Image; after: Image; conflict?: string };
@@ -34,6 +35,9 @@ type Active = {
   prepared: Map<string, Image>;
   excluded: Map<string, string>;
   conflicts: Set<string>;
+  proofs: Map<string, FileRevision>;
+  proofCalls: Set<string>;
+  proofBytes: number;
 };
 export type FilesRevertPlan = {
   files: { path: string; action: "restore" | "delete"; conflict?: string }[];
@@ -56,6 +60,72 @@ const fingerprint = async (cwd: string, path: string) => {
     return message(error);
   }
 };
+
+/** Reverse only validated provider hunks; unchanged regions come from current bytes. */
+export function reverseProviderUpdate(current: string, diff: string): string {
+  const lines = current.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+  const patch = diff.split("\n");
+  if (patch.at(-1) === "") patch.pop();
+  const before: string[] = [];
+  let cursor = 0;
+  let hunks = 0;
+  for (let i = 0; i < patch.length;) {
+    const header = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:.*)$/.exec(patch[i]);
+    if (!header) {
+      if (hunks || !/^(?:diff |index |--- |\+\+\+ |$)/.test(patch[i]))
+        throw new Error("Unsupported provider update patch");
+      i++;
+      continue;
+    }
+    hunks++;
+    const oldStart = Number(header[1]);
+    const oldCount = Number(header[2] ?? 1);
+    const newStart = Number(header[3]);
+    const newCount = Number(header[4] ?? 1);
+    const oldIndex = oldCount ? oldStart - 1 : oldStart;
+    const newIndex = newCount ? newStart - 1 : newStart;
+    if (
+      ![oldStart, oldCount, newStart, newCount].every(Number.isSafeInteger) ||
+      oldIndex < 0 ||
+      newIndex < cursor ||
+      newIndex > lines.length
+    )
+      throw new Error("Invalid provider update range");
+    for (let index = cursor; index < newIndex; index++) before.push(lines[index]);
+    if (before.length !== oldIndex) throw new Error("Inconsistent provider update positions");
+    cursor = newIndex;
+    const body: Array<{ kind: string; text: string }> = [];
+    i++;
+    while (i < patch.length && !patch[i].startsWith("@@ ")) {
+      const line = patch[i++];
+      if (line === "\\ No newline at end of file") {
+        const previous = body.at(-1);
+        if (!previous || !previous.text.endsWith("\n"))
+          throw new Error("Invalid no-newline marker");
+        previous.text = previous.text.slice(0, -1);
+      } else if (/^[ +-]/.test(line)) body.push({ kind: line[0], text: `${line.slice(1)}\n` });
+      else throw new Error("Unsupported provider update hunk");
+    }
+    if (
+      body.filter((line) => line.kind !== "+").length !== oldCount ||
+      body.filter((line) => line.kind !== "-").length !== newCount
+    )
+      throw new Error("Provider update hunk counts do not match");
+    for (const line of body) {
+      if (line.kind !== "-") {
+        if (lines[cursor] !== line.text)
+          throw new Error("Current file differs from provider update");
+        cursor++;
+      }
+      if (line.kind !== "+") before.push(line.text);
+    }
+  }
+  if (!hunks) throw new Error("Provider update has no verifiable hunks");
+  for (; cursor < lines.length; cursor++) before.push(lines[cursor]);
+  if (before.some((line, index) => index < before.length - 1 && !line.endsWith("\n")))
+    throw new Error("Provider update has a non-final no-newline marker");
+  return before.join("");
+}
 
 // Node's Windows file handles always share writes. A short-lived hidden helper
 // supplies mandatory deny-write and deny-directory-rename handles for revert only.
@@ -311,6 +381,9 @@ export class SessionFileRevert {
       prepared: new Map(),
       excluded: new Map(),
       conflicts: new Set(),
+      proofs: new Map(),
+      proofCalls: new Set(),
+      proofBytes: 0,
     };
     this.active.set(session, active);
     let size = 0;
@@ -353,6 +426,91 @@ export class SessionFileRevert {
       active.claimed.set(normalized, await image(active.cwd, normalized));
     }
   }
+  /** Codex file notifications arrive after writes. Their proof replaces the late
+   * prepare/claim heuristic; it never authorizes a previous journal entry. */
+  async claimProof(
+    session: string,
+    cwd: string,
+    turnId: string,
+    callId: string,
+    changes: HarnessFileChange[],
+  ) {
+    const active = this.active.get(session);
+    if (!active || active.turn.id !== turnId || active.cwd !== (await realpath(cwd))) return;
+    if (active.proofCalls.has(callId)) return;
+    if (
+      typeof callId !== "string" ||
+      !callId ||
+      callId.length > 512 ||
+      active.proofCalls.size >= 4096 ||
+      !Array.isArray(changes) ||
+      !changes.length ||
+      changes.length > 4096
+    ) {
+      active.complete = false;
+      return;
+    }
+    active.proofCalls.add(callId);
+    for (const change of changes) {
+      try {
+        const path = relative(active.cwd, await filePath(active.cwd, change.path)).replace(
+          /\\/g,
+          "/",
+        );
+        if (
+          typeof change.contents !== "string" ||
+          Buffer.byteLength(change.contents) > MAX_FILE ||
+          Buffer.from(change.contents).toString("utf8") !== change.contents
+        )
+          throw new Error("Provider proof exceeds file capture limits");
+        const actual = await image(active.cwd, path);
+        const textImage = (
+          text: string,
+          mode = actual?.mode ?? active.baseline.get(path)?.mode ?? 0o644,
+        ): Image => {
+          if (Buffer.byteLength(text) > MAX_FILE)
+            throw new Error("Provider proof exceeds file capture limits");
+          return { raw: Buffer.from(text, "utf8").toString("base64"), mode };
+        };
+        let before: Image;
+        let after: Image;
+        if (change.kind === "add") {
+          before = null;
+          after = textImage(change.contents);
+        } else if (change.kind === "delete") {
+          before = textImage(change.contents, active.baseline.get(path)?.mode ?? 0o644);
+          after = null;
+        } else if (change.kind === "update") {
+          if (!actual) throw new Error("Updated file is missing");
+          const current = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+            Buffer.from(actual.raw, "base64"),
+          );
+          before = textImage(reverseProviderUpdate(current, change.contents));
+          after = actual;
+        } else throw new Error("Unsupported provider file proof");
+        const previous = active.proofs.get(path);
+        const revision = {
+          before: previous ? previous.before : before,
+          after,
+          conflict:
+            previous?.conflict ??
+            (previous && !same(previous.after, before)
+              ? "File changed outside this session between edits"
+              : undefined),
+        };
+        const bytes = (value: FileRevision | undefined) =>
+          (value?.before?.raw.length ?? 0) + (value?.after?.raw.length ?? 0);
+        const nextSize = active.proofBytes - bytes(previous) + bytes(revision);
+        if (nextSize > this.budget || (!previous && active.proofs.size >= 4096))
+          throw new Error("Provider proof exceeded the turn history budget");
+        active.proofBytes = nextSize;
+        active.proofs.set(path, revision);
+      } catch {
+        // Unsupported or malformed evidence must never fall back to a stale baseline.
+        active.complete = false;
+      }
+    }
+  }
   async finish(session: string, cwd: string, turnId: string, shared = false) {
     const active = this.active.get(session);
     if (!active || active.turn.id !== turnId || active.cwd !== (await realpath(cwd))) return;
@@ -362,16 +520,22 @@ export class SessionFileRevert {
       if (!turn) return;
       const discovered = shared ? new Set<string>() : new Set(await this.paths(active.cwd));
       const candidates = shared
-        ? [...active.claimed.keys()]
+        ? [...new Set([...active.claimed.keys(), ...active.proofs.keys()])]
         : [
             ...new Set([
               ...active.baseline.keys(),
               ...active.excluded.keys(),
               ...active.claimed.keys(),
+              ...active.proofs.keys(),
               ...discovered,
             ]),
           ];
       for (const path of candidates) {
+        const proof = active.proofs.get(path);
+        if (proof) {
+          if (!same(proof.before, proof.after) || proof.conflict) turn.files[path] = proof;
+          continue;
+        }
         if (active.excluded.has(path)) {
           if (
             active.claimed.has(path) ||

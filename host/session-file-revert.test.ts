@@ -14,7 +14,11 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileAsync } from "../src/shared/lib/processExecution.node";
 import { HostCheckpoints } from "./checkpoints";
-import { acquireRevertFileGuard, SessionFileRevert } from "./session-file-revert";
+import {
+  acquireRevertFileGuard,
+  reverseProviderUpdate,
+  SessionFileRevert,
+} from "./session-file-revert";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -53,6 +57,142 @@ async function fixture(gitRepo = true) {
   };
 }
 describe("session message file revert", () => {
+  it("chains late delete/add proofs and ignores duplicate completed notifications", async () => {
+    const f = await fixture();
+    await f.checkpoints.beginFilesTurn("s", f.cwd, "one");
+    await rm(join(f.cwd, "a.txt"));
+    await f.write("a.txt", "mine\n");
+    // Both notifications arrive after the replacement file already exists.
+    await f.checkpoints.claimFilesProof("s", f.cwd, "one", "delete", [
+      { path: "a.txt", kind: "delete", contents: "base\n" },
+    ]);
+    const added = [{ path: "a.txt", kind: "add" as const, contents: "mine\n" }];
+    await f.checkpoints.claimFilesProof("s", f.cwd, "one", "add", added);
+    await f.checkpoints.claimFilesProof("s", f.cwd, "one", "add", added);
+    await f.checkpoints.finishFilesTurn("s", f.cwd, "one");
+    expect(await f.checkpoints.filesRevertPlan("s", f.cwd, "one")).toEqual({
+      files: [{ path: "a.txt", action: "restore", conflict: undefined }],
+    });
+    expect((await f.checkpoints.filesRevert("s", f.cwd, "one")).reverted).toEqual(["a.txt"]);
+    expect(await f.read("a.txt")).toBe("base\n");
+  });
+  it("preserves a peer's pre-edit bytes supplied by the authoritative delete proof", async () => {
+    const f = await fixture();
+    await f.checkpoints.beginFilesTurn("s", f.cwd, "one");
+    await f.write("a.txt", "peer before\n");
+    await f.write("a.txt", "mine\n");
+    await f.checkpoints.claimFilesProof("s", f.cwd, "one", "delete", [
+      { path: "a.txt", kind: "delete", contents: "peer before\n" },
+    ]);
+    await f.checkpoints.claimFilesProof("s", f.cwd, "one", "add", [
+      { path: "a.txt", kind: "add", contents: "mine\n" },
+    ]);
+    await f.checkpoints.finishFilesTurn("s", f.cwd, "one");
+    expect((await f.checkpoints.filesRevert("s", f.cwd, "one")).skipped).toEqual([]);
+    expect(await f.read("a.txt")).toBe("peer before\n");
+  });
+  it("skips foreign writes after a proven edit and between two proven own edits", async () => {
+    const f = await fixture();
+    await f.checkpoints.beginFilesTurn("s", f.cwd, "one");
+    await f.write("a.txt", "mine\n");
+    await f.checkpoints.claimFilesProof("s", f.cwd, "one", "delete", [
+      { path: "a.txt", kind: "delete", contents: "base\n" },
+    ]);
+    await f.checkpoints.claimFilesProof("s", f.cwd, "one", "add", [
+      { path: "a.txt", kind: "add", contents: "mine\n" },
+    ]);
+    await f.write("a.txt", "peer after\n");
+    await f.checkpoints.finishFilesTurn("s", f.cwd, "one");
+    expect(
+      (await f.checkpoints.filesRevert("s", f.cwd, "one")).skipped.map((entry) => entry.path),
+    ).toEqual(["a.txt"]);
+    expect(await f.read("a.txt")).toBe("peer after\n");
+    await f.checkpoints.beginFilesTurn("s", f.cwd, "two");
+    await f.write("a.txt", "first own\n");
+    await f.checkpoints.claimFilesProof("s", f.cwd, "two", "delete1", [
+      { path: "a.txt", kind: "delete", contents: "peer after\n" },
+    ]);
+    await f.checkpoints.claimFilesProof("s", f.cwd, "two", "add1", [
+      { path: "a.txt", kind: "add", contents: "first own\n" },
+    ]);
+    await f.write("a.txt", "peer between\n");
+    await f.write("a.txt", "second own\n");
+    await f.checkpoints.claimFilesProof("s", f.cwd, "two", "delete2", [
+      { path: "a.txt", kind: "delete", contents: "peer between\n" },
+    ]);
+    await f.checkpoints.claimFilesProof("s", f.cwd, "two", "add2", [
+      { path: "a.txt", kind: "add", contents: "second own\n" },
+    ]);
+    await f.checkpoints.finishFilesTurn("s", f.cwd, "two");
+    expect((await f.checkpoints.filesRevertPlan("s", f.cwd, "two")).files[0].conflict).toMatch(
+      /between edits/,
+    );
+    expect((await f.checkpoints.filesRevert("s", f.cwd, "two")).reverted).toEqual([]);
+    expect(await f.read("a.txt")).toBe("second own\n");
+  });
+  it("reverses update hunks while retaining peer bytes outside those hunks", async () => {
+    const f = await fixture();
+    await f.write("a.txt", "\uFEFFinitial prefix\nbase\nend\n");
+    await f.checkpoints.beginFilesTurn("s", f.cwd, "one");
+    await f.write("a.txt", "\uFEFFpeer prefix\nmine\nend\n");
+    await f.checkpoints.claimFilesProof("s", f.cwd, "one", "update", [
+      { path: "a.txt", kind: "update", contents: "@@ -2 +2 @@\n-base\n+mine\n" },
+    ]);
+    await f.checkpoints.finishFilesTurn("s", f.cwd, "one");
+    expect((await f.checkpoints.filesRevert("s", f.cwd, "one")).skipped).toEqual([]);
+    expect(await f.read("a.txt")).toBe("\uFEFFpeer prefix\nbase\nend\n");
+  });
+  it.each(["@@ -1 +1 @@\n-base\n+not current\n", "not a patch", "@@ -1,2 +1 @@\n-base\n+mine\n"])(
+    "does not authorize a stale baseline for invalid update evidence: %s",
+    async (contents) => {
+      const f = await fixture();
+      await f.checkpoints.beginFilesTurn("s", f.cwd, "one");
+      await f.write("a.txt", "mine\n");
+      await f.checkpoints.claimFilesProof("s", f.cwd, "one", "invalid", [
+        { path: "a.txt", kind: "update", contents },
+      ]);
+      await f.checkpoints.finishFilesTurn("s", f.cwd, "one");
+      expect((await f.checkpoints.filesRevertPlan("s", f.cwd, "one")).unavailable).toBeTruthy();
+      await expect(f.checkpoints.filesRevert("s", f.cwd, "one")).rejects.toThrow();
+      expect(await f.read("a.txt")).toBe("mine\n");
+    },
+  );
+  it("deletes a proven creation and refuses empty or unsupported proof rather than baseline fallback", async () => {
+    const f = await fixture();
+    await f.checkpoints.beginFilesTurn("s", f.cwd, "one");
+    await f.write("new.txt", "new\n");
+    await f.checkpoints.claimFilesProof("s", f.cwd, "one", "create", [
+      { path: "new.txt", kind: "add", contents: "new\n" },
+    ]);
+    await f.checkpoints.finishFilesTurn("s", f.cwd, "one");
+    expect((await f.checkpoints.filesRevert("s", f.cwd, "one")).reverted).toEqual(["new.txt"]);
+    await expect(f.read("new.txt")).rejects.toMatchObject({ code: "ENOENT" });
+    await f.checkpoints.beginFilesTurn("s", f.cwd, "two");
+    await f.write("a.txt", "mine\n");
+    await f.checkpoints.claimFilesProof("s", f.cwd, "two", "unknown", []);
+    await f.checkpoints.finishFilesTurn("s", f.cwd, "two");
+    expect((await f.checkpoints.filesRevertPlan("s", f.cwd, "two")).unavailable).toBeTruthy();
+  });
+  it("validates multiple update hunks, zero-count ranges and final-newline evidence", () => {
+    expect(
+      reverseProviderUpdate(
+        "new\npeer\ntail",
+        "@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-end\n\\ No newline at end of file\n+tail\n\\ No newline at end of file\n",
+      ),
+    ).toBe("old\npeer\nend");
+    expect(reverseProviderUpdate("new\nbase\n", "@@ -0,0 +1 @@\n+new\n")).toBe("base\n");
+    expect(reverseProviderUpdate("base\n", "@@ -1 +0,0 @@\n-old\n")).toBe("old\nbase\n");
+    expect(() => reverseProviderUpdate("new\r\n", "@@ -1 +1 @@\n-old\n+new\n")).toThrow();
+    expect(() =>
+      reverseProviderUpdate("new\n", "@@ -1 +1 @@\n-old\n+new\n@@ -1 +1 @@\n-old\n+new\n"),
+    ).toThrow();
+    expect(() =>
+      reverseProviderUpdate(
+        "new\npeer\n",
+        "@@ -1 +1 @@\n-old\n\\ No newline at end of file\n+new\n",
+      ),
+    ).toThrow();
+  });
   it("retires committed aggregate review entries while retaining message history", async () => {
     const f = await fixture();
     await f.turn("one", () => f.write("a.txt", "committed\n"));

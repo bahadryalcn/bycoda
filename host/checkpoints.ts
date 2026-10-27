@@ -253,6 +253,17 @@ export class HostCheckpoints {
   prepareFilesTurn(session: string, cwd: string, turn: string, paths: string[]) {
     return this.queue(session, [cwd], () => this.fileHistory.prepare(session, cwd, turn, paths));
   }
+  claimFilesProof(
+    session: string,
+    cwd: string,
+    turn: string,
+    callId: string,
+    changes: import("../src/integrations/harness/core/types").HarnessFileChange[],
+  ) {
+    return this.queue(session, [cwd], () =>
+      this.fileHistory.claimProof(session, cwd, turn, callId, changes),
+    );
+  }
   filesRevertPlan(session: string, cwd: string, userBlockId: string) {
     return this.queue(session, [cwd], () => this.fileHistory.plan(session, cwd, userBlockId));
   }
