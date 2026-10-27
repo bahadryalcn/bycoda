@@ -203,6 +203,14 @@ independent shell, dev server or dirty/unknown editor buffer still blocks it.
 The provider must retire before after-capture; accepting preflight activity does
 not authorize capturing a still-running writer's end.
 
+Desktop busy publications and desktop run leases precede native capture. Native
+turn/activity calls carry the current desktop client separately from persisted
+turn identity. A scoped Host probe recognizes that mirror only with a fresh,
+authenticated matching device/client/session and a positive matching busy or
+lease claim. Another window/device, a real Host run and unknown stored running
+state remain writers. Legacy bindings retain their original identity during
+recovery; the current caller context does not rewrite them.
+
 Rejected begins cancel their exact binding durably before releasing the native
 SQLite admission. `native.turn.recover` validates the complete persisted request
 and owner device under the workspace Git mutation lock. Unknown legacy requests

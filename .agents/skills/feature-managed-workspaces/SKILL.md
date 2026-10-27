@@ -370,10 +370,61 @@ provider acceptance. Isolated native evidence, final check results and immutable
 commit references are recorded in the N1 handoff; installation/release remain
 outside this stream.
 
-Committed fixes so far: `570c5207` (revision), `573cfd27` (own process admission),
+Committed fixes: `570c5207` (revision), `573cfd27` (own process admission),
 `e26c1f57` (notice action), `c7927040` (native recovery), `86ae09ae` (pre-save
-recovery), `64cb6fbb` (Host cancellation/recovery). Final native after-capture
-retirement refinement is recorded with its commit at handoff.
+recovery), `64cb6fbb` (Host cancellation/recovery), `41699dd2` (retirement before
+after-capture), `e489b034` (frontend desktop client), `630396c6` (native caller
+context) and `71c48b33` (authenticated busy publication ownership).
+
+The actual desktop publishes busy before begin and keeps it through end. The
+production Host probe in `host/server.ts` now scopes that synthetic mirror to
+the matching authenticated device/client/session with a fresh positive busy or
+desktop lease claim. A real Host execution, foreign window/device, unknown stored
+running state, process, shell, terminal or dirty/unknown buffer remains fenced.
+`src/integrations/harness/core/child.ts`, `src-tauri/src/harness.rs`,
+`native_workspace.rs` and `remote.rs` carry optional current client context;
+persisted legacy turn requests remain unchanged. Production HTTP coverage lives
+in `host/managed-workspaces-rpc.test.ts`, including busy-before-begin and
+busy-through-end with real Git commits and process retirement.
+
+### N1 acceptance and build inclusion
+
+- Isolated Windows native acceptance passed at clean product source
+  `71c48b33588837a50ab0c2b6cde2c647339752a7`, build
+  `dev-1793090162750-0d63895a91d1` (version 0.6.92, debug). Web, native and Host
+  stamps match; all N1 product changes are included. No installer or owner update
+  was performed.
+- A fresh GPT-6-Luna/Codex session executed three consecutive real turns in
+  workspace `7e2540e0-d6fe-4bae-8876-e8a4c99de170`: `ff22f9d`, `b31eb43`,
+  `f41cb83`. Each edited and committed only `counter.txt`; the source repository
+  main and sibling verification workspace stayed unchanged.
+- Native UI rewind of the third turn restored `b31eb43` and exact `2\r\n` file
+  bytes with two user turns. Undo restored `f41cb83`, exact `3\r\n`, all thirteen
+  original transcript blocks, clean Git, native phase `complete` and no Host
+  execution activities. Three Host before/after records are complete.
+- Evidence: `temp/verification/n1/native-result.json`, `native-*-transcript.json`,
+  `native-after-undo-db.json`, `native-turns/`, `native-rewind/`, `native-undo/`.
+  All twelve native light/dark 1280/800 captures were opened and reviewed;
+  metadata records exact source comparison and stable captures. Reset has the
+  separate sixteen-image browser fixture matrix plus a real rejected-start
+  recovery capture.
+- Final source checks: web fast 12,408 passed/15 skipped; native modules and
+  authenticated HTTP/desktop regressions 35 passed; Rust checkpoint 78 passed/
+  one crash helper ignored, native workspace 3 passed, then changed native client
+  transport 20 passed/one crash helper ignored. Clippy, Rust format, fast web/Host
+  types and repository hygiene passed. The optional locale audit reports 5,359
+  catalog issues, including baseline German `Connect {p0} in the browser`; new
+  recovery keys are present in every catalog.
+
+Pre-existing acceptance limitation: rewind message menus did not refresh after
+the successful turns; reopening the native page exposed all three menus and
+rewind/Undo then passed. The stable eligibility/memo structure is unchanged from
+`0a42b1ab` (`SessionPane.tsx:947`, `AgentTranscript.tsx:1664` and `:2331` in this
+delivery); the exact memo tier remains an inference. Follow up separately with
+reactive eligibility and busy-to-idle/blocked-to-unblocked coverage. Initial
+GPT-6.1-Sol capacity failure and the isolated Host directory ACL setup workaround
+are documented in the local evidence report; neither is presented as successful
+provider acceptance. The owner's two installed sessions remain unmodified.
 
 ## X1 cross-platform path repair (2026-10-27)
 
