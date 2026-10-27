@@ -624,6 +624,10 @@ async function scenario3(context) {
       }
     }, current.id);
     assert(rejected.error, "Foreign editor activity did not reject native begin");
+    context.steps.push({
+      step: "Attempt native begin with a foreign dirty editor",
+      actual: rejected.error,
+    });
     const database = new DatabaseSync(databasePath);
     try {
       rejectedRequest = database
@@ -685,6 +689,16 @@ async function scenario3(context) {
   assert.equal(binding.released, true, "Rejected binding was not durably cancelled");
   delete binding.released;
   await writeFile(bindingPath, JSON.stringify(binding));
+  context.steps.push({
+    step: "Seed the owner's unreleased starting-row shape in the development profile",
+    actual: {
+      sessionId: legacyRequest.sessionId,
+      userBlockId: legacyRequest.userBlockId,
+      runId: legacyRequest.runId,
+      beforeCapture: history?.before?.status ?? "absent",
+      hostBindingReleased: false,
+    },
+  });
   const database = new DatabaseSync(databasePath);
   try {
     assert(
@@ -727,6 +741,10 @@ async function scenario3(context) {
     true,
     "Host did not durably release the legacy binding",
   );
+  context.steps.push({
+    step: "Reload the updated native app and reconcile the retained admission",
+    actual: "Exact native request completed and matching Host binding durably released",
+  });
   await sendPrompt(context, "Reply LEGACYRECOVERED without editing files.");
   await sendPrompt(
     context,
