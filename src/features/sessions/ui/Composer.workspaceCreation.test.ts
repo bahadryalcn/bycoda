@@ -96,21 +96,24 @@ it("lets an explicit current choice send on an older remote Host", async () => {
   expect(submit).toHaveBeenCalledWith("Preserve this draft", [], expect.anything());
 });
 
-it("explains an idle-gated update and makes the draft's explicit current choice actionable", async () => {
-  host.status = {
-    state: "deferred",
-    message: "The host update waits until running sessions finish.",
-  };
-  await draw();
-  expect(container.textContent).toContain(
-    "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
-  );
-  expect(button("Send")?.disabled).toBe(true);
-  await act(async () => button("Use current checkout")!.click());
-  expect(container.querySelector("textarea")?.value).toBe("Preserve this draft");
-  expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(button("Send")?.disabled).toBe(false);
-});
+it.each([false, true])(
+  "explains an idle-gated update and makes the draft's explicit current choice actionable (compact %s)",
+  async (hideTopBar) => {
+    host.status = {
+      state: "deferred",
+      message: "The host update waits until running sessions finish.",
+    };
+    await draw({ hideTopBar });
+    expect(container.textContent).toContain(
+      "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
+    );
+    expect(button("Send")?.disabled).toBe(true);
+    await act(async () => button("Use current checkout")!.click());
+    expect(container.querySelector("textarea")?.value).toBe("Preserve this draft");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(button("Send")?.disabled).toBe(false);
+  },
+);
 
 it.each([
   null,

@@ -2961,12 +2961,17 @@ export const Composer = memo(function Composer({
           enabled={enabled}
         />
       ) : null}
-      {remoteWorkspaceCreationBlocked && (hideTopBar || hideBranchPicker) ? (
+      {draftWorkspace && workspaceCreationError && (hideTopBar || hideBranchPicker) ? (
         <div className="px-3 py-2">
           <WorkspaceCreationStatus
             pending={false}
             error={workspaceCreationError}
             onRetry={workspaceCreation.refresh}
+            onUseCurrentCheckout={
+              workspaceHostUpdateRequired && enabled && !busy && onWorkspaceModeChange
+                ? () => onWorkspaceModeChange("current")
+                : undefined
+            }
           />
         </div>
       ) : null}
