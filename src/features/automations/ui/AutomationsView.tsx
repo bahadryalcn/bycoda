@@ -310,8 +310,9 @@ function AutomationsContent({
       subscribeAutomations((change) => {
         const current = queryClient.getQueryData<Automation[]>(["automations", "local"]);
         if (change && current) {
-          // A confirmed local mutation is authoritative; discard an older list read.
-          void queryClient.cancelQueries({ queryKey: ["automations", "local"] }, { revert: false });
+          // Revert the pending read before publishing the confirmed mutation. Disabling
+          // reversion lets its asynchronous cancellation overwrite this data with an error.
+          void queryClient.cancelQueries({ queryKey: ["automations", "local"] });
           queryClient.setQueryData<Automation[]>(
             ["automations", "local"],
             applyAutomationChange(current, change),

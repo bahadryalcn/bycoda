@@ -113,6 +113,83 @@ it("invalidates the cached list when an automation changes", async () => {
   expect(peekAutomations()).toBeNull();
 });
 
+it("keeps a confirmed save authoritative when it cancels a pending list refresh", async () => {
+  const automation: Automation = {
+    ...newAutomationDraft("/work/project", "codex", "model"),
+    id: "pending-refresh",
+    name: "Original review",
+    prompt: "Review changes",
+    nextRunAt: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  invoke.mockResolvedValue([automation]);
+  await listAutomations();
+  let finishRefresh!: (entries: Automation[]) => void;
+  const refresh = new Promise<Automation[]>((resolve) => {
+    finishRefresh = resolve;
+  });
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "automations_list") return refresh;
+    if (command === "automations_upsert") return { ...args.automation, createdAt: 1, updatedAt: 2 };
+    if (command.endsWith("_status")) return { connected: false };
+    return [];
+  });
+  await act(async () =>
+    root.render(
+      createElement(AutomationsView, {
+        cwd: "/work/project",
+        recents: [],
+        onClose: vi.fn(),
+        onLaunch: vi.fn(),
+        onOpenSession: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Open Original review"]')!.click(),
+  );
+  await changeInput(
+    container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!,
+    "Saved review",
+  );
+  const findButton = (text: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === text,
+    )!;
+  await act(async () => findButton("Save").click());
+  expect(container.querySelector('[aria-label="Open Saved review"]')).not.toBeNull();
+  expect(container.textContent).not.toContain("CancelledError");
+  await act(async () => findButton("New automation").click());
+  await act(async () =>
+    container.querySelectorAll<HTMLButtonElement>(".automation-template")[1].click(),
+  );
+  await act(async () => finishRefresh([automation]));
+  expect(container.querySelector('[aria-label="Open Saved review"]')).not.toBeNull();
+  expect(container.querySelector('[aria-label="Open Original review"]')).toBeNull();
+  expect(container.textContent).not.toContain("CancelledError");
+});
+
+it("shows genuine local list failures", async () => {
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "automations_list") throw new Error("Automation list unavailable");
+    if (command.endsWith("_status")) return { connected: false };
+    return [];
+  });
+  await act(async () =>
+    root.render(
+      createElement(AutomationsView, {
+        cwd: "/work/project",
+        recents: [],
+        onClose: vi.fn(),
+        onLaunch: vi.fn(),
+        onOpenSession: vi.fn(),
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Automation list unavailable");
+});
+
 it("keeps an edited automation draft across host invalidation and saves the edited values", async () => {
   let automation: Automation = {
     ...newAutomationDraft("/work/project", "codex", "model"),
