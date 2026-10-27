@@ -2,6 +2,7 @@
 /**
  * pnpm dev:native [--bootstrap] [--workspace-id ID] [--run-id ID]
  *                 [--shared-target ABSOLUTE_CACHE_ROOT]
+ *                 [--cargo-target ABSOLUTE_TARGET] [--acceptance-controls]
  * Builds a debug executable, copies it under this workspace, then supervises an
  * isolated Host/Vite/native run. Ctrl+C stops only this supervisor's children.
  * No services or installers are used. Node 24+, pinned pnpm and Rust are required.
@@ -10,7 +11,7 @@ import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DevPortLeases } from "../../host/dev-port-leases.ts";
 import {
@@ -20,6 +21,7 @@ import {
 import { sourceIdentity } from "./build-info.mjs";
 import { chromium } from "@playwright/test";
 import { verifyNativeIdentity } from "./dev-shot.mjs";
+import { acceptanceControl } from "./dev-native-control.mjs";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -228,6 +230,9 @@ export async function waitForNativePage(
 
 export async function runNativeDev(args = process.argv.slice(2)) {
   const root = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), "../.."));
+  const explicitCargoTarget = option(args, "--cargo-target", process.env.CARGO_TARGET_DIR);
+  if (explicitCargoTarget && !isAbsolute(explicitCargoTarget))
+    throw new Error("--cargo-target must be absolute");
   const workspaceId = option(args, "--workspace-id", hash(root));
   const runId = option(args, "--run-id", randomUUID());
   const abort = new AbortController();
@@ -327,7 +332,9 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         const executable = await bootstrap.withBuildCache(
           workspaceId,
           abort.signal,
-          async ({ cargoTargetDir, cargoHome }) => {
+          async ({ cargoTargetDir: leasedCargoTargetDir, cargoHome }) => {
+            const cargoTargetDir = explicitCargoTarget ?? leasedCargoTargetDir;
+            await mkdir(cargoTargetDir, { recursive: true });
             await completed(
               launch("cargo", ["build", "--manifest-path", join(root, "src-tauri", "Cargo.toml")], {
                 ...env,
@@ -362,30 +369,34 @@ export async function runNativeDev(args = process.argv.slice(2)) {
           abort.signal,
         );
         await leases.handoff(lease.id, ["host"]);
-        const host = launch(
-          process.execPath,
-          [
-            env.BYCODA_DEV_HOST_ENTRY,
-            "serve",
-            "--data-dir",
-            environment.hostDataPath,
-            "--port",
-            String(lease.ports.host),
-          ],
-          env,
-        );
-        await waitFor(
-          host,
-          async () => {
-            const state = JSON.parse(
-              await readFile(join(environment.hostDataPath, "running.json"), "utf8"),
-            );
-            return state.pid === host.pid && state.port === lease.ports.host;
-          },
-          abort.signal,
-        );
+        const launchHost = () =>
+          launch(
+            process.execPath,
+            [
+              env.BYCODA_DEV_HOST_ENTRY,
+              "serve",
+              "--data-dir",
+              environment.hostDataPath,
+              "--port",
+              String(lease.ports.host),
+            ],
+            env,
+          );
+        let host = launchHost();
+        const waitForHost = async () =>
+          waitFor(
+            host,
+            async () => {
+              const state = JSON.parse(
+                await readFile(join(environment.hostDataPath, "running.json"), "utf8"),
+              );
+              return state.pid === host.pid && state.port === lease.ports.host;
+            },
+            abort.signal,
+          );
+        await waitForHost();
         await leases.handoff(lease.id, ["cdp"]);
-        const native = launch(executable, [], env);
+        let native = launch(executable, [], env);
         if (process.platform === "win32") {
           try {
             await waitFor(
@@ -438,19 +449,61 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         const record = {
           schemaVersion: 1,
           ...environment,
+          cargoTargetDir: explicitCargoTarget ?? environment.cargoTargetDir,
           pid: native.pid,
           executable,
           capturedAt: Date.now(),
           buildManifest: env.BYCODA_BUILD_MANIFEST,
         };
         const recordPath = join(dirname(environment.executableRunDir), "dev-run.json");
+        let hostStopped = false;
+        const saveRecord = async () => {
+          record.pid = native.pid;
+          record.hostPid = host?.pid;
+          await writeFile(recordPath, `${JSON.stringify(record, null, 2)}\n`);
+        };
+        const stopHost = async () => {
+          hostStopped = true;
+          await stopChildren(new Set([host]));
+          return { hostPid: host.pid };
+        };
+        const startHost = async () => {
+          if (hostStopped) {
+            host = launchHost();
+            await waitForHost();
+            hostStopped = false;
+            await saveRecord();
+          }
+          return { hostPid: host.pid };
+        };
+        const controls = args.includes("--acceptance-controls")
+          ? acceptanceControl(dirname(recordPath), {
+              "stop-host": stopHost,
+              "start-host": startHost,
+              "restart-host": async () => {
+                await stopHost();
+                return startHost();
+              },
+              "restart-app": async () => {
+                await stopChildren(new Set([native]));
+                native = launch(executable, [], env);
+                await saveRecord();
+                return { pid: native.pid };
+              },
+            })
+          : null;
+        if (controls) {
+          record.acceptanceControlPath = controls.path;
+          record.acceptanceResultPath = controls.resultPath;
+        }
         await mkdir(dirname(recordPath), { recursive: true });
-        await writeFile(recordPath, `${JSON.stringify(record, null, 2)}\n`);
+        await saveRecord();
         console.log(`Native development ready. Run record: ${recordPath}`);
         while (native.exitCode === null && native.signalCode === null) {
           abort.signal.throwIfAborted();
+          await controls?.poll();
           assertRunning(vite);
-          assertRunning(host);
+          if (!hostStopped) assertRunning(host);
           assertRunning(native);
           await sleep(200);
         }
@@ -478,7 +531,7 @@ export async function runNativeDev(args = process.argv.slice(2)) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv.includes("--help"))
     console.log(
-      "pnpm dev:native [--bootstrap] [--workspace-id ID] [--run-id ID] [--shared-target ABSOLUTE_CACHE_ROOT]\nBuild and supervise an isolated debug app, Host and Vite run. Ctrl+C cancels this run.",
+      "pnpm dev:native [--bootstrap] [--workspace-id ID] [--run-id ID] [--shared-target ABSOLUTE_CACHE_ROOT] [--cargo-target ABSOLUTE_TARGET] [--acceptance-controls]\nBuild and supervise an isolated debug app, Host and Vite run. Ctrl+C cancels this run.",
     );
   else
     runNativeDev().catch((error) => {
