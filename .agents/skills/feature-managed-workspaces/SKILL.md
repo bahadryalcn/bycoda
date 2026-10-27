@@ -5,6 +5,47 @@ description: Current-checkout defaults and opt-in managed workspace ownership, c
 
 # Managed workspaces
 
+## Q1 development acceptance gate (2026-10-27)
+
+Scope T2: the eight-scenario Windows development gate in the owner's Q1 brief,
+on `fix/stabilize-0.6.93`. Live claim tools were unavailable; the assigned
+worktree and explicit per-file ownership define this sub-scope, not this card.
+Owner instruction, source Q1 task brief: "do not release until the problems are
+reproduced and solved in the development environment with the real app."
+
+Maintained surfaces added to this inventory:
+
+- `scripts/build/acceptance-native.mjs`, `acceptance-native.test.mjs` and
+  `acceptance-native-focus.ps1`: `pnpm acceptance:native`, isolated native
+  identity/path checks, real Codex sends, temporary Git repositories, verified
+  Windows PID activation, per-scenario JSON and light/dark 1280/800 captures.
+- `scripts/build/dev-native.mjs`, `dev-native-control.mjs` and its test:
+  explicit `--acceptance-controls` restarts only run-owned Host/app children
+  while retaining that run's isolated data and executable.
+- `host/dev-capabilities.ts` and its test: dev-only capability omission file,
+  reread on actual Host `environment.describe`; installed profiles ignore it.
+- `host/managed-native-activity.ts`, `host/managed-native-turns.ts`,
+  `src-tauri/src/native_workspace.rs`, `harness.rs`, `session_rewind.rs` and
+  `remote.rs`: spawned-process acknowledgement, additive
+  `sessions.native-process-recovery.v1`, exact accepted-turn crash finalization
+  and credential-free native settlement replay. Missing/live/foreign/unknown
+  evidence remains fenced; process-tree proof is platform-specific.
+- `src/features/workspaces/model/workspaceCreation.ts`: missing new native
+  capability uses the existing update-pending/explicit-current recovery UI;
+  Current checkout and remote Host execution retain their contracts.
+- `src/features/sessions/ui/AgentTranscript.tsx`, `SessionPane.tsx` and
+  `AgentTranscript.rewindEligibility.test.ts`: reactive per-message rewind
+  eligibility across memo boundaries, including busy and blocker transitions.
+- `host/managed-workspaces.ts` and test: proven duplicate idle reports preserve
+  revision/retention timestamps; actual activity still invalidates old plans.
+
+Committed repairs: merge `c66bade1`, restart controls `2f19c341`, eligibility
+`71d23b19`, duplicate idle `848d98fc`, accepted crash `1773c3ec`, additive
+capability `555373f9`. Native acceptance evidence and final inclusion are recorded
+under `temp/verification/q1/`; source/unit success alone is not native acceptance.
+Run the maintained gate against a freshly built isolated run before release.
+No installer, owner profile, push or publication belongs to this gate.
+
 ## Purpose and keywords
 
 Default writers to the current checkout; offer owned branches/directories through

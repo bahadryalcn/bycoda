@@ -214,7 +214,7 @@ Additional integration transports retain the frozen owner contract:
   workspace creation never silently installs them.
 - `sessions.rewind.status` exposes durable operation/Undo discovery for
   Host-executed sessions; persisted browser IDs are discovery hints only.
-- Trusted `native.turn.begin/end/recover`, `native.activity.start/end`,
+- Trusted `native.turn.begin/end/recover`, `native.activity.start/spawned/end`,
   `native.buffers.update` and `native.rewind.plan/prepare/apply/status/ack` use
   native execution/activity/rewind capabilities. Native transcript rescue is
   persisted before Git restore; Host completion waits for native receipt
@@ -246,10 +246,30 @@ delayed begin requests. Native recovery validates all echoed identity/revision
 fields before releasing only the matching `starting` row. Session load and the
 pre-save send path retry this proof; failed reads preserve the fence and drafts.
 
+Accepted native turns use a different recovery path: the original before-capture
+is retained and an authenticated, exact completed after-capture receipt finalizes
+the matching `active`/`finishing` row. Provider process identity is acknowledged
+before its streams become available. Automatic cross-app crash recovery on Windows
+requires both the recorded provider and owning desktop process to be proven dead;
+the desktop's existing kill-on-close job owns the provider tree. A dead provider
+leader while its desktop is alive does not establish tree retirement. Unsupported
+platform tree proof, missing identity, live/reused PIDs, permission errors and
+foreign writers preserve the fence. Native settlement receipts recorded after
+`child.wait()` survive Host outages and are replayed until the exact Host
+acknowledgement arrives; they contain no credentials.
+
 The trusted native transport capabilities are `sessions.native-execution.v1`,
-`workspaces.native-activity.v1` and `sessions.native-rewind.v1`; all are implemented
+`sessions.native-process-recovery.v1`, `workspaces.native-activity.v1` and
+`sessions.native-rewind.v1`; all are implemented
 and advertised by the integrated Host. Native rewind still requires the general
 Git rewind/Undo capabilities and the matching complete native adapter.
+An older Host without the additive process-recovery capability gets the same
+managed-workspace update requirement and explicit **Use current checkout** choice;
+ordinary Current checkout and Host-executed remote turns do not require it.
+
+Repeated idle reports are idempotent when the live activity probe proves the
+workspace is already idle. They neither move retention timestamps nor invalidate
+an open owner review. Real active/idle transitions continue to change its revision.
 
 `build.identity.v1` identifies immutable frozen-source manifests, including Git
 identity, dirty paths, fingerprint, capture time, component identities and

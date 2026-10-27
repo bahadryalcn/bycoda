@@ -154,6 +154,13 @@ Reset cannot discard it; reconcile the existing execution and capture instead.
 Active provider processes, terminals, other writers and dirty or unknown editor
 buffers continue to block recovery of an unknown request.
 
+After an interrupted accepted turn, recovery preserves its earlier Git capture
+and finishes the matching end capture once the Host can prove the writer tree
+stopped. Windows can prove a crashed desktop's job exited; a provider PID alone
+is insufficient. The same **Reset stuck turn** action retries recovery. An older
+Host shows **Host update pending** and **Use current checkout** before native
+worktree execution. Update both components to use the new native recovery path.
+
 ## Rewind and Undo
 
 Managed Git rewind restores the selected accepted user boundary's conversation,
