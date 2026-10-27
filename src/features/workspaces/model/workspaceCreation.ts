@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { gitHistory, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
+import { subscribeRemoteCapabilities } from "../../connections/model/connections";
+import { subscribeRemoteRecovered } from "../../connections/model/remoteHealth";
+import { invalidateMachineSnapshot } from "../../automations/model/machineSnapshot";
 import type { WorkspaceMode } from "../../sessions/model/session";
 import { fetchGitIndex } from "../../source-control/model/gitIndexStore";
 import { listWorktrees } from "../../source-control/model/worktrees";
@@ -69,42 +72,64 @@ export function useWorkspaceCreation(
   choice?: WorkspaceMode,
   base?: string,
 ) {
+  const managedActive = active && choice !== "current";
   const [reload, setReload] = useState(0);
   const [result, setResult] = useState<{
     cwd: string;
     base?: string;
+    reload: number;
     policy?: WorkspacePolicy;
     preview?: WorkspaceCreationPreview;
     error?: string;
   }>();
   const refresh = useCallback(() => setReload((value) => value + 1), []);
   useEffect(() => {
-    if (!active) return;
+    if (!managedActive) return;
     window.addEventListener("focus", refresh);
     const unsubscribe = subscribeGitChanged(refresh, { cwd });
+    const unsubscribeRecovered = subscribeRemoteRecovered((environmentId) => {
+      const remote = parseRemotePath(cwd);
+      if (!remote || !environmentId || remote.environmentId === environmentId) refresh();
+    });
+    const unsubscribeCapabilities = subscribeRemoteCapabilities(() => {
+      // Descriptors can change without a disconnect. The snapshot cache must
+      // forget its previous answer before the hook asks for the new policy.
+      invalidateMachineSnapshot();
+      refresh();
+    });
     return () => {
       window.removeEventListener("focus", refresh);
       unsubscribe();
+      unsubscribeRecovered();
+      unsubscribeCapabilities();
     };
-  }, [active, cwd, refresh]);
+  }, [managedActive, cwd, refresh]);
   useEffect(() => {
-    if (!active || !cwd || cwd === "~") return;
-    let cancelled = false;
     setResult(undefined);
+    if (!managedActive || !cwd || cwd === "~") return;
+    let cancelled = false;
     void loadWorkspaceCreation(cwd, base).then(
       (value) => {
-        if (!cancelled) setResult({ cwd, base, ...value });
+        if (!cancelled) setResult({ cwd, base, reload, ...value });
       },
       (error: unknown) => {
         if (!cancelled)
-          setResult({ cwd, base, error: error instanceof Error ? error.message : String(error) });
+          setResult({
+            cwd,
+            base,
+            reload,
+            error: error instanceof Error ? error.message : String(error),
+          });
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [cwd, active, base, reload]);
-  const current = result?.cwd === cwd && result.base === base ? result : undefined;
+  }, [cwd, managedActive, base, reload]);
+  const current =
+    managedActive && result?.cwd === cwd && result.base === base && result.reload === reload
+      ? result
+      : undefined;
   return {
     mode: choice ?? current?.policy?.defaultMode ?? "worktree",
     base:
@@ -112,7 +137,7 @@ export function useWorkspaceCreation(
       (current?.policy ? shortWorkspaceRef(current.policy.integrationBranchRef) : undefined),
     preview: current?.preview,
     error: current?.error,
-    pending: active && !current,
+    pending: managedActive && !current,
     refresh,
   };
 }
