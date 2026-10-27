@@ -52,6 +52,13 @@ export function nativeDevConfig(base, environment) {
   return config;
 }
 
+/** Windows Host ACLs need the local per-run native profile, even for repos on other volumes. */
+export function nativeDevHostDataPath(environment, platform = process.platform) {
+  return platform === "win32"
+    ? join(environment.desktopDataPath, "host")
+    : environment.hostDataPath;
+}
+
 export function supervisedChild(command, args, { cwd, env, children }) {
   const child = spawn(command, args, {
     cwd,
@@ -312,6 +319,8 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         runId: lease.runId,
         ports: lease,
       });
+      environment.hostDataPath = nativeDevHostDataPath(environment);
+      await mkdir(environment.hostDataPath, { recursive: true });
       const env = {
         ...process.env,
         ...workspaceEnvironmentVariables(environment),

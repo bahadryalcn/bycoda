@@ -223,7 +223,6 @@ export async function validateAcceptanceRun(root, recordPath) {
   const path = assertWithin(runs, await realpath(resolve(recordPath)), "run record");
   const run = JSON.parse(await readFile(path, "utf8"));
   for (const [key, value] of Object.entries({
-    hostDataPath: run.hostDataPath,
     executableRunDir: run.executableRunDir,
     executable: run.executable,
     buildManifest: run.buildManifest,
@@ -231,6 +230,9 @@ export async function validateAcceptanceRun(root, recordPath) {
     assertWithin(runs, await realpath(value), key);
   }
   const expectedDesktop = nativeDevDesktopDataPath(run.instanceId);
+  const actualHost = await realpath(run.hostDataPath);
+  if (resolve(actualHost).toLowerCase() !== resolve(join(expectedDesktop, "host")).toLowerCase())
+    assertWithin(runs, actualHost, "hostDataPath");
   assert.equal(
     resolve(run.desktopDataPath).toLowerCase(),
     resolve(expectedDesktop).toLowerCase(),

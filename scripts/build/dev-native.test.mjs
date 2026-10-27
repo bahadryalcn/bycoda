@@ -1,14 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   nativeDevConfig,
+  nativeDevHostDataPath,
   supervisedChild,
   completed,
   stopChildren,
   waitForNativePage,
 } from "./dev-native.mjs";
 import { loopbackUrl, screenshotOptions, verifyNativeIdentity } from "./dev-shot.mjs";
+
+test("Windows Host data follows only the isolated native profile instead of the checkout volume", () => {
+  const environment = {
+    desktopDataPath: join(tmpdir(), "isolated-desktop-profile"),
+    hostDataPath: join(tmpdir(), "checkout-host"),
+  };
+  assert.equal(
+    nativeDevHostDataPath(environment, "win32"),
+    join(environment.desktopDataPath, "host"),
+  );
+  assert.equal(nativeDevHostDataPath(environment, "linux"), environment.hostDataPath);
+});
 
 test("leased native URLs and CSP agree while production CSP remains untouched", async () => {
   const original = JSON.parse(

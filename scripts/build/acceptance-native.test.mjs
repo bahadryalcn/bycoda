@@ -219,6 +219,31 @@ test("accepts a complete isolated record without connecting or launching process
   }
 });
 
+test(
+  "accepts only the matching Windows dev profile Host directory outside the checkout",
+  { skip: process.platform !== "win32" },
+  async () => {
+    const item = await fixture();
+    const appData = process.env.APPDATA;
+    try {
+      process.env.APPDATA = item.root;
+      item.run.desktopDataPath = nativeDevDesktopDataPath(item.run.instanceId);
+      item.run.hostDataPath = join(item.run.desktopDataPath, "host");
+      await mkdir(item.run.hostDataPath, { recursive: true });
+      await item.save();
+      assert.equal((await validateAcceptanceRun(item.root, item.path)).identity.buildId, "test");
+      item.run.hostDataPath = join(nativeDevDesktopDataPath("another-dev-run"), "host");
+      await mkdir(item.run.hostDataPath, { recursive: true });
+      await item.save();
+      await assert.rejects(validateAcceptanceRun(item.root, item.path));
+    } finally {
+      if (appData === undefined) delete process.env.APPDATA;
+      else process.env.APPDATA = appData;
+      await rm(item.root, { recursive: true, force: true });
+    }
+  },
+);
+
 test("rejects installed desktop identity, owner Host paths, reserved ports and nondev stamps", async () => {
   const item = await fixture();
   try {
