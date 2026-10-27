@@ -5,6 +5,55 @@ description: Current-checkout defaults and opt-in managed workspace ownership, c
 
 # Managed workspaces
 
+## V94 lightweight execution (2026-10-27)
+
+T2, V94-W1, baseline `86a8c870`, branch `feat/v94-light-worktree`.
+Owner decision, 2026-10-27 V94 common/stream brief: "Worktrees must be
+lightweight and optional: a worktree session is just its own folder + branch."
+This supersedes the unconditional per-turn capture/admission statements below.
+Live claim APIs were unavailable in this worker session; the owner's explicit
+three-stream file assignments establish the coordination boundary.
+
+Delivered surface checklist:
+
+- Done: `host/exact-git-rewind.ts`, `host/managed-workspace-runtime.ts` and
+  `host/server.ts`: execution-host policy persisted outside checkouts as
+  `managed-workspaces/exact-git-rewind.json`, default OFF; owner-authenticated
+  `workspaces.exactGitRewind.get/set`; enabling rejects running worktree turns.
+  Missing/unreadable policy disables the experiment; Settings read errors remain visible.
+- Done: `host/engine.ts`, `host/managed-native-turns.ts`,
+  `host/managed-native-activity.ts`: OFF skips capture, turn admission/activity
+  leases, legacy whole-tree checkpoint fallback and exact-capture retirement.
+  Old bindings remain stored for explicit experimental recovery, without
+  blocking ordinary sends. Workspace identity and destructive lifecycle guards remain.
+- Done: `src-tauri/src/session_rewind.rs`, `src-tauri/src/harness.rs`:
+  stale native rows ignored OFF, no native turn capture/retirement/activity
+  admission. Native opt-in requires fresh `sessions.git-rewind.experimental.v1`
+  advertising; older Hosts do not accidentally enable exact rewind.
+- Done: `src/app/workspace/sessions/submit/submitTurnDispatch.ts`: OFF skips
+  managed begin/end and whole-tree checkpoint fallback. The shared harness's
+  separate Codex idle writer-lock release remains outside this stream's ownership.
+- Done: `src/features/settings/model/exactGitRewind.ts`,
+  `src/features/settings/ui/WorkspaceSettings.tsx`, settings search catalog and
+  all eight locale catalogs: shared Toggle, acknowledged saving, loading,
+  error/retry and keyboard use. Scope is this computer's execution Host;
+  remote Hosts retain independent policy.
+- Done: `docs/guides/managed-workspaces.md`: default and opt-in workflow.
+- Done: focused behavior checks for three sends OFF in desktop/Host,
+  stuck native rows/bindings, capabilities OFF and retained exact behavior ON.
+  Settings browser fixture reviewed light/dark at 1280/800, keyboard and error/retry;
+  captures/results in `temp/verification/v94w1/`.
+
+Preserve drafts, conversation persistence, permission gates, authoritative cwd,
+directory removal guards and explicit exact-rewind recovery. Conversation-only
+managed rewind OFF never calls provider-native file revert (including OpenCode).
+No new file-revert implementation is owned here; V94-W3 owns that capability.
+Native/provider acceptance, packaging, installation and release are owned by
+the orchestrator; no installed build inclusion is established by these checks.
+Product implementation: `a6f73927` on `feat/v94-light-worktree` (29 files).
+Focused fast app/Host types, managed engine/Host/native tests and Clippy passed;
+this inventory does not assert a release build stamp.
+
 ## Purpose and keywords
 
 Default writers to the current checkout; offer owned branches/directories through
