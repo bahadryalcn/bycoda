@@ -362,3 +362,18 @@ Implemented in `263ce591` on `hotfix/0.6.93`:
 acceptance scenarios with real Codex and isolated profiles, plus light/dark
 1280/800 captures. Native outcomes and exact logs belong in
 `temp/verification/hot1/`; source checks alone do not establish those outcomes.
+
+HOT1 native development evidence at product source `2c25cbed`, runner `6e66c921`:
+Current completed three real Codex turns; a 34,483-byte Turkish message survived
+Luna-to-Sol selection; a labelled history/capacity seed produced the reduced
+handoff notice and a verified native history archive while real Codex replied.
+An actual outage of only the isolated test Host saved the unresolved user block;
+after Host restart, Retry completed in Current. Real Host contextual Current and
+task/automation/Settings defaults also passed. Light/dark 1280/800 captures were
+opened; `temp/verification/hot1/acceptance-final.json` aggregates the seven cases.
+
+One initial switch attempt was explicitly marked stopped and timed out without a
+reply; the cause was not established. The traced repeat passed without product
+changes, and the failed attempt is retained. Explicit Worktree native first-turn
+admission still failed; see the managed-workspaces card. These findings prevent
+claiming full HOT1 native acceptance or release readiness.

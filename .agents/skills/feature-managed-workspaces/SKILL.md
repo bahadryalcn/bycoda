@@ -581,3 +581,23 @@ Exact native results, source stamp and the per-surface acceptance ledger live in
 Coordination: no live feature-claim API was available; the owner's explicit HOT1
 assignment and sibling worktree inventory established the sub-scope. Deeper native
 managed-turn/rewind implementation, installation and release remain separate.
+
+HOT1 development acceptance at product source `2c25cbed` used build
+`dev-1793103230117-28b2724ca7a5` (debug, manifest version 0.6.92), with runner
+`6e66c921`. All product changes are included; the later runner changes are Node
+acceptance tooling. `temp/verification/hot1/acceptance-final.json` records six
+passing scenarios and one failed scenario. Current three-turn, 34,483-byte Turkish
+model switch/reduced handoff, real Host contextual Current, actual isolated Host
+outage/Retry Current, task/automation creation defaults and Settings Current passed.
+Captures were opened in both themes at 1280/800; task/automation creation checks
+persist To do tasks and disabled automations, not live scheduled executions.
+
+Explicit Worktree creation succeeded, but its first native turn failed with
+`Conversation changed before managed turn capture`; a second fresh creation hit
+`Another workspace writer or unknown activity is still active`. Native admission
+and activity repair remain owned by the deferred native stream; HOT1 must not be
+reported as fully accepted or release-ready. `src-tauri/src/session_rewind.rs`
+retains the baseline revision-snapshot/connect/admission sequence; the pending
+preparation marker is not part of its user-boundary predicate. No native fences
+were cleared to force acceptance. Exact failing records and screenshots are kept
+under `temp/verification/hot1/`.
