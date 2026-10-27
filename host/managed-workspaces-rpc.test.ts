@@ -12,6 +12,7 @@ import { createHostServer } from "./server";
 import { HostStore } from "./store";
 import { DeliveryEffectNotAppliedError, GitHubDeliveryPublication } from "./branch-delivery";
 import type { BuildIdentity, ManagedWorkspace, SessionRewindPlan } from "./workspace-contracts";
+import { canonicalWorkspacePath } from "./workspace-paths";
 
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 60_000 });
 const cleanups: Array<() => Promise<void>> = [];
@@ -124,7 +125,8 @@ it("defaults authenticated creation without a choice to current and preserves ex
   const receipt = await f.call("commands.dispatch", command);
   expect(await f.call("commands.dispatch", command)).toEqual(receipt);
   const session = (await f.store.session(receipt.sessionId)).session;
-  expect(session.cwd).toBe(f.target);
+  const canonicalTarget = await canonicalWorkspacePath(f.target);
+  expect(await canonicalWorkspacePath(session.cwd)).toBe(canonicalTarget);
   expect(session.workspaceId).toBeUndefined();
   expect(session.workspaceMode).toBe("current");
   const managed = await f.call("commands.dispatch", {
@@ -134,7 +136,7 @@ it("defaults authenticated creation without a choice to current and preserves ex
   });
   const managedSession = (await f.store.session(managed.sessionId)).session;
   expect(managedSession.workspaceId).toBeTruthy();
-  expect(managedSession.cwd).not.toBe(f.target);
+  expect(await canonicalWorkspacePath(managedSession.cwd)).not.toBe(canonicalTarget);
 });
 
 it("prepares independent execution for project worktree policy before authenticated old-client atomic creation dispatches its first turn", async () => {

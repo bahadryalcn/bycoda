@@ -69,6 +69,7 @@ async function fixture(options: Parameters<typeof createManagedWorkspaceRuntime>
     owner: { kind: "session" as const, id: "owned-session" },
     slug: "source",
     idempotencyKey: "prepare",
+    choice: { defaultMode: "worktree" as const },
   };
   return { root, git, store, engine, runtime, project, request, send };
 }
